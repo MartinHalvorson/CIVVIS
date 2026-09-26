@@ -2350,6 +2350,14 @@ pub const GENES: &[Gene] = &[
     // (-0.03 pp, z -0.10); against the lane without either, +2.35 pp (z
     // +4.78) and +1.38 pp (z +1.67). See `advanced/lane_delegates_production.rs`.
     Gene { tag: "lane-delegates-production-2", field: "lane_delegates_production_2", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_delegates_production_2, disable: AdvancedAi::disable_lane_delegates_production_2 },
+    // `settler-detour-stays-near` (2026-09-26): the threat detour's fallback
+    // was FARTHER than the deferred site in 11 of 18 Immortal-proxy detours
+    // (4 tiles became 9), and each far walk met its own blocker; Settlers
+    // walked 20–27 turns for sites four tiles from home. With this on, the
+    // fallback must lie within the deferred site's distance plus one (floor
+    // three, ceiling eight), else the target is kept and the guard holds.
+    // See `SETTLER_DETOUR_NEAR_SLACK`.
+    Gene { tag: "settler-detour-stays-near", field: "settler_detour_stays_near", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_detour_stays_near, disable: AdvancedAi::disable_settler_detour_stays_near },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
