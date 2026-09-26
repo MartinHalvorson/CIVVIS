@@ -101,7 +101,10 @@ pub fn live_finishing_candidates(
             // corresponding line with CIVVIS's own pathfinder first; a route
             // stopped by terrain, stacking, ZOC or exhausted movement never
             // becomes a host order.
-            let mut approach = game.clone();
+            // A read-and-discard branch: nothing reads its explored ground,
+            // contacts or fog memory, so it need not publish sight after
+            // every simulated step (`Game::speculative_clone`).
+            let mut approach = game.speculative_clone();
             let mut simulation = Vec::new();
             for _ in 0..game.map.tiles.len() {
                 if approach.wdist(approach.units[&unit].pos, target_pos) <= 1 {
@@ -137,7 +140,7 @@ pub fn live_finishing_candidates(
 
         for (ranged, simulation, order) in modes {
             let attacker_hp = friendly.hp;
-            let mut after = game.clone();
+            let mut after = game.speculative_clone();
             let mut legal = true;
             for action in &simulation {
                 if after.apply(pid, action).is_err() {
@@ -195,7 +198,7 @@ pub fn live_finishing_damage_floor(
     target: u32,
     candidate: &FinishingCandidate,
 ) -> Option<i32> {
-    let mut approach = game.clone();
+    let mut approach = game.speculative_clone();
     for action in &candidate.simulation {
         let strengths = match action {
             Action::Move { .. } => {
@@ -298,7 +301,7 @@ pub fn finish_live_war_units_excluding(
         // Prove that a direct volley actually removes the target before taking
         // any unit away from the ordinary AI. Damage-only opportunities remain
         // the ordinary tactical path's decision.
-        let mut proof = planned_game.clone();
+        let mut proof = planned_game.speculative_clone();
         let mut proof_committed = committed.clone();
         let mut chosen = Vec::new();
         while proof.units.contains_key(&target) {
