@@ -1551,7 +1551,11 @@ impl Game {
                             && !self.are_friends(pid, o.id)
                             && !self.are_allied(pid, o.id)
                         {
-                            acts.push(Action::DeclareWar { player: o.id });
+                            if self.host_war_type_permission(pid, o.id, "surprise_war")
+                                != Some(false)
+                            {
+                                acts.push(Action::DeclareWar { player: o.id });
+                            }
                             for casus_belli in [
                                 "formal_war",
                                 "holy_war",
@@ -8536,6 +8540,12 @@ impl Game {
         {
             return false;
         }
+        // Surprise declarations and joint-war agreements have separate paths.
+        if !matches!(profile.id, "surprise_war" | "joint_war") {
+            if let Some(allowed) = self.host_war_type_permission(pid, other, profile.id) {
+                return allowed;
+            }
+        }
         let waited = self.denounced_long_enough(pid, other);
         match profile.id {
             "formal_war" => waited,
@@ -8864,8 +8874,29 @@ impl Game {
         self.host_war_blocks.contains(&(pid, other, self.turn))
     }
 
+    pub(crate) fn host_war_type_permission(
+        &self,
+        pid: usize,
+        other: usize,
+        casus_belli: &str,
+    ) -> Option<bool> {
+        let statement = native_war_statement(casus_belli)?;
+        self.host_war_type_permissions
+            .get(&(pid, other))
+            .filter(|observed| observed.turn == self.turn)
+            .map(|observed| {
+                observed
+                    .permissions
+                    .get(statement)
+                    .copied()
+                    .unwrap_or(false)
+            })
+    }
+
     pub(super) fn do_declare_war(&mut self, pid: usize, other: usize) -> Result<(), String> {
-        if self.host_blocks_war(pid, other) {
+        if self.host_blocks_war(pid, other)
+            || self.host_war_type_permission(pid, other, "surprise_war") == Some(false)
+        {
             return Err("host forbids declaring war this turn".into());
         }
         self.start_war(
