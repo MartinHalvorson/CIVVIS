@@ -43,6 +43,9 @@ use civvis::ai::Ai;
 use civvis::game::Action;
 use civvis::mirror;
 
+#[path = "civvis_orders/air_assault.rs"]
+mod air_assault;
+
 fn arg_text(args: &[String], flag: &str) -> Option<String> {
     args.iter()
         .position(|value| value == flag)
@@ -1708,11 +1711,18 @@ fn assume_seat_capabilities(
             "moves_at_turn_start" => seat.moves_at_turn_start = true,
             "tile_delta" => seat.tile_delta = true,
             "replan_frames" if value.is_none() => seat.replan_frames = true,
+            "replan_frame_limit" => {
+                seat.replan_frame_limit = Some(
+                    value
+                        .and_then(|text| text.parse().ok())
+                        .ok_or("--assume-seat replan_frame_limit needs a nonnegative integer")?,
+                );
+            }
             "" => {}
             other => {
                 return Err(format!(
                     "--assume-seat {other}: unknown capability (order_queue, \
-                     moves_at_turn_start, replan_frames, tile_delta)"
+                     moves_at_turn_start, replan_frames, replan_frame_limit=N, tile_delta)"
                 ))
             }
         }
@@ -3678,6 +3688,13 @@ fn decide(
     // been measured leaving such kills alive. And a settler's bound guard is
     // not the volley's to spend one tile away from the civilian it shields.
     ai.observe_confirmed_host_deaths(&planned_game, state);
+    air_assault::apply_cooldowns(
+        &mut planned_game,
+        &mirror_state.civ6_of,
+        state.turn,
+        host_order_refusals,
+    );
+    air_assault::observe(ai, snapshot, state);
     let (war_finishers, ai_actions_begin) =
         civvis::ai::player::plan_frame(ai, &mut planned_game, 0, &mirror_state.civ6_of);
     // Finishing attacks are translated explicitly below, including the reserve
@@ -4211,6 +4228,16 @@ fn decide(
         note_bits.push(format!(
             "deferred_activation_plot_conflicts={deferred_activation_plot_conflicts}"
         ));
+    }
+
+    let air_phase_deferred = air_assault::defer_followups(
+        &mut orders,
+        ai.planned_air_city_assault(),
+        snapshot,
+        &mirror_state.civ6_of,
+    );
+    if air_phase_deferred > 0 {
+        note_bits.push(format!("air_assault_phase_deferred={air_phase_deferred}"));
     }
 
     // Keep the first speculative local step before a whole walk is compressed
