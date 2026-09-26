@@ -65,7 +65,8 @@ controls. Existing Builder, treasury, threat, lane and ground-upgrade controls
 also pass. `cargo test --profile ci --locked` passes 4,285 tests with 53 existing
 ignored tests. Rust formatting and `git diff --check` pass; fetched main was
 already integrated. No engine rules changed, so an engine-stability soak is not
-required for this purchase-policy change. Integration validation is pending.
+required for this purchase-policy change. Changed-line Rust quality also passes.
+Native verification of the candidate remains pending.
 
 This is a supply-policy repair, not a measured win-rate improvement. The full
 objective remains reaching the beeline reliably and converting the wing into
