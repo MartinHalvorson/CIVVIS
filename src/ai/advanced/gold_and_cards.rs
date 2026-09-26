@@ -414,22 +414,18 @@ impl AdvancedAi {
     /// nothing qualifies or clears the reserve.
     pub(super) fn young_empire_purchase(&self, g: &mut Game, pid: usize, reserve: f64) -> bool {
         let counts = self.counts(g, pid);
-        let mut cities = g.player_city_ids(pid);
-        if self.treasury_at_work_2_2 {
-            let mut production: Vec<_> = cities
-                .iter()
-                .map(|cid| (*cid, g.city_yields(*cid).production))
+        // Cities by Production, least first. Each yield is read once, under
+        // one memo, rather than twice per comparison.
+        let cities: Vec<u32> = {
+            let _memo = g.query_memo();
+            let mut production: Vec<_> = g
+                .player_city_ids(pid)
+                .into_iter()
+                .map(|cid| (cid, g.city_yields(cid).production))
                 .collect();
             production.sort_by(|left, right| left.1.total_cmp(&right.1).then(left.0.cmp(&right.0)));
-            cities = production.into_iter().map(|(cid, _)| cid).collect();
-        } else {
-            cities.sort_by(|left, right| {
-                g.city_yields(*left)
-                    .production
-                    .total_cmp(&g.city_yields(*right).production)
-                    .then(left.cmp(right))
-            });
-        }
+            production.into_iter().map(|(cid, _)| cid).collect()
+        };
         let bank = g.players[pid].gold;
         let city_name = |g: &Game, cid: u32| {
             g.cities

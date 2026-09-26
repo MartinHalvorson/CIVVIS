@@ -7,6 +7,10 @@ impl Game {
     /// unknown/prior representation as the Civilization VI mirror. Last-seen
     /// cities and terrain come from the observer's memory, not today's world.
     pub fn player_decision_view(&self, pid: usize) -> Self {
+        // The authoritative board is only read here. Its loyalty and yield
+        // readbacks below ask every owned and met city for its yields, each of
+        // which values the owner's whole luxury allocation; one memo shares it.
+        let _memo = self.query_memo();
         let visible = self.player_visibility(pid);
         let viewers = self.visibility_viewers(pid);
         let mut tiles = BTreeMap::new();
