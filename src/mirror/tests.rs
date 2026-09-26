@@ -14353,7 +14353,6 @@ mod plot_city_ownership;
 #[path = "foreign_movement_tests.rs"]
 mod foreign_movement_tests;
 
-
 #[test]
 fn strategic_trade_catalogue_preserves_public_quantities_and_unknowns() {
     for (raw, expected) in [

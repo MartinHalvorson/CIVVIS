@@ -306,70 +306,73 @@ local emptyCatalogue, emptyCataloguePlayer = fixture({ theirPossible = { RESOURC
 local noCandidates = tradeableLuxuries(emptyCataloguePlayer, 7, 3)
 check("the stock probe distinguishes no luxury from an error", #noCandidates, 0)
 
--- Read-only strategic offers, as shown in the rival's deal column.
-local tradeableStrategics = rawget(_G, "CivvisTradeableStrategics")
-assert(type(tradeableStrategics) == "function",
-    "CivvisControlAgent.lua did not export CivvisTradeableStrategics")
-resourceRows.RESOURCE_ALUMINUM = { ResourceType = "RESOURCE_ALUMINUM", Index = 45,
-    ResourceClassType = "RESOURCECLASS_STRATEGIC" }
-resourceRows.RESOURCE_IRON.ResourceClassType = "RESOURCECLASS_STRATEGIC"
-local strategicCatalogue, strategicPlayer = fixture({
-    theirPossible = { RESOURCE_ALUMINUM = 24, RESOURCE_IRON = 7, RESOURCE_AMBER = 1 },
-    own = { RESOURCE_ALUMINUM = 5 },
-})
-local strategics = tradeableStrategics(strategicPlayer, 7, 3)
-check("strategic catalogue reads their side", table.concat(strategicCatalogue.possibleArgs, ":"), "3:7")
-check("strategic catalogue preserves offered Aluminum", strategics.RESOURCE_ALUMINUM, 24)
-check("strategic catalogue preserves offered Iron", strategics.RESOURCE_IRON, 7)
-check("strategic catalogue excludes luxuries", strategics.RESOURCE_AMBER, nil)
-check("strategic catalogue never clears a working deal", strategicCatalogue.clears, nil)
-check("strategic catalogue never submits a deal", strategicCatalogue.sends, nil)
-check("strategic catalogue never adds a deal item", #strategicCatalogue.items, 0)
-local emptyStrategics, emptyStrategicPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 } })
-check("known absence is an empty strategic catalogue", next(tradeableStrategics(emptyStrategicPlayer, 7, 3)), nil)
-local missingDeal, missingDealPlayer = fixture({ noWorkingDeal = true })
-check("missing deal is unknown strategic stock", tradeableStrategics(missingDealPlayer, 7, 3), nil)
-for _, opts in ipairs({ { met = false }, { atWar = true }, { major = false } }) do
-    local unavailable, unavailablePlayer = fixture(opts)
-    check("unavailable partner has unknown strategic stock", tradeableStrategics(unavailablePlayer, 7, 3), nil)
-    check("unavailable partner is not queried", unavailable.possibleArgs, nil)
-end
-local malformed, malformedPlayer = fixture({})
-DealManager.GetPossibleDealItems = function()
-    return {
-        { ForType = 45, MaxAmount = 8, IsValid = false },
-        { ForType = 44, MaxAmount = -2 },
-        { ForType = 45, MaxAmount = 0 },
-        { ForType = 44, MaxAmount = 0/0 },
-        { ForType = 45, MaxAmount = math.huge },
-        { ForType = 44, MaxAmount = "7" },
-        { ForType = 999, MaxAmount = 7 },
-    }
-end
-check("malformed offers do not become strategic stock", next(tradeableStrategics(malformedPlayer, 7, 3)), nil)
-DealManager.GetPossibleDealItems = function() return nil end
-check("missing catalogue is unknown strategic stock", tradeableStrategics(malformedPlayer, 7, 3), nil)
+do
+	-- Read-only strategic offers, as shown in the rival's deal column.
+	local tradeableStrategics = rawget(_G, "CivvisTradeableStrategics")
+	assert(type(tradeableStrategics) == "function",
+	    "CivvisControlAgent.lua did not export CivvisTradeableStrategics")
+	resourceRows.RESOURCE_ALUMINUM = { ResourceType = "RESOURCE_ALUMINUM", Index = 45,
+	    ResourceClassType = "RESOURCECLASS_STRATEGIC" }
+	resourceRows.RESOURCE_IRON.ResourceClassType = "RESOURCECLASS_STRATEGIC"
+	local strategicCatalogue, strategicPlayer = fixture({
+	    theirPossible = { RESOURCE_ALUMINUM = 24, RESOURCE_IRON = 7, RESOURCE_AMBER = 1 },
+	    own = { RESOURCE_ALUMINUM = 5 },
+	})
+	local strategics = tradeableStrategics(strategicPlayer, 7, 3)
+	check("strategic catalogue reads their side", table.concat(strategicCatalogue.possibleArgs, ":"), "3:7")
+	check("strategic catalogue preserves offered Aluminum", strategics.RESOURCE_ALUMINUM, 24)
+	check("strategic catalogue preserves offered Iron", strategics.RESOURCE_IRON, 7)
+	check("strategic catalogue excludes luxuries", strategics.RESOURCE_AMBER, nil)
+	check("strategic catalogue never clears a working deal", strategicCatalogue.clears, nil)
+	check("strategic catalogue never submits a deal", strategicCatalogue.sends, nil)
+	check("strategic catalogue never adds a deal item", #strategicCatalogue.items, 0)
+	local emptyStrategics, emptyStrategicPlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 } })
+	check("known absence is an empty strategic catalogue", next(tradeableStrategics(emptyStrategicPlayer, 7, 3)), nil)
+	local missingDeal, missingDealPlayer = fixture({ noWorkingDeal = true })
+	check("missing deal is unknown strategic stock", tradeableStrategics(missingDealPlayer, 7, 3), nil)
+	for _, opts in ipairs({ { met = false }, { atWar = true }, { major = false } }) do
+	    local unavailable, unavailablePlayer = fixture(opts)
+	    check("unavailable partner has unknown strategic stock", tradeableStrategics(unavailablePlayer, 7, 3), nil)
+	    check("unavailable partner is not queried", unavailable.possibleArgs, nil)
+	end
+	local malformed, malformedPlayer = fixture({})
+	DealManager.GetPossibleDealItems = function()
+	    return {
+	        { ForType = 45, MaxAmount = 8, IsValid = false },
+	        { ForType = 44, MaxAmount = -2 },
+	        { ForType = 45, MaxAmount = 0 },
+	        { ForType = 44, MaxAmount = 0/0 },
+	        { ForType = 45, MaxAmount = math.huge },
+	        { ForType = 44, MaxAmount = "7" },
+	        { ForType = 999, MaxAmount = 7 },
+	    }
+	end
+	check("malformed offers do not become strategic stock", next(tradeableStrategics(malformedPlayer, 7, 3)), nil)
+	DealManager.GetPossibleDealItems = function() return nil end
+	check("missing catalogue is unknown strategic stock", tradeableStrategics(malformedPlayer, 7, 3), nil)
 
--- Execute the actual exporter expression too: the helper must be wired in,
--- and a host API failure must omit the field instead of exporting zero stock.
-local catalogueSource = assert(io.open(here .. "/CivvisControlAgent.lua"))
-local catalogueText = catalogueSource:read("*a"); catalogueSource:close()
-local catalogueExpression = assert(catalogueText:match(
-    "tradeable_strategics = (try%(function%(%).-end, nil%)),"))
-local _, exportPlayer = fixture({ theirPossible = { RESOURCE_ALUMINUM = 24 } })
-local exportCatalogue = assert(loadstring("return " .. catalogueExpression))
-setfenv(exportCatalogue, setmetatable({
-    player = exportPlayer, pid = 7, otherId = 3,
-    CivvisTradeableStrategics = tradeableStrategics,
-    try = function(fn, fallback)
-        local success, value = pcall(fn)
-        if success then return value end
-        return fallback
-    end,
-}, { __index = _G }))
-check("rival state exports the strategic catalogue", exportCatalogue().RESOURCE_ALUMINUM, 24)
-DealManager.GetPossibleDealItems = function() error("API unavailable") end
-check("failed strategic export stays unknown", exportCatalogue(), nil)
+	-- Execute the actual exporter expression too: the helper must be wired in,
+	-- and a host API failure must omit the field instead of exporting zero stock.
+	local catalogueSource = assert(io.open(here .. "/CivvisControlAgent.lua"))
+	local catalogueText = catalogueSource:read("*a"); catalogueSource:close()
+	local catalogueExpression = assert(catalogueText:match(
+	    "tradeable_strategics = (try%(function%(%).-end, nil%)),"))
+	local _, exportPlayer = fixture({ theirPossible = { RESOURCE_ALUMINUM = 24 } })
+	local exportCatalogue = assert(loadstring("return " .. catalogueExpression))
+	setfenv(exportCatalogue, setmetatable({
+	    player = exportPlayer, pid = 7, otherId = 3,
+	    CivvisTradeableStrategics = tradeableStrategics,
+	    try = function(fn, fallback)
+	        local success, value = pcall(fn)
+	        if success then return value end
+	        return fallback
+	    end,
+	}, { __index = _G }))
+	check("rival state exports the strategic catalogue", exportCatalogue().RESOURCE_ALUMINUM, 24)
+	DealManager.GetPossibleDealItems = function() error("API unavailable") end
+	check("failed strategic export stays unknown", exportCatalogue(), nil)
+
+end
 
 local function sellOrder(pid, subject, player, turn, verb, floor)
 	return applyOrder(player, pid, {
