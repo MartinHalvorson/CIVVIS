@@ -103,3 +103,18 @@ fn staging_floor_only_applies_with_the_doctrine_and_never_reduces_a_budget() {
     ai.enable_siege_train();
     assert_eq!(ai.siege_requirement(&g, 0, cid), strategic);
 }
+
+#[test]
+fn a_peacetime_campaign_keeps_its_existing_declaration_requirement() {
+    let (mut g, cid) = staging_world(12);
+    g.at_war.clear();
+    let mut ai = AdvancedAi::new();
+    ai.disable_siege_train();
+    ai.disable_siege_positive_damage_budget();
+    let strategic = ai.siege_requirement(&g, 0, cid);
+    ai.enable_siege_train();
+    assert_eq!(ai.siege_requirement(&g, 0, cid), strategic);
+    ai.disable_siege_train();
+    ai.enable_siege_positive_damage_budget();
+    assert_eq!(ai.siege_requirement(&g, 0, cid), strategic);
+}
