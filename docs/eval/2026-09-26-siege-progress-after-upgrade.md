@@ -52,3 +52,19 @@ Require a focused regression to fail before the correction, rerun the exact
 observed-history replay, preserve existing bounded-fatigue tests, run the full
 Rust suite and evaluator profile tests, and check changed-file quality before
 shipping. No engine mechanics or live runtime settings are changed here.
+
+
+## Diagnostic result
+
+The instrumented baseline completed all476 frames. On turn167, the stored
+`initial_maximum` was500, current maximum600, actual remaining health456,
+`greatest_quarter`0 and `progressed_at` absent. The existing formula used
+`(500 - 456) * 4 / 500`, so144 actual damage after the upgraded full-health
+observation counted as44. Our army was present. The fatigue gate read Conquest,
+target Norway, city `(23,23)`, no threatened city, and an active war.
+
+The defect is the damage reference after an observed health increase, rather
+than a missing army, target switch, home-defense condition or an insufficient
+fixed milestone budget. A quarter of the original500HP budget is125; the
+observed144HP drop exceeds that without lowering the threshold. Temporary
+logging was removed after freezing its binary and patch in the evidence folder.
