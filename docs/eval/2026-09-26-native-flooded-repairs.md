@@ -56,8 +56,12 @@ Regression tests cover district and building repair enumeration, drying,
 submergence, host-state precedence, rebuild, same-turn delta sync, omitted
 climate, and legacy fields. The Lua test executes the shipped tile sweep,
 including deltas caused solely by the new flags and unknown API results.
-Full Rust, discovered Lua, quality, and simulation smoke results are recorded
-in the PR after completion.
+Local validation on `207b16d33` passed: `cargo test --profile ci --locked`
+(4,299 passed, 53 existing ignored), all 65 discovered control-mod Lua 5.1
+suites, full agent Lua 5.1 parsing, changed-Rust formatting/warning checks,
+and two King/four-major/Pangaea/Online simulation smoke games with a 250-turn
+cap (seeds 926776–926777). Both simulations ended normally with non-domination
+victories; they are execution checks, not strength evidence.
 
 This is a legality/fidelity correction, not a measured domination improvement.
 After normal integration and a completed-game boundary, check actual native
