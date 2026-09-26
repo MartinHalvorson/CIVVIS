@@ -30,3 +30,27 @@ changed-line Rust quality checks. A simulator win comparison is inapplicable:
 no game or policy behavior changes. Native data will be read only after the
 owner adopts the merged revision at an ordinary completed-game boundary.
 The active native tab, process and orders database remain untouched.
+
+
+## Completed offline checks
+
+The missing-helper Lua regression failed first. After implementation, all 67
+mod regression scripts pass and all 74 Lua scripts compile under Lua 5.1.5.
+The catalogue test executes both the real helper and the actual rival-export
+expression. It checks exact offered amounts, read-only behavior, invalid and
+unavailable offers, unmet/hostile/minor partners and API failure. Its new
+locals are scoped to preserve the Lua 5.1 chunk limit.
+
+The first mirror test caught a missing entry in the rival schema allowlist;
+that integration was added before shipping. At source `d74612bce`, the full
+`cargo test --profile ci --locked` suite passes: 4,336 tests, 53 existing
+ignores. The catalogue test covers old snapshots, null, empty array, empty
+object and populated values without schema gaps. Changed-line Rust quality
+and whitespace checks pass. The existing unused `civilian_reach_safety_on`
+warning is outside this patch's changed lines.
+
+Artifacts, source hashes and retained intermediate failures are under
+`~/civvis-tactics-results/2026-09-26/aluminum-trade-catalogue/`.
+No native Aluminum offer or purchase has yet been observed. The patch only
+makes those future public offers available for inspection; it establishes no
+resource income, production, capture or win improvement.
