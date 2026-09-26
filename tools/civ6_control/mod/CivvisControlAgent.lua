@@ -26,6 +26,40 @@
 local cfg = CivvisControlConfig or {};
 local PREFIX = "CIVVISJSON ";
 
+-- The major-civilization UI validates each action separately, then opens its
+-- named session (DiplomacyStatementSupport.lua:167; DiplomacyActionView.lua:
+-- 411-433 and its Expansion1 replacement). CanDeclareWarOn is the city-state
+-- UI's accessor; its false answer must not veto a legal Formal War on Canada.
+-- Bare global keeps the agent below Lua 5.1's main-chunk local-slot limit.
+CivvisWarDeclarations = {
+    statements = {
+        DECLARE_SURPRISE_WAR = true, DECLARE_FORMAL_WAR = true,
+        DECLARE_HOLY_WAR = true, DECLARE_LIBERATION_WAR = true,
+        DECLARE_RECONQUEST_WAR = true, DECLARE_PROTECTORATE_WAR = true,
+        DECLARE_COLONIAL_WAR = true, DECLARE_TERRITORIAL_WAR = true,
+        DECLARE_GOLDEN_AGE_WAR = true, DECLARE_WAR_OF_RETRIBUTION = true,
+        DECLARE_IDEOLOGICAL_WAR = true,
+    },
+};
+function CivvisWarDeclarations.isValid(diplomacy, target, statement)
+    if not CivvisWarDeclarations.statements[statement] then return false; end
+    local ok, allowed = pcall(function()
+        return diplomacy:IsDiplomaticActionValid("DIPLOACTION_" .. statement, target, true);
+    end);
+    if ok and type(allowed) == "boolean" then return allowed; end
+    return nil;
+end
+function CivvisWarDeclarations.canDeclareAny(diplomacy, target)
+    local unknown = false;
+    for statement in pairs(CivvisWarDeclarations.statements) do
+        local allowed = CivvisWarDeclarations.isValid(diplomacy, target, statement);
+        if allowed == true then return true; end
+        if allowed == nil then unknown = true; end
+    end
+    if unknown then return nil; end
+    return false;
+end
+
 -- BEGIN holy-city observation
 -- ReligionScreen.lua:795 forwards every GetHolyCityID return to GetCity.
 -- Keep that call shape, but distinguish an API error from a missing city:
@@ -7614,9 +7648,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 				-- CIVVIS declared war ZERO times. Exporting the real permission lets
 				-- the reconstruction offer the action Civilization VI would actually
 				-- allow, instead of a CIVVIS rule with no counterpart here.
-				can_declare = try(function()
-					return diplomacy:CanDeclareWarOn(otherId);
-				end, false),
+				can_declare = CivvisWarDeclarations.canDeclareAny(diplomacy, otherId),
 				-- ★★★★★ THE RELATIONSHIP ITSELF, ONE-TO-ONE. `can_declare` says a war is
 				-- LEGAL; nothing said whether it was ruinous. Every war, peace,
 				-- denounce and alliance decision on the board was taken blind to the
@@ -12102,7 +12134,20 @@ local function applyOrder(player, pid, row, turn)
 		if try(function() return diplomacy:IsAtWarWith(subject); end, false) then
 			return false, "already_at_war";
 		end
-		if not try(function() return diplomacy:CanDeclareWarOn(subject); end, true) then
+		local major = try(function() return Players[subject]:IsMajor(); end, nil);
+		if type(major) ~= "boolean" then return false, "war_target_unknown"; end
+		local statement = verb == "DECLARE" and "DECLARE_SURPRISE_WAR" or verb;
+		if major and not CivvisWarDeclarations.statements[statement] then
+			return false, "war_type_unknown";
+		end
+		if not major and verb ~= "DECLARE" then return false, "war_type_for_minor"; end
+		local allowed;
+		if major then
+			allowed = CivvisWarDeclarations.isValid(diplomacy, subject, statement);
+		else
+			allowed = try(function() return diplomacy:CanDeclareWarOn(subject); end, nil);
+		end
+		if allowed ~= true then
 			-- ★★★★★ SAY WHY. Domination is the only route to a win here, and on run
 			-- civvis-20260731T144251Z this refusal fired on 38 turns between t120 and
 			-- t176 -- every other turn for a third of the game -- while `at_war` was
@@ -12115,6 +12160,7 @@ local function applyOrder(player, pid, row, turn)
 			emit("war_refused", {
 				turn = turn,
 				target = subject,
+				statement = major and statement or nil,
 				at_war = try(function() return diplomacy:IsAtWarWith(subject); end, nil),
 				has_met = try(function() return player:HasMet(subject); end, nil),
 				alive = try(function() return Players[subject]:IsAlive(); end, nil),
@@ -12129,7 +12175,12 @@ local function applyOrder(player, pid, row, turn)
 		params[PlayerOperations.PARAM_PLAYER_ONE] = pid;
 		params[PlayerOperations.PARAM_PLAYER_TWO] = subject;
 		local ok = pcall(function()
-			UI.RequestPlayerOperation(pid, PlayerOperations.DIPLOMACY_DECLARE_WAR, params);
+			if major then
+				DiplomacyManager.RequestSession(pid, subject, statement);
+			else
+				-- DeclareWarPopup.lua:76-80 uses the bare operation for minors.
+				UI.RequestPlayerOperation(pid, PlayerOperations.DIPLOMACY_DECLARE_WAR, params);
+			end
 		end);
 		if ok then
 			warDeclared[subject] = true;
@@ -12138,7 +12189,8 @@ local function applyOrder(player, pid, row, turn)
 			-- appeared only as an anonymous `by.war = 1` count and the run's `war`
 			-- field stayed null — which is exactly how "the army never fights" was
 			-- misdiagnosed for the whole history of this project.
-			emit("war", { turn = turn, target = subject, source = "civvis" });
+			emit("war", { turn = turn, target = subject, source = "civvis",
+				statement = major and statement or nil });
 		end
 		return ok, ok and "declared" or "throw";
 	end
