@@ -5255,6 +5255,10 @@ pub struct Seat {
     /// and the same turn re-planned. Absent (older mod) reads `false`.
     #[serde(default)]
     pub replan_frames: bool,
+    /// Exact cap reported by the host. A boolean cannot promise that a
+    /// spot, volley and cavalry follow-up all fit into this turn.
+    #[serde(default)]
+    pub replan_frame_limit: Option<u32>,
     /// Newly revealed plots cross every turn and frame as `tiles` deltas
     /// (`CivvisTiles`), not only with the periodic sweep. Informational: the
     /// snapshot merges chunks cumulatively either way.

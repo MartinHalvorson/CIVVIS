@@ -764,6 +764,7 @@ local function survey()
 		-- strike) is exported again and the same turn re-planned, up to
 		-- `ReplanFrames` times.
 		replan_frames = (tonumber(cfg.ReplanFrames) or 0) > 0,
+		replan_frame_limit = math.max(0, math.floor(tonumber(cfg.ReplanFrames) or 0)),
 		action_transitions = cfg.ActionTransitions == true,
 		isolated_action_probes = cfg.IsolatedActionProbes == true,
 		-- Newly revealed plots cross every turn and every frame as `tiles`
@@ -17648,6 +17649,7 @@ CivvisFrames.reset = function()
 	CivvisFrames.revealed = 0;
 	CivvisFrames.movers = 0;
 	CivvisFrames.reason = nil;
+	CivvisFrames.requested = false;
 	-- True once the turn declined its next frame: `settleTurn` is called
 	-- again on every later tick of the turn (blockers, end-turn retries),
 	-- and the sweep must not run on each of them.
@@ -17700,6 +17702,9 @@ CivvisFrames.why = function()
 			and CivvisFrames.revealed > 0 and CivvisFrames.movers > 0 then
 		return "revealed";
 	end
+	if current < CivvisFrames.replanMax() and CivvisFrames.requested then
+		return "air_assault";
+	end
 	return nil;
 end;
 
@@ -17718,6 +17723,7 @@ CivvisFrames.begin = function(player, pid, turn, requestedReason)
 	CivvisFrames.strikes = 0;
 	CivvisFrames.revealed = 0;
 	awaiting.frame = CivvisFrames.current;
+	CivvisFrames.requested = false;
 	awaiting.done = false;
 	awaiting.polls = 0;
 	awaiting.ticks = 0;
@@ -17758,6 +17764,12 @@ local function applyOrders(player, pid, turn, rows)
 		local row = rows[i];
 		if row.kind == "combat_policy" and row.verb == "DOOMED_BLOW_VETO" then
 			survival = true;
+			table.remove(rows, i);
+		elseif row.kind == "observe" and row.verb == "AIR_ASSAULT" then
+			-- A failed spotting move or refused sortie changes no sight/damage,
+			-- but its cavalry still needs a decision from the settled board.
+			-- This spends the existing ReplanFrames budget, never another turn.
+			CivvisFrames.requested = true;
 			table.remove(rows, i);
 		end
 	end

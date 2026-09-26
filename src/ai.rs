@@ -338,11 +338,11 @@ pub use advanced::victory_portfolio::{
 };
 pub use advanced::{
     deployment_treatments, gene, gene_ledger, gene_ledger_rows, host_only_tags, ledger_default_on,
-    ledger_verdict, live_tags, repair_tags, repair_tags_on, screenable_genes, AdvancedAi, Axis,
-    ExpansionCensus, ForceDomain, ForceGroup, ForcePosture, Gene, GeneLedgerApplied, GeneVerdict,
-    GrandStrategy, Kind, Measure, StrategicPlan, StrategyCensus, Verdict, VictoryTarget, GENES,
-    LAND_GRAB_CITY_CEILING, LAND_GRAB_CITY_FLOOR, LAND_GRAB_PIPELINE_BASE,
-    LAND_GRAB_TILES_PER_CITY, PRODUCTION_CITY_TARGET_FLOOR,
+    ledger_verdict, live_tags, repair_tags, repair_tags_on, screenable_genes, AdvancedAi,
+    AirCityAssault, Axis, ExpansionCensus, ForceDomain, ForceGroup, ForcePosture, Gene,
+    GeneLedgerApplied, GeneVerdict, GrandStrategy, Kind, Measure, StrategicPlan, StrategyCensus,
+    Verdict, VictoryTarget, GENES, LAND_GRAB_CITY_CEILING, LAND_GRAB_CITY_FLOOR,
+    LAND_GRAB_PIPELINE_BASE, LAND_GRAB_TILES_PER_CITY, PRODUCTION_CITY_TARGET_FLOOR,
 };
 
 const TECH_PRIORITY: [&str; 15] = [
