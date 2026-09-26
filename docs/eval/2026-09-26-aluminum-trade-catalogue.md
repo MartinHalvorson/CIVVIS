@@ -54,3 +54,15 @@ Artifacts, source hashes and retained intermediate failures are under
 No native Aluminum offer or purchase has yet been observed. The patch only
 makes those future public offers available for inspection; it establishes no
 resource income, production, capture or win improvement.
+
+
+## Native trade execution remains separate
+
+The completed 222220Z record has 41 `deal_offer` events, 33 expirations and
+zero `deal_response` events. This is consistent with the deliberate
+`DealSessions=False` default in `tools/civ6_play.py`: an unanswered MAKE_DEAL
+session previously wedged the native core. The prior investigation is
+`docs/eval/2026-09-21-host-trade-confirmation.md`. The catalogue does not
+change that setting or make an offered resource executable as a purchase.
+A future purchase path would first need a reliable native deal response;
+resource settlement and connection work remain independently usable.
