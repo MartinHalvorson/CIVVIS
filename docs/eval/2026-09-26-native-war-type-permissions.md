@@ -59,7 +59,21 @@ behavior and exact-type cooldown reopening. The Lua suite executes the
 shipped exporter and verifies false/unknown distinction, stable ordering,
 coverage of every supported statement and wiring into the rival export.
 
-Full-suite and deployment results are recorded in the PR after validation.
+Local validation on `43d316944` passed: 4,319 Rust tests, 53 existing ignored;
+all 66 discovered Lua 5.1 control-mod suites and full-agent parsing; changed
+Rust formatting/warning checks; and two King/four-major/Pangaea/Online smoke
+games with 250-turn caps (seeds 926780–926781). The simulations ended normally
+with Religious victories; they are execution checks, not strength evidence.
+
+An offline fresh-board replay of native turn 53/frame 0 using one candidate
+binary emits `DECLARE_FORMAL_WAR` under the unmodified legacy observation.
+Adding only the same-turn host's known Formal refusal removes that declaration.
+Other types remain unknown; no alternate permission or successful interception
+is assumed. Binary SHA-256:
+`bf0aae8eabd7b5d038f57107bcfadf0519914517192cc06750a32ebd405f9ae4`.
+Local replay inputs, outputs and provenance are in
+`/var/folders/0q/x7q7psys6mbc856b3g64pr8c0000gn/T/civvis-war-types-replay-rxlk7r07/`.
+
 This corrects an observed obstacle to war; it does not establish successful
 native war/condemnation, city capture or a domination win. Those require
 readback in a normally deployed game.
