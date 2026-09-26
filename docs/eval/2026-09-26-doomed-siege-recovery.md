@@ -31,3 +31,29 @@ unit could have survived. Earlier turns must then be checked separately.
 The local ignored diagnostic is temporary investigative scaffolding, not a
 CI regression. No new game comparison has been run and no native victory or
 capture is attributable to this task.
+
+## Probe results
+
+The turn-160 mirror confirms a valid linked support pair on a nongarrison
+tile. The danger reading at its current tile is 147.56 damage; its only two
+reachable alternatives each read 152.49. `least_danger_stand` returns `None`
+under the existing deliberate lethal-stand rule. This is not an omitted
+linked-carrier eligibility check, and a final hold is not a demonstrated save.
+
+At turn 158, however, the retreat to (5,26) reads zero danger and a 20-HP heal
+rate. The observed Cuirassier `3997696` starts embarked at (7,26), lands at
+(6,26), and actually hits the retreating Bombard for 44. Rebuilding the field
+after relocating only the Bombard does not change the zero reading. The linked
+peer was not relocated in that probe, so this does not yet distinguish a
+formation-occupancy issue from an amphibious-reach issue.
+
+A sequential replay of all 462 observed frames through turn 160 keeps AI
+history in each arm. Baseline reproduces the native turn-157 advance to (6,26);
+the #3778 candidate instead orders (5,26) and Fortify. Both order (5,26) and
+Fortify at 158, (4,26) at 159, and (6,25) at 160. The future frames are the
+recorded observations, not consequences of the candidate's different orders.
+No survival or outcome claim follows from this replay.
+
+These are historical King observations. The user's subsequent request sets
+future games and prospective strength evaluations to Prince, retaining Simón,
+four-player Pangaea, and the domination objective.
