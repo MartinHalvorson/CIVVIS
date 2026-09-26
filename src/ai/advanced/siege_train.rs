@@ -311,6 +311,13 @@ fn siege_bill(g: &Game, pid: usize, city: &CityView) -> f64 {
     (defenders + g.city_strength(city.id) + walls) * BILL_MARGIN
 }
 
+/// The allocator must supply the same strength the doctrine requires before
+/// advancing. The campaign's tech-edge discount can otherwise leave the board
+/// satisfied while the siege stays in Stage with spare units in reserve.
+pub(super) fn staging_strength_requirement(g: &Game, pid: usize, cid: u32) -> f64 {
+    CityView::of(g, cid).map_or(0.0, |city| siege_bill(g, pid, &city))
+}
+
 /// How many of the city's passable neighbours are held or covered — the
 /// test `Game::city_under_siege` applies, read from outside the engine: an
 /// off-map or impassable side counts as sealed, an occupied tile is held,
@@ -1809,6 +1816,9 @@ mod firing_tests;
 
 #[cfg(test)]
 mod staging_tests;
+
+#[cfg(test)]
+mod staging_budget_tests;
 
 #[cfg(test)]
 mod tests {
