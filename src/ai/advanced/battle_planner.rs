@@ -3083,6 +3083,9 @@ impl AdvancedAi {
 mod healing_tests;
 
 #[cfg(test)]
+mod linked_recovery_tests;
+
+#[cfg(test)]
 mod recon_veto_tests;
 
 #[cfg(test)]
