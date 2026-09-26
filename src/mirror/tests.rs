@@ -77,6 +77,8 @@ fn plot(x: i32, y: i32, t: &str) -> Plot {
         ap: None,
         np: false,
         vis: false,
+        flooded: None,
+        submerged: None,
     }
 }
 
@@ -1812,6 +1814,8 @@ fn a_revealed_land_plot_becomes_land_and_can_hold_a_city() {
             ap: None,
             np: false,
             vis: false,
+            flooded: None,
+            submerged: None,
         }],
     }];
     let snapshot = Snapshot::from_chunks(&chunks);
@@ -5086,6 +5090,8 @@ fn corrections_are_measured_after_population_and_dedications_are_on_the_board() 
                 ap: None,
                 np: false,
                 vis: false,
+                flooded: None,
+                submerged: None,
             })
         })
         .collect();
@@ -5224,6 +5230,8 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
                 ap: None,
                 np: false,
                 vis: false,
+                flooded: None,
+                submerged: None,
             })
         })
         .collect();
@@ -12120,6 +12128,8 @@ fn a_hostile_lands_on_the_barbarian_seat_and_not_on_dormant_free_cities() {
                     ap: None,
                     np: false,
                     vis: false,
+                    flooded: None,
+                    submerged: None,
                 })
             })
             .collect(),
@@ -12665,6 +12675,8 @@ fn open_grass_board(side: i32) -> Snapshot {
                     ap: None,
                     np: false,
                     vis: false,
+                    flooded: None,
+                    submerged: None,
                 })
             })
             .collect(),
@@ -12867,6 +12879,8 @@ fn a_rivals_districts_and_wonders_cross_with_the_plots() {
                 ap: None,
                 np: false,
                 vis: false,
+                flooded: None,
+                submerged: None,
             })
         })
         .collect();
@@ -13199,6 +13213,8 @@ fn a_seated_but_cityless_minors_ground_is_still_blocked() {
                     ap: None,
                     np: false,
                     vis: false,
+                    flooded: None,
+                    submerged: None,
                 })
             })
             .collect(),
