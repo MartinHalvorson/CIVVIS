@@ -825,8 +825,7 @@ impl AdvancedAi {
     }
 
     /// The Siege requirement: the campaign's own bill for the city, times
-    /// [`SIEGE_MARGIN`], a melee taker, and siege if the city has walls. An
-    /// active siege doctrine also needs its undiscounted staging strength.
+    /// [`SIEGE_MARGIN`], a melee taker, and siege if the city has walls.
     pub(super) fn siege_requirement(&self, g: &Game, pid: usize, cid: u32) -> ForceNeed {
         let city = &g.cities[&cid];
         let owner = city.owner;
@@ -854,14 +853,8 @@ impl AdvancedAi {
             Self::campaign_strength_of(g, &army) / army.len() as f64
         };
         let bill = self.campaign_city_requirement(g, pid, cid, &appraisal, average_body);
-        let mut strength = bill.strength * SIEGE_MARGIN;
-        if g.is_at_war(pid, owner) && (self.siege_train || self.siege_positive_damage_budget) {
-            strength = strength.max(super::siege_train::staging_strength_requirement(
-                g, pid, cid,
-            ));
-        }
         ForceNeed {
-            strength,
+            strength: bill.strength * SIEGE_MARGIN,
             melee: 1,
             ranged: 0,
             siege: usize::from(city.wall_hp > 0),

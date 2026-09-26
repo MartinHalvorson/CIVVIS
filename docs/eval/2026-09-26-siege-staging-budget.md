@@ -1,4 +1,10 @@
-# Siege allocation versus staging strength — 2026-09-26
+# Rejected siege-allocation floors — 2026-09-26
+
+Neither tested allocation floor earned deployment. Four paired seeds per
+variant produced zero wins, and a follow-up audit found zero captured major
+cities or capitals. The candidate code and its regression tests are preserved
+in this PR's earlier commits, but the final contribution changes only this
+report. The underlying allocation/staging disagreement remains unresolved.
 
 Native King / Gran Colombia / four-player Tiny Pangaea run
 `civvis-20260926T173411Z` declared on Byzantium at turn 75, then took no
@@ -89,5 +95,34 @@ outcomes. Store the follow-up separately as
 The first pilot remains a distinct treatment and is not pooled with this one.
 All four focused tests pass for this variant. Follow-up executable SHA-256:
 `c0f160cccfc58f5141ae1a94ab308c3a563c88424b5ba6342e0125e5c18cf935`.
-The full-suite rerun passed. Scoped policy source: `1dde0a446`. The follow-up
-pilot is running; no deployment claim is made while its outcomes are pending.
+The full-suite rerun passed. Scoped policy source: `1dde0a446`. All four
+follow-up pairs completed, again with byte-identical toggle arms and exit 2.
+Every recorded outcome matches the broader-floor table above; restricting
+the floor to existing wars did not improve any measured result in this sample.
+
+A separate read-only capital audit replays candidate seeds 37140000 and
+37140002, the two seeds with foreign cities held. It links the same compiled
+candidate library and adds only an observer distinguishing original major
+owners from minors. Its results must match the candidate's turn, victory,
+score and action count before its additional ownership fields are used.
+Audit output: `~/civvis-simulation-results/siege-staging-capital-audit-20260926.jsonl`.
+The audit completed and matched the candidate's recorded turn, victory, score
+and action count for both seeds. It found only minor cities:
+
+| Seed | Observed foreign city IDs | Observed major cities | Observed original major capitals |
+|---|---|---:|---:|
+| 37140000 | 21, 24 | 0 | 0 |
+| 37140002 | 21 | 0 | 0 |
+
+The other two seeds held no foreign cities at all. Thus neither variant
+demonstrated major-city or capital progress on any of the four seeds. This
+is a small diagnostic sample, not a statistical claim about the true win
+rate. It does show why passing a consistency regression is insufficient to
+justify this proposed fix: the same-seed games did not establish conquest
+benefit, and two changed games ended earlier.
+
+Decision: remove the experimental implementation and tests from the final
+diff; retain their recoverable source commits (`3e9983ed4` and `1dde0a446`)
+and this evidence. Do not alter the live bundle based on these trials. Further
+work should investigate how reinforcements actually reach and attack a major
+city, alongside the separately observed loss of native war-type information.
