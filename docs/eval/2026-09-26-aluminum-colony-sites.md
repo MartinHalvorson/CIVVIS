@@ -66,3 +66,27 @@ Online, all victories and a 250-turn clock. The off arm stays as a control;
 all four focal results per source are retained. Rivals use CIVVIS policies,
 not Firaxis AI. This small diagnostic cannot establish consistent wins or
 justify a deployment promotion.
+
+## Intermediate observations retained
+
+The regression failed before policy editing because the six-tile buffer
+excluded the otherwise supported resource site. The first candidate removed
+that exclusion in the test, but the fixture's flat, unimproved grassland
+failed the ordinary settlement value floor. Giving the fixture productive
+hills made it a worthwhile site without changing the production scoring.
+Five focused tests then passed, including nineteen refusal cases, negative
+Loyalty, cached arrival and stalled founding. The existing ordinary six-ring
+city-state buffer test also passed.
+
+Candidate `5226f52e8` left the actual turn-160 replay unchanged. Both southern
+Aluminum deposits were explored but outside current sight. Requiring current
+sight before even planning the trip therefore hid both candidates again.
+The refinement uses the recorded, explored resource for planning and retains
+the fresh eligibility check before founding. It does not grant sight or
+ignore newly observed ownership, hostility or Loyalty. The initial candidate
+and its complete paired results remain in the artifact directory.
+
+The identical external evaluator harness passed all nine tests, including
+actual major-player and barbarian Prince-rule readback. Baseline completed
+both registered pairs: seed 37870000 won Science off and Score on; seed
+37870001 lost Score off and Culture on. There were no Domination victories.

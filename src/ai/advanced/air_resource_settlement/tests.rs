@@ -60,7 +60,7 @@ fn colony_exception_keeps_need_permission_and_security_vetoes() {
         "science",
         "field",
         "unrevealed",
-        "unseen",
+        "unexplored",
         "other_resource",
         "owned",
         "flooded",
@@ -88,7 +88,7 @@ fn colony_exception_keeps_need_permission_and_security_vetoes() {
             "unrevealed" => {
                 g.players[0].techs.remove(&crate::name!("radio"));
             }
-            "unseen" => {
+            "unexplored" => {
                 g.units.get_mut(&guard).unwrap().pos = (12, 14);
                 g.players[0].explored.remove(&deposit);
                 assert!(!g.sees(&g.player_vision_frame(0), deposit));
@@ -173,4 +173,17 @@ fn stalled_founding_cannot_bypass_lost_colony_permission() {
     g.players[0].envoys.clear();
     assert!(!ai.founds_where_it_stands(&mut g, 0, settler, deposit));
     assert!(g.city_at(deposit).is_none());
+}
+
+#[test]
+fn a_charted_resource_colony_can_be_planned_before_it_reenters_sight() {
+    let (mut g, ai, deposit, guard) = fixture();
+    g.units.get_mut(&guard).unwrap().pos = (12, 14);
+    assert!(g.players[0].explored.contains(&deposit));
+    assert!(!g.player_can_see(0, deposit));
+    assert!(!ai.city_state_settlement_exclusion(&g, 0).contains(&deposit));
+    assert!(ai
+        .settle_ranking(&g, 0, (8, 10), 8)
+        .iter()
+        .any(|(pos, _)| *pos == deposit));
 }

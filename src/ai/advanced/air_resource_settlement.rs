@@ -40,7 +40,10 @@ impl AdvancedAi {
                     || tile.owner_city.is_some()
                     || tile.flooded
                     || tile.submerged
-                    || !g.sees(&visible, *site)
+                    // A destination may leave sight while remaining charted.
+                    // Arrival rechecks ownership, security and Loyalty before
+                    // founding; planning must not require a Scout already there.
+                    || !g.players[pid].explored.contains(site)
                     || g.rules.is_water(tile)
                     || !g.rules.is_passable(tile)
                     || g.tile_is_natural_wonder(tile)
