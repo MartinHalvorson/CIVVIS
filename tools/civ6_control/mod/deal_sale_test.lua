@@ -350,6 +350,27 @@ check("malformed offers do not become strategic stock", next(tradeableStrategics
 DealManager.GetPossibleDealItems = function() return nil end
 check("missing catalogue is unknown strategic stock", tradeableStrategics(malformedPlayer, 7, 3), nil)
 
+-- Execute the actual exporter expression too: the helper must be wired in,
+-- and a host API failure must omit the field instead of exporting zero stock.
+local catalogueSource = assert(io.open(here .. "/CivvisControlAgent.lua"))
+local catalogueText = catalogueSource:read("*a"); catalogueSource:close()
+local catalogueExpression = assert(catalogueText:match(
+    "tradeable_strategics = (try%(function%(%).-end, nil%)),"))
+local _, exportPlayer = fixture({ theirPossible = { RESOURCE_ALUMINUM = 24 } })
+local exportCatalogue = assert(loadstring("return " .. catalogueExpression))
+setfenv(exportCatalogue, setmetatable({
+    player = exportPlayer, pid = 7, otherId = 3,
+    CivvisTradeableStrategics = tradeableStrategics,
+    try = function(fn, fallback)
+        local success, value = pcall(fn)
+        if success then return value end
+        return fallback
+    end,
+}, { __index = _G }))
+check("rival state exports the strategic catalogue", exportCatalogue().RESOURCE_ALUMINUM, 24)
+DealManager.GetPossibleDealItems = function() error("API unavailable") end
+check("failed strategic export stays unknown", exportCatalogue(), nil)
+
 local function sellOrder(pid, subject, player, turn, verb, floor)
 	return applyOrder(player, pid, {
 		kind = "sell", subject = tostring(subject), verb = verb, x = floor, y = 0,
