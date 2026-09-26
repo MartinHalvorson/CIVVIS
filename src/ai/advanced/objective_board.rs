@@ -2860,3 +2860,7 @@ mod staging_tests;
 
 #[cfg(test)]
 mod defense_priority_tests;
+
+#[cfg(test)]
+#[path = "objective_board/defense_deadline_tests.rs"]
+mod defense_deadline_tests;
