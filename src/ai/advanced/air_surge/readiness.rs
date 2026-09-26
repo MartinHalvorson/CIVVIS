@@ -3,6 +3,33 @@
 use super::*;
 
 impl AdvancedAi {
+    /// Peacetime land-force reservations run before the air production pass.
+    /// Leave a legal launch Bomber's idle queue available to that later pass;
+    /// an unrelated city can still supply deterrence's missing land units.
+    pub(crate) fn domination_bomber_queue_needed(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        if !self.air_surge_enabled()
+            || !g.cities[&cid].queue.is_empty()
+            || !g.players[pid]
+                .techs
+                .contains(&Name::new(AIR_SURGE_GOAL_TECH))
+        {
+            return false;
+        }
+        let Some(unit) = Self::air_surge_bomber(g, pid) else {
+            return false;
+        };
+        let item = Item::Unit { unit };
+        if !g.can_produce(pid, cid, &item) {
+            return false;
+        }
+        let turns = g.item_remaining_cost_for_city(pid, cid, &item)
+            / (g.city_yields(cid).production * g.item_prod_mult(pid, cid, Some(&item))).max(0.1);
+        turns <= g.max_turns.saturating_sub(g.turn) as f64
+            && self
+                .domination_air_readiness_value(g, pid, cid, &item, turns)
+                .is_some_and(|value| value > 0.0)
+    }
+
     pub(super) fn domination_air_readiness_active(&self, g: &Game, pid: usize) -> bool {
         self.air_surge_enabled()
             && self.active_victory_target(g) == Some(VictoryTarget::Domination)
