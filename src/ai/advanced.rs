@@ -4918,6 +4918,18 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `beeline-orders-by-value`: a forced research or civic goal walks its
+    /// remaining prerequisites in `tech_value` / `civic_value` order instead
+    /// of cheapest-printed-price first. Every prerequisite is researched
+    /// before the goal lands whatever the order, so the goal arrives on the
+    /// same turn; what the order decides is which unlock (and which boost in
+    /// hand) arrives first. See `AdvancedAi::beeline_step`.
+    beeline_orders_by_value: bool,
+    /// `beeline-orders-by-value-2`: version one's order, priced at the lane's
+    /// own yield weights (the decision objective) rather than the plan's
+    /// current posture, so a Science seat in its Expansion half still reads a
+    /// Library's beakers at the Science rate. See `AdvancedAi::beeline_step`.
+    beeline_orders_by_value_2: bool,
     /// `builders-work-through-raiders`: the live capture lessons keep their
     /// barbarian-reach holds for Settlers only; a Builder steps and takes
     /// jobs under the native Builder safety instead. See
@@ -8301,6 +8313,8 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            beeline_orders_by_value: false,
+            beeline_orders_by_value_2: false,
             builders_work_through_raiders: false,
             builder_charge_window: false,
             boost_planner_builds: false,
@@ -14943,6 +14957,19 @@ impl AdvancedAi {
             }
             let goal_pick = science_milestone_pick.or_else(|| {
                 forced_goal.and_then(|goal| {
+                    if self.beeline_orders_by_value || self.beeline_orders_by_value_2 {
+                        let steps: Vec<Name> = available
+                            .iter()
+                            .filter(|tech| self.tech_leads_to(g, tech, goal))
+                            .cloned()
+                            .collect();
+                        let weights = if self.beeline_orders_by_value_2 {
+                            objective
+                        } else {
+                            plan.strategy
+                        };
+                        return self.beeline_step(g, pid, weights, &steps, true);
+                    }
                     available
                         .iter()
                         .filter(|tech| self.tech_leads_to(g, tech, goal))
@@ -15158,6 +15185,19 @@ impl AdvancedAi {
                 _ => None,
             };
             let goal_pick = forced_goal.and_then(|goal| {
+                if self.beeline_orders_by_value || self.beeline_orders_by_value_2 {
+                    let steps: Vec<Name> = available
+                        .iter()
+                        .filter(|civic| self.civic_leads_to(g, civic, goal))
+                        .cloned()
+                        .collect();
+                    let weights = if self.beeline_orders_by_value_2 {
+                        objective
+                    } else {
+                        civic_objective
+                    };
+                    return self.beeline_step(g, pid, weights, &steps, false);
+                }
                 available
                     .iter()
                     .filter(|civic| self.civic_leads_to(g, civic, goal))
@@ -16925,6 +16965,37 @@ impl AdvancedAi {
                 let _ = g.apply(pid, &Action::SlotPolicy { policy: current });
             }
         }
+    }
+
+    /// `beeline-orders-by-value`: the step a forced goal takes next among
+    /// `steps`, its remaining prerequisites the era window offers. Every one
+    /// of them is researched before the goal whatever the order, so the goal
+    /// lands on the same turn either way; the order only decides which unlock
+    /// arrives first. The stock picker takes the cheapest printed price with
+    /// ties broken by name, which put Sailing ahead of Writing (both 50) and
+    /// Military Tactics ahead of Education on a Science seat; this takes the
+    /// best `tech_value` / `civic_value` — the same score the unforced argmax
+    /// ranks by, boost in hand included — with ties to the earlier name.
+    fn beeline_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        strategy: GrandStrategy,
+        steps: &[Name],
+        techs: bool,
+    ) -> Option<Name> {
+        let value = |node: &Name| {
+            if techs {
+                self.tech_value(g, pid, node.as_str(), strategy)
+            } else {
+                self.civic_value(g, pid, node.as_str(), strategy)
+            }
+        };
+        steps
+            .iter()
+            .map(|node| (value(node), *node))
+            .max_by(|a, b| a.0.total_cmp(&b.0).then_with(|| b.1.cmp(&a.1)))
+            .map(|(_, node)| node)
     }
 
     fn tech_value(&self, g: &Game, pid: usize, tech: &str, strategy: GrandStrategy) -> f64 {

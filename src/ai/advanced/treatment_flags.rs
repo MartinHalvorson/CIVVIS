@@ -4492,6 +4492,26 @@ impl AdvancedAi {
         self.builders_work_through_raiders = false;
     }
 
+    /// `beeline-orders-by-value`: a forced research or civic goal walks its
+    /// prerequisites by value, not by printed price. See
+    /// `AdvancedAi::beeline_step`.
+    pub fn enable_beeline_orders_by_value(&mut self) {
+        self.beeline_orders_by_value = true;
+    }
+    /// The twin of `enable_beeline_orders_by_value`.
+    pub fn disable_beeline_orders_by_value(&mut self) {
+        self.beeline_orders_by_value = false;
+    }
+    /// `beeline-orders-by-value-2`: version one's order at the lane's own
+    /// yield weights. See `AdvancedAi::beeline_step`.
+    pub fn enable_beeline_orders_by_value_2(&mut self) {
+        self.beeline_orders_by_value_2 = true;
+    }
+    /// The twin of `enable_beeline_orders_by_value_2`.
+    pub fn disable_beeline_orders_by_value_2(&mut self) {
+        self.beeline_orders_by_value_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

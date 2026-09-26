@@ -2356,6 +2356,15 @@ pub const GENES: &[Gene] = &[
     // Immortal. With this on, Builders keep the native Builder safety and the
     // Settlers keep every lesson. See `AdvancedAi::builder_reach_safety_on`.
     Gene { tag: "builders-work-through-raiders", field: "builders_work_through_raiders", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_work_through_raiders, disable: AdvancedAi::disable_builders_work_through_raiders },
+    // `beeline-orders-by-value` (2026-09-26): a forced research or civic goal
+    // walks its remaining prerequisites by `tech_value` / `civic_value`
+    // rather than cheapest printed price with ties by name, which on the
+    // Immortal Science seat took Writing at turn 27 behind Sailing. The goal
+    // lands on the same turn either way. See `AdvancedAi::beeline_step`.
+    Gene { tag: "beeline-orders-by-value", field: "beeline_orders_by_value", kind: Kind::OptIn, enable: AdvancedAi::enable_beeline_orders_by_value, disable: AdvancedAi::disable_beeline_orders_by_value },
+    // `beeline-orders-by-value-2` (2026-09-26): version one's order priced at
+    // the lane's own yield weights rather than the plan's current posture.
+    Gene { tag: "beeline-orders-by-value-2", field: "beeline_orders_by_value_2", kind: Kind::OptIn, enable: AdvancedAi::enable_beeline_orders_by_value_2, disable: AdvancedAi::disable_beeline_orders_by_value_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -441,6 +441,77 @@ mod tests {
             .expect("the fixture has a nearby open land tile")
     }
 
+    /// `beeline-orders-by-value`: the Science beeline walks Rocketry's
+    /// prerequisites by `tech_value`, not by printed price with ties by name.
+    /// Off, the three 50-cost Ancient steps go archery, sailing, writing —
+    /// alphabetical — whatever they unlock; on, the step is the value argmax
+    /// over the same chain steps, and the goal is unchanged.
+    #[test]
+    fn beeline_orders_by_value_walks_the_chain_by_value() {
+        let mut game = Game::new_full(1, 24, 16, 91_007, 300, 0, false);
+        found_capitals(&mut game);
+        game.turn = 8;
+        for tech in ["pottery", "animal_husbandry", "mining"] {
+            game.players[0].techs.insert(crate::name::Name::new(tech));
+        }
+        let plan = science_plan(game.turn);
+        let steps: Vec<crate::name::Name> = crate::ai::BasicAi::era_window_techs(&game, 0)
+            .into_iter()
+            .filter(|tech| AdvancedAi::new().tech_leads_to(&game, tech, "rocketry"))
+            .collect();
+        assert!(steps.len() >= 3, "the fixture offers several chain steps: {steps:?}");
+
+        let off = AdvancedAi::targeting(VictoryTarget::Science);
+        assert!(!off.beeline_orders_by_value, "the gene ships off");
+        let mut off_game = game.clone();
+        off_game.players[0].research = None;
+        off.advanced_research(&mut off_game, 0, &plan);
+        let cheapest = steps
+            .iter()
+            .min_by(|a, b| {
+                off_game.rules.techs[a.as_str()]
+                    .cost
+                    .total_cmp(&off_game.rules.techs[b.as_str()].cost)
+                    .then(a.cmp(b))
+            })
+            .copied();
+        assert_eq!(
+            off_game.players[0].research.as_deref(),
+            cheapest.as_ref().map(|tech| tech.as_str()),
+            "off, the beeline takes the cheapest step, ties by name"
+        );
+
+        let mut on = AdvancedAi::targeting(VictoryTarget::Science);
+        on.enable_beeline_orders_by_value();
+        let best = steps
+            .iter()
+            .map(|tech| (on.tech_value(&game, 0, tech.as_str(), plan.strategy), *tech))
+            .max_by(|a, b| a.0.total_cmp(&b.0).then_with(|| b.1.cmp(&a.1)))
+            .map(|(_, tech)| tech);
+        let mut on_game = game.clone();
+        on_game.players[0].research = None;
+        on.advanced_research(&mut on_game, 0, &plan);
+        assert_eq!(
+            on_game.players[0].research.as_deref(),
+            best.as_ref().map(|tech| tech.as_str()),
+            "on, the best-valued chain step"
+        );
+        assert_ne!(
+            best, cheapest,
+            "the fixture must separate the two orders, or it proves nothing"
+        );
+        assert_eq!(
+            AdvancedAi::science_victory_tech_goal(&on_game, 0, GrandStrategy::Science),
+            AdvancedAi::science_victory_tech_goal(&off_game, 0, GrandStrategy::Science),
+            "the goal itself is the same either way"
+        );
+        on.disable_beeline_orders_by_value();
+        assert!(!on.beeline_orders_by_value);
+        assert!(super::super::GENES
+            .iter()
+            .any(|gene| gene.tag == "beeline-orders-by-value" && gene.opt_in()));
+    }
+
     #[test]
     fn science_target_backfills_an_unfinished_ancient_tech_before_rocketry() {
         let mut game = Game::new_full(1, 24, 16, 91_001, 300, 0, false);
