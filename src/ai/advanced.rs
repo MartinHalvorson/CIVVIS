@@ -24833,7 +24833,9 @@ impl AdvancedAi {
                 // This branch is intentionally limited to the pre-war target.
                 // Wartime production still enters through its ordinary plan,
                 // rather than seizing every empty queue after a declaration.
-                None => peacetime_target.is_some(),
+                None => {
+                    peacetime_target.is_some() && !self.domination_bomber_queue_needed(g, pid, cid)
+                }
                 _ => false,
             };
             if !redirectable {
