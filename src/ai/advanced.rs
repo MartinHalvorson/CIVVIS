@@ -7260,6 +7260,7 @@ mod surprise_defense;
 /// bomber wing, and the cavalry that takes the city the wing empties. See
 /// `advanced/air_surge.rs`.
 mod air_city_assault;
+mod air_resource_builders;
 mod air_surge;
 pub use air_city_assault::AirCityAssault;
 mod siege_resource_purchase;
@@ -35138,6 +35139,9 @@ impl AdvancedAi {
             return acted;
         }
         if let Some(acted) = self.chop_for_expansion_step(g, pid, uid, strategy) {
+            return acted;
+        }
+        if let Some(acted) = self.air_resource_builder_step(g, pid, uid) {
             return acted;
         }
         let repairable = g.map.get(current).is_some_and(|tile| {

@@ -2034,6 +2034,17 @@ impl AdvancedAi {
         destination.is_some_and(|to| self.base.path_walk_to(g, pid, uid, to))
     }
 
+    /// Recovery orders belong to the support formation, not just its carrier.
+    /// The follower's later unit step must not undo the carrier's safe stand.
+    fn claim_recovery_formation(&mut self, g: &Game, uid: u32) {
+        self.battle_planner_ordered.insert(uid);
+        if super::siege_train::linked_support_carrier(g, uid) {
+            if let Some(peer) = g.units[&uid].linked_to {
+                self.battle_planner_ordered.insert(peer);
+            }
+        }
+    }
+
     /// Pull the wounded and the exposed out of reach and fortify them.
     /// Returns how many actually moved or swapped.
     fn rotate_wounded(
@@ -2057,7 +2068,11 @@ impl AdvancedAi {
                 || self.battle_planner_ordered.contains(&uid)
                 || spec.class != "military"
                 || spec.domain.as_deref() == Some("air")
-                || unit.linked_to.is_some()
+                // Support carriers already advance with the siege train.
+                // Their formation must not exempt them from recovery, while
+                // civilian/religious escorts retain their separate controller.
+                || (unit.linked_to.is_some()
+                    && !super::siege_train::linked_support_carrier(g, uid))
                 || unit.moves_left <= 0.0
                 || !(spec.is_melee_capable() || spec.has_ranged_attack())
                 || self.guard_is_reserved_for_civilian(uid)
@@ -2074,7 +2089,7 @@ impl AdvancedAi {
                 if doomed.contains(&uid) || (heals && self.battle_planner_recovering.contains(&uid))
                 {
                     self.base.fortify_or_stop(g, pid, uid);
-                    self.battle_planner_ordered.insert(uid);
+                    self.claim_recovery_formation(g, uid);
                 }
                 continue;
             }
@@ -2094,7 +2109,7 @@ impl AdvancedAi {
                 let advanced = self.advance_vetoed_siege_unit(g, pid, uid, field);
                 let escaped = !advanced && self.escape_vetoed_recon(g, pid, uid, field);
                 self.base.fortify_or_stop(g, pid, uid);
-                self.battle_planner_ordered.insert(uid);
+                self.claim_recovery_formation(g, uid);
                 if let Some(now) = g.units.get(&uid) {
                     if advanced {
                         think!(self.journal(), Military, Decision,
@@ -2172,7 +2187,7 @@ impl AdvancedAi {
                 self.census.battle_plan_fallbacks += 1;
             }
             self.base.fortify_or_stop(g, pid, uid);
-            self.battle_planner_ordered.insert(uid);
+            self.claim_recovery_formation(g, uid);
             if heals {
                 self.battle_planner_recovering.insert(uid);
             }
@@ -3081,6 +3096,9 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod healing_tests;
+
+#[cfg(test)]
+mod linked_recovery_tests;
 
 #[cfg(test)]
 mod recon_veto_tests;
