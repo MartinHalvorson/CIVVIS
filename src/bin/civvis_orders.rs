@@ -1589,6 +1589,16 @@ fn coalesce_unit_paths_except(
     let mut deferred = 0;
     let mut coalesced = 0;
     for order in orders {
+        if order.kind == "unit" && order.verb.as_deref() == Some("AIR_ATTACK") {
+            // A preceding cavalry move can supply the aircraft's visibility.
+            // Its later capture approach or retreat is a separate segment:
+            // folding it into the opening MOVE_TO would erase the spotting
+            // position before the sortie. Preserve that cross-unit boundary
+            // even though each unit has its own native follow-up queue.
+            for (_, open) in kept.values_mut() {
+                *open = false;
+            }
+        }
         if order.kind != "unit" {
             out.push(order);
             continue;
@@ -19142,3 +19152,7 @@ mod civ6_name_audit {
 #[cfg(test)]
 #[path = "civvis_orders/air_pillage_tests.rs"]
 mod air_pillage_tests;
+
+#[cfg(test)]
+#[path = "civvis_orders/air_sequence_tests.rs"]
+mod air_sequence_tests;
