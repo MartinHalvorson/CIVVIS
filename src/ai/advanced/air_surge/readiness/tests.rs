@@ -182,15 +182,23 @@ fn peacetime_deterrence_leaves_the_launch_wing_a_queue() {
     // this pass took its queue for a land unit before the air pass could run.
     ai.redirect_repeatable_projects_for_force_gap(&mut g, 0, &plan);
     assert!(g.cities[&field].queue.is_empty(), "keep the ready airfield");
-    assert!(matches!(g.cities[&other].queue.first(), Some(Item::Unit { .. })));
+    assert!(matches!(
+        g.cities[&other].queue.first(),
+        Some(Item::Unit { .. })
+    ));
     assert!(ai.air_surge_production(&mut g, 0));
-    assert_eq!(g.cities[&field].queue, vec![Item::Unit { unit: crate::name!("bomber") }]);
+    assert_eq!(
+        g.cities[&field].queue,
+        vec![Item::Unit {
+            unit: crate::name!("bomber")
+        }]
+    );
 }
 
 #[test]
 fn deterrence_keeps_idle_queues_when_a_launch_bomber_cannot_be_reserved() {
-    for case in 0..7 {
-        let (mut g, mut ai, field, _, plan) = deterrence_fixture();
+    for case in 0..8 {
+        let (mut g, mut ai, field, other, plan) = deterrence_fixture();
         match case {
             0 => g.players[0].strategic_resources.clear(),
             1 => g.players[0].gold = 20.0,
@@ -198,15 +206,28 @@ fn deterrence_keeps_idle_queues_when_a_launch_bomber_cannot_be_reserved() {
             3 => ai.retarget(VictoryTarget::Science),
             4 => g.max_turns = g.turn + 1,
             5 => {
-                for pos in [(6, 12), (12, 12)] {
-                    g.spawn_test_unit("jet_bomber", 0, pos);
-                }
+                g.cities.get_mut(&other).unwrap().queue = vec![
+                    Item::Unit {
+                        unit: crate::name!("bomber")
+                    };
+                    2
+                ];
             }
-            6 => { g.cities.get_mut(&field).unwrap().districts.clear(); }
+            6 => {
+                g.cities.get_mut(&field).unwrap().districts.clear();
+            }
+            7 => g.max_turns = g.turn + 60,
             _ => unreachable!(),
         }
+        let mut control = g.clone();
+        let mut no_air = ai.clone();
+        no_air.disable_air_surge_2();
+        no_air.air_surge = false;
+        no_air.redirect_repeatable_projects_for_force_gap(&mut control, 0, &plan);
         ai.redirect_repeatable_projects_for_force_gap(&mut g, 0, &plan);
-        assert!(matches!(g.cities[&field].queue.first(), Some(Item::Unit { unit })
-            if g.rules.units[*unit].domain.as_deref() != Some("air")), "case {case}");
+        assert_eq!(
+            g.cities[&field].queue, control.cities[&field].queue,
+            "case {case}"
+        );
     }
 }
