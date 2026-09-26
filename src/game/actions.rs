@@ -293,7 +293,29 @@ impl Game {
             }
         }
 
-        for unit in self.rules.units.keys() {
+        for (unit, spec) in &self.rules.units {
+            // A kind this player has not unlocked prices to `None` on every
+            // branch of `unit_purchase_cost_for_formation_uncached` — the
+            // ordinary branch through `can_produce`, the religious, Warrior
+            // Monk, Rock Band and Naturalist branches through their own
+            // `unlocked` checks — except two: the host's own exported price
+            // for the standard formation, and Lahore's Nihang, which never
+            // asks. Both are kept; every other locked kind is skipped before
+            // six price derivations (three formations, two currencies) each
+            // rediscover the same `None`. Most of a ruleset's unit kinds are
+            // locked at any moment of a game.
+            if unit != "nihang" && !self.unlocked(pid, &spec.tech, &spec.civic) {
+                let plain = Item::Unit { unit: *unit };
+                let host_priced = ["gold", "faith"].iter().any(|currency| {
+                    matches!(
+                        self.host_purchase_price(cid, &plain, currency),
+                        Some(Some(_))
+                    )
+                });
+                if !host_priced {
+                    continue;
+                }
+            }
             for formation in 0..=2 {
                 for (currency, bank) in [("gold", p.gold), ("faith", p.faith)] {
                     let cost = if cache_unit_prices {
