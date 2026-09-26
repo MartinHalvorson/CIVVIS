@@ -2655,6 +2655,13 @@ pub struct StateCongressDvpEntry {
 }
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateWarDeclaration {
+    pub statement: String,
+    #[serde(default)]
+    pub allowed: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateRival {
     #[serde(default)]
     pub player: usize,
@@ -2682,6 +2689,11 @@ pub struct StateRival {
     /// Missing on an older export is unknown, not an explicit refusal.
     #[serde(default)]
     pub can_declare: Option<bool>,
+    /// Exact unilateral war permissions, not the aggregate above. Present
+    /// observations authorize only explicit true entries; unknown types wait.
+    /// None preserves archived/legacy aggregate-permission semantics.
+    #[serde(default)]
+    pub war_declarations: Option<Vec<StateWarDeclaration>>,
     #[serde(default)]
     pub score: i64,
     /// Firaxis's current Diplomatic Victory-point total for this rival.
@@ -5969,6 +5981,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "golden_age",
         "heroic_golden_age",
         "can_declare",
+        "war_declarations",
         // The host's own relationship, ledger, alliance, missions, promises
         // and visibility for this rival — see `StateRival::diplomatic_state`.
         "diplomatic_state",
@@ -6166,6 +6179,19 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         .flatten()
     {
         keys(rival, RIVAL, "rival", &mut gaps);
+        for declaration in rival
+            .get("war_declarations")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            keys(
+                declaration,
+                &["statement", "allowed"],
+                "war_declaration",
+                &mut gaps,
+            );
+        }
         public_stats(rival.get("public_stats"), "rival.public_stats", &mut gaps);
         for route in rival
             .get("trade_routes")
@@ -10818,17 +10844,13 @@ fn apply_host_competitions(game: &mut crate::game::Game, state: &StateSnapshot) 
 ///   visibility level both ways (`Player::observed_visibility`, which
 ///   `Game::diplomatic_visibility` prefers to its derivation).
 ///
-/// ⚠ The `can_declare` permission fake stays, in one case: when the host
-/// permits a declaration and the board holds no ACTIVE denouncement of our
-/// own, `denounced_until = turn + 1` is still written. The bridge carries no
-/// `Denounce` order, so a board denouncement never reaches the host; without
-/// the fake `preferred_war_opening` would denounce on the board every turn,
-/// be rebuilt without it, and never declare — the 81-turn, zero-declaration
-/// history that put the fake there. It is the one board fact that is not the
-/// host's, and FIDELITY.md's queue names it.
+/// Legacy exports retain the old permission fake: aggregate permission and
+/// no active denouncement writes `denounced_until = turn + 1`. This existed
+/// before the bridge carried Denounce orders. Modern typed permissions MUST
+/// NOT manufacture that clock: permission for Surprise War is not permission
+/// for Formal War. The exact per-type facts are applied in step_host_war_types.
 ///
-/// An export without `diplomatic_state` (an older mod) writes only the fake,
-/// exactly as before.
+/// An export without typed permissions keeps its historical behavior.
 pub(crate) fn apply_host_diplomacy(game: &mut crate::game::Game, owner: usize, rival: &StateRival) {
     if owner == 0 || owner >= game.players.len() {
         return;
@@ -10843,7 +10865,8 @@ pub(crate) fn apply_host_diplomacy(game: &mut crate::game::Game, owner: usize, r
     if rival.can_declare == Some(false) && !rival.at_war {
         blocks.insert((0, owner, turn));
     }
-    let permitted = rival.can_declare == Some(true) && !rival.at_war;
+    let permitted =
+        rival.war_declarations.is_none() && rival.can_declare == Some(true) && !rival.at_war;
     let Some(state) = rival.diplomatic_state.as_deref() else {
         if permitted {
             game.players[0].denounced_until.insert(owner, turn + 1);
@@ -11296,6 +11319,7 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
             ("religion_identity", BOTH, religion_state::apply),
             ("governor_state", BOTH, step_governor_state),
             ("host_envoys", BOTH, step_host_envoys),
+            ("host_war_types", BOTH, step_host_war_types),
             ("great_person_points", BOTH, step_great_person_points),
             ("strategic_stockpiles", BOTH, step_strategic_stockpiles),
             ("player_ages", BOTH, step_player_ages),
@@ -11656,6 +11680,32 @@ fn step_host_envoys(ctx: &mut HostStepCtx<'_>) {
                 permissions.insert((0, owner), (ctx.game.turn, allowed));
             }
         }
+    }
+}
+
+fn step_host_war_types(ctx: &mut HostStepCtx<'_>) {
+    let permissions = Arc::make_mut(&mut ctx.game.host_war_type_permissions);
+    permissions.retain(|(actor, _), _| *actor != 0);
+    for rival in &ctx.state.rivals {
+        let (Some(facts), Some(&owner)) = (
+            rival.war_declarations.as_ref(),
+            ctx.seat_of_host.get(&rival.player),
+        ) else {
+            continue;
+        };
+        permissions.insert(
+            (0, owner),
+            crate::game::ObservedWarTypes {
+                turn: ctx.game.turn,
+                permissions: facts
+                    .iter()
+                    .filter_map(|fact| {
+                        fact.allowed
+                            .map(|allowed| (fact.statement.clone(), allowed))
+                    })
+                    .collect(),
+            },
+        );
     }
 }
 
@@ -14742,3 +14792,6 @@ mod envoy_permission_tests;
 
 #[cfg(test)]
 mod flood_state_tests;
+
+#[cfg(test)]
+mod war_type_permission_tests;

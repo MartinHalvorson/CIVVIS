@@ -821,6 +821,25 @@ impl CasusBelliProfile {
 /// Every declaration form uses one source of truth for both admission and
 /// city-fate accounting.  Aliases keep older saved action logs readable while
 /// new observations always emit the explicit `_war` IDs.
+/// Native unilateral declaration name, shared by permission checks and orders.
+/// Joint wars need a partner/deal and are not unilateral native sessions.
+pub fn native_war_statement(casus_belli: &str) -> Option<&'static str> {
+    Some(match casus_belli_profile(casus_belli)?.id {
+        "surprise_war" => "DECLARE_SURPRISE_WAR",
+        "formal_war" => "DECLARE_FORMAL_WAR",
+        "holy_war" => "DECLARE_HOLY_WAR",
+        "liberation_war" => "DECLARE_LIBERATION_WAR",
+        "reconquest_war" => "DECLARE_RECONQUEST_WAR",
+        "protectorate_war" => "DECLARE_PROTECTORATE_WAR",
+        "colonial_war" => "DECLARE_COLONIAL_WAR",
+        "territorial_war" => "DECLARE_TERRITORIAL_WAR",
+        "golden_age_war" => "DECLARE_GOLDEN_AGE_WAR",
+        "retribution_war" => "DECLARE_WAR_OF_RETRIBUTION",
+        "ideological_war" => "DECLARE_IDEOLOGICAL_WAR",
+        _ => return None,
+    })
+}
+
 fn casus_belli_profile(id: &str) -> Option<CasusBelliProfile> {
     let profile = match id {
         "surprise_war" | "surprise" => CasusBelliProfile {
@@ -6585,6 +6604,11 @@ pub struct Game {
     /// hypothetical later turns and games without host facts use normal rules.
     #[serde(default)]
     pub host_war_blocks: Arc<BTreeSet<(usize, usize, u32)>>,
+    /// Exact native permissions for unilateral war types, refreshed per board.
+    /// Present observations require an explicit true for the selected type;
+    /// missing observations and later simulated turns use ordinary rules.
+    #[serde(skip)]
+    pub host_war_type_permissions: Arc<BTreeMap<(usize, usize), ObservedWarTypes>>,
     /// Native envoy permissions for (actor, city-state), with observed turn.
     /// Only that turn uses the host answer; simulations without it retain
     /// their own rules. Contact, a living minor and an available envoy remain
@@ -7018,6 +7042,14 @@ pub struct Storm {
     pub severity: u8,
     /// The turn the system dissipates.
     pub ends: u32,
+}
+
+/// One target's current native declaration observations. Unknown types are not
+/// permissions; a snapshot without this record retains legacy model semantics.
+#[derive(Clone, Debug, Default)]
+pub struct ObservedWarTypes {
+    pub turn: u32,
+    pub permissions: BTreeMap<String, bool>,
 }
 
 /// The host's climate readings a mirrored board carries beside its phase —
@@ -7457,6 +7489,7 @@ impl From<GameSer> for Game {
             host_band_promotions: Arc::new(BTreeMap::new()),
             blocked_strikes: Arc::new(BTreeSet::new()),
             host_war_blocks: Arc::new(BTreeSet::new()),
+            host_war_type_permissions: Arc::new(BTreeMap::new()),
             host_envoy_permissions: Arc::new(BTreeMap::new()),
             host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
@@ -8174,6 +8207,7 @@ impl Game {
             host_band_promotions: Arc::new(BTreeMap::new()),
             blocked_strikes: Arc::new(BTreeSet::new()),
             host_war_blocks: Arc::new(BTreeSet::new()),
+            host_war_type_permissions: Arc::new(BTreeMap::new()),
             host_envoy_permissions: Arc::new(BTreeMap::new()),
             host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
@@ -36091,3 +36125,6 @@ mod luxury_allocation_tests;
 
 #[cfg(test)]
 mod fogged_elimination_tests;
+
+#[cfg(test)]
+mod host_war_permission_tests;
