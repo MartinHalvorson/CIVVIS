@@ -11,7 +11,7 @@
 //! their adaptive deployed controllers. The focal seat also carries the
 //! repository's compiled live-force-on bundle, recorded in every pair.
 use civvis::ai::{gene, run_game_observed, AdvancedAi, Gene, VictoryTarget};
-use civvis::game::{Game, GameOptions, LeaderPool};
+use civvis::game::{Action, Game, GameOptions, LeaderPool};
 use civvis::setup::MapScript;
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -130,6 +130,81 @@ struct Outcome {
     foreign_cities_observed_held: usize,
     foreign_cities_held_at_end: usize,
     applied_actions: usize,
+    conquest: ConquestProgress,
+}
+
+/// Observations occur at turn boundaries and once at the end. These times are
+/// first *observed* turns, not exact action timestamps; transient ownership
+/// between observations is deliberately not counted as a held city.
+#[derive(Debug, Default, Serialize)]
+struct ConquestProgress {
+    first_major_war_observed_turn: Option<u32>,
+    first_focal_major_declaration_observed_turn: Option<u32>,
+    focal_major_declarations: usize,
+    focal_minor_declarations: usize,
+    first_major_city_held_observed_turn: Option<u32>,
+    first_foreign_capital_held_observed_turn: Option<u32>,
+    foreign_major_cities_observed_held: BTreeSet<u32>,
+    foreign_capitals_observed_held: BTreeSet<u32>,
+    foreign_capitals_held_at_end: usize,
+    own_original_capital_held_at_end: bool,
+    #[serde(skip)]
+    observed_actions: usize,
+}
+
+impl ConquestProgress {
+    fn observe(&mut self, g: &Game) {
+        let major = |pid: usize| {
+            g.players
+                .get(pid)
+                .is_some_and(|p| !p.is_minor && !p.is_barbarian)
+        };
+        if g.players
+            .iter()
+            .any(|p| p.id != 0 && major(p.id) && g.is_at_war(0, p.id))
+        {
+            self.first_major_war_observed_turn.get_or_insert(g.turn);
+        }
+        // Applied declarations distinguish attacking from being attacked and
+        // retain wars opened and closed between boundary observations.
+        for (seat, action) in g.log.since(self.observed_actions) {
+            if *seat != 0 {
+                continue;
+            }
+            let target = match action {
+                Action::DeclareWar { player } | Action::DeclareWarWithCasusBelli { player, .. } => {
+                    *player
+                }
+                _ => continue,
+            };
+            if major(target) {
+                self.focal_major_declarations += 1;
+                self.first_focal_major_declaration_observed_turn
+                    .get_or_insert(g.turn);
+                self.first_major_war_observed_turn.get_or_insert(g.turn);
+            } else {
+                self.focal_minor_declarations += 1;
+            }
+        }
+        self.observed_actions = g.log.len();
+        self.foreign_capitals_held_at_end = 0;
+        self.own_original_capital_held_at_end = false;
+        for city in g.cities.values().filter(|city| city.owner == 0) {
+            if city.original_owner == 0 {
+                self.own_original_capital_held_at_end |= city.is_capital;
+            } else if major(city.original_owner) {
+                self.first_major_city_held_observed_turn
+                    .get_or_insert(g.turn);
+                self.foreign_major_cities_observed_held.insert(city.id);
+                if city.is_capital {
+                    self.first_foreign_capital_held_observed_turn
+                        .get_or_insert(g.turn);
+                    self.foreign_capitals_observed_held.insert(city.id);
+                    self.foreign_capitals_held_at_end += 1;
+                }
+            }
+        }
+    }
 }
 
 struct Trial {
@@ -145,7 +220,9 @@ fn trial(seed: u64, policy: &Gene, enabled: bool) -> Trial {
     let civs = game.players.iter().take(4).map(|p| p.civ.clone()).collect();
     let mut ais = fleet(&game, policy, enabled);
     let mut held = BTreeSet::new();
+    let mut conquest = ConquestProgress::default();
     let mut observe = |g: &Game| {
+        conquest.observe(g);
         for city in g.cities.values() {
             if city.owner == 0 && city.original_owner != 0 {
                 held.insert(city.id);
@@ -169,6 +246,7 @@ fn trial(seed: u64, policy: &Gene, enabled: bool) -> Trial {
             .filter(|c| c.owner == 0 && c.original_owner != 0)
             .count(),
         applied_actions: game.log.len(),
+        conquest,
     };
     Trial {
         outcome,
@@ -214,7 +292,7 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
             domination[i] += usize::from(arm.outcome.focal_domination_won);
         }
         let row = serde_json::json!({
-            "schema": 1, "kind": "simulator_domination_policy_pair",
+            "schema": 2, "kind": "simulator_domination_policy_pair",
             "policy": config.policy.tag, "seed": seed,
             "execution_order": if index % 2 == 0 { "off,on" } else { "on,off" },
             "profile": profile(seed), "civilizations": off.civs,
