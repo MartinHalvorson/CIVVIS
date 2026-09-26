@@ -149,7 +149,7 @@ in this colony patch.
 After integration, the full suite passed 4,337 tests with 53 existing
 ignores. Changed-line Rust quality and whitespace checks passed.
 
-## Knowledge check before integration
+## Knowledge check before merge
 
 Final review found that the arrival-only refusal inspected the underlying
 resource without first checking its revealing technology. An additional
@@ -169,3 +169,37 @@ Both sources must complete both pairs, with all outcomes retained. The
 protocol is also frozen in `knowledge-guard-protocol.json` in the artifact
 directory. These small diagnostic runs remain insufficient for promotion or
 a claim of consistent Domination wins.
+
+
+The knowledge-corrected source `04b41131ff808c6235fe989d691c9ee11d6e8965`
+passes seven focused tests and the full suite: 4,338 passed with 53 existing
+ignores. Changed-line Rust quality and whitespace checks pass. Its frozen
+turn-160 replay still chooses Aluminum `(2,18)`, route fourteen, and waits
+for the assigned escort. The correction preserves the intended planning
+change without using unrevealed resources or uncharted terrain.
+
+Both sources completed both new pairs without crashes, substituted seeds or
+early stops. Their complete pair records are identical, including action
+counts and conquest telemetry:
+
+| Seed | Air-surge-2 arm | Turn | Score | Focal outcome | Major cities observed held | Capitals held at end |
+|---|---|---|---|---|---|---|
+| 37870002 | off | 250 | 1266 | Score win | 3 | 0 |
+| 37870002 | on | 238 | 1687 | Science win | 13 | 2 |
+| 37870003 | off | 159 | 361 | Religious loss | 0 | 0 |
+| 37870003 | on | 183 | 403 | Religious loss | 0 | 0 |
+
+Again, zero Domination wins and no measured outcome benefit. The thirteen
+major cities and two capitals in one arm also occur on the baseline and
+cannot be attributed to this patch. All raw records and comparison checks
+are retained in `knowledge-guard/` beside the original artifacts.
+
+| Corrected comparison artifact | SHA-256 |
+|---|---|
+| Baseline evaluator (`e58d4a7c4`) | `681099adf3a31dd836ea0234c8fdaffc9c2674f369298c5bdfa8be593024dabb` |
+| Corrected evaluator (`04b41131f`) | `53b68cf5085ae72e77e62f3fb091b71e7c5d151ca3afdd23b978be20281a8cd9` |
+| Corrected orders CLI (`04b41131f`) | `19dc2a1128b96bcc896d26274a3503f0561f8c90e6f0a853e1324e9cb6851314` |
+
+These source freezes precede any subsequent mainline integration. This patch
+establishes guarded destination planning only; native Aluminum income,
+Bomber use and consistent Domination wins remain unproven.
