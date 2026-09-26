@@ -31129,7 +31129,8 @@ impl AdvancedAi {
         if !self.settlement_safety {
             return BTreeSet::new();
         }
-        g.cities
+        let mut excluded = g
+            .cities
             .values()
             .filter(|city| {
                 city.owner != pid
@@ -31141,7 +31142,11 @@ impl AdvancedAi {
                     })
             })
             .flat_map(|city| g.wdisk(city.pos, CITY_STATE_SETTLEMENT_BUFFER))
-            .collect()
+            .collect::<BTreeSet<_>>();
+        for site in self.air_resource_settlement_sites(g, pid, &excluded) {
+            excluded.remove(&site);
+        }
+        excluded
     }
 
     fn settlement_route_risk(
@@ -34113,7 +34118,9 @@ impl AdvancedAi {
             // make the loss irreversible.
             let relaxed = self.settler_never_idles
                 && self.settler_relaxed_targets.get(&uid) == Some(&current);
-            let arrival_verdict = if relaxed && !science_targeted {
+            let arrival_verdict = if self.air_resource_colony_refused(g, pid, current) {
+                Some("the resource colony no longer has its required supply need, friendly city-states, defense and Loyalty".to_string())
+            } else if relaxed && !science_targeted {
                 // See `relaxed_arrival_verdict`: a site the exhaustion search
                 // chose is judged at arrival by the rule that chose it.
                 Self::relaxed_arrival_verdict(g, pid, current)
@@ -34436,7 +34443,10 @@ impl AdvancedAi {
     /// the loyalty-doomed or unsupported hostile frontier the failed route may
     /// have reached.
     fn founds_where_it_stands(&mut self, g: &mut Game, pid: usize, uid: u32, here: Pos) -> bool {
-        if !self.settler_founds_when_stalled || !g.can_found_city(uid) {
+        if !self.settler_founds_when_stalled
+            || !g.can_found_city(uid)
+            || self.air_resource_colony_refused(g, pid, here)
+        {
             return false;
         }
         let visible = self.battlefront_visibility(g, pid);
