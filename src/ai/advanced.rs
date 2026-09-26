@@ -31923,6 +31923,10 @@ impl AdvancedAi {
         )
     }
 
+    // Two caches, one per shared derivation, beside the ranking's own six
+    // inputs; the callers that hold both are the ones documented on
+    // `settler_walk_costs_cached`.
+    #[allow(clippy::too_many_arguments)]
     fn best_reachable_settle_site_except_cached(
         &self,
         g: &Game,
