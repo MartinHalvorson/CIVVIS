@@ -1667,6 +1667,22 @@ const SETTLER_THREAT_DETOUR_RETRIES: usize = 12;
 /// `AdvancedAi::settler_walk_costs_cached`.
 type SettlerWalkCosts = BTreeMap<i32, BTreeMap<Pos, f64>>;
 
+/// The read-only answers one settlement scan shares with the next scan of
+/// the same board for the same seat. `map_settlement_room` scans from every
+/// expansion origin in turn, and nothing here depends on the origin: the
+/// founding-exclusion disks around every city, the buffer around explored
+/// city-states, and each plot's prefilter score are functions of the board
+/// and the seat alone. Each was rebuilt per origin before this existed. The
+/// struct lives inside one shared `&Game` borrow, so nothing in it can go
+/// stale.
+#[derive(Default)]
+struct SettlementScanShared {
+    /// (`city_exclusion`, `city_state_exclusion`), built on first use.
+    exclusions: Option<(BTreeSet<Pos>, BTreeSet<Pos>)>,
+    /// Prefilter score per plot, for a scan that prefilters.
+    prefilter: BTreeMap<Pos, f64>,
+}
+
 /// `detour-keeps-the-site-worth`: the least of the deferred site's value a
 /// detour may settle for. The detour picks the best site whose approach is
 /// SAFE, which is not the same as a site worth going to. Measured over 53
@@ -24371,7 +24387,9 @@ impl AdvancedAi {
             .saturating_sub(counts.military_engineers + counts.air_defense + obsolete_breach);
         let desired_support = if land_military >= 8 {
             2
-        } else if land_military >= 3 {
+        } else if land_military >= 3 || is_breach {
+            // An eligible infantry group needs one usable breach element even
+            // before it reaches the ordinary three-unit field-support floor.
             1
         } else {
             0
@@ -24595,10 +24613,20 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether the strategic plan currently sends an army to take a foreign
+    /// city. The support scorer separately verifies that an eligible infantry
+    /// escort and a useful capability exist, so this only identifies the
+    /// front that may claim an otherwise-idle production queue.
+    fn has_foreign_city_assault(g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
+        plan.target_city
+            .and_then(|cid| g.cities.get(&cid))
+            .is_some_and(|city| city.owner != pid && g.is_at_war(pid, city.owner))
+    }
+
     /// The adaptive agent normally delegates routine city queues to the
     /// lightweight governor. Reserve at most one empty queue per turn for a
     /// support capability that the active campaign and army can actually use.
-    fn advanced_support_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+    fn advanced_support_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) -> bool {
         let counts = self.counts(g, pid);
         if self.base.book_pos < 4
             || !g
@@ -24607,7 +24635,7 @@ impl AdvancedAi {
                 .any(|other| other.id != pid && g.is_at_war(pid, other.id))
             || self.live_war_economy_requires_recovery(g, pid, &counts)
         {
-            return;
+            return false;
         }
         let best: Option<(f64, u32, String)> = {
             let _memo = g.query_memo();
@@ -24639,10 +24667,10 @@ impl AdvancedAi {
             best
         };
         let Some((value, city, unit)) = best else {
-            return;
+            return false;
         };
         if value > 0.0 {
-            let _ = g.apply(
+            g.apply(
                 pid,
                 &Action::Produce {
                     city,
@@ -24650,8 +24678,26 @@ impl AdvancedAi {
                         unit: Name::new(&unit),
                     },
                 },
-            );
+            )
+            .is_ok()
+        } else {
+            false
         }
+    }
+
+    /// Let a live foreign-city assault reserve its Ram, Tower, or other
+    /// applicable support before broad strategic production consumes every
+    /// idle queue. Appointed timed wars own their exact breach package, so
+    /// this deliberately leaves that production route untouched.
+    fn reserve_foreign_city_assault_support(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        self.war_plan.is_none()
+            && Self::has_foreign_city_assault(g, pid, plan)
+            && self.advanced_support_production(g, pid, plan)
     }
 
     /// The live peacetime deterrence target is normally a small multiplier of
@@ -31565,6 +31611,7 @@ impl AdvancedAi {
     /// still ranks normal sites first and reaches these only after those sites
     /// have gone, so this raises the long-term plan without making a marginal
     /// site outrank a good nearby one.
+    #[allow(clippy::too_many_arguments)]
     fn settle_sites_for_room(
         &self,
         g: &Game,
@@ -31573,16 +31620,19 @@ impl AdvancedAi {
         radius: i32,
         prefilter_limit: Option<usize>,
         include_emergency: bool,
+        score_cache: &mut BTreeMap<Pos, f64>,
+        shared: &mut SettlementScanShared,
     ) -> Vec<(Pos, f64)> {
-        self.settle_sites_scanning(
+        self.settle_sites_scanning_shared(
             g,
             pid,
             from,
             radius,
             prefilter_limit,
-            None,
+            Some(score_cache),
             false,
             include_emergency,
+            Some(shared),
         )
     }
 
@@ -31606,6 +31656,11 @@ impl AdvancedAi {
             10
         };
         let mut sites: Vec<(Pos, f64)> = Vec::new();
+        // Every origin scans the same board for the same seat: the exclusion
+        // disks, the prefilter scores and the site values are shared across
+        // the origins, and only the disk and the distance term differ.
+        let mut score_cache = BTreeMap::new();
+        let mut shared = SettlementScanShared::default();
         for origin in origins {
             sites.extend(self.settle_sites_for_room(
                 g,
@@ -31614,6 +31669,8 @@ impl AdvancedAi {
                 radius,
                 Some(SETTLEMENT_GLOBAL_PREFILTER_LIMIT),
                 self.shared_city_target,
+                &mut score_cache,
+                &mut shared,
             ));
         }
         sites.sort_by(|a, b| {
@@ -31667,9 +31724,37 @@ impl AdvancedAi {
         from: Pos,
         radius: i32,
         prefilter_limit: Option<usize>,
+        score_cache: Option<&mut BTreeMap<Pos, f64>>,
+        stop_at_first: bool,
+        include_emergency: bool,
+    ) -> Vec<(Pos, f64)> {
+        self.settle_sites_scanning_shared(
+            g,
+            pid,
+            from,
+            radius,
+            prefilter_limit,
+            score_cache,
+            stop_at_first,
+            include_emergency,
+            None,
+        )
+    }
+
+    /// `settle_sites_scanning` for a caller that scans the same board for
+    /// the same seat from more than one origin; see `SettlementScanShared`.
+    #[allow(clippy::too_many_arguments)]
+    fn settle_sites_scanning_shared(
+        &self,
+        g: &Game,
+        pid: usize,
+        from: Pos,
+        radius: i32,
+        prefilter_limit: Option<usize>,
         mut score_cache: Option<&mut BTreeMap<Pos, f64>>,
         stop_at_first: bool,
         include_emergency: bool,
+        shared: Option<&mut SettlementScanShared>,
     ) -> Vec<(Pos, f64)> {
         let mut sites = Vec::new();
         let mut emergency_sites = Vec::new();
@@ -31695,12 +31780,23 @@ impl AdvancedAi {
         // `wdist` scan per plot of the disk. `wdisk(pos, 3)` is exactly the
         // set of plots at `wdist <= 3`, so the union answers the same
         // question at every radius.
-        let city_exclusion = g
-            .cities
-            .values()
-            .flat_map(|city| g.wdisk(city.pos, 3))
-            .collect::<BTreeSet<_>>();
-        let city_state_exclusion = self.city_state_settlement_exclusion(g, pid);
+        // A caller scanning from several origins hands in the answers the
+        // previous origin already derived (`SettlementScanShared`); a lone
+        // scan derives its own, exactly as before.
+        let mut own_exclusions = None;
+        let (exclusions, mut prefilter_cache) = match shared {
+            Some(shared) => (&mut shared.exclusions, Some(&mut shared.prefilter)),
+            None => (&mut own_exclusions, None),
+        };
+        let (city_exclusion, city_state_exclusion) = exclusions.get_or_insert_with(|| {
+            (
+                g.cities
+                    .values()
+                    .flat_map(|city| g.wdisk(city.pos, 3))
+                    .collect::<BTreeSet<_>>(),
+                self.city_state_settlement_exclusion(g, pid),
+            )
+        });
         let mut candidates = g
             .wdisk(from, radius)
             .into_iter()
@@ -31724,10 +31820,21 @@ impl AdvancedAi {
                 }
                 let prefilter_score = prefilter_limit
                     .map(|_| {
+                        if let Some(cached) = prefilter_cache
+                            .as_deref()
+                            .and_then(|cache| cache.get(&pos).copied())
+                        {
+                            return cached;
+                        }
                         // `contested_land_first`: a contested site is never
                         // cut before it is priced.
-                        self.settlement_prefilter_score_with_water_science_wonder(g, pid, pos)
-                            + self.contested_land_credit(g, pid, pos)
+                        let score = self
+                            .settlement_prefilter_score_with_water_science_wonder(g, pid, pos)
+                            + self.contested_land_credit(g, pid, pos);
+                        if let Some(cache) = prefilter_cache.as_deref_mut() {
+                            cache.insert(pos, score);
+                        }
+                        score
                     })
                     .unwrap_or(0.0);
                 Some((pos, prefilter_score))
@@ -41761,6 +41868,15 @@ impl AdvancedAi {
         }
         let plan = self.plan.clone().unwrap();
         self.record_portfolio_trace(g, pid, &plan);
+        // The activation chooser is also reached by the ordinary city pass
+        // later this turn.  Stamp its narrow Science-expansion policy once so
+        // every route agrees about whether a low-impact, off-lane named person
+        // may open a wholly new prerequisite chain.
+        self.base.set_defer_low_impact_science_activation_paths(
+            active_victory_target == Some(VictoryTarget::Science)
+                && plan.strategy == GrandStrategy::Expansion
+                && g.player_city_ids(pid).len() < plan.desired_cities,
+        );
         // `coalition_before_war`: open, keep or close the coalition window
         // for this turn's target, before envoys and diplomacy read it. Exact
         // no-op with the gene off. See `advanced/coalition.rs`.
@@ -41918,6 +42034,11 @@ impl AdvancedAi {
         // mirror-owned assets the ordinary immediate-retirement model cannot
         // see. Reserve the fastest idle city for their missing prerequisite
         // before strategic production fills every queue with another project.
+        // A targeted Science seat still expanding is the narrow exception:
+        // do not open a new off-lane activation chain for the named low-impact
+        // Scientist while it is short of the plan's city target.  Existing
+        // foundations remain resumable, and every other lane keeps the normal
+        // asset-preserving behavior.
         self.base.prioritize_live_great_person_activation(g, pid);
         // Native boards have no host need list, but the same blockers: a
         // Writer's points at the price with no open Writing slot pile up
@@ -42040,6 +42161,10 @@ impl AdvancedAi {
             };
             let adaptive_expansion_dispatch =
                 self.adaptive_expansion_dispatches(&plan, dispatch_target);
+            // Reserve one useful support element before broad production
+            // consumes the idle queues of an active foreign-city assault.
+            let city_assault_support_reserved =
+                self.reserve_foreign_city_assault_support(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
@@ -42093,7 +42218,9 @@ impl AdvancedAi {
                 self.redirect_repeatable_projects_for_amenity_crisis(g, pid, &plan, false);
             }
             if dispatch_target.is_none() {
-                self.advanced_support_production(g, pid, &plan);
+                if !city_assault_support_reserved {
+                    self.advanced_support_production(g, pid, &plan);
+                }
                 // The adaptive empire's Settler gate lives in the baseline
                 // governor. Thread the larger, speed-aware plan through that
                 // call without leaking it to later consumers.
