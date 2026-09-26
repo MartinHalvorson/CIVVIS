@@ -35128,6 +35128,9 @@ impl AdvancedAi {
         if let Some(acted) = self.chop_for_expansion_step(g, pid, uid, strategy) {
             return acted;
         }
+        if let Some(acted) = self.air_resource_builder_step(g, pid, uid) {
+            return acted;
+        }
         let repairable = g.map.get(current).is_some_and(|tile| {
             tile.pillaged
                 && tile.improvement.is_some()
