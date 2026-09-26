@@ -7251,11 +7251,11 @@ mod opportunistic_war;
 /// `advanced/surprise_defense.rs`.
 mod surprise_defense;
 
-mod air_resource_builders;
 /// The air surge: a three-tech beeline to Advanced Flight, an Aerodrome, a
 /// bomber wing, and the cavalry that takes the city the wing empties. See
 /// `advanced/air_surge.rs`.
 mod air_city_assault;
+mod air_resource_builders;
 mod air_surge;
 pub use air_city_assault::AirCityAssault;
 mod siege_resource_purchase;
