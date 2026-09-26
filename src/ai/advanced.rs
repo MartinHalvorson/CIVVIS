@@ -4918,6 +4918,11 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `builders-work-through-raiders`: the live capture lessons keep their
+    /// barbarian-reach holds for Settlers only; a Builder steps and takes
+    /// jobs under the native Builder safety instead. See
+    /// `AdvancedAi::builder_reach_safety_on`.
+    builders_work_through_raiders: bool,
     /// Slot Serfdom while a queued Builder is close to completion.
     builder_charge_window: bool,
     /// `boost-planner-builds`: the boost planner may make a side objective of a
@@ -8296,6 +8301,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            builders_work_through_raiders: false,
             builder_charge_window: false,
             boost_planner_builds: false,
             boost_planner: false,
@@ -24834,7 +24840,9 @@ impl AdvancedAi {
                 // This branch is intentionally limited to the pre-war target.
                 // Wartime production still enters through its ordinary plan,
                 // rather than seizing every empty queue after a declaration.
-                None => peacetime_target.is_some(),
+                None => {
+                    peacetime_target.is_some() && !self.domination_bomber_queue_needed(g, pid, cid)
+                }
                 _ => false,
             };
             if !redirectable {
@@ -35105,7 +35113,7 @@ impl AdvancedAi {
         }
         // The native opt-in and the live capture lessons share the exact
         // reach response: a builder inside it leaves before it takes a job.
-        if self.civilian_reach_safety_on() {
+        if self.builder_reach_safety_on() {
             if let Some(acted) = self.civilian_flee_step(g, pid, uid) {
                 return acted;
             }
@@ -35125,7 +35133,7 @@ impl AdvancedAi {
                     .apply(pid, &Action::ContributeProject { unit: uid, city })
                     .is_ok();
             }
-            let stepped = if self.civilian_reach_safety_on() {
+            let stepped = if self.builder_reach_safety_on() {
                 self.builder_step_out_of_reach(g, pid, uid, position)
             } else {
                 self.builder_step_toward_barbarian_safe(g, pid, uid, position)
@@ -35255,7 +35263,7 @@ impl AdvancedAi {
         // reach-checked route step itself. Here the normal sweep also filters
         // a job tile a raider could stand on next turn before it is assigned.
         let reach = self
-            .civilian_reach_safety_on()
+            .builder_reach_safety_on()
             .then(|| self.barbarian_reach(g, pid, current, civilian_safety::REACH_SCAN_RADIUS));
         let job_out_of_reach = |pos: Pos| {
             reach
@@ -35311,7 +35319,7 @@ impl AdvancedAi {
             }),
         };
         target.is_some_and(|pos| {
-            if self.civilian_reach_safety_on() {
+            if self.builder_reach_safety_on() {
                 self.builder_step_out_of_reach(g, pid, uid, pos)
             } else {
                 self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
@@ -35429,7 +35437,7 @@ impl AdvancedAi {
         };
         let mut attempts = BUILDER_ROUTE_ATTEMPTS;
         if let Some(pos) = pinned {
-            let stepped = if self.civilian_reach_safety_on() {
+            let stepped = if self.builder_reach_safety_on() {
                 self.builder_step_out_of_reach(g, pid, uid, pos)
             } else {
                 self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
@@ -35459,7 +35467,7 @@ impl AdvancedAi {
             .filter(|pos| Some(*pos) != pinned)
             .take(attempts)
         {
-            let stepped = if self.civilian_reach_safety_on() {
+            let stepped = if self.builder_reach_safety_on() {
                 self.builder_step_out_of_reach(g, pid, uid, pos)
             } else {
                 self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
