@@ -256,6 +256,9 @@ impl AdvancedAi {
         if !self.deny_leaders {
             return None;
         }
+        // This seat's victory focus and every rival's pressure below read the
+        // same city yields; one memo derives them once.
+        let _memo = g.query_memo();
         let targeted = self.active_victory_target(g).is_some();
         let own_progress = self.victory_focus(g, pid).progress;
         for (rival, pressure) in self.ranked_rival_victory_pressures(g, pid, culture_pressures) {

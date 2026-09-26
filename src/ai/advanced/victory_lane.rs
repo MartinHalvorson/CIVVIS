@@ -312,6 +312,9 @@ impl AdvancedAi {
             return plan.strategy != GrandStrategy::Recovery
                 && self.portfolio_supports(VictoryTarget::Culture);
         }
+        // The victory focus and the adaptive forecast below each project the
+        // culture race from every major's city yields; one memo shares them.
+        let _memo = g.query_memo();
         let culture_focus = self.victory_focus(g, pid).strategy == GrandStrategy::Culture;
         // Recovery keeps its reserve unless complete host menus confirm that
         // the named Culture seat cannot spend Faith on any other unit.
