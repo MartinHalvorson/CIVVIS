@@ -2867,6 +2867,12 @@ pub struct StateRival {
     /// six-turn purchase window.
     #[serde(default)]
     pub tradeable_luxuries: Option<Vec<String>>,
+    /// Strategic quantities offered on this met rival's public trade screen.
+    /// These are current available offers, not total stockpiles or income.
+    /// Unknown API/deal data is `None`; a queried empty catalogue is `Some({})`.
+    /// Lua emits an empty table as `[]`, which must remain a known empty map.
+    #[serde(default, deserialize_with = "map_or_empty_sequence")]
+    pub tradeable_strategics: Option<BTreeMap<String, i64>>,
     /// The rival's economy as the host reports it — per-turn Science and
     /// Culture, Tourism, treasury and Faith balances and their per-turn rates —
     /// every one an accessor the shipped World Rankings and Deal screens call
@@ -6032,6 +6038,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "era_score",
         "trade_routes",
         "tradeable_luxuries",
+        "tradeable_strategics",
         // Rival victory progress as the shipped World Rankings screen shows it.
         // `the_schema_allowlists_cover_every_declared_field` fails if a new
         // StateRival field is missing here.
