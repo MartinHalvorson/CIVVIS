@@ -2294,6 +2294,12 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `science-building-first`.
     pub(crate) science_building_first: bool,
+    /// Set by a targeted Science controller while its expansion plan still
+    /// has a city deficit.  The flag applies to every route through the
+    /// activation-item chooser for this turn, so an ordinary city-production
+    /// pass cannot reopen a low-impact off-lane path that the activation
+    /// reservation correctly deferred.
+    defer_low_impact_science_activation_paths: bool,
     /// Choose the pantheon from the land this empire actually holds, instead of
     /// from a fixed order.
     ///
@@ -4904,6 +4910,7 @@ impl BasicAi {
             skip_prophet_race: false,
             enter_prophet_race: false,
             science_building_first: false,
+            defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
             bank_envoys: false,
@@ -4995,6 +5002,10 @@ impl BasicAi {
 
     pub(crate) fn barbarian_tactics_enabled(&self) -> bool {
         self.barbarian_tactics
+    }
+
+    pub(crate) fn set_defer_low_impact_science_activation_paths(&mut self, defer: bool) {
+        self.defer_low_impact_science_activation_paths = defer;
     }
 
     /// Open the second settler pipeline slot (see `parallel_settlers`). The
@@ -5368,6 +5379,7 @@ impl BasicAi {
             skip_prophet_race: false,
             enter_prophet_race: false,
             science_building_first: false,
+            defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
             bank_envoys: false,
@@ -11151,6 +11163,26 @@ impl BasicAi {
         None
     }
 
+    /// A named person can be real, already claimed, and still be the wrong
+    /// reason to spend a frontier city's first free queue on a wholly new
+    /// district.  The Science lane already classifies these people when it
+    /// decides whether Campus projects should race them; keep that same
+    /// selectivity at the activation-path boundary.  This only withholds a
+    /// *new* path while the caller says the empire is still expanding.  A
+    /// placed foundation is sunk production and remains resumable, and a
+    /// naturally-ready person remains free to activate through the host.
+    fn low_impact_science_activation_path(
+        need: &crate::game::LiveGreatPersonActivationNeed,
+    ) -> bool {
+        matches!(
+            need.individual.as_deref(),
+            // Hildegard's Holy Site science conversion is useful only after
+            // the core Campus/settlement work; Mary Leakey belongs to an
+            // Artifact game, not an expanding Science empire.
+            Some("hildegard_of_bingen" | "mary_leakey")
+        )
+    }
+
     /// Production that turns an already-owned physical Great Person into a
     /// usable action. Ordinary/headless games never enter this path because
     /// their mirror-only need list is empty.
@@ -11159,6 +11191,11 @@ impl BasicAi {
             return None;
         }
         for need in &g.players[pid].live_great_person_activation_needs {
+            if self.defer_low_impact_science_activation_paths
+                && Self::low_impact_science_activation_path(need)
+            {
+                continue;
+            }
             let wonder_engineer = need.kind == "engineer"
                 && matches!(
                     need.individual.as_deref(),
@@ -18912,6 +18949,62 @@ mod tests {
             !ai.prioritize_live_great_person_activation(&mut game, 0),
             "a queued Campus satisfies every waiting Scientist without duplication"
         );
+    }
+
+    #[test]
+    fn science_expansion_defers_low_impact_new_great_person_paths() {
+        let mut game = Game::new_full(1, 20, 14, 41_116, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        grant_tech_with_prerequisites(&mut game, 0, "astrology");
+        game.players[0].live_great_person_activation_needs.push(
+            crate::game::LiveGreatPersonActivationNeed {
+                kind: "scientist".to_string(),
+                individual: Some("hildegard_of_bingen".to_string()),
+                required_district: Some("holy_site".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
+            },
+        );
+
+        let mut ai = BasicAi::new();
+        ai.set_defer_low_impact_science_activation_paths(true);
+        assert!(
+            !ai.prioritize_live_great_person_activation(&mut game, 0),
+            "a frontier Science empire must not open a new Holy Site solely for Hildegard"
+        );
+        assert!(game.cities[&city].queue.is_empty());
+
+        let mut ordinary = game.clone();
+        ai.set_defer_low_impact_science_activation_paths(false);
+        assert!(ai.prioritize_live_great_person_activation(&mut ordinary, 0));
+        assert!(matches!(
+            ordinary.cities[&city].queue.first(),
+            Some(Item::District { district, .. })
+                if ordinary.district_family(*district) == "holy_site"
+        ));
+
+        let need = game.players[0]
+            .live_great_person_activation_needs
+            .first_mut()
+            .unwrap();
+        need.individual = Some("hypatia".to_string());
+        need.required_district = Some("campus".to_string());
+        grant_tech_with_prerequisites(&mut game, 0, "writing");
+        ai.set_defer_low_impact_science_activation_paths(true);
+        assert!(
+            ai.prioritize_live_great_person_activation(&mut game, 0),
+            "a high-impact Scientist remains worth a new Campus during expansion"
+        );
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::District { district, .. })
+                if game.district_family(*district) == "campus"
+        ));
     }
 
     #[test]

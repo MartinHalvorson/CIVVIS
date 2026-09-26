@@ -39869,6 +39869,15 @@ impl AdvancedAi {
             self.plan = Some(current);
         }
         let plan = self.plan.clone().unwrap();
+        // The activation chooser is also reached by the ordinary city pass
+        // later this turn.  Stamp its narrow Science-expansion policy once so
+        // every route agrees about whether a low-impact, off-lane named person
+        // may open a wholly new prerequisite chain.
+        self.base.set_defer_low_impact_science_activation_paths(
+            active_victory_target == Some(VictoryTarget::Science)
+                && plan.strategy == GrandStrategy::Expansion
+                && g.player_city_ids(pid).len() < plan.desired_cities,
+        );
         // `coalition_before_war`: open, keep or close the coalition window
         // for this turn's target, before envoys and diplomacy read it. Exact
         // no-op with the gene off. See `advanced/coalition.rs`.
@@ -40021,6 +40030,11 @@ impl AdvancedAi {
         // mirror-owned assets the ordinary immediate-retirement model cannot
         // see. Reserve the fastest idle city for their missing prerequisite
         // before strategic production fills every queue with another project.
+        // A targeted Science seat still expanding is the narrow exception:
+        // do not open a new off-lane activation chain for the named low-impact
+        // Scientist while it is short of the plan's city target.  Existing
+        // foundations remain resumable, and every other lane keeps the normal
+        // asset-preserving behavior.
         self.base.prioritize_live_great_person_activation(g, pid);
         // Native boards have no host need list, but the same blockers: a
         // Writer's points at the price with no open Writing slot pile up
