@@ -7,6 +7,7 @@ use crate::game::Game;
 pub(super) struct SiegeMilestone {
     greatest_quarter: i32,
     initial_maximum: i32,
+    damage_reference: i32,
     progressed_at: Option<u32>,
     observed_turn: u32,
 }
@@ -55,13 +56,20 @@ impl AdvancedAi {
                 .or_insert(SiegeMilestone {
                     greatest_quarter: quarter,
                     initial_maximum: maximum,
+                    // Already-missing health consumes initial thresholds.
+                    damage_reference: maximum,
                     progressed_at: None,
                     observed_turn: g.turn,
                 });
-            // Hold the scale fixed for this war. An upgrade to stronger
-            // walls is not damage, and rebuilding cannot reuse old thresholds.
-            let remaining = (city.hp + city.wall_hp).clamp(0, milestone.initial_maximum);
-            let quarter = (milestone.initial_maximum - remaining) * 4 / milestone.initial_maximum;
+            // Keep the original four-quarter budget. Only observed health
+            // can raise its damage reference. Upgraded walls can take HP
+            // above the old maximum; clamping there would discard real hits.
+            // Capacity alone grants nothing, and repairs cannot reuse spent
+            // thresholds even after a larger health peak has been observed.
+            milestone.damage_reference = milestone.damage_reference.max(remaining);
+            let removed =
+                (milestone.damage_reference - remaining).clamp(0, milestone.initial_maximum);
+            let quarter = removed * 4 / milestone.initial_maximum;
             if quarter > milestone.greatest_quarter {
                 // Consume each threshold even without our army: returning to
                 // someone else's damaged city must not manufacture progress.
