@@ -24367,18 +24367,14 @@ impl AdvancedAi {
             .saturating_sub(counts.military_engineers + counts.air_defense + obsolete_breach);
         let desired_support = if land_military >= 8 {
             2
-        } else if land_military >= 3 {
+        } else if land_military >= 3 || is_breach {
+            // An eligible infantry group needs one usable breach element even
+            // before it reaches the ordinary three-unit field-support floor.
             1
         } else {
             0
         };
-        // A breach element belongs to a concrete city assault, not to the
-        // empire-wide support quota. In particular, two infantry already
-        // marching on a walled foreign city need their Ram/Tower even though
-        // the ordinary field quota does not begin until a third land unit.
-        // The capability check below still rejects a duplicate or equipment
-        // that cannot affect this city's current defenses.
-        if field_support >= desired_support && !is_breach {
+        if field_support >= desired_support {
             return -10_000.0;
         }
 

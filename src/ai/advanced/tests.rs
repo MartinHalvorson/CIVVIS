@@ -16514,6 +16514,18 @@ fn foreign_city_assault_reserves_breach_support_for_a_small_infantry_group() {
         game.cities[&home].queue.first(),
         Some(Item::Unit { unit }) if unit == "battering_ram"
     ));
+
+    game.cities.get_mut(&home).unwrap().queue.clear();
+    game.spawn_test_unit("battering_ram", 0, position);
+    assert!(
+        !ai.reserve_foreign_city_assault_support(&mut game, 0, &plan),
+        "an existing breach element must not open a duplicate support queue"
+    );
+    game.at_war.clear();
+    assert!(
+        !ai.reserve_foreign_city_assault_support(&mut game, 0, &plan),
+        "a foreign city is not an assault objective after peace"
+    );
 }
 
 #[test]
