@@ -46,7 +46,7 @@ UnitCommandTypes = {}
 
 -- A 4x3 map. `revealed[key]` and `owner[key]` are what the host would answer.
 local W, H = 4, 3
-local revealed, owner = {}, {}
+local revealed, owner, visible = {}, {}, {}
 local function key(x, y) return y * W + x end
 local function plotObject(x, y)
 	return {
@@ -140,7 +140,7 @@ Players = setmetatable({}, { __index = function(_, pid)
 end })
 PlayerManager = { GetAliveIDs = function() return { PID, 63 } end, GetAliveMajorIDs = function() return { PID } end }
 PlayersVisibility = setmetatable({}, { __index = function()
-	return { IsVisible = function() return true end,
+	return { IsVisible = function(_, x, y) return visible[key(x, y)] ~= false end,
 	         IsRevealed = function(_, x, y) return revealed[key(x, y)] == true end }
 end })
 Game = { GetLocalPlayer = function() return PID end, GetCurrentGameTurn = function() return 12 end }
@@ -369,6 +369,42 @@ check("legal CivVis choice remains playable", choose(city, {}, 1, 13, {}), "UNIT
 check("refused request cannot invoke the ladder", choose(city, {}, 1, 13, { UNIT_WARRIOR = true }), nil)
 builds[7] = nil; builds["7:next"] = "UNIT_WARRIOR"
 check("deferred CivVis lease remains playable", choose(city, {}, 1, 13, {}), "UNIT_WARRIOR")
+
+-- A cavalry spot often restores sight of an already explored city. It must
+-- open the first observation, and the bomber volley the second, within the
+-- exact budget advertised by the real seat survey.
+CivvisControlConfig.ExportState = true
+CivvisControlConfig.ReplanFrames = 2
+host.units = { [7] = { id = 7, x = 0, y = 0, moves = 2, kind = "UNIT_CAVALRY" } }
+revealed[key(0, 0)] = true
+visible[key(0, 0)] = false
+tiles.sweep(player, PID, 12, 0)
+frames.reset()
+visible[key(0, 0)] = true
+frames.observe(player, PID, 12)
+check("known city regains sight and opens a frame", frames.why(), "revealed")
+beginFrame(12)
+frames.noteStrike()
+check("the observed volley opens the final frame", frames.why(), "strike")
+beginFrame(12)
+check("capture/retreat is the last ordinary frame", frames.current, 2)
+check("no extra speculative frame remains", frames.wanted(), false)
+local survey = rawget(_G, "CivvisSurvey")
+pcall(survey)
+check("seat advertises the exact two-frame cap", has(lastEvent("seat"), '"replan_frame_limit":2'), true)
+CivvisControlConfig.ReplanFrames = nil
+pcall(survey)
+check("disabled replans advertise zero", has(lastEvent("seat"), '"replan_frame_limit":0'), true)
+frames.reset()
+CivvisControlConfig.ReplanFrames = 2
+local apply = rawget(_G, "CivvisApplyOrders")
+apply(player, PID, 12, {{ kind = "observe", verb = "AIR_ASSAULT" }})
+check("refused sortie still requests an observation", frames.why(), "air_assault")
+beginFrame(12)
+check("observation request is consumed once", frames.wanted(), false)
+frames.current = 2
+apply(player, PID, 12, {{ kind = "observe", verb = "AIR_ASSAULT" }})
+check("explicit request cannot exceed the advertised cap", frames.wanted(), false)
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
