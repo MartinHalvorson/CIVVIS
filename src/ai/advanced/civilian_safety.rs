@@ -300,6 +300,24 @@ impl AdvancedAi {
         self.civilian_out_of_reach || self.live_settler_capture_lessons
     }
 
+    /// The reach holds as a Builder reads them. `builders-work-through-raiders`
+    /// leaves the live capture lessons to the Settlers they were written for:
+    /// a Builder then steps and picks jobs under the native Builder safety
+    /// (`builder-barbarian-safety`), which still refuses a tile a raider can
+    /// take, instead of refusing every job and step a raider could reach next
+    /// turn. The native opt-in `civilian-out-of-reach` keeps its holds.
+    ///
+    /// Ladder proxy, Immortal, the Science lane: with the lessons on its
+    /// Builders a seat left a worked, improvable first-copy luxury unimproved
+    /// for 40+ turns with a Builder one to three tiles away ("Builder waits
+    /// outside a barbarian's reach"), and 44% of its cities were Displeased
+    /// at turn 50 against the rivals' 11%. See
+    /// `docs/eval/2026-09-26-ladder-proxy-immortal.md`.
+    pub(super) fn builder_reach_safety_on(&self) -> bool {
+        self.civilian_out_of_reach
+            || (self.live_settler_capture_lessons && !self.builders_work_through_raiders)
+    }
+
     /// The reach of every visible hostile military unit that could capture a
     /// civilian at `around`: raiders within `radius`, each flooded with its
     /// full allowance through blockers (`threat_reach`). Native/evaluator
