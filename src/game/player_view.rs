@@ -328,11 +328,22 @@ impl Game {
         // modifier depends on off-screen infrastructure. Preserve that reading
         // as a correction, just as the live mirror does, without revealing the
         // hidden infrastructure that caused it.
-        for id in &own_cities {
-            let observed = self.city_yields(*id);
-            let modeled = view.city_yields(*id);
+        //
+        // A city's modelled yields read only that city's own correction
+        // (`city_yields_inner`), so every reading can be taken under one memo
+        // before any correction is written: the view's luxury allocation is
+        // then valued once for the empire rather than once per city.
+        let modeled_own: Vec<(u32, crate::rules::Yields)> = {
+            let _memo = view.query_memo();
+            own_cities
+                .iter()
+                .map(|id| (*id, view.city_yields(*id)))
+                .collect()
+        };
+        for (id, modeled) in modeled_own {
+            let observed = self.city_yields(id);
             let correction = Arc::make_mut(&mut view.observed_city_yield_adjustments)
-                .entry(*id)
+                .entry(id)
                 .or_default();
             correction.food += observed.food - modeled.food;
             correction.production += observed.production - modeled.production;
@@ -349,10 +360,14 @@ impl Game {
             for id in self.player_city_ids(other) {
                 observed.add(self.city_yields(id));
             }
-            let mut modeled = view.player_yield_extras(other);
-            for id in view.player_city_ids(other) {
-                modeled.add(view.city_yields(id));
-            }
+            let modeled = {
+                let _memo = view.query_memo();
+                let mut modeled = view.player_yield_extras(other);
+                for id in view.player_city_ids(other) {
+                    modeled.add(view.city_yields(id));
+                }
+                modeled
+            };
             let correction = Arc::make_mut(&mut view.observed_yield_adjustments)
                 .entry(other)
                 .or_default();
