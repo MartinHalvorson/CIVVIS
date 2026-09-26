@@ -189,3 +189,64 @@ fn resource_scout_keeps_valid_commitment_and_honors_retired_targets() {
     ai.base.retire_exploration_target(&g, scout, goal);
     assert_ne!(ai.air_resource_scout_goal(&g, 0, scout), Some(goal));
 }
+
+#[test]
+fn a_healthy_connected_source_does_not_hide_insufficient_bomber_income() {
+    let (mut g, ai, _, city, source) = fixture();
+    let home = g.cities[&city].pos;
+    g.map.tiles.get_mut(&home).unwrap().resource = Some(crate::name!("aluminum"));
+    for _ in 0..3 {
+        g.spawn_test_unit("bomber", 0, home);
+    }
+    assert_eq!(g.strategic_resource_rate(0, "aluminum"), 2.0);
+    assert_eq!(
+        ai.air_resource_shortfall(&g, 0),
+        Some(crate::name!("aluminum"))
+    );
+    assert_eq!(ai.air_resource_frontier(&g, 0), Some(source));
+    g.map.tiles.get_mut(&home).unwrap().pillaged = true;
+    assert_eq!(ai.air_resource_frontier(&g, 0), None);
+}
+
+#[test]
+fn free_resource_scout_actually_advances_before_routine_military_assignments() {
+    let (mut g, mut ai, plan, city, source) = fixture();
+    let home = g.cities[&city].pos;
+    let scout = g.spawn_test_unit("scout", 0, home);
+    let before = g.wdist(home, source);
+    assert!(ai.advanced_military_step_with_decline(&mut g, 0, scout, &plan, true));
+    assert!(g.wdist(g.units[&scout].pos, source) < before);
+    let (goal, _) = ai.base.explore_goal.borrow().get(&scout).copied().unwrap();
+    assert!(g.wdist(goal, source) <= 9);
+    assert!(ai
+        .settle_site_frontier_loyalty_verdict(&g, 0, source)
+        .is_some());
+}
+
+#[test]
+fn resource_scout_can_clear_the_remote_land_frontier_without_relaxing_its_veto() {
+    let (mut g, mut ai, _, city, source) = fixture();
+    let scout = g.spawn_test_unit("scout", 0, g.cities[&city].pos);
+    assert!(AdvancedAi::beyond_loyalty_reach(&g, 0, source));
+    for _ in 0..60 {
+        g.turn += 1;
+        let moves = g.unit_max_moves(scout);
+        let u = g.units.get_mut(&scout).unwrap();
+        u.moves_left = moves;
+        u.moved = false;
+        u.acted = false;
+        u.attacks_left = 1;
+        for _ in 0..8 {
+            if ai.distance_scout_step(&mut g, 0, scout) != Some(true) {
+                break;
+            }
+        }
+        if !AdvancedAi::beyond_loyalty_reach(&g, 0, source) {
+            break;
+        }
+    }
+    assert!(!AdvancedAi::beyond_loyalty_reach(&g, 0, source));
+    assert!(ai
+        .settle_site_frontier_loyalty_verdict(&g, 0, source)
+        .is_none());
+}

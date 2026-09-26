@@ -21,8 +21,9 @@ impl AdvancedAi {
         }
         let resource = self.air_resource_shortfall(g, pid)?;
         let known = &g.players[pid].explored;
-        // An owned deposit, including a mine waiting for repair, is a Builder
-        // job. Do not buy a remote expedition while that connection is pending.
+        // An unconnected owned deposit is a Builder job. A healthy source
+        // can still be insufficient for the wing, so only its backlog defers
+        // the expedition, not ownership alone.
         if g.map.tiles.iter().any(|(pos, tile)| {
             known.contains(pos)
                 && tile.resource == Some(resource)
@@ -31,7 +32,18 @@ impl AdvancedAi {
                 && tile
                     .owner_city
                     .and_then(|cid| g.cities.get(&cid))
-                    .is_some_and(|c| c.owner == pid)
+                    .is_some_and(|c| {
+                        c.owner == pid
+                            && (tile.pillaged
+                                || (*pos != c.pos
+                                    && !tile.improvement.is_some_and(|improvement| {
+                                        g.rules.improvements[improvement]
+                                            .resources
+                                            .contains(&resource)
+                                            || g.rules.resources[resource].improvement
+                                                == improvement
+                                    })))
+                    })
         }) {
             return None;
         }
