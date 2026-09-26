@@ -4483,6 +4483,15 @@ impl AdvancedAi {
     }
 
     // ---- append: a-b ------------------------------------------------
+    /// `builders-work-through-raiders`: the live capture lessons' reach holds
+    /// keep Settlers only. See `AdvancedAi::builder_reach_safety_on`.
+    pub fn enable_builders_work_through_raiders(&mut self) {
+        self.builders_work_through_raiders = true;
+    }
+    /// The twin of `enable_builders_work_through_raiders`.
+    pub fn disable_builders_work_through_raiders(&mut self) {
+        self.builders_work_through_raiders = false;
+    }
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
 
