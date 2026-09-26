@@ -855,8 +855,10 @@ impl AdvancedAi {
         };
         let bill = self.campaign_city_requirement(g, pid, cid, &appraisal, average_body);
         let mut strength = bill.strength * SIEGE_MARGIN;
-        if self.siege_train || self.siege_positive_damage_budget {
-            strength = strength.max(super::siege_train::staging_strength_requirement(g, pid, cid));
+        if g.is_at_war(pid, owner) && (self.siege_train || self.siege_positive_damage_budget) {
+            strength = strength.max(super::siege_train::staging_strength_requirement(
+                g, pid, cid,
+            ));
         }
         ForceNeed {
             strength,

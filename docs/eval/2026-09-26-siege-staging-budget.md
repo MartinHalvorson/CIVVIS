@@ -49,7 +49,7 @@ The evaluators were built using
 - Baseline executable SHA-256: `b4020cafcaece7bb82d4a24933f23ed4c8c37eb90d3de048227f4b62053372c5`
 - Candidate executable SHA-256: `5715f544e2fa8eb0991c779972ccf71f69991a9b8b02e4205925eeb2c26e8903`
 
-Pilot results remain pending. On `mbp-m5-max-128`, each frozen executable runs:
+On `mbp-m5-max-128`, each frozen executable runs:
 
 ```sh
 victory_eval --domination-pair early-conquest-opening --games 4 --start-seed 37140000 --out <fresh-output-file>
@@ -58,3 +58,36 @@ victory_eval --domination-pair early-conquest-opening --games 4 --start-seed 371
 The separate outputs are
 `~/civvis-simulation-results/siege-staging-before-20260926.jsonl` and
 `~/civvis-simulation-results/siege-staging-after-20260926.jsonl`.
+
+## First pilot: broader floor not accepted for deployment
+
+Both versions completed all four pairs; within each source version the
+early-conquest toggle arms were byte-identical, so both runners exited 2 as
+documented. Across source versions, three seeds changed outcomes or action
+counts. Neither version won a game. Foreign-city totals include minors and
+must not be presented as capital captures.
+
+| Seed | Before: loss / turn / score / foreign held | After: loss / turn / score / foreign held |
+|---|---|---|
+| 37140000 | Science / 222 / 974 / 1 | Religion / 191 / 862 / 2 |
+| 37140001 | Science / 220 / 615 / 0 | Science / 220 / 615 / 0 |
+| 37140002 | Religion / 176 / 472 / 1 | Science / 228 / 645 / 1 |
+| 37140003 | Science / 223 / 586 / 0 | Culture / 156 / 356 / 0 |
+
+This does not establish improvement: two changed games ended earlier, and
+mean score fell 42.25. Inspection found that `siege_requirement` also serves
+prewar readiness. The tactical doctrine operates only against cities already
+at war, so changing the prewar budget is outside the defect being repaired.
+
+## Scoped follow-up plan
+
+Limit the floor to existing wars and add a regression proving both doctrine
+flags preserve the peacetime requirement. Repeat all four pairs on the same
+seeds against the original frozen baseline, retaining both arms and all
+outcomes. Store the follow-up separately as
+`~/civvis-simulation-results/siege-staging-wartime-20260926.jsonl`.
+The first pilot remains a distinct treatment and is not pooled with this one.
+All four focused tests pass for this variant. Follow-up executable SHA-256:
+`c0f160cccfc58f5141ae1a94ab308c3a563c88424b5ba6342e0125e5c18cf935`.
+The full-suite rerun and follow-up pilot are running; no deployment claim is
+made while their outcomes are pending.
