@@ -475,6 +475,20 @@ impl AdvancedAi {
         status
     }
 
+    /// `air_surge_status` through the scoring batch's frame: the batch's
+    /// first answer when one is open, a fresh derivation otherwise. See
+    /// `AdvancedAi::air_surge_status_frame`.
+    fn air_surge_status_framed(&self, g: &Game, pid: usize, plan: &AirSurge) -> AirSurgeStatus {
+        if let Some(Some(status)) = self.air_surge_status_frame.borrow().as_ref() {
+            return *status;
+        }
+        let status = self.air_surge_status(g, pid, plan);
+        if let Some(frame) = self.air_surge_status_frame.borrow_mut().as_mut() {
+            *frame = Some(status);
+        }
+        status
+    }
+
     /// Whether the empire may open a surge at all this turn.
     ///
     /// Deliberately the same shape as `may_form_war_plan`: one appointment,
@@ -1096,7 +1110,7 @@ impl AdvancedAi {
         let Some(plan) = self.air_surge_plan.as_ref() else {
             return self.domination_air_readiness_value(g, pid, cid, item, turns);
         };
-        let mut status = self.air_surge_status(g, pid, plan);
+        let mut status = self.air_surge_status_framed(g, pid, plan);
         if status.aerodromes_committed == 0 && self.air_surge_reserves_field_slot(g, pid, cid, item)
         {
             return Some(-10_000.0);
@@ -1154,7 +1168,11 @@ impl AdvancedAi {
                 self.domination_air_readiness_active(g, pid)
                     && Self::domination_air_readiness_counts(g, pid).0 == 0
             },
-            |plan| self.air_surge_status(g, pid, plan).aerodromes_committed == 0,
+            |plan| {
+                self.air_surge_status_framed(g, pid, plan)
+                    .aerodromes_committed
+                    == 0
+            },
         );
         if !needs_field {
             return false;
