@@ -42,6 +42,8 @@ ownership baseline, missing/malformed frames, and refounding a lost site.
 
 - `python3 -m unittest discover -s tools -p test_civ6_ladder.py`: 195 passed.
 - `python3 -m unittest discover -s tools -p test_civ6_tactics_ledger.py`: 37 passed.
+- `cargo test --profile ci --locked` after merging `5725e0ce7`: 4,289 passed,
+  zero failed, 53 existing ignores.
 - The exact saved native run now agrees with the full tactical report, as above.
 
 This changes reporting only. It neither changes the outcome of that game nor
