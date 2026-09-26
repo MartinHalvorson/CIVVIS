@@ -7256,6 +7256,7 @@ mod surprise_defense;
 /// `advanced/air_surge.rs`.
 mod air_city_assault;
 mod air_resource_builders;
+mod air_resource_settlement;
 mod air_surge;
 pub use air_city_assault::AirCityAssault;
 mod siege_resource_purchase;
