@@ -1355,6 +1355,7 @@ struct RefusalRecord {
 struct HostOrderRefusals {
     seen: std::collections::BTreeMap<OrderIdentity, RefusalRecord>,
     war_permissions: std::collections::BTreeMap<i64, bool>,
+    typed_war_permissions: std::collections::BTreeMap<(i64, String), bool>,
 }
 
 impl HostOrderRefusals {
@@ -1362,6 +1363,35 @@ impl HostOrderRefusals {
     /// Keep ordinary cooldowns while permission stays true or is unknown.
     fn observe_war_permissions(&mut self, state: &civvis::mirror::StateSnapshot) {
         for rival in &state.rivals {
+            if let Some(facts) = &rival.war_declarations {
+                for fact in facts {
+                    let Some(allowed) = fact.allowed else {
+                        continue;
+                    };
+                    let target = rival.player as i64;
+                    let prior = self
+                        .typed_war_permissions
+                        .insert((target, fact.statement.clone()), allowed);
+                    if allowed && prior == Some(false) {
+                        self.seen.retain(|(kind, verb, subject, _), record| {
+                            let statement = match verb.as_deref() {
+                                Some("DECLARE") => Some("DECLARE_SURPRISE_WAR"),
+                                other => other,
+                            };
+                            !(kind == "war"
+                                && *subject == Some(target)
+                                && statement == Some(fact.statement.as_str())
+                                && matches!(
+                                    record.reason.as_str(),
+                                    "not_at_war" | "cannot_declare"
+                                ))
+                        });
+                    }
+                }
+                // Some different war becoming available is not permission to
+                // repeat the exact type the native host just refused.
+                continue;
+            }
             let Some(allowed) = rival.can_declare else {
                 continue;
             };
@@ -5136,22 +5166,7 @@ fn translate(
             player,
             casus_belli,
         } => {
-            let statement = match casus_belli.as_str() {
-                "surprise_war" | "surprise" => "DECLARE_SURPRISE_WAR",
-                "formal_war" | "formal" => "DECLARE_FORMAL_WAR",
-                "holy_war" | "holy" => "DECLARE_HOLY_WAR",
-                "liberation_war" | "liberation" => "DECLARE_LIBERATION_WAR",
-                "reconquest_war" | "reconquest" => "DECLARE_RECONQUEST_WAR",
-                "protectorate_war" | "protectorate" => "DECLARE_PROTECTORATE_WAR",
-                "colonial_war" | "colonial" => "DECLARE_COLONIAL_WAR",
-                "territorial_war" | "territorial" => "DECLARE_TERRITORIAL_WAR",
-                "golden_age_war" | "golden_age" => "DECLARE_GOLDEN_AGE_WAR",
-                "retribution_war" | "retribution" => "DECLARE_WAR_OF_RETRIBUTION",
-                "ideological_war" | "ideological" => "DECLARE_IDEOLOGICAL_WAR",
-                // Joint wars require a partner and a deal, not a unilateral
-                // session. Unknown forms must not silently become surprise wars.
-                _ => return None,
-            };
+            let statement = civvis::game::native_war_statement(casus_belli)?;
             Some(Order {
                 kind: "war",
                 subject: host_player_target(mirror_state, state, *player),
@@ -18669,6 +18684,68 @@ mod order_postcondition_tests {
         assert_eq!(allowed.len(), 1, "the unrelated order still goes");
         assert_eq!(allowed[0].kind, "research");
         assert_eq!(withheld, vec!["unit:MOVE_TO did_not_move".to_string()]);
+    }
+
+    #[test]
+    fn native_war_type_permissions_reopen_only_the_exact_refused_type() {
+        let formal = order("war", Some(3), Some("DECLARE_FORMAL_WAR"), None);
+        let surprise = order("war", Some(3), Some("DECLARE"), None);
+        let other = order("war", Some(5), Some("DECLARE_FORMAL_WAR"), None);
+        let mut state = StateSnapshot {
+            turn: 53,
+            rivals: vec![civvis::mirror::StateRival {
+                player: 3,
+                can_declare: Some(false),
+                war_declarations: Some(vec![
+                    civvis::mirror::StateWarDeclaration {
+                        statement: "DECLARE_FORMAL_WAR".into(),
+                        allowed: Some(false),
+                    },
+                    civvis::mirror::StateWarDeclaration {
+                        statement: "DECLARE_SURPRISE_WAR".into(),
+                        allowed: Some(false),
+                    },
+                ]),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut refusals = HostOrderRefusals::default();
+        refusals.observe_war_permissions(&state);
+        for _ in 0..ORDER_REFUSAL_STRIKES {
+            refusals.observe(
+                &[
+                    refused(&formal, "cannot_declare"),
+                    refused(&surprise, "cannot_declare"),
+                    refused(&other, "cannot_declare"),
+                ],
+                53,
+            );
+        }
+        state.rivals[0].can_declare = Some(true);
+        state.rivals[0].war_declarations.as_mut().unwrap()[1].allowed = Some(true);
+        refusals.observe_war_permissions(&state);
+        assert!(refusals.withheld(&wire(&formal), 54).is_some());
+        assert!(refusals.withheld(&wire(&other), 54).is_some());
+        assert!(
+            refusals.withheld(&wire(&surprise), 54).is_none(),
+            "DECLARE aliases only Surprise War"
+        );
+        state.rivals[0].war_declarations.as_mut().unwrap()[0].allowed = None;
+        refusals.observe_war_permissions(&state);
+        assert!(refusals.withheld(&wire(&formal), 54).is_some());
+        state.rivals[0].war_declarations.as_mut().unwrap()[0].allowed = Some(true);
+        refusals.observe_war_permissions(&state);
+        assert!(refusals.withheld(&wire(&formal), 54).is_none());
+        assert!(refusals.withheld(&wire(&other), 54).is_some());
+        for _ in 0..ORDER_REFUSAL_STRIKES {
+            refusals.observe(&[refused(&formal, "cannot_declare")], 54);
+        }
+        refusals.observe_war_permissions(&state);
+        assert!(
+            refusals.withheld(&wire(&formal), 54).is_some(),
+            "unchanged permission cannot loop retries"
+        );
     }
 
     #[test]

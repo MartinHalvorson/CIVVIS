@@ -66,6 +66,20 @@ function CivvisWarDeclarations.canDeclareAny(diplomacy, target)
     return false;
 end
 
+-- Export every type, including an unknown read. A list stays valid JSON even
+-- when no permission is known; an aggregate true cannot authorize Formal War.
+function CivvisWarDeclarations.permissions(diplomacy, target)
+    local facts = {};
+    for statement in pairs(CivvisWarDeclarations.statements) do
+        facts[#facts + 1] = {
+            statement = statement,
+            allowed = CivvisWarDeclarations.isValid(diplomacy, target, statement),
+        };
+    end
+    table.sort(facts, function(a, b) return a.statement < b.statement; end);
+    return facts;
+end
+
 -- BEGIN holy-city observation
 -- ReligionScreen.lua:795 forwards every GetHolyCityID return to GetCity.
 -- Keep that call shape, but distinguish an API error from a missing city:
@@ -7665,6 +7679,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 				-- repeats the native validation for the exact selected war type.
 				-- An unavailable API stays unknown, not an invented treaty.
 				can_declare = CivvisWarDeclarations.canDeclareAny(diplomacy, otherId),
+				war_declarations = CivvisWarDeclarations.permissions(diplomacy, otherId),
 				-- ★★★★★ THE RELATIONSHIP ITSELF, ONE-TO-ONE. `can_declare` says a war is
 				-- LEGAL; nothing said whether it was ruinous. Every war, peace,
 				-- denounce and alliance decision on the board was taken blind to the
