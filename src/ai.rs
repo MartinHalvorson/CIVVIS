@@ -13533,13 +13533,29 @@ impl BasicAi {
             return BTreeSet::new();
         };
         let mut landmass = BTreeSet::new();
+        // The set is the answer, but the flood asked it about every
+        // neighbour of every plot — six ordered-set probes a plot, for every
+        // naval explorer, every turn (1.5% of a ladder game's CPU in the
+        // 2026-09-26 profile). A dense table in tile-vector order (see
+        // `first_visit` in the settle-site sweep) answers the same question
+        // with one index; it is marked exactly when the set is, so the two
+        // never disagree, and a plot the grid cannot index (none in practice
+        // — every neighbour is on the map) still asks the set.
+        let mut seen = vec![false; g.map.tiles.len()];
         let mut frontier = VecDeque::from([home]);
         while let Some(pos) = frontier.pop_front() {
             if !landmass.insert(pos) {
                 continue;
             }
+            if let Some(index) = g.map.tiles.index_of(pos) {
+                seen[index] = true;
+            }
             for next in g.nbrs(pos) {
-                if landmass.contains(&next) {
+                let visited = match g.map.tiles.index_of(next) {
+                    Some(index) => seen[index],
+                    None => landmass.contains(&next),
+                };
+                if visited {
                     continue;
                 }
                 if g.map
