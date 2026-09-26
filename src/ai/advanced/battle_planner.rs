@@ -437,6 +437,10 @@ pub(super) struct DangerField {
     reaches: Vec<(u32, Vec<Pos>)>,
     /// (tile, our unit, remaining HP) → each source's expected blow there.
     cache: BTreeMap<(Pos, u32, i32), Blows>,
+    strike_reach: bool,
+    /// A moving victim no longer blocks its old tile. Cache the extra reply
+    /// reach independently of its hypothetical remaining hit points.
+    moved_reach: BTreeMap<(u32, Pos, u32), bool>,
     /// `strike-reach`: hostiles whose strike reach held a tile the movement
     /// flood did not. Zero with the gene off.
     pub(super) widened: u32,
@@ -474,7 +478,7 @@ impl DangerField {
             } else {
                 flood
             };
-            if !reach.is_empty() {
+            if strike_reach || !reach.is_empty() {
                 reaches.push((unit.id, reach));
             }
         }
@@ -484,6 +488,8 @@ impl DangerField {
             probe,
             reaches,
             cache: BTreeMap::new(),
+            strike_reach,
+            moved_reach: BTreeMap::new(),
             widened,
         }
     }
@@ -514,26 +520,58 @@ impl DangerField {
         let garrisoned =
             self.probe.city_at(tile).is_some() || self.probe.encampment_at(tile).is_some();
         if !garrisoned {
+            let moving = self.strike_reach && tile != saved.pos;
+            let peer = moving
+                .then(|| saved.linked_to.and_then(|peer| self.probe.units.get(&peer)))
+                .flatten()
+                .filter(|peer| {
+                    peer.owner == saved.owner
+                        && peer.pos == saved.pos
+                        && peer.linked_to == Some(uid)
+                })
+                .cloned();
             self.probe.relocate(uid, tile);
+            if let Some(peer) = &peer {
+                self.probe.relocate(peer.id, tile);
+            }
             if let Some(unit) = self.probe.units.get_mut(&uid) {
                 unit.fortified = false;
                 unit.fortify_turns = 0;
                 unit.hp = hp;
             }
-            for (enemy, reach) in &self.reaches {
-                if reach.binary_search(&tile).is_err() {
+            for index in 0..self.reaches.len() {
+                let (enemy, reach) = &self.reaches[index];
+                let enemy = *enemy;
+                let already_reachable = reach.binary_search(&tile).is_ok();
+                let newly_reachable = !already_reachable && moving && {
+                    let key = (uid, tile, enemy);
+                    if let Some(reachable) = self.moved_reach.get(&key) {
+                        *reachable
+                    } else {
+                        // Price the reply on the proposed board, not a board
+                        // where our retreating formation still closes the
+                        // enemy's approach corridor. Preserve the original
+                        // reach as a conservative floor for all other paths.
+                        let reachable = strike_reach_of(&mut self.probe, self.pid, enemy)
+                            .binary_search(&tile)
+                            .is_ok();
+                        self.moved_reach.insert(key, reachable);
+                        reachable
+                    }
+                };
+                if !(already_reachable || newly_reachable) {
                     continue;
                 }
-                let Some(attacker) = self.probe.units.get(enemy) else {
+                let Some(attacker) = self.probe.units.get(&enemy) else {
                     continue;
                 };
                 let pair = if self.probe.rules.units[attacker.kind].has_ranged_attack() {
-                    self.probe.ranged_strike_strengths(*enemy, uid, tile)
+                    self.probe.ranged_strike_strengths(enemy, uid, tile)
                 } else {
-                    self.probe.melee_exchange_strengths(*enemy, uid)
+                    self.probe.melee_exchange_strengths(enemy, uid)
                 };
                 if let Some((att, def)) = pair {
-                    out.push((Some(*enemy), expected_damage(att, def)));
+                    out.push((Some(enemy), expected_damage(att, def)));
                 }
             }
             // A walled city or a standing Encampment strikes within two tiles
@@ -580,6 +618,12 @@ impl DangerField {
             self.probe.relocate(uid, saved.pos);
             if let Some(unit) = self.probe.units.get_mut(&uid) {
                 *unit = saved;
+            }
+            if let Some(peer) = peer {
+                self.probe.relocate(peer.id, peer.pos);
+                if let Some(unit) = self.probe.units.get_mut(&peer.id) {
+                    *unit = peer;
+                }
             }
         }
         let out = Arc::new(out);
