@@ -7556,6 +7556,10 @@ impl Game {
                 };
                 if tile.owner_city != Some(cid)
                     || tile.district.is_none()
+                    // Expansion2_InGameText: LOC_DISTRICT_REPAIR_LOCATION_FLOODED.
+                    // A Flood Barrier must clear flooding before repairs can start.
+                    || tile.flooded
+                    || tile.submerged
                     || self.unit_ids_at(*pos).iter().any(|unit| {
                         self.units[unit].owner != pid && self.is_at_war(pid, self.units[unit].owner)
                     })

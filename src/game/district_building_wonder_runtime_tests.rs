@@ -981,6 +981,45 @@ fn dar_e_mehr_ages_from_construction_and_resets_when_repaired() {
 }
 
 #[test]
+fn flooded_district_and_building_repairs_wait_for_dry_ground() {
+    let (mut game, city, position) = one_city(926_3776);
+    install_district(&mut game, city, position, "campus");
+    game.map.tiles.get_mut(&position).unwrap().pillaged = true;
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .pillaged_buildings
+        .insert(crate::name!("library"));
+    for (flooded, submerged) in [
+        (false, false),
+        (true, false),
+        (false, true),
+        (true, true),
+        (false, false),
+    ] {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.flooded = flooded;
+        tile.submerged = submerged;
+        for repair in ["district", "library"] {
+            let item = Item::Repair {
+                repair: Name::new(repair),
+                pos: position,
+            };
+            assert_eq!(game.can_produce(0, city, &item), !flooded && !submerged);
+            assert_eq!(
+                game.producible_items(0, city).contains(&item),
+                !flooded && !submerged
+            );
+        }
+    }
+}
+
+#[test]
 fn rock_bands_are_faith_bought_and_perform_at_local_venues() {
     let (mut game, city, position) = one_city(crate::rng::fixture_seed("ROCKBAND", 774_407));
     game.players[0].civics.insert(crate::name!("cold_war"));

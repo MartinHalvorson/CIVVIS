@@ -221,6 +221,13 @@ pub struct Plot {
     /// sea-level rise cannot reach.
     #[serde(default = "minus_one")]
     pub cl: i32,
+    /// Exact Gathering Storm tile state (`TerrainManager.IsFlooded` /
+    /// `IsSubmerged`). Unknown on legacy exports or failed native reads.
+    /// Observations override phase-derived flooding after climate is applied.
+    #[serde(default)]
+    pub flooded: Option<bool>,
+    #[serde(default)]
+    pub submerged: Option<bool>,
     /// Appeal as the host counts it (`Plot:GetAppeal`, the shipped
     /// PlotToolTip's read). The board derives appeal from its own six
     /// neighbours and cannot see a wonder's +2 in fog, a Governor's promotion
@@ -857,10 +864,10 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
             // The same defect as `apply_rivers`, `apply_landmass` and the
             // cliffs, one group of fields over: a field this pass does not
             // write keeps whatever `Game::new`'s generated world put there.
-            // These eight are the engine's own disaster bookkeeping, and the
-            // export carries none of them — the host has no accessor for the
-            // fertility on a plot, and its flood, drought and fallout state
-            // reach the board through `Plot:GetYield` instead (a flooded or
+            // These eight are the engine's own disaster bookkeeping. Exact
+            // flooding is restored after the climate phase in step_host_climate;
+            // the remaining weather reaches the board through `Plot:GetYield`
+            // instead (a flooded or
             // irradiated plot reads zero there, which is exactly what it pays).
             // So the honest value is nothing at all: a modelled eruption on a
             // mirrored board would be invented weather, and it would now be
@@ -11691,6 +11698,24 @@ fn step_host_climate(ctx: &mut HostStepCtx<'_>) {
     // The host's climate needs the finished map (the lowland bands) and the
     // finished city roster (a Flood Barrier keeps its ground).
     apply_host_climate(ctx.game, ctx.state);
+    // Phase alone cannot describe protected tiles or the host's exact timing.
+    // Apply observations LAST, on both rebuild and sync, before yield calibration.
+    // Missing fields retain the legacy phase-derived fallback.
+    for plot in ctx.snapshot.revealed.values() {
+        if let Some(tile) = ctx
+            .game
+            .map
+            .tiles
+            .get_mut(&crate::hex::offset_to_axial(plot.x, plot.y))
+        {
+            if let Some(flooded) = plot.flooded {
+                tile.flooded = flooded;
+            }
+            if let Some(submerged) = plot.submerged {
+                tile.submerged = submerged;
+            }
+        }
+    }
 }
 
 fn step_record_host_observed(ctx: &mut HostStepCtx<'_>) {
@@ -14710,3 +14735,6 @@ mod city_ranged_strength_tests;
 
 #[cfg(test)]
 mod envoy_permission_tests;
+
+#[cfg(test)]
+mod flood_state_tests;
