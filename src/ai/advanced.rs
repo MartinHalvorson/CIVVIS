@@ -11407,6 +11407,9 @@ impl AdvancedAi {
         if !self.deny_leaders {
             return None;
         }
+        // The rivals' culture pressures and this seat's victory focus both
+        // derive every major's city yields; one memo derives them once.
+        let _memo = g.query_memo();
         let targeted = self.active_victory_target(g).is_some();
         let culture_pressures = self.rival_culture_pressures(g);
         let denial = self.victory_denial_with_culture_pressures(g, pid, &culture_pressures)?;
@@ -11487,6 +11490,7 @@ impl AdvancedAi {
     /// raw signal in [`Self::victory_denial`] for pressure reporting and
     /// non-military counters.
     fn actionable_victory_denial(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
+        let _memo = g.query_memo();
         let culture_pressures = self.rival_culture_pressures(g);
         self.actionable_victory_denial_with_culture_pressures(g, pid, &culture_pressures)
     }
@@ -20341,22 +20345,12 @@ impl AdvancedAi {
     fn legal_purchase_actions(&self, g: &Game, pid: usize) -> Vec<Action> {
         let city_ids = g.purchase_action_city_ids(pid);
         let Some(pool) = self.work_pool.as_ref() else {
-            // Interactive and frozen-control agents retain the literal stock
-            // enumeration path. The specialized projection is a headless
-            // simulation optimization, gated by the attached work pool.
-            return g
-                .legal_actions_within(pid, ActionFamilies::PURCHASES | ActionFamilies::EMPIRE)
-                .into_iter()
-                .filter(|action| {
-                    matches!(
-                        action,
-                        Action::Buy { .. }
-                            | Action::BuyBuilding { .. }
-                            | Action::BuyDistrict { .. }
-                            | Action::BuyPlot { .. }
-                    )
-                })
-                .collect();
+            // The purchase-only projection returns exactly the stock
+            // `legal_actions_within(PURCHASES | EMPIRE)` purchases in the same
+            // order (asserted in `purchase_price_memo_tests` and here in
+            // `tests.rs`) without enumerating the empire family's other
+            // actions only to filter them out.
+            return g.legal_purchase_actions(pid);
         };
         if pool.threads() == 1 || city_ids.len() < 2 {
             return g.legal_purchase_actions(pid);
