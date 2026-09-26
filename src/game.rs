@@ -1356,6 +1356,17 @@ pub struct QueryCache {
     // recomputed an answer the engine had already produced for that tile that
     // turn -- 34 evaluations per tile per turn, of which one was new.
     appeal: std::cell::RefCell<Option<BTreeMap<Pos, i32>>>,
+    /// `modeled_tile_yields` per plot.
+    ///
+    /// ★★★★ THE SAME PLOT PRICED TWICE PER CITY, EVERY TIME. One city-yield
+    /// derivation asks every owned plot for its yields to plan the citizens,
+    /// then asks the worked plots again to sum them; the 2026-09-26 profile
+    /// put `modeled_tile_yields` at 7.6% of a ladder game's CPU, 2.2% of it
+    /// that second ask. A plot's modeled yields read the map, its owner's
+    /// techs, civics and policies and its neighbours — nothing a `&self`
+    /// query can change — so the answer is kept for the memo scope, exactly
+    /// like `appeal`.
+    tile_yields: std::cell::RefCell<Option<BTreeMap<Pos, Yields>>>,
     traversal: std::cell::RefCell<Option<BTreeMap<u32, TraversalClass>>>,
     /// Every unit currently flying a patrol, as `(owner, tile)`.
     ///
@@ -1638,6 +1649,7 @@ impl Drop for QueryMemo<'_> {
         if self.outermost {
             *self.game.query_memo.yields.borrow_mut() = None;
             *self.game.query_memo.appeal.borrow_mut() = None;
+            *self.game.query_memo.tile_yields.borrow_mut() = None;
             *self.game.query_memo.traversal.borrow_mut() = None;
             *self.game.query_memo.air_patrols.borrow_mut() = None;
             *self.game.query_memo.passage_improvements.borrow_mut() = None;
