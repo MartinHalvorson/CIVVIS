@@ -16466,6 +16466,69 @@ fn support_search_respects_ram_and_tower_wall_eras() {
 }
 
 #[test]
+fn foreign_city_assault_reserves_breach_support_for_a_small_infantry_group() {
+    let mut game = Game::new_full(2, 24, 16, 71_012, 160, 0, false);
+    for pid in 0..2 {
+        game.current = pid;
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    game.current = 0;
+    let home = game.player_city_ids(0)[0];
+    let target = game.player_city_ids(1)[0];
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    let position = game.cities[&home].pos;
+    game.spawn_test_unit("warrior", 0, position);
+    game.spawn_test_unit("warrior", 0, position);
+    game.players[0].techs.insert(crate::name!("masonry"));
+    game.cities.get_mut(&home).unwrap().queue.clear();
+    game.cities.get_mut(&target).unwrap().buildings = vec![crate::name!("walls")];
+    game.cities.get_mut(&target).unwrap().wall_hp = 100;
+    game.at_war.insert((0, 1));
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(target),
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.base.book_pos = 4;
+
+    let counts = ai.counts(&game, 0);
+    assert!(
+        ai.support_unit_value(&game, 0, home, "battering_ram", &plan, &counts) > 0.0,
+        "two eligible infantry on a walled city objective need their breach element"
+    );
+    assert!(ai.reserve_foreign_city_assault_support(&mut game, 0, &plan));
+    assert!(matches!(
+        game.cities[&home].queue.first(),
+        Some(Item::Unit { unit }) if unit == "battering_ram"
+    ));
+
+    game.cities.get_mut(&home).unwrap().queue.clear();
+    game.spawn_test_unit("battering_ram", 0, position);
+    assert!(
+        !ai.reserve_foreign_city_assault_support(&mut game, 0, &plan),
+        "an existing breach element must not open a duplicate support queue"
+    );
+    game.at_war.clear();
+    assert!(
+        !ai.reserve_foreign_city_assault_support(&mut game, 0, &plan),
+        "a foreign city is not an assault objective after peace"
+    );
+}
+
+#[test]
 fn support_search_builds_air_defense_only_for_a_real_hostile_air_threat() {
     let mut game = Game::new_full(2, 24, 16, 71_011, 160, 0, false);
     for pid in 0..2 {
