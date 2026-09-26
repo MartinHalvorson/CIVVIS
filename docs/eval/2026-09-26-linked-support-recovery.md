@@ -116,8 +116,13 @@ SHA-256 hashes of frozen executables:
 | `civvis_orders` | `ecae007557caa21fa5b085380fba6b100c920b9c3e8bc679caab45d803065d2a` | `3cb499065a97bf31f2365ab536a949a99566f150351c5d8aa39f66217f9dad2c` |
 | `victory_eval` | `4e45850a390f0b918a67b405d925b7d100453b67f1a761d098caaf4207fbcebc` | `5158fa3f8391fdfb4170291c294804cf11997b52e984f21e43bcefcc733556c6` |
 
-Both evaluators used `cargo build --profile ci --locked --features developer-tools
---bin victory_eval`. The candidate orders executable also enabled
+Both evaluators used:
+
+```sh
+cargo build --profile ci --locked --features developer-tools --bin victory_eval
+```
+
+The candidate orders executable also enabled
 `developer-tools`; that empty feature enables extra binary targets and has no
 runtime conditional code. Exact replay arguments and all 20 forced policy flags
 are in `provenance.json`.
