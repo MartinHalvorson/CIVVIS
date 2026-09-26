@@ -6038,6 +6038,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "era_score",
         "trade_routes",
         "tradeable_luxuries",
+        "tradeable_strategics",
         // Rival victory progress as the shipped World Rankings screen shows it.
         // `the_schema_allowlists_cover_every_declared_field` fails if a new
         // StateRival field is missing here.
