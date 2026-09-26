@@ -14591,6 +14591,10 @@ impl AdvancedAi {
             plan.strategy
         };
         if g.players[pid].research.is_none() {
+            // Every candidate's value reads the empire's science rate, and a
+            // comparator asks for two values per comparison: under one memo
+            // each city's yields are derived once for the whole choice.
+            let memo = g.query_memo();
             let mut available = BasicAi::era_window_techs(g, pid);
             let science_commitment = objective == GrandStrategy::Science
                 || self.diplomatic_science_backup(g, pid, plan)
@@ -14979,6 +14983,7 @@ impl AdvancedAi {
                     };
                     think!(self.journal(), Research, Decision, "Researching {}", plain(&tech); "{why}");
                 }
+                drop(memo);
                 let _ = g.apply(
                     pid,
                     &Action::Research {
@@ -14988,6 +14993,7 @@ impl AdvancedAi {
             }
         }
         if g.players[pid].civic.is_none() {
+            let memo = g.query_memo();
             let available = g.available_civics(pid);
             // A victory beeline cannot usefully precede the government's
             // policy capacity. Science formerly aimed at Space Race from turn
@@ -15149,6 +15155,7 @@ impl AdvancedAi {
                     think!(self.journal(), Research, Decision, "Adopting the {} civic", plain(&civic);
                            "{why}");
                 }
+                drop(memo);
                 let _ = g.apply(
                     pid,
                     &Action::Civic {
@@ -25424,21 +25431,24 @@ impl AdvancedAi {
 
         let city_ids = g.player_city_ids(pid);
         let city_count = city_ids.len();
-        let shortfalls: Vec<(u32, i64)> = city_ids
-            .iter()
-            .map(|cid| (*cid, (-g.city_amenity_surplus(&g.cities[cid])).max(0)))
-            .collect();
+        // Each surplus values the whole empire's luxury allocation; one memo
+        // shares it across the cities.
+        let shortfalls: Vec<(u32, i64)> = {
+            let _memo = g.query_memo();
+            city_ids
+                .iter()
+                .map(|cid| (*cid, (-g.city_amenity_surplus(&g.cities[cid])).max(0)))
+                .collect()
+        };
         let short_cities = shortfalls
             .iter()
             .filter(|(_, shortfall)| *shortfall > 0)
             .count();
         let total_shortfall: i64 = shortfalls.iter().map(|(_, shortfall)| *shortfall).sum();
-        let severe: Vec<(u32, i64)> = city_ids
+        let severe: Vec<(u32, i64)> = shortfalls
             .iter()
-            .filter_map(|cid| {
-                let shortfall = (-g.city_amenity_surplus(&g.cities[cid])).max(0);
-                (shortfall >= 3).then_some((*cid, shortfall))
-            })
+            .copied()
+            .filter(|(_, shortfall)| *shortfall >= 3)
             .collect();
         // The ordinary handoff protects all active Conquest queues. Its one
         // exception is deliberately much stricter than the peaceful -3 band:
