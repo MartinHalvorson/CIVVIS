@@ -204,6 +204,7 @@ already a friend and not denounced either way:
 |---|---:|---:|---:|---:|---:|---:|
 | Immortal, Domination-lane rivals | **+10.65 pp** | **+5.22** | **4 → 19** | 22 → 25 | 3.06 → 1.81 | 2.5 of 3 |
 | Immortal, adaptive rivals (16) | +1.11 pp | +2.60 | 0 → 0 | 16 → 16 | 0.75 → 0.44 | 3 of 3 |
+| Immortal, adaptive rivals, fresh seeds 64000000+ (2026-09-27) | **+1.56 pp** | **+3.43** | 0 → 0 | 30 → 32 | 0.97 → 0.16 | 2.9 of 3 |
 | King, adaptive rivals (16) | −0.10 pp | −0.13 | 1 → 2 | 16 → 16 | — | — |
 
 The focal seat's 19 wins against Domination-lane rivals are 9 Religious, 5
@@ -215,7 +216,17 @@ from Neutral, −40 from Unfriendly). A friendship-only deal now crosses the
 bridge as a `friendship` order the agent opens as the shipped view does,
 `RequestSession(…, "DECLARE_FRIEND")` (#3811), only toward a rival the host
 reads as Friendly, and the verdict reads the host's `GetDeclaredFriendshipTurn`.
-The gene stays unforced; forcing it is what would let the ladder find out.
+The gene itself now chooses among the rivals the host reads as Friendly
+toward us (#3814, `Player::observed_diplomatic_state`), so a Neutral strongest
+rival no longer holds the offer while a Friendly one waits; on a native board
+nothing is observed and play is byte-identical. The gene stays unforced;
+forcing it is what would let the ladder find out.
+
+The fresh-seed row (2026-09-27, main `621c5c6`, 250-turn clock, the games end
+at the first rival victory) repeats the adaptive-rival reading on 32 seeds the
+first block never saw: every game the seat survived, and it lost one sixth of
+the cities it lost without the gene. Pooled over the 48 adaptive Immortal
+games the share reading is positive in both blocks.
 
 ## What was decided
 
@@ -241,8 +252,15 @@ The gene stays unforced; forcing it is what would let the ladder find out.
   Settlers keep every capture lesson, and a Builder still refuses a tile a
   raider can take this turn.
 - **Shipped, off** (#3810): `befriend-the-strongest` — against Domination-lane
-  rivals the focal seat's wins 4 → 19 of 32 (z +5.22 on share); not forced on
-  the live seat, whose order translation cannot send a friendship yet.
+  rivals the focal seat's wins 4 → 19 of 32 (z +5.22 on share); against
+  adaptive rivals +1.11 pp (16) and +1.56 pp (32 fresh, z +3.43). The live
+  seat can now carry it: the friendship order (#3811) and the host's attitude
+  (#3814).
+- **Recommended to the operator, not changed**: forcing `befriend-the-strongest`
+  on the live seat. The bridge's `DECLARE_FRIEND` session has not yet run in a
+  native game; its answer arrives as a leader scene the autoclose already
+  dismisses for delegations and denouncements, and the verdict ledger will
+  show `friendship` orders as verified (`friendship_turn`) or `not_friends`.
 - **Recommended to the operator, not changed**: the Science lane at Immortal
   (+1.46 pp, z +2.62, over the unassigned seat), which the native ladder
   already runs.
