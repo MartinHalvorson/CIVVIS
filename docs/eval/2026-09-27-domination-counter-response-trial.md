@@ -38,3 +38,30 @@ activation. No tuning follows fresh outcomes without a new registration.
 Evidence root: `~/civvis-war-evidence-20260926/prince-counter-response/`.
 `preregistration.json` records the complete design. Build, native replay, and
 fresh results are pending. No fresh game has started.
+
+## Native preflight rejected before fresh games
+
+The registered source passed the full suite (4,390 passed, zero failed,
+53 ignored), 60 existing counter tests, and 124 Domination tests. A probe of
+the exact focal evaluator constructor reads `counter_in_lane=false` in OFF,
+`true` in ON, and `Some(Domination)` in both arms. The unchanged ledger,
+manifest, and firing gate pass (326/326 shown to fire, zero waivers).
+
+Both persistent native replays completed all 202 frames, exit zero, but startup
+metadata lists `counter-in-lane` as active in **both** arms. The OFF command
+does include `--without counter-in-lane`. Source inspection shows
+`configure_live_bridge` applies explicit withholds after force configuration;
+the startup `treatments` field instead projects the ledger/forced list without
+subtracting those withholds. This is a reporting defect, not proof that the
+runtime setter failed.
+
+The required native identity assertion rejected the preflight. No pilot freeze
+or start receipt was written. Four external runners subsequently failed to
+read the absent start receipt before invoking any simulation binary; no fresh
+trial game started and no outcome was inspected. `preflight-abort.json` retains
+the abort. A separate repair, #3808, verifies the startup identity against the
+configured controller. The original registration, binaries, constructor
+readback, and both native replays remain preserved. Before fresh games, record
+the corrected source and any newer-main changes in a new registration receipt;
+retain the same reserved seeds and fixed-rival comparison. The host setting
+remains ON.
