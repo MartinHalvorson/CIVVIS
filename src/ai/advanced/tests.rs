@@ -3766,6 +3766,45 @@ fn timed_war_uses_unique_replacements_and_exact_upgrade_quotes() {
     );
 }
 
+/// The one-pass catalog names, for every civilization, exactly the units the
+/// per-unit `Game::player_unit_replacement` walk named.
+#[test]
+fn the_unit_catalog_matches_the_per_unit_replacement_walk_for_every_civilization() {
+    let (mut game, _, _) = timed_war_fixture(940_004);
+    let civs: Vec<String> = game.rules.civs.keys().map(|civ| civ.to_string()).collect();
+    assert!(civs.len() > 10, "the rules carry the civilization roster");
+    let mut replaced = 0;
+    for civ in civs {
+        game.players[0].civ = civ.clone();
+        let walked: Vec<Name> = game
+            .rules
+            .units
+            .iter()
+            .filter(|(_, spec)| {
+                spec.buildable && spec.unique_to.as_deref().is_none_or(|owner| owner == civ)
+            })
+            .map(|(name, _)| game.player_unit_replacement(0, *name))
+            .filter(|actual| {
+                let spec = &game.rules.units[*actual];
+                spec.buildable && spec.unique_to.as_deref().is_none_or(|owner| owner == civ)
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let catalog = AdvancedAi::player_unit_catalog(&game, 0);
+        replaced += usize::from(
+            catalog
+                .iter()
+                .any(|unit| game.rules.units[*unit].replaces.is_some()),
+        );
+        assert_eq!(catalog, walked, "{civ}");
+    }
+    assert!(
+        replaced > 10,
+        "most civilizations field a unique replacement"
+    );
+}
+
 #[test]
 fn timed_war_rejects_an_unavailable_strategic_resource() {
     let (mut game, _, _) = timed_war_fixture(940_003);
