@@ -5101,6 +5101,9 @@ pub struct AdvancedAi {
     /// `builder-supply-floor`.
     builder_supply_floor: bool,
 
+    /// One supply colony chosen by an otherwise untargeted Settler. Its
+    /// guarded permission is rechecked while the ordinary escort walks it.
+    air_resource_colony_target: Option<(u32, Pos)>,
     // ---- append: c-d ------------------------------------------------
     /// Version 2 of the Culture clock forecast: project secular and religious
     /// Tourism through each rival's current international modifiers. The
@@ -6651,9 +6654,6 @@ pub struct AdvancedAi {
     /// settler, and the turn its retirement expires: dead for EVERY settler
     /// until then. Empire memory, not unit memory — it survives a remap.
     settler_capture_scars: BTreeMap<Pos, u32>,
-    /// One supply colony chosen by an otherwise untargeted Settler. Its
-    /// guarded permission is rechecked while the ordinary escort walks it.
-    air_resource_colony_target: Option<(u32, Pos)>,
     /// A Settler always has somewhere to go: exhaustion asks wider questions
     /// instead of holding, and a watchdog bounds every other hold. Opt-in
     /// gene `settler-never-idles`; see `advanced/settler_never_idles.rs`.
@@ -8345,6 +8345,7 @@ impl AdvancedAi {
             amenity_project_preemption_2: false,
             builder_supply_floor: false,
 
+            air_resource_colony_target: None,
             // ---- append: c-d ----------------------------------------
             culture_lane_forecast_2: false,
             capture_hold_chain: false,
@@ -8542,7 +8543,6 @@ impl AdvancedAi {
             summoned_guard_turn: BTreeMap::new(),
             settler_vanished: Vec::new(),
             settler_capture_scars: BTreeMap::new(),
-            air_resource_colony_target: None,
             settler_never_idles: false,
             swap_rotation: false,
             swap_rotation_2: false,
