@@ -1,6 +1,86 @@
 use super::*;
 
 impl AdvancedAi {
+    /// Keep useful capture cavalry when training the preferred successor
+    /// would spend the Aluminum that makes the launch wing viable.
+    pub(super) fn air_resource_capture_body(
+        &self,
+        g: &Game,
+        pid: usize,
+        preferred: (Name, bool),
+    ) -> (Name, bool) {
+        if !self.air_resource_wing_reserved(g, pid) {
+            return preferred;
+        }
+        let ready = |kind| {
+            g.units
+                .values()
+                .filter(|unit| {
+                    unit.owner == pid
+                        && unit.hp >= 50
+                        && Self::war_unit_is_at_least(g, pid, unit.kind, kind)
+                })
+                .count()
+                >= air_surge::AIR_SURGE_LAUNCH_BODIES
+        };
+        let spec = &g.rules.units[preferred.0];
+        let Some(resource) = spec.requires_resource else {
+            return preferred;
+        };
+        if ready(preferred.0)
+            || self.air_resource_spending_preserves_wing(
+                g,
+                pid,
+                resource,
+                spec.resource_maintenance,
+                spec.resource_cost,
+            )
+        {
+            return preferred;
+        }
+        g.units
+            .values()
+            .filter(|unit| unit.owner == pid && unit.hp >= 50)
+            .map(|unit| unit.kind)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .filter(|kind| {
+                let spec = &g.rules.units[*kind];
+                spec.class == "military"
+                    && spec.is_melee_capable()
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && (!preferred.1
+                        || matches!(
+                            spec.promotion_class.as_str(),
+                            "light_cavalry" | "heavy_cavalry"
+                        ))
+                    && ready(*kind)
+            })
+            .max_by(|left, right| {
+                g.rules.units[*left]
+                    .strength
+                    .total_cmp(&g.rules.units[*right].strength)
+                    .then_with(|| right.cmp(left))
+            })
+            .map(|kind| {
+                let cavalry = matches!(
+                    g.rules.units[kind].promotion_class.as_str(),
+                    "light_cavalry" | "heavy_cavalry"
+                );
+                (kind, cavalry)
+            })
+            .unwrap_or(preferred)
+    }
+
+    pub(super) fn air_surge_body_preserving_wing(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> Option<(Name, bool)> {
+        Self::air_surge_body(g, pid)
+            .map(|preferred| self.air_resource_capture_body(g, pid, preferred))
+    }
+
     fn air_resource_wing_reserved(&self, g: &Game, pid: usize) -> bool {
         if !self.air_surge_enabled()
             || self.active_victory_target(g) != Some(VictoryTarget::Domination)

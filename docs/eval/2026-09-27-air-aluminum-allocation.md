@@ -85,6 +85,15 @@ prototype is not ready to ship. Eight separate fresh seeds38021000–38021007
 were registered at03:32:56UTC before refinement. They will be reported as a
 separate block, preserving the prototype's null and negative results.
 
+The refinement chooses healthy held capture cavalry when spending for the
+preferred successor would displace the wing. New appointment, standing
+census, launch estimate and existing appointment review use the same choice.
+Ready Helicopters and spare supply keep the original choice. The real-engine
+integration now produces two aircraft, legally rebases one forward, declares
+with the retained Cavalry, and executes spotting before the volley and capture
+of a weakened city. Focused suite:16 passed; full validation and the separate
+fresh block are pending. No native result is inferred from this fixture.
+
 ## Independent observed-income limitation
 
 A separate external read-only fixture against the frozen parent exposes another

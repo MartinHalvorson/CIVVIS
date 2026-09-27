@@ -619,7 +619,8 @@ impl AdvancedAi {
             .map(|bomber| g.rules.units[bomber].cost)
             .unwrap_or(0.0)
             * missing_bombers as f64;
-        let escort_cost = Self::air_surge_body(g, pid)
+        let escort_cost = self
+            .air_surge_body_preserving_wing(g, pid)
             .map(|(body, _)| g.rules.units[body].cost)
             .unwrap_or(0.0)
             * missing_bodies as f64;
@@ -632,12 +633,12 @@ impl AdvancedAi {
     /// The package members already standing, counted without an appointment:
     /// `(airfields, bombers, escort bodies)`. The estimate above runs before
     /// any plan exists, so unlike [`Self::air_surge_status`] this cannot read
-    /// a plan's chosen body and asks [`Self::air_surge_body`] what the escort
+    /// a plan's chosen body and asks [`Self::air_surge_body_preserving_wing`] what the escort
     /// would be today.
     fn air_surge_standing_package(&self, g: &Game, pid: usize) -> (usize, usize, usize) {
         let field = Self::air_surge_field(g, pid);
         let bomber = Self::air_surge_bomber(g, pid);
-        let body = Self::air_surge_body(g, pid);
+        let body = self.air_surge_body_preserving_wing(g, pid);
         let airfields = g
             .player_city_ids(pid)
             .into_iter()
@@ -683,7 +684,7 @@ impl AdvancedAi {
     /// of a legal major that a Bomber based at home can reach and a land body
     /// can walk to.
     pub(crate) fn choose_air_surge(&self, g: &Game, pid: usize) -> Option<AirSurge> {
-        let (body_unit, body_is_cavalry) = Self::air_surge_body(g, pid)?;
+        let (body_unit, body_is_cavalry) = self.air_surge_body_preserving_wing(g, pid)?;
         // A running war fixes the target: the counter arms against the
         // civilization already fighting us, never against a third party.
         let front = Self::air_surge_fronts(g, pid).first().copied();
@@ -876,6 +877,8 @@ impl AdvancedAi {
                     plan.tech_turn = Some(g.turn);
                     self.air_surge_census.breakthroughs += 1;
                 }
+                (plan.body_unit, plan.body_is_cavalry) =
+                    self.air_resource_capture_body(g, pid, (plan.body_unit, plan.body_is_cavalry));
                 let status = self.air_surge_status(g, pid, &plan);
                 let reserve = g.standard_duration(AIR_SURGE_ENDGAME_RESERVE);
                 let grace = g.standard_duration(AIR_SURGE_ALUMINUM_GRACE);

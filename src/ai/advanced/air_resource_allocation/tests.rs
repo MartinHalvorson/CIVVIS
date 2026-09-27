@@ -425,21 +425,7 @@ fn launch_appointment_uses_capture_cavalry_that_does_not_displace_its_wing() {
     let (mut g, mut ai, _, cities) = fixture(8.0);
     let objective = g.found_city_for(1, (20, 12), None);
     g.players[0].explored.extend(g.map.tiles.keys().copied());
-    for cid in cities {
-        let item = Item::Unit {
-            unit: crate::name!("bomber"),
-        };
-        g.apply(
-            0,
-            &Action::Produce {
-                city: cid,
-                item: item.clone(),
-            },
-        )
-        .unwrap();
-        g.cities.get_mut(&cid).unwrap().production = g.item_cost_for_city(0, cid, &item);
-    }
-    next_owned_turn(&mut g);
+    produce_wing(&mut g, cities);
     ai.maintain_air_surge(&g, 0);
     // Appointment starts in Beeline; the next review applies actual readiness.
     ai.maintain_air_surge(&g, 0);
@@ -457,4 +443,154 @@ fn launch_appointment_uses_capture_cavalry_that_does_not_displace_its_wing() {
         plan.body_unit,
         plan.phase
     );
+    assert_eq!(ai.air_surge_launch_estimate(&g, 0), (0, 0));
+}
+
+fn produce_wing(g: &mut Game, cities: [u32; 2]) {
+    for cid in cities {
+        let item = Item::Unit {
+            unit: crate::name!("bomber"),
+        };
+        g.apply(
+            0,
+            &Action::Produce {
+                city: cid,
+                item: item.clone(),
+            },
+        )
+        .unwrap();
+        g.cities.get_mut(&cid).unwrap().production = g.item_cost_for_city(0, cid, &item);
+    }
+    next_owned_turn(g);
+    assert_eq!(
+        g.units
+            .values()
+            .filter(|unit| unit.owner == 0 && unit.kind == "bomber")
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn an_existing_helicopter_appointment_releases_the_reserved_wing() {
+    let (mut g, mut ai, _, cities) = fixture(8.0);
+    g.found_city_for(1, (20, 12), None);
+    ai.air_surge_2 = false;
+    ai.air_surge = false;
+    let appointed = ai.choose_air_surge(&g, 0).unwrap();
+    assert_eq!(appointed.body_unit, "helicopter");
+    ai.air_surge_plan = Some(appointed);
+    ai.enable_air_surge_2();
+    produce_wing(&mut g, cities);
+    ai.maintain_air_surge(&g, 0);
+    let plan = ai.air_surge_plan.as_ref().unwrap();
+    assert_eq!(plan.body_unit, "cavalry");
+    assert_eq!(plan.phase, air_surge::AirSurgePhase::Strike);
+}
+
+#[test]
+fn escort_choice_keeps_ready_helicopters_and_inactive_controls() {
+    for case in ["ready_helicopters", "surplus", "off", "science", "wounded"] {
+        let (mut g, mut ai, cavalry, _) = fixture(8.0);
+        match case {
+            "ready_helicopters" => {
+                g.map.tiles.get_mut(&(12, 12)).unwrap().resource = Some(crate::name!("aluminum"));
+                for uid in cavalry.iter().take(2) {
+                    g.apply(0, &Action::UpgradeUnit { unit: *uid }).unwrap();
+                }
+                assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 2);
+            }
+            "surplus" => {
+                g.map.tiles.get_mut(&(12, 12)).unwrap().resource = Some(crate::name!("aluminum"));
+            }
+            "off" => {
+                ai.air_surge_2 = false;
+                ai.air_surge = false;
+            }
+            "science" => {
+                ai = AdvancedAi::targeting(VictoryTarget::Science);
+                ai.enable_air_surge_2();
+            }
+            "wounded" => {
+                for uid in cavalry {
+                    g.units.get_mut(&uid).unwrap().hp = 49;
+                }
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            ai.air_surge_body_preserving_wing(&g, 0),
+            AdvancedAi::air_surge_body(&g, 0),
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn retained_cavalry_spots_then_captures_with_the_physically_produced_wing() {
+    let (mut g, mut ai, cavalry, cities) = fixture(8.0);
+    let objective = g.found_city_for(1, (20, 12), None);
+    g.players[0].explored.extend(g.map.tiles.keys().copied());
+    produce_wing(&mut g, cities);
+    let first_plane = g
+        .units
+        .values()
+        .filter(|unit| unit.owner == 0 && unit.kind == "bomber")
+        .min_by_key(|unit| g.wdist(unit.pos, (6, 12)))
+        .unwrap()
+        .id;
+    g.apply(
+        0,
+        &Action::AirRebase {
+            unit: first_plane,
+            to: (12, 12),
+        },
+    )
+    .unwrap();
+    next_owned_turn(&mut g);
+    g.apply(
+        0,
+        &Action::MoveTo {
+            unit: cavalry[2],
+            to: (16, 12),
+        },
+    )
+    .unwrap();
+    next_owned_turn(&mut g);
+    ai.maintain_air_surge(&g, 0);
+    ai.maintain_air_surge(&g, 0);
+    assert_eq!(
+        ai.air_surge_plan.as_ref().unwrap().phase,
+        air_surge::AirSurgePhase::Strike
+    );
+    g.players[0].denounced_until.insert(1, g.turn + 25);
+    g.players[0].denounced_since.insert(1, g.turn - 5);
+    assert!(ai.air_surge_opening(&mut g, 0, 1));
+    assert!(g.is_at_war(0, 1));
+    assert!(cavalry.iter().all(|uid| g.units[uid].kind == "cavalry"));
+    assert!(!g.player_can_see(0, (20, 12)));
+    let mut ground_plan = ai.plan.clone().unwrap();
+    ground_plan.target_city = Some(objective);
+    g.cities.get_mut(&objective).unwrap().hp = 30;
+    let before = g.log.len();
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &ground_plan);
+    assert!(reserved.contains(&cavalry[2]));
+    let actions: Vec<_> = g
+        .log
+        .iter()
+        .skip(before)
+        .map(|(_, action)| action)
+        .collect();
+    let first_bomb = actions
+        .iter()
+        .position(|a| matches!(a, Action::AirStrike { .. }))
+        .unwrap();
+    assert!(
+        first_bomb > 0,
+        "cavalry must establish sight before the volley"
+    );
+    assert_eq!(g.cities[&objective].owner, 0);
+    assert_eq!(g.units[&cavalry[2]].pos, (20, 12));
+    assert!(ai.planned_air_city_assault().unwrap().moved_to_spot);
+    assert!(g.legal_city_disposition_actions(0).is_empty());
 }
