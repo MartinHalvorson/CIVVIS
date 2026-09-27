@@ -72,8 +72,18 @@ refresh, and the full observed-player dispatcher. On the unchanged implementatio
 six tests failed and two controls passed. With the repair, all eight pass.
 The dispatcher fixture goes from three refused orders to zero and executes an
 independent army move. Command: `cargo test --profile ci --locked --lib
-envoy_readback_tests`. Full-suite and cost results remain pending. These are
-correctness checks, not a new campaign-strength experiment.
+envoy_readback_tests`.
+
+On integrated revision `5d8fe2689` (including main `ab7c2c8b8`),
+`cargo test --profile ci --locked` completed successfully: 4,381 passed,
+zero failed, 53 ignored across all targets and doctests.
+`python3 tools/rust_quality.py --base origin/main --head HEAD` passed;
+`git diff --check origin/main...` passed. Full logs are retained in the
+`envoy-refusal-37930100/` evidence directory above. CI cost validation remains
+pending on the final published revision. No additional campaign soak is
+claimed: this bounded readback repair is covered by the eight regression
+fixtures and full suite, with two exact known-game diagnostic reproductions.
+These are correctness checks, not a new campaign-strength experiment.
 
 No later Recon purchase success, aluminum allocation repair, stronger
 Domination result, native quit-dialog recovery or resumed native game is claimed.
