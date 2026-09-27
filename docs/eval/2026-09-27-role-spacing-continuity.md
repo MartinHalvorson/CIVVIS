@@ -134,3 +134,80 @@ arms. This replication is new validation, not part of the original preregistered
 eight pairs. Native202-frame replay remains action-identical and supplies no
 native strength evidence. OFF and WITHHELD; higher native difficulty remains
 unproved.
+
+## Complete sixteen-pair replication: Domination gain does not repeat
+
+All four replication segments complete with exit zero and all sixteen pairs
+change applied actions. The source, copied binaries, current parent-main21
+policies and rivals remain fixed. Focal wins rise2 to3, but Domination wins
+fall1 to0. Home capital losses are1 in both legs. Major cities ever observed
+held sum falls49 to29, and foreign capitals held at end fall5 to3. The policy
+does not establish a consistent improvement in wars.
+
+| Seed | Off ending / focal score | On ending / focal score | Major cities ever, off/on | Foreign capitals at end, off/on | Home capital held, off/on |
+| --- | --- | --- | --- | --- | --- |
+| 37918000 | culture 223 loss / 795 | religious 191 loss / 593 | 0/0 | 0/0 | yes/yes |
+| 37918001 | science 225 loss / 861 | score 250 win / 1327 | 0/3 | 0/1 | yes/yes |
+| 37918002 | score 250 loss / 1013 | score 250 win / 1975 | 3/18 | 0/1 | yes/yes |
+| 37918003 | culture 163 loss / 527 | culture 159 loss / 532 | 0/0 | 0/0 | yes/yes |
+| 37918004 | diplomatic 214 loss / 604 | culture 214 loss / 561 | 1/0 | 0/0 | yes/yes |
+| 37918005 | domination 242 win / 2094 | score 250 win / 1162 | 19/2 | 3/0 | yes/yes |
+| 37918006 | score 250 win / 1513 | science 244 loss / 1096 | 11/0 | 1/0 | yes/yes |
+| 37918007 | science 200 loss / 550 | religious 167 loss / 558 | 0/0 | 0/0 | yes/yes |
+| 37918008 | diplomatic 225 loss / 1005 | science 250 loss / 986 | 1/3 | 0/0 | yes/yes |
+| 37918009 | score 250 loss / 792 | culture 189 loss / 531 | 0/0 | 0/0 | yes/yes |
+| 37918010 | science 240 loss / 891 | score 250 loss / 940 | 3/0 | 0/0 | yes/yes |
+| 37918011 | religious 166 loss / 154 | religious 161 loss / 154 | 0/0 | 0/0 | no/no |
+| 37918012 | science 241 loss / 1244 | culture 196 loss / 817 | 4/0 | 0/0 | yes/yes |
+| 37918013 | science 243 loss / 1147 | culture 196 loss / 614 | 7/0 | 1/0 | yes/yes |
+| 37918014 | religious 213 loss / 1139 | science 237 loss / 1216 | 0/3 | 0/1 | yes/yes |
+| 37918015 | science 230 loss / 758 | culture 180 loss / 591 | 0/0 | 0/0 | yes/yes |
+
+Seed37918005 switches the control's Domination win242 with all three foreign
+capitals to a Score win250 with none. Seed37918006 loses the control Score win
+and foreign capital. Seeds37918001/2 gain Score wins, and37918014 gains one
+foreign capital despite losing. Every arm and full metric is retained in the
+replication folder; combined raw SHA256 is
+`d4a6300fae404e56177f6232d4a68c9ed4508bbae28f5c921d6f5a625181a203`.
+
+Across the original8 and separately registered16, wins are4/24 off versus5/24
+on; Domination is1/24 each; home capital losses1 versus2; major cities ever
+held sum68 versus48; foreign capitals held at end5 versus7. This descriptive
+total does not treat24 as preregistered together, and it does not convert
+Score/Science wins into Domination. The original single Domination gain is
+matched by a lost Domination win in fresh replication. OFF and WITHHELD.
+The score-boundary stall remains reproduced, but this repair has not solved
+the broader war outcome defect. Native strength and higher-level promotion
+remain unproved; no policy/source tuning follows these outcomes.
+
+## Read-only diagnosis of the pilot benefit and capital harm
+
+An observer-only harness compiled against the immutable candidate library
+replays37914000 and37914002. It reproduces every originally reported field
+and action count. Original pilot full action sequences were not retained;
+these comparisons are field/count proof, not sequence identity with the pilot.
+
+On37914000, control captures Hanoi observed191, then loses it to Free Cities
+observed239: HP200, Loyalty7.14 before the flip, no target attack in that
+interval and last attacked190. Enabled captures Hanoi176, Gyeongju207 and
+Aachen231 and retains all three through its Domination ending. Its first
+applied difference is a Warrior155 move at index5255, observed60, with both
+snapshots HP100. That early difference alone does not establish the entire
+later campaign's cause.
+
+On37914002, the enabled home capital Bogota changes0 to3 observed196, after
+ranged unit775 and melee unit85 attack at195. Loyalty is100 before capture,
+50 after; HP59 to100 and walls37 to0. This is military capture, not Loyalty
+rebellion. The first applied difference is Horseman410 fortifying versus
+moving at index15749, observed114; both snapshots are HP100. That event alone
+does not prove the later capital loss mechanism or identify a safe fix.
+
+All snapshot/action records survive, and thought-ID continuity has zero gaps
+in the four traces. The positive enabled trace reports11 civilization turns
+truncated by the reasoning journal's per-turn budget; its reasoning content
+is therefore incomplete despite contiguous IDs. The other three report zero
+truncated turns. Cumulative dropped/truncated counters are not summed across
+snapshots. Owner/HP/actions and ending fields come from full state/action
+records, independent of those reasoning limits. Full raw traces, summaries,
+field comparisons, first differences and harness/library hashes remain under
+`prince-approach-spacing/causal-37914000/` and `causal-37914002/`.
