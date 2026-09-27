@@ -5517,6 +5517,10 @@ pub struct AdvancedAi {
     /// `advanced/chokepoints.rs`.
     chokepoint_gates: chokepoints::GatePlan,
 
+    /// Unlock walls at the ordinary research slot for an unwalled captured
+    /// major city while its original owner remains at war. Default off.
+    captured_city_wall_research: bool,
+
     // ---- append: e-f ------------------------------------------------
     /// A district is worth the land-grab building it will host.
     ///
@@ -7306,6 +7310,7 @@ pub use air_city_assault::AirCityAssault;
 mod siege_resource_purchase;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
+mod captured_city_walls;
 mod civilian_coordination;
 /// Settlers and builders out of a barbarian's reach: flee it, never step
 /// into it, stack with a summoned guard when they must. Opt-in gene
@@ -8453,6 +8458,8 @@ impl AdvancedAi {
             campaign: None,
             campaign_pillage: false,
             campaign_retry_after: 0,
+
+            captured_city_wall_research: false,
 
             // ---- append: e-f ----------------------------------------
             expansion_hall_district: false,
