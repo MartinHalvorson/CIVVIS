@@ -304,7 +304,12 @@ impl Game {
             // six price derivations (three formations, two currencies) each
             // rediscover the same `None`. Most of a ruleset's unit kinds are
             // locked at any moment of a game.
-            if unit != "nihang" && !self.unlocked(pid, &spec.tech, &spec.civic) {
+            // A Spy is never bought: the derivation refuses it before it
+            // reads anything, at every formation and in either currency.
+            if unit == "spy" {
+                continue;
+            }
+            if unit != "nihang" {
                 let plain = Item::Unit { unit: *unit };
                 let host_priced = ["gold", "faith"].iter().any(|currency| {
                     matches!(
@@ -313,7 +318,20 @@ impl Game {
                     )
                 });
                 if !host_priced {
-                    continue;
+                    if !self.unlocked(pid, &spec.tech, &spec.civic) {
+                        continue;
+                    }
+                    // The ordinary branch refuses a kind this city cannot
+                    // produce, and a Corps or Army is producible only if its
+                    // unit is (`can_produce`, `Item::Formation`), so one
+                    // `can_produce` here answers all six derivations. The
+                    // religious, Warrior Monk, Rock Band and Naturalist
+                    // branches never ask it and are left to price themselves.
+                    let ordinary = spec.class != "religious"
+                        && !matches!(unit.as_str(), "warrior_monk" | "rock_band" | "naturalist");
+                    if ordinary && !self.can_produce(pid, cid, &plain) {
+                        continue;
+                    }
                 }
             }
             for formation in 0..=2 {

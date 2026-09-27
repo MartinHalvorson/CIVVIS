@@ -138,11 +138,25 @@ Settler holds, not to this gene.
 
 ## What was decided
 
-- **Shipped, off**: `builders-work-through-raiders`, an opt-in gene with its
-  single-gene fires probe (`docs/gene_screens/fires/builders-work-through-raiders.json`).
-  Its Immortal read is +0.46 pp (z +0.97) with a clear mechanism; whether the
-  live seat forces it waits on King and Emperor no-harm checks and a second
-  32-seed Immortal block.
+- **Shipped, off** (#3781): `builders-work-through-raiders`, an opt-in gene
+  with its single-gene fires probe
+  (`docs/gene_screens/fires/builders-work-through-raiders.json`).
+- **Forced on the live seat** (#3790) after the lower rungs read positive on
+  the same instrument (Science lane, 32 paired each):
+
+  | rung | Δ share | z | population at turn 100 | Science at turn 100 | luxury types at turn 50 |
+  |---|---:|---:|---:|---:|---:|
+  | King (37140000+) | **+2.09 pp** | **+3.48** | 39.0 → 43.4 | 64.9 → 77.2 | 0.78 → 1.72 |
+  | Emperor (51000000+) | +0.39 pp | +0.70 | 36.7 → 38.2 | 56.5 → 60.8 | 0.97 → 1.44 |
+  | Immortal (61000000+) | +0.46 pp | +0.97 | 36.0 → 38.8 | 56.3 → 59.6 | 0.62 → 1.59 |
+
+  Displeased cities at turn 50 fall at every rung (King 1.41 → 0.88, Emperor
+  1.50 → 0.84, Immortal 1.38 → 0.91). Settlers lost: King 0 → 3 (three
+  games, one each; the traced one wandered 35 turns and fell to a rival at
+  war), Emperor 5 → 5, Immortal 4 → 0. The live seat is the Civilization VI
+  seat and its raiders are Firaxis', which these games do not play; the
+  Settlers keep every capture lesson, and a Builder still refuses a tile a
+  raider can take this turn.
 - **Recommended to the operator, not changed**: the Science lane at Immortal
   (+1.46 pp, z +2.62, over the unassigned seat), which the native ladder
   already runs.
