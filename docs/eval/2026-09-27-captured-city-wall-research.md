@@ -94,3 +94,34 @@ receipts and logs, complete raw pairs and comparison are retained under
 Keep the policy off and withheld. The native replay demonstrates an earlier
 research request in the archived case; the registered fresh set supplies no
 behavioral contrast or war-strength improvement. No difficulty promotion follows.
+
+Known-seed observer diagnostics reproduce every original outcome field and
+action count for the four pairs with observed foreign major-city holdings.
+Both diagnostic action streams remain identical and the no-contrast rejection
+remains exit 2. The observer only reads immutable game state; the linked AI
+library is the frozen candidate. These are reused diagnostic seeds, not fresh
+strength results. Original full action hashes were not retained, so field/count
+reproduction is not an independent original-stream identity claim.
+
+| Known seed | Masonry first observed known | First foreign major-city holding observed | Walls at that first holding |
+|---|---:|---:|---:|
+| 37919000 | 41 | 147 | 400 |
+| 37919003 | 49 | 190 | 400 |
+| 37919004 | 54 | 162 | 100 |
+| 37919007 | 40 | 104 | 0 |
+
+No foreign major-city holding snapshot in these diagnostics has Masonry
+unknown. The other four original pairs have no observed foreign major-city
+holdings. Observations are at civilization-turn boundaries and cannot census
+every within-turn research call or transient capture. The native early,
+unwalled, Masonry-missing holding is therefore absent from the observed
+holdings in this registered set. The zero action contrast establishes no
+war-strength benefit; these results do not demonstrate that the fallback
+would fail in the native early-capture case.
+
+Diagnostic binary SHA256:
+`d59f15e9357a1d22eb4eb1803093334a4907c118e8b4fd7f3ab2133ac0ad4889`.
+Observer source, plans, timelines, all original-field comparisons and actual
+exit codes are retained in `research-slot-diagnostic/`, `diagnostic-37919000/`,
+`diagnostic-37919003/`, `diagnostic-37919004/`, `diagnostic-37919007/` and
+`research-diagnostic-comparison.json` under the evidence root.
