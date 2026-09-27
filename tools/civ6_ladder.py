@@ -1459,6 +1459,18 @@ def with_bridge_health(summary: dict, summary_path: Path) -> dict:
     return enriched
 
 
+def with_conquest(summary: dict, summary_path: Path) -> dict:
+    """Preserve native ownership milestones on live and backfilled rows."""
+    if "conquest" in summary:
+        return summary
+    from civ6_conquest import conquest_totals
+    from civ6_race_audit import event_path
+    evidence = event_path(Path(summary_path).parent)
+    if evidence is None:
+        return summary
+    return dict(summary, conquest=conquest_totals(evidence))
+
+
 def trailing_unmeasured(attempts: list) -> int:
     """How many of the newest attempts carry no bridge-health rate.
 
@@ -1615,6 +1627,8 @@ def entry_from(summary: dict) -> dict:
         # `HallofFame.sqlite` by hand. See `combat_totals`; `None` on a run
         # whose mod predates the tactical ledger.
         "combat": summary.get("combat"),
+        # Ownership observations distinguish major capitals from minor cities.
+        "conquest": summary.get("conquest"),
         # The opening tempo (`civ6_play.OPENING_TEMPO_TURN`). Over the 35
         # completed runs of 2026-08-16/17 these were the strongest correlates
         # the live ladder has produced: cities at t60 r=+0.69 with final lead,
@@ -1817,6 +1831,7 @@ def record_summary(summary_path: Path, ledger: Path | None = None) -> bool:
         ledger = live_ledger_for(summary_path.parent.parent)
     summary = with_bridge_health(json.loads(summary_path.read_text()),
                                  summary_path)
+    summary = with_conquest(summary, summary_path)
     from civ6_race_audit import event_path, game_key, race_totals
     summary = dict(summary)
     summary.setdefault("game_id", game_key(summary))
@@ -2035,6 +2050,7 @@ def sync(runs_dir: Path, ledger: Path, *, quiet: bool = False,
                 skipped += 1
                 continue
             summary = with_bridge_health(summary, path)
+            summary = with_conquest(summary, path)
             if apply(state, summary):
                 seen.add(summary.get("tag"))
                 recorded += 1
