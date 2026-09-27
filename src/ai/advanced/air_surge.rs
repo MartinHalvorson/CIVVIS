@@ -1160,6 +1160,7 @@ impl AdvancedAi {
                     // until the launch wing is committed; never subsidize a
                     // third field or a fresh candidate in another city.
                     let launch_base = status.aerodromes_committed <= 2
+                        && status.metal_ready
                         && status.bombers_committed < AIR_SURGE_LAUNCH_BOMBERS;
                     if status.aerodromes_committed == 1 || launch_base {
                         return Some(AIR_SURGE_AERODROME_VALUE - turns * 8.0);
@@ -1317,11 +1318,10 @@ impl AdvancedAi {
         let bomber_goal = Self::air_surge_bomber_goal(g, pid);
         let wants_bomber = status.bombers_committed < bomber_goal;
         let wants_body = status.metal_ready && status.bodies_committed < AIR_SURGE_BODIES;
-        let launch_missing = AIR_SURGE_LAUNCH_BOMBERS.saturating_sub(status.bombers_committed);
-        let wants_alternative_field = status.aerodromes_committed == 1 && launch_missing > 0;
-        if !wants_field && !wants_alternative_field && !wants_bomber && !wants_body {
+        if !wants_field && !wants_bomber && !wants_body {
             return false;
         }
+        let launch_missing = AIR_SURGE_LAUNCH_BOMBERS.saturating_sub(status.bombers_committed);
         let wing_turns = |city| {
             let item = Item::Unit { unit: bomber? };
             let rate = (g.city_yields(city).production * g.item_prod_mult(pid, city, Some(&item)))
@@ -1330,33 +1330,33 @@ impl AdvancedAi {
         };
         // A single slow base can monopolize the whole wing while the rest of
         // the empire trains escorts. Permit one faster alternative, including
-        // its construction cost, before the launch wing is committed. Field
-        // construction can overlap the wait for Aluminum supply.
-        let existing_wing_turns = wants_alternative_field
-            .then(|| {
-                g.player_city_ids(pid)
-                    .into_iter()
-                    .filter(|cid| {
-                        field.is_some_and(|family| {
-                            g.city_has_district_family(&g.cities[cid], family)
-                                || g.cities[cid].queue.iter().any(|item| {
-                                    matches!(item, Item::District { district, .. }
+        // its construction cost, before the launch wing is committed.
+        let existing_wing_turns =
+            (status.aerodromes_committed == 1 && status.metal_ready && launch_missing > 0)
+                .then(|| {
+                    g.player_city_ids(pid)
+                        .into_iter()
+                        .filter(|cid| {
+                            field.is_some_and(|family| {
+                                g.city_has_district_family(&g.cities[cid], family)
+                                    || g.cities[cid].queue.iter().any(|item| {
+                                        matches!(item, Item::District { district, .. }
                                         if g.district_family(*district) == family)
-                                })
+                                    })
+                            })
                         })
-                    })
-                    .filter_map(|cid| {
-                        let waiting = g.cities[&cid].queue.first().map_or(0.0, |item| {
-                            g.item_remaining_cost_for_city(pid, cid, item)
-                                / (g.city_yields(cid).production
-                                    * g.item_prod_mult(pid, cid, Some(item)))
-                                .max(0.1)
-                        });
-                        Some(waiting + wing_turns(cid)?)
-                    })
-                    .min_by(f64::total_cmp)
-            })
-            .flatten();
+                        .filter_map(|cid| {
+                            let waiting = g.cities[&cid].queue.first().map_or(0.0, |item| {
+                                g.item_remaining_cost_for_city(pid, cid, item)
+                                    / (g.city_yields(cid).production
+                                        * g.item_prod_mult(pid, cid, Some(item)))
+                                    .max(0.1)
+                            });
+                            Some(waiting + wing_turns(cid)?)
+                        })
+                        .min_by(f64::total_cmp)
+                })
+                .flatten();
         let remaining = g.max_turns.saturating_sub(g.turn) as f64;
         let mut best: Option<(u8, f64, u32, String, Item)> = None;
         for cid in g.player_city_ids(pid) {
