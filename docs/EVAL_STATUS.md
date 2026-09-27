@@ -23,8 +23,8 @@ How much of the shipped live-bridge bundle the evaluation evidence has
 ever *named* — `docs/EVAL.md` plus every round under `docs/eval/`.
 
 - Withholdable live treatments: **38**
-- Named somewhere in the evidence: **37**
-- **Never named in any round: 1**
+- Named somewhere in the evidence: **38**
+- **Never named in any round: 0**
 
 ⚠ This is deliberately the weaker half of the question. Whether a
 treatment was *priced* is a judgement about what a round concluded and
@@ -39,7 +39,7 @@ over ladder games. This list is the debt neither has touched.
 
 Never named:
 
-`relief-column-marches`
+_None — every withholdable treatment has been named._
 
 ## Genome coverage
 
