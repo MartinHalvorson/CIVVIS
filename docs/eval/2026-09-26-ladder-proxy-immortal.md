@@ -264,6 +264,45 @@ or the alliance desk: alliances are dead in every engine game until the view
 carries those facts, and reviving them needs the Science seat to ask for the
 kinds it can sign before Scientific Theory.
 
+### The forced genome, audited one gene at a time
+
+Each of the 21 genes in `deploy/live-force-on.txt` was switched off alone,
+the rest of the deployed genome unchanged: Emperor, Science lane against
+adaptive rivals, 16 paired games per gene (seeds 69000000+, main `5670348`).
+
+| Off | Δ share | z | games changed |
+|---|---:|---:|---:|
+| `lane-delegates-production-2` | −2.33 pp | −2.52 | 16 |
+| `builders-work-through-raiders` | −1.41 pp | −1.45 | 16 |
+| `garrison-under-fire` | −0.98 pp | −0.82 | 16 |
+| `early-conquest-opening` | −0.80 pp | −1.46 | 2 |
+| `ranged-hp-reserve` | −0.44 pp | −0.80 | 6 |
+| `rapid-city-expansion-2` | −0.43 pp | −0.36 | 16 |
+| `siege-train` | +0.69 pp | +1.40 | 8 |
+| `peacetime-deterrence` | +0.73 pp | +1.16 | 15 |
+
+The other thirteen changed at most five of the sixteen games and moved share
+by 0.13 pp or less: `city-campaign-2`, `domination-lane-hands-over` and
+`science-expansion-phase` changed none, and most of the rest are Domination
+machinery this seat never runs. The two suspects were re-run on 32 fresh
+Emperor seeds (70000000+): `siege-train` off read −0.22 pp (z −0.53), noise;
+`peacetime-deterrence` off read **+0.73 pp (z +1.83)** again, with cities
+lost per game 1.12 → 0.50. At Immortal (32, seeds 71000000+) it read
++0.23 pp (z +0.94).
+
+`peacetime-deterrence` sizes the peacetime army against the strongest met
+major. A friendship forbids that major's war for thirty turns, which is the
+threat the floor buys an army against, so the two were measured together at
+Immortal on the same 32 seeds:
+
+| Immortal, 32 paired (seeds 71000000+) | Δ share | z | cities lost / game |
+|---|---:|---:|---:|
+| `befriend-the-strongest` on | +1.28 pp | +2.79 | 0.97 → 0.22 |
+| … and `peacetime-deterrence` off, against befriend on | +0.29 pp | +1.35 | 0.22 → 0.16 |
+| **both, against the deployed genome** | **+1.56 pp** | **+3.82** | **0.97 → 0.16** |
+
+This is the third independent Immortal block for `befriend-the-strongest`.
+
 ## What was decided
 
 - **Shipped, off** (#3781): `builders-work-through-raiders`, an opt-in gene
@@ -293,11 +332,17 @@ kinds it can sign before Scientific Theory.
   +2.67 pp (32, z +4.58) at Emperor. The live
   seat can now carry it: the friendship order (#3811) and the host's attitude
   (#3814).
-- **Recommended to the operator, not changed**: forcing `befriend-the-strongest`
-  on the live seat. The bridge's `DECLARE_FRIEND` session has not yet run in a
-  native game; its answer arrives as a leader scene the autoclose already
-  dismisses for delegations and denouncements, and the verdict ledger will
-  show `friendship` orders as verified (`friendship_turn`) or `not_friends`.
+- **Recommended to the operator, not changed**: one live package, forcing
+  `befriend-the-strongest` and removing `peacetime-deterrence` from
+  `deploy/live-force-on.txt` (+1.56 pp, z +3.82 at Immortal against the
+  deployed genome; the deterrence half alone +0.73 pp, z +1.83 at Emperor).
+  Deterrence was forced after a native loss to a rival's army at t157
+  (`civvis-20260803T220954Z`); the friendship covers that threat from the
+  strongest rival, and the native ladder is where the package would be
+  proven. The bridge's `DECLARE_FRIEND` session has not yet run in a native
+  game; its answer arrives as a leader scene the autoclose already dismisses
+  for delegations and denouncements, and the verdict ledger will show
+  `friendship` orders as verified (`friendship_turn`) or `not_friends`.
 - **Recommended to the operator, not changed**: the Science lane at Immortal
   (+1.46 pp, z +2.62, over the unassigned seat), which the native ladder
   already runs.
