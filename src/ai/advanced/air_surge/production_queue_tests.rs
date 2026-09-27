@@ -65,6 +65,123 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
     (g, ai, plan, first, second)
 }
 
+// Match the native slow-field case without requiring a particular tile layout.
+fn unfueled_field_fixture(
+    slow_rate: f64,
+    idle_rate: f64,
+) -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
+    let (mut g, mut ai, plan, slow, idle) = fixture();
+    g.players[0].strategic_resources.clear();
+    let field = g
+        .producible_items(0, slow)
+        .into_iter()
+        .find(|item| matches!(item, Item::District { district, .. } if district == "aerodrome"))
+        .unwrap();
+    g.apply(
+        0,
+        &Action::Produce {
+            city: slow,
+            item: field,
+        },
+    )
+    .unwrap();
+    for (cid, rate) in [(slow, slow_rate), (idle, idle_rate)] {
+        let correction = rate - g.city_yields_model(cid).production;
+        std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
+            cid,
+            crate::rules::Yields {
+                production: correction,
+                ..Default::default()
+            },
+        );
+        assert!((g.city_yields(cid).production - rate).abs() < 1e-9);
+    }
+    ai.air_surge_status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert_eq!(ai.air_surge_status.aerodromes_committed, 1);
+    assert!(!ai.air_surge_status.metal_ready);
+    (g, ai, plan, slow, idle)
+}
+
+#[test]
+fn faster_alternative_field_starts_and_survives_review_before_aluminum() {
+    let (mut g, mut ai, plan, slow, idle) = unfueled_field_fixture(3.0, 14.0);
+    let slow_queue = g.cities[&slow].queue.clone();
+    assert!(
+        ai.air_surge_production(&mut g, 0),
+        "a faster idle field must not wait for Aluminum"
+    );
+    let item = g.cities[&idle].queue.first().unwrap().clone();
+    assert!(matches!(&item, Item::District { district, .. } if district == "aerodrome"));
+    assert_eq!(g.cities[&slow].queue, slow_queue);
+    assert_eq!(ai.air_surge_status.aerodromes_committed, 2);
+    assert!(!ai.air_surge_status.metal_ready);
+    let value = ai.production_value(&g, 0, idle, &item, &plan, &ai.counts(&g, 0));
+    assert!(
+        value > 7000.0,
+        "early alternative lost its reservation: {value}"
+    );
+    ai.preempt_margin = 1.25;
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(g.cities[&idle].queue.first(), Some(&item));
+}
+
+#[test]
+fn unfueled_alternative_still_requires_a_faster_idle_queue_and_missing_launch_wing() {
+    for case in ["slower", "busy", "two_fields", "two_bombers", "disabled"] {
+        let (mut g, mut ai, _, _, idle) = if case == "slower" {
+            unfueled_field_fixture(14.0, 3.0)
+        } else {
+            unfueled_field_fixture(3.0, 14.0)
+        };
+        match case {
+            "busy" => {
+                g.cities.get_mut(&idle).unwrap().queue = vec![Item::Unit {
+                    unit: name!("builder"),
+                }];
+            }
+            "two_fields" => {
+                let field = g.producible_items(0, idle).into_iter().find(|item|
+                    matches!(item, Item::District { district, .. } if district == "aerodrome")).unwrap();
+                g.apply(
+                    0,
+                    &Action::Produce {
+                        city: idle,
+                        item: field,
+                    },
+                )
+                .unwrap();
+                let third = g.found_city_for(0, (6, 18), None);
+                g.cities.get_mut(&third).unwrap().pop = 12;
+            }
+            "two_bombers" => {
+                g.spawn_test_unit("bomber", 0, (6, 12));
+                g.spawn_test_unit("bomber", 0, (12, 12));
+            }
+            "disabled" => {
+                ai.disable_air_surge_2();
+                ai.maintain_air_surge(&g, 0);
+                assert!(ai.air_surge_plan.is_none());
+            }
+            _ => {}
+        }
+        if let Some(plan) = ai.air_surge_plan.as_ref() {
+            ai.air_surge_status = ai.air_surge_status(&g, 0, plan);
+        }
+        let queues: Vec<_> = g
+            .player_city_ids(0)
+            .into_iter()
+            .map(|cid| (cid, g.cities[&cid].queue.clone()))
+            .collect();
+        assert!(
+            !ai.air_surge_production(&mut g, 0),
+            "unexpected reservation: {case}"
+        );
+        for (cid, queue) in queues {
+            assert_eq!(g.cities[&cid].queue, queue, "{case}");
+        }
+    }
+}
+
 #[test]
 fn reserved_airfield_keeps_priority_after_status_refresh() {
     let (mut g, mut ai, plan, _, _) = fixture();
@@ -111,6 +228,7 @@ fn final_queued_bomber_retains_priority_without_ordering_a_third() {
 #[test]
 fn second_queued_airfield_is_reserved_only_until_the_launch_wing_is_committed() {
     let (mut g, mut ai, _, first, second) = fixture();
+    g.players[0].strategic_resources.clear();
     let field =
         |g: &Game, cid| {
             g.producible_items(0, cid).into_iter().find(|item|
