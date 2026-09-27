@@ -4934,6 +4934,9 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `befriend-the-strongest`: offer a friendship to the strongest
+    /// neighbour at peace. See `advanced/protective_friendship.rs`.
+    befriend_the_strongest: bool,
     /// `beeline-orders-by-value`: a forced research or civic goal walks its
     /// remaining prerequisites in `tech_value` / `civic_value` order instead
     /// of cheapest-printed-price first. Every prerequisite is researched
@@ -7347,6 +7350,10 @@ use district_planning::DistrictPlanCache;
 /// its city-states and joint-war invitations before the declaration. Opt-in
 /// gene `coalition-before-war`; see `advanced/coalition.rs`.
 mod coalition;
+/// Opt-in gene `befriend-the-strongest`: a friendship-only offer to the
+/// strongest neighbour at peace, which forbids its war while it lasts. See
+/// `advanced/protective_friendship.rs`.
+mod protective_friendship;
 use coalition::Coalition;
 
 /// Opt-in gene `enemy-of-my-enemy`: the neighbours' barbarian camps stand,
@@ -8344,6 +8351,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            befriend_the_strongest: false,
             beeline_orders_by_value: false,
             builders_work_through_raiders: false,
             builder_charge_window: false,
@@ -19414,6 +19422,7 @@ impl AdvancedAi {
 
     fn advanced_diplomacy(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         crate::ai::choose_dedications(g, pid, self.base.w.dedication_choice);
+        self.propose_protective_friendship(g, pid);
         let incoming: Vec<u32> = g
             .pending_deals
             .iter()
