@@ -29,7 +29,7 @@ inferring it from a journal purchase message:
 | Explicit war / host permission | false /none | false /none |
 | Own delegation | 18 | 18 |
 | India's raw / effective delegation | 18 /20 | 18 /18 |
-| Minor9 Suzerain | India, seat3 | none, false18-way tie |
+| Minor9 Suzerain | India, seat3 | none, false18–18 tie |
 | Derived war with minor9 | true | false |
 
 Rival governor redaction correctly removes India's private Amani record, but
