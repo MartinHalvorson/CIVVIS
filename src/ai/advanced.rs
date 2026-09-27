@@ -7300,6 +7300,7 @@ mod air_base_loyalty;
 mod air_city_assault;
 mod air_resource_builders;
 mod air_resource_colony;
+mod air_resource_allocation;
 mod air_resource_settlement;
 mod air_surge;
 pub use air_city_assault::AirCityAssault;
