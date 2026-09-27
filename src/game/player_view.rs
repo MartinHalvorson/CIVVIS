@@ -190,11 +190,21 @@ impl Game {
                 player.gold_per_turn = source.gold_per_turn;
                 player.age = source.age.clone();
                 player.pantheon = source.pantheon.clone();
-                player.envoys = source
-                    .envoys
+                // The city-state panel exposes effective delegations (shipped
+                // CityStates.lua:1458, GetTokensReceived), including Amani.
+                // Rival governors stay private; copying raw placements would
+                // erase their public bonus, invent ties and lose derived wars.
+                // Enumerate minors: Puppeteer can contribute without a raw row.
+                player.envoys = self
+                    .players
                     .iter()
-                    .filter(|(minor, _)| self.has_met(pid, *minor))
-                    .copied()
+                    .filter(|minor| {
+                        minor.is_minor && !minor.is_barbarian && self.has_met(pid, minor.id)
+                    })
+                    .filter_map(|minor| {
+                        let count = self.envoys_at(other, minor.id);
+                        (count > 0).then_some((minor.id, count))
+                    })
                     .collect();
                 player.dvp = source.dvp;
                 player.diplomatic_favor = source.diplomatic_favor;
@@ -486,3 +496,6 @@ mod tests;
 
 #[cfg(test)]
 mod colonial_war_tests;
+
+#[cfg(test)]
+mod envoy_readback_tests;
