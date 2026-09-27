@@ -459,7 +459,10 @@ mod tests {
             .into_iter()
             .filter(|tech| AdvancedAi::new().tech_leads_to(&game, tech, "rocketry"))
             .collect();
-        assert!(steps.len() >= 3, "the fixture offers several chain steps: {steps:?}");
+        assert!(
+            steps.len() >= 3,
+            "the fixture offers several chain steps: {steps:?}"
+        );
 
         let off = AdvancedAi::targeting(VictoryTarget::Science);
         assert!(!off.beeline_orders_by_value, "the gene ships off");
