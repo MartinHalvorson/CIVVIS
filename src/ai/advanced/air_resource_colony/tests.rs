@@ -351,6 +351,29 @@ fn deferred_production_uses_the_same_guarded_supply_request() {
 }
 
 #[test]
+fn deferred_production_counts_the_finishing_supply_settler() {
+    let (mut g, ai, _, _, home, _) = fixture();
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    for cid in g.player_city_ids(0) {
+        g.cities.get_mut(&cid).unwrap().queue.push(if cid == home {
+            settler.clone()
+        } else {
+            Item::Unit {
+                unit: crate::name!("builder"),
+            }
+        });
+    }
+    assert_ne!(
+        ai.preview_live_production(&g, 0, home),
+        Some(settler.clone()),
+        "the next queue must account for the Settler completing after observation"
+    );
+    assert_eq!(g.cities[&home].queue, vec![settler]);
+}
+
+#[test]
 fn stalled_founding_keeps_the_tracked_supply_permission() {
     let (mut g, mut ai, _, _, _, guard) = fixture();
     let deposit = (8, 16);

@@ -27047,8 +27047,15 @@ impl AdvancedAi {
         let plan = self.plan.clone()?;
         let mut preview = self.clone();
         let mut board = g.clone();
-        board.cities.get_mut(&city)?.queue.clear();
-        preview.reserve_air_resource_colony(&mut board, pid, &plan);
+        let queue = &mut board.cities.get_mut(&city)?.queue;
+        let incoming_settler =
+            matches!(queue.first(), Some(Item::Unit { unit }) if unit == "settler");
+        queue.clear();
+        // A finishing Settler has not appeared in the exported unit roster
+        // yet, but already fills the single supply-colony request.
+        if !incoming_settler {
+            preview.reserve_air_resource_colony(&mut board, pid, &plan);
+        }
         preview.advanced_production(&mut board, pid, &plan, false);
         board.cities.get(&city)?.queue.first().cloned()
     }
