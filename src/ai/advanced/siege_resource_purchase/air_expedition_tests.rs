@@ -307,7 +307,9 @@ fn resource_scout_can_clear_a_coastal_supply_neighborhood_without_relaxing_loyal
 fn ordinary_land_exploration_keeps_come_ashore_outside_the_supply_survey() {
     for kind in ["scout", "warrior"] {
         let (mut g, mut ai, _, city, shore) = coastal_fixture();
-        g.cities.get_mut(&city).unwrap().districts.clear();
+        if kind == "scout" {
+            g.cities.get_mut(&city).unwrap().districts.clear();
+        }
         g.players[0].explored.extend(
             g.map
                 .tiles
@@ -316,6 +318,10 @@ fn ordinary_land_exploration_keeps_come_ashore_outside_the_supply_survey() {
                 .map(|(pos, _)| *pos),
         );
         let unit = g.spawn_test_unit(kind, 0, shore);
+        if kind == "warrior" {
+            let survey = g.spawn_test_unit("scout", 0, g.cities[&city].pos);
+            assert!(ai.air_resource_scout_goal(&g, 0, survey).is_some());
+        }
         let water = g
             .nbrs(shore)
             .into_iter()
