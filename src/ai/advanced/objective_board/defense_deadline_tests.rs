@@ -9,10 +9,9 @@ fn relief_on() -> AdvancedAi {
 
 #[test]
 fn city_relief_experiment_is_registered_and_off_in_both_controllers() {
-    super::super::test_support::opt_in_off_in_both_controllers(
-        "city-relief-deadlines",
-        |ai| ai.city_relief_deadlines,
-    );
+    super::super::test_support::opt_in_off_in_both_controllers("city-relief-deadlines", |ai| {
+        ai.city_relief_deadlines
+    });
     let mut ai = AdvancedAi::new();
     ai.enable_city_relief_deadlines();
     assert!(ai.city_relief_deadlines);
