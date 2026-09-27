@@ -2704,7 +2704,10 @@ seat's ledger under the offender (`Player::grievances[offender]`, the way
 `promises` both ways as engine kinds (`no_settling`, `no_spying`,
 `no_conversion`), `open_borders_until` for the grant we make, and a new
 `Player::observed_visibility` that `Game::diplomatic_visibility` prefers to
-its derivation. `civvis_orders --dump-mirror` reads it all back.
+its derivation. Every state, the attitudes included, also lands on the
+rival's seat as `Player::observed_diplomatic_state` (its leader's standing
+toward us, `DIPLO_STATE_` dropped), removed when an export carries none.
+`civvis_orders --dump-mirror` reads it all back.
 
 **Which decisions now read host diplomacy** (none of these changed; they
 were reading an empty ledger):
@@ -2729,6 +2732,12 @@ were reading an empty ledger):
 - `has_open_borders` for THEIR units in OUR land reads the grant we make.
 - `break_promise` reads the promise ledger when a settle, spy or conversion
   would break one.
+
+Since #3814 the opt-in `befriend-the-strongest`
+(`advanced/protective_friendship.rs`) offers a friendship only to a rival whose
+attitude reads `FRIENDLY`, the one state from which the host's leaders value a
+declaration (`DiplomaticActions.xml`: Worth 15 Friendly, −10 Neutral, −40
+Unfriendly). A native board carries no attitude and chooses as before.
 
 **What stays faked, deliberately.** When the host permits a declaration and
 the board holds no active denouncement of our own, `denounced_until = turn +

@@ -10846,6 +10846,9 @@ fn apply_host_competitions(game: &mut crate::game::Game, state: &StateSnapshot) 
 /// - `DIPLO_STATE_ALLIED`: `alliances` both sides with the host's type, level
 ///   and turns to expiry, plus the friendship an alliance implies.
 /// - Any other state clears all three on both sides.
+/// - Every state, attitudes included: the leader's standing toward us as the
+///   host names it (`Player::observed_diplomatic_state`), removed when the
+///   export carries none.
 /// - Independently of the state: the grievance balance both ways, missions
 ///   both ways, promises both ways, the Open Borders WE grant, and the
 ///   visibility level both ways (`Player::observed_visibility`, which
@@ -10875,6 +10878,7 @@ pub(crate) fn apply_host_diplomacy(game: &mut crate::game::Game, owner: usize, r
     let permitted =
         rival.war_declarations.is_none() && rival.can_declare == Some(true) && !rival.at_war;
     let Some(state) = rival.diplomatic_state.as_deref() else {
+        game.players[owner].observed_diplomatic_state.remove(&0);
         if permitted {
             game.players[0].denounced_until.insert(owner, turn + 1);
         } else {
@@ -10883,6 +10887,9 @@ pub(crate) fn apply_host_diplomacy(game: &mut crate::game::Game, owner: usize, r
         return;
     };
     let state = state.strip_prefix("DIPLO_STATE_").unwrap_or(state);
+    game.players[owner]
+        .observed_diplomatic_state
+        .insert(0, state.to_string());
     let limit = rival
         .denounce_time_limit
         .filter(|limit| *limit > 0)
