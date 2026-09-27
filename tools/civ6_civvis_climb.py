@@ -94,6 +94,7 @@ from civ6_brain import binary_provenance, binary_sha256  # noqa: E402
 # and the per-run dossier count the same captures the CLI does.
 import civ6_settler_captures  # noqa: E402
 import civ6_native_log_snapshot  # noqa: E402
+import civ6_save_snapshot  # noqa: E402
 import genes  # noqa: E402
 
 # Backoff between blocked starts. The first steps are short because the usual cause
@@ -2927,6 +2928,15 @@ def main() -> int:
                 if save is None:
                     break
                 cont = f"{tag}-cont{len(resumes) + 1}"
+                try:
+                    manifest = civ6_save_snapshot.snapshot(
+                        save, RUN_ROOT / run_tag / "native-recovery-save",
+                        root_tag=tag, frozen_tag=run_tag, continuation_tag=cont,
+                        last_turn=record.get("last_turn"))
+                    print(f"[resume] selected save snapshot: {manifest}", flush=True)
+                except OSError as error:
+                    print(f"[resume] selected save snapshot failed: {error}; "
+                          "retaining original reload", flush=True)
                 print(f"[resume] {run_tag} froze at turn {record.get('last_turn')}; "
                       f"reloading {save.name} under {cont} (resume {len(resumes) + 1} "
                       f"of {args.max_resumes})", flush=True)
