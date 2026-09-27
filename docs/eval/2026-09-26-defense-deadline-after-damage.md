@@ -315,3 +315,14 @@ and known37911002-on reported fields as diagnostics, not fresh strength tests.
 The archived20-policy bundle remains distinct from latest main21. A harmed or
 ineffective candidate stays withheld. Green tests, an off-path match or a
 smaller patch do not satisfy the goal of stronger wars or native promotion.
+
+The safety and city-target regressions both fail first at `0e5efc10e` on the
+scoped prototype (nine earlier tests pass). The repair moves mission eligibility
+after the full doomed-strike assessment, retains those safety facts, and also
+checks the remaining eligible attacks. Removing all eligible attacks releases
+a healthy relief body for movement while an unsafe fighter stays reserved by
+recovery. Outside two hexes, urgent relief movement targets its city; Recover
+keeps its prior target and full score. Forty focused board tests pass, including
+actual movement toward the city, off-policy remote kills and identical Recover
+actions/unit state. The14 append-point tests pass with every existing gene bit
+unchanged. No fresh pair outcomes have been read or run.

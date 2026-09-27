@@ -5491,6 +5491,11 @@ pub struct AdvancedAi {
     /// `advanced/chokepoints.rs`.
     chokepoint_gates: chokepoints::GatePlan,
 
+    /// Experimental city-relief deadline and command handoff. Preserve
+    /// strike safety before applying the travel budget, then aim overdue
+    /// relief at its city. Default-off gene `city-relief-deadlines`.
+    city_relief_deadlines: bool,
+
     // ---- append: e-f ------------------------------------------------
     /// A district is worth the land-grab building it will host.
     ///
@@ -8408,6 +8413,8 @@ impl AdvancedAi {
             campaign: None,
             campaign_pillage: false,
             campaign_retry_after: 0,
+
+            city_relief_deadlines: false,
 
             // ---- append: e-f ----------------------------------------
             expansion_hall_district: false,
@@ -36809,16 +36816,22 @@ impl AdvancedAi {
             self.base.come_ashore && g.rules.units[unit.kind].domain.as_deref() != Some("sea");
         let role = Self::force_role(g, uid);
         let spec = &g.rules.units[unit.kind];
-        let target = match group.posture {
+        let relief_city = (!self.base.legacy_movement && group.posture != ForcePosture::Recover)
+            .then(|| self.urgent_relief_assignment(g, uid))
+            .flatten()
+            .map(|(city, _)| city)
+            .filter(|city| g.wdist(upos, *city) > 2);
+        let target = relief_city.unwrap_or_else(|| match group.posture {
             ForcePosture::Hold if self.relief_column_marches => {
                 self.relief_hold_point(g, group).unwrap_or(group.anchor)
             }
             ForcePosture::Muster | ForcePosture::Hold | ForcePosture::Recover => group.anchor,
             ForcePosture::Engage => group.focus_target.unwrap_or(group.objective),
             ForcePosture::Advance => group.objective,
-        };
-        let urgent_relief =
-            !self.base.legacy_movement && self.urgent_relief_assignment(g, uid).is_some();
+        });
+        let urgent_relief = !self.base.legacy_movement
+            && group.posture != ForcePosture::Recover
+            && self.urgent_relief_assignment(g, uid).is_some();
         let preferred_depth = match role {
             ForceRole::Recon => spec.range.max(2),
             ForceRole::Vanguard | ForceRole::Mobile => 1,

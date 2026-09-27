@@ -1,6 +1,25 @@
 use super::tests::{at, conquest, flat_board, on, war};
 use super::*;
 
+fn relief_on() -> AdvancedAi {
+    let mut ai = on();
+    ai.enable_city_relief_deadlines();
+    ai
+}
+
+#[test]
+fn city_relief_experiment_is_registered_and_off_in_both_controllers() {
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "city-relief-deadlines",
+        |ai| ai.city_relief_deadlines,
+    );
+    let mut ai = AdvancedAi::new();
+    ai.enable_city_relief_deadlines();
+    assert!(ai.city_relief_deadlines);
+    ai.disable_city_relief_deadlines();
+    assert!(!ai.city_relief_deadlines);
+}
+
 #[test]
 fn a_small_hit_does_not_postpone_relief_from_an_adjacent_minor_army() {
     let mut g = flat_board(379100, &[at(6, 8), at(30, 8)], false);
@@ -10,7 +29,7 @@ fn a_small_hit_does_not_postpone_relief_from_an_adjacent_minor_army() {
     for pos in [at(8, 8), at(7, 9), at(7, 7)] {
         g.spawn_test_unit("man_at_arms", 1, pos);
     }
-    let mut ai = on();
+    let mut ai = relief_on();
     ai.rebuild_force_groups(&g, 0, &conquest(&g, None));
     let initial = ai
         .objective_board()
@@ -51,7 +70,7 @@ fn lightly_damaged_city_recalls_relief_from_a_valuable_siege() {
         g.spawn_test_unit("warrior", 0, pos);
     }
     let relief = g.spawn_test_unit("warrior", 0, at(18, 8));
-    let mut ai = on();
+    let mut ai = relief_on();
     ai.rebuild_force_groups(&g, 0, &conquest(&g, Some(target)));
     g.turn += 1;
     let city = g.cities.get_mut(&home).unwrap();
@@ -83,7 +102,7 @@ fn assigned_relief() -> (Game, AdvancedAi, u32, u32, u32) {
     let archer = g.spawn_test_unit("archer", 0, at(16, 12));
     let victim = g.spawn_test_unit("archer", 1, at(17, 13));
     g.units.get_mut(&victim).unwrap().hp = 1;
-    let mut ai = on();
+    let mut ai = relief_on();
     ai.enable_battle_planner_2();
     ai.objective_board_state.rows = vec![Objective {
         kind: ObjectiveKind::Defend,
@@ -128,6 +147,16 @@ fn overdue_city_relief_does_not_spend_its_turn_on_a_remote_kill() {
 fn disabling_the_board_does_not_leave_a_stale_relief_attack_veto() {
     let (g, mut ai, _, archer, victim) = assigned_relief();
     ai.objective_board = false;
+    assert!(ai
+        .kill_sequence(&g, 0)
+        .iter()
+        .any(|blow| blow.unit == archer && blow.target == g.units[&victim].pos));
+}
+
+#[test]
+fn disabling_the_relief_experiment_restores_the_remote_kill() {
+    let (g, mut ai, _, archer, victim) = assigned_relief();
+    ai.disable_city_relief_deadlines();
     assert!(ai
         .kill_sequence(&g, 0)
         .iter()
@@ -326,4 +355,30 @@ fn overdue_relief_movement_follows_its_city_instead_of_a_remote_contact() {
         g.wdist(g.units[&archer].pos, city) < before,
         "the overdue defender must really close on its city through this clear corridor"
     );
+}
+
+#[test]
+fn urgent_relief_does_not_reaim_or_rescore_a_recovering_force() {
+    let (mut g, ai, home, archer, victim) = assigned_relief();
+    g.remove_unit(victim);
+    g.units.get_mut(&archer).unwrap().hp = 30;
+    let group = ForceGroup {
+        id: 1,
+        domain: ForceDomain::Land,
+        units: vec![archer],
+        anchor: g.units[&archer].pos,
+        objective: g.cities[&home].pos,
+        focus_target: Some(at(30, 15)),
+        posture: ForcePosture::Recover,
+        readiness: 0.0,
+        local_strength_ratio: 1.0,
+    };
+    let mut control = ai.clone();
+    control.disable_city_relief_deadlines();
+    let mut before = g.clone();
+    let off = control.coordinated_tactical_step(&mut before, 0, archer, &group, &[1], false);
+    let on = ai.coordinated_tactical_step(&mut g, 0, archer, &group, &[1], false);
+    assert_eq!(on, off);
+    assert_eq!(g.log, before.log);
+    assert!(g.units[&archer] == before.units[&archer]);
 }

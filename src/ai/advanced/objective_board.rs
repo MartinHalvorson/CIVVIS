@@ -677,8 +677,18 @@ impl AdvancedAi {
             || (g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id))
     }
 
+    /// Enable the separately measured city-relief command experiment.
+    pub fn enable_city_relief_deadlines(&mut self) {
+        self.city_relief_deadlines = true;
+    }
+
+    /// Restore the existing board deadlines and command dispatch.
+    pub fn disable_city_relief_deadlines(&mut self) {
+        self.city_relief_deadlines = false;
+    }
+
     pub(super) fn urgent_relief_assignment(&self, g: &Game, uid: u32) -> Option<(Pos, u32)> {
-        if !self.objective_board {
+        if !self.objective_board || !self.city_relief_deadlines {
             return None;
         }
         let force = self
@@ -1016,10 +1026,16 @@ impl AdvancedAi {
                 .get(cid)
                 .filter(|rate| **rate > 0.0)
                 .map(|rate| ((f64::from(health) / rate).ceil() as u32).max(DEFEND_DEADLINE_FLOOR));
-            let deadline = match (damage_deadline, approach_deadline) {
-                (Some(damage), Some(approach)) => damage.min(approach),
-                (Some(deadline), None) | (None, Some(deadline)) => deadline,
-                (None, None) => THREAT_RELIEF_RADIUS as u32,
+            let deadline = if self.city_relief_deadlines {
+                match (damage_deadline, approach_deadline) {
+                    (Some(damage), Some(approach)) => damage.min(approach),
+                    (Some(deadline), None) | (None, Some(deadline)) => deadline,
+                    (None, None) => THREAT_RELIEF_RADIUS as u32,
+                }
+            } else {
+                damage_deadline
+                    .or(approach_deadline)
+                    .unwrap_or(THREAT_RELIEF_RADIUS as u32)
             };
             let value = city_value(g, *cid, lane).max(POP_VALUE);
             rows.push(Objective {

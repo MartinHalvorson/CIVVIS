@@ -1290,11 +1290,41 @@ impl AdvancedAi {
         if candidates.is_empty() {
             return (Vec::new(), armed, Vec::new(), BTreeSet::new());
         }
-        let doomed = if self.doomed_blow_veto || self.doomed_blow_veto_2 {
+        let mut doomed = if self.doomed_blow_veto || self.doomed_blow_veto_2 {
             doomed_shooters(&shooters, &targets, &candidates, field)
         } else {
             BTreeSet::new()
         };
+        if self.city_relief_deadlines {
+            // A mission may refuse a remote attack, but it must not erase
+            // the unsafe-strike evidence the recovery planner already owns.
+            // Assess all legal blows first, then the remaining eligible ones.
+            let offered: BTreeSet<_> = candidates
+                .iter()
+                .map(|candidate| shooters[candidate.shooter].uid)
+                .collect();
+            let mut defense_targets = BTreeMap::new();
+            let before = candidates.len();
+            candidates.retain(|candidate| {
+                let uid = shooters[candidate.shooter].uid;
+                let target = targets[candidate.target].pos;
+                self.attack_meets_relief_deadline(g, uid, candidate.from, target, candidate.ranged)
+                    || defense_targets
+                        .entry(uid)
+                        .or_insert_with(|| self.relief_defense_targets(g, pid, uid))
+                        .contains(&target)
+            });
+            if candidates.len() != before {
+                if self.doomed_blow_veto || self.doomed_blow_veto_2 {
+                    doomed.extend(doomed_shooters(&shooters, &targets, &candidates, field));
+                }
+                let eligible: BTreeSet<_> = candidates
+                    .iter()
+                    .map(|candidate| shooters[candidate.shooter].uid)
+                    .collect();
+                armed.retain(|uid| !offered.contains(uid) || eligible.contains(uid));
+            }
+        }
         armed.retain(|uid| !doomed.contains(uid));
         let wanted = self.wanted_previews_of(&shooters, &targets, &candidates);
         // Rotation runs after the selected blows have been applied. A veto
@@ -1451,7 +1481,6 @@ impl AdvancedAi {
                 spec.is_melee_capable(),
             );
             let mut own: Vec<Candidate> = Vec::new();
-            let relief_defenders = std::cell::OnceCell::new();
             let mut stands: Vec<Pos> = vec![unit.pos];
             stands.extend(g.reachable(uid));
             for stand in stands {
@@ -1468,10 +1497,6 @@ impl AdvancedAi {
                             continue;
                         }
                         if spec.has_ranged_attack()
-                            && (self.attack_meets_relief_deadline(g, uid, stand, target.pos, true)
-                                || relief_defenders
-                                    .get_or_init(|| self.relief_defense_targets(g, pid, uid))
-                                    .contains(&target.pos))
                             && board.ranged_order_is_legal(
                                 pid,
                                 uid,
@@ -1495,10 +1520,6 @@ impl AdvancedAi {
                             }
                         }
                         if spec.is_melee_capable()
-                            && (self.attack_meets_relief_deadline(g, uid, stand, target.pos, false)
-                                || relief_defenders
-                                    .get_or_init(|| self.relief_defense_targets(g, pid, uid))
-                                    .contains(&target.pos))
                             && board.melee_order_is_legal(pid, uid, target.pos)
                         {
                             if let Some((att, def)) =

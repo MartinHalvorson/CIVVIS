@@ -2356,6 +2356,10 @@ pub const GENES: &[Gene] = &[
     // Immortal. With this on, Builders keep the native Builder safety and the
     // Settlers keep every lesson. See `AdvancedAi::builder_reach_safety_on`.
     Gene { tag: "builders-work-through-raiders", field: "builders_work_through_raiders", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_work_through_raiders, disable: AdvancedAi::disable_builders_work_through_raiders },
+    // Keep city relief's damage deadline inside observed hostile arrival;
+    // preserve doomed-strike safety and move assigned relief toward its
+    // city instead of reopening a remote engagement. Unproved, default off.
+    Gene { tag: "city-relief-deadlines", field: "city_relief_deadlines", kind: Kind::OptIn, enable: AdvancedAi::enable_city_relief_deadlines, disable: AdvancedAi::disable_city_relief_deadlines },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
