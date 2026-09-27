@@ -394,6 +394,35 @@ CivvisTradeableLuxuries = function(player, pid, otherId)
 end;
 
 
+-- Quantities displayed in the met rival's strategic-resource trade column.
+-- Read their existing deal only: never clear, add to, price or submit it.
+-- DiplomacyDealView.lua:1715,1722-1724 reads and displays this same MaxAmount.
+CivvisTradeableStrategics = function(player, pid, otherId)
+	local diplomacy = player:GetDiplomacy();
+	if diplomacy == nil or not diplomacy:HasMet(otherId)
+			or diplomacy:IsAtWarWith(otherId) or not Players[otherId]:IsMajor() then
+		return nil;
+	end
+	local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, otherId);
+	if deal == nil then return nil; end
+	local possible = DealManager.GetPossibleDealItems(
+		otherId, pid, DealItemTypes.RESOURCES, deal);
+	if type(possible) ~= "table" then return nil; end
+	local out = {};
+	for _, entry in ipairs(possible) do
+		local amount = entry.MaxAmount;
+		if entry.IsValid ~= false and type(amount) == "number" and amount > 0
+				and amount < math.huge and amount == math.floor(amount) then
+			local row = try(function() return GameInfo.Resources[entry.ForType]; end, nil);
+			if row ~= nil and row.ResourceClassType == "RESOURCECLASS_STRATEGIC" then
+				out[row.ResourceType] = amount;
+			end
+		end
+	end
+	return out;
+end;
+
+
 -- --------------------------------------------------------------- action ids
 --
 -- Operations are looked up in GameInfo, not on the UnitOperationTypes table.
@@ -7597,6 +7626,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 								class = unitClass(name),
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 								moves = try(function() return unit:GetMovesRemaining(); end, -1),
+								max_moves = try(function() return unit:GetMaxMoves(); end, nil),
 								xp = progress.xp, level = progress.level,
 								promotions = progress.promotions,
 								build_charges = progress.build_charges,
@@ -7971,6 +8001,9 @@ local function exportState(player, pid, turn, frame, eventKind)
 				tradeable_luxuries = try(function()
 					return CivvisTradeableLuxuries(player, pid, otherId);
 				end, nil),
+				tradeable_strategics = try(function()
+					return CivvisTradeableStrategics(player, pid, otherId);
+				end, nil),
 				-- ★★★★ THE RIVAL'S OWN ECONOMY, AS THE HOST REPORTS IT. Counts of
 				-- techs and civics say how far ahead a rival is; these say how
 				-- fast it is moving. Every accessor is one the shipped World
@@ -8118,6 +8151,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 								x = ux, y = uy, kind = name,
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 								moves = try(function() return unit:GetMovesRemaining(); end, -1),
+								max_moves = try(function() return unit:GetMaxMoves(); end, nil),
 								xp = progress.xp, level = progress.level,
 								promotions = progress.promotions,
 								build_charges = progress.build_charges,
