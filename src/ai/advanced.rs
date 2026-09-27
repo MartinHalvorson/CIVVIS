@@ -7269,11 +7269,11 @@ mod surprise_defense;
 /// The air surge: a three-tech beeline to Advanced Flight, an Aerodrome, a
 /// bomber wing, and the cavalry that takes the city the wing empties. See
 /// `advanced/air_surge.rs`.
-mod air_city_assault;
 mod air_base_loyalty;
+mod air_city_assault;
 mod air_resource_builders;
-mod air_resource_settlement;
 mod air_resource_colony;
+mod air_resource_settlement;
 mod air_surge;
 pub use air_city_assault::AirCityAssault;
 mod siege_resource_purchase;
@@ -38752,7 +38752,9 @@ impl AdvancedAi {
             legal
                 .iter()
                 .filter_map(|action| match action {
-                    Action::AirRebase { unit, to } if *unit == uid => {
+                    Action::AirRebase { unit, to }
+                        if *unit == uid && self.air_base_rebase_allowed(g, pid, uid, *to) =>
+                    {
                         let distance = g.wdist(*to, objective);
                         let improvement = current_distance - distance;
                         let reaches = (distance <= g.unit_attack_range(uid)) as i32;
@@ -41125,6 +41127,7 @@ impl AdvancedAi {
         if !self.builder_support.is_empty() {
             self.rebuild_force_groups(g, pid, plan);
         }
+        let evacuated_aircraft = self.evacuate_air_bases(g, pid, plan);
         // A direct kill is a local opportunity, not a new campaign objective.
         // Resolve those exact, positive exchanges before the remaining unit
         // loop runs, then rebuild once if the board changed so the force
@@ -41173,6 +41176,7 @@ impl AdvancedAi {
                 && Some(*uid) != opening_recon_warrior
                 && !withdrawn.contains(uid)
                 && !air_assault_units.contains(uid)
+                && !evacuated_aircraft.contains(uid)
         });
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
