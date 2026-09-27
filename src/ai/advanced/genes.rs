@@ -2362,6 +2362,10 @@ pub const GENES: &[Gene] = &[
     // Immortal Science seat took Writing at turn 27 behind Sailing. The goal
     // lands on the same turn either way. See `AdvancedAi::beeline_step`.
     Gene { tag: "beeline-orders-by-value", field: "beeline_orders_by_value", kind: Kind::OptIn, enable: AdvancedAi::enable_beeline_orders_by_value, disable: AdvancedAi::disable_beeline_orders_by_value },
+    // Keep city relief's damage deadline inside observed hostile arrival;
+    // preserve doomed-strike safety and move assigned relief toward its
+    // city instead of reopening a remote engagement. Unproved, default off.
+    Gene { tag: "city-relief-deadlines", field: "city_relief_deadlines", kind: Kind::OptIn, enable: AdvancedAi::enable_city_relief_deadlines, disable: AdvancedAi::disable_city_relief_deadlines },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

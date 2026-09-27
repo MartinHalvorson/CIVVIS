@@ -5501,6 +5501,11 @@ pub struct AdvancedAi {
     /// `advanced/chokepoints.rs`.
     chokepoint_gates: chokepoints::GatePlan,
 
+    /// Experimental city-relief deadline and command handoff. Preserve
+    /// strike safety before applying the travel budget, then aim overdue
+    /// relief at its city. Default-off gene `city-relief-deadlines`.
+    city_relief_deadlines: bool,
+
     // ---- append: e-f ------------------------------------------------
     /// A district is worth the land-grab building it will host.
     ///
@@ -8425,6 +8430,8 @@ impl AdvancedAi {
             campaign: None,
             campaign_pillage: false,
             campaign_retry_after: 0,
+
+            city_relief_deadlines: false,
 
             // ---- append: e-f ----------------------------------------
             expansion_hall_district: false,
@@ -36930,14 +36937,22 @@ impl AdvancedAi {
             self.base.come_ashore && g.rules.units[unit.kind].domain.as_deref() != Some("sea");
         let role = Self::force_role(g, uid);
         let spec = &g.rules.units[unit.kind];
-        let target = match group.posture {
+        let relief_city = (!self.base.legacy_movement && group.posture != ForcePosture::Recover)
+            .then(|| self.urgent_relief_assignment(g, uid))
+            .flatten()
+            .map(|(city, _)| city)
+            .filter(|city| g.wdist(upos, *city) > 2);
+        let target = relief_city.unwrap_or_else(|| match group.posture {
             ForcePosture::Hold if self.relief_column_marches => {
                 self.relief_hold_point(g, group).unwrap_or(group.anchor)
             }
             ForcePosture::Muster | ForcePosture::Hold | ForcePosture::Recover => group.anchor,
             ForcePosture::Engage => group.focus_target.unwrap_or(group.objective),
             ForcePosture::Advance => group.objective,
-        };
+        });
+        let urgent_relief = !self.base.legacy_movement
+            && group.posture != ForcePosture::Recover
+            && self.urgent_relief_assignment(g, uid).is_some();
         let preferred_depth = match role {
             ForceRole::Recon => spec.range.max(2),
             ForceRole::Vanguard | ForceRole::Mobile => 1,
@@ -37136,19 +37151,26 @@ impl AdvancedAi {
                 enemies,
                 visible: visible.as_deref(),
             });
-            if g.wdist(tile, target) <= 5 {
+            // Isolate continuity at the approach ring to urgent city relief.
+            // Its finite arrival budget is otherwise defeated by the spacing
+            // penalty appearing all at once on a six-to-five approach.
+            // The broader army-approach correction remains under evaluation.
+            if urgent_relief || g.wdist(tile, target) <= 5 {
                 value -= self.base.w.role_spacing
                     * spacing
-                    * (g.wdist(tile, target) - preferred_depth).abs() as f64;
-                if matches!(
-                    role,
-                    ForceRole::Recon | ForceRole::Ranged | ForceRole::Siege | ForceRole::AirStrike
-                ) {
-                    if let Some(front_depth) = vanguard_depth {
-                        value -= self.base.w.screen
-                            * (front_depth - g.wdist(tile, target)).max(0) as f64;
-                    }
-                }
+                    * (g.wdist(tile, target).min(5) - preferred_depth).abs() as f64;
+            }
+            if let Some(front_depth) = vanguard_depth.filter(|_| {
+                g.wdist(tile, target) <= 5
+                    && matches!(
+                        role,
+                        ForceRole::Recon
+                            | ForceRole::Ranged
+                            | ForceRole::Siege
+                            | ForceRole::AirStrike
+                    )
+            }) {
+                value -= self.base.w.screen * (front_depth - g.wdist(tile, target)).max(0) as f64;
             }
             if let Some(frame) = &screen_frame {
                 value += self.screen_bonus(g, tile, frame);
@@ -39726,6 +39748,7 @@ impl AdvancedAi {
             1
         };
         let mut candidates = Vec::new();
+        let relief_defenders = std::cell::OnceCell::new();
         // Hoisted out of the tile loop below: `visibility_viewers` walks the
         // alliance graph, and neither frame can move while this loop applies
         // nothing. Built lazily, because most units reach no enemy tile at
@@ -39803,6 +39826,18 @@ impl AdvancedAi {
                 });
             }
             for action in actions {
+                if !self.attack_meets_relief_deadline(
+                    g,
+                    uid,
+                    unit.pos,
+                    pos,
+                    !matches!(action, Action::Attack { .. }),
+                ) && !relief_defenders
+                    .get_or_init(|| self.relief_defense_targets(g, pid, uid))
+                    .contains(&pos)
+                {
+                    continue;
+                }
                 candidates.push((pos, action));
             }
         }
