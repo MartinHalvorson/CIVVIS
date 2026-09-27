@@ -209,10 +209,13 @@ already a friend and not denounced either way:
 The focal seat's 19 wins against Domination-lane rivals are 9 Religious, 5
 Science and 5 Score: its would-be attackers spend their armies on each other.
 ⚠ The rivals here are our own genome, which accepts any friendship it values
-above zero; Civilization VI's leaders accept by their opinion of the proposer,
-and the live seat cannot offer one at all yet — `civvis_orders` sends a peace
-deal to the host and skips every other deal. A `DECLARE_FRIENDSHIP` order in
-the agent mod is the follow-up that would let the ladder find out.
+above zero; Civilization VI's leaders accept by their opinion of the proposer
+(`DiplomaticActions.xml` prices a declaration at Worth 15 from Friendly, −10
+from Neutral, −40 from Unfriendly). A friendship-only deal now crosses the
+bridge as a `friendship` order the agent opens as the shipped view does,
+`RequestSession(…, "DECLARE_FRIEND")` (#3811), only toward a rival the host
+reads as Friendly, and the verdict reads the host's `GetDeclaredFriendshipTurn`.
+The gene stays unforced; forcing it is what would let the ladder find out.
 
 ## What was decided
 
