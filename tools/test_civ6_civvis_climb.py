@@ -1946,6 +1946,80 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertEqual(rows[0]["last_turn"], 250)
         snapshot.assert_called_once()
 
+    def test_selected_save_is_archived_after_cleanup_before_reload(self):
+        newest = Path(self.tmp.name) / "AutoSave_0102.Civ6Save"
+        selected = Path(self.tmp.name) / "AutoSave_0101.Civ6Save"
+        newest.write_bytes(b"parked board")
+        original = b"selected recovery board\x00\xff"
+        selected.write_bytes(original)
+        cleaned = []
+        test = self
+
+        class Recording(FakeProc):
+            def __init__(self, argv, *args, **kwargs):
+                if "--load-save" in argv:
+                    test.assertEqual(argv[argv.index("--load-save") + 1], str(selected))
+                    continuation = argv[argv.index("--tag") + 1]
+                    manifests = list(test.runs.glob("*/native-recovery-save/manifest.json"))
+                    test.assertEqual(len(manifests), 1)
+                    manifest = manifests[0]
+                    report = json.loads(manifest.read_text())
+                    test.assertIn(report["frozen_tag"], cleaned)
+                    test.assertEqual(report["root_tag"], report["frozen_tag"])
+                    test.assertEqual(report["continuation_tag"], continuation)
+                    test.assertEqual(report["source"], str(selected.absolute()))
+                    test.assertEqual(report["last_observed_turn"], 102)
+                    test.assertEqual((manifest.parent / report["archive"]).read_bytes(), original)
+                    newest.unlink()
+                    selected.unlink()  # Simulate a later game's autosave cleanup.
+                super().__init__(argv, *args, **kwargs)
+
+        with mock.patch.object(climb, "wait_watching_the_turn", side_effect=["frozen", "exited"]), \
+             mock.patch.object(climb, "_recent_autosaves", return_value=[newest, selected]), \
+             mock.patch.object(climb, "teardown", side_effect=lambda tag: cleaned.append(tag)), \
+             mock.patch.object(climb.subprocess, "Popen", Recording):
+            _, rows = self.climb_with([{"last_turn": 102}, {"last_turn": 250}], attempts=1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["resumes"][0]["save"], selected.name)
+        archives = list(self.runs.glob("*/native-recovery-save/*.Civ6Save"))
+        self.assertEqual([path.read_bytes() for path in archives], [original])
+
+    def test_save_snapshot_failure_reports_it_and_keeps_the_original_reload(self):
+        selected = Path("/saves/AutoSave_0101.Civ6Save")
+        spawned = []
+
+        class Recording(FakeProc):
+            def __init__(self, argv, *args, **kwargs):
+                spawned.append(list(argv))
+                super().__init__(argv, *args, **kwargs)
+
+        with mock.patch.object(climb, "wait_watching_the_turn", side_effect=["frozen", "exited"]), \
+             mock.patch.object(climb, "_recent_autosaves", return_value=[selected]), \
+             mock.patch.object(climb.civ6_save_snapshot, "snapshot",
+                               side_effect=OSError("disk full")) as snapshot, \
+             mock.patch.object(climb.subprocess, "Popen", Recording), \
+             mock.patch("builtins.print") as printed:
+            _, rows = self.climb_with([{"last_turn": 102}, {"last_turn": 250}], attempts=1)
+        self.assertEqual(rows[0]["last_turn"], 250)
+        snapshot.assert_called_once()
+        reloads = [argv for argv in spawned if "--load-save" in argv]
+        self.assertEqual(len(reloads), 1)
+        self.assertEqual(reloads[0][reloads[0].index("--load-save") + 1], str(selected))
+        self.assertTrue(any("selected save snapshot failed: disk full" in str(call)
+                            for call in printed.call_args_list))
+
+    def test_unproven_cleanup_does_not_archive_or_launch_a_continuation(self):
+        with mock.patch.object(climb, "wait_watching_the_turn", return_value="frozen"), \
+             mock.patch.object(climb, "teardown", return_value=False), \
+             mock.patch.object(climb.civ6_save_snapshot, "snapshot") as snapshot:
+            self.climb_with([{"last_turn": 102}], attempts=1)
+        snapshot.assert_not_called()
+
+    def test_finished_games_do_not_snapshot_an_unselected_save(self):
+        with mock.patch.object(climb.civ6_save_snapshot, "snapshot") as snapshot:
+            self.climb_with([{"last_turn": 250}], attempts=1)
+        snapshot.assert_not_called()
+
     def test_conquest_ancestry_failure_does_not_prevent_recovery(self):
         with mock.patch.object(climb, "wait_watching_the_turn", side_effect=["frozen", "exited"]), \
              mock.patch.object(climb, "_recent_autosaves",
