@@ -58,9 +58,13 @@ impl AdvancedAi {
             .into_iter()
             .filter(|uid| g.rules.units[g.units[uid].kind].promotion_class == "air_bomber")
             .count();
+        // One answer for the whole empire: finding the Bomber walks the
+        // unit catalog, and asking once per city made this count the
+        // costliest part of pricing every purchase for a seat with Flight.
+        let field = Self::air_surge_field(g, pid);
         for cid in g.player_city_ids(pid) {
             let city = &g.cities[&cid];
-            fields += usize::from(Self::air_surge_field(g, pid).is_some_and(|field| {
+            fields += usize::from(field.is_some_and(|field| {
                 g.city_has_district_family(city, field) || city.queue.iter().any(|item| {
                     matches!(item, Item::District { district, .. } if g.district_family(*district) == field)
                 })
