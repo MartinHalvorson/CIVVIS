@@ -19,7 +19,7 @@ python3 tools/civ6_civvis_climb.py --attempts 1 \
 The input is archived and checksummed before the player starts. The archive,
 not the rotating original, reaches `civ6_play --load-save`. A save outside the
 native manual directory is copied into its constant `civvis-resume` row and
-checked byte-for-byte by SHA-256. An external staging failure refuses the load;
+verified by SHA-256. An external staging failure refuses the load;
 ordinary autosave recovery retains its existing filter fallback. Installed
 `Base/Assets/UI/FrontEnd/LoadGameMenu.lua:108` calls
 `Network.LoadGame(m_thisLoadFile, serverType);`; lines 320–323 toggle the
@@ -57,12 +57,44 @@ profile was four players, King, Gran Colombia, Simón Bolívar, Tiny Pangaea,
 Online, Gathering Storm, with all six victories enabled and a native turn
 cap of 250. The same decider image and all 21 force-on treatments are retained.
 
-The replay will start only after the currently active fresh game finishes.
-An expiring, fingerprinted lease holds only its supervisor; the active climb
-and player keep running. A Terminal-owned wrapper will run the actual
-standard climb from a frozen candidate checkout. It will restore the ordinary
-supervisor after the diagnostic or on failure. No watchdog ownership check,
-native outcome, capture-permission setting, or live-game process name changes.
+The replay ran after fresh `civvis-20260927T155010Z` exited around turn 115.
+That interruption has no native victory/defeat result; the preserved crash
+report records `EXC_BAD_ACCESS`, `SIGSEGV`, and invalid address `0x18`. Its
+autosave was archived separately, rather than treating the exit as a loss.
+An expiring, fingerprinted lease held only its supervisor while the active
+climb and player continued. The Terminal-owned wrapper then ran the actual
+standard climb from frozen candidate `77cfd585f82e4cc795e7a498aa4f0211b9e863af`.
+
+Native `civvis-20260927T160634Z` loaded turn 204 and observed every turn through
+221 (53 state frames, 18 turns). The 1,416,677-byte input SHA-256 was
+`6e3cf4bcfdde42bed4ce9af39e30d80bac25ff6ad5986117447921038c00907b`;
+the staged native manual row passed that same checksum. Native seat readback
+matched the registered four-player King Gran Colombia profile, all six
+victories, and the native 250-turn cap. All 21 force-on treatments were read
+back in the actual genome. The decider SHA-256 stayed
+`d0bd1f27f3ffb18c5e76bb6e4a4ec12f5047188e7b1f173e03fb4da74b3e9483`.
+The observed player PID 47421 had standard climb PID 47161 as its parent,
+satisfying the existing watchdog ownership condition. No freeze occurred;
+recovery label inheritance and pin refusal remain regression-tested, not
+newly measured native recoveries.
+
+The native terminal event was rival team 1's Science victory at turn 221,
+`won=false`, matching the prior trajectory's ending. It is one saved-board
+diagnostic, with no Domination gain claimed. The complete summary and root
+`diagnostic-result.json` retain the label and input pins. Owned cleanup
+completed and the ordinary supervisor resumed at 16:11:15 UTC.
+
+The premerge supervisor initially backfilled this labeled diagnostic using
+the old `a5b6d499f` reader, which did not understand the new exclusions. The
+rollout correction retained a full ledger backup and removed only this
+task's nonwinning diagnostic row; the other 1,296 entries and rung wins stayed
+unchanged. The new reader refused to record the same summary. Future
+premerge diagnostics must keep the boundary reserved until the new reader
+is integrated. This mixed-version observation and its correction are in
+`mixed-version-ledger-correction.json` outside the repository.
+
+No watchdog ownership check, native outcome, capture-permission setting,
+or live-game process name changed.
 
 External evidence lives under
 `~/civvis-war-evidence-20260927/native-saved-game-diagnostics/`.
@@ -76,9 +108,17 @@ exclusion, and unstaged external archives. Candidate focused suites passed
 actual command builder and main recovery loop, exact archived bytes before
 launch, frozen refresh, inherited prelaunch markers, changed-binary refusal,
 archive/staging failures, a no-turn start, direct recording and backfill, and
-continued eligibility of ordinary recovery.
+continued eligibility of ordinary recovery. Another 77 adjacent snapshot,
+conquest, ledger-publication, and watchdog tests passed. The required
+`cargo test --profile ci --locked` passed 4,423 tests, with zero failed and
+53 ignored. No engine or AI code changed in this process fix.
 
 The fresh game `civvis-20260927T153159Z` independently ended at turn 156 in
-Religious victory for rival team 3. It held no foreign cities or original
-capitals. This is another native religion-defense failure, not evidence about
-the diagnostic runner or the strength of the Congress fix.
+Religious victory for rival team 3. Complete native ownership records show
+two foreign major cities (Tver at 149 and Nizhniy Novgorod at 152), one foreign
+minor city (Geneva by 156), and zero foreign major original capitals. The
+last native state shows seven of 13 cities following Orthodoxy, compared with
+six of 12 immediately before Geneva joined the empire. All three acquired
+cities followed that faith. This is another native religion-defense failure,
+with city acquisition contributing to the observed majority; it is not
+evidence about the diagnostic runner or the strength of the Congress fix.
