@@ -186,6 +186,12 @@ uses the real military dispatch rather than just a direct exploration call.
 
 This controlled 40x24 map is not the native neighborhood, a completed colony,
 income, Bomber sustainment or a victory. The earlier four-seed campaign
-regression remains retained. Full-suite and changed-line validation of this
-new checkpoint, then combined guarded-colony campaign evidence on a fresh
-registered block, remain required. PR #3793 stays draft and withheld.
+regression remains retained. At coastal source checkpoint `4929d54e4`, the full
+suite passed 4,356 tests with 53 existing ignores and changed-line quality
+passed. This still does not validate deployment. A fresh fixed block,
+`37930100`–`37930103`, is registered in `coastal-37930100/plan.json` before any
+campaign runs. It will compare the combined survey against the same merged
+guarded-colony baseline with the identical twenty-one force-on rows. Full
+action/reasoning streams and compact supply/retention snapshots are required;
+partial outcomes will not tune the block. Guarded-colony main integration and
+that campaign evidence are pending. PR #3793 stays draft and withheld.
