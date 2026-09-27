@@ -190,11 +190,21 @@ impl Game {
                 player.gold_per_turn = source.gold_per_turn;
                 player.age = source.age.clone();
                 player.pantheon = source.pantheon.clone();
-                player.envoys = source
-                    .envoys
+                // The city-state panel exposes effective delegations (shipped
+                // CityStates.lua:1458, GetTokensReceived), including Amani.
+                // Rival governors stay private; copying raw placements would
+                // erase their public bonus, invent ties and lose derived wars.
+                // Enumerate minors: Puppeteer can contribute without a raw row.
+                player.envoys = self
+                    .players
                     .iter()
-                    .filter(|(minor, _)| self.has_met(pid, *minor))
-                    .copied()
+                    .filter(|minor| {
+                        minor.is_minor && !minor.is_barbarian && self.has_met(pid, minor.id)
+                    })
+                    .filter_map(|minor| {
+                        let count = self.envoys_at(other, minor.id);
+                        (count > 0).then_some((minor.id, count))
+                    })
                     .collect();
                 player.dvp = source.dvp;
                 player.diplomatic_favor = source.diplomatic_favor;
@@ -324,6 +334,27 @@ impl Game {
             }
         }
         view.grow_player_frontier(6);
+        // Own gross strategic income is public (shipped Gathering Storm
+        // TopPanel_Expansion2.lua:50-64), even when a source's infrastructure
+        // is redacted. Preserve the reading, not foreign owned-tile ledgers.
+        // Reconcile against the raw model: an inherited host adjustment may
+        // already clamp to zero and cannot safely be adjusted a second time.
+        // The modeled part remains live for own improvement counterfactuals.
+        let strategic_income = self
+            .rules
+            .resources
+            .iter()
+            .filter(|(_, resource)| resource.class == "strategic")
+            .map(|(&resource, _)| {
+                (
+                    resource,
+                    self.strategic_resource_rate(pid, resource.as_str())
+                        - view.modeled_strategic_resource_rate(pid, resource.as_str()),
+                )
+            })
+            .collect();
+        view.observed_strategic_income_adjustments =
+            Arc::new(BTreeMap::from([(pid, strategic_income)]));
         // The player can read actual yields in its city panels even when a
         // modifier depends on off-screen infrastructure. Preserve that reading
         // as a correction, just as the live mirror does, without revealing the
@@ -486,3 +517,9 @@ mod tests;
 
 #[cfg(test)]
 mod colonial_war_tests;
+
+#[cfg(test)]
+mod envoy_readback_tests;
+
+#[cfg(test)]
+mod strategic_income_tests;

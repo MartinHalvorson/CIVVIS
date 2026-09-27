@@ -477,6 +477,9 @@ mod growth;
 mod route_avoidance;
 
 #[cfg(test)]
+mod area_damage_unit_removal_tests;
+
+#[cfg(test)]
 mod city_transfer_unit_removal_tests;
 
 #[cfg(test)]
@@ -20274,7 +20277,14 @@ impl Game {
         }
         let units = self.units_at(position);
         for unit_id in units {
-            let hp = self.units[&unit_id].hp - unit_damage;
+            // Removing an Aircraft Carrier removes the aircraft it carries,
+            // which stand on this tile and are later in `units`: one lethal
+            // strike on a loaded carrier used to index a unit it had already
+            // removed and panic ("unit N is not present").
+            let Some(unit) = self.units.get(&unit_id) else {
+                continue;
+            };
+            let hp = unit.hp - unit_damage;
             if hp <= 0 {
                 let (owner, kind, formation) = {
                     let unit = &self.units[&unit_id];
