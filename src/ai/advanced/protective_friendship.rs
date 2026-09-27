@@ -24,7 +24,11 @@
 //! `friendship` order (`civvis_orders`), which the agent mod opens as the
 //! shipped `DECLARE_FRIEND` session only toward a rival the host reads as
 //! Friendly; Civilization VI's leaders value a declaration from any colder
-//! state below zero.
+//! state below zero. The partner is therefore chosen among the rivals the
+//! host reads as Friendly toward us (`Player::observed_diplomatic_state`),
+//! so a Neutral strongest rival does not hold the offer every turn while a
+//! Friendly one is never asked. A native board carries no such reading and
+//! chooses exactly as before.
 
 use super::*;
 
@@ -62,6 +66,15 @@ impl AdvancedAi {
                     && !g.are_friends(pid, other.id)
                     && !denounced(g, pid, other.id)
                     && !denounced(g, other.id, pid)
+                    // A live board carries the host's own reading of this
+                    // leader's attitude toward us, and the host's leaders
+                    // value a declared friendship only from FRIENDLY; a colder
+                    // one would refuse, and the bridge would decline to ask.
+                    // Absent on a native board, so nothing changes there.
+                    && g.players[other.id]
+                        .observed_diplomatic_state
+                        .get(&pid)
+                        .is_none_or(|state| state == "FRIENDLY")
                     && !g.pending_deals.iter().any(|deal| {
                         (deal.from == pid && deal.to == other.id)
                             || (deal.from == other.id && deal.to == pid)
@@ -163,6 +176,34 @@ mod tests {
             .pending_deals
             .iter()
             .any(|deal| deal.from == 0 && deal.to == 1 && deal.friendship));
+    }
+
+    /// On a live board the host's reading of each leader decides who is
+    /// asked: the strongest rival, Neutral toward us, is passed over for a
+    /// Friendly one, and nobody is asked while nobody is Friendly.
+    #[test]
+    fn a_live_seat_asks_only_a_rival_the_host_reads_as_friendly() {
+        let mut game = three_majors();
+        let mut ai = AdvancedAi::new();
+        ai.enable_befriend_the_strongest();
+        let attitude = |game: &mut Game, pid: usize, state: &str| {
+            game.players[pid]
+                .observed_diplomatic_state
+                .insert(0, state.to_string());
+        };
+        attitude(&mut game, 2, "NEUTRAL");
+        attitude(&mut game, 1, "UNFRIENDLY");
+        ai.propose_protective_friendship(&mut game, 0);
+        assert!(game.pending_deals.is_empty(), "no rival is Friendly");
+
+        attitude(&mut game, 1, "FRIENDLY");
+        ai.propose_protective_friendship(&mut game, 0);
+        let deal = game
+            .pending_deals
+            .iter()
+            .find(|deal| deal.from == 0)
+            .expect("the Friendly rival is asked");
+        assert_eq!(deal.to, 1, "the Neutral strongest rival is passed over");
     }
 
     #[test]

@@ -10982,6 +10982,41 @@ fn host_missions_promises_visibility_and_our_grant_cross_both_ways() {
     assert!(!game.players[0].open_borders_until.contains_key(&1));
 }
 
+/// The host's attitude toward us crosses on both paths as the leader's own
+/// reading of our seat, follows the next export, and is removed when an
+/// export carries none. It is not a treaty.
+#[test]
+fn the_hosts_attitude_toward_us_crosses_and_follows_each_export() {
+    let rival = StateRival {
+        player: 3,
+        diplomatic_state: Some("DIPLO_STATE_FRIENDLY".to_string()),
+        ..StateRival::default()
+    };
+    let (snapshot, mut state) = diplomacy_board(50, rival);
+    let attitude =
+        |game: &crate::game::Game| game.players[1].observed_diplomatic_state.get(&0).cloned();
+    let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+    assert_eq!(attitude(&rebuilt.game).as_deref(), Some("FRIENDLY"));
+
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+    assert_eq!(attitude(&mirror.game).as_deref(), Some("FRIENDLY"));
+    assert!(
+        mirror.game.players[0].observed_diplomatic_state.is_empty(),
+        "the reading is theirs of us, not ours of them"
+    );
+    assert_eq!(mirror.game.relationship_state(0, 1), "neutral");
+
+    state.turn = 51;
+    state.rivals[0].diplomatic_state = Some("DIPLO_STATE_NEUTRAL".to_string());
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(attitude(&mirror.game).as_deref(), Some("NEUTRAL"));
+
+    state.turn = 52;
+    state.rivals[0].diplomatic_state = None;
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(attitude(&mirror.game), None, "an older export says nothing");
+}
+
 /// ⚠ The old mod exports no `diplomatic_state`: the `can_declare`
 /// permission fake is written exactly as before on both paths, and a new
 /// export that says NEUTRAL while the host permits a declaration still

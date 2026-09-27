@@ -4845,6 +4845,16 @@ pub struct Player {
     /// export; empty on every native board.
     #[serde(default)]
     pub observed_visibility: BTreeMap<usize, f64>,
+    /// This leader's standing toward each seat AS THE HOST REPORTS IT
+    /// (`GetDiplomaticStateIndex`, `DiplomacyActionView.lua:870`), without the
+    /// `DIPLO_STATE_` prefix: `FRIENDLY`, `NEUTRAL`, `UNFRIENDLY`,
+    /// `DENOUNCED`, `DECLARED_FRIEND`, `ALLIED`, `WAR`. The treaty states are
+    /// already applied as treaties; the attitudes are what a live seat needs
+    /// before it asks for one, since the host's leaders value a declared
+    /// friendship only from `FRIENDLY`. Assigned from every export; empty on
+    /// every native board.
+    #[serde(default)]
+    pub observed_diplomatic_state: BTreeMap<usize, String>,
     #[serde(default)]
     pub alliances: BTreeMap<usize, AllianceState>,
     /// Outgoing Delegations or Resident Embassies, keyed by the leader that
@@ -5035,6 +5045,7 @@ impl Player {
             open_borders_until: BTreeMap::new(),
             borders_enforced: None,
             observed_visibility: BTreeMap::new(),
+            observed_diplomatic_state: BTreeMap::new(),
             alliances: BTreeMap::new(),
             diplomatic_missions: BTreeMap::new(),
             defensive_pacts: BTreeMap::new(),
