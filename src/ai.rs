@@ -9884,14 +9884,26 @@ impl BasicAi {
         floor: f64,
         veteran_weight: f64,
     ) -> usize {
+        Self::modernize_army_with_filter(g, pid, floor, veteran_weight, |_, _, _, _| true)
+    }
+
+    /// Keep the shared ranking and legal host quotes while a strategic caller
+    /// reserves material for another already viable military capability.
+    pub(crate) fn modernize_army_with_filter(
+        g: &mut Game,
+        pid: usize,
+        floor: f64,
+        veteran_weight: f64,
+        allowed: impl Fn(&Game, u32, Name, f64) -> bool,
+    ) -> usize {
         let mut taken = 0;
         loop {
             let mut best: Option<(f64, f64, u32)> = None;
             for uid in g.player_unit_ids(pid) {
-                let Some((target, gold, _)) = g.unit_gold_upgrade_offer(pid, uid) else {
+                let Some((target, gold, resources)) = g.unit_gold_upgrade_offer(pid, uid) else {
                     continue;
                 };
-                if g.players[pid].gold - gold < floor {
+                if g.players[pid].gold - gold < floor || !allowed(g, uid, target, resources) {
                     continue;
                 }
                 let from = &g.rules.units[g.units[&uid].kind];

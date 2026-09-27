@@ -7298,9 +7298,9 @@ mod surprise_defense;
 /// `advanced/air_surge.rs`.
 mod air_base_loyalty;
 mod air_city_assault;
+mod air_resource_allocation;
 mod air_resource_builders;
 mod air_resource_colony;
-mod air_resource_allocation;
 mod air_resource_settlement;
 mod air_surge;
 pub use air_city_assault::AirCityAssault;
@@ -10172,7 +10172,7 @@ impl AdvancedAi {
         } else {
             PEACETIME_UPGRADE_FLOOR
         };
-        let taken = BasicAi::modernize_army(g, pid, floor, VETERAN_UPGRADE_WEIGHT);
+        let taken = self.modernize_army_preserving_air_wing(g, pid, floor, VETERAN_UPGRADE_WEIGHT);
         if taken > 0 {
             think!(self.journal(), Military, Decision,
                    "Modernizing the army before the treasury is spent";
@@ -10227,14 +10227,22 @@ impl AdvancedAi {
                 if unit.kind != predecessor {
                     return None;
                 }
-                let (target, gold, _) = g.unit_gold_upgrade_offer(pid, uid)?;
-                (target == plan.assault_unit).then_some((gold, uid))
+                let (target, gold, resources) = g.unit_gold_upgrade_offer(pid, uid)?;
+                (target == plan.assault_unit
+                    && self.air_resource_upgrade_preserves_wing(g, pid, uid, target, resources))
+                .then_some((gold, uid))
             })
             .collect::<Vec<_>>();
         candidates.sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
         for (gold, uid) in candidates {
             if needed == 0 {
                 break;
+            }
+            let Some((target, _, resources)) = g.unit_gold_upgrade_offer(pid, uid) else {
+                continue;
+            };
+            if !self.air_resource_upgrade_preserves_wing(g, pid, uid, target, resources) {
+                continue;
             }
             if g.apply(pid, &Action::UpgradeUnit { unit: uid }).is_ok() {
                 needed -= 1;
@@ -28236,6 +28244,9 @@ impl AdvancedAi {
     ) -> f64 {
         let city = &g.cities[&cid];
         let city_count = g.player_city_ids(pid).len();
+        if !self.air_resource_item_preserves_wing(g, pid, cid, item) {
+            return -10_000.0;
+        }
         // The undermanned-war exception permits defenders, not another Spy
         // replacement loop while the same treasury is already in deficit.
         if g.players[pid].gold_per_turn < -0.5
@@ -42177,7 +42188,7 @@ impl AdvancedAi {
             && self.base.barbarian_tactics_enabled()
             && BasicAi::barbarian_military_gap(g, pid)
         {
-            BasicAi::upgrade_units(g, pid);
+            self.upgrade_units_preserving_air_wing(g, pid);
         }
         // See `upgrade_the_garrison`: the same move as the line above, asked on
         // the plain condition instead of a six-turn casus-belli window. An
@@ -42193,7 +42204,7 @@ impl AdvancedAi {
                     && g.is_at_war(pid, other.id)
             });
             if at_major_war {
-                BasicAi::upgrade_units(g, pid);
+                self.upgrade_units_preserving_air_wing(g, pid);
             }
         }
         if self.victory_planning {
@@ -42535,7 +42546,7 @@ impl AdvancedAi {
         // spending. Generic modernization resumes after the appointment; it
         // cannot consume cash reserved for one of the still-missing bodies.
         if self.war_plan.is_none() {
-            BasicAi::upgrade_units(g, pid);
+            self.upgrade_units_preserving_air_wing(g, pid);
         }
         self.advanced_units(g, pid, &plan);
         // `commitment-owner-acts`: the owners the unit pass left standing with

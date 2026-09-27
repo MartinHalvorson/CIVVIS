@@ -116,7 +116,7 @@ fn observed_dispatch_keeps_the_aluminum_source_for_two_bomber_queues() {
 }
 
 fn assert_dispatch_wing(observed: bool) {
-    let (mut g, mut ai, cavalry, _) = fixture(8.0);
+    let (mut g, mut ai, cavalry, cities) = fixture(8.0);
     ai.observed_player = observed;
     assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 2);
     let log_start = g.log.len();
@@ -129,18 +129,293 @@ fn assert_dispatch_wing(observed: bool) {
     let queued = g.player_city_ids(0).iter().flat_map(|cid| &g.cities[cid].queue)
         .filter(|item| matches!(item, Item::Unit { unit } if g.rules.units[unit].promotion_class == "air_bomber"))
         .count();
-    eprintln!(
-        "applied={:?}; wing={bombers}+{queued}; cavalry={:?}; stock={}",
-        g.log.since(log_start).collect::<Vec<_>>(),
-        cavalry
-            .iter()
-            .map(|uid| g.units.get(uid).map(|unit| unit.kind))
-            .collect::<Vec<_>>(),
-        g.strategic_stockpile(0, &crate::name!("aluminum"))
-    );
     assert!(
         bombers + queued >= 2,
         "the canonical dispatcher must commit the launch wing"
     );
     assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 2);
+    assert!(cavalry.iter().all(|uid| g.units[uid].kind == "cavalry"));
+    assert!(!g
+        .log
+        .since(log_start)
+        .any(|(_, action)| matches!(action, Action::UpgradeUnit { .. })));
+    // Complete the remaining real production order, with the engine placing
+    // the aircraft and paying its already committed construction material.
+    for cid in cities {
+        if let Some(item) = g.cities[&cid].queue.first().cloned() {
+            if matches!(item, Item::Unit { unit } if g.rules.units[unit].promotion_class == "air_bomber")
+            {
+                g.cities.get_mut(&cid).unwrap().production = g.item_cost_for_city(0, cid, &item);
+            }
+        }
+    }
+    next_owned_turn(&mut g);
+    assert_eq!(
+        g.units
+            .values()
+            .filter(
+                |unit| unit.owner == 0 && g.rules.units[unit.kind].promotion_class == "air_bomber"
+            )
+            .count(),
+        2
+    );
+    for _ in 0..g.standard_duration(air_surge::AIR_SURGE_ALUMINUM_GRACE) {
+        // Even a later full modernization opportunity must leave fuel to fly.
+        ai.upgrade_units_preserving_air_wing(&mut g, 0);
+        next_owned_turn(&mut g);
+        assert!(!g.players[0]
+            .strategic_resource_shortages
+            .contains_key(&crate::name!("aluminum")));
+    }
+}
+
+#[test]
+fn surplus_source_funds_only_the_ground_upgrades_it_can_sustain() {
+    let (mut g, ai, cavalry, cities) = fixture(8.0);
+    g.map
+        .tiles
+        .get_mut(&g.cities[&cities[1]].pos)
+        .unwrap()
+        .resource = Some(crate::name!("aluminum"));
+    assert_eq!(g.strategic_resource_rate(0, "aluminum"), 4.0);
+    ai.upgrade_units_preserving_air_wing(&mut g, 0);
+    assert_eq!(
+        cavalry
+            .iter()
+            .filter(|uid| g.units[uid].kind == "helicopter")
+            .count(),
+        2
+    );
+    assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 2);
+}
+
+#[test]
+fn inactive_lanes_and_immediate_defense_keep_the_shared_upgrade_actions() {
+    for case in 0..6 {
+        let (mut g, mut ai, _, cities) = fixture(8.0);
+        match case {
+            0 => ai.disable_air_surge_2(),
+            1 => ai.retarget(VictoryTarget::Science),
+            2 => {
+                for cid in cities {
+                    g.cities.get_mut(&cid).unwrap().districts.clear();
+                }
+            }
+            3 => {
+                g.players[0].techs.remove(&crate::name!("advanced_flight"));
+            }
+            4 => g.max_turns = g.turn + 1,
+            5 => {
+                g.at_war.insert((0, 1));
+                g.spawn_test_unit("modern_armor", 1, (7, 12));
+                g.spawn_test_unit("modern_armor", 1, (6, 11));
+                assert!(ai.threatened_city(&g, 0).is_some());
+            }
+            _ => unreachable!(),
+        }
+        let mut control = g.clone();
+        BasicAi::upgrade_units(&mut control, 0);
+        ai.upgrade_units_preserving_air_wing(&mut g, 0);
+        assert_eq!(
+            g.log.iter().collect::<Vec<_>>(),
+            control.log.iter().collect::<Vec<_>>(),
+            "case {case}"
+        );
+        assert_eq!(g.players[0].gold, control.players[0].gold);
+        assert_eq!(
+            g.players[0].strategic_resources,
+            control.players[0].strategic_resources
+        );
+    }
+}
+
+#[test]
+fn free_ground_upkeep_does_not_take_the_wing_reserve() {
+    let (mut g, ai, cavalry, _) = fixture(8.0);
+    for uid in &cavalry {
+        g.units.get_mut(uid).unwrap().free_upkeep = true;
+    }
+    ai.upgrade_units_preserving_air_wing(&mut g, 0);
+    assert!(cavalry.iter().all(|uid| g.units[uid].kind == "helicopter"));
+    assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 2);
+}
+
+#[test]
+fn pending_ground_queue_counts_against_the_next_upgrade() {
+    let (mut g, ai, cavalry, cities) = fixture(8.0);
+    g.map
+        .tiles
+        .get_mut(&g.cities[&cities[1]].pos)
+        .unwrap()
+        .resource = Some(crate::name!("aluminum"));
+    g.apply(
+        0,
+        &Action::Produce {
+            city: cities[0],
+            item: Item::Unit {
+                unit: crate::name!("helicopter"),
+            },
+        },
+    )
+    .unwrap();
+    ai.upgrade_units_preserving_air_wing(&mut g, 0);
+    assert_eq!(
+        cavalry
+            .iter()
+            .filter(|uid| g.units[uid].kind == "helicopter")
+            .count(),
+        1
+    );
+    assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 2);
+}
+
+#[test]
+fn jet_bombers_fulfill_the_wing_instead_of_being_counted_as_ground_demand() {
+    let (mut g, ai, cavalry, cities) = fixture(8.0);
+    for cid in cities {
+        g.spawn_test_unit("jet_bomber", 0, g.cities[&cid].pos);
+    }
+    ai.upgrade_units_preserving_air_wing(&mut g, 0);
+    assert!(cavalry.iter().all(|uid| g.units[uid].kind == "cavalry"));
+    assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 2);
+    next_owned_turn(&mut g);
+    assert!(!g.players[0]
+        .strategic_resource_shortages
+        .contains_key(&crate::name!("aluminum")));
+}
+
+#[test]
+fn appointed_package_rechecks_fuel_after_each_upgrade() {
+    let (mut g, mut ai, cavalry, cities) = fixture(8.0);
+    g.map
+        .tiles
+        .get_mut(&g.cities[&cities[1]].pos)
+        .unwrap()
+        .resource = Some(crate::name!("aluminum"));
+    ai.war_plan = Some(WarPlan {
+        target_player: 1,
+        objective_city: g.player_city_ids(1)[0],
+        breakthrough_tech: crate::name!("synthetic_materials"),
+        assault_unit: crate::name!("helicopter"),
+        predecessor: Some(crate::name!("cavalry")),
+        breach_unit: None,
+        estimated_research_turns: 0,
+        estimated_production_turns: 0,
+        estimated_upgrade_gold: 0.0,
+        estimated_march_turns: 3,
+        phase: WarPhase::Mobilize,
+        appointed_turn: g.turn,
+        tech_turn: Some(g.turn),
+        declared_turn: None,
+        last_reviewed_turn: g.turn,
+        recovery_assessments: 0,
+    });
+    ai.execute_war_upgrades(&mut g, 0);
+    assert_eq!(
+        cavalry
+            .iter()
+            .filter(|uid| g.units[uid].kind == "helicopter")
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn production_and_cash_cannot_replace_the_reserved_fuel_with_a_ground_unit() {
+    let (mut g, ai, cavalry, cities) = fixture(8.0);
+    for uid in cavalry {
+        g.remove_unit(uid);
+    }
+    // A four-city offensive with no land army clears the real purchase
+    // scorer's need floor; the control must actually want this alternative.
+    g.found_city_for(0, (6, 20), None);
+    g.found_city_for(0, (12, 20), None);
+    g.cities
+        .get_mut(&cities[0])
+        .unwrap()
+        .production_progress
+        .insert("unit:helicopter".into(), 299.0);
+    let plan = ai.plan.as_ref().unwrap().clone();
+    let counts = ai.counts(&g, 0);
+    let item = Item::Unit {
+        unit: crate::name!("helicopter"),
+    };
+    let mut control_ai = ai.clone();
+    control_ai.disable_air_surge_2();
+    let score = control_ai.production_value(&g, 0, cities[0], &item, &plan, &counts);
+    assert!(
+        score > 120.0,
+        "control score {score}; military={}; alternatives={:?}",
+        counts.military,
+        g.producible_items(0, cities[0])
+            .into_iter()
+            .filter(|item| matches!(item, Item::Unit { .. }))
+            .collect::<Vec<_>>()
+    );
+    assert!(ai.production_value(&g, 0, cities[0], &item, &plan, &counts) < -1000.0);
+    let purchase = Action::Buy {
+        city: cities[0],
+        unit: crate::name!("helicopter"),
+        formation: 0,
+        currency: "gold".into(),
+    };
+    let context = PurchaseScoreContext {
+        g: &g,
+        pid: 0,
+        plan: &plan,
+        counts: &counts,
+        bank: g.players[0].gold,
+        reserve: 125.0,
+    };
+    assert!(control_ai
+        .gold_purchase_score(context, &purchase, cities[0], &item)
+        .is_some());
+    assert!(ai
+        .gold_purchase_score(context, &purchase, cities[0], &item)
+        .is_none());
+    let mut control = g.clone();
+    control.apply(0, &purchase).unwrap();
+    assert_eq!(AdvancedAi::air_surge_bomber_goal(&control, 0), 1);
+}
+
+#[test]
+fn the_bank_pays_training_once_then_carries_two_real_aircraft() {
+    let (mut g, mut ai, _, cities) = fixture(30.0);
+    g.map.tiles.get_mut(&(6, 12)).unwrap().resource = None;
+    assert_eq!(g.strategic_resource_rate(0, "aluminum"), 0.0);
+    assert!(ai.air_surge_production(&mut g, 0));
+    assert!(ai.air_surge_production(&mut g, 0));
+    assert_eq!(g.strategic_stockpile(0, &crate::name!("aluminum")), 28.0);
+    for cid in cities {
+        let item = g.cities[&cid].queue[0].clone();
+        g.cities.get_mut(&cid).unwrap().production = g.item_cost_for_city(0, cid, &item);
+    }
+    next_owned_turn(&mut g);
+    assert_eq!(
+        g.units
+            .values()
+            .filter(|unit| unit.owner == 0 && unit.kind == "bomber")
+            .count(),
+        2
+    );
+    for _ in 0..g.standard_duration(air_surge::AIR_SURGE_ALUMINUM_GRACE) {
+        next_owned_turn(&mut g);
+        assert!(!g.players[0]
+            .strategic_resource_shortages
+            .contains_key(&crate::name!("aluminum")));
+    }
+}
+
+#[test]
+fn an_oil_upgrade_uses_its_own_supply() {
+    let (mut g, ai, cavalry, _) = fixture(8.0);
+    g.remove_unit(cavalry[0]);
+    let tank = g.spawn_test_unit("tank", 0, (6, 12));
+    g.players[0].techs.insert(crate::name!("composites"));
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("oil"), 20.0);
+    ai.upgrade_units_preserving_air_wing(&mut g, 0);
+    assert_eq!(g.units[&tank].kind, "modern_armor");
+    assert_eq!(g.strategic_stockpile(0, &crate::name!("aluminum")), 8.0);
 }
