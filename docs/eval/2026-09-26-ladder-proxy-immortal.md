@@ -232,6 +232,38 @@ native ladder last won, reads the strongest of all: every one of the 32 games
 survived where 27 had, and the seat declared 2 wars against 9 while ending
 with 4 foreign cities against 1. The King reading (16) stays null.
 
+### No engine seat can propose an alliance
+
+With `befriend-the-strongest` on, the focal seat held about three friendships
+at turn 150 in both the Immortal and the Emperor blocks, yet no major formed an
+alliance with anyone, focal or rival. Counting the proposals in 8 Emperor games
+(seeds 65000000+, main `5670348`) found **zero alliance proposals from any
+seat**, although every seat had Civil Service between turns 38 and 90.
+`propose_strategic_alliance` ran on its cadence, and every candidate failed
+its partner filter on `other.civics.contains(civil_service)`.
+
+The controller plans on `Game::player_decision_view`, which rebuilds each met
+rival's `Player` from its public fields. Civics and techs are not among them;
+only their counts cross (`observed_public_empire_stats`). On the view, then,
+no rival holds Civil Service, Early Empire or Scientific Theory, and the
+engine's own legality check on that view refuses every alliance, research
+agreement and open-borders bundle with a rival. The host's diplomacy screen
+shows which of those deals a met rival can sign, so the gating civics are
+public there.
+
+A bench-only change that carried just those three (`civil_service` and
+`early_empire` civics, `scientific_theory` tech) into each met rival's view
+brought alliances back: 0.9 per game for the focal seat and 1.5 for each
+rival by turn 100. The rivals proposed 85, 39 and 35 alliances against the
+focal Science seat's 16, since that seat asks only for a Research alliance,
+which waits for Scientific Theory. Over 16 paired Emperor games the focal
+share moved −0.88 pp (z −1.62): the world gains more from alliances than the
+focal seat does. Not shipped. The live seat's bridge carries no alliance, so
+the native ladder is unaffected either way. For whoever next touches the view
+or the alliance desk: alliances are dead in every engine game until the view
+carries those facts, and reviving them needs the Science seat to ask for the
+kinds it can sign before Scientific Theory.
+
 ## What was decided
 
 - **Shipped, off** (#3781): `builders-work-through-raiders`, an opt-in gene
