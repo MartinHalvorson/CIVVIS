@@ -303,6 +303,21 @@ Immortal on the same 32 seeds:
 
 This is the third independent Immortal block for `befriend-the-strongest`.
 
+**Which lane under the package** (Immortal, 32 paired, seeds 73000000+, every
+arm with `befriend-the-strongest` on and `peacetime-deterrence` off): Science
+stays the best seat. Against it, unassigned reads −0.73 pp (z −1.47), Culture
+−0.98 pp (z −2.16), Diplomacy −1.44 pp (z −3.71) and Religion −2.07 pp
+(z −3.43), each losing more cities (0.75–1.44 a game against Science's 0.34).
+No lane wins at Immortal: a rival takes Science in 24–28 of 32 games.
+
+**On a Domination seat.** A friendship forbids our own war with that major,
+so the gene could have cost a conquering seat its target. It did not: with
+the focal seat on the Domination lane at Emperor (16 paired, seeds
+74000000+) the gene read **+2.84 pp (z +3.67)**, the seat survived 16 of 16
+against 13, and cities lost fell 2.19 → 0.19 a game. That seat declared 5
+wars against 9, and in both arms held one foreign city and no capital: it was
+not converting its wars into conquests, and the safety was worth more.
+
 ## What was decided
 
 - **Shipped, off** (#3781): `builders-work-through-raiders`, an opt-in gene
