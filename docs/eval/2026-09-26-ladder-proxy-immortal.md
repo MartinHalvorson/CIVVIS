@@ -205,6 +205,7 @@ already a friend and not denounced either way:
 | Immortal, Domination-lane rivals | **+10.65 pp** | **+5.22** | **4 → 19** | 22 → 25 | 3.06 → 1.81 | 2.5 of 3 |
 | Immortal, adaptive rivals (16) | +1.11 pp | +2.60 | 0 → 0 | 16 → 16 | 0.75 → 0.44 | 3 of 3 |
 | Immortal, adaptive rivals, fresh seeds 64000000+ (2026-09-27) | **+1.56 pp** | **+3.43** | 0 → 0 | 30 → 32 | 0.97 → 0.16 | 2.9 of 3 |
+| Emperor, adaptive rivals, seeds 65000000+ (2026-09-27) | **+2.67 pp** | **+4.58** | 0 → 0 | 27 → 32 | 1.59 → 0.16 | 2.8 of 3 |
 | King, adaptive rivals (16) | −0.10 pp | −0.13 | 1 → 2 | 16 → 16 | — | — |
 
 The focal seat's 19 wins against Domination-lane rivals are 9 Religious, 5
@@ -226,7 +227,10 @@ The fresh-seed row (2026-09-27, main `621c5c6`, 250-turn clock, the games end
 at the first rival victory) repeats the adaptive-rival reading on 32 seeds the
 first block never saw: every game the seat survived, and it lost one sixth of
 the cities it lost without the gene. Pooled over the 48 adaptive Immortal
-games the share reading is positive in both blocks.
+games the share reading is positive in both blocks. Emperor, the rung the
+native ladder last won, reads the strongest of all: every one of the 32 games
+survived where 27 had, and the seat declared 2 wars against 9 while ending
+with 4 foreign cities against 1. The King reading (16) stays null.
 
 ## What was decided
 
@@ -253,7 +257,8 @@ games the share reading is positive in both blocks.
   raider can take this turn.
 - **Shipped, off** (#3810): `befriend-the-strongest` — against Domination-lane
   rivals the focal seat's wins 4 → 19 of 32 (z +5.22 on share); against
-  adaptive rivals +1.11 pp (16) and +1.56 pp (32 fresh, z +3.43). The live
+  adaptive rivals +1.11 pp (16) and +1.56 pp (32 fresh, z +3.43) at Immortal,
+  +2.67 pp (32, z +4.58) at Emperor. The live
   seat can now carry it: the friendship order (#3811) and the host's attitude
   (#3814).
 - **Recommended to the operator, not changed**: forcing `befriend-the-strongest`
