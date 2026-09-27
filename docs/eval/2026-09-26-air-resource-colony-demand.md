@@ -158,6 +158,8 @@ Its renewed 436-frame persistent replay is also exactly equal to both parent
 and frozen candidate, with the same decision-stream hash reported above.
 Full local validation on `2b14c78c5` passes 4,356 tests, zero failed, with
 53 existing ignores.
+The clean integration of main's purchase-menu legality fix `0796aecc3` in
+`0efe46718` also passes the same full test count and changed-line Rust quality.
 Final branch CI verifies the actual merge tree; this document distinguishes it
 from the local and frozen probes.
 
