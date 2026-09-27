@@ -49960,6 +49960,13 @@ fn domination_specializes_earlier_moves_only_the_domination_clock() {
         AdvancedAi::targeting(VictoryTarget::Science).phase_specialization_active(&game),
         "only the Domination lane's clock moves"
     );
+    let mut emperor = Game::new_full(2, 24, 16, 91_013, 250, 0, false);
+    emperor.difficulty = "emperor".to_string();
+    emperor.turn = 110;
+    assert!(
+        !domination.phase_specialization_active(&emperor),
+        "above King the shared halfway clock stands"
+    );
     assert!(super::GENES
         .iter()
         .any(|gene| gene.tag == "domination-specializes-earlier" && gene.opt_in()));

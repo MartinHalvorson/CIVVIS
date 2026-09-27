@@ -1207,6 +1207,11 @@ pub(crate) const DOMINATION_HANDOVER_CITIES: usize = 4;
 /// after which an assigned Domination lane leaves its development half. 40%
 /// is turn 100 of the ladder's 250; the shared clock is halfway (turn 125).
 pub(crate) const DOMINATION_SPECIALIZATION_PERCENT: u32 = 40;
+/// `domination-specializes-earlier` acts only up to this rung's `order`
+/// (King = 4). At Emperor the same clock measured −1.06 pp (z −2.33) and
+/// three more eliminations over 32 paired games: the stronger rivals punish
+/// the earlier war, so the shared halfway clock stands there.
+pub(crate) const DOMINATION_SPECIALIZATION_MAX_ORDER: usize = 4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StrategicPlan {
@@ -5139,8 +5144,9 @@ pub struct AdvancedAi {
     /// `domination-specializes-earlier`: an assigned Domination lane's
     /// development half ends at [`DOMINATION_SPECIALIZATION_PERCENT`] of the
     /// clock (turn 100 of 250) instead of halfway, so it turns to Conquest
-    /// while the rivals' lead is still smaller. On the King ladder proxy it
-    /// doubled foreign cities held over 64 paired games. See
+    /// while the rivals' lead is still smaller — at King and below only
+    /// ([`DOMINATION_SPECIALIZATION_MAX_ORDER`]). On the King ladder proxy it
+    /// nearly tripled foreign cities held over 64 paired games. See
     /// `AdvancedAi::phase_specialization_active`.
     domination_specializes_earlier: bool,
     /// `domination-ignores-city-states`: an assigned Domination seat leaves
@@ -23215,6 +23221,7 @@ impl AdvancedAi {
         if self.domination_specializes_earlier
             && self.victory_target == Some(VictoryTarget::Domination)
             && g.max_turns > 0
+            && g.difficulty_spec().order <= DOMINATION_SPECIALIZATION_MAX_ORDER
         {
             return !self.victory_planning
                 || g.turn.saturating_mul(100)
