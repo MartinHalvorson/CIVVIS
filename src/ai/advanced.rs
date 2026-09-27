@@ -7270,6 +7270,7 @@ mod surprise_defense;
 /// bomber wing, and the cavalry that takes the city the wing empties. See
 /// `advanced/air_surge.rs`.
 mod air_city_assault;
+mod air_base_loyalty;
 mod air_resource_builders;
 mod air_resource_settlement;
 mod air_resource_colony;
