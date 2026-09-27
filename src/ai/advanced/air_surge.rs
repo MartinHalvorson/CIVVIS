@@ -295,16 +295,36 @@ impl AdvancedAi {
         missing
     }
 
-    /// The Bomber this empire would actually train, unique replacements
-    /// included. `None` when the ruleset has no such unit at all, which is how
-    /// a mod that removes the air layer switches the whole gene off.
+    fn air_surge_is_bomber(g: &Game, unit: Name) -> bool {
+        let spec = &g.rules.units[unit];
+        spec.domain.as_deref() == Some("air") && spec.promotion_class == "air_bomber"
+    }
+
+    /// The strongest unlocked Bomber this empire would train, including its
+    /// unique replacement and later generations. Before the research goal is
+    /// known, retain its base unit for planning. A ruleset without that base
+    /// switches the gene off.
     pub(crate) fn air_surge_bomber(g: &Game, pid: usize) -> Option<Name> {
-        Self::player_unit_catalog(g, pid).into_iter().find(|unit| {
-            let spec = &g.rules.units[*unit];
-            spec.domain.as_deref() == Some("air")
-                && spec.promotion_class == "air_bomber"
-                && spec.tech == Some(Name::new(AIR_SURGE_GOAL_TECH))
-        })
+        let catalog = Self::player_unit_catalog(g, pid);
+        let base = catalog.iter().copied().find(|unit| {
+            Self::air_surge_is_bomber(g, *unit)
+                && g.rules.units[*unit].tech == Some(Name::new(AIR_SURGE_GOAL_TECH))
+        })?;
+        catalog
+            .into_iter()
+            .filter(|unit| {
+                Self::air_surge_is_bomber(g, *unit)
+                    && Self::war_unit_unlocked(g, pid, *unit)
+                    && g.rules.units[*unit].ranged_attack_strength()
+                        >= g.rules.units[base].ranged_attack_strength()
+            })
+            .max_by(|left, right| {
+                g.rules.units[*left]
+                    .ranged_attack_strength()
+                    .total_cmp(&g.rules.units[*right].ranged_attack_strength())
+                    .then_with(|| right.cmp(left))
+            })
+            .or(Some(base))
     }
 
     /// The district a Bomber has to be trained in.
@@ -357,15 +377,29 @@ impl AdvancedAi {
             .collect()
     }
 
-    /// Whether a Bomber based in one of our cities can strike `objective`.
+    /// Plan with the trainable generation until a launch wing exists. Once
+    /// aircraft stand, at least two must have range from one of our bases;
+    /// one Jet Bomber cannot lend its range to an older partner.
     fn air_surge_in_range(g: &Game, pid: usize, objective: Pos) -> bool {
+        let bases = Self::air_surge_bases(g, pid);
+        let reaches = |kind: Name| {
+            bases
+                .iter()
+                .any(|base| g.wdist(*base, objective) <= g.rules.units[kind].range)
+        };
+        let wing: Vec<_> = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid && Self::air_surge_is_bomber(g, unit.kind))
+            .collect();
+        if wing.len() >= AIR_SURGE_LAUNCH_BOMBERS {
+            return wing.iter().filter(|unit| reaches(unit.kind)).count()
+                >= AIR_SURGE_LAUNCH_BOMBERS;
+        }
         let Some(bomber) = Self::air_surge_bomber(g, pid) else {
             return false;
         };
-        let range = g.rules.units[bomber].range;
-        Self::air_surge_bases(g, pid)
-            .into_iter()
-            .any(|base| g.wdist(base, objective) <= range)
+        reaches(bomber)
     }
 
     /// The number of Bombers this economy can keep in the air. Four is the
@@ -458,7 +492,6 @@ impl AdvancedAi {
     /// every city starting the same wish list.
     pub(crate) fn air_surge_status(&self, g: &Game, pid: usize, plan: &AirSurge) -> AirSurgeStatus {
         let field = Self::air_surge_field(g, pid);
-        let bomber = Self::air_surge_bomber(g, pid);
         let mut status = AirSurgeStatus {
             wing_in_range: Self::air_surge_in_range(g, pid, plan.objective_pos),
             metal_ready: Self::air_surge_metal_ready(g, pid),
@@ -483,7 +516,7 @@ impl AdvancedAi {
                 }) else {
                     continue;
                 };
-                if Some(unit) == bomber {
+                if Self::air_surge_is_bomber(g, unit) {
                     status.bombers_committed += 1;
                 } else if Self::war_unit_is_at_least(g, pid, unit, plan.body_unit) {
                     status.bodies_committed += 1;
@@ -492,7 +525,7 @@ impl AdvancedAi {
         }
         for uid in g.player_unit_ids(pid) {
             let kind = g.units[&uid].kind;
-            if Some(kind) == bomber {
+            if Self::air_surge_is_bomber(g, kind) {
                 status.bombers += 1;
             } else if Self::war_unit_is_at_least(g, pid, kind, plan.body_unit) {
                 status.bodies += 1;
@@ -637,7 +670,6 @@ impl AdvancedAi {
     /// would be today.
     fn air_surge_standing_package(&self, g: &Game, pid: usize) -> (usize, usize, usize) {
         let field = Self::air_surge_field(g, pid);
-        let bomber = Self::air_surge_bomber(g, pid);
         let body = self.air_surge_body_preserving_wing(g, pid);
         let airfields = g
             .player_city_ids(pid)
@@ -650,7 +682,7 @@ impl AdvancedAi {
         let mut bodies = 0;
         for uid in g.player_unit_ids(pid) {
             let kind = g.units[&uid].kind;
-            if Some(kind) == bomber {
+            if Self::air_surge_is_bomber(g, kind) {
                 bombers += 1;
             } else if body.is_some_and(|(unit, _)| Self::war_unit_is_at_least(g, pid, kind, unit)) {
                 bodies += 1;
@@ -1167,7 +1199,7 @@ impl AdvancedAi {
                     }
                 }
                 Item::Unit { unit } | Item::Formation { unit, .. } => {
-                    if Self::air_surge_bomber(g, pid) == Some(*unit) {
+                    if Self::air_surge_is_bomber(g, *unit) {
                         status.bombers_committed = status.bombers_committed.saturating_sub(1);
                     } else if Self::war_unit_is_at_least(g, pid, *unit, plan.body_unit) {
                         status.bodies_committed = status.bodies_committed.saturating_sub(1);
@@ -1274,7 +1306,7 @@ impl AdvancedAi {
                     .then_some(AIR_SURGE_AERODROME_VALUE - turns * 8.0)
             }
             Item::Unit { unit } | Item::Formation { unit, .. } => {
-                if Self::air_surge_bomber(g, pid) == Some(*unit) {
+                if Self::air_surge_is_bomber(g, *unit) {
                     let missing = bomber_goal.saturating_sub(status.bombers_committed);
                     (missing > 0).then_some(
                         AIR_SURGE_BOMBER_VALUE + AIR_SURGE_SCARCITY_STEP * missing as f64
@@ -1384,7 +1416,7 @@ impl AdvancedAi {
                     {
                         0
                     }
-                    Item::Unit { unit } if wants_bomber && Some(*unit) == bomber => 1,
+                    Item::Unit { unit } if wants_bomber && Self::air_surge_is_bomber(g, *unit) => 1,
                     Item::Unit { unit }
                         if wants_body
                             && Self::war_unit_is_at_least(g, pid, *unit, plan.body_unit) =>

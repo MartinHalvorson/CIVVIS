@@ -65,6 +65,166 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
     (g, ai, plan, first, second)
 }
 
+fn stealth_fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
+    let (mut g, ai, plan, first, second) = fixture();
+    for tech in g.rules.tech_ancestors["stealth_technology"].clone() {
+        g.players[0].techs.insert(Name::new(&tech));
+    }
+    g.players[0].techs.insert(name!("stealth_technology"));
+    for cid in [first, second] {
+        let pos = g.district_sites(cid, name!("aerodrome"))[0];
+        g.cities
+            .get_mut(&cid)
+            .unwrap()
+            .districts
+            .insert(name!("aerodrome"), pos);
+        g.map.tiles.get_mut(&pos).unwrap().district = Some(name!("aerodrome"));
+    }
+    (g, ai, plan, first, second)
+}
+
+#[test]
+fn active_package_keeps_existing_and_queued_bomber_generations() {
+    let (mut g, mut ai, plan, first, second) = stealth_fixture();
+    g.spawn_test_unit("jet_bomber", 0, g.cities[&first].pos);
+    g.spawn_test_unit("fighter", 0, g.cities[&second].pos);
+    let queued = Item::Formation {
+        unit: name!("jet_bomber"),
+        formation: 1,
+    };
+    g.cities.get_mut(&second).unwrap().queue = vec![queued.clone()];
+    ai.air_surge_status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert_eq!(
+        ai.air_surge_status.bombers, 1,
+        "the upgraded aircraft still supplies the wing"
+    );
+    assert_eq!(
+        ai.air_surge_status.bombers_committed, 2,
+        "a queued successor supplies one aircraft, including a formation"
+    );
+    assert_eq!(ai.air_surge_standing_package(&g, 0).1, 1);
+    let legal_queue = Item::Unit {
+        unit: name!("jet_bomber"),
+    };
+    g.cities.get_mut(&second).unwrap().queue = vec![legal_queue.clone()];
+    // Preserve a nearly finished successor, like the observed native queue.
+    g.cities.get_mut(&second).unwrap().production =
+        g.item_cost_for_city(0, second, &legal_queue) - 10.0;
+    let value = ai.production_value(&g, 0, second, &legal_queue, &plan, &ai.counts(&g, 0));
+    assert!(
+        value > 7000.0,
+        "the final successor queue lost package priority: {value}"
+    );
+    ai.preempt_margin = 1.25;
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(g.cities[&second].queue.first(), Some(&legal_queue));
+    g.cities.get_mut(&second).unwrap().queue = vec![Item::Unit {
+        unit: name!("bomber"),
+    }];
+    g.cities.get_mut(&second).unwrap().production = 0.0;
+    assert_eq!(
+        ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap())
+            .bombers_committed,
+        2
+    );
+}
+
+#[test]
+fn two_upgraded_bombers_fill_the_launch_quota_without_ordering_a_third() {
+    let (mut g, mut ai, _, first, second) = stealth_fixture();
+    for cid in [first, second] {
+        g.spawn_test_unit("jet_bomber", 0, g.cities[&cid].pos);
+    }
+    for pos in [(6, 12), (7, 12), (8, 12), (9, 12)] {
+        g.spawn_test_unit("modern_armor", 0, pos);
+    }
+    ai.air_surge_status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 2);
+    assert!(ai.air_surge_status.wing_ready());
+    assert!(!ai.air_surge_production(&mut g, 0));
+    assert!(g
+        .player_city_ids(0)
+        .into_iter()
+        .all(|cid| g.cities[&cid].queue.is_empty()));
+}
+
+#[test]
+fn active_package_trains_a_legal_successor_after_the_base_bomber_is_obsolete() {
+    let (mut g, mut ai, _, first, _) = stealth_fixture();
+    assert!(g.can_produce(
+        0,
+        first,
+        &Item::Unit {
+            unit: name!("jet_bomber")
+        }
+    ));
+    assert!(!g.can_produce(
+        0,
+        first,
+        &Item::Unit {
+            unit: name!("bomber")
+        }
+    ));
+    ai.air_surge_status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert!(ai.air_surge_production(&mut g, 0));
+    assert!(
+        g.player_city_ids(0)
+            .into_iter()
+            .any(|cid| g.cities[&cid].queue.first()
+                == Some(&Item::Unit {
+                    unit: name!("jet_bomber")
+                })),
+        "the active package must use a trainable bomber generation"
+    );
+}
+
+#[test]
+fn two_upgraded_bombers_use_their_range_without_treating_fighters_as_a_wing() {
+    let (mut g, mut ai, _, first, second) = stealth_fixture();
+    let objective = (12 + g.rules.units["bomber"].range + 2, 12);
+    let closest = [first, second]
+        .into_iter()
+        .map(|cid| g.wdist(g.cities[&cid].pos, objective))
+        .min()
+        .unwrap();
+    assert!(closest > g.rules.units["bomber"].range);
+    assert!(closest <= g.rules.units["jet_bomber"].range);
+    ai.air_surge_plan.as_mut().unwrap().objective_pos = objective;
+    for cid in [first, second] {
+        g.spawn_test_unit("jet_bomber", 0, g.cities[&cid].pos);
+    }
+    let status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert_eq!(status.bombers, 2);
+    assert!(
+        status.wing_ready(),
+        "two upgraded bombers can reach the appointed objective"
+    );
+    for uid in g.player_unit_ids(0) {
+        g.remove_unit(uid);
+    }
+    for cid in [first, second] {
+        g.spawn_test_unit("fighter", 0, g.cities[&cid].pos);
+    }
+    let status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert_eq!(status.bombers, 0);
+    assert!(!status.wing_ready());
+}
+
+#[test]
+fn a_mixed_wing_needs_two_aircraft_with_enough_range() {
+    let (mut g, mut ai, _, first, second) = stealth_fixture();
+    let objective = (12 + g.rules.units["bomber"].range + 2, 12);
+    ai.air_surge_plan.as_mut().unwrap().objective_pos = objective;
+    g.spawn_test_unit("bomber", 0, g.cities[&first].pos);
+    g.spawn_test_unit("jet_bomber", 0, g.cities[&second].pos);
+    let status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert_eq!(status.bombers, 2);
+    assert!(
+        !status.wing_ready(),
+        "one long-range aircraft does not supply a two-plane strike"
+    );
+}
+
 #[test]
 fn reserved_airfield_keeps_priority_after_status_refresh() {
     let (mut g, mut ai, plan, _, _) = fixture();
