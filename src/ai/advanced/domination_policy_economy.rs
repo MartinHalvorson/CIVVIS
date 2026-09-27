@@ -63,22 +63,34 @@ impl AdvancedAi {
         // inherit cached city yields. No action or policy change reaches g.
         let mut probe = g.clone();
         let cities = probe.player_city_ids(pid);
+        // One read-only sweep of the empire. The memo shares each city's
+        // luxury and ownership derivations across the sweep and is dropped
+        // before the next card is toggled.
         let total = |board: &Game| {
+            let _memo = board.query_memo();
             let mut yields = board.player_yield_extras(pid);
             for city in &cities {
                 yields.add(board.city_yields(*city));
             }
             yields
         };
+        // Every card is priced against the slate as it stands: a held card
+        // against the slate without it, any other card against the slate
+        // with it. That side is the same for every card, so it is read once
+        // rather than swept again for each of up to ten cards.
+        let current = total(&probe);
         let mut value = |card: &str| {
             let name = Name::new(card);
-            let held = probe.players[pid].policies.remove(&name);
-            let without = total(&probe);
-            probe.players[pid].policies.insert(name);
-            let with = total(&probe);
-            if !held {
+            let (without, with) = if probe.players[pid].policies.remove(&name) {
+                let without = total(&probe);
+                probe.players[pid].policies.insert(name);
+                (without, current)
+            } else {
+                probe.players[pid].policies.insert(name);
+                let with = total(&probe);
                 probe.players[pid].policies.remove(&name);
-            }
+                (current, with)
+            };
             self.yield_value(
                 Yields {
                     food: with.food - without.food,
