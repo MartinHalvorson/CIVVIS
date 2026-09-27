@@ -1,11 +1,11 @@
 # Defense deadlines after small hits
 
-**WITHHELD FROM DEPLOYMENT.** The deadline correction passes its regressions
-and assigns native relief earlier, but all202 emitted native decisions remain
-identical. The fixed Prince pilot gives no wins in either source and a mixed
-first seed. Do not merge this candidate as a retention repair. The follow-up
-must make assigned relief affect commands and then receive fresh registered
-evaluation.
+**WITHHELD FROM DEPLOYMENT.** The combined command candidate changes native
+orders and passes4,344 tests, but its fresh four-seed Prince pilot adds a home
+capital loss and gives no wins or Domination wins. The original deadline-only
+candidate also remains rejected: it changes assignments without changing any
+of202 emitted decisions. Both complete negative evaluations are retained.
+No native retention or difficulty promotion is proved.
 
 ## Native diagnosis
 
@@ -58,7 +58,7 @@ preregistered evidence. Promotion requires native domination outcomes.
 Evidence is retained outside task worktrees at
 `~/civvis-war-evidence-20260926/prince-city-retention/`.
 
-## Candidate and results
+## Initial deadline-only candidate and results
 
 Frozen candidate `9de4a7053fa34418bdcd6415c7e94246f72d90aa` takes the minimum
 of the existing observed-hostile approach estimate and the measured damage
@@ -173,3 +173,67 @@ prototype. Before inspecting any fresh pilot outcomes, review adds the frozen
 legacy-control guard and fixes two changed-line formatting findings. The
 eligible pilot source must include those checks and receive another exact
 native replay. No fresh outcomes informed this refinement.
+
+## Combined command candidate: completed evaluation
+
+Eligible source `668e37d647ff87d5c07dc536a7ea4a506f31de02` is frozen before
+fresh outcome inspection. All35 objective-board tests and the complete local
+suite pass:4,344 passed, zero failed,53 existing ignores. Changed-line Rust
+quality passes. The compatibility regression preserves the frozen legacy
+controller's historical movement score.
+
+Exact eligible-source replay completes all202 frames. It changes23 full
+decision objects and unit orders in14 frames, across turns42,47,49,51,53,54,
+55,56,68,69 and74. Native decisions match the preliminary9440 prototype
+exactly after the legacy guard and quality fixes. Turn74's Archer917510 now
+ends its move at offset16,21, one hex closer to the defended city. The command
+effect is established; timely arrival and city survival are not. Broader
+movement changes come from the spacing correction.
+
+All four registered pairs37911000–37911003 complete for both sources:
+
+| Seed | Arm | Before → after ending | Score | Major cities ever observed held | Foreign original capitals held at end | Home original capital held at end |
+| --- | --- | --- | --- | --- | --- | --- |
+| 37911000 | off | Culture161 → Science250 | 700 → 1319 | 0 → 0 | 0 → 0 | yes → yes |
+| 37911000 | on | Culture161 → Science250 | 700 → 1319 | 0 → 0 | 0 → 0 | yes → yes |
+| 37911001 | off | Science240 → Culture224 | 1177 → 973 | 1 → 3 | 0 → 0 | yes → yes |
+| 37911001 | on | Science241 → Science241 | 1289 → 1075 | 6 → 4 | 1 → 1 | yes → yes |
+| 37911002 | off | Science242 → Religious163 | 245 → 348 | 0 → 0 | 0 → 0 | no → no |
+| 37911002 | on | Science250 → Religious163 | 509 → 348 | 0 → 0 | 0 → 0 | yes → no |
+| 37911003 | off | Culture219 → Diplomatic245 | 762 → 974 | 0 → 0 | 0 → 0 | yes → yes |
+| 37911003 | on | Culture219 → Diplomatic245 | 762 → 974 | 0 → 0 | 0 → 0 | yes → yes |
+
+Every focal seat loses and no Domination win occurs. Home-capital losses
+increase from one to two across the paired observations. Total major cities
+ever observed held and foreign capitals held at end are unchanged, with
+mixed changes by arm. In37911001 on, foreign cities held at end fall8→6;
+the winning rival changes from1 to2 despite the same Science241 ending.
+Four seed pairs are the independent units, not eight source-comparison seeds.
+Profiles, civilizations and forced focal policies match. Every simulator
+controller uses the chosen source, so this comparison cannot attribute a
+result change to the focal controller alone. It is insufficient to dismiss
+the extra capital loss or authorize deployment.
+
+Eligible binary SHA256 receipts:
+
+| Binary | SHA256 |
+| --- | --- |
+| civvis_orders | bd3e66f51a4b57c4595f39376edee09385e40eeb4cd97bcedcbef0910a46bd91 |
+| victory_eval | 05d8260dd06680f623b29b47c0f917e997385356be795c2d1328ff583bca43ba |
+
+Raw results, the pre-inspection freeze receipt, source/binary hashes, complete
+replay comparison, negative tests and final validation are retained under
+`prince-city-retention/command-handoff/`. Keep PR3791 draft and withheld.
+
+## Next registered phase: narrow the movement change
+
+Register fresh Prince seeds37912000–37912003 for the next candidate before
+reading them. The planned refinement applies spacing continuity only to an
+urgent assigned city-relief body, preserving the earlier finite attack budget
+and direct-defense exception. It must retain the actual safe-advance and
+frozen-control regressions, then replay the same complete native prefix.
+Freeze its exact source and binaries before opening fresh results. Use clean
+baseline `de6a184d2`, the same four-pair command and profile, fresh output
+paths, and all reported outcomes and capital-retention metrics. No next-phase
+source or outcomes exist yet. The broad candidate668e and its harmful pilot
+remain unchanged; further outcome-driven tuning needs another registration.
