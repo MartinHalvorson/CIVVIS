@@ -40,7 +40,10 @@ Eight regression tests cover the reproduced non-center mine, all seven
 strategic resources, repeat observation, existing positive/negative/clamped
 host adjustments, world non-mutation and foreign privacy, fresh views after
 pillage or Suzerainty loss, own-mine counterfactuals, and unrevealed resources.
-They are being run before implementation; results are not yet claimed.
+Before implementation, seven tests failed and the unrevealed-resource control
+passed. The failures include world2/view0 and native-adjusted world7/view5;
+the private foreign correction was also still present in the redacted copy.
+The bounded correction is now implemented; post-fix results remain pending.
 
 The correction is a current public reading. It does not claim omniscient
 prediction of future hidden city-state infrastructure or arbitrary hypothetical
