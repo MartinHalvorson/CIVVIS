@@ -677,7 +677,7 @@ impl AdvancedAi {
             || (g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id))
     }
 
-    fn urgent_relief_assignment(&self, g: &Game, uid: u32) -> Option<(Pos, u32)> {
+    pub(super) fn urgent_relief_assignment(&self, g: &Game, uid: u32) -> Option<(Pos, u32)> {
         if !self.objective_board {
             return None;
         }

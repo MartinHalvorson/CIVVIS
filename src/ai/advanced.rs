@@ -36817,6 +36817,8 @@ impl AdvancedAi {
             ForcePosture::Engage => group.focus_target.unwrap_or(group.objective),
             ForcePosture::Advance => group.objective,
         };
+        let urgent_relief =
+            !self.base.legacy_movement && self.urgent_relief_assignment(g, uid).is_some();
         let preferred_depth = match role {
             ForceRole::Recon => spec.range.max(2),
             ForceRole::Vanguard | ForceRole::Mobile => 1,
@@ -37015,12 +37017,11 @@ impl AdvancedAi {
                 enemies,
                 visible: visible.as_deref(),
             });
-            // Keep spacing continuous at the approach ring. Charging it
-            // only within five hexes makes a six-to-five step acquire the
-            // whole penalty at once, so an unobstructed relief body can
-            // prefer staying outside the ring indefinitely.
-            // Preserve the historical score for the frozen legacy control.
-            if !self.base.legacy_movement || g.wdist(tile, target) <= 5 {
+            // Isolate continuity at the approach ring to urgent city relief.
+            // Its finite arrival budget is otherwise defeated by the spacing
+            // penalty appearing all at once on a six-to-five approach.
+            // The broader army-approach correction remains under evaluation.
+            if urgent_relief || g.wdist(tile, target) <= 5 {
                 value -= self.base.w.role_spacing
                     * spacing
                     * (g.wdist(tile, target).min(5) - preferred_depth).abs() as f64;
