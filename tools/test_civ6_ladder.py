@@ -72,6 +72,29 @@ class LedgerCase(unittest.TestCase):
 
 
 class RecordsItself(LedgerCase):
+    def test_native_conquest_is_recorded_by_both_live_and_backfill_paths(self):
+        for tag, live in (("native-live", True), ("native-backfill", False)):
+            path = write_run(self.runs, summary(tag))
+            rows = [{"kind": "seat", "local_player": 0},
+                    {"kind": "state", "turn": 100,
+                     "rivals": [{"player": 2}], "minors": [{"player": 8}],
+                     "cities": [{"x": 4, "y": 5, "original_owner": 2, "original_capital": True},
+                                {"x": 6, "y": 5, "original_owner": 8, "original_capital": True}]}]
+            (path.parent / "events.jsonl").write_text("\n".join(json.dumps(row) for row in rows))
+            if live:
+                civ6_ladder.record_summary(path, self.ledger)
+            else:
+                civ6_ladder.sync(self.runs, self.ledger, quiet=True, snapshot=self.snapshot)
+            row = next(row for row in self.state()["attempts"] if row["tag"] == tag)
+            self.assertEqual(row["conquest"]["foreign_major_original_capitals_held_final"], 1)
+            self.assertEqual(row["conquest"]["foreign_minor_cities_held_final"], 1)
+
+    def test_existing_conquest_evidence_survives_without_raw_events(self):
+        evidence = {"scope": "run_segment", "foreign_major_original_capitals_held_final": 2}
+        path = write_run(self.runs, summary("native-preserved", conquest=evidence))
+        civ6_ladder.record_summary(path, self.ledger)
+        self.assertEqual(self.state()["attempts"][0]["conquest"], evidence)
+
     def test_the_deal_lane_is_summed_onto_the_ledger(self):
         events = self.runs / "civvis-20260824T230000Z" / "events.jsonl"
         events.parent.mkdir(parents=True, exist_ok=True)
