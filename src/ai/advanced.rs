@@ -6549,6 +6549,11 @@ pub struct AdvancedAi {
     /// version 1 off. Opt-in gene `power-the-laboratory-2`.
     power_the_laboratory_2: bool,
 
+    /// An advancing army prices role depth continuously across the five-hex
+    /// approach ring. Hold, recovery and legacy scoring stay unchanged.
+    /// Default-off gene `role-spacing-continuity`; see `role_spacing`.
+    role_spacing_continuity: bool,
+
     // ---- append: s-s ------------------------------------------------
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     siege_positive_damage_budget: bool,
@@ -7271,8 +7276,8 @@ mod surprise_defense;
 /// `advanced/air_surge.rs`.
 mod air_city_assault;
 mod air_resource_builders;
-mod air_resource_settlement;
 mod air_resource_colony;
+mod air_resource_settlement;
 mod air_surge;
 pub use air_city_assault::AirCityAssault;
 mod siege_resource_purchase;
@@ -8531,6 +8536,8 @@ impl AdvancedAi {
             pass_picket_2: false,
             recon_disruption: recon_disruption::ReconPlan::default(),
             power_the_laboratory_2: false,
+
+            role_spacing_continuity: false,
 
             // ---- append: s-s ----------------------------------------
             siege_positive_damage_budget: false,
@@ -36946,6 +36953,7 @@ impl AdvancedAi {
             ForceRole::Support => 2,
             ForceRole::AirStrike => spec.range.max(3),
         };
+        let continuous_spacing = self.role_spacing_continues(group.posture);
         let vanguard_depth = group
             .units
             .iter()
@@ -37137,10 +37145,12 @@ impl AdvancedAi {
                 enemies,
                 visible: visible.as_deref(),
             });
-            if g.wdist(tile, target) <= 5 {
+            if continuous_spacing || objective_distance <= 5 {
                 value -= self.base.w.role_spacing
                     * spacing
-                    * (g.wdist(tile, target) - preferred_depth).abs() as f64;
+                    * (objective_distance.min(5) - preferred_depth).abs() as f64;
+            }
+            if objective_distance <= 5 {
                 if matches!(
                     role,
                     ForceRole::Recon | ForceRole::Ranged | ForceRole::Siege | ForceRole::AirStrike

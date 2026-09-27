@@ -2362,6 +2362,10 @@ pub const GENES: &[Gene] = &[
     // Immortal Science seat took Writing at turn 27 behind Sailing. The goal
     // lands on the same turn either way. See `AdvancedAi::beeline_step`.
     Gene { tag: "beeline-orders-by-value", field: "beeline_orders_by_value", kind: Kind::OptIn, enable: AdvancedAi::enable_beeline_orders_by_value, disable: AdvancedAi::disable_beeline_orders_by_value },
+    // Remove the role-depth score cliff at five hexes for ordinary Advance,
+    // Engage and Muster movement. Threat/safety pricing still owns approach;
+    // Hold, recovery and legacy keep their score. Experimental, default off.
+    Gene { tag: "role-spacing-continuity", field: "role_spacing_continuity", kind: Kind::OptIn, enable: AdvancedAi::enable_role_spacing_continuity, disable: AdvancedAi::disable_role_spacing_continuity },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
