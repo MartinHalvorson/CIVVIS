@@ -377,6 +377,19 @@ impl AdvancedAi {
     /// but only for the two-plane launch wing. It is not mistaken for a
     /// permanent four-plane income.
     pub(crate) fn air_surge_bomber_goal(g: &Game, pid: usize) -> usize {
+        Self::air_surge_bomber_goal_after_spending(g, pid, 0.0, 0.0)
+    }
+
+    pub(super) fn air_surge_supply_commitments(g: &Game, pid: usize) -> (usize, usize) {
+        Self::domination_air_readiness_counts(g, pid)
+    }
+
+    pub(super) fn air_surge_bomber_goal_after_spending(
+        g: &Game,
+        pid: usize,
+        extra_demand: f64,
+        resource_cost: f64,
+    ) -> usize {
         let Some(bomber) = Self::air_surge_bomber(g, pid) else {
             return 0;
         };
@@ -391,15 +404,28 @@ impl AdvancedAi {
         let other_demand = g
             .units
             .values()
-            .filter(|unit| unit.owner == pid && unit.kind != bomber && !unit.free_upkeep)
+            .filter(|unit| unit.owner == pid && !unit.free_upkeep)
             .filter_map(|unit| {
                 let unit_spec = &g.rules.units[unit.kind];
-                (unit_spec.requires_resource == Some(resource))
+                (unit_spec.requires_resource == Some(resource)
+                    && unit_spec.promotion_class != "air_bomber")
                     .then_some(unit_spec.resource_maintenance)
             })
-            .sum::<f64>();
-        let income = (g.strategic_resource_rate(pid, resource.as_str()) - other_demand).max(0.0);
-        let sustainable = (income / spec.resource_maintenance).floor() as usize;
+            .chain(g.player_city_ids(pid).into_iter().flat_map(|cid| {
+                g.cities[&cid].queue.iter().filter_map(|item| {
+                    let (Item::Unit { unit } | Item::Formation { unit, .. }) = item else {
+                        return None;
+                    };
+                    let queued = &g.rules.units[unit];
+                    (queued.requires_resource == Some(resource)
+                        && queued.promotion_class != "air_bomber")
+                        .then_some(queued.resource_maintenance)
+                })
+            }))
+            .sum::<f64>()
+            + extra_demand;
+        let income = g.strategic_resource_rate(pid, resource.as_str()) - other_demand;
+        let sustainable = (income.max(0.0) / spec.resource_maintenance).floor() as usize;
         let sustainable = sustainable.min(AIR_SURGE_BOMBERS);
         if sustainable >= AIR_SURGE_LAUNCH_BOMBERS {
             return sustainable;
@@ -411,9 +437,11 @@ impl AdvancedAi {
         // replacement source; otherwise this is not a viable wing at all.
         let launch_maintenance = AIR_SURGE_LAUNCH_BOMBERS as f64 * spec.resource_maintenance;
         let grace = g.standard_duration(AIR_SURGE_ALUMINUM_GRACE) as f64;
-        let temporary_cost = AIR_SURGE_LAUNCH_BOMBERS as f64 * spec.resource_cost
+        let (_, committed) = Self::domination_air_readiness_counts(g, pid);
+        let temporary_cost = AIR_SURGE_LAUNCH_BOMBERS.saturating_sub(committed) as f64
+            * spec.resource_cost
             + (launch_maintenance - income).max(0.0) * grace;
-        if g.strategic_stockpile(pid, resource) + f64::EPSILON >= temporary_cost {
+        if g.strategic_stockpile(pid, resource) - resource_cost + f64::EPSILON >= temporary_cost {
             AIR_SURGE_LAUNCH_BOMBERS
         } else {
             sustainable
@@ -591,7 +619,8 @@ impl AdvancedAi {
             .map(|bomber| g.rules.units[bomber].cost)
             .unwrap_or(0.0)
             * missing_bombers as f64;
-        let escort_cost = Self::air_surge_body(g, pid)
+        let escort_cost = self
+            .air_surge_body_preserving_wing(g, pid)
             .map(|(body, _)| g.rules.units[body].cost)
             .unwrap_or(0.0)
             * missing_bodies as f64;
@@ -604,12 +633,12 @@ impl AdvancedAi {
     /// The package members already standing, counted without an appointment:
     /// `(airfields, bombers, escort bodies)`. The estimate above runs before
     /// any plan exists, so unlike [`Self::air_surge_status`] this cannot read
-    /// a plan's chosen body and asks [`Self::air_surge_body`] what the escort
+    /// a plan's chosen body and asks [`Self::air_surge_body_preserving_wing`] what the escort
     /// would be today.
     fn air_surge_standing_package(&self, g: &Game, pid: usize) -> (usize, usize, usize) {
         let field = Self::air_surge_field(g, pid);
         let bomber = Self::air_surge_bomber(g, pid);
-        let body = Self::air_surge_body(g, pid);
+        let body = self.air_surge_body_preserving_wing(g, pid);
         let airfields = g
             .player_city_ids(pid)
             .into_iter()
@@ -655,7 +684,7 @@ impl AdvancedAi {
     /// of a legal major that a Bomber based at home can reach and a land body
     /// can walk to.
     pub(crate) fn choose_air_surge(&self, g: &Game, pid: usize) -> Option<AirSurge> {
-        let (body_unit, body_is_cavalry) = Self::air_surge_body(g, pid)?;
+        let (body_unit, body_is_cavalry) = self.air_surge_body_preserving_wing(g, pid)?;
         // A running war fixes the target: the counter arms against the
         // civilization already fighting us, never against a third party.
         let front = Self::air_surge_fronts(g, pid).first().copied();
@@ -848,6 +877,8 @@ impl AdvancedAi {
                     plan.tech_turn = Some(g.turn);
                     self.air_surge_census.breakthroughs += 1;
                 }
+                (plan.body_unit, plan.body_is_cavalry) =
+                    self.air_resource_capture_body(g, pid, (plan.body_unit, plan.body_is_cavalry));
                 let status = self.air_surge_status(g, pid, &plan);
                 let reserve = g.standard_duration(AIR_SURGE_ENDGAME_RESERVE);
                 let grace = g.standard_duration(AIR_SURGE_ALUMINUM_GRACE);
@@ -1334,6 +1365,9 @@ impl AdvancedAi {
             }
             let production = g.city_yields(cid).production.max(0.1);
             for item in g.producible_items(pid, cid) {
+                if !self.air_resource_item_preserves_wing(g, pid, cid, &item) {
+                    continue;
+                }
                 let rank = match &item {
                     Item::District { district, .. }
                         if field.is_some_and(|family| g.district_family(*district) == family)

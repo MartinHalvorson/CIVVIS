@@ -868,6 +868,12 @@ impl AdvancedAi {
             return;
         }
         for uid in &self.conversion.upgrade_units {
+            let Some((target, _, resources)) = g.unit_gold_upgrade_offer(pid, *uid) else {
+                continue;
+            };
+            if !self.air_resource_upgrade_preserves_wing(g, pid, *uid, target, resources) {
+                continue;
+            }
             let _ = g.apply(pid, &Action::UpgradeUnit { unit: *uid });
         }
     }

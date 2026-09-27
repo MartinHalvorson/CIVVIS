@@ -24,6 +24,9 @@ impl AdvancedAi {
                 let to = &g.rules.units[target];
                 let (_, resources) =
                     g.unit_upgrade_price_in_formation(pid, unit.kind, target, unit.formation)?;
+                if !self.air_resource_upgrade_preserves_wing(g, pid, uid, target, resources) {
+                    return None;
+                }
                 if to.requires_resource.is_some_and(|resource| {
                     g.strategic_stockpile(pid, resource) + f64::EPSILON < resources
                 }) {

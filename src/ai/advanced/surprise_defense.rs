@@ -29,7 +29,7 @@
 //!
 //! Off by default: registry row `surprise-war-mobilization`.
 
-use super::{AdvancedAi, BasicAi};
+use super::AdvancedAi;
 use crate::game::{Action, Game, Item};
 
 /// The declaration shock in Standard-speed turns. Six is long enough for the
@@ -206,7 +206,7 @@ impl AdvancedAi {
     /// are consumed and therefore the second pass is an exact no-op.
     pub(crate) fn surprise_defense_modernize(&self, g: &mut Game, pid: usize) {
         if self.surprise_defense_window(g, pid).is_some() {
-            BasicAi::upgrade_units(g, pid);
+            self.upgrade_units_preserving_air_wing(g, pid);
         }
     }
 
