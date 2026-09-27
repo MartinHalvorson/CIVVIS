@@ -1459,6 +1459,18 @@ def with_bridge_health(summary: dict, summary_path: Path) -> dict:
     return enriched
 
 
+def with_air_supply(summary: dict, summary_path: Path) -> dict:
+    """Fill absent native supply observations without rewriting raw records."""
+    from civ6_air_supply import air_supply_totals
+    from civ6_race_audit import event_path
+    enriched = dict(summary)
+    if "air_supply" not in summary:
+        evidence = event_path(Path(summary_path).parent)
+        if evidence is not None:
+            enriched["air_supply"] = air_supply_totals(evidence)
+    return enriched
+
+
 def with_conquest(summary: dict, summary_path: Path) -> dict:
     """Preserve native ownership milestones on live and backfilled rows."""
     from civ6_conquest import conquest_totals, recovered_conquest
@@ -1642,6 +1654,8 @@ def entry_from(summary: dict) -> dict:
         # Ownership observations distinguish major capitals from minor cities.
         "conquest": summary.get("conquest"),
         "game_conquest": summary.get("game_conquest"),
+        # Observed airfield, Aluminum and Bomber milestones, including upgrades.
+        "air_supply": summary.get("air_supply"),
         # The opening tempo (`civ6_play.OPENING_TEMPO_TURN`). Over the 35
         # completed runs of 2026-08-16/17 these were the strongest correlates
         # the live ladder has produced: cities at t60 r=+0.69 with final lead,
@@ -1845,6 +1859,7 @@ def record_summary(summary_path: Path, ledger: Path | None = None) -> bool:
     summary = with_bridge_health(json.loads(summary_path.read_text()),
                                  summary_path)
     summary = with_conquest(summary, summary_path)
+    summary = with_air_supply(summary, summary_path)
     from civ6_race_audit import event_path, game_key, race_totals
     summary = dict(summary)
     summary.setdefault("game_id", game_key(summary))
@@ -1972,6 +1987,8 @@ def publish_run(tag: str, runs_dir: Path | None = None, *,
                 # and ancestry so off-seat readers keep the full-path result.
                 summary_blob = (json.dumps(with_conquest(json.loads(summary_blob), summary_path),
                                           sort_keys=True) + "\n").encode()
+            summary_blob = (json.dumps(with_air_supply(json.loads(summary_blob), summary_path),
+                                      sort_keys=True) + "\n").encode()
             entries = [(ledger_summary, summary_blob)]
             if events_path.is_file():
                 entries.append((ledger_events, gzip_bytes(events_path.read_bytes())))
@@ -2071,6 +2088,7 @@ def sync(runs_dir: Path, ledger: Path, *, quiet: bool = False,
                 continue
             summary = with_bridge_health(summary, path)
             summary = with_conquest(summary, path)
+            summary = with_air_supply(summary, path)
             if apply(state, summary):
                 seen.add(summary.get("tag"))
                 recorded += 1
