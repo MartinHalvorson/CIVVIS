@@ -3648,12 +3648,11 @@ fn configure_live_bridge(
     Ok(())
 }
 
-/// The treatment list recorded in the startup genome identity.
-fn configured_live_treatments(
-    forced_on: &[&str],
-    _withheld: &[String],
-) -> Vec<&'static str> {
-    civvis::ai::gene_ledger::deployment_treatments_with_forced_live(forced_on)
+/// The configured arm, after validated explicit withholds, recorded at startup.
+fn configured_live_treatments(forced_on: &[&str], withheld: &[String]) -> Vec<&'static str> {
+    let mut treatments = civvis::ai::gene_ledger::deployment_treatments_with_forced_live(forced_on);
+    treatments.retain(|tag| !withheld.iter().any(|treatment| treatment.as_str() == *tag));
+    treatments
 }
 
 /// The immutable live-arm identity. Keeping it as one value prevents a new
@@ -9060,6 +9059,43 @@ fn action_variant(action: &Action) -> String {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn startup_genome_keeps_default_and_forced_identity_without_withholds() {
+        let requested: Vec<String> = include_str!("../../deploy/live-force-on.txt")
+            .trim()
+            .split(',')
+            .map(str::to_string)
+            .collect();
+        let forced = super::forced_live_treatments(&requested).expect("compiled force bundle");
+        for selected in [&[][..], forced.as_slice()] {
+            let mut ai = civvis::ai::AdvancedAi::new();
+            super::configure_live_bridge(&mut ai, selected, &[]).expect("valid default arm");
+            let reported = super::configured_live_treatments(selected, &[]);
+            assert_eq!(
+                reported,
+                civvis::ai::gene_ledger::deployment_treatments_with_forced_live(selected),
+                "default startup identity stays in the same registry order"
+            );
+            assert!(ai.counter_in_lane && reported.contains(&"counter-in-lane"));
+            assert!(ai.parallel_settlers && reported.contains(&"parallel-settlers"));
+        }
+    }
+
+    #[test]
+    fn startup_genome_tracks_multiple_repeated_host_withholds_without_forcing() {
+        let withheld = vec![
+            "counter-in-lane".to_string(),
+            "parallel-settlers".to_string(),
+            "counter-in-lane".to_string(),
+        ];
+        let mut ai = civvis::ai::AdvancedAi::new();
+        super::configure_live_bridge(&mut ai, &[], &withheld).expect("valid repeated controls");
+        let reported = super::configured_live_treatments(&[], &withheld);
+        assert!(!ai.counter_in_lane && !reported.contains(&"counter-in-lane"));
+        assert!(!ai.parallel_settlers && !reported.contains(&"parallel-settlers"));
+        assert!(ai.era_paced_expansion && reported.contains(&"era-paced-expansion"));
+    }
+
+    #[test]
     fn startup_genome_reports_a_withheld_counter_response_under_the_force_bundle() {
         let requested: Vec<String> = include_str!("../../deploy/live-force-on.txt")
             .trim()
@@ -9070,8 +9106,14 @@ mod tests {
         let withheld = vec!["counter-in-lane".to_string()];
         let mut ai = civvis::ai::AdvancedAi::targeting(civvis::ai::VictoryTarget::Domination);
         super::configure_live_bridge(&mut ai, &forced, &withheld).expect("valid OFF arm");
-        assert!(!ai.counter_in_lane, "the configured controller is actually OFF");
-        assert_eq!(ai.victory_target(), Some(civvis::ai::VictoryTarget::Domination));
+        assert!(
+            !ai.counter_in_lane,
+            "the configured controller is actually OFF"
+        );
+        assert_eq!(
+            ai.victory_target(),
+            Some(civvis::ai::VictoryTarget::Domination)
+        );
         assert!(
             !super::configured_live_treatments(&forced, &withheld).contains(&"counter-in-lane"),
             "startup identity must describe the configured OFF controller"
