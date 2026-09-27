@@ -43,7 +43,17 @@ pillage or Suzerainty loss, own-mine counterfactuals, and unrevealed resources.
 Before implementation, seven tests failed and the unrevealed-resource control
 passed. The failures include world2/view0 and native-adjusted world7/view5;
 the private foreign correction was also still present in the redacted copy.
-The bounded correction is now implemented; post-fix results remain pending.
+The correction at `0d67883d8` passes all eight focused tests:
+`cargo test --profile ci --locked --lib strategic_income_tests`.
+`cargo test --profile ci --locked` also passes: 4,389 passed, zero failed,
+53 ignored across all targets and doctests. Changed-file quality passes with
+`python3 tools/rust_quality.py --base origin/main --head HEAD`, as does
+`git diff --check origin/main...`. Pre-ready synchronization found the branch
+current with main `be8a36019`. Logs are retained under
+`~/civvis-war-evidence-20260926/strategic-income-{red,green,full,quality}.log`.
+CI cost and published-head validation remain pending. No additional campaign
+soak is claimed for this bounded observed-state repair; the focused fixtures
+and full suite establish correctness, not stronger Domination outcomes.
 
 The correction is a current public reading. It does not claim omniscient
 prediction of future hidden city-state infrastructure or arbitrary hypothetical
