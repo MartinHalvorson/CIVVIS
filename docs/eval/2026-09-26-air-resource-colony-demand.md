@@ -98,7 +98,53 @@ Future observed native states remain fixed. Decisions can show whether a guard
 or handoff fires; they cannot demonstrate different survival, scouting,
 founding, Aluminum, Bombers, captures or victory.
 
-Full validation, candidate provenance and the paired/replay result tables are
-pending. Keep this PR draft until those checks are completed. No engine rules,
-gene registration, deployment default, native runtime, UI or orders database
-is changed by this task.
+## Completed evidence
+
+All four complete pair records, including both legs, their action counts and
+conquest observations, are exactly equal across libraries. The on-row outcomes
+below are the same for parent and candidate:
+
+| Seed | Ending | Turn | Focal score | Major cities held | Foreign capitals held |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 37950000 | Science loss | 224 | 688 | 0 | 0 |
+| 37950001 | Science loss | 221 | 469 | 0 | 0 |
+| 37950002 | Culture loss | 182 | 468 | 0 | 0 |
+| 37950003 | Culture loss | 170 | 561 | 0 | 0 |
+
+Neither source wins Domination in either leg. These games provide execution
+compatibility and no evidence of stronger play or of the new handoff firing.
+The controlled regressions above establish its conditional behavior.
+
+Both native history replays complete 436 frames with all decisions identical.
+Their decision-stream SHA-256 is
+`d0303e17b243eba07a090760376259fec9b013ed096d3a2e83dc7f193976e974`.
+At the first turn-162 frame both produce only Cali's Shipyard. There is no
+new native Settler order, colony, Aluminum income, Bomber, capture or win.
+The existing blockers at both known deposits retain their authority.
+
+The frozen candidate is `d26bb4b035150fa34b41fac68cfd1fa450f00d0a`.
+Its native decider SHA-256 is
+`a6566558419d732738e2394265617c0308aeecf64843fac5529474290f65add7`;
+the parent decider is
+`3a0c0b182d08cdc2a13d6742a193708e29163c1e7878bfd445fd534c0c87fd5f`.
+The candidate evaluator is
+`3fdcf470cf81bed5a2f709cebad66b80045ef15386684879704cb5a2878d6991`;
+the parent evaluator is
+`eba30ba6a0f20e136c10d763e83a29c1fb14bf382d9311d5daddc33962536466`.
+Library, harness, forced-bundle and protocol hashes, every pair, complete
+decision/why streams and the comparison summaries survive under
+`~/civvis-tactics-results/2026-09-26/air-resource-colony-demand/`.
+
+Local full validation on `e1f9a87bc` passed 4,355 tests, zero failed, with
+53 existing ignores. The frozen candidate subsequently applied repository
+edition-2021 formatting and an equivalent cache-retirement filter; all twelve
+focused tests and changed-line Rust quality passed. CI then required the new
+state/default declaration in its a-b append ranges, rather than beside the
+Settler maps. That declaration-only move passed all fourteen append-point
+tests and renewed changed-line quality. No policy, movement, queue or target
+logic changed after the frozen candidate. Final branch CI verifies the actual
+merge tree; this document distinguishes it from the local and frozen probes.
+
+No engine rules, gene registration, deployment default, native runtime, UI or
+orders database is changed by this task. Native game adoption and an actual
+resource-to-Bomber campaign remain unverified.
