@@ -2370,6 +2370,10 @@ pub const GENES: &[Gene] = &[
     // three, ceiling eight), else the target is kept and the guard holds.
     // See `SETTLER_DETOUR_NEAR_SLACK`.
     Gene { tag: "settler-detour-stays-near", field: "settler_detour_stays_near", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_detour_stays_near, disable: AdvancedAi::disable_settler_detour_stays_near },
+    // Optional earlier Masonry preparation for an unwalled foreign city
+    // still at war with its major founder. Existing wall warnings retain
+    // priority; in-progress research is untouched. See captured_city_walls.rs.
+    Gene { tag: "captured-city-wall-research", field: "captured_city_wall_research", kind: Kind::OptIn, enable: AdvancedAi::enable_captured_city_wall_research, disable: AdvancedAi::disable_captured_city_wall_research },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

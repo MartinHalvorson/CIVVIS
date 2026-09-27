@@ -14795,7 +14795,9 @@ impl AdvancedAi {
                 None
             };
             let opening_archery_goal = self.opening_archery_goal(g, pid);
-            let defensive_walls_goal = self.defensive_walls_research_goal(g, pid, plan);
+            let defensive_walls_goal = self
+                .defensive_walls_research_goal(g, pid, plan)
+                .or_else(|| self.captured_city_walls_research_goal(g, pid));
             let standing_army_fuel_goal = self.standing_army_fuel_goal(g, pid);
             let wartime_modernization_goal = self.wartime_modernization_tech(g, pid);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
