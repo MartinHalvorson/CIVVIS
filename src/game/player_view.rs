@@ -499,3 +499,6 @@ mod colonial_war_tests;
 
 #[cfg(test)]
 mod envoy_readback_tests;
+
+#[cfg(test)]
+mod strategic_income_tests;
