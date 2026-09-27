@@ -2049,6 +2049,54 @@ def screen_refusal(args) -> str | None:
     return None
 
 
+def write_diagnostic_marker(tag: str, diagnostic: dict) -> None:
+    directory = RUN_ROOT / tag
+    directory.mkdir(parents=True, exist_ok=True)
+    with (directory / "native-diagnostic.json").open("x") as handle:
+        handle.write(json.dumps(diagnostic, indent=2, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def check_diagnostic_pins(diagnostic: dict, orders_bin: Path) -> None:
+    if code_state() != diagnostic["code_rev"]:
+        raise OSError("diagnostic bridge source changed")
+    if binary_sha256(orders_bin) != diagnostic["binary_sha256"]:
+        raise OSError("diagnostic decider binary changed")
+
+
+def prepare_save_diagnostic(args, tag: str, code_rev: str,
+                            orders_bin: Path) -> tuple[Path, dict]:
+    """Freeze the initial input before the ordinary owned player starts."""
+    digest = binary_sha256(orders_bin)
+    if digest is None:
+        raise OSError("diagnostic decider binary could not be checksummed")
+    manifest = civ6_save_snapshot.snapshot(
+        Path(args.load_save).expanduser().absolute(),
+        RUN_ROOT / tag / "native-diagnostic-input", root_tag=tag,
+        frozen_tag=tag, continuation_tag=tag, last_turn=None)
+    saved = json.loads(manifest.read_text())
+    diagnostic = {
+        "schema": 1, "kind": "saved_game", "label": args.diagnostic_label,
+        "root_tag": tag, "code_rev": code_rev, "binary_sha256": digest,
+        "input_manifest": str(manifest), "input_sha256": saved["sha256"],
+        "input_bytes": saved["bytes"],
+    }
+    check_diagnostic_pins(diagnostic, orders_bin)
+    write_diagnostic_marker(tag, diagnostic)
+    return manifest.parent / saved["archive"], diagnostic
+
+
+def write_attempt_record(record: dict, diagnostic: dict | None, tag: str) -> None:
+    if diagnostic is not None:
+        record["diagnostic"] = diagnostic
+        (RUN_ROOT / tag / "diagnostic-result.json").write_text(
+            json.dumps(record, indent=2, sort_keys=True) + "\n")
+    else:
+        with LEDGER.open("a") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+
 def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
                  load_save: Path | None = None) -> list[str]:
     """The `civ6_play` command line for one attempt — or its continuation.
@@ -2376,6 +2424,12 @@ def operator_turn_cap(requested: int, path: Path | None = None,
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--attempts", type=int, default=10)
+    ap.add_argument("--load-save", default=None, metavar="PATH",
+                    help="one saved-game diagnostic through the normal owned "
+                         "runner; requires --attempts 1 and --diagnostic-label")
+    ap.add_argument("--diagnostic-label", default=None, metavar="LABEL",
+                    help="describe the saved-board experiment; diagnostic "
+                         "outcomes are retained outside the fresh-game ladder")
     ap.add_argument("--without", action="append", default=[], metavar="TREATMENT",
                     help="withhold one live treatment for every attempt in "
                          "this batch — the control half of a live A/B. Pair "
@@ -2675,6 +2729,15 @@ def main() -> int:
                     help="allow the code to change mid-batch; rows stop being "
                          "comparable and the ledger can only say so afterwards")
     args = ap.parse_args()
+    if args.load_save or args.diagnostic_label is not None:
+        if not args.load_save or not (args.diagnostic_label or "").strip():
+            ap.error("--load-save and a nonempty --diagnostic-label are required together")
+        if args.attempts != 1 or args.no_pin or args.screen_gene:
+            ap.error("saved-game diagnostics require --attempts 1, pinned code, and no live screen")
+        if args.refresh_seconds not in (None, 0.0):
+            ap.error("saved-game diagnostics require --refresh-seconds 0")
+        args.refresh_seconds = 0.0
+        args.diagnostic_label = args.diagnostic_label.strip()
     args.leader = resolve_live_leader(args.leader)
     # Re-read per game, so the lane can be changed without restarting a
     # supervisor that has held its environment for days. See VICTORY_LANE_FILE.
@@ -2779,7 +2842,8 @@ def main() -> int:
                  if "+" in pinned else "")
               + staleness, flush=True)
 
-    print(batch_power_line(args.attempts), flush=True)
+    print("saved-game diagnostic: no fresh-game win-rate measurement"
+          if args.load_save else batch_power_line(args.attempts), flush=True)
     args.refresh_seconds = batch_refresh_seconds(
         args.refresh_seconds, pinned, args.attempts)
     if args.refresh_seconds == 0.0:
@@ -2851,6 +2915,18 @@ def main() -> int:
         # game still has it open creates a new, invisible order channel.
         orders_db = RUN_ROOT / tag / "orders.sqlite"
 
+        load_save, diagnostic = None, None
+        if args.load_save:
+            try:
+                load_save, diagnostic = prepare_save_diagnostic(
+                    args, tag, code_rev, orders_bin)
+            except (OSError, ValueError) as error:
+                print(f"saved-game diagnostic refused before launch: {error}",
+                      file=sys.stderr, flush=True)
+                return 4
+            print(f"diagnostic {args.diagnostic_label!r}: "
+                  f"input sha256={diagnostic['input_sha256']}", flush=True)
+
         play_log = (logs / f"{tag}-play.log").open("w")
         # ⚠ No `<tag>-brain.log` any more, and its absence is the point: an empty
         # file next to a real one reads as "the decider said nothing". The single
@@ -2859,7 +2935,7 @@ def main() -> int:
         prepare_cleanup_ownership(
             tag, baseline_pids=getattr(env, "_LAST_GAME_PIDS", ()))
         play = subprocess.Popen(
-            play_command(args, tag, orders_db, orders_bin),
+            play_command(args, tag, orders_db, orders_bin, load_save=load_save),
             stdout=play_log, stderr=subprocess.STDOUT,
         )
         player_pid = getattr(play, "pid", None)
@@ -2928,6 +3004,15 @@ def main() -> int:
                 if save is None:
                     break
                 cont = f"{tag}-cont{len(resumes) + 1}"
+                if diagnostic is not None:
+                    try:
+                        check_diagnostic_pins(diagnostic, orders_bin)
+                        write_diagnostic_marker(cont, diagnostic)
+                    except OSError as error:
+                        print(f"[resume] diagnostic continuation refused: {error}",
+                              flush=True)
+                        record["diagnostic_resume_refused"] = str(error)
+                        break
                 try:
                     manifest = civ6_save_snapshot.snapshot(
                         save, RUN_ROOT / run_tag / "native-recovery-save",
@@ -3074,10 +3159,11 @@ def main() -> int:
         if record.get("last_turn") is None:
             record["blocked"] = tail_of(logs / f"{tag}-play.log") or "no turn observed"
             record["attempt"] = None
-            with LEDGER.open("a") as handle:
-                handle.write(json.dumps(record, sort_keys=True) + "\n")
+            write_attempt_record(record, diagnostic, tag)
             blocked_streak += 1
             print(f"  NO GAME — {record['blocked']}", flush=True)
+            if diagnostic is not None:
+                return 3
             if blocked_streak >= len(BLOCKED_BACKOFF_S):
                 print(f"{blocked_streak} starts in a row produced no game; stopping. "
                       f"{played}/{args.attempts} attempts were played. "
@@ -3090,17 +3176,20 @@ def main() -> int:
         blocked_streak = 0
         outcomes[str(record.get("reason") or "unknown")] += 1
         record["attempt"] = played
-        with LEDGER.open("a") as handle:
-            handle.write(json.dumps(record, sort_keys=True) + "\n")
+        write_attempt_record(record, diagnostic, tag)
 
         print(f"  turn={record.get('last_turn')} score={record.get('last_score')} "
               f"rival_best={record.get('rival_best')} cities={record.get('cities')}",
               flush=True)
         if won(record):
-            print(f"*** WON on attempt {played} ({tag}) ***", flush=True)
+            print(f"*** {'Diagnostic won on the saved board' if diagnostic is not None else 'WON on attempt ' + str(played)} ({tag}) ***", flush=True)
             print(batch_composition_line(outcomes), flush=True)
             return 0
 
+    if args.load_save:
+        print(f"saved-game diagnostic ended: {dict(outcomes)}; "
+              "no fresh-game ladder sample", flush=True)
+        return 1
     print(f"no win in {played} attempts played "
           f"({started - played} starts produced no game)", flush=True)
     print(batch_composition_line(outcomes), flush=True)

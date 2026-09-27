@@ -1785,12 +1785,33 @@ def load_snapshot(snapshot: Path | None = None) -> dict:
     return {"attempts": [], "wins": {}}
 
 
+def with_diagnostic(summary: dict, summary_path: Path) -> dict:
+    """Retain a prelaunch diagnostic marker, including an unreadable marker.
+
+    A saved-board experiment is evidence about that board, not a fresh-game
+    ladder sample. The marker is written before the player starts, so even a
+    killed child or a later backfill cannot accidentally claim a rung.
+    """
+    marker = Path(summary_path).parent / "native-diagnostic.json"
+    try:
+        diagnostic = json.loads(marker.read_text())
+        if not isinstance(diagnostic, dict) or not diagnostic.get("label"):
+            raise ValueError("diagnostic marker has no label")
+    except FileNotFoundError:
+        return summary
+    except (OSError, ValueError) as error:
+        diagnostic = {"unreadable_marker": str(error)}
+    return dict(summary, diagnostic=diagnostic)
+
+
 def apply(state: dict, summary: dict) -> bool:
     """Fold one summary into the state. False if its tag is already recorded.
 
     Idempotence is what lets the automatic path and a by-hand ``record`` (or a
     later ``sync``) coexist without double-counting an attempt.
     """
+    if "diagnostic" in summary:
+        return False
     tag = summary.get("tag")
     if tag and any(a.get("tag") == tag for a in state["attempts"]):
         return False
@@ -1856,8 +1877,10 @@ def record_summary(summary_path: Path, ledger: Path | None = None) -> bool:
     if ledger is None:
         # <runs>/<tag>/summary.json -> the ledger beside <runs>.
         ledger = live_ledger_for(summary_path.parent.parent)
-    summary = with_bridge_health(json.loads(summary_path.read_text()),
-                                 summary_path)
+    summary = with_diagnostic(json.loads(summary_path.read_text()), summary_path)
+    if "diagnostic" in summary:
+        return False
+    summary = with_bridge_health(summary, summary_path)
     summary = with_conquest(summary, summary_path)
     summary = with_air_supply(summary, summary_path)
     from civ6_race_audit import event_path, game_key, race_totals
@@ -1980,7 +2003,9 @@ def publish_run(tag: str, runs_dir: Path | None = None, *,
                 _git(repo, "read-tree", tip, env=index_env)
             else:
                 _git(repo, "read-tree", "--empty", env=index_env)
-            summary_blob = summary_path.read_bytes()
+            summary_blob = (json.dumps(with_diagnostic(
+                json.loads(summary_path.read_bytes()), summary_path),
+                sort_keys=True) + "\n").encode()
             if (run_dir / "recovery-chain.json").is_file():
                 # The recovery metadata is written before launch; the normal
                 # summary itself stays untouched. Publish its derived scopes
@@ -2072,16 +2097,19 @@ def sync(runs_dir: Path, ledger: Path, *, quiet: bool = False,
     report: publishing lands a repository change and belongs in a pull request.
     """
     paths = summaries_under(runs_dir)
-    recorded = skipped = broken = 0
+    recorded = skipped = broken = diagnostics = 0
     with ledger_lock(ledger):
         state = load(ledger)
         seen = {a.get("tag") for a in state["attempts"]}
         for path in paths:
             try:
-                summary = json.loads(path.read_text())
+                summary = with_diagnostic(json.loads(path.read_text()), path)
             except (OSError, json.JSONDecodeError) as exc:
                 print(f"unreadable summary {path}: {exc}", file=sys.stderr)
                 broken += 1
+                continue
+            if "diagnostic" in summary:
+                diagnostics += 1
                 continue
             if summary.get("tag") in seen:
                 skipped += 1
@@ -2099,6 +2127,7 @@ def sync(runs_dir: Path, ledger: Path, *, quiet: bool = False,
         held = len(state["attempts"])
     if not quiet or recorded or broken:
         print(f"recorded {recorded} attempt(s), {skipped} already in the ledger"
+              + (f", {diagnostics} saved-game diagnostic(s) excluded" if diagnostics else "")
               + (f", {broken} unreadable" if broken else "")
               + f"; ledger holds {held}")
     backlog = unpublished_tags(state, snapshot)

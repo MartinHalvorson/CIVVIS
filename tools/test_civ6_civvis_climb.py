@@ -677,6 +677,131 @@ class _Harness:
                 self.ledger.read_text().splitlines()] if self.ledger.exists() else []
         return code, rows
 
+class SavedGameDiagnostics(_Harness, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        for name in ("ensure_mirror", "ensure_popup_clear"):
+            patcher = mock.patch.object(climb, name)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.input = Path(self.tmp.name) / "AutoSave_0170.Civ6Save"
+        self.input.write_bytes(b"exact saved board\x00\xff")
+        self.words = ("--load-save", str(self.input),
+                      "--diagnostic-label", "Congress denial replay")
+
+    def result(self):
+        paths = list(self.runs.glob("*/diagnostic-result.json"))
+        self.assertEqual(len(paths), 1)
+        return json.loads(paths[0].read_text())
+
+    def test_initial_launch_uses_archived_bytes_and_is_not_a_fresh_sample(self):
+        spawned = []
+        test = self
+
+        class Recording(FakeProc):
+            def __init__(self, argv, *args, **kwargs):
+                spawned.append(argv)
+                tag = argv[argv.index("--tag") + 1]
+                marker = json.loads((test.runs / tag / "native-diagnostic.json").read_text())
+                selected = Path(argv[argv.index("--load-save") + 1])
+                test.assertNotEqual(selected, test.input)
+                test.assertEqual(selected.read_bytes(), test.input.read_bytes())
+                manifest = json.loads(Path(marker["input_manifest"]).read_text())
+                test.assertEqual(marker["input_sha256"], manifest["sha256"])
+                test.assertIsNone(manifest["last_observed_turn"])
+                test.assertEqual(argv[argv.index("--civvis-refresh-seconds") + 1], "0.0")
+                test.input.write_bytes(b"a later autosave rotation")
+                test.assertEqual(selected.read_bytes(), b"exact saved board\x00\xff")
+                super().__init__(argv, *args, **kwargs)
+
+        with mock.patch.object(climb.subprocess, "Popen", Recording):
+            code, rows = self.climb_with([{"last_turn": 221}], attempts=1,
+                                         argv_extra=self.words)
+        self.assertEqual(code, 1)
+        self.assertEqual(rows, [])
+        self.assertFalse(self.ledger.exists())
+        self.assertEqual(len(spawned), 1)
+        self.assertEqual(self.result()["diagnostic"]["label"], "Congress denial replay")
+
+    def test_recovery_inherits_the_label_before_its_player_starts(self):
+        selected = Path(self.tmp.name) / "AutoSave_0207.Civ6Save"
+        selected.write_bytes(b"recovery input")
+        markers = []
+        test = self
+
+        class Recording(FakeProc):
+            def __init__(self, argv, *args, **kwargs):
+                tag = argv[argv.index("--tag") + 1]
+                markers.append(json.loads((test.runs / tag / "native-diagnostic.json").read_text()))
+                super().__init__(argv, *args, **kwargs)
+
+        with mock.patch.object(climb.subprocess, "Popen", Recording), \
+             mock.patch.object(climb, "wait_watching_the_turn", side_effect=["frozen", "exited"]), \
+             mock.patch.object(climb, "_recent_autosaves", return_value=[selected]):
+            _, rows = self.climb_with([{"last_turn": 208}, {"last_turn": 221}],
+                                     attempts=1, argv_extra=self.words)
+        self.assertEqual(rows, [])
+        self.assertEqual(len(markers), 2)
+        self.assertEqual(markers[0], markers[1])
+        self.assertEqual(self.result()["last_turn"], 221)
+        self.assertEqual(len(self.result()["resumes"]), 1)
+
+    def test_unarchivable_input_refuses_before_launch(self):
+        with mock.patch.object(climb.civ6_save_snapshot, "snapshot", side_effect=OSError("disk full")), \
+             mock.patch.object(climb.subprocess, "Popen") as popen:
+            code, rows = self.climb_with([], attempts=1, argv_extra=self.words)
+        self.assertEqual(code, 4)
+        self.assertEqual(rows, [])
+        popen.assert_not_called()
+
+    def test_changed_binary_refuses_diagnostic_recovery(self):
+        spawned = []
+        test = self
+        selected = Path(self.tmp.name) / "AutoSave_0207.Civ6Save"
+        selected.write_bytes(b"recovery input")
+
+        class Recording(FakeProc):
+            def __init__(self, argv, *args, **kwargs):
+                spawned.append(argv)
+                super().__init__(argv, *args, **kwargs)
+
+        def frozen(*args):
+            test.orders_bin.write_bytes(b"different decider")
+            return "frozen"
+
+        with mock.patch.object(climb.subprocess, "Popen", Recording), \
+             mock.patch.object(climb, "wait_watching_the_turn", side_effect=frozen), \
+             mock.patch.object(climb, "_recent_autosaves", return_value=[selected]):
+            _, rows = self.climb_with([{"last_turn": 208}], attempts=1,
+                                     argv_extra=self.words)
+        self.assertEqual(rows, [])
+        self.assertEqual(len(spawned), 1)
+        self.assertIn("binary changed", self.result()["diagnostic_resume_refused"])
+
+    def test_no_native_turn_is_a_single_failed_diagnostic_start(self):
+        with mock.patch.object(climb.subprocess, "Popen", wraps=FakeProc) as popen:
+            code, rows = self.climb_with([{"last_turn": None}], attempts=1,
+                                         argv_extra=self.words)
+        self.assertEqual(code, 3)
+        self.assertEqual(rows, [])
+        self.assertEqual(popen.call_count, 1)
+        self.assertIsNone(self.result()["attempt"])
+
+    def test_ambiguous_or_unfrozen_diagnostics_are_rejected_before_seat_work(self):
+        cases = [(2, self.words), (1, ("--load-save", str(self.input))),
+                 (1, ("--diagnostic-label", "orphan")),
+                 (1, (*self.words, "--no-pin")),
+                 (1, (*self.words, "--refresh-seconds", "30")),
+                 (1, (*self.words, "--screen-gene", "air-surge-2"))]
+        for attempts, words in cases:
+            with self.subTest(words=words, attempts=attempts), \
+                 mock.patch.object(climb, "busy") as busy, \
+                 self.assertRaises(SystemExit) as error:
+                self.climb_with([], attempts=attempts, argv_extra=words)
+            self.assertEqual(error.exception.code, 2)
+            busy.assert_not_called()
+
+
 class DeciderRebuildTests(unittest.TestCase):
     """The climb rebuilds this checkout's own decider before it plays; a supplied
     binary is left alone. See `refresh_orders_binary`."""

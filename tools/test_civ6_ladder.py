@@ -91,6 +91,36 @@ def recovered_events(runs, root_tag, current_tag):
                                         "save": "AutoSave_0200.Civ6Save"}])
 
 
+class SavedBoardDiagnostics(LedgerCase):
+    def test_saved_board_win_does_not_claim_a_rung_or_enter_attempts(self):
+        body = summary("saved-win", won=True, diagnostic={"label": "late ballot"})
+        path = write_run(self.runs, body)
+        self.assertFalse(civ6_ladder.record_summary(path, self.ledger))
+        self.assertFalse(self.ledger.exists())
+        state = {"attempts": [], "wins": {}}
+        self.assertFalse(civ6_ladder.apply(state, body))
+        self.assertEqual(state, {"attempts": [], "wins": {}})
+
+    def test_prelaunch_marker_excludes_unlabeled_partial_and_backfilled_summaries(self):
+        fresh = write_run(self.runs, summary("fresh"))
+        civ6_ladder.record_summary(fresh, self.ledger)
+        for tag, marker in (("saved-root", '{"label":"native denial","root_tag":"saved-root"}'),
+                            ("saved-root-cont1", '{"label":"native denial","root_tag":"saved-root"}'),
+                            ("broken-marker", "{"), ("empty-marker", "{}")):
+            path = write_run(self.runs, summary(tag, won=True, partial=True))
+            (path.parent / "native-diagnostic.json").write_text(marker)
+            self.assertFalse(civ6_ladder.record_summary(path, self.ledger))
+            enriched = civ6_ladder.with_diagnostic(json.loads(path.read_text()), path)
+            self.assertIn("diagnostic", enriched)
+        civ6_ladder.sync(self.runs, self.ledger, quiet=True, snapshot=self.snapshot)
+        self.assertEqual([row["tag"] for row in self.state()["attempts"]], ["fresh"])
+
+    def test_normal_recovery_remains_eligible(self):
+        path = write_run(self.runs, summary("normal-cont1", won=True))
+        self.assertTrue(civ6_ladder.record_summary(path, self.ledger))
+        self.assertEqual(self.state()["attempts"][0]["tag"], "normal-cont1")
+
+
 class RecordsItself(LedgerCase):
     def test_recovery_scopes_are_recorded_by_live_and_backfill_paths(self):
         for tag, live in (("recovery-live", True), ("recovery-backfill", False)):

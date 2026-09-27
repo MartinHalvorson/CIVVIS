@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import signal
+import hashlib
 import json
 import math
 import os
@@ -45,7 +46,7 @@ from civ6_control.orders import (orders_db_path, request_retire,  # noqa: E402
 # The mod's sentinel for a readback it could not resolve, imported rather than
 # repeated: this harness and the ledger have to agree on what "unreadable"
 # looks like, and a second copy of that fact is a second place for it to rot.
-from civ6_ladder import UNREADABLE  # noqa: E402
+from civ6_ladder import UNREADABLE, with_diagnostic  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 
@@ -3272,24 +3273,41 @@ def stage_resume_save(load_save: Path,
 
     So stage the save instead of driving the filter: copy it beside the
     manual saves under the constant stem ``civvis-resume`` and select that
-    row. A save that already lives outside the autosave rotation is returned
-    untouched — a caller naming a manual save meant that exact row. A copy
-    that fails falls back to the original path, which leaves the old
-    filter-ticking path in force rather than trading a weak resume for none.
+    row. A save already in the manual directory is returned untouched. An
+    archived diagnostic input outside that directory is staged too. A copy
+    that fails for an autosave falls back to its filter. An external archive
+    must stage and pass a byte checksum; its filename alone is not proof that
+    the matching manual row is the selected input.
     """
     destination_dir = single_dir if single_dir is not None else AUTOSAVE_DIR.parent
+    external = True
     try:
-        if load_save.parent.resolve() != (destination_dir / "auto").resolve():
+        if load_save.parent.resolve() == destination_dir.resolve():
             return load_save
+        external = load_save.parent.resolve() != (destination_dir / "auto").resolve()
     except OSError:
-        return load_save
+        raise OSError(f"could not resolve saved-game input: {load_save}")
     staged = destination_dir / f"{RESUME_STAGED_STEM}{load_save.suffix}"
+    def digest(path):
+        result = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                result.update(chunk)
+        return result.hexdigest()
+
     try:
+        expected = digest(load_save) if external else None
         shutil.copy2(load_save, staged)
+        if external and digest(staged) != expected:
+            raise OSError(f"staged save checksum differs from {load_save}")
     except OSError as error:
+        if external:
+            raise
         print(f"could not stage {load_save.name} as {staged.name}: {error}; "
               "falling back to the Autosaves filter", file=sys.stderr)
         return load_save
+    if external:
+        print(f"verified staged save sha256={expected}", flush=True)
     print(f"staged {load_save.name} as {staged.name} in the manual save list")
     return staged
 
@@ -3299,9 +3317,9 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
     """Load a named save after proving each rendered menu target.
 
     A save replay is the shortest reliable regression test for behavior that
-    appeared late in a real game. The file must already be in Firaxis's Single
-    Player save directory; the path supplies the exact rendered filename to
-    select, so this never guesses which row happens to be first.
+    appeared late in a real game. An external archive is staged into Firaxis's
+    Single Player save directory; the path supplies the exact rendered filename
+    to select, so this never guesses which row happens to be first.
     """
     def started(seconds: float, still_loading=None) -> bool:
         return wait_for_agent_start(tail, on_event, seconds,
@@ -3310,7 +3328,11 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
     patience = {"left": verify_s * LOADING_PATIENCE, "spent": 0.0}
     # See `stage_resume_save`: an autosave is copied into the manual list so
     # no filter stands between the reader and its row.
-    save_path = stage_resume_save(Path(args.load_save))
+    try:
+        save_path = stage_resume_save(Path(args.load_save))
+    except OSError as error:
+        print(f"saved-game input could not be staged: {error}", file=sys.stderr)
+        return False
     save_label = save_path.stem
     for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
         focus_game(GAME_SIDE, GAME_FRACTION)
@@ -4110,6 +4132,7 @@ def write_attached_summary(args: argparse.Namespace, config: dict, state: dict,
     """Write and index one completed capture-free attach run."""
     path = run_dir / "summary.json"
     summary = attached_summary(args, config, state, run_dir, reason)
+    summary = with_diagnostic(summary, path)
     path.write_text(json.dumps(summary, indent=2, sort_keys=True))
     try:
         import civ6_ladder
@@ -4336,7 +4359,7 @@ def _play(args: argparse.Namespace) -> int:
         path = run_dir / "summary.json"
         if path.exists():
             return
-        partial = partial_summary(args.tag, config, state)
+        partial = with_diagnostic(partial_summary(args.tag, config, state), path)
         # ⭐ A KILLED RUN STILL MEASURED ITS RESEARCH. `killed` and
         # `operator_retired` end most Emperor games (61% in September), so a
         # tech-gap column written only by the finished path would miss the
@@ -5149,6 +5172,7 @@ def _play(args: argparse.Namespace) -> int:
                       f"both.", file=sys.stderr)
     except Exception as exc:  # noqa: BLE001 — health must not fail the run
         print(f"bridge-health totals unavailable: {exc}", file=sys.stderr)
+    summary = with_diagnostic(summary, run_dir / "summary.json")
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
     print(json.dumps(summary, indent=2, sort_keys=True))
 
