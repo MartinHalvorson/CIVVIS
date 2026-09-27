@@ -12415,6 +12415,51 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and "denounce_asked" or "throw";
 	end
 
+	-- A DECLARED FRIENDSHIP IS A SESSION TOO, under a shorter name: the
+	-- shipped view answers CHOICE_DECLARE_FRIENDSHIP with
+	-- RequestSession(local, other, "DECLARE_FRIEND") (DiplomacyActionView.lua:
+	-- 472-473), while the action type is DIPLOACTION_DECLARE_FRIENDSHIP. That
+	-- type is what the shipped view greys the choice with
+	-- (IsDiplomaticActionValid, DiplomacyStatementSupport.lua:167), so an ask
+	-- the host would not offer a human opens no leader scene here. The host
+	-- values a friendship only from DIPLO_STATE_FRIENDLY (DiplomaticActions.xml:
+	-- Worth 15 there, -10 neutral, -40 unfriendly), so a colder rival is not
+	-- asked either. The rival answers inside the session; acceptance crosses as
+	-- GetDeclaredFriendshipTurn on a later frame, so nothing here may claim
+	-- more than "asked".
+	if kind == "friendship" then
+		local diplomacy = try(function() return player:GetDiplomacy(); end);
+		if diplomacy == nil then return false, "no_diplomacy"; end
+		if subject < 0 then return false, "friendship_target_unmapped"; end
+		if try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+			return false, "friendship_at_war";
+		end
+		if try(function()
+			return diplomacy:IsDiplomaticActionValid("DIPLOACTION_DECLARE_FRIENDSHIP", subject, true);
+		end) == false then
+			return false, "friendship_not_offered";
+		end
+		-- The rival's view of us, read as the rival export reads it.
+		local state = try(function()
+			local row = GameInfo.DiplomaticStates[
+				Players[subject]:GetDiplomaticAI():GetDiplomaticStateIndex(pid)];
+			return row ~= nil and row.StateType or nil;
+		end);
+		if state ~= nil and state ~= "DIPLO_STATE_FRIENDLY" then
+			return false, "friendship_not_friendly";
+		end
+		local key = "DECLARE_FRIEND" .. subject;
+		local asked = peaceAsked[key];
+		if asked ~= nil and (turn - asked) < (cfg.PeaceRetryTurns or 5) then
+			return false, "friendship_cooldown";
+		end
+		local ok = pcall(function()
+			DiplomacyManager.RequestSession(pid, subject, "DECLARE_FRIEND");
+		end);
+		if ok then peaceAsked[key] = turn; end
+		return ok, ok and "friendship_asked" or "throw";
+	end
+
 	-- ★★★★★ AID REQUEST FINISHER. Firaxis exposes two score routes for Aid
 	-- Requests: a completed `PROJECT_SEND_AID` gives 200, and every Gold gift
 	-- to the emergency target gives one. The Rust side sends this arm only when

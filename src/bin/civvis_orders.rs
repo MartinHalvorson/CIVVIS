@@ -2829,7 +2829,10 @@ fn append_aid_gift_order(
     let target = emergency.target;
     if orders.iter().any(|order| {
         order.subject == Some(target)
-            && matches!(order.kind, "war" | "peace" | "delegation" | "denounce")
+            && matches!(
+                order.kind,
+                "war" | "peace" | "delegation" | "denounce" | "friendship"
+            )
     }) {
         return Some("aid_gift_hold:diplomacy_conflict");
     }
@@ -5206,8 +5209,9 @@ fn translate(
         // the replay of civvis-20260801T221459Z journals "Offering peace" 106
         // times and every one was a ProposeDeal falling into the `deal` skip
         // tally. Both variants funnel to the one Civilization VI peace order;
-        // a non-peace deal (open borders, friendship, gold) still has no
-        // counterpart and stays skipped.
+        // a friendship-only deal has its own arm below, and every other deal
+        // (open borders, gold, an alliance bundle) has no counterpart and
+        // stays skipped.
         Action::ProposeDeal {
             player,
             peace: true,
@@ -5216,6 +5220,27 @@ fn translate(
             kind: "peace",
             subject: host_player_target(mirror_state, state, *player),
             verb: Some("MAKE_PEACE".to_string()),
+            pos: None,
+        }),
+        // A friendship and nothing else — no gold, passage or alliance
+        // bundled — is the host's DIPLOACTION_DECLARE_FRIENDSHIP, asked as a
+        // session like a denouncement: DiplomacyActionView.lua:472-473 answers
+        // CHOICE_DECLARE_FRIENDSHIP with `RequestSession(local, other,
+        // "DECLARE_FRIEND")`. On the advanced turn only the opt-in
+        // `befriend-the-strongest` proposes this shape, so the arm carries
+        // nothing to the host until that gene is forced on.
+        Action::ProposeDeal {
+            player,
+            give_gold,
+            request_gold,
+            open_borders: false,
+            friendship: true,
+            peace: false,
+            alliance: None,
+        } if *give_gold <= 0.0 && *request_gold <= 0.0 => Some(Order {
+            kind: "friendship",
+            subject: host_player_target(mirror_state, state, *player),
+            verb: Some("DECLARE_FRIEND".to_string()),
             pos: None,
         }),
         Action::Research { tech, .. } => Some(Order {
@@ -6139,6 +6164,17 @@ fn our_denounce_turn_of(state: &civvis::mirror::StateSnapshot, player: i64) -> O
         .map(|r| r.our_denounce_turn)
 }
 
+/// The turn the host records our declared friendship with `player`
+/// (`GetDeclaredFriendshipTurn`, `<= 0` for none), shaped like
+/// [`our_denounce_turn_of`].
+fn friendship_turn_of(state: &civvis::mirror::StateSnapshot, player: i64) -> Option<Option<i64>> {
+    state
+        .rivals
+        .iter()
+        .find(|r| r.player as i64 == player)
+        .map(|r| r.friendship_turn)
+}
+
 /// Whether whatever stood on `pos` before the order is damaged, gone, or ours.
 fn target_harmed(
     before: &civvis::mirror::StateSnapshot,
@@ -6910,6 +6946,15 @@ fn verify_order_with_context(
         "denounce" => match order.subject.and_then(|p| our_denounce_turn_of(after, p)) {
             Some(Some(since)) if since >= turn as i64 => Verdict::Verified,
             Some(Some(_)) => failed("not_denounced".to_string()),
+            Some(None) => Verdict::Unverifiable,
+            None => failed("player_unseen".to_string()),
+        },
+        // The host's `GetDeclaredFriendshipTurn` crosses on every rival
+        // (#2590). The rival answers inside the session, so `not_friends`
+        // covers a refusal as well as a session that never opened.
+        "friendship" => match order.subject.and_then(|p| friendship_turn_of(after, p)) {
+            Some(Some(since)) if since >= turn as i64 => Verdict::Verified,
+            Some(Some(_)) => failed("not_friends".to_string()),
             Some(None) => Verdict::Unverifiable,
             None => failed("player_unseen".to_string()),
         },
@@ -14640,6 +14685,74 @@ mod tests {
         assert_eq!(unmet.subject, None);
     }
 
+    /// A friendship and nothing else crosses as the host's `DECLARE_FRIEND`
+    /// session (DiplomacyActionView.lua:472-473); a deal that bundles
+    /// anything else with it has no host counterpart and stays skipped.
+    #[test]
+    fn a_friendship_only_deal_crosses_as_a_declare_friend_session() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 40,
+            rivals: vec![StateRival {
+                player: 4,
+                civ: "CIVILIZATION_PERSIA".to_string(),
+                leader: "LEADER_NADER_SHAH".to_string(),
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let deal = |open_borders: bool,
+                    alliance: Option<&str>,
+                    give_gold: f64,
+                    request_gold: f64,
+                    peace: bool| Action::ProposeDeal {
+            player: 1,
+            give_gold,
+            request_gold,
+            open_borders,
+            friendship: true,
+            peace,
+            alliance: alliance.map(str::to_string),
+        };
+
+        let order = translate(&deal(false, None, 0.0, 0.0, false), &mirror, &state)
+            .expect("a friendship-only deal to a mapped rival translates");
+        assert_eq!(order.kind, "friendship");
+        assert_eq!(order.subject, Some(4));
+        assert_eq!(order.verb.as_deref(), Some("DECLARE_FRIEND"));
+        assert_eq!(order.pos, None);
+
+        for (label, bundled) in [
+            ("passage", deal(true, None, 0.0, 0.0, false)),
+            (
+                "an alliance",
+                deal(false, Some("military"), 0.0, 0.0, false),
+            ),
+            ("gold given", deal(false, None, 30.0, 0.0, false)),
+            ("gold asked", deal(false, None, 0.0, 30.0, false)),
+        ] {
+            assert!(
+                translate(&bundled, &mirror, &state).is_none(),
+                "a friendship with {label} stays skipped"
+            );
+        }
+        let peace = translate(&deal(false, None, 0.0, 0.0, true), &mirror, &state)
+            .expect("a peace deal still crosses");
+        assert_eq!(
+            peace.kind, "peace",
+            "peace outranks the friendship it carries"
+        );
+    }
+
     #[test]
     fn planner_sales_cross_as_sell_orders_with_a_floor() {
         use civvis::game::DealItems;
@@ -17943,6 +18056,46 @@ mod order_postcondition_tests {
         after.rivals = Vec::new();
         assert_eq!(
             check(&denounce, &before, &after, &[]),
+            failed("player_unseen")
+        );
+    }
+
+    /// A friendship is verified by the host's own `GetDeclaredFriendshipTurn`
+    /// on the next frame; a refusal reads the same as a session never opened.
+    #[test]
+    fn a_friendship_is_verified_by_the_hosts_own_friendship_turn() {
+        let rival = |since: Option<i64>| StateRival {
+            player: 2,
+            friendship_turn: since,
+            ..StateRival::default()
+        };
+        let mut before = frame(80);
+        before.rivals = vec![rival(Some(-1))];
+        let friendship = order("friendship", Some(2), Some("DECLARE_FRIEND"), None);
+
+        let mut after = frame(81);
+        after.rivals = vec![rival(Some(80))];
+        assert_eq!(check(&friendship, &before, &after, &[]), Verdict::Verified);
+
+        // Refused, or a friendship older than the ask.
+        for since in [-1, 50] {
+            after.rivals = vec![rival(Some(since))];
+            assert_eq!(
+                check(&friendship, &before, &after, &[]),
+                failed("not_friends")
+            );
+        }
+
+        after.rivals = vec![rival(None)];
+        assert_eq!(
+            check(&friendship, &before, &after, &[]),
+            Verdict::Unverifiable,
+            "an older mod that does not export the turn cannot answer"
+        );
+
+        after.rivals = Vec::new();
+        assert_eq!(
+            check(&friendship, &before, &after, &[]),
             failed("player_unseen")
         );
     }
