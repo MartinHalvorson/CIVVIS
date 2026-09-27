@@ -152,5 +152,11 @@ provide a refusal channel; its simulator adapter needs separate verification.
 - `known-analysis.json` and each frame-probe directory retain diagnostic
   completions, exact-prefix validation, planned orders and authoritative
   refusal reasons. Frozen scripts and binaries remain outside Git.
-- Explicit library and native CLI build passed. Full tests and final
-  documentation checks are recorded before integration below.
+- Explicit library and native CLI build passed. `cargo test --profile ci
+  --locked`: 4,406 passed, zero failed, 53 ignored. Test source `9a36c7dac` has
+  the same production code as the frozen source; subsequent edits are this
+  report only. `full-test-completion.json` records exit zero.
+- Merged `origin/main` once before Ready (already up to date); final
+  `git diff --check` passed. Rust quality passed with no changed Rust files.
+- No engine-change soak is applicable to a documentation-only PR. The
+  complete registered simulator block supplies the evaluation evidence.
