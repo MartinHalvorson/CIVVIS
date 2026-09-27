@@ -121,3 +121,38 @@ reported campaign regression whose cause is not yet established. Neither
 successful information acquisition nor a completed colony, Aluminum income,
 Bomber or Domination win has been demonstrated. Do not deploy this candidate
 on test-suite success or the unchanged initial pilot alone.
+
+## First causal trace, not a tuned replacement pilot
+
+A read-only instrumented copy of the frozen harness reran the already
+registered seed `37930001` against the parent library and a clean rebuilt
+`d3d2f2df9` library. Both off/on reported outcomes **and applied-action counts**
+matched their original records exactly. This single-pair run uses `off,on`,
+whereas the original block used `on,off` for this seed; matched aggregate
+records do not prove the original unrecorded action streams were identical.
+The original four-seed block remains retained and unchanged.
+
+The first global applied-action difference is index 25,232, grouped under
+observed boundary 154 and corroborated by turn-153 reasoning. Focal
+Skirmisher 38 at `(25,10)` moves to `(26,9)` in the parent and `(24,10)` in the
+reviewed source. Every earlier applied action matches. Rivals first change
+later. Neither arm records a survey Scout purchase: this is an existing
+explorer's route change, not evidence of treasury diverted to a new Scout.
+At boundary 153 the focal seat has Flight, Radio, Advanced Flight, two
+Bombers, a queued third and 12 Aluminum.
+
+The reviewed source first holds Persepolis (capital 35) at boundary 186,
+earlier than the parent's 200, but loses it to seat 1 at 199. It recaptures
+at 219 and the city flips to the free-city player at 223. The parent also
+loses this city to Loyalty at 205, recaptures at 217 and retains it at the
+end. Both runs show Aluminum-starved air fleets during the campaign; all
+reviewed Bombers are gone by boundary 237. This distinguishes later military
+and Loyalty retention failures without proving that one Scout reroute alone
+caused them. Reverting healthy-source eligibility merely to recover a Score
+win would not demonstrate a completed sustainable Bomber supply path.
+
+Evidence: `causal-37930001/` under the archive above, including immutable
+library/binary hashes, copied harness and force rows, full applied-action and
+state streams, reasoning records and explicit ring-loss/truncation counters,
+outcome reproduction checks, first-difference analysis and city-owner
+timelines. Observer snapshots are omniscient diagnostics, never AI inputs.
