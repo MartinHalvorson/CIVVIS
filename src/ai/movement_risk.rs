@@ -295,10 +295,19 @@ impl BasicAi {
                 }
         };
         let stay = score(here);
-        candidates.sort_by(|a, b| score(*b).total_cmp(&score(*a)).then(a.cmp(b)));
-        let candidates: Vec<_> = candidates
+        // Each candidate is scored once. `score` prices every enemy envelope
+        // against the tile, and a comparator that asked it again on both
+        // sides of every comparison was 3% of a whole game's CPU. The order
+        // and the hold test read the same numbers.
+        let mut scored: Vec<(Pos, f64)> = candidates
             .into_iter()
-            .take_while(|pos| self.move_beats_holding(g, uid, score(*pos), stay))
+            .map(|pos| (pos, score(pos)))
+            .collect();
+        scored.sort_by(|(a, left), (b, right)| right.total_cmp(left).then(a.cmp(b)));
+        let candidates: Vec<Pos> = scored
+            .into_iter()
+            .take_while(|(_, value)| self.move_beats_holding(g, uid, *value, stay))
+            .map(|(pos, _)| pos)
             .collect();
         for pos in candidates {
             if self.path_move(g, pid, uid, pos) {
