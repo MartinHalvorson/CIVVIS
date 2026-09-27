@@ -7394,6 +7394,7 @@ mod siege_train;
 /// groups and the posture ladder. Opt-in gene `objective-board`; see
 /// `advanced/objective_board.rs`.
 pub mod objective_board;
+mod role_spacing;
 /// Target feasibility, the declaration and the peace term read off the
 /// board's requirements. Opt-in gene `war-policy-via-board`.
 mod war_policy;
