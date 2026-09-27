@@ -1,7 +1,7 @@
 # Bomber generation continuity: native defect and King regression screen
 
-Status: **IN PROGRESS**. Candidate correctness fix; no strength claim or native
-Domination win. The registered checks below determine whether it is promoted.
+Status: **PROMOTE AS A CORRECTNESS FIX**. The registered functional and regression
+checks pass. This does not establish a strength gain or a native Domination win.
 
 ## Native trigger
 
@@ -78,7 +78,91 @@ claim requires a separately registered larger replication.
 
 ## Validation and results
 
-Pending. Baseline focused tests reproduce four assertion failures: upgraded
-package count, legal successor production, two-Jet range, and mixed wing count.
-The original four production-queue regressions pass on baseline. Compilation
-and test setup errors are retained separately from these expected failures.
+Baseline focused tests reproduce four assertion failures: upgraded package
+count, legal successor production, two-Jet range, and mixed wing count. The
+original four production-queue regressions pass on baseline. The candidate's
+nine focused tests pass, including successor queue preservation through the
+production governor and no third aircraft when two Jets fill the affordable
+launch quota. Intermediate compilation and fixture errors were corrected
+before binary freeze; no policy tuning occurred after fresh launch.
+
+`cargo test --profile ci --locked` passed 4,423 tests, zero failures and 53
+ignored. `python3 tools/rust_quality.py --base 9d430ac585b91744cb5f959e400b1599bbb285eb
+--head 01194a859` reports the changed lines formatted and warning-free.
+`python3 -m unittest discover -s tools -p 'test_docs*.py'` passed 12 tests.
+
+The baseline binaries were compiled from
+`0583bcbb4544ca43608ef4f46a8982693f38dea9`. All thirteen changed files through
+baseline `9d430ac58` are docs or Python tools; Rust, compiled data, Cargo inputs,
+gene ledger and the forced bundle are identical. The equivalence patch and its
+hash are retained. Candidate binaries were compiled in this task worktree's own
+target directory from `01194a85963b8301b4b90c93f23b7f8e8fed5906` and frozen before
+replay and fresh launch.
+
+| Binary | Baseline SHA-256 | Candidate SHA-256 |
+| --- | --- | --- |
+| `civvis_orders` | `23e797618293c0e41b215517db8a77585042f0990c42308a619a70b856b19a95` | `a9d4a76cd57b3e6369302356faa2919c10b708c5868c2924ac75302751b8f79a` |
+| `victory_eval` | `afade64f074882b49a46ee5add09898ce7b74eb70573ecf8d9dbdd7768ed7264` | `aa03f1994f8715b8a69a8eeb8d5ecefd35457a46f9f0d988a1c2c03b133dfead` |
+
+Both persistent native replays completed all 700 frames. Their actual genomes
+have Domination, air-surge-2 ON, v1 OFF, identical treatment sets and all 21
+requested deployed policies active. Frame-indexed reasoning offsets align each
+package report with the corresponding observed state. Baseline has twelve
+reports, including four mismatches: zero instead of one Jet on turns 224–226
+and zero instead of two Jets on 233. Candidate has 68 reports, 57 with observed
+Jets, and zero mismatches. It also proposes legal Jet Bomber reinforcement
+queues. Different report counts reflect changed internal appointments and
+proposals, not additional native matches. This passes the registered native
+preflight; it does not show a counterfactual capture or victory.
+
+All four fresh workers finished at `2026-09-27T12:51:21.584220+00:00`; outcome
+inspection began at `2026-09-27T12:51:55.482846+00:00`. All sixteen harness
+invocations returned zero. All 32 games, eight fixed source pairs, profiles,
+forced-policy lists, focal civilization/target, paired civilization rosters and
+frozen binary hashes were validated. No seed replacement or policy tuning
+occurred after launch.
+
+| Metric, eight primary ON games per source | Baseline | Candidate |
+| --- | ---: | ---: |
+| Domination wins | 0 | 0 |
+| Final foreign original capitals | 1 | 1 |
+| Foreign original capitals ever held | 1 | 1 |
+| Own original capital losses | 3 | 3 |
+| Foreign major cities ever held | 8 | 8 |
+| Major declarations | 4 | 4 |
+
+| Seed | Baseline finish | Candidate finish | Major cities ever, baseline/candidate | Final foreign capitals, baseline/candidate | Own capital held, both sources |
+| --- | --- | --- | ---: | ---: | --- |
+| 38260000 | science 195 | science 195 | 7/7 | 1/1 | yes |
+| 38260001 | science 211 | science 211 | 0/0 | 0/0 | yes |
+| 38260002 | science 195 | science 196 | 0/0 | 0/0 | yes |
+| 38260003 | science 196 | science 196 | 0/0 | 0/0 | no |
+| 38260004 | science 191 | science 191 | 1/1 | 0/0 | yes |
+| 38260005 | science 213 | science 213 | 0/0 | 0/0 | no |
+| 38260006 | science 193 | science 193 | 0/0 | 0/0 | no |
+| 38260007 | science 202 | science 202 | 0/0 | 0/0 | yes |
+
+The secondary OFF arm has zero Domination wins, zero final foreign capitals and
+three home-capital losses in both sources. Equal aggregate counts do not imply
+identical play: some leg summaries and action counts differ, and one primary
+game finishes a turn later. The harness does not record Bomber-upgrade exposure.
+This small screen cannot exclude a regression or establish a strength gain.
+Source changes also affect rivals. The registered decision is to promote the
+reproduced correctness fix because its functional checks pass and none of the
+three pilot guards worsens. No strength replication or ledger change is claimed.
+
+## Automatic native observation readback
+
+While this task ran, the existing recovery supervisor completed the separate
+native game `civvis-20260927T115203Z` through `-cont2`. The automatic terminal
+ladder row from observer source `307fdf2` includes air supply and an explicitly
+validated recovered game path. It uses root turns 1–83 and continuation turns
+84–181, discarding the superseded first continuation. These are one game.
+
+The rival won Culture on turn 182. Our original capital remained held, no
+foreign major cities or original capitals were held, and the two Bombers were
+first observed on 176 and 180. The terminal observation has Aluminum income
+five, stock 25 and two usable airfields. This independently verifies automatic
+air-supply collection on a newly completed native game; it is not a candidate
+result or evidence of stronger play. The next native batch remains on the
+deployed source and the requested four-player King Gran Colombia profile.
