@@ -206,3 +206,52 @@ changed-line quality passed. Independent library build directories avoid a
 stale shared-cache alias found during preparation; no campaign was run with
 the incorrect copies. Campaign evidence is still pending. PR #3793 stays
 draft and withheld.
+
+## Completed combined-source block, still withheld
+
+Both pre-registered `37930100`–`37930103` blocks finished successfully and
+were verified terminal at `2026-09-27T01:42:53Z`, before the first outcome
+inspection. All four pairs per source, both off/on arms and all sixteen games
+are retained. The independent source libraries and binaries, compiler receipts,
+force bundle, result/trace hashes and completion receipt are archived under
+`coastal-37930100/`. No source policy or registered seed changed within the block.
+
+| Seed suffix | Baseline primary on | Candidate primary on |
+| --- | --- | --- |
+| 100 | Score loss t250 / 1075 | Science loss t242 / 1070 |
+| 101 | Diplomatic loss t245 / 1210 | identical outcome and complete applied-action stream |
+| 102 | Culture loss t188 / 274, home capital lost | identical outcome and complete applied-action stream |
+| 103 | Score loss t250 / 685 | Score loss t250 / 643 |
+
+Both primary arms have zero wins, zero Domination wins, zero final foreign
+capitals, one home-capital loss and seven observed foreign major cities total.
+The secondary off arm changes 100 and 101; candidate 101 wins Science at
+229 with score 1583 versus the baseline's Science loss at 248/1476. That
+secondary win is retained, not counted as Domination. All sixteen games have
+zero Domination wins. Secondary 102 and 103 also have identical complete
+canonical action streams across sources. Adaptive rivals consume source
+changes, so this remains a source diagnostic rather than focal-only strength.
+
+In primary 100, the known unclaimed center `(31,22)` begins with forty
+uncharted plots at boundary 136; the candidate still has eleven at best and
+does not found that resource center. Its first gross Aluminum rate of +2 and
+stock of two at 194 follows the applied liberation of city 12, not a proved
+resource colony. There is no Bomber/Jet Bomber or Bomber queue at any observed
+boundary. Helicopters grow to four by 199 while stock is exhausted and the
+explicit Aluminum shortage begins at 198. This is a supply-allocation and
+airfield-production lead, not proof of the sole cause of the missing wing.
+
+Secondary 100's remaining map fog disappears at 208. Its Spaceport city 132
+has `launch_earth_satellite` queued at 207 and an empty queue at 208; the engine
+reveals the full map on that project's completion. Do not count this as
+successful local Scout coverage. Available journal records also need execution
+corroboration: primary 100 reports twenty-one survey-purchase thoughts at
+236–242, but no corresponding applied purchase or surviving recon unit at
+those boundaries. The purchase path needs further diagnosis before claiming
+acquisition. Ring/truncation counters are retained; cumulative ring drops can
+include records already drained, and thoughts alone are not actions.
+
+The checkpoint `47562d856` passed all independent PR checks. Neither green
+checks nor the secondary Science win remedies the retained campaign limits.
+PR #3793 remains draft and withheld; no live-runtime or native-game change is
+approved by these results.
