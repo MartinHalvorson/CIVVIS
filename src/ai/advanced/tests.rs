@@ -49893,3 +49893,34 @@ fn an_expansion_district_is_worth_the_hall_it_hosts() {
         );
     }
 }
+
+/// `domination-ignores-city-states`: an assigned Domination seat's campaign
+/// ranking leaves city-states out; off, and for any other lane, they stay
+/// candidates exactly as before.
+#[test]
+fn domination_ignores_city_states_is_a_domination_only_opt_in() {
+    let game = Game::new_full(2, 24, 16, 91_011, 250, 2, false);
+    let mut domination = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert!(!domination.domination_ignores_city_states, "the gene ships off");
+    assert!(!AdvancedAi::new().domination_ignores_city_states);
+    assert!(
+        domination.conquest_campaign_considers_city_states(&game),
+        "off, a city-state stays a campaign candidate"
+    );
+    domination.enable_domination_ignores_city_states();
+    assert!(
+        !domination.conquest_campaign_considers_city_states(&game),
+        "on, the Domination seat's ranking names no city-state"
+    );
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.enable_domination_ignores_city_states();
+    assert!(
+        science.conquest_campaign_considers_city_states(&game),
+        "only the Domination lane drops them"
+    );
+    domination.disable_domination_ignores_city_states();
+    assert!(domination.conquest_campaign_considers_city_states(&game));
+    assert!(super::GENES
+        .iter()
+        .any(|gene| gene.tag == "domination-ignores-city-states" && gene.opt_in()));
+}

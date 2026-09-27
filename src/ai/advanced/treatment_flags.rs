@@ -4522,6 +4522,17 @@ impl AdvancedAi {
         self.befriend_the_strongest = false;
     }
 
+    /// `domination-ignores-city-states`: an assigned Domination seat keeps
+    /// city-states out of its campaign's fallback ranking. See
+    /// `AdvancedAi::conquest_campaign_considers_city_states`.
+    pub fn enable_domination_ignores_city_states(&mut self) {
+        self.domination_ignores_city_states = true;
+    }
+    /// The twin of `enable_domination_ignores_city_states`.
+    pub fn disable_domination_ignores_city_states(&mut self) {
+        self.domination_ignores_city_states = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
