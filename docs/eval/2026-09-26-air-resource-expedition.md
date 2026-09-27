@@ -145,11 +145,17 @@ The reviewed source first holds Persepolis (capital 35) at boundary 186,
 earlier than the parent's 200, but loses it to seat 1 at 199. It recaptures
 at 219 and the city flips to the free-city player at 223. The parent also
 loses this city to Loyalty at 205, recaptures at 217 and retains it at the
-end. Both runs show Aluminum-starved air fleets during the campaign; all
-reviewed Bombers are gone by boundary 237. This distinguishes later military
-and Loyalty retention failures without proving that one Scout reroute alone
-caused them. Reverting healthy-source eligibility merely to recover a Score
-win would not demonstrate a completed sustainable Bomber supply path.
+end. An earlier strict ordinary-Bomber census incorrectly suggested the
+reviewed wing had disappeared by boundary 237: it omitted upgrades to Jet
+Bombers. Direct verification of the complete raw unit state at that boundary
+shows three reviewed Jet Bombers (838, 934, 971), all at 100 HP, with five
+Aluminum and no strategic-resource shortage. The parent has two healthy Jet
+Bombers, 24 Aluminum and only a Uranium shortage. These records do not prove
+an Aluminum-starved or destroyed air fleet. The capital-retention regression
+remains real, without proof that one Scout reroute alone caused it. Reverting
+healthy-source eligibility merely to recover a Score win would not demonstrate
+a completed sustainable Bomber supply path. Future observer censuses use the
+`air_bomber` promotion class and record explicit shortage maps.
 
 Evidence: `causal-37930001/` under the archive above, including immutable
 library/binary hashes, copied harness and force rows, full applied-action and
@@ -193,5 +199,10 @@ passed. This still does not validate deployment. A fresh fixed block,
 campaign runs. It will compare the combined survey against the same merged
 guarded-colony baseline with the identical twenty-one force-on rows. Full
 action/reasoning streams and compact supply/retention snapshots are required;
-partial outcomes will not tune the block. Guarded-colony main integration and
-that campaign evidence are pending. PR #3793 stays draft and withheld.
+partial outcomes will not tune the block. Guarded-colony #3795 is now merged
+in baseline `a0ca7b2e0`; the integrated candidate is frozen at `511c3b810`.
+The integrated suite passed 4,370 tests with 53 existing ignores and
+changed-line quality passed. Independent library build directories avoid a
+stale shared-cache alias found during preparation; no campaign was run with
+the incorrect copies. Campaign evidence is still pending. PR #3793 stays
+draft and withheld.
