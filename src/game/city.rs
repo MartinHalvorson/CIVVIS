@@ -6303,6 +6303,19 @@ impl Game {
     }
 
     pub(super) fn unit_resource_cost(&self, cid: u32, item: &Item) -> f64 {
+        // The host prices the exact city/tier after all modifiers. Preserve
+        // explicit zero prices and do not discount or multiply them again.
+        // Empty on ordinary boards, avoiding a key allocation there.
+        if !self.host_unit_resource_prices.is_empty() {
+            if let Some(cost) = self
+                .host_unit_resource_prices
+                .get(&cid)
+                .and_then(|prices| prices.get(&Self::production_block_key(item)))
+                .filter(|cost| cost.is_finite() && **cost >= 0.0)
+            {
+                return *cost;
+            }
+        }
         let (unit, multiplier) = match item {
             Item::Unit { unit } => (unit, 1.0),
             Item::Formation {
@@ -7145,6 +7158,14 @@ impl Game {
         self.host_buildable = Arc::new(buildable);
         self.host_purchasable = Arc::new(purchasable);
         self.host_district_plots = Arc::new(district_plots);
+        self.query_memo.producible.borrow_mut().clear();
+    }
+
+    pub(crate) fn replace_host_unit_resource_prices(
+        &mut self,
+        prices: BTreeMap<u32, BTreeMap<String, f64>>,
+    ) {
+        self.host_unit_resource_prices = Arc::new(prices);
         self.query_memo.producible.borrow_mut().clear();
     }
 

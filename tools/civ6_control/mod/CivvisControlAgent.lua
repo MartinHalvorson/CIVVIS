@@ -6045,6 +6045,16 @@ CivvisMenus.plots = function(city, param, hash)
 	return offered, out;
 end;
 
+-- ToolTipLoader_Expansion2.lua:109 uses the city's queue and formation tier
+-- for the actual strategic-resource price, after the host's modifiers.
+CivvisMenus.resource_cost = function(queue, index, formation)
+	local amount = try(function() return queue:GetUnitResourceCost(index, formation); end);
+	if type(amount) == "number" and amount >= 0 and amount < math.huge then
+		return amount;
+	end
+	return nil;
+end;
+
 CivvisMenus.buildable = function(city)
 	local queue = city:GetBuildQueue();
 	if queue == nil then return nil; end
@@ -6101,6 +6111,7 @@ CivvisMenus.buildable = function(city)
 						t = row.UnitType,
 						c = try(function() return queue:GetUnitCost(row.Index); end, -1),
 						p = try(function() return queue:GetTurnsLeft(row.Hash); end, -1),
+						r = CivvisMenus.resource_cost(queue, row.Index, standard),
 					};
 					-- `ProductionPanel.lua:2150-2172`: the results table says whether
 					-- a Corps or Army may be trained here; each tier is asked again.
@@ -6114,6 +6125,7 @@ CivvisMenus.buildable = function(city)
 							f = 1,
 							c = try(function() return queue:GetUnitCorpsCost(row.Index); end, -1),
 							p = try(function() return queue:GetTurnsLeft(row.Hash, corps); end, -1),
+							r = CivvisMenus.resource_cost(queue, row.Index, corps),
 						};
 					end
 					local canArmy = try(function()
@@ -6126,6 +6138,7 @@ CivvisMenus.buildable = function(city)
 							f = 2,
 							c = try(function() return queue:GetUnitArmyCost(row.Index); end, -1),
 							p = try(function() return queue:GetTurnsLeft(row.Hash, army); end, -1),
+							r = CivvisMenus.resource_cost(queue, row.Index, army),
 						};
 					end
 				end

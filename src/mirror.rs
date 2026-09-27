@@ -1792,6 +1792,10 @@ pub struct StateMenuItem {
     pub c: f64,
     #[serde(default = "unknown_metric")]
     pub p: f64,
+    /// Exact strategic-resource price for this city and formation, when the
+    /// host accessor answered. Zero is a price; absence remains unknown.
+    #[serde(default)]
+    pub r: Option<f64>,
     #[serde(default)]
     pub f: Option<u8>,
     #[serde(default)]
@@ -7561,6 +7565,7 @@ pub fn host_production_key(
 #[derive(Default)]
 pub(crate) struct HostMenus {
     pub buildable: BTreeMap<u32, BTreeMap<String, crate::game::HostMenuEntry>>,
+    pub unit_resource_prices: BTreeMap<u32, BTreeMap<String, f64>>,
     pub purchasable: BTreeMap<u32, BTreeMap<String, crate::game::HostPurchaseEntry>>,
     pub district_plots: BTreeMap<u32, BTreeMap<crate::name::Name, BTreeSet<crate::Pos>>>,
 }
@@ -7578,11 +7583,17 @@ fn host_menus_from(
         };
         if let Some(menu) = city.buildable.as_deref() {
             let mut translated = BTreeMap::new();
+            let mut resource_prices = BTreeMap::new();
             let mut plots: BTreeMap<crate::name::Name, BTreeSet<crate::Pos>> = BTreeMap::new();
             for row in menu {
                 let Some(key) = host_production_key(rules, &row.t, row.f) else {
                     continue;
                 };
+                if key.starts_with("unit:") || key.starts_with("formation:") {
+                    if let Some(price) = row.r.and_then(reading) {
+                        resource_prices.insert(key.clone(), price);
+                    }
+                }
                 if let Some(district) = key.strip_prefix("district:") {
                     // Only a COMPLETE offer can say a plot is not legal; a
                     // capped list says only where some of them are.
@@ -7611,6 +7622,9 @@ fn host_menus_from(
             // Civilization VI city can always train something. No gate then.
             if !translated.is_empty() {
                 out.buildable.insert(*cid, translated);
+            }
+            if !resource_prices.is_empty() {
+                out.unit_resource_prices.insert(*cid, resource_prices);
             }
             if !plots.is_empty() {
                 out.district_plots.insert(*cid, plots);
@@ -12714,6 +12728,7 @@ pub fn rebuild_from_state(
     // `Game::host_buildable`; wired on BOTH paths for the reason the
     // promotion blocks are.
     let menus = host_menus_from(&state.cities, &city_ids, &game.rules);
+    game.replace_host_unit_resource_prices(menus.unit_resource_prices);
     game.replace_host_menus(menus.buildable, menus.purchasable, menus.district_plots);
     seat_live_spies(&mut game);
     block_live_spy_production(&mut game, state.spy_capacity);
@@ -13939,6 +13954,8 @@ impl LiveMirror {
             &self.game.rules,
         );
         self.game
+            .replace_host_unit_resource_prices(menus.unit_resource_prices);
+        self.game
             .replace_host_menus(menus.buildable, menus.purchasable, menus.district_plots);
         let blocked_purchases = blocked_production_from(
             &state.refused_purchases,
@@ -14793,6 +14810,9 @@ mod transient_refusal_tests;
 
 #[cfg(test)]
 mod host_fact_tests;
+
+#[cfg(test)]
+mod host_resource_price_tests;
 
 #[cfg(test)]
 mod enemy_district_pillage_tests;
