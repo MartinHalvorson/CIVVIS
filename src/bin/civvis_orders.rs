@@ -9096,6 +9096,28 @@ mod tests {
     }
 
     #[test]
+    fn startup_genome_reports_mixed_host_and_forced_repair_withholds() {
+        let requested: Vec<String> = include_str!("../../deploy/live-force-on.txt")
+            .trim()
+            .split(',')
+            .map(str::to_string)
+            .collect();
+        let forced = super::forced_live_treatments(&requested).expect("compiled force bundle");
+        assert!(forced.contains(&"siege-commitment"));
+        let withheld = vec![
+            "counter-in-lane".to_string(),
+            "siege-commitment".to_string(),
+            "counter-in-lane".to_string(),
+        ];
+        let mut ai = civvis::ai::AdvancedAi::new();
+        super::configure_live_bridge(&mut ai, &forced, &withheld).expect("valid mixed arm");
+        let reported = super::configured_live_treatments(&forced, &withheld);
+        assert!(!ai.counter_in_lane && !reported.contains(&"counter-in-lane"));
+        assert!(!ai.siege_commitment && !reported.contains(&"siege-commitment"));
+        assert!(ai.parallel_settlers && reported.contains(&"parallel-settlers"));
+    }
+
+    #[test]
     fn startup_genome_reports_a_withheld_counter_response_under_the_force_bundle() {
         let requested: Vec<String> = include_str!("../../deploy/live-force-on.txt")
             .trim()
