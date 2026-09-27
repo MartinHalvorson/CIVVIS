@@ -326,3 +326,26 @@ keeps its prior target and full score. Forty focused board tests pass, including
 actual movement toward the city, off-policy remote kills and identical Recover
 actions/unit state. The14 append-point tests pass with every existing gene bit
 unchanged. No fresh pair outcomes have been read or run.
+
+Eligible phase-four source `0b71273441270e98c0b5d8a8eb2d5bb1c78805e0` is frozen
+after formatting and regeneration, before any fresh pair runs. Full local
+validation passes4,349 tests, zero failures,53 existing ignores; changed-line
+Rust quality, gene-generation and evaluation-manifest checks pass. Off replay
+matches every full clean-baseline decision in all202 archived frames. On replay
+changes two full decisions and one unit-order frame, retaining turn74's Archer
+advance; no timely arrival or retention is inferred. The immutable binaries
+are `civvis_orders` SHA256
+`aa44448e6ac45fd275df173d3dfd8ed46f1e8a161db9d12a22fd3c3d73d7477f`
+and `victory_eval` SHA256
+`39f52445717bbed8fb1b46c442844fa646e349ef81c34afcd8953f3440fc7ac4`.
+
+All eight registered pairs are running from those copied artifacts. The policy
+is toggled only for seat0, leaving every rival unchanged between legs. A
+separate known37911002 trace diagnoses off equivalence and the original unsafe
+Warrior handoff; its reused seed is not fresh efficacy evidence. The registry
+entry is appended without renumbering old genes; only its generated off-policy
+ranking row is added. Both earlier harmed candidates remain retained. Source,
+commands, hashes, validation and202-frame comparisons are under
+`prince-city-retention/relief-safety-and-direction/`. Draft stays withheld
+pending complete efficacy results; the broader army approach defect and
+actual native Domination/difficulty promotion remain open.
