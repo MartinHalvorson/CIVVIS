@@ -6507,10 +6507,16 @@ impl Game {
         if unit == "spy" {
             // Counts mirrored `UNIT_SPY` units too — see `spy_agents`.
             let existing = self.spy_agents(pid);
+            // Spies queued in the empire's OTHER cities. A `Produce` order
+            // replaces the asking city's whole queue, so a Spy already at the
+            // head of this city's queue is the claim being asked about, not a
+            // second one: counting it made a queued Spy illegal the moment the
+            // empire had exactly one free slot, and the AI then replaced it and
+            // queued it again every turn without ever finishing it.
             let queued = self
                 .cities
                 .values()
-                .filter(|candidate| candidate.owner == pid)
+                .filter(|candidate| candidate.owner == pid && candidate.id != cid)
                 .filter(|candidate| {
                     candidate
                         .queue
