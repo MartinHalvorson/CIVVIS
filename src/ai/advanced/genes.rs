@@ -2370,6 +2370,13 @@ pub const GENES: &[Gene] = &[
     // three, ceiling eight), else the target is kept and the guard holds.
     // See `SETTLER_DETOUR_NEAR_SLACK`.
     Gene { tag: "settler-detour-stays-near", field: "settler_detour_stays_near", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_detour_stays_near, disable: AdvancedAi::disable_settler_detour_stays_near },
+    // `befriend-the-strongest` (2026-09-26): a friendship-only offer to the
+    // strongest met major at peace, every third turn. A friendship forbids a
+    // war declaration between the pair; no major formed one on the ladder
+    // proxy without it. Immortal against Domination-lane rivals (32 paired):
+    // focal wins 4 -> 19, cities lost 3.1 -> 1.8. See
+    // `advanced/protective_friendship.rs`.
+    Gene { tag: "befriend-the-strongest", field: "befriend_the_strongest", kind: Kind::OptIn, enable: AdvancedAi::enable_befriend_the_strongest, disable: AdvancedAi::disable_befriend_the_strongest },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

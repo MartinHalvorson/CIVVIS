@@ -182,6 +182,38 @@ Two engine bugs surfaced here and are fixed:
   Paired, the fix read +4.12 pp (z +1.31) on this mode and −0.26 pp on the
   default one.
 
+## Friendships nobody made
+
+A declared friendship forbids a war declaration between the pair while it
+lasts (`start_war`: "friendship and alliance declarations must expire before
+war"), and a seat values an offered friendship at +40 (`incoming_deal_value`;
++80 on the Diplomacy plan). A census of every seat at turns 60, 100 and 150
+found **no friendship, alliance or defensive pact between any two majors** —
+Immortal, both rival modes. The advanced controller's only friendship offer
+rides `propose_strategic_alliance`, which waits for Civil Service on both sides
+and bundles an alliance kind the partner must also want; the stock
+controller's friendship cadence (`BasicAi::diplomacy`) is not on the advanced
+turn. Against Domination-lane rivals the focal seat was attacked by neighbours
+it had never asked.
+
+`befriend-the-strongest` (opt-in, #3810) offers a friendship — and nothing
+else — every third turn to the strongest met major it is at peace with, not
+already a friend and not denounced either way:
+
+| Science lane, 32 paired unless noted | Δ share | z | focal wins | alive | cities lost / game | friends at turn 100 |
+|---|---:|---:|---:|---:|---:|---:|
+| Immortal, Domination-lane rivals | **+10.65 pp** | **+5.22** | **4 → 19** | 22 → 25 | 3.06 → 1.81 | 2.5 of 3 |
+| Immortal, adaptive rivals (16) | +1.11 pp | +2.60 | 0 → 0 | 16 → 16 | 0.75 → 0.44 | 3 of 3 |
+| King, adaptive rivals (16) | −0.10 pp | −0.13 | 1 → 2 | 16 → 16 | — | — |
+
+The focal seat's 19 wins against Domination-lane rivals are 9 Religious, 5
+Science and 5 Score: its would-be attackers spend their armies on each other.
+⚠ The rivals here are our own genome, which accepts any friendship it values
+above zero; Civilization VI's leaders accept by their opinion of the proposer,
+and the live seat cannot offer one at all yet — `civvis_orders` sends a peace
+deal to the host and skips every other deal. A `DECLARE_FRIENDSHIP` order in
+the agent mod is the follow-up that would let the ladder find out.
+
 ## What was decided
 
 - **Shipped, off** (#3781): `builders-work-through-raiders`, an opt-in gene
@@ -205,6 +237,9 @@ Two engine bugs surfaced here and are fixed:
   seat and its raiders are Firaxis', which these games do not play; the
   Settlers keep every capture lesson, and a Builder still refuses a tile a
   raider can take this turn.
+- **Shipped, off** (#3810): `befriend-the-strongest` — against Domination-lane
+  rivals the focal seat's wins 4 → 19 of 32 (z +5.22 on share); not forced on
+  the live seat, whose order translation cannot send a friendship yet.
 - **Recommended to the operator, not changed**: the Science lane at Immortal
   (+1.46 pp, z +2.62, over the unassigned seat), which the native ladder
   already runs.

@@ -4512,6 +4512,16 @@ impl AdvancedAi {
         self.beeline_orders_by_value = false;
     }
 
+    /// `befriend-the-strongest`: offer a friendship-only deal to the
+    /// strongest neighbour at peace. See `advanced/protective_friendship.rs`.
+    pub fn enable_befriend_the_strongest(&mut self) {
+        self.befriend_the_strongest = true;
+    }
+    /// The twin of `enable_befriend_the_strongest`.
+    pub fn disable_befriend_the_strongest(&mut self) {
+        self.befriend_the_strongest = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
