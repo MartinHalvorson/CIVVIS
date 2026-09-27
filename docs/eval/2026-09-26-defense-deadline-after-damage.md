@@ -325,7 +325,7 @@ recovery. Outside two hexes, urgent relief movement targets its city; Recover
 keeps its prior target and full score. Forty focused board tests pass, including
 actual movement toward the city, off-policy remote kills and identical Recover
 actions/unit state. The14 append-point tests pass with every existing gene bit
-unchanged. No fresh pair outcomes have been read or run.
+unchanged. Those checks preceded the frozen fresh trial below.
 
 Eligible phase-four source `0b71273441270e98c0b5d8a8eb2d5bb1c78805e0` is frozen
 after formatting and regeneration, before any fresh pair runs. Full local
@@ -339,13 +339,59 @@ are `civvis_orders` SHA256
 and `victory_eval` SHA256
 `39f52445717bbed8fb1b46c442844fa646e349ef81c34afcd8953f3440fc7ac4`.
 
-All eight registered pairs are running from those copied artifacts. The policy
-is toggled only for seat0, leaving every rival unchanged between legs. A
-separate known37911002 trace diagnoses off equivalence and the original unsafe
-Warrior handoff; its reused seed is not fresh efficacy evidence. The registry
-entry is appended without renumbering old genes; only its generated off-policy
-ranking row is added. Both earlier harmed candidates remain retained. Source,
-commands, hashes, validation and202-frame comparisons are under
-`prince-city-retention/relief-safety-and-direction/`. Draft stays withheld
-pending complete efficacy results; the broader army approach defect and
-actual native Domination/difficulty promotion remain open.
+All eight registered pairs completed from those copied artifacts, exit zero.
+Only the focal city-relief-deadlines policy differs; rivals keep identical
+controllers/policies. Seven pairs change actions. This removes the earlier
+all-controller attribution problem, and the result is negative: wins fall
+2 to1, Domination wins remain0, home capital losses rise0 to1, foreign major
+cities ever held sum falls30 to19, and foreign capitals retained at end fall
+3 to2. The candidate remains OFF and WITHHELD.
+
+| Seed | Off ending / focal score | On ending / focal score | Major cities ever, off/on | Foreign capitals at end, off/on | Home capital held, off/on |
+| --- | --- | --- | --- | --- | --- |
+| 37913000 | diplomatic 225 loss / 631 | culture 189 loss / 475 | 0/0 | 0/0 | yes/yes |
+| 37913001 | science 215 loss / 521 | science 227 loss / 707 | 0/0 | 0/0 | yes/yes |
+| 37913002 | science 224 loss / 701 | diplomatic 225 loss / 1020 | 2/0 | 0/0 | yes/yes |
+| 37913003 | science 230 win / 2230 | science 230 win / 2230 | 19/19 | 2/2 | yes/yes |
+| 37913004 | science 220 loss / 364 | science 205 loss / 469 | 0/0 | 0/0 | yes/yes |
+| 37913005 | religious 156 loss / 452 | culture 216 loss / 211 | 0/0 | 0/0 | yes/no |
+| 37913006 | culture 239 loss / 482 | culture 171 loss / 450 | 0/0 | 0/0 | yes/yes |
+| 37913007 | score 250 win / 1534 | religious 158 loss / 499 | 9/0 | 1/0 | yes/yes |
+
+Seed37913003 is exactly action-identical and wins Science in both legs; it
+provides no policy effect or Domination evidence. Seed37913007 loses the off
+leg's Score win and foreign capital. Seed37913005 introduces a home capital
+loss. Every raw row and full metric is retained in pilot.jsonl and
+pilot-comparison.json, whose raw SHA256 is
+`ff6ba5be4ac1f422b34b328ddd16460ebab9073a56b98a1834b55540bc049346`.
+
+The separate reused37911002 diagnostic completes both legs. OFF matches every
+original baseline-on reported field and action count. Both legs end at250
+with Science loss, score509 and the home capital retained. Both preserve the
+original turn8 Warrior fortification and observed turn9 HP90, rather than the
+harmful prototype's move and HP80; this establishes the local safety fix on a
+known case. It is not a fresh strength result, and the original pilot did not
+retain its full action sequence, so field/count equality is not sequence proof.
+
+After the trial, current main was merged solely to resolve a registry-tail
+conflict preventing CI. The integrated source
+`1c72b5cb45faf27f8bff69f0594aefd59419af1b` passes4,371 local Rust tests,
+zero failures and53 existing ignores. Rust quality and gene generation pass.
+Its first CI run passes Rust tests but correctly rejects absent gene firing
+evidence and a stale evaluation manifest. The actual six-game single-gene
+screen37916000–37916005 completes on the copied integrated gene_screen binary;
+its unmodified analysis is committed at
+`docs/gene_screens/fires/city-relief-deadlines.json`. This is a firing gate only:
+six-player74x46 Continents, random major genomes/civs, Online250, nine minor
+players, Prince majors and Deity barbarians. It is separate from the eight
+fixed-rival focal Prince pairs and supplies no positive strength conclusion.
+The manifest is regenerated over the integrated registry. No source policy is
+tuned, enabled or promoted based on these outcomes or checks.
+
+The21-policy integrated-main regime has not received this eight-pair strength
+trial; those frozen binaries retain the archived20-policy regime. Both earlier
+harmed candidates, the frozen phase-four candidate and all negative arms remain
+preserved. The broader ordinary army approach defect is independently registered
+in PR #3796; that experiment must preserve this negative evidence and cannot
+claim native retention from fixed-future replay. Actual native Domination and
+higher-difficulty promotion remain open.
