@@ -33957,15 +33957,15 @@ impl AdvancedAi {
             .get(&uid)
             .copied()
             .and_then(target_drop_reason);
-        if cached_drop == Some("the resource colony lost its guarded supply permission") {
-            if let Some(site) = self.settler_targets.get(&uid).copied() {
-                // The ordinary economic ranking must not immediately reuse
-                // a supply target whose stronger permission just failed.
-                self.settler_dead_sites.entry(uid).or_default().insert(
-                    site,
-                    g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
-                );
-            }
+        if let Some(site) = self.settler_targets.get(&uid).copied().filter(|_| {
+            cached_drop == Some("the resource colony lost its guarded supply permission")
+        }) {
+            // The ordinary economic ranking must not immediately reuse
+            // a supply target whose stronger permission just failed.
+            self.settler_dead_sites.entry(uid).or_default().insert(
+                site,
+                g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+            );
         }
         let valid_target = self
             .settler_targets

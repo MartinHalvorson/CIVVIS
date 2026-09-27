@@ -1,7 +1,7 @@
 use super::super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
-use crate::Pos;
 use crate::game::{Game, Item};
 use crate::name::Name;
+use crate::Pos;
 
 fn fixture() -> (Game, AdvancedAi, StrategicPlan, Pos, u32, u32) {
     let mut g = Game::new_full(3, 40, 24, 379_500, 250, 0, false);
@@ -71,10 +71,9 @@ fn an_actual_domination_turn_requests_one_supply_colony_at_the_city_target() {
         unit: crate::name!("settler"),
     };
     assert!(g.can_produce(0, home, &item));
-    assert!(
-        ai.air_resource_settlement_sites(&g, 0, &std::collections::BTreeSet::from([deposit]))
-            .contains(&deposit)
-    );
+    assert!(ai
+        .air_resource_settlement_sites(&g, 0, &std::collections::BTreeSet::from([deposit]))
+        .contains(&deposit));
     assert!(
         ai.production_value(&g, 0, home, &item, &plan, &ai.counts(&g, 0)) < 0.0,
         "ordinary expansion is already at its city target"

@@ -1,10 +1,10 @@
 //! Acquire one guarded city-center resource for the committed Bomber wing.
 
 use super::{AdvancedAi, StrategicPlan};
-use crate::Pos;
 use crate::game::{Action, Game, Item};
 use crate::name::Name;
 use crate::think;
+use crate::Pos;
 use std::collections::BTreeSet;
 
 impl AdvancedAi {
