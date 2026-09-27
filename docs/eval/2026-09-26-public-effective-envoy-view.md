@@ -68,9 +68,12 @@ AI policy, tactical guard, force bundle or native runtime write is introduced.
 Eight focused regression tests have been added, including the exact false-tie
 legality, zero-raw Puppeteer, private-state/non-mutation boundary, own-Amani
 double-count guard, unmet-minor privacy, repeated observations, neutralization
-refresh, and the full observed-player dispatcher. The unchanged implementation
-is being run first to establish a genuine failing regression. Fix validation,
-full-suite/cost results, and integrated campaign evidence are pending.
+refresh, and the full observed-player dispatcher. On the unchanged implementation,
+six tests failed and two controls passed. With the repair, all eight pass.
+The dispatcher fixture goes from three refused orders to zero and executes an
+independent army move. Command: `cargo test --profile ci --locked --lib
+envoy_readback_tests`. Full-suite and cost results remain pending. These are
+correctness checks, not a new campaign-strength experiment.
 
 No later Recon purchase success, aluminum allocation repair, stronger
 Domination result, native quit-dialog recovery or resumed native game is claimed.

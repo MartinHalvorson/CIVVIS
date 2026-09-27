@@ -89,7 +89,9 @@ fn own_raw_envoys_and_amani_are_not_counted_twice() {
     let (mut game, minor, city) = rival_amani_fixture();
     let amani = game.players[1].governor_roster.remove("amani").unwrap();
     game.sync_governor_cities(1);
-    game.players[0].governor_roster.insert("amani".into(), amani);
+    game.players[0]
+        .governor_roster
+        .insert("amani".into(), amani);
     game.sync_governor_cities(0);
     let remembered = game.remember_city(&game.cities[&city]);
     game.players[0].remembered_cities.insert(city, remembered);
@@ -106,7 +108,10 @@ fn an_unmet_city_states_delegation_is_not_disclosed() {
     game.players[0].met.remove(&minor);
     assert!(!game.has_met(0, minor));
     let view = game.player_decision_view(0);
-    assert!(!view.players[1].envoys.iter().any(|(seat, _)| *seat == minor));
+    assert!(!view.players[1]
+        .envoys
+        .iter()
+        .any(|(seat, _)| *seat == minor));
     assert!(view.players[1].governor_roster.is_empty());
 }
 
@@ -160,11 +165,18 @@ fn observed_dispatcher_does_not_repeat_a_ghost_wartime_envoy() {
         *seat == 0 && matches!(action, Action::SendEnvoy { player } if *player == minor)
     }));
     assert_eq!(
-        game.players[0].counters.get("player:refused").copied().unwrap_or(0),
+        game.players[0]
+            .counters
+            .get("player:refused")
+            .copied()
+            .unwrap_or(0),
         0,
         "the real observed dispatcher must not spend its refresh frames on the false Envoy offer"
     );
-    assert!(game.log.since(start).any(|(seat, action)| {
-        *seat == 0 && matches!(action, Action::Move { .. } | Action::MoveTo { .. })
-    }), "the independent army must still act");
+    assert!(
+        game.log.since(start).any(|(seat, action)| {
+            *seat == 0 && matches!(action, Action::Move { .. } | Action::MoveTo { .. })
+        }),
+        "the independent army must still act"
+    );
 }
