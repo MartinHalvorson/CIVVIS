@@ -3648,6 +3648,14 @@ fn configure_live_bridge(
     Ok(())
 }
 
+/// The treatment list recorded in the startup genome identity.
+fn configured_live_treatments(
+    forced_on: &[&str],
+    _withheld: &[String],
+) -> Vec<&'static str> {
+    civvis::ai::gene_ledger::deployment_treatments_with_forced_live(forced_on)
+}
+
 /// The immutable live-arm identity. Keeping it as one value prevents a new
 /// experimental gene from growing the already busy turn-decider signature.
 #[derive(Clone, Copy)]
@@ -7991,7 +7999,7 @@ fn main() {
             // genome, the registry's live genes name what COULD be on; this
             // names what IS — the helpers the screens proved, the opt-ins they
             // proved, and the host-only flags no screen can price.
-            "treatments": civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced_on),
+            "treatments": configured_live_treatments(&forced_on, &withheld),
             "ledger_withheld": civvis::ai::GENES
                 .iter()
                 .filter(|gene| gene.live())
@@ -9051,6 +9059,25 @@ fn action_variant(action: &Action) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn startup_genome_reports_a_withheld_counter_response_under_the_force_bundle() {
+        let requested: Vec<String> = include_str!("../../deploy/live-force-on.txt")
+            .trim()
+            .split(',')
+            .map(str::to_string)
+            .collect();
+        let forced = super::forced_live_treatments(&requested).expect("compiled force bundle");
+        let withheld = vec!["counter-in-lane".to_string()];
+        let mut ai = civvis::ai::AdvancedAi::targeting(civvis::ai::VictoryTarget::Domination);
+        super::configure_live_bridge(&mut ai, &forced, &withheld).expect("valid OFF arm");
+        assert!(!ai.counter_in_lane, "the configured controller is actually OFF");
+        assert_eq!(ai.victory_target(), Some(civvis::ai::VictoryTarget::Domination));
+        assert!(
+            !super::configured_live_treatments(&forced, &withheld).contains(&"counter-in-lane"),
+            "startup identity must describe the configured OFF controller"
+        );
+    }
+
     /// ★★★★★ EVERY ITEM THE BOARD CAN ORDER COMES BACK FROM ITS HOST SPELLING
     /// TO THE SAME KEY. `Game::can_produce` gates on the host's exported menu,
     /// translated through `mirror::host_production_key`; an orderable item
