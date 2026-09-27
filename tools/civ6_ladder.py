@@ -1461,14 +1461,26 @@ def with_bridge_health(summary: dict, summary_path: Path) -> dict:
 
 def with_conquest(summary: dict, summary_path: Path) -> dict:
     """Preserve native ownership milestones on live and backfilled rows."""
-    if "conquest" in summary:
-        return summary
-    from civ6_conquest import conquest_totals
+    from civ6_conquest import conquest_totals, recovered_conquest
     from civ6_race_audit import event_path
-    evidence = event_path(Path(summary_path).parent)
-    if evidence is None:
-        return summary
-    return dict(summary, conquest=conquest_totals(evidence))
+    directory = Path(summary_path).parent
+    enriched = dict(summary)
+    if "conquest" not in summary:
+        evidence = event_path(directory)
+        if evidence is not None:
+            enriched["conquest"] = conquest_totals(evidence)
+    if "game_conquest" not in summary:
+        recovered = recovered_conquest(directory)
+        if recovered is not None:
+            enriched["game_conquest"] = recovered
+            # Keep ancestry with a published derived result as well as in the
+            # local sidecar. Remote readers can retain it after raw-run pruning.
+            try:
+                enriched["recovery_chain"] = json.loads(
+                    (directory / "recovery-chain.json").read_text())
+            except (OSError, ValueError):
+                pass
+    return enriched
 
 
 def trailing_unmeasured(attempts: list) -> int:
@@ -1534,7 +1546,7 @@ def entry_from(summary: dict) -> dict:
         # pruning. A continuation's race remains explicitly segment-scoped.
         **{key: summary[key] for key in ("race", "boosts", "game_id", "seat",
                                        "genome_treatments", "max_turns",
-                                       "seed_probe", "seed_request") if key in summary},
+                                       "seed_probe", "seed_request", "recovery_chain") if key in summary},
         "tag": summary.get("tag"),
         "utc": summary.get("finished_utc") or datetime.now(timezone.utc)
             .strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1629,6 +1641,7 @@ def entry_from(summary: dict) -> dict:
         "combat": summary.get("combat"),
         # Ownership observations distinguish major capitals from minor cities.
         "conquest": summary.get("conquest"),
+        "game_conquest": summary.get("game_conquest"),
         # The opening tempo (`civ6_play.OPENING_TEMPO_TURN`). Over the 35
         # completed runs of 2026-08-16/17 these were the strongest correlates
         # the live ladder has produced: cities at t60 r=+0.69 with final lead,
@@ -1952,7 +1965,14 @@ def publish_run(tag: str, runs_dir: Path | None = None, *,
                 _git(repo, "read-tree", tip, env=index_env)
             else:
                 _git(repo, "read-tree", "--empty", env=index_env)
-            entries = [(ledger_summary, summary_path.read_bytes())]
+            summary_blob = summary_path.read_bytes()
+            if (run_dir / "recovery-chain.json").is_file():
+                # The recovery metadata is written before launch; the normal
+                # summary itself stays untouched. Publish its derived scopes
+                # and ancestry so off-seat readers keep the full-path result.
+                summary_blob = (json.dumps(with_conquest(json.loads(summary_blob), summary_path),
+                                          sort_keys=True) + "\n").encode()
+            entries = [(ledger_summary, summary_blob)]
             if events_path.is_file():
                 entries.append((ledger_events, gzip_bytes(events_path.read_bytes())))
             for path, blob in entries:
