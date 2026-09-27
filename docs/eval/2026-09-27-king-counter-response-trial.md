@@ -119,8 +119,8 @@ is this registration document; the production trees are identical.
 | block2.jsonl | `1ad167bedc166dd9c236c375c1e245731a5cfe9c268453ae6ca8f74ee953d089` |
 | block3.jsonl | `75567c76de1ecb75d7d420f2bc197a8143036996d5e42f5d560a9a40440d31ea` |
 
-Build: `cargo build --profile ci --locked --features developer-tools --bin
-civvis_orders --bin victory_eval`. Each frozen evaluator block ran
+Build: `cargo build --profile ci --locked --features developer-tools --bin civvis_orders --bin victory_eval`.
+Each frozen evaluator block ran
 `--domination-pair counter-in-lane --difficulty king --games 2 --start-seed
 SEED --out PATH`, with first seeds 38210000, 38210002, 38210004 and 38210006.
 Output paths were exclusive. All eight actual profiles, focal civilization,
@@ -130,6 +130,7 @@ assigned target, forced policies and execution orders matched registration.
 The full suite includes the startup withholding-identity tests. The separate
 constructor readback and native replay are the focused trial checks. An engine
 soak is inapplicable to this evidence-only document; production code is unchanged.
+Documentation command checks passed (seven tests).
 
 The evidence root retains every raw JSONL outcome and block log, immutable
 binary copies, registration, constructor and replay inputs/outputs, source and
