@@ -86,7 +86,7 @@ fn stockpile_grace_pays_existing_ground_deficit_for_real_resource_ticks() {
     for uid in cavalry {
         g.apply(0, &Action::UpgradeUnit { unit: uid }).unwrap();
     }
-    assert_eq!(g.strategic_stockpile(0, &crate::name!("aluminum")), 30.0);
+    assert_eq!(g.strategic_stockpile(0, crate::name!("aluminum")), 30.0);
     // A two-plane wing plus four Helicopters burns four Aluminum per turn.
     // Prove the short bank fails the actual upkeep processor before asking
     // the AI to reject its apparent speed-scaled grace-period bridge.
@@ -385,7 +385,7 @@ fn the_bank_pays_training_once_then_carries_two_real_aircraft() {
     assert_eq!(g.strategic_resource_rate(0, "aluminum"), 0.0);
     assert!(ai.air_surge_production(&mut g, 0));
     assert!(ai.air_surge_production(&mut g, 0));
-    assert_eq!(g.strategic_stockpile(0, &crate::name!("aluminum")), 28.0);
+    assert_eq!(g.strategic_stockpile(0, crate::name!("aluminum")), 28.0);
     for cid in cities {
         let item = g.cities[&cid].queue[0].clone();
         g.cities.get_mut(&cid).unwrap().production = g.item_cost_for_city(0, cid, &item);
@@ -417,5 +417,5 @@ fn an_oil_upgrade_uses_its_own_supply() {
         .insert(crate::name!("oil"), 20.0);
     ai.upgrade_units_preserving_air_wing(&mut g, 0);
     assert_eq!(g.units[&tank].kind, "modern_armor");
-    assert_eq!(g.strategic_stockpile(0, &crate::name!("aluminum")), 8.0);
+    assert_eq!(g.strategic_stockpile(0, crate::name!("aluminum")), 8.0);
 }
