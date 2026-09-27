@@ -151,6 +151,22 @@ probe and shipped the view repair separately in #3804, merge
 before that change and do not contain it. These comparisons cannot attribute
 any gain to the income repair or establish the final merged tree's win rate.
 
+## Final combined-tree validation
+
+Merged `origin/main` at `871b872c4d55ff92b8acf6494441bf22ac20062f` once,
+without conflicts. Validation source `23f3a0734e602d908a71c2e1b1854076f50ea7a6`:
+`cargo test --profile ci --locked` passed 4,405 tests, 0 failed, 53 ignored;
+changed-line Rust quality and the explicit library/native-orders CLI build
+passed. The owned allocation policy and tests are identical to the frozen
+refinement source; subsequent changes record evidence only.
+
+The original independent public-income probe now reports world +2/view +2,
+with equal stock/Suzerainty and the same redacted center-only foreign city.
+This confirms the separate upstream projection repair on the combined tree.
+It is not a native gameplay or new campaign-strength result. Native startup
+remains with the game owner and no native Bomber sortie has been verified by
+this task.
+
 ## Reproducible artifacts
 
 Protocol, source and artifact freezes, full actions/reasoning traces, both
