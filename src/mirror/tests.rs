@@ -14349,3 +14349,28 @@ fn requested_state_readers_keep_latest_valid_frame_and_its_tiles() {
 }
 
 mod plot_city_ownership;
+
+#[path = "foreign_movement_tests.rs"]
+mod foreign_movement_tests;
+
+#[test]
+fn strategic_trade_catalogue_preserves_public_quantities_and_unknowns() {
+    for (raw, expected) in [
+        (r#"{}"#, None),
+        (r#"{"tradeable_strategics":null}"#, None),
+        (r#"{"tradeable_strategics":[]}"#, Some(BTreeMap::new())),
+        (r#"{"tradeable_strategics":{}}"#, Some(BTreeMap::new())),
+        (
+            r#"{"tradeable_strategics":{"RESOURCE_ALUMINUM":24,"RESOURCE_IRON":7}}"#,
+            Some(BTreeMap::from([
+                ("RESOURCE_ALUMINUM".to_string(), 24),
+                ("RESOURCE_IRON".to_string(), 7),
+            ])),
+        ),
+    ] {
+        let state = state_from_json(&format!(r#"{{"turn":162,"rivals":[{raw}]}}"#)).unwrap();
+        assert!(state.schema_gaps.is_empty(), "{:?}", state.schema_gaps);
+        assert_eq!(state.rivals[0].tradeable_strategics, expected);
+        assert_eq!(state.turn, 162);
+    }
+}

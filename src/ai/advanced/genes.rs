@@ -2350,6 +2350,12 @@ pub const GENES: &[Gene] = &[
     // (-0.03 pp, z -0.10); against the lane without either, +2.35 pp (z
     // +4.78) and +1.38 pp (z +1.67). See `advanced/lane_delegates_production.rs`.
     Gene { tag: "lane-delegates-production-2", field: "lane_delegates_production_2", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_delegates_production_2, disable: AdvancedAi::disable_lane_delegates_production_2 },
+    // `builders-work-through-raiders` (2026-09-26): the live capture
+    // lessons' barbarian-reach holds were written for Settlers; on a Builder
+    // they left worked first-copy luxuries unimproved for 40+ turns at
+    // Immortal. With this on, Builders keep the native Builder safety and the
+    // Settlers keep every lesson. See `AdvancedAi::builder_reach_safety_on`.
+    Gene { tag: "builders-work-through-raiders", field: "builders_work_through_raiders", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_work_through_raiders, disable: AdvancedAi::disable_builders_work_through_raiders },
     // `settler-detour-stays-near` (2026-09-26): the threat detour's fallback
     // was FARTHER than the deferred site in 11 of 18 Immortal-proxy detours
     // (4 tiles became 9), and each far walk met its own blocker; Settlers

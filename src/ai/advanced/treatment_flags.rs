@@ -4482,6 +4482,15 @@ impl AdvancedAi {
         self.trade_growth_to_district = false;
     }
 
+    /// `builders-work-through-raiders`: the live capture lessons' reach holds
+    /// keep Settlers only. See `AdvancedAi::builder_reach_safety_on`.
+    pub fn enable_builders_work_through_raiders(&mut self) {
+        self.builders_work_through_raiders = true;
+    }
+    /// The twin of `enable_builders_work_through_raiders`.
+    pub fn disable_builders_work_through_raiders(&mut self) {
+        self.builders_work_through_raiders = false;
+    }
     /// `settler-detour-stays-near`: a threat detour's fallback must lie about
     /// as close as the site it leaves. See `SETTLER_DETOUR_NEAR_SLACK`.
     pub fn enable_settler_detour_stays_near(&mut self) {

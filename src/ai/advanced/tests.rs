@@ -42556,6 +42556,79 @@ fn a_builder_refuses_a_job_inside_a_raiders_reach() {
     assert_ne!(safe.builder_targets.get(&builder), Some(&target));
 }
 
+/// `builders-work-through-raiders`: the live capture lessons hold a Builder
+/// whose only job sits inside a raider's reach; with the gene the Builder
+/// walks to its job, while the Settler-facing reach safety is untouched and
+/// the native `civilian-out-of-reach` opt-in still holds the Builder.
+#[test]
+fn builders_work_through_raiders_frees_the_builder_and_keeps_the_settler_lessons() {
+    let setup = || {
+        let (mut game, city, home) = barbarian_field(71_025);
+        let target = game
+            .nbrs(home)
+            .into_iter()
+            .find(|pos| game.cities[&city].owned_tiles.contains(pos) && open_land(&game, *pos))
+            .expect("the capital owns an open neighbouring tile");
+        game.map.tiles.get_mut(&target).unwrap().improvement = None;
+        game.players[0].techs.extend([
+            crate::name!("mining"),
+            crate::name!("bronze_working"),
+            crate::name!("irrigation"),
+        ]);
+        let raider_at = game
+            .wdisk(target, 1)
+            .into_iter()
+            .find(|pos| {
+                game.wdist(*pos, target) == 1
+                    && game.wdist(*pos, home) > 1
+                    && open_land(&game, *pos)
+            })
+            .expect("an open raider tile one step from the job");
+        game.spawn_test_unit("warrior", 1, raider_at);
+        (game, home, target)
+    };
+
+    let (mut held_game, home, target) = setup();
+    let builder = held_game.spawn_test_unit("builder", 0, home);
+    let mut held = AdvancedAi::new();
+    held.enable_live_settler_capture_lessons();
+    assert!(held.builder_reach_safety_on());
+    let reach = held.barbarian_reach(&held_game, 0, home, 10);
+    assert!(
+        reach.covers(&held_game, target),
+        "the only job is inside the reach"
+    );
+    let _ = held.advanced_builder_step(&mut held_game, 0, builder, GrandStrategy::Expansion);
+    assert_eq!(
+        held_game.units[&builder].pos, home,
+        "under the lessons the builder stays in the city"
+    );
+
+    let (mut free_game, home, _target) = setup();
+    let builder = free_game.spawn_test_unit("builder", 0, home);
+    let mut free = AdvancedAi::new();
+    free.enable_live_settler_capture_lessons();
+    free.enable_builders_work_through_raiders();
+    assert!(!free.builder_reach_safety_on());
+    assert!(
+        free.civilian_reach_safety_on(),
+        "the settlers keep the capture lessons' reach holds"
+    );
+    assert!(free.advanced_builder_step(&mut free_game, 0, builder, GrandStrategy::Expansion));
+    assert_ne!(
+        free_game.units[&builder].pos, home,
+        "with the gene the builder walks out to its job"
+    );
+
+    let mut native = AdvancedAi::new();
+    native.enable_civilian_out_of_reach();
+    native.enable_builders_work_through_raiders();
+    assert!(
+        native.builder_reach_safety_on(),
+        "the native opt-in keeps its builder holds"
+    );
+}
+
 /// Native version-2 families are opt-in, off in both controllers, published
 /// for `gene_screen` as `<base>-2`, and their enables turn version 1 off so a
 /// seat plays one version of a family.

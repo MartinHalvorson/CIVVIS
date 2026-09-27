@@ -5,8 +5,10 @@
 //! victory_eval --domination-pair siege-is-progress-3 --games 16 \
 //!   --start-seed 37140000 --out /tmp/domination-pairs.jsonl
 //!
-//! Both legs use King, 4 players, 60x38 Pangaea, 6 city-states, Online,
+//! Both legs use 4 players, 60x38 Pangaea, 6 city-states, Online,
 //! barbarians, all victory conditions and the natural 250-turn clock.
+//! `--difficulty prince|king` sets both player and barbarian difficulty.
+//! Omission preserves the historical King-player/Emperor-barbarian profile.
 //! Only seat zero's named policy is disabled/enabled. The other seats keep
 //! their adaptive deployed controllers. The focal seat also carries the
 //! repository's compiled live-force-on bundle, recorded in every pair.
@@ -23,6 +25,7 @@ const FORCED: &str = include_str!("../../../deploy/live-force-on.txt");
 
 struct Config {
     policy: &'static Gene,
+    difficulty: Option<&'static str>,
     games: u64,
     start_seed: u64,
     out: PathBuf,
@@ -30,6 +33,7 @@ struct Config {
 
 fn parse(args: &[String]) -> Result<Config, String> {
     let mut policy = None;
+    let mut difficulty = None;
     let mut games = 16;
     let mut start_seed = 37_140_000;
     let mut out = None;
@@ -43,6 +47,13 @@ fn parse(args: &[String]) -> Result<Config, String> {
         match flag.as_str() {
             "--domination-pair" => {
                 policy = Some(gene(value).ok_or_else(|| format!("unknown policy {value}"))?);
+            }
+            "--difficulty" => {
+                difficulty = Some(match value.as_str() {
+                    "prince" => "prince",
+                    "king" => "king",
+                    _ => return Err("--difficulty must be prince or king".to_string()),
+                });
             }
             "--games" => games = value.parse::<u64>().map_err(|e| e.to_string())?,
             "--start-seed" => start_seed = value.parse::<u64>().map_err(|e| e.to_string())?,
@@ -59,16 +70,20 @@ fn parse(args: &[String]) -> Result<Config, String> {
     }
     Ok(Config {
         policy: policy.ok_or("--domination-pair is required")?,
+        difficulty,
         games,
         start_seed,
         out: out.ok_or("--out is required; existing files are never overwritten")?,
     })
 }
 
-fn options(seed: u64) -> GameOptions {
+fn options(seed: u64, difficulty: Option<&str>) -> GameOptions {
     GameOptions {
         map_script: MapScript::Pangaea,
-        difficulty: "king".to_string(),
+        difficulty: difficulty.unwrap_or("king").to_string(),
+        // Explicit native-rung probes must not inherit the engine’s default
+        // Emperor barbarians. Keep omission compatible with archived probes.
+        barbarian_difficulty: difficulty.unwrap_or("emperor").to_string(),
         speed: "online".to_string(),
         civs: vec!["Gran Colombia".to_string()],
         leader_pool: LeaderPool::Civ6,
@@ -80,8 +95,8 @@ fn options(seed: u64) -> GameOptions {
     }
 }
 
-fn profile(seed: u64) -> serde_json::Value {
-    let setup = options(seed);
+fn profile(seed: u64, difficulty: Option<&str>) -> serde_json::Value {
+    let setup = options(seed, difficulty);
     serde_json::json!({
         "players": setup.players, "width": setup.width, "height": setup.height,
         "map": format!("{:?}", setup.map_script), "difficulty": setup.difficulty,
@@ -215,8 +230,8 @@ struct Trial {
     civs: Vec<String>,
 }
 
-fn trial(seed: u64, policy: &Gene, enabled: bool) -> Trial {
-    let mut game = Game::new_with(options(seed));
+fn trial(seed: u64, difficulty: Option<&str>, policy: &Gene, enabled: bool) -> Trial {
+    let mut game = Game::new_with(options(seed, difficulty));
     let civs = game.players.iter().take(4).map(|p| p.civ.clone()).collect();
     let mut ais = fleet(&game, policy, enabled);
     let mut held = BTreeSet::new();
@@ -275,12 +290,12 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
         // with the second leg. Both worlds and controllers start fresh.
         let (off, on) = if index % 2 == 0 {
             (
-                trial(seed, config.policy, false),
-                trial(seed, config.policy, true),
+                trial(seed, config.difficulty, config.policy, false),
+                trial(seed, config.difficulty, config.policy, true),
             )
         } else {
-            let on = trial(seed, config.policy, true);
-            (trial(seed, config.policy, false), on)
+            let on = trial(seed, config.difficulty, config.policy, true);
+            (trial(seed, config.difficulty, config.policy, false), on)
         };
         if off.civs != on.civs {
             return Err(format!("paired civilizations differ at seed {seed}"));
@@ -295,7 +310,7 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
             "schema": 2, "kind": "simulator_domination_policy_pair",
             "policy": config.policy.tag, "seed": seed,
             "execution_order": if index % 2 == 0 { "off,on" } else { "on,off" },
-            "profile": profile(seed), "civilizations": off.civs,
+            "profile": profile(seed, config.difficulty), "civilizations": off.civs,
             "focal_seat": 0, "focal_target": "domination",
             "rivals": "adaptive CIVVIS live bridge; not Firaxis AI",
             "forced_focal_policies": FORCED.trim().split(',').collect::<Vec<_>>(),
