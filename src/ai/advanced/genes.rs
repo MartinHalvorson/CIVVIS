@@ -2377,6 +2377,12 @@ pub const GENES: &[Gene] = &[
     // focal wins 4 -> 19, cities lost 3.1 -> 1.8. See
     // `advanced/protective_friendship.rs`.
     Gene { tag: "befriend-the-strongest", field: "befriend_the_strongest", kind: Kind::OptIn, enable: AdvancedAi::enable_befriend_the_strongest, disable: AdvancedAi::disable_befriend_the_strongest },
+    // `domination-ignores-city-states` (2026-09-27): an assigned Domination
+    // seat's campaign never ranks a city-state. On the King ladder proxy the
+    // fallback ranking opened a city-state war in 7 of 16 games, which then
+    // held the front; captured city-states count nothing toward Domination.
+    // See `AdvancedAi::conquest_campaign_considers_city_states`.
+    Gene { tag: "domination-ignores-city-states", field: "domination_ignores_city_states", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_ignores_city_states, disable: AdvancedAi::disable_domination_ignores_city_states },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

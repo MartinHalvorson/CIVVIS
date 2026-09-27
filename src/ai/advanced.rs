@@ -5131,6 +5131,13 @@ pub struct AdvancedAi {
     /// guarded permission is rechecked while the ordinary escort walks it.
     air_resource_colony_target: Option<(u32, Pos)>,
     // ---- append: c-d ------------------------------------------------
+    /// `domination-ignores-city-states`: an assigned Domination seat leaves
+    /// city-states out of the campaign's fallback target ranking. A captured
+    /// city-state counts nothing toward Domination (foreign original
+    /// capitals do), yet on the King ladder proxy the ranking opened a
+    /// city-state war in 7 of 16 games and the war then held the front for
+    /// dozens of turns. See `AdvancedAi::conquest_campaign_considers_city_states`.
+    domination_ignores_city_states: bool,
     /// Version 2 of the Culture clock forecast: project secular and religious
     /// Tourism through each rival's current international modifiers. The
     /// original forecast treats every rival as a full-strength market, even
@@ -8392,6 +8399,7 @@ impl AdvancedAi {
 
             air_resource_colony_target: None,
             // ---- append: c-d ----------------------------------------
+            domination_ignores_city_states: false,
             culture_lane_forecast_2: false,
             capture_hold_chain: false,
             capital_campaign_router: false,
@@ -12382,7 +12390,9 @@ impl AdvancedAi {
                                 .filter(|rival| self.campaign_target_legal(g, pid, *rival))
                                 .filter(|rival| self.war_policy_target_feasible(g, pid, *rival))
                                 .collect();
-                            if strategy == GrandStrategy::Conquest {
+                            if strategy == GrandStrategy::Conquest
+                                && self.conquest_campaign_considers_city_states(g)
+                            {
                                 candidates.extend(
                                     g.players
                                         .iter()
@@ -31536,6 +31546,17 @@ impl AdvancedAi {
     /// occupation pressure, development, and victory-denial value. It is the
     /// campaign analogue of a chess engine's move ordering: forces search the
     /// most forcing and profitable front first rather than the first legal one.
+    /// Whether the Conquest campaign's fallback ranking may name a city-state.
+    /// Always, except for an assigned Domination seat with
+    /// `domination-ignores-city-states` on: its victory counts foreign
+    /// original capitals, and a city-state war it opens becomes the plan's
+    /// front (`wartime_rivals`) until it ends, so the army that should be
+    /// marching on a capital besieges a city worth nothing to the lane.
+    fn conquest_campaign_considers_city_states(&self, g: &Game) -> bool {
+        !(self.domination_ignores_city_states
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination))
+    }
+
     fn campaign_city_value(
         &self,
         g: &Game,
