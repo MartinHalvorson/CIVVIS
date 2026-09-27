@@ -15021,6 +15021,13 @@ impl AdvancedAi {
             };
             if let Some(tech) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
+                    // `beeline-orders-by-value` takes the best-valued step,
+                    // not the cheapest; say which.
+                    let step = if self.beeline_orders_by_value {
+                        "most valuable"
+                    } else {
+                        "cheapest"
+                    };
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
                             if opening_archery_goal.as_deref() == Some(goal) {
@@ -15029,23 +15036,23 @@ impl AdvancedAi {
                                 "unlock Ancient Walls for wartime recovery or a stronger hostile approaching an exposed city before the longer army upgrade path".to_string()
                             } else if barbarian_military_goal.as_deref() == Some(goal) {
                                 format!(
-                                    "the cheapest step toward {}, needed to catch a nearby barbarian army",
+                                    "the {step} step toward {}, needed to catch a nearby barbarian army",
                                     plain(goal)
                                 )
                             } else if domination_siege_goal.as_deref() == Some(goal) {
                                 format!("domination-siege-research: unlock {} to supply the missing wall-breaking capability for the campaign", plain(goal))
                             } else if standing_army_fuel_goal.as_deref() == Some(goal) {
-                                format!("the cheapest step toward {}, needed to reveal fuel for the standing army with no reserve", plain(goal))
+                                format!("the {step} step toward {}, needed to reveal fuel for the standing army with no reserve", plain(goal))
                             } else if wartime_modernization_goal.as_deref() == Some(goal) {
                                 format!(
-                                    "the cheapest step toward {}, needed to modernize the standing army at war",
+                                    "the {step} step toward {}, needed to modernize the standing army at war",
                                     plain(goal)
                                 )
                             } else if domination_campus_goal == Some(goal) {
                                 "unlock campuses for the expanding domination economy".to_string()
                             } else {
                                 format!(
-                                    "the cheapest step toward {}, which {} needs",
+                                    "the {step} step toward {}, which {} needs",
                                     plain(goal),
                                     objective.as_str()
                                 )
@@ -15222,10 +15229,15 @@ impl AdvancedAi {
             });
             if let Some(civic) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
+                    let step = if self.beeline_orders_by_value {
+                        "most valuable"
+                    } else {
+                        "cheapest"
+                    };
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
                             format!(
-                                "the cheapest step toward {}, which {} needs",
+                                "the {step} step toward {}, which {} needs",
                                 plain(goal),
                                 objective.as_str()
                             )
