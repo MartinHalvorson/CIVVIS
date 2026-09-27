@@ -37029,11 +37029,13 @@ impl AdvancedAi {
                 g.wdist(tile, target) <= 5
                     && matches!(
                         role,
-                        ForceRole::Recon | ForceRole::Ranged | ForceRole::Siege | ForceRole::AirStrike
+                        ForceRole::Recon
+                            | ForceRole::Ranged
+                            | ForceRole::Siege
+                            | ForceRole::AirStrike
                     )
             }) {
-                value -= self.base.w.screen
-                    * (front_depth - g.wdist(tile, target)).max(0) as f64;
+                value -= self.base.w.screen * (front_depth - g.wdist(tile, target)).max(0) as f64;
             }
             if let Some(frame) = &screen_frame {
                 value += self.screen_bonus(g, tile, frame);
