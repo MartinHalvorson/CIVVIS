@@ -6774,6 +6774,11 @@ pub struct Game {
     /// [`Game::item_cost_for_city`] prices from it.
     #[serde(default)]
     pub host_buildable: Arc<BTreeMap<u32, BTreeMap<String, HostMenuEntry>>>,
+    /// Native strategic-resource prices for units and formations in each city,
+    /// from `BuildQueue:GetUnitResourceCost(index, formation)`. These already
+    /// include the host's modifiers; absent prices use the ordinary rules.
+    #[serde(default)]
+    pub host_unit_resource_prices: Arc<BTreeMap<u32, BTreeMap<String, f64>>>,
     /// The HOST's purchase menu per city, same keys: what
     /// `CityManager.CanStartCommand(city, PURCHASE, ...)` says this city can
     /// BUY now and what `CityGold:GetPurchaseCost` charges
@@ -7518,6 +7523,7 @@ impl From<GameSer> for Game {
             blocked_production: Arc::new(BTreeMap::new()),
             blocked_purchases: Arc::new(BTreeMap::new()),
             host_buildable: Arc::new(BTreeMap::new()),
+            host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
             host_district_plots: Arc::new(BTreeMap::new()),
             host_district_capacity: Arc::new(BTreeMap::new()),
@@ -8236,6 +8242,7 @@ impl Game {
             blocked_production: Arc::new(BTreeMap::new()),
             blocked_purchases: Arc::new(BTreeMap::new()),
             host_buildable: Arc::new(BTreeMap::new()),
+            host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
             host_district_plots: Arc::new(BTreeMap::new()),
             host_district_capacity: Arc::new(BTreeMap::new()),
@@ -36128,6 +36135,9 @@ mod purchase_price_memo_tests;
 
 #[cfg(test)]
 mod unit_upgrade_price_tests;
+
+#[cfg(test)]
+mod host_resource_price_tests;
 
 #[cfg(test)]
 mod regional_building_tests;
