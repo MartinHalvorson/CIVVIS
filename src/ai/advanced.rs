@@ -4925,11 +4925,6 @@ pub struct AdvancedAi {
     /// same turn; what the order decides is which unlock (and which boost in
     /// hand) arrives first. See `AdvancedAi::beeline_step`.
     beeline_orders_by_value: bool,
-    /// `beeline-orders-by-value-2`: version one's order, priced at the lane's
-    /// own yield weights (the decision objective) rather than the plan's
-    /// current posture, so a Science seat in its Expansion half still reads a
-    /// Library's beakers at the Science rate. See `AdvancedAi::beeline_step`.
-    beeline_orders_by_value_2: bool,
     /// `builders-work-through-raiders`: the live capture lessons keep their
     /// barbarian-reach holds for Settlers only; a Builder steps and takes
     /// jobs under the native Builder safety instead. See
@@ -8314,7 +8309,6 @@ impl AdvancedAi {
 
             // ---- append: a-b ----------------------------------------
             beeline_orders_by_value: false,
-            beeline_orders_by_value_2: false,
             builders_work_through_raiders: false,
             builder_charge_window: false,
             boost_planner_builds: false,
@@ -14957,18 +14951,13 @@ impl AdvancedAi {
             }
             let goal_pick = science_milestone_pick.or_else(|| {
                 forced_goal.and_then(|goal| {
-                    if self.beeline_orders_by_value || self.beeline_orders_by_value_2 {
+                    if self.beeline_orders_by_value {
                         let steps: Vec<Name> = available
                             .iter()
                             .filter(|tech| self.tech_leads_to(g, tech, goal))
                             .cloned()
                             .collect();
-                        let weights = if self.beeline_orders_by_value_2 {
-                            objective
-                        } else {
-                            plan.strategy
-                        };
-                        return self.beeline_step(g, pid, weights, &steps, true);
+                        return self.beeline_step(g, pid, plan.strategy, &steps, true);
                     }
                     available
                         .iter()
@@ -15185,18 +15174,13 @@ impl AdvancedAi {
                 _ => None,
             };
             let goal_pick = forced_goal.and_then(|goal| {
-                if self.beeline_orders_by_value || self.beeline_orders_by_value_2 {
+                if self.beeline_orders_by_value {
                     let steps: Vec<Name> = available
                         .iter()
                         .filter(|civic| self.civic_leads_to(g, civic, goal))
                         .cloned()
                         .collect();
-                    let weights = if self.beeline_orders_by_value_2 {
-                        objective
-                    } else {
-                        civic_objective
-                    };
-                    return self.beeline_step(g, pid, weights, &steps, false);
+                    return self.beeline_step(g, pid, civic_objective, &steps, false);
                 }
                 available
                     .iter()

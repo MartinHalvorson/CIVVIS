@@ -2362,9 +2362,6 @@ pub const GENES: &[Gene] = &[
     // Immortal Science seat took Writing at turn 27 behind Sailing. The goal
     // lands on the same turn either way. See `AdvancedAi::beeline_step`.
     Gene { tag: "beeline-orders-by-value", field: "beeline_orders_by_value", kind: Kind::OptIn, enable: AdvancedAi::enable_beeline_orders_by_value, disable: AdvancedAi::disable_beeline_orders_by_value },
-    // `beeline-orders-by-value-2` (2026-09-26): version one's order priced at
-    // the lane's own yield weights rather than the plan's current posture.
-    Gene { tag: "beeline-orders-by-value-2", field: "beeline_orders_by_value_2", kind: Kind::OptIn, enable: AdvancedAi::enable_beeline_orders_by_value_2, disable: AdvancedAi::disable_beeline_orders_by_value_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

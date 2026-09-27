@@ -4502,15 +4502,6 @@ impl AdvancedAi {
     pub fn disable_beeline_orders_by_value(&mut self) {
         self.beeline_orders_by_value = false;
     }
-    /// `beeline-orders-by-value-2`: version one's order at the lane's own
-    /// yield weights. See `AdvancedAi::beeline_step`.
-    pub fn enable_beeline_orders_by_value_2(&mut self) {
-        self.beeline_orders_by_value_2 = true;
-    }
-    /// The twin of `enable_beeline_orders_by_value_2`.
-    pub fn disable_beeline_orders_by_value_2(&mut self) {
-        self.beeline_orders_by_value_2 = false;
-    }
 
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
