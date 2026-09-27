@@ -162,6 +162,14 @@ approach acquires the whole role-depth penalty at once. The combined candidate
 caps the spacing distance at five and charges the capped term outside the
 ring as well, making the boundary continuous. All far positions receive the
 same capped term, preserving their relative ranking. Counterdamage, recovery
-and focus-target policy are unchanged. This affects ordinary force movement
+and focus-target policy are unchanged. The frozen `AdvancedAi::legacy()`
+control keeps the historical spacing score via its existing `legacy_movement`
+gate, verified by a separate regression. This affects current ordinary force movement
 as well as relief, so the fresh pilot evaluates the combined change. Final
 outcome evidence and validation remain pending; the draft stays withheld.
+
+Source9440e9e47 and its202-frame replay are retained as a preliminary
+prototype. Before inspecting any fresh pilot outcomes, review adds the frozen
+legacy-control guard and fixes two changed-line formatting findings. The
+eligible pilot source must include those checks and receive another exact
+native replay. No fresh outcomes informed this refinement.

@@ -37019,9 +37019,12 @@ impl AdvancedAi {
             // only within five hexes makes a six-to-five step acquire the
             // whole penalty at once, so an unobstructed relief body can
             // prefer staying outside the ring indefinitely.
-            value -= self.base.w.role_spacing
-                * spacing
-                * (g.wdist(tile, target).min(5) - preferred_depth).abs() as f64;
+            // Preserve the historical score for the frozen legacy control.
+            if !self.base.legacy_movement || g.wdist(tile, target) <= 5 {
+                value -= self.base.w.role_spacing
+                    * spacing
+                    * (g.wdist(tile, target).min(5) - preferred_depth).abs() as f64;
+            }
             if g.wdist(tile, target) <= 5 {
                 if matches!(
                     role,

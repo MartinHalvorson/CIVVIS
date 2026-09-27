@@ -231,7 +231,8 @@ fn ordinary_military_scan_does_not_reopen_the_overdue_remote_kill() {
     let hostiles = Vec::new();
     let next = g.route_step(archer, city, 2).unwrap();
     assert_eq!(
-        ai.base.projected_counter_damage(&g, archer, next, &hostiles),
+        ai.base
+            .projected_counter_damage(&g, archer, next, &hostiles),
         0.0
     );
     assert!(
@@ -242,4 +243,28 @@ fn ordinary_military_scan_does_not_reopen_the_overdue_remote_kill() {
         g.wdist(g.units[&archer].pos, city) < before,
         "the available relief body should actually close through the safe corridor"
     );
+}
+
+#[test]
+fn frozen_legacy_control_preserves_its_historical_approach_score() {
+    let (mut g, _, home, archer, victim) = assigned_relief();
+    g.remove_unit(victim);
+    g.relocate(archer, (9, 12));
+    let city = g.cities[&home].pos;
+    let before = g.wdist(g.units[&archer].pos, city);
+    assert_eq!(before, 6);
+    let group = ForceGroup {
+        id: 1,
+        domain: ForceDomain::Land,
+        units: vec![archer],
+        anchor: city,
+        objective: city,
+        focus_target: None,
+        posture: ForcePosture::Hold,
+        readiness: 0.0,
+        local_strength_ratio: 1.0,
+    };
+    let ai = AdvancedAi::legacy();
+    assert!(ai.coordinated_tactical_step(&mut g, 0, archer, &group, &[1], false));
+    assert!(g.wdist(g.units[&archer].pos, city) >= before);
 }

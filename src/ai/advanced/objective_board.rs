@@ -694,10 +694,11 @@ impl AdvancedAi {
             .rows
             .iter()
             .find(|row| row.key == force.objective_key && row.urgent)?;
-        let city = g
-            .cities
-            .get(&cid)
-            .filter(|city| g.units.get(&uid).is_some_and(|unit| city.owner == unit.owner))?;
+        let city = g.cities.get(&cid).filter(|city| {
+            g.units
+                .get(&uid)
+                .is_some_and(|unit| city.owner == unit.owner)
+        })?;
         Some((city.pos, force.formed.saturating_add(row.deadline?)))
     }
 
