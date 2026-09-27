@@ -268,3 +268,62 @@ fn frozen_legacy_control_preserves_its_historical_approach_score() {
     assert!(ai.coordinated_tactical_step(&mut g, 0, archer, &group, &[1], false));
     assert!(g.wdist(g.units[&archer].pos, city) >= before);
 }
+
+#[test]
+fn relief_attack_filter_keeps_the_doomed_fighters_safety_reservation() {
+    let mut g = flat_board(379130, &[(4, 4), (22, 4)], false);
+    war(&mut g, 0, 1);
+    let home = g.city_at((4, 4)).unwrap();
+    let warrior = g.spawn_test_unit("warrior", 0, (9, 4));
+    g.units.get_mut(&warrior).unwrap().hp = 80;
+    g.spawn_test_unit("archer", 1, (11, 4));
+    g.spawn_test_unit("swordsman", 1, (10, 5));
+    let (_, mut ai, _, _, _) = assigned_relief();
+    ai.enable_doomed_blow_veto();
+    ai.objective_board_state.rows[0].key = ObjectiveKey::Defend(home);
+    ai.objective_board_state.rows[0].at = g.cities[&home].pos;
+    ai.objective_board_state.forces[0].objective_key = ObjectiveKey::Defend(home);
+    ai.objective_board_state.forces[0].units = vec![warrior];
+    let plan = conquest(&g, None);
+
+    // The old safety assessment finds a fighter that is safe where it
+    // stands, but would die after every offered attack. Relief eligibility
+    // must not erase that fact before the rotation can reserve its turn.
+    let mut control_game = g.clone();
+    let mut control = ai.clone();
+    control.objective_board = false;
+    control.plan_battle(&mut control_game, 0, &plan);
+    assert_eq!(control.census.battle_plan_doomed, 1);
+    assert!(control.battle_planner_ordered.contains(&warrior));
+
+    ai.plan_battle(&mut g, 0, &plan);
+    assert_eq!(ai.census.battle_plan_doomed, 1);
+    assert!(ai.battle_planner_ordered.contains(&warrior));
+    assert_eq!(g.units[&warrior].pos, (9, 4));
+    assert!(g.units[&warrior].fortified);
+}
+
+#[test]
+fn overdue_relief_movement_follows_its_city_instead_of_a_remote_contact() {
+    let (mut g, ai, home, archer, victim) = assigned_relief();
+    g.remove_unit(victim);
+    let city = g.cities[&home].pos;
+    let remote = at(30, 15);
+    let before = g.wdist(g.units[&archer].pos, city);
+    let group = ForceGroup {
+        id: 1,
+        domain: ForceDomain::Land,
+        units: vec![archer],
+        anchor: city,
+        objective: remote,
+        focus_target: Some(remote),
+        posture: ForcePosture::Engage,
+        readiness: 0.0,
+        local_strength_ratio: 1.0,
+    };
+    assert!(ai.coordinated_tactical_step(&mut g, 0, archer, &group, &[1], false));
+    assert!(
+        g.wdist(g.units[&archer].pos, city) < before,
+        "the overdue defender must really close on its city through this clear corridor"
+    );
+}
