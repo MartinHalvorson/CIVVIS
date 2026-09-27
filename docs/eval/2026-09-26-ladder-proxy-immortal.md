@@ -136,13 +136,61 @@ further (population at turn 100 +5.2, Science +17) for one Settler lost: the
 Settler half of the lessons costs growth too; repricing it belongs to the
 Settler holds, not to this gene.
 
+## Aggressive rivals: the native failure the default proxy never plays
+
+The native ladder loses Immortal by elimination as often as by a rival's
+victory: 7 of 21 finished attempts ended with the seat destroyed, and cities
+were lost in most of the rest. The proxy's default rivals (the deployment
+genome, adaptive) almost never do that — the focal seat survives 27–31 of 32 —
+and they never let the focal win, even at King (0 of 32 on every arm this
+round): they race Science and Culture flat out. A second rival mode retargets
+every rival to the Domination lane (`AdvancedAi::retarget(VictoryTarget::Domination)`
+on the live-bridge genome, Immortal bonuses unchanged). Against it the focal is
+eliminated in a third to a half of the games, loses 3–5 cities a game, and the
+games that survive run to the turn limit — the native shape — where the focal
+can win:
+
+| Immortal, every rival on the Domination lane (61000000+) | wins | alive at the end | cities lost / game | score share |
+|---|---:|---:|---:|---:|
+| Science lane (32) | 4 (12%) | 22 | 3.1 | 16.0% |
+| unassigned `civvis` (31) | 6 (19%), all Religious | 14 | 4.7 | 13.5% |
+| Religion lane (32) | 7 (22%), 6 Religious | 14 | 5.1 | 12.8% |
+
+Rivals racing only conquest leave religion open, and the seats that take it win
+more often but die more often: paired against the Science lane, Religion won 6
+games Science lost and lost 3 Science won (not significant at 32), for −3.26 pp
+of share (z −1.56). The Science lane stays the recommendation.
+
+A seed the focal lost (61000002) shows how: the seat holds 3 cities from turn 31
+to 101 while its Settlers wander (one stood on legal sites at turns 60 and 100
+without founding), a rival snowballs from 10 cities to 35, and everything is
+taken by turn 180. The worst seed (61000029) had grown to 10 cities with 400–650
+Gold banked against a 400 war reserve, then lost one every few turns from 164
+to the rival's 4-to-1 army. A screen of twelve default-off defence genes on this
+mode (six seeds each) found seven inert for the live seat and none worth
+shipping at 32 paired games: `upgrade-the-garrison` +0.50 pp (z +0.55, alive
+22 → 24), `naval-threat-triage` −0.44 pp, `relief-column-marches` −0.72 pp on 17.
+
+Two engine bugs surfaced here and are fixed:
+
+- **#3799** — a lethal WMD strike on a loaded Aircraft Carrier removed the
+  carrier's aircraft with it and then indexed them (`unit N is not present`),
+  ending the game. About one game in 31 on this mode.
+- **#3803** — a city's own queued Spy counted against the capacity that decides
+  whether that Spy is legal, so with one free slot the AI resumed it and
+  replaced it every turn without finishing it (turns 105–124 of seed 61000029).
+  Paired, the fix read +4.12 pp (z +1.31) on this mode and −0.26 pp on the
+  default one.
+
 ## What was decided
 
 - **Shipped, off** (#3781): `builders-work-through-raiders`, an opt-in gene
   with its single-gene fires probe
   (`docs/gene_screens/fires/builders-work-through-raiders.json`).
 - **Forced on the live seat** (#3790) after the lower rungs read positive on
-  the same instrument (Science lane, 32 paired each):
+  the same instrument (Science lane, 32 paired each; a second Immortal block,
+  61000032+, read +0.72 pp, z +1.63 — pooled over 64 Immortal games +0.59 pp,
+  z +1.84):
 
   | rung | Δ share | z | population at turn 100 | Science at turn 100 | luxury types at turn 50 |
   |---|---:|---:|---:|---:|---:|

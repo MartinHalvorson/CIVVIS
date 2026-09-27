@@ -1,10 +1,8 @@
 {
   "coverage": {
-    "named": 37,
-    "never_named": 1,
-    "never_named_treatments": [
-      "relief-column-marches"
-    ],
+    "named": 38,
+    "never_named": 0,
+    "never_named_treatments": [],
     "withholdable": 38
   },
   "derived": {
