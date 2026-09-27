@@ -206,6 +206,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `domination-ignores-city-states` | off (unmeasured) | `domination-ignores-city-states`: an assigned Domination seat keeps city-states out of its campaign's fallback ranking. | 1 \| 1 |
 | `domination-lane-hands-over` | off (unmeasured) | The Domination lane hands over to Conquest at `DOMINATION_HANDOVER_CITIES` instead of waiting for a growing city target. | 1 \| 1 |
 | `domination-siege-research` | off (unmeasured) | Unlock the first land siege capability for a walled Conquest objective. | 1 \| 1 |
+| `domination-specializes-earlier` | off (unmeasured) | `domination-specializes-earlier`: an assigned Domination lane leaves its development half at 40% of the clock. | 1 \| 1 |
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |
 | `first-granary-reserve-2` | off (unmeasured) | Reserve a Granary only when its housing accelerates the next citizen within the construction and growth budget. | 1 \| 2 |
 | `government-ladder-3` | off (unmeasured) | Choose a government by its remaining civic cost per extra policy slot, reserving time to use the upgrade. | 2 \| 3 |
