@@ -891,3 +891,54 @@ fn every_espionage_promotion_changes_an_outcome() {
         "an espionage promotion ships without a proven effect"
     );
 }
+
+/// With exactly one free spy slot, the city that queued a Spy may keep it —
+/// `Produce` replaces a city's whole queue, so the queued Spy is the claim
+/// being asked about — while another city of ours may not start a second.
+/// Counting the asking city's own queue made the queued Spy illegal, and the
+/// AI replaced and re-queued it every turn without ever finishing it.
+#[test]
+fn a_city_may_keep_the_spy_it_queued_in_the_last_free_slot() {
+    let (mut game, home, _, _) = game_with_spy_cities(774_262);
+    game.players[0]
+        .civics
+        .insert(crate::name!("diplomatic_service"));
+    assert_eq!(
+        game.spy_capacity(0) - game.spy_agents(0) as i64,
+        1,
+        "the fixture leaves exactly one free slot"
+    );
+    let spy = Item::Unit {
+        unit: crate::name!("spy"),
+    };
+    assert!(game.can_produce(0, home, &spy));
+    game.do_produce(0, home, &spy)
+        .expect("the empire has a free slot");
+    assert!(
+        game.can_produce(0, home, &spy),
+        "a Spy queued in the last free slot stays legal for its own city"
+    );
+
+    let home_pos = game.cities[&home].pos;
+    let second_site = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(position, tile)| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && game
+                    .cities
+                    .values()
+                    .all(|city| game.wdist(city.pos, **position) >= 4)
+                && game.wdist(home_pos, **position) <= 8
+        })
+        .map(|(position, _)| *position)
+        .min_by_key(|position| (game.wdist(home_pos, *position), *position))
+        .expect("a second site near the capital");
+    let second = game.found_city_for(0, second_site, None);
+    assert!(
+        !game.can_produce(0, second, &spy),
+        "the only free slot is already claimed by the first city's queue"
+    );
+}
