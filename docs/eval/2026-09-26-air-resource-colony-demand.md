@@ -54,8 +54,9 @@ the peacetime force floor, which otherwise fills every idle queue.
 Exactly one valid queued supply Settler remains authoritative through the
 ordinary production review. Earlier siege and insolvency responses retain
 their authority. The deferred production preview uses the same reservation
-on its disposable board. The generic city target and economic expansion
-window are unchanged.
+on its disposable board. A Settler finishing after observation already fills
+that single request, even before the host exports its unit. The generic city
+target and economic expansion window are unchanged.
 
 An untargeted non-opening Settler may choose the guarded resource ahead of
 ordinary economic ranking. Valid ordinary targets keep their walkers. The
@@ -74,8 +75,9 @@ retain their own authority; no new movement or founding command is invented.
 
 ## Validation and interpretation
 
-Twelve focused tests cover the two failed actual paths, queue retention,
-the peacetime force gap, deferred preview, an existing ordinary target,
+Thirteen focused tests cover the two failed actual paths, queue retention,
+the peacetime force gap, deferred preview and its incoming Settler quota,
+an existing ordinary target,
 knowledge/security/legality/clock and connection guards, native ID remapping,
 lost permission at arrival and stalled founding, and expired route deferrals.
 A controlled normal-production and legal-movement scenario founds the center
@@ -135,15 +137,29 @@ Library, harness, forced-bundle and protocol hashes, every pair, complete
 decision/why streams and the comparison summaries survive under
 `~/civvis-tactics-results/2026-09-26/air-resource-colony-demand/`.
 
-Local full validation on `e1f9a87bc` passed 4,355 tests, zero failed, with
-53 existing ignores. The frozen candidate subsequently applied repository
+Local full validation on both `e1f9a87bc` and `ef63a4623` passed 4,355 tests,
+zero failed, with 53 existing ignores. The frozen candidate applied repository
 edition-2021 formatting and an equivalent cache-retirement filter; all twelve
-focused tests and changed-line Rust quality passed. CI then required the new
-state/default declaration in its a-b append ranges, rather than beside the
-Settler maps. That declaration-only move passed all fourteen append-point
-tests and renewed changed-line quality. No policy, movement, queue or target
-logic changed after the frozen candidate. Final branch CI verifies the actual
-merge tree; this document distinguishes it from the local and frozen probes.
+then-existing focused tests and changed-line Rust quality passed. CI then
+required the new state/default declaration in its a-b append ranges, rather
+than beside the Settler maps. That declaration-only move passed all fourteen
+append-point tests and renewed changed-line quality.
+
+Final review subsequently proved a deferred-preview quota error: clearing a
+finishing Settler's queue before observing its newborn could request another
+supply Settler. The new regression failed first. Commit `2b14c78c5` preserves
+that incoming-unit information before clearing the disposable queue; all
+thirteen focused tests, fourteen append-point tests and changed-line Rust
+quality pass. Only the native orders bridge calls this preview, so the
+simulator pilot remains the explicitly frozen probe above. The final native
+decider is retained separately with SHA-256
+`3b81b0a9d12bf03cb8a46ab0e09d27ecc70705ce814990378fbffd38ddc88f57`.
+Its renewed 436-frame persistent replay is also exactly equal to both parent
+and frozen candidate, with the same decision-stream hash reported above.
+Full local validation on `2b14c78c5` passes 4,356 tests, zero failed, with
+53 existing ignores.
+Final branch CI verifies the actual merge tree; this document distinguishes it
+from the local and frozen probes.
 
 No engine rules, gene registration, deployment default, native runtime, UI or
 orders database is changed by this task. Native game adoption and an actual
