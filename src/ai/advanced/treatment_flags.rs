@@ -4491,6 +4491,15 @@ impl AdvancedAi {
     pub fn disable_builders_work_through_raiders(&mut self) {
         self.builders_work_through_raiders = false;
     }
+    /// `settler-detour-stays-near`: a threat detour's fallback must lie about
+    /// as close as the site it leaves. See `SETTLER_DETOUR_NEAR_SLACK`.
+    pub fn enable_settler_detour_stays_near(&mut self) {
+        self.settler_detour_stays_near = true;
+    }
+    /// The twin of `enable_settler_detour_stays_near`.
+    pub fn disable_settler_detour_stays_near(&mut self) {
+        self.settler_detour_stays_near = false;
+    }
 
     /// `beeline-orders-by-value`: a forced research or civic goal walks its
     /// prerequisites by value, not by printed price. See

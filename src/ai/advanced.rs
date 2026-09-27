@@ -1727,6 +1727,22 @@ struct SettlementScanShared {
 /// original site is kept: the approach is merely threatened, and the
 /// blocker's own clock is shorter than a walk to half a city.
 const SETTLER_DETOUR_VALUE_FLOOR: f64 = 0.6;
+/// `settler-detour-stays-near`: how many hexes past the deferred site's own
+/// distance a detour's fallback may lie from the Settler, and the floor that
+/// distance never drops under. Measured on the Immortal ladder proxy
+/// (seeds 61000000/61000004, 18 detours): the fallback was FARTHER than the
+/// site it left in 11 of them — 4 tiles became 9, 2 became 9, 3 became 8,
+/// 8 became 13 — and each far walk met its own blocker and detoured again,
+/// so a Settler born four tiles from its site walked 27 turns criss-crossing
+/// the empire (`settler_life` mean 12–14 turns, standing still only 9–13%
+/// of them). A blocker's clock is a few turns; a nine-tile walk is not.
+const SETTLER_DETOUR_NEAR_SLACK: i32 = 1;
+/// See `SETTLER_DETOUR_NEAR_SLACK`.
+const SETTLER_DETOUR_NEAR_FLOOR: i32 = 3;
+/// See `SETTLER_DETOUR_NEAR_SLACK`: the near search never widens past the
+/// plain detour's own local radius, so for a far deferred site the gene is
+/// a pure restriction of the plain search, never a wider one.
+const SETTLER_DETOUR_NEAR_CEILING: i32 = 8;
 
 /// `settle_sooner`: what one turn of a Settler's walk costs, on top of the
 /// per-tile discount `settle_sites` already applies and the route's movement
@@ -6550,6 +6566,17 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `settler-detour-stays-near`: a threat detour may only hand the Settler
+    /// a fallback within `SETTLER_DETOUR_NEAR_SLACK` hexes past the deferred
+    /// site's own distance (never under `SETTLER_DETOUR_NEAR_FLOOR`, never
+    /// past `SETTLER_DETOUR_NEAR_CEILING`). Without one the original target
+    /// is kept and the deferral rolled back, exactly as the no-safe-alternate
+    /// path already does: the Settler holds with its guard for the blocker's
+    /// short clock instead of walking to the far side of the empire, where
+    /// the proxy shows it meets the next blocker and detours again. The value
+    /// floor stays with `detour-keeps-the-site-worth`, which stacks. Off by
+    /// default; see `SETTLER_DETOUR_NEAR_SLACK`.
+    settler_detour_stays_near: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     siege_positive_damage_budget: bool,
     /// Deny a rival the science victory rather than only race it: no new
@@ -8532,6 +8559,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            settler_detour_stays_near: false,
             siege_positive_damage_budget: false,
             science_threat_denial: false,
             science_denial_war: false,
@@ -32731,10 +32759,28 @@ impl AdvancedAi {
         // Every retry ranks against the same unchanged board from the same
         // tile; only the deferral set moves. Share the walk floods.
         let mut walk_costs = SettlerWalkCosts::new();
+        // `settler-detour-stays-near`: rank only the sites about as close as
+        // the one being left. See `SETTLER_DETOUR_NEAR_SLACK`.
+        let near_limit = self.settler_detour_stays_near.then(|| {
+            let current = g.units[&uid].pos;
+            (g.wdist(current, target) + SETTLER_DETOUR_NEAR_SLACK)
+                .clamp(SETTLER_DETOUR_NEAR_FLOOR, SETTLER_DETOUR_NEAR_CEILING)
+        });
+        let mut near_scores = BTreeMap::new();
         for _ in 0..SETTLER_THREAT_DETOUR_RETRIES {
-            let Some((candidate, _)) =
-                self.best_settler_target_cached(g, pid, uid, 8, avoid, &mut walk_costs)
-            else {
+            let ranked = match near_limit {
+                Some(limit) => self.best_reachable_settle_site_except_cached(
+                    g,
+                    pid,
+                    uid,
+                    limit,
+                    avoid,
+                    &mut near_scores,
+                    &mut walk_costs,
+                ),
+                None => self.best_settler_target_cached(g, pid, uid, 8, avoid, &mut walk_costs),
+            };
+            let Some((candidate, _)) = ranked else {
                 break;
             };
             if !self.settler_target_has_visible_route_threat(g, pid, uid, candidate) {
@@ -32775,6 +32821,14 @@ impl AdvancedAi {
                 None => {
                     self.settler_threat_deferrals.remove(&target);
                 }
+            }
+            if let Some(limit) = near_limit {
+                think!(self.journal(), Expansion, Detail,
+                       "Settler keeps {target:?} through a blocked approach";
+                       "no safe site lies within {limit} tiles, and a far detour is how \
+                        the last settlers spent twenty turns crossing the empire; the \
+                        guard holds here until the approach clears";
+                       target);
             }
             return None;
         };

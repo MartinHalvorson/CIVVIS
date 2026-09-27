@@ -2362,6 +2362,14 @@ pub const GENES: &[Gene] = &[
     // Immortal Science seat took Writing at turn 27 behind Sailing. The goal
     // lands on the same turn either way. See `AdvancedAi::beeline_step`.
     Gene { tag: "beeline-orders-by-value", field: "beeline_orders_by_value", kind: Kind::OptIn, enable: AdvancedAi::enable_beeline_orders_by_value, disable: AdvancedAi::disable_beeline_orders_by_value },
+    // `settler-detour-stays-near` (2026-09-26): the threat detour's fallback
+    // was FARTHER than the deferred site in 11 of 18 Immortal-proxy detours
+    // (4 tiles became 9), and each far walk met its own blocker; Settlers
+    // walked 20–27 turns for sites four tiles from home. With this on, the
+    // fallback must lie within the deferred site's distance plus one (floor
+    // three, ceiling eight), else the target is kept and the guard holds.
+    // See `SETTLER_DETOUR_NEAR_SLACK`.
+    Gene { tag: "settler-detour-stays-near", field: "settler_detour_stays_near", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_detour_stays_near, disable: AdvancedAi::disable_settler_detour_stays_near },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
