@@ -486,3 +486,6 @@ mod tests;
 
 #[cfg(test)]
 mod colonial_war_tests;
+
+#[cfg(test)]
+mod envoy_readback_tests;
