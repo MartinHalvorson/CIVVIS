@@ -9204,12 +9204,28 @@ impl AdvancedAi {
     /// production, and upgrade reservation agree on the same upgrade graph.
     fn player_unit_catalog(g: &Game, pid: usize) -> Vec<Name> {
         let civ = g.players[pid].civ.as_str();
+        // `Game::player_unit_replacement` answers one unit by scanning the
+        // whole roster, so asking it for every unit made the catalog
+        // quadratic. One pass records, for each base unit, the first unique
+        // this player owns that replaces it, in the same roster order that
+        // function's `find` walks, under its same arena rule: every entry
+        // resolves to the unit it would have named.
+        let mut replacements: BTreeMap<Name, Name> = BTreeMap::new();
+        if !(g.is_arena() && !g.tactics.unique_units) {
+            for (name, spec) in &g.rules.units {
+                if let (Some(base), Some(owner)) = (spec.replaces, spec.unique_to.as_deref()) {
+                    if g.owns_civ_unique(pid, owner) {
+                        replacements.entry(base).or_insert(*name);
+                    }
+                }
+            }
+        }
         let mut units = BTreeSet::new();
         for (name, spec) in &g.rules.units {
             if !spec.buildable || spec.unique_to.as_deref().is_some_and(|owner| owner != civ) {
                 continue;
             }
-            let actual = g.player_unit_replacement(pid, *name);
+            let actual = replacements.get(name).copied().unwrap_or(*name);
             let actual_spec = &g.rules.units[actual];
             if actual_spec.buildable
                 && actual_spec
