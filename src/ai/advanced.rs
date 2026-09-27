@@ -37150,15 +37150,15 @@ impl AdvancedAi {
                     * spacing
                     * (objective_distance.min(5) - preferred_depth).abs() as f64;
             }
-            if objective_distance <= 5 {
-                if matches!(
+            if objective_distance <= 5
+                && matches!(
                     role,
                     ForceRole::Recon | ForceRole::Ranged | ForceRole::Siege | ForceRole::AirStrike
-                ) {
-                    if let Some(front_depth) = vanguard_depth {
-                        value -= self.base.w.screen
-                            * (front_depth - g.wdist(tile, target)).max(0) as f64;
-                    }
+                )
+            {
+                if let Some(front_depth) = vanguard_depth {
+                    value -=
+                        self.base.w.screen * (front_depth - g.wdist(tile, target)).max(0) as f64;
                 }
             }
             if let Some(frame) = &screen_frame {
