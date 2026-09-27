@@ -1451,6 +1451,7 @@ impl AdvancedAi {
                 spec.is_melee_capable(),
             );
             let mut own: Vec<Candidate> = Vec::new();
+            let relief_defenders = std::cell::OnceCell::new();
             let mut stands: Vec<Pos> = vec![unit.pos];
             stands.extend(g.reachable(uid));
             for stand in stands {
@@ -1467,6 +1468,10 @@ impl AdvancedAi {
                             continue;
                         }
                         if spec.has_ranged_attack()
+                            && (self.attack_meets_relief_deadline(g, uid, stand, target.pos, true)
+                                || relief_defenders
+                                    .get_or_init(|| self.relief_defense_targets(g, pid, uid))
+                                    .contains(&target.pos))
                             && board.ranged_order_is_legal(
                                 pid,
                                 uid,
@@ -1490,6 +1495,10 @@ impl AdvancedAi {
                             }
                         }
                         if spec.is_melee_capable()
+                            && (self.attack_meets_relief_deadline(g, uid, stand, target.pos, false)
+                                || relief_defenders
+                                    .get_or_init(|| self.relief_defense_targets(g, pid, uid))
+                                    .contains(&target.pos))
                             && board.melee_order_is_legal(pid, uid, target.pos)
                         {
                             if let Some((att, def)) =

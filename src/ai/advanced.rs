@@ -37015,10 +37015,14 @@ impl AdvancedAi {
                 enemies,
                 visible: visible.as_deref(),
             });
+            // Keep spacing continuous at the approach ring. Charging it
+            // only within five hexes makes a six-to-five step acquire the
+            // whole penalty at once, so an unobstructed relief body can
+            // prefer staying outside the ring indefinitely.
+            value -= self.base.w.role_spacing
+                * spacing
+                * (g.wdist(tile, target).min(5) - preferred_depth).abs() as f64;
             if g.wdist(tile, target) <= 5 {
-                value -= self.base.w.role_spacing
-                    * spacing
-                    * (g.wdist(tile, target) - preferred_depth).abs() as f64;
                 if matches!(
                     role,
                     ForceRole::Recon | ForceRole::Ranged | ForceRole::Siege | ForceRole::AirStrike
@@ -39605,6 +39609,7 @@ impl AdvancedAi {
             1
         };
         let mut candidates = Vec::new();
+        let relief_defenders = std::cell::OnceCell::new();
         // Hoisted out of the tile loop below: `visibility_viewers` walks the
         // alliance graph, and neither frame can move while this loop applies
         // nothing. Built lazily, because most units reach no enemy tile at
@@ -39682,6 +39687,18 @@ impl AdvancedAi {
                 });
             }
             for action in actions {
+                if !self.attack_meets_relief_deadline(
+                    g,
+                    uid,
+                    unit.pos,
+                    pos,
+                    !matches!(action, Action::Attack { .. }),
+                ) && !relief_defenders
+                    .get_or_init(|| self.relief_defense_targets(g, pid, uid))
+                    .contains(&pos)
+                {
+                    continue;
+                }
                 candidates.push((pos, action));
             }
         }

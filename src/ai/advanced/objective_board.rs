@@ -127,6 +127,8 @@ pub const NO_DEADLINE_HORIZON: f64 = 10.0;
 pub const DESTROY_ENGAGE_EXCHANGE: f64 = 1.5;
 /// A Defend deadline is never under this.
 pub const DEFEND_DEADLINE_FLOOR: u32 = 2;
+/// The stand distance used by defense and relief allocation.
+const DEFEND_STAND_RADIUS: i32 = 2;
 /// Hostile units this close to each other are one force.
 pub const FORCE_LINK: i32 = 3;
 /// A Destroy force that has lost its exact row keeps its identity for a row
@@ -673,6 +675,85 @@ impl AdvancedAi {
     ) -> bool {
         !self.battlefront_observation
             || (g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id))
+    }
+
+    fn urgent_relief_assignment(&self, g: &Game, uid: u32) -> Option<(Pos, u32)> {
+        if !self.objective_board {
+            return None;
+        }
+        let force = self
+            .objective_board_state
+            .forces
+            .iter()
+            .find(|force| force.units.contains(&uid))?;
+        let ObjectiveKey::Defend(cid) = force.objective_key else {
+            return None;
+        };
+        let row = self
+            .objective_board_state
+            .rows
+            .iter()
+            .find(|row| row.key == force.objective_key && row.urgent)?;
+        let city = g
+            .cities
+            .get(&cid)
+            .filter(|city| g.units.get(&uid).is_some_and(|unit| city.owner == unit.owner))?;
+        Some((city.pos, force.formed.saturating_add(row.deadline?)))
+    }
+
+    /// A remote attack spends this turn. Reject it when even optimistic
+    /// hex travel misses the urgent relief budget, anchored to force formation
+    /// rather than renewed every turn. Terrain can still make arrival later.
+    pub(super) fn attack_meets_relief_deadline(
+        &self,
+        g: &Game,
+        uid: u32,
+        from: Pos,
+        target: Pos,
+        ranged: bool,
+    ) -> bool {
+        let Some((city, due)) = self.urgent_relief_assignment(g, uid) else {
+            return true;
+        };
+        let mut distance = g.wdist(from, city);
+        if !ranged {
+            // A melee kill enters the victim's tile; a nonlethal blow stays.
+            // Both outcomes must leave enough time for the relief mission.
+            distance = distance.max(g.wdist(target, city));
+        }
+        let travel = (f64::from((distance - DEFEND_STAND_RADIUS).max(0))
+            / g.unit_max_moves(uid).max(1.0))
+        .ceil() as u32;
+        let remaining = due.saturating_sub(g.turn.saturating_add(1));
+        travel <= remaining
+    }
+
+    /// Fighting an attacker that can strike the defended city next turn
+    /// serves the relief mission. Use the existing engine strike-reach probe,
+    /// including fresh movement, instead of treating a distance ring as reach.
+    pub(super) fn relief_defense_targets(&self, g: &Game, pid: usize, uid: u32) -> BTreeSet<Pos> {
+        let Some((city, _)) = self.urgent_relief_assignment(g, uid) else {
+            return BTreeSet::new();
+        };
+        let visible = g.player_vision_frame(pid);
+        let mut probe = g.speculative_clone();
+        g.units
+            .values()
+            .filter(|enemy| enemy.owner != pid && g.is_at_war(pid, enemy.owner))
+            .filter(|enemy| g.rules.units[enemy.kind].class == "military")
+            .filter(|enemy| self.observed(g, pid, &visible, enemy))
+            .filter(|enemy| {
+                g.wdist(enemy.pos, city)
+                    <= g.unit_max_moves(enemy.id).ceil() as i32
+                        + g.unit_attack_range(enemy.id).max(1)
+            })
+            .filter(|enemy| {
+                super::battle_planner::strike_reach_of(&mut probe, pid, enemy.id)
+                    .binary_search(&city)
+                    .is_ok()
+            })
+            .map(|enemy| enemy.pos)
+            .collect()
     }
 
     /// Hostile military strength within `radius` of `at`, visible in the
@@ -1520,7 +1601,7 @@ impl AdvancedAi {
                         break;
                     }
                     let stop = match row.kind {
-                        ObjectiveKind::Defend | ObjectiveKind::Relieve => 2,
+                        ObjectiveKind::Defend | ObjectiveKind::Relieve => DEFEND_STAND_RADIUS,
                         ObjectiveKind::Siege => 3,
                         _ => 1,
                     };

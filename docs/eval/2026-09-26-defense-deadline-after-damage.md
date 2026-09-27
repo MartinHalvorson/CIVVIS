@@ -115,3 +115,53 @@ replay wall times were collected under concurrent build/pilot load and are
 not a controlled cost comparison; the repository's paired-cost CI is the
 performance gate. Neither simulator outcomes nor green tests justify a
 native promotion or deployment of this incomplete repair.
+
+## Command handoff: fresh evaluation registration
+
+After the initial candidate failed to change native orders, the next phase
+will make an urgent assigned defense retain a finite arrival deadline. The
+kill prepass and ordinary attack scan must not repeatedly consume its travel
+time at a remote front. Direct city-defense attacks and immediate survival
+rotation remain available. Civilian guard reservation is a separate observed
+diversion; change it only if causal replay demonstrates that the command
+handoff still cannot deliver available relief.
+
+Register fresh seeds37911000–37911003 before reading their outcomes. Reuse
+the clean pre-policy baseline `de6a184d2` and freeze the combined candidate
+after native decision replay and focused tests, before inspecting fresh
+pilot results. Run four complete pairs per source with the same command,
+replacing `--start-seed 37910000` with `--start-seed 37911000` and fresh output
+paths. Retain the initial negative candidate and every registered arm.
+Outcome-dependent tuning requires another fresh registration. Decision
+replay against fixed future host states never establishes city survival.
+
+The command candidate uses force formation plus the current urgent defense
+deadline as a bounded due turn. A remote attack is refused when spending this
+turn leaves too little time even at the unit's full observed movement allowance
+to reach the existing two-hex defense stand distance. This is an optimistic
+hex-travel bound, not proof of a terrain-legal arrival. Both the global kill
+prepass and ordinary military scan use it. Visible military attackers that
+can strike the defended city next turn remain eligible via the existing
+strike-reach probe. The board-off path, recovery and movement threat scoring
+retain their existing behavior.
+
+An unfrozen command prototype changes actual unit orders at turn74 in the
+202-frame persistent replay. Native Archer917510 replaces remote fire with
+movement ending at offset16,21, one hex closer to Székesfehérvár. Turn73 still
+allows a remote kill within the initial travel slack; turn75's unit orders
+remain unchanged because the archived future still supplies the old unit
+positions. This establishes a command effect, not timely arrival or retention.
+
+The first ordinary-dispatch movement assertion incorrectly assumed that a
+1HP enemy Archer made the approach safe. The defender instead moves away from
+its counterfire. The regression retains an actual advance assertion on the
+next turn after that hostile is removed, with a fresh movement allowance and
+zero projected counterdamage on the route. That stronger assertion still
+fails: the spacing score appears only within five hexes, so a six-to-five
+approach acquires the whole role-depth penalty at once. The combined candidate
+caps the spacing distance at five and charges the capped term outside the
+ring as well, making the boundary continuous. All far positions receive the
+same capped term, preserving their relative ranking. Counterdamage, recovery
+and focus-target policy are unchanged. This affects ordinary force movement
+as well as relief, so the fresh pilot evaluates the combined change. Final
+outcome evidence and validation remain pending; the draft stays withheld.
