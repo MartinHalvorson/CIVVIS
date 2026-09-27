@@ -1607,7 +1607,7 @@ class Civ6PlayTest(unittest.TestCase):
              patch.object(civ6_play, "click_at") as click:
             loaded = civ6_play.bootstrap_saved_game(
                 Tail(), lambda _event: None, Path(temporary),
-                args(load_save="/saves/CivvisWriterRepro.Civ6Save"),
+                args(load_save=str(civ6_play.AUTOSAVE_DIR.parent / "CivvisWriterRepro.Civ6Save")),
             )
 
         self.assertTrue(loaded)
@@ -1684,6 +1684,7 @@ class Civ6PlayTest(unittest.TestCase):
              patch.object(civ6_play, "screenshot"), \
              patch.object(civ6_play.macos_ocr, "recognize", side_effect=observations), \
              patch.object(civ6_play, "_menu_crop_ocr", return_value=[]), \
+             patch.object(civ6_play, "stage_resume_save", return_value=Path("/saves/auto/AutoSave_0102.Civ6Save")), \
              patch.object(civ6_play.env, "game_pids", return_value=[123]), \
              patch.object(civ6_play.time, "sleep"), \
              patch.object(civ6_play, "click_at") as click:
@@ -3476,6 +3477,31 @@ class AResumeStagesTheAutosaveWhereTheListShowsIt(unittest.TestCase):
             self.assertEqual(staged.read_bytes(), b"two")
             saves = [p.name for p in single.iterdir() if p.is_file()]
             self.assertEqual(saves, ["civvis-resume.Civ6Save"])
+
+    def test_external_diagnostic_archive_is_staged_with_exact_bytes(self):
+        with tempfile.TemporaryDirectory() as base:
+            single = self._dirs(base)
+            archive = Path(base) / "native-evidence" / "AutoSave_0170.Civ6Save"
+            archive.parent.mkdir()
+            archive.write_bytes(b"archived board\x00\xff")
+            staged = civ6_play.stage_resume_save(archive, single_dir=single)
+            self.assertEqual(staged, single / "civvis-resume.Civ6Save")
+            self.assertEqual(staged.read_bytes(), archive.read_bytes())
+
+    def test_external_archive_cannot_fall_back_to_an_unverified_manual_row(self):
+        with tempfile.TemporaryDirectory() as base:
+            single = self._dirs(base)
+            archive = Path(base) / "AutoSave_0170.Civ6Save"
+            archive.write_bytes(b"correct input")
+            for corrupt in (False, True):
+                with self.subTest(corrupt=corrupt):
+                    def copy(source, target):
+                        if not corrupt:
+                            raise OSError("disk full")
+                        target.write_bytes(b"different board")
+                    with mock.patch.object(civ6_play.shutil, "copy2", side_effect=copy), \
+                         self.assertRaises(OSError):
+                        civ6_play.stage_resume_save(archive, single_dir=single)
 
     def test_a_manual_save_is_the_row_the_caller_meant(self):
         """A --load-save naming a save outside the rotation is not rewritten:
