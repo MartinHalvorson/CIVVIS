@@ -3648,6 +3648,13 @@ fn configure_live_bridge(
     Ok(())
 }
 
+/// The configured arm, after validated explicit withholds, recorded at startup.
+fn configured_live_treatments(forced_on: &[&str], withheld: &[String]) -> Vec<&'static str> {
+    let mut treatments = civvis::ai::gene_ledger::deployment_treatments_with_forced_live(forced_on);
+    treatments.retain(|tag| !withheld.iter().any(|treatment| treatment.as_str() == *tag));
+    treatments
+}
+
 /// The immutable live-arm identity. Keeping it as one value prevents a new
 /// experimental gene from growing the already busy turn-decider signature.
 #[derive(Clone, Copy)]
@@ -7991,7 +7998,7 @@ fn main() {
             // genome, the registry's live genes name what COULD be on; this
             // names what IS — the helpers the screens proved, the opt-ins they
             // proved, and the host-only flags no screen can price.
-            "treatments": civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced_on),
+            "treatments": configured_live_treatments(&forced_on, &withheld),
             "ledger_withheld": civvis::ai::GENES
                 .iter()
                 .filter(|gene| gene.live())
@@ -9051,6 +9058,90 @@ fn action_variant(action: &Action) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn startup_genome_keeps_default_and_forced_identity_without_withholds() {
+        let requested: Vec<String> = include_str!("../../deploy/live-force-on.txt")
+            .trim()
+            .split(',')
+            .map(str::to_string)
+            .collect();
+        let forced = super::forced_live_treatments(&requested).expect("compiled force bundle");
+        for selected in [&[][..], forced.as_slice()] {
+            let mut ai = civvis::ai::AdvancedAi::new();
+            super::configure_live_bridge(&mut ai, selected, &[]).expect("valid default arm");
+            let reported = super::configured_live_treatments(selected, &[]);
+            assert_eq!(
+                reported,
+                civvis::ai::gene_ledger::deployment_treatments_with_forced_live(selected),
+                "default startup identity stays in the same registry order"
+            );
+            assert!(ai.counter_in_lane && reported.contains(&"counter-in-lane"));
+            assert!(ai.parallel_settlers && reported.contains(&"parallel-settlers"));
+        }
+    }
+
+    #[test]
+    fn startup_genome_tracks_multiple_repeated_host_withholds_without_forcing() {
+        let withheld = vec![
+            "counter-in-lane".to_string(),
+            "parallel-settlers".to_string(),
+            "counter-in-lane".to_string(),
+        ];
+        let mut ai = civvis::ai::AdvancedAi::new();
+        super::configure_live_bridge(&mut ai, &[], &withheld).expect("valid repeated controls");
+        let reported = super::configured_live_treatments(&[], &withheld);
+        assert!(!ai.counter_in_lane && !reported.contains(&"counter-in-lane"));
+        assert!(!ai.parallel_settlers && !reported.contains(&"parallel-settlers"));
+        assert!(ai.era_paced_expansion && reported.contains(&"era-paced-expansion"));
+    }
+
+    #[test]
+    fn startup_genome_reports_mixed_host_and_forced_repair_withholds() {
+        let requested: Vec<String> = include_str!("../../deploy/live-force-on.txt")
+            .trim()
+            .split(',')
+            .map(str::to_string)
+            .collect();
+        let forced = super::forced_live_treatments(&requested).expect("compiled force bundle");
+        assert!(forced.contains(&"siege-commitment"));
+        let withheld = vec![
+            "counter-in-lane".to_string(),
+            "siege-commitment".to_string(),
+            "counter-in-lane".to_string(),
+        ];
+        let mut ai = civvis::ai::AdvancedAi::new();
+        super::configure_live_bridge(&mut ai, &forced, &withheld).expect("valid mixed arm");
+        let reported = super::configured_live_treatments(&forced, &withheld);
+        assert!(!ai.counter_in_lane && !reported.contains(&"counter-in-lane"));
+        assert!(!ai.siege_commitment && !reported.contains(&"siege-commitment"));
+        assert!(ai.parallel_settlers && reported.contains(&"parallel-settlers"));
+    }
+
+    #[test]
+    fn startup_genome_reports_a_withheld_counter_response_under_the_force_bundle() {
+        let requested: Vec<String> = include_str!("../../deploy/live-force-on.txt")
+            .trim()
+            .split(',')
+            .map(str::to_string)
+            .collect();
+        let forced = super::forced_live_treatments(&requested).expect("compiled force bundle");
+        let withheld = vec!["counter-in-lane".to_string()];
+        let mut ai = civvis::ai::AdvancedAi::targeting(civvis::ai::VictoryTarget::Domination);
+        super::configure_live_bridge(&mut ai, &forced, &withheld).expect("valid OFF arm");
+        assert!(
+            !ai.counter_in_lane,
+            "the configured controller is actually OFF"
+        );
+        assert_eq!(
+            ai.victory_target(),
+            Some(civvis::ai::VictoryTarget::Domination)
+        );
+        assert!(
+            !super::configured_live_treatments(&forced, &withheld).contains(&"counter-in-lane"),
+            "startup identity must describe the configured OFF controller"
+        );
+    }
+
     /// ★★★★★ EVERY ITEM THE BOARD CAN ORDER COMES BACK FROM ITS HOST SPELLING
     /// TO THE SAME KEY. `Game::can_produce` gates on the host's exported menu,
     /// translated through `mirror::host_production_key`; an orderable item
