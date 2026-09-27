@@ -49901,7 +49901,10 @@ fn an_expansion_district_is_worth_the_hall_it_hosts() {
 fn domination_ignores_city_states_is_a_domination_only_opt_in() {
     let game = Game::new_full(2, 24, 16, 91_011, 250, 2, false);
     let mut domination = AdvancedAi::targeting(VictoryTarget::Domination);
-    assert!(!domination.domination_ignores_city_states, "the gene ships off");
+    assert!(
+        !domination.domination_ignores_city_states,
+        "the gene ships off"
+    );
     assert!(!AdvancedAi::new().domination_ignores_city_states);
     assert!(
         domination.conquest_campaign_considers_city_states(&game),
