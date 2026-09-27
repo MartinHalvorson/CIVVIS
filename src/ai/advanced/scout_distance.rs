@@ -27,7 +27,8 @@ impl AdvancedAi {
         if !self.distance_scout_available(g, pid, uid) {
             return None;
         }
-        if let Some(goal) = self.air_resource_scout_goal(g, pid, uid) {
+        let survey = self.air_resource_scout_goal(g, pid, uid);
+        if let Some(goal) = survey {
             let mut goals = self.base.explore_goal.borrow_mut();
             let held = goals.entry(uid).or_insert((goal, g.turn));
             if held.0 != goal {
@@ -38,7 +39,21 @@ impl AdvancedAi {
         // other scouts, and routes around known threats. When no exploration
         // route remains, the ordinary fallback may use the idle unit.
         let before = g.units[&uid].pos;
-        let acted = self.explorer_turn(g, pid, uid)?;
+        let acted = if survey.is_some() {
+            // A coastal Loyalty neighborhood can contain water beyond land
+            // sight. Only the selected recon eye gets that survey domain;
+            // ordinary combat units keep their come-ashore exploration rule.
+            if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid)
+                || self.base.village_collection_step(g, pid, uid)
+                || self.base.explore_step_with_domain(g, pid, uid, false)
+            {
+                Some(true)
+            } else {
+                None
+            }
+        } else {
+            self.explorer_turn(g, pid, uid)
+        }?;
         if acted && g.units.get(&uid).is_some_and(|unit| unit.pos != before) {
             let at = g.units[&uid].pos;
             think!(self.journal(), Military, Detail,
@@ -88,7 +103,8 @@ impl AdvancedAi {
                 // Only charted adjacent terrain is inspected. The destination
                 // itself is unknown; its unseen terrain is not a ranking input.
                 && g.nbrs(pos).into_iter().any(|p| known.contains(&p)
-                    && g.map.get(p).is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t)))
+                    && g.map.get(p).is_some_and(|t| g.rules.is_passable(t)
+                        && (!g.rules.is_water(t) || g.unit_can_traverse(uid, p))))
         };
         if let Some((goal, since)) = self.base.explore_goal.borrow().get(&uid).copied() {
             if g.turn.saturating_sub(since) <= super::super::EXPLORE_COMMIT_TURNS && usable(goal) {

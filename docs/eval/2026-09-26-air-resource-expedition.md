@@ -156,3 +156,36 @@ library/binary hashes, copied harness and force rows, full applied-action and
 state streams, reasoning records and explicit ring-loss/truncation counters,
 outcome reproduction checks, first-difference analysis and city-owner
 timelines. Observer snapshots are omniscient diagnostics, never AI inputs.
+
+## Coastal survey completion, not deployment evidence
+
+A controlled known-shore reproduction with Sailing, Shipbuilding and
+Cartography failed against the previous integrated source: after 100 survey
+ticks, 119 plots in the supply center's nine-ring neighborhood remained
+unexplored, including 117 water plots. The resource Scout selected a water
+goal, but the ordinary `BasicAi::explore_step` come-ashore rule discarded it
+and resumed global land exploration. The red log and exact added diagnostic
+test source are retained as `coastal-diagnostic-red.log` and
+`coastal-red-tests.rs` in the archive.
+
+The shared exploration body is now extracted behind an explicit domain
+argument. Its ordinary caller retains the original village-first and dry-only
+policy. Only the one eligible healthy resource-survey Scout enables water
+goals; adjacent known water must be traversable by that Scout. Existing
+exploration commitment, visible-threat avoidance, host-refusal retirement,
+path movement and normal army come-ashore behavior are retained. No hidden
+destination terrain ranks the resource goal, and no settlement veto changes.
+
+Thirteen focused tests pass. Four added tests prove completion of the coastal
+neighborhood through the military dispatch within the original 100-tick bound,
+actual embarkation, unchanged ordinary Scout/Warrior dry-only exploration,
+known-water traversal gating, and refusal-target retirement. The frontier
+Loyalty veto is present before the survey and only disappears after charting
+finishes. Earlier diagnostic movement logs are retained; the permanent test
+uses the real military dispatch rather than just a direct exploration call.
+
+This controlled 40x24 map is not the native neighborhood, a completed colony,
+income, Bomber sustainment or a victory. The earlier four-seed campaign
+regression remains retained. Full-suite and changed-line validation of this
+new checkpoint, then combined guarded-colony campaign evidence on a fresh
+registered block, remain required. PR #3793 stays draft and withheld.

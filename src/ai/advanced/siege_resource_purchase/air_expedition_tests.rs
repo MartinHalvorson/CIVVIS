@@ -48,6 +48,21 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, crate::Pos) {
     (g, ai, plan, city, source)
 }
 
+fn coastal_fixture() -> (Game, AdvancedAi, StrategicPlan, u32, crate::Pos) {
+    let (mut g, ai, plan, city, source) = fixture();
+    for (pos, tile) in &mut g.map.tiles {
+        if pos.0 > source.0 {
+            tile.terrain = crate::name!("coast");
+        }
+    }
+    g.players[0].techs.extend(
+        ["sailing", "shipbuilding", "cartography"]
+            .into_iter()
+            .map(Name::new),
+    );
+    (g, ai, plan, city, source)
+}
+
 #[test]
 fn known_air_supply_frontier_gets_one_scout_even_with_generic_recon_withheld() {
     let (mut g, ai, plan, _, _) = fixture();
@@ -249,4 +264,105 @@ fn resource_scout_can_clear_the_remote_land_frontier_without_relaxing_its_veto()
     assert!(ai
         .settle_site_frontier_loyalty_verdict(&g, 0, source)
         .is_none());
+}
+
+#[test]
+fn resource_scout_can_clear_a_coastal_supply_neighborhood_without_relaxing_loyalty() {
+    let (mut g, mut ai, plan, city, source) = coastal_fixture();
+    let scout = g.spawn_test_unit("scout", 0, g.cities[&city].pos);
+    assert!(AdvancedAi::beyond_loyalty_reach(&g, 0, source));
+    assert!(ai
+        .settle_site_frontier_loyalty_verdict(&g, 0, source)
+        .is_some());
+    let mut embarked = false;
+    for _ in 0..100 {
+        g.turn += 1;
+        let moves = g.unit_max_moves(scout);
+        let u = g.units.get_mut(&scout).unwrap();
+        u.moves_left = moves;
+        u.moved = false;
+        u.acted = false;
+        u.attacks_left = 1;
+        for _ in 0..8 {
+            if !ai.advanced_military_step_with_decline(&mut g, 0, scout, &plan, true) {
+                break;
+            }
+            embarked |= g.is_embarked(&g.units[&scout]);
+        }
+        if !AdvancedAi::beyond_loyalty_reach(&g, 0, source) {
+            break;
+        }
+    }
+    assert!(
+        embarked,
+        "fixture must exercise the water survey, not land-only sight"
+    );
+    assert!(!AdvancedAi::beyond_loyalty_reach(&g, 0, source));
+    assert!(ai
+        .settle_site_frontier_loyalty_verdict(&g, 0, source)
+        .is_none());
+}
+
+#[test]
+fn ordinary_land_exploration_keeps_come_ashore_outside_the_supply_survey() {
+    for kind in ["scout", "warrior"] {
+        let (mut g, mut ai, _, city, shore) = coastal_fixture();
+        g.cities.get_mut(&city).unwrap().districts.clear();
+        g.players[0].explored.extend(
+            g.map
+                .tiles
+                .iter()
+                .filter(|(_, tile)| !g.rules.is_water(tile))
+                .map(|(pos, _)| *pos),
+        );
+        let unit = g.spawn_test_unit(kind, 0, shore);
+        let water = g
+            .nbrs(shore)
+            .into_iter()
+            .find(|p| g.map.get(*p).is_some_and(|tile| g.rules.is_water(tile)))
+            .unwrap();
+        assert!(g.unit_can_traverse(unit, water));
+        assert!(ai.base.come_ashore);
+        assert_eq!(ai.air_resource_scout_goal(&g, 0, unit), None);
+        assert!(!ai.base.explore_step(&mut g, 0, unit), "{kind}");
+        assert_eq!(ai.distance_scout_step(&mut g, 0, unit), None, "{kind}");
+        assert_eq!(g.units[&unit].pos, shore, "{kind}");
+    }
+}
+
+#[test]
+fn deeper_coastal_survey_needs_a_charted_water_route_the_scout_can_use() {
+    let (mut g, ai, _, _, source) = coastal_fixture();
+    g.players[0].explored.extend(
+        g.map
+            .tiles
+            .iter()
+            .filter(|(pos, _)| pos.0 <= source.0 + 2)
+            .map(|(pos, _)| *pos),
+    );
+    let scout = g.spawn_test_unit("scout", 0, source);
+    g.players[0].techs.remove(&crate::name!("shipbuilding"));
+    g.players[0].techs.remove(&crate::name!("cartography"));
+    assert!(AdvancedAi::beyond_loyalty_reach(&g, 0, source));
+    assert_eq!(ai.air_resource_scout_goal(&g, 0, scout), None);
+    g.players[0].techs.insert(crate::name!("shipbuilding"));
+    g.players[0].techs.insert(crate::name!("cartography"));
+    assert!(ai.air_resource_scout_goal(&g, 0, scout).is_some());
+}
+
+#[test]
+fn a_coastal_survey_does_not_reuse_the_scouts_host_retired_goal() {
+    let (mut g, ai, _, _, source) = coastal_fixture();
+    g.players[0].explored.extend(
+        g.map
+            .tiles
+            .iter()
+            .filter(|(pos, _)| pos.0 <= source.0 + 2)
+            .map(|(pos, _)| *pos),
+    );
+    let scout = g.spawn_test_unit("scout", 0, source);
+    let goal = ai.air_resource_scout_goal(&g, 0, scout).unwrap();
+    assert!(g.rules.is_water(&g.map.tiles[&goal]));
+    ai.base.retire_exploration_target(&g, scout, goal);
+    assert_ne!(ai.air_resource_scout_goal(&g, 0, scout), Some(goal));
 }
