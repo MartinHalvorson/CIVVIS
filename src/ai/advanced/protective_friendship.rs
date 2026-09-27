@@ -20,9 +20,11 @@
 //! adaptive rivals it read +1.11 pp of score share. See
 //! `docs/eval/2026-09-26-ladder-proxy-immortal.md`.
 //!
-//! The live Civilization VI seat does not carry this yet: its order
-//! translation (`civvis_orders`) sends a peace deal to the host and skips
-//! every other deal, friendship included.
+//! On the live Civilization VI seat a friendship-only deal crosses as a
+//! `friendship` order (`civvis_orders`), which the agent mod opens as the
+//! shipped `DECLARE_FRIEND` session only toward a rival the host reads as
+//! Friendly; Civilization VI's leaders value a declaration from any colder
+//! state below zero.
 
 use super::*;
 
