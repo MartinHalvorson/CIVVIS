@@ -24,8 +24,9 @@ lane, 16 games (61000000+, 150-turn clock), at turn 100:
 | … completed with their Inspiration | **5.4** (30%) | 14.4 (51%) |
 
 Rivals are handed three free Eurekas and three free Inspirations each era, so
-part of that gap is the rung. The part that is not is the order the focal seat
-takes the tree in. Its research journal (seed 61000004, turn by turn):
+part of that gap is the rung. The candidate this round tested is the order the
+focal seat takes the tree in. Its research journal (seed 61000004, turn by
+turn):
 
 ```
 t1  Researching animal husbandry — the cheapest step toward rocketry, which science needs
@@ -76,7 +77,7 @@ Education 86.8 → 78.4; Craftsmanship 17.3 → 28.4 (Inspired in 0 → 2 games)
 Early Empire 27.9 → 24.2 (Inspired in 10 → 5 — taken sooner, it is open for
 less of its population trigger). Coastal seats still take Sailing early
 (25.4 → 20.9): `tech_value` pays the water goal 190 on a coastal start, and
-Sailing's own Eureka (a coastal city) is usually in hand.
+Sailing's own Eureka (a coastal city) was in hand in 9 of the 16 games.
 
 ## Measured
 
@@ -105,12 +106,19 @@ An independent 250-turn arm by `claude-opus55-0926` (8 games, the value order
 on the Rocketry beeline only, `builders-work-through-raiders` on) read
 −0.35 pp (z −0.37), Education 82.5 → 73, technologies at turn 150 +0.5.
 
-The Settler losses are an Immortal effect — over the three Immortal blocks the seat lost 15 Settlers with the gene against 3 without it, at King and Emperor 4 against 7 — and Immortal is
-where barbarians march at 1.5× force. The civic half is the
-suspect: value order takes Foreign Trade and Early Empire ahead of
-Craftsmanship, which lands about ten turns later (17.3 → 28.4 in block A) and
-with it Agoge, the ancient military card. A techs-only prototype is the next
-arm (see below).
+The Settler losses are an Immortal effect — over the three Immortal blocks
+the seat lost 15 Settlers with the gene against 3 without it, at King and
+Emperor 4 against 7 — and Immortal is where barbarians march at 1.5× force.
+Most of it is the civic half: value
+order takes Foreign Trade and Early Empire ahead of Craftsmanship, which lands
+about ten turns later (17.3 → 28.4 in block A). A techs-only prototype (the
+same order for technologies, civics left on the cheapest step; bench build,
+not in this PR), on the same sixteen 250-turn Immortal seeds, reads
+**−0.23 pp (z −0.29)**: Science at turn 100 57.1 → 63.7 (z +1.88), cities at
+turn 100 6.47 → 6.00, Settlers lost 0 → 1 against the full gene's 0 → 6. The
+tech half buys Science with a little expansion (buildings take Production the
+Settlers had: through turn 100 Buildings +6%, Settlers −7%, military −14% in
+the full-length block) and nets to nothing at this rung.
 
 ## What was tried and dropped
 
@@ -135,5 +143,10 @@ arm (see below).
   forced-goal chain from turn 1, so every research-ordering gene that lives in
   the `tech_value` argmax is inert there. A research experiment for the live
   seat has to act on `goal_pick`, or it measures nothing.
-- **Next**: the techs-only order (civics keep the cheapest step) on the full
-  clock — TECH_ONLY_RESULT
+- **Not pursued**: the techs-only order — neutral at the rung (−0.23 pp,
+  z −0.29) for +6.5 Science. What the Immortal seat is short of is cities and
+  the Production to defend them, not the order of its tree.
+
+The fires probe (6 standard screen games, seeds 26092661–66) was played on the
+bench build, which still registered the dropped `beeline-orders-by-value-2`
+toggle; no seat drew it, so its rows in the probe are empty.
