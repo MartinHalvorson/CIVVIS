@@ -2007,6 +2007,36 @@ class TheHealthFloorStaysFalsifiable(LedgerCase):
             + [{"partial": True}] * 4), 2)
 
 
+class NativeAirSupplyIsRecorded(LedgerCase):
+    def air_run(self, tag):
+        path = write_run(self.runs, summary(tag))
+        (path.parent / "events.jsonl").write_text(json.dumps({
+            "kind": "state", "turn": 144, "units": [{"kind": "UNIT_JET_BOMBER"}],
+            "cities": [], "strategic_resource_income": {"RESOURCE_ALUMINUM": 2}}) + "\n")
+        return path
+
+    def test_completed_game_automatically_keeps_supply_without_rewriting_summary(self):
+        path = self.air_run("air-live")
+        before = path.read_bytes()
+        civ6_ladder.record_summary(path)
+        air = self.state()["attempts"][0]["air_supply"]
+        self.assertEqual(air["peak_bombers_observed"], 1)
+        self.assertEqual(air["milestones"]["aluminum_positive_income"]["observed_turn"], 144)
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_backfill_keeps_the_same_segment_scope(self):
+        self.air_run("air-backfill")
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.sync(self.runs, self.ledger)
+        self.assertEqual(self.state()["attempts"][0]["air_supply"]["scope"], "run_segment")
+
+    def test_retained_measurement_survives_pruned_raw_evidence(self):
+        expected = {"scope": "run_segment", "peak_bombers_observed": 3}
+        path = write_run(self.runs, summary("air-archive", air_supply=expected))
+        civ6_ladder.record_summary(path)
+        self.assertEqual(self.state()["attempts"][0]["air_supply"], expected)
+
+
 class TheBackfillRecoversBridgeHealth(LedgerCase):
     """The self-healing path could not heal the one number it was built for.
 
@@ -2133,6 +2163,18 @@ class PublishRunTests(unittest.TestCase):
         # A pulled/pruned archive can preserve the already measured scopes.
         archived = civ6_ladder.with_conquest(remote, self.runs / "pruned" / "summary.json")
         self.assertEqual(archived["game_conquest"], remote["game_conquest"])
+
+    def test_published_supply_is_kept_without_rewriting_raw_summary(self):
+        run = self.runs / "civvis-1"
+        (run / "events.jsonl").write_text(json.dumps({
+            "kind": "state", "turn": 150, "units": [{"kind": "UNIT_JET_BOMBER"}], "cities": []}) + "\n")
+        before = (run / "summary.json").read_bytes()
+        self.assertEqual(self.publish("civvis-1"), "published")
+        remote = json.loads(_git(self.origin, "show", "refs/heads/ledger:runs/civvis-1/summary.json"))
+        self.assertEqual(remote["air_supply"]["peak_bombers_observed"], 1)
+        self.assertEqual((run / "summary.json").read_bytes(), before)
+        self.assertEqual(civ6_ladder.with_air_supply(remote, self.runs / "pruned" / "summary.json")["air_supply"],
+                         remote["air_supply"])
 
     def test_append_only_and_idempotent(self):
         self.assertEqual(self.publish("civvis-1"), "published")
