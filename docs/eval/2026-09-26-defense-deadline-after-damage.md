@@ -234,6 +234,84 @@ and direct-defense exception. It must retain the actual safe-advance and
 frozen-control regressions, then replay the same complete native prefix.
 Freeze its exact source and binaries before opening fresh results. Use clean
 baseline `de6a184d2`, the same four-pair command and profile, fresh output
-paths, and all reported outcomes and capital-retention metrics. No next-phase
-source or outcomes exist yet. The broad candidate668e and its harmful pilot
+paths, and all reported outcomes and capital-retention metrics. The phase was registered before its source or outcomes existed. The broad candidate668e and its harmful pilot
 remain unchanged; further outcome-driven tuning needs another registration.
+
+## Relief-only isolation: completed negative evaluation
+
+Frozen source `6127841d4581feaa10ab825b153ed351cc3710c3` limits spacing continuity
+to an urgent assigned Defend body. All35 focused tests and4,344 full tests pass
+(zero failures,53 existing ignores); changed-line Rust quality passes. Exact
+native replay changes two full decisions, with unit orders changing only at74.
+Archer917510 still ends at offset16,21. This is fixed-future command evidence,
+not timely arrival or survival. The broad approach-ring defect stays open.
+
+All four registered Prince pairs37912000–37912003 completed. The pair tool exits2
+after retaining all results because the early-conquest off/on action records
+are identical within each candidate pair. This does not mean the candidate
+matches the old source: all four source comparisons change.
+
+| Seed | Arm | Before → after ending | Score | Major cities ever held | Foreign capitals held at end | Home capital held |
+| --- | --- | --- | --- | --- | --- | --- |
+| 37912000 | off/on | Science221 → Science189 | 565 →396 | 0 →1 | 0 →0 | no →no |
+| 37912001 | off | Culture181 → Culture200 | 515 →521 | 0 →0 | 0 →0 | yes →yes |
+| 37912001 | on | Culture181 → Culture200 | 372 →521 | 0 →0 | 0 →0 | yes →yes |
+| 37912002 | off/on | Score250 win → Score250 loss | 1107 →1033 | 7 →5 | 1 →0 | yes →yes |
+| 37912003 | off/on | Culture204 → Science232 | 708 →605 | 1 →0 | 0 →0 | yes →yes |
+
+Neither source wins by Domination. One independent baseline seed wins by Score
+in both paired arms; the candidate loses both and no longer takes that foreign
+capital. Home-capital losses stay two across the eight arm records, with four
+independent seeds. Profiles, civilizations and the20-policy bundle match.
+Every controller uses its source, so attribution remains coupled. The scoped
+candidate is also withheld; reducing the movement footprint did not establish
+a useful repair. Binary hashes and raw completed results are retained under
+`prince-city-retention/relief-only-spacing/`.
+
+## Explaining the harmful combined candidate
+
+Read-only turn snapshots and reasoning traces for source668e and clean baseline
+seed37911002 reproduce every original reported pair field and applied-action
+count. The original complete action sequence was not retained, so exact sequence
+identity with that original pilot is not proved. The current traces have no
+thought-ID gaps or truncated-turn counters. Journal ring eviction is cumulative;
+summing its dropped counter across turns would incorrectly report trace loss.
+
+The first source action difference is focal Warrior2 on turn8: baseline fortifies
+at axial15,27; candidate moves to16,26. At observed9 it has90 versus80HP. The
+baseline records that every offered blow is unsafe and holds the Warrior. The
+candidate filters remote relief attacks before `doomed_shooters`, removing the
+evidence for that safety reservation. Its later ordinary movement still aims
+the Defend force at the remote barbarian contact16,27, four hexes from Bogota.
+Both stands are within the old five-hex spacing ring; this first difference
+cannot come from the ring-continuity change. The candidate move does not close
+on the defended city. These are direct handoff defects, not proof that this
+one early move alone caused the final loss.
+
+The combined on-arm capital loss is military: enemy seat3 air strikes712,733
+and756 on160 reduce Bogota from200HP/200walls to69HP/0walls. AT Crew130 captures
+it on161, observed162. The prior baseline-on capital remains held through250.
+The capture window also differs in army and garrison state; attributing those
+later differences requires more than finding the first changed action. Both
+complete raw traces and compact comparisons are preserved under
+`prince-city-retention/causal-37911002/`. No Loyalty rule is changed.
+
+## Registered repair of safety and relief direction
+
+Register eight fresh Prince pairs37913000–37913007 before implementation or
+fresh result inspection. A default-off `city-relief-deadlines` gene will gate
+all3791 scheduling, attack-handoff and urgent-spacing changes. Assess doomed
+strikes before relief eligibility removes remote attacks; retain recovery
+ownership. An urgent relief body outside the existing two-hex stand distance
+must aim its movement at the defended city instead of a remote engagement.
+Keep the actual safe-advance assertion and the broader approach defect open.
+
+Freeze exact source and binaries after tests and native command replay, before
+running the fresh pilot with `--domination-pair city-relief-deadlines`. Only the
+focal controller toggles this policy; rivals keep the same controllers and
+policy state in both legs. Record every ending, capture, home/foreign capital
+and action-count metric. Check off against the archived202 native decisions
+and known37911002-on reported fields as diagnostics, not fresh strength tests.
+The archived20-policy bundle remains distinct from latest main21. A harmed or
+ineffective candidate stays withheld. Green tests, an off-path match or a
+smaller patch do not satisfy the goal of stronger wars or native promotion.
