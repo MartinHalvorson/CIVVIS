@@ -2383,6 +2383,11 @@ pub const GENES: &[Gene] = &[
     // held the front; captured city-states count nothing toward Domination.
     // See `AdvancedAi::conquest_campaign_considers_city_states`.
     Gene { tag: "domination-ignores-city-states", field: "domination_ignores_city_states", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_ignores_city_states, disable: AdvancedAi::disable_domination_ignores_city_states },
+    // `domination-specializes-earlier` (2026-09-27): an assigned Domination
+    // lane turns to Conquest at 40% of the clock instead of halfway. King
+    // ladder proxy, 64 paired games: foreign cities held 8 -> 22, alive
+    // 49 -> 54. See `AdvancedAi::phase_specialization_active`.
+    Gene { tag: "domination-specializes-earlier", field: "domination_specializes_earlier", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_specializes_earlier, disable: AdvancedAi::disable_domination_specializes_earlier },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

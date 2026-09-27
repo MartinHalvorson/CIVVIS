@@ -1203,6 +1203,11 @@ impl std::str::FromStr for VictoryTarget {
 /// recorded live win came from (4-6 cities at t60, 9 of 9 in, 0 of 128 out).
 pub(crate) const DOMINATION_HANDOVER_CITIES: usize = 4;
 
+/// `domination-specializes-earlier`: the share of the game clock (percent)
+/// after which an assigned Domination lane leaves its development half. 40%
+/// is turn 100 of the ladder's 250; the shared clock is halfway (turn 125).
+pub(crate) const DOMINATION_SPECIALIZATION_PERCENT: u32 = 40;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StrategicPlan {
     pub strategy: GrandStrategy,
@@ -5131,6 +5136,13 @@ pub struct AdvancedAi {
     /// guarded permission is rechecked while the ordinary escort walks it.
     air_resource_colony_target: Option<(u32, Pos)>,
     // ---- append: c-d ------------------------------------------------
+    /// `domination-specializes-earlier`: an assigned Domination lane's
+    /// development half ends at [`DOMINATION_SPECIALIZATION_PERCENT`] of the
+    /// clock (turn 100 of 250) instead of halfway, so it turns to Conquest
+    /// while the rivals' lead is still smaller. On the King ladder proxy it
+    /// doubled foreign cities held over 64 paired games. See
+    /// `AdvancedAi::phase_specialization_active`.
+    domination_specializes_earlier: bool,
     /// `domination-ignores-city-states`: an assigned Domination seat leaves
     /// city-states out of the campaign's fallback target ranking. A captured
     /// city-state counts nothing toward Domination (foreign original
@@ -8399,6 +8411,7 @@ impl AdvancedAi {
 
             air_resource_colony_target: None,
             // ---- append: c-d ----------------------------------------
+            domination_specializes_earlier: false,
             domination_ignores_city_states: false,
             culture_lane_forecast_2: false,
             capture_hold_chain: false,
@@ -23196,6 +23209,18 @@ impl AdvancedAi {
         let culture_buildup = self.victory_target == Some(VictoryTarget::Culture)
             && g.max_turns > 0
             && g.turn.saturating_mul(3) >= g.max_turns.min(g.game_speed.turn_limit());
+        // `domination-specializes-earlier`: an assigned Domination lane turns
+        // to Conquest at 40% of the clock rather than halfway. See
+        // `AdvancedAi::domination_specializes_earlier`.
+        if self.domination_specializes_earlier
+            && self.victory_target == Some(VictoryTarget::Domination)
+            && g.max_turns > 0
+        {
+            return !self.victory_planning
+                || g.turn.saturating_mul(100)
+                    >= g.max_turns.min(g.game_speed.turn_limit())
+                        * DOMINATION_SPECIALIZATION_PERCENT;
+        }
         !self.victory_planning || culture_buildup || Self::victory_specialization_active(g)
     }
 
