@@ -55,27 +55,77 @@ and the applied thirteen-vote request for this case.
 All 69 discovered control-mod Lua suites passed under Lua 5.1 via the
 installed Lupa runtime. Lua 5.1 compiled all 76 scripts in the control-mod
 and legacy-mod roots. `cargo test --profile ci --locked` passed 4,423 tests,
-zero failed, 53 ignored. Python validation is recorded with the final
-preflight results before integration. The existing CI discovers the new
-`*_test.lua` suite.
+zero failed, 53 ignored. `PYTHONPATH=tools python3 -m unittest test_ci_wiring
+test_docs_commands test_docs_reference_live_commands test_civ6_play
+test_civ6_control_install` passed all 387 tests. The existing CI discovers
+the new `*_test.lua` suite.
 
-Before a candidate native replay, preserve the exact source, binary and
-autosave hashes. The input is the already archived
+Before the candidate native replay, the exact source, binary and autosave
+hashes were preserved in `registration.json`. The input was the archived
 `AutoSave_0170.Civ6Save`, SHA-256
 `98929078deac0152bd93978a406a3df55964c75cd6dc8b68eeca97ae290e3184`.
 The earlier baseline continuation actually loaded those same bytes at turn
-170. Keep the Rust binary, all 21 force-on treatments, air-surge-2 on,
-air-surge v1 off, four-player King Gran Colombia / Simón Bolívar, Tiny
-Pangaea, Online, Gathering Storm and all victories enabled. Read the native
-seat and restored turn back again; CLI flags alone do not prove them.
+170. Candidate Lua was frozen at `bc34b9a82eae0c3f243272611c7c89642e42beaa`;
+the installed script matched that source after its configuration prelude.
+The unchanged Rust executable was frozen at SHA-256
+`d0bd1f27f3ffb18c5e76bb6e4a4ec12f5047188e7b1f173e03fb4da74b3e9483`.
+Its baseline and candidate digests match; revisions `3ec0a0780` and
+`3775e9be5` differ only in recovery-save instrumentation and its records.
 
-After the current fresh game finishes, run the candidate from the preserved
-input. Verify the production request and native readback at the first
-eligible Congress, retain every subsequent outcome, and play to the native
-terminal event. A rejected or mismatched ballot must not be called an
-applied fix. Native outcomes from a reused save are a diagnosis, not a
-fresh-game strength screen; no general strength claim follows from one
-trajectory. Candidate native preflight is pending at this checkpoint.
+The replay `civvis-pr3828-save170-20260927T144218Z` actually restored turn
+170. Native readback verified four-player King Gran Colombia / Simón
+Bolívar, Tiny Pangaea, Online, Gathering Storm, all victories enabled and
+the saved game's 250-turn limit. The genome seated all 21 force-on
+treatments, air-surge-2 on and air-surge v1 off. CLI flags alone were not
+used to establish the seat or restored turn.
+
+At Congress 181, the actual bank was again 569 Favor and player 3 again
+had 15 DVP. The candidate requested seventeen B votes against player 3,
+costing 544. Native `wc_ballot_verdict` verified the count, option and
+target; both ordinary one-vote resolutions also registered correctly.
+B won 29 to A's 7, targeted player 3, and its DVP fell to 13.
+
+At Congress 201, the actual bank was 311 Favor and the leader had 15 DVP.
+The host budget afforded twelve votes costing 264. Native readback
+verified all twelve B votes against player 3. B won 15 to A's 10 and the
+leader remained on 15 DVP. Subsequent rival votes and banks differ from
+the baseline; this is an actual changed trajectory, not the fixed-vote
+counterfactual above.
+
+The replay froze at turn 208 after GDR-versus-city combat. Its imported
+outer watcher confirmed 900 seconds without turn progress, cleaned up the
+owned game and preserved the selected turn-207 autosave. That reload
+restored turn 207 and froze at the same combat boundary. The host watchdog
+diagnosed the direct player but withheld its signal because the diagnostic
+parent is outside the standard climb entry point.
+
+Before the second recovery, an operational handoff amendment was recorded:
+the operator verified the exact player fingerprint, cleanup receipt,
+installed tag and source pins, repeated combat freeze, and silence beyond
+240 seconds in both native and copied logs. Only that owned player was
+interrupted; the existing recovery loop selected and preserved the older
+turn-204 save. This changes recovery timing, not the voter, binary, source
+or six-resume budget. The turn-204 reload escaped the freeze.
+
+The native terminal event was a **Science loss at turn 221**, team 1,
+`won: false`; owned cleanup and `game_stopped: true` were verified. The
+retained path covers all 52 turns from 170 through 221, uses the root
+through 203 and `-cont2` from 204, and excludes the rolled-back `-cont1`
+observations. It held Bogotá, the two foreign major cities already present
+in the input, and zero foreign original capitals. Three run segments are
+one reused-save diagnosis, not three independent games.
+
+An additional fresh baseline game, `civvis-20260927T135851Z`, reproduced
+the override at Congress 201: 305 Favor, a rival on 13 DVP and twelve
+verified A/self votes. That game ended in Religious loss at turn 203,
+held no foreign cities or original capitals, and had two recovery segments.
+It is a separate observation of the trigger, not a paired strength screen.
+
+The native request, readback and outcome support shipping this correctness
+fix. The replay avoided the baseline's turn-202 Diplomatic ending, then
+lost by another victory route. No Domination win or general strength gain
+is claimed. Setup failures, recovery timing amendment, every segment and
+both complete endings are retained without filtering.
 
 Evidence is retained under
 `~/civvis-war-evidence-20260927/native-congress-denial-priority/`.
