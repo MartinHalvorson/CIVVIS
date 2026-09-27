@@ -4501,6 +4501,17 @@ impl AdvancedAi {
         self.settler_detour_stays_near = false;
     }
 
+    /// `beeline-orders-by-value`: a forced research or civic goal walks its
+    /// prerequisites by value, not by printed price. See
+    /// `AdvancedAi::beeline_step`.
+    pub fn enable_beeline_orders_by_value(&mut self) {
+        self.beeline_orders_by_value = true;
+    }
+    /// The twin of `enable_beeline_orders_by_value`.
+    pub fn disable_beeline_orders_by_value(&mut self) {
+        self.beeline_orders_by_value = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

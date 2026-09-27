@@ -4934,6 +4934,13 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `beeline-orders-by-value`: a forced research or civic goal walks its
+    /// remaining prerequisites in `tech_value` / `civic_value` order instead
+    /// of cheapest-printed-price first. Every prerequisite is researched
+    /// before the goal lands whatever the order, so the goal arrives on the
+    /// same turn; what the order decides is which unlock (and which boost in
+    /// hand) arrives first. See `AdvancedAi::beeline_step`.
+    beeline_orders_by_value: bool,
     /// `builders-work-through-raiders`: the live capture lessons keep their
     /// barbarian-reach holds for Settlers only; a Builder steps and takes
     /// jobs under the native Builder safety instead. See
@@ -5117,6 +5124,9 @@ pub struct AdvancedAi {
     /// `builder-supply-floor`.
     builder_supply_floor: bool,
 
+    /// One supply colony chosen by an otherwise untargeted Settler. Its
+    /// guarded permission is rechecked while the ordinary escort walks it.
+    air_resource_colony_target: Option<(u32, Pos)>,
     // ---- append: c-d ------------------------------------------------
     /// Version 2 of the Culture clock forecast: project secular and religious
     /// Tourism through each rival's current international modifiers. The
@@ -7289,6 +7299,7 @@ mod surprise_defense;
 mod air_city_assault;
 mod air_resource_builders;
 mod air_resource_settlement;
+mod air_resource_colony;
 mod air_surge;
 pub use air_city_assault::AirCityAssault;
 mod siege_resource_purchase;
@@ -7954,6 +7965,9 @@ impl AdvancedAi {
                 .collect()
         };
         self.settler_targets = remap(&self.settler_targets);
+        self.air_resource_colony_target = self
+            .air_resource_colony_target
+            .and_then(|(uid, site)| map.get(&uid).map(|new| (*new, site)));
         self.wonder_clearance = self
             .wonder_clearance
             .iter()
@@ -8328,6 +8342,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            beeline_orders_by_value: false,
             builders_work_through_raiders: false,
             builder_charge_window: false,
             boost_planner_builds: false,
@@ -8365,6 +8380,7 @@ impl AdvancedAi {
             amenity_project_preemption_2: false,
             builder_supply_floor: false,
 
+            air_resource_colony_target: None,
             // ---- append: c-d ----------------------------------------
             culture_lane_forecast_2: false,
             capture_hold_chain: false,
@@ -14971,6 +14987,14 @@ impl AdvancedAi {
             }
             let goal_pick = science_milestone_pick.or_else(|| {
                 forced_goal.and_then(|goal| {
+                    if self.beeline_orders_by_value {
+                        let steps: Vec<Name> = available
+                            .iter()
+                            .filter(|tech| self.tech_leads_to(g, tech, goal))
+                            .cloned()
+                            .collect();
+                        return self.beeline_step(g, pid, plan.strategy, &steps, true);
+                    }
                     available
                         .iter()
                         .filter(|tech| self.tech_leads_to(g, tech, goal))
@@ -15033,6 +15057,13 @@ impl AdvancedAi {
             };
             if let Some(tech) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
+                    // `beeline-orders-by-value` takes the best-valued step,
+                    // not the cheapest; say which.
+                    let step = if self.beeline_orders_by_value {
+                        "most valuable"
+                    } else {
+                        "cheapest"
+                    };
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
                             if opening_archery_goal.as_deref() == Some(goal) {
@@ -15041,23 +15072,23 @@ impl AdvancedAi {
                                 "unlock Ancient Walls for wartime recovery or a stronger hostile approaching an exposed city before the longer army upgrade path".to_string()
                             } else if barbarian_military_goal.as_deref() == Some(goal) {
                                 format!(
-                                    "the cheapest step toward {}, needed to catch a nearby barbarian army",
+                                    "the {step} step toward {}, needed to catch a nearby barbarian army",
                                     plain(goal)
                                 )
                             } else if domination_siege_goal.as_deref() == Some(goal) {
                                 format!("domination-siege-research: unlock {} to supply the missing wall-breaking capability for the campaign", plain(goal))
                             } else if standing_army_fuel_goal.as_deref() == Some(goal) {
-                                format!("the cheapest step toward {}, needed to reveal fuel for the standing army with no reserve", plain(goal))
+                                format!("the {step} step toward {}, needed to reveal fuel for the standing army with no reserve", plain(goal))
                             } else if wartime_modernization_goal.as_deref() == Some(goal) {
                                 format!(
-                                    "the cheapest step toward {}, needed to modernize the standing army at war",
+                                    "the {step} step toward {}, needed to modernize the standing army at war",
                                     plain(goal)
                                 )
                             } else if domination_campus_goal == Some(goal) {
                                 "unlock campuses for the expanding domination economy".to_string()
                             } else {
                                 format!(
-                                    "the cheapest step toward {}, which {} needs",
+                                    "the {step} step toward {}, which {} needs",
                                     plain(goal),
                                     objective.as_str()
                                 )
@@ -15186,6 +15217,14 @@ impl AdvancedAi {
                 _ => None,
             };
             let goal_pick = forced_goal.and_then(|goal| {
+                if self.beeline_orders_by_value {
+                    let steps: Vec<Name> = available
+                        .iter()
+                        .filter(|civic| self.civic_leads_to(g, civic, goal))
+                        .cloned()
+                        .collect();
+                    return self.beeline_step(g, pid, civic_objective, &steps, false);
+                }
                 available
                     .iter()
                     .filter(|civic| self.civic_leads_to(g, civic, goal))
@@ -15226,10 +15265,15 @@ impl AdvancedAi {
             });
             if let Some(civic) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
+                    let step = if self.beeline_orders_by_value {
+                        "most valuable"
+                    } else {
+                        "cheapest"
+                    };
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
                             format!(
-                                "the cheapest step toward {}, which {} needs",
+                                "the {step} step toward {}, which {} needs",
                                 plain(goal),
                                 objective.as_str()
                             )
@@ -16953,6 +16997,37 @@ impl AdvancedAi {
                 let _ = g.apply(pid, &Action::SlotPolicy { policy: current });
             }
         }
+    }
+
+    /// `beeline-orders-by-value`: the step a forced goal takes next among
+    /// `steps`, its remaining prerequisites the era window offers. Every one
+    /// of them is researched before the goal whatever the order, so the goal
+    /// lands on the same turn either way; the order only decides which unlock
+    /// arrives first. The stock picker takes the cheapest printed price with
+    /// ties broken by name, which put Sailing ahead of Writing (both 50) and
+    /// Military Tactics ahead of Education on a Science seat; this takes the
+    /// best `tech_value` / `civic_value` — the same score the unforced argmax
+    /// ranks by, boost in hand included — with ties to the earlier name.
+    fn beeline_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        strategy: GrandStrategy,
+        steps: &[Name],
+        techs: bool,
+    ) -> Option<Name> {
+        let value = |node: &Name| {
+            if techs {
+                self.tech_value(g, pid, node.as_str(), strategy)
+            } else {
+                self.civic_value(g, pid, node.as_str(), strategy)
+            }
+        };
+        steps
+            .iter()
+            .map(|node| (value(node), *node))
+            .max_by(|a, b| a.0.total_cmp(&b.0).then_with(|| b.1.cmp(&a.1)))
+            .map(|(_, node)| node)
     }
 
     fn tech_value(&self, g: &Game, pid: usize, tech: &str, strategy: GrandStrategy) -> f64 {
@@ -26374,6 +26449,8 @@ impl AdvancedAi {
                     .as_ref()
                     .is_some_and(|(source, reserved)| *source == cid && reserved == item)
             });
+            let air_resource_colony_commitment =
+                self.air_resource_colony_queue_committed(g, pid, cid, plan);
             let defensive_temple_commitment = plan.threatened_city != Some(cid)
                 && committed.as_ref().is_some_and(|(_, item)| {
                     self.domination_defensive_temple(g, pid, cid, item)
@@ -26387,6 +26464,7 @@ impl AdvancedAi {
                     || domination_research_commitment
                     || defensive_temple_commitment
                     || sanctuary_commitment
+                    || air_resource_colony_commitment
             }) && !recovery_preemption
                 && (finish_investment
                     || science_endgame_commitment
@@ -26394,6 +26472,7 @@ impl AdvancedAi {
                     || domination_research_commitment
                     || defensive_temple_commitment
                     || sanctuary_commitment
+                    || air_resource_colony_commitment
                     || preempt_margin <= 1.0
                     || economic_recovery)
             {
@@ -27063,7 +27142,15 @@ impl AdvancedAi {
         let plan = self.plan.clone()?;
         let mut preview = self.clone();
         let mut board = g.clone();
-        board.cities.get_mut(&city)?.queue.clear();
+        let queue = &mut board.cities.get_mut(&city)?.queue;
+        let incoming_settler =
+            matches!(queue.first(), Some(Item::Unit { unit }) if unit == "settler");
+        queue.clear();
+        // A finishing Settler has not appeared in the exported unit roster
+        // yet, but already fills the single supply-colony request.
+        if !incoming_settler {
+            preview.reserve_air_resource_colony(&mut board, pid, &plan);
+        }
         preview.advanced_production(&mut board, pid, &plan, false);
         board.cities.get(&city)?.queue.first().cloned()
     }
@@ -33954,6 +34041,9 @@ impl AdvancedAi {
             if self.settler_target_reserved_by_other(g, pid, uid, target) {
                 return Some("another settler already owns the site");
             }
+            if self.air_resource_colony_target_refused(g, pid, uid, target) {
+                return Some("the resource colony lost its guarded supply permission");
+            }
             // `commitment_patience`: a threat is a hold, not a drop — the
             // ledger retires the site if the hold outlasts its patience.
             if self.settler_threat_detour_on()
@@ -33995,6 +34085,16 @@ impl AdvancedAi {
             .get(&uid)
             .copied()
             .and_then(target_drop_reason);
+        if let Some(site) = self.settler_targets.get(&uid).copied().filter(|_| {
+            cached_drop == Some("the resource colony lost its guarded supply permission")
+        }) {
+            // The ordinary economic ranking must not immediately reuse
+            // a supply target whose stronger permission just failed.
+            self.settler_dead_sites.entry(uid).or_default().insert(
+                site,
+                g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+            );
+        }
         let valid_target = self
             .settler_targets
             .get(&uid)
@@ -34079,6 +34179,15 @@ impl AdvancedAi {
             self.settler_closest.remove(&uid);
         }
         let target = overseas_target.or(valid_target).or_else(|| {
+            if let Some(site) = self.air_resource_colony_settler_target(g, pid, uid, avoid) {
+                self.air_resource_colony_target = Some((uid, site));
+                self.settler_targets.insert(uid, site);
+                think!(self.journal(), Expansion, Detail,
+                       "Settler chooses the Bomber supply colony";
+                       "the known resource is needed by the committed airfield; its route, \
+                        nearby defender and Loyalty checks pass"; site);
+                return Some(site);
+            }
             // Ask the forecast before the walk. The mirror can only reject a
             // doomed site after the Settler stands on it, which previously
             // spent a long frontier walk merely to discover the city would
@@ -34508,6 +34617,7 @@ impl AdvancedAi {
         if !self.settler_founds_when_stalled
             || !g.can_found_city(uid)
             || self.air_resource_colony_refused(g, pid, here)
+            || self.air_resource_colony_target_refused(g, pid, uid, here)
         {
             return false;
         }
@@ -42199,9 +42309,14 @@ impl AdvancedAi {
             self.base.cities(g, pid);
         } else {
             if self.victory_planning {
-                // Emergency force readiness takes precedence; the peaceful
+                // One guarded supply colony may be needed after ordinary
+                // expansion has closed. Reserve its idle queue before the
+                // peacetime army floor, while existing defense and stability
+                // reservations keep their queues.
+                self.reserve_air_resource_colony(g, pid, &plan);
+                // Force readiness uses the remaining queues; the ordinary
                 // settlement handoff can then spend a separate project queue
-                // only if the empire is still short of its city plan.
+                // only while the empire is short of its city plan.
                 self.redirect_repeatable_projects_for_force_gap(g, pid, &plan);
                 self.redirect_repeatable_projects_for_settlement_gap(g, pid, &plan);
             }
