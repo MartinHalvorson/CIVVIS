@@ -25653,8 +25653,8 @@ fn threat_detour_board(barbarian: bool, live: bool) -> ThreatDetourBoard {
             break;
         }
     }
-    let threat_position = threat_position
-        .expect("the first step has a visible threat post with a safe runner-up");
+    let threat_position =
+        threat_position.expect("the first step has a visible threat post with a safe runner-up");
     let threat = game.spawn_test_unit("warrior", owner, threat_position);
     ThreatDetourBoard {
         game,
