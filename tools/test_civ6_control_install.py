@@ -1259,29 +1259,27 @@ class ProtectedInstallTest(unittest.TestCase):
         # And the state now carries the points and the favor.
         self.assertIn("dvp = try(function() return player:GetStats():GetDiplomaticVictoryPoints(); end, nil)", source)
 
-    def test_the_ballot_claims_the_diplomatic_points_when_the_bank_outvotes_every_block(self) -> None:
-        """Decoded `wc_outcome` rows (T205104Z, T223457Z): option A of the
-        Diplomatic Victory resolution wins every session because each rival
-        votes A for itself with 6-11 votes and the target is the biggest block,
-        so a B ballot against the leader changes nothing while 640-1441 Favor
-        sat unspent. When the bank affords `DiploVictoryClaimVotes` (12) the
-        ballot is A with every vote targeting us; below that the floor rule
-        stands; the mode reaches `wc_vote`.
+    def test_the_ballot_claims_below_the_denial_floor_when_the_bank_is_large(self) -> None:
+        """Keep the self-claim path below the configured denial threshold.
+
+        Native t201 of civvis-20260927T132350Z-cont1 showed that twelve
+        affordable votes do not necessarily outvote a rival's block. A claim
+        must not override denial at or above the configured threshold.
         """
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         voter = source.split("local function voteWorldCongress(pid)", 1)[1].split("local player, pid = localPlayer();", 1)[0]
         arm = voter.split('if rtype == "WC_RES_DIPLOVICTORY" then', 1)[1].split("elseif r.TargetType", 1)[0]
         self.assertIn("local claim = tonumber(cfg.DiploVictoryClaimVotes) or 12;", arm)
         self.assertIn("if tonumber(t) == pid then ourIdx = idx; end", arm)
-        self.assertIn("if ourIdx ~= nil and budget >= claim then", arm)
-        claim = arm.index("if ourIdx ~= nil and budget >= claim then")
+        self.assertIn("if ourIdx ~= nil and budget >= claim", arm)
+        self.assertIn("and (tonumber(leaderPoints) or 0) < floor then", arm)
+        claim = arm.index("if ourIdx ~= nil and budget >= claim")
         tail = arm[claim:]
         self.assertIn("option = 1;", tail)
         self.assertIn("selection = ourIdx;", tail)
         self.assertIn("n = budget;", tail)
         self.assertIn('mode = "claim";', tail)
-        # The claim overrides the floor rule, so it comes after it and before
-        # the votes are committed.
+        # The guarded claim still follows budget selection and precedes commit.
         gate = arm.index("if (tonumber(leaderPoints) or 0) >= floor then")
         commit = arm.index("votes = n;")
         self.assertLess(gate, claim)

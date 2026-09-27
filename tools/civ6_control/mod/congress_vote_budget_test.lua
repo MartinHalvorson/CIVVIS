@@ -151,10 +151,10 @@ check("actual ballot cast", count, 1)
 check("actual ballot modeled cost", spent, 312)
 check("actual ballot leading rival", leader, 3)
 check("actual ballot rival points", points, 15)
-check("actual ballot mode", mode, "claim")
+check("actual ballot mode keeps denial above the floor", mode, "deny")
 check("actual request votes", requested and requested.votes, 13)
-check("actual request option", requested and requested.option, 1)
-check("actual request target index is our seat", requested and requested.selection, 0)
+check("actual request option", requested and requested.option, 2)
+check("actual request target index is the leader", requested and requested.selection, 3)
 check("actual ballot submitted once", submitted, 1)
 
 if failures > 0 then

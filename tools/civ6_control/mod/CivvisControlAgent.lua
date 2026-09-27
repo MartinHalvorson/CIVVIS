@@ -19589,7 +19589,7 @@ local function tick()
 						else
 							mode = "free";
 						end
-						-- ★★★★ WHEN THE BANK OUTVOTES EVERY RIVAL'S BLOCK, CLAIM THE +2.
+						-- Below the denial floor, a large bank can try to claim +2.
 						--
 						-- The resolution's winner is the option with more votes, and
 						-- its target the player with the most votes ON that option.
@@ -19602,15 +19602,20 @@ local function tick()
 						-- Favor sat at 640–1441 unspent. Twelve votes beat every
 						-- block seen; price them from the host table. When the bank
 						-- affords that many, vote A with all of them targeting US: the
-						-- +2 lands on this seat and the leader gets nothing that
-						-- session. `DiploVictoryClaimVotes` is that bar; below it the
-						-- floor rule above stands.
+						-- +2 can land on this seat instead of the leader that session.
+						-- `DiploVictoryClaimVotes` retains that historical heuristic;
+						-- it does not guarantee that today's rival block is smaller.
 						local claim = tonumber(cfg.DiploVictoryClaimVotes) or 12;
 						local ourIdx = nil;
 						for idx, t in pairs(targets) do
 							if tonumber(t) == pid then ourIdx = idx; end
 						end
-						if ourIdx ~= nil and budget >= claim then
+						-- A self-claim must not replace the denial selected above.
+						-- Native t201 of civvis-20260927T132350Z-cont1: our 13
+						-- A/self votes joined the leader's 14 A votes against 18 B
+						-- votes; the leader, not us, received the +2 and won.
+						if ourIdx ~= nil and budget >= claim
+							and (tonumber(leaderPoints) or 0) < floor then
 							option = 1;
 							selection = ourIdx;
 							n = budget;
