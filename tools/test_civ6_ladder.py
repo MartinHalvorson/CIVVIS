@@ -71,7 +71,60 @@ class LedgerCase(unittest.TestCase):
         return json.loads(self.ledger.read_text())
 
 
+def recovered_events(runs, root_tag, current_tag):
+    from civ6_conquest import write_recovery_chain
+    home = {"x": 0, "y": 0, "original_owner": 0, "original_capital": True}
+    captured = {"x": 4, "y": 0, "original_owner": 3, "original_capital": False}
+    profile = {"local_player": 0, "civ": "CIVILIZATION_GRAN_COLOMBIA",
+               "leader": "LEADER_SIMON_BOLIVAR", "difficulty": "DIFFICULTY_KING",
+               "players": 4, "city_states": 6, "map": "Pangaea.lua", "size": "MAPSIZE_TINY",
+               "speed": "GAMESPEED_ONLINE", "ruleset": "RULESET_EXPANSION_2",
+               "max_turns": 250, "modes": [], "victories": {"conquest": True, "score": True}}
+    for tag, turns in ((root_tag, range(1, 4)), (current_tag, range(2, 5))):
+        directory = runs / tag
+        directory.mkdir(exist_ok=True)
+        rows = [dict(profile, kind="seat", run=tag)]
+        rows += [{"kind": "state", "run": tag, "turn": turn, "rivals": [{"player": 3}],
+                  "cities": [home, captured] if turn >= 2 else [home]} for turn in turns]
+        (directory / "events.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    write_recovery_chain(runs, root_tag, [{"tag": current_tag, "from_turn": 3,
+                                        "save": "AutoSave_0200.Civ6Save"}])
+
+
 class RecordsItself(LedgerCase):
+    def test_recovery_scopes_are_recorded_by_live_and_backfill_paths(self):
+        for tag, live in (("recovery-live", True), ("recovery-backfill", False)):
+            path = write_run(self.runs, summary(tag))
+            recovered_events(self.runs, tag + "-root", tag)
+            if live:
+                civ6_ladder.record_summary(path, self.ledger)
+            else:
+                civ6_ladder.sync(self.runs, self.ledger, quiet=True, snapshot=self.snapshot)
+            row = next(row for row in self.state()["attempts"] if row["tag"] == tag)
+            self.assertEqual(row["conquest"]["scope"], "run_segment")
+            self.assertTrue(row["conquest"]["first_major_city_held"]["present_at_first_frame"])
+            self.assertEqual(row["game_conquest"]["scope"], "recovered_game_path")
+            self.assertEqual(row["game_conquest"]["first_major_city_held"],
+                             {"observed_turn": 2, "present_at_first_frame": False})
+            self.assertEqual(row["game_conquest"]["foreign_major_cities_held_final"], 1)
+            self.assertEqual(row["recovery_chain"]["current"], tag)
+
+    def test_existing_segment_result_does_not_bypass_recovery_accounting(self):
+        path = write_run(self.runs, summary("recovery", conquest={"scope": "run_segment"}))
+        recovered_events(self.runs, "original", "recovery")
+        got = civ6_ladder.with_conquest(json.loads(path.read_text()), path)
+        self.assertEqual(got["conquest"], {"scope": "run_segment"})
+        self.assertTrue(got["game_conquest"]["available"])
+
+    def test_missing_recovery_history_preserves_the_segment_result(self):
+        path = write_run(self.runs, summary("recovery"))
+        recovered_events(self.runs, "original", "recovery")
+        (self.runs / "original" / "events.jsonl").unlink()
+        civ6_ladder.record_summary(path, self.ledger)
+        row = self.state()["attempts"][0]
+        self.assertEqual(row["conquest"]["foreign_major_cities_held_final"], 1)
+        self.assertFalse(row["game_conquest"]["available"])
+
     def test_native_conquest_is_recorded_by_both_live_and_backfill_paths(self):
         for tag, live in (("native-live", True), ("native-backfill", False)):
             path = write_run(self.runs, summary(tag))
@@ -2066,6 +2119,20 @@ class PublishRunTests(unittest.TestCase):
     def ledger_files(self) -> list[str]:
         return _git(self.origin, "ls-tree", "-r", "--name-only",
                     "refs/heads/ledger").splitlines()
+
+    def test_published_recovery_result_retains_ancestry_without_rewriting_local_summary(self):
+        recovered_events(self.runs, "original", "civvis-1")
+        path = self.runs / "civvis-1" / "summary.json"
+        before = path.read_bytes()
+        self.assertEqual(self.publish("civvis-1"), "published")
+        remote = json.loads(_git(self.origin, "show", "refs/heads/ledger:runs/civvis-1/summary.json"))
+        self.assertTrue(remote["game_conquest"]["available"])
+        self.assertEqual(remote["game_conquest"]["foreign_major_cities_held_final"], 1)
+        self.assertEqual(remote["recovery_chain"]["segments"], ["original", "civvis-1"])
+        self.assertEqual(path.read_bytes(), before)
+        # A pulled/pruned archive can preserve the already measured scopes.
+        archived = civ6_ladder.with_conquest(remote, self.runs / "pruned" / "summary.json")
+        self.assertEqual(archived["game_conquest"], remote["game_conquest"])
 
     def test_append_only_and_idempotent(self):
         self.assertEqual(self.publish("civvis-1"), "published")

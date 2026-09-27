@@ -2932,6 +2932,15 @@ def main() -> int:
                       f"of {args.max_resumes})", flush=True)
                 resumes.append({"tag": cont, "from_turn": record.get("last_turn"),
                                 "save": save.name})
+                # The player's terminal recorder runs before this loop returns.
+                # Give it explicit ancestry now, while the climb owns the reload,
+                # so it can reconstruct ownership without guessing from tag names.
+                try:
+                    from civ6_conquest import write_recovery_chain
+                    write_recovery_chain(RUN_ROOT, tag, resumes)
+                except (OSError, ValueError) as error:
+                    print(f"[resume] conquest ancestry unavailable: {error}; "
+                          "continuing with segment accounting", flush=True)
                 before_resume = record
                 run_tag = cont
                 play_log = (logs / f"{cont}-play.log").open("w")

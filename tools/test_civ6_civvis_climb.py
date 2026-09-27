@@ -1946,6 +1946,20 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertEqual(rows[0]["last_turn"], 250)
         snapshot.assert_called_once()
 
+    def test_conquest_ancestry_failure_does_not_prevent_recovery(self):
+        with mock.patch.object(climb, "wait_watching_the_turn", side_effect=["frozen", "exited"]), \
+             mock.patch.object(climb, "_recent_autosaves",
+                               return_value=[Path("/saves/AutoSave_0101.Civ6Save")]), \
+             mock.patch("civ6_conquest.write_recovery_chain",
+                        side_effect=OSError("disk full")) as ancestry:
+            code, rows = self.climb_with(
+                [{"last_turn": 102, "last_score": 340, "rival_best": 324},
+                 {"last_turn": 250, "last_score": 910, "rival_best": 880}], attempts=1)
+        self.assertEqual(code, 1)
+        self.assertEqual(rows[0]["last_turn"], 250)
+        self.assertEqual(len(rows[0]["resumes"]), 1)
+        ancestry.assert_called_once()
+
     def test_a_frozen_attempt_is_reloaded_under_a_cont_tag_and_scored_from_it(self):
         spawned = []
         (self.native_logs / "AI.csv").write_text("rival turn evidence")
@@ -1957,6 +1971,12 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
                     snapshots = list(test.runs.glob("*/native-freeze-logs/AI.csv"))
                     test.assertEqual(len(snapshots), 1)
                     test.assertEqual(snapshots[0].read_text(), "rival turn evidence")
+                    cont = argv[argv.index("--tag") + 1]
+                    chain = json.loads((test.runs / cont / "recovery-chain.json").read_text())
+                    test.assertEqual(chain["current"], cont)
+                    test.assertEqual(chain["segments"], [chain["root"], cont])
+                    test.assertEqual(chain["reloads"][0]["save"],
+                                     Path(argv[argv.index("--load-save") + 1]).name)
                     (test.native_logs / "AI.csv").write_text("replacement on launch")
                 spawned.append(list(argv))
                 super().__init__(argv, *args, **kwargs)
