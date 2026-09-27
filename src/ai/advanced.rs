@@ -4918,6 +4918,13 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `beeline-orders-by-value`: a forced research or civic goal walks its
+    /// remaining prerequisites in `tech_value` / `civic_value` order instead
+    /// of cheapest-printed-price first. Every prerequisite is researched
+    /// before the goal lands whatever the order, so the goal arrives on the
+    /// same turn; what the order decides is which unlock (and which boost in
+    /// hand) arrives first. See `AdvancedAi::beeline_step`.
+    beeline_orders_by_value: bool,
     /// `builders-work-through-raiders`: the live capture lessons keep their
     /// barbarian-reach holds for Settlers only; a Builder steps and takes
     /// jobs under the native Builder safety instead. See
@@ -8301,6 +8308,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            beeline_orders_by_value: false,
             builders_work_through_raiders: false,
             builder_charge_window: false,
             boost_planner_builds: false,
@@ -14943,6 +14951,14 @@ impl AdvancedAi {
             }
             let goal_pick = science_milestone_pick.or_else(|| {
                 forced_goal.and_then(|goal| {
+                    if self.beeline_orders_by_value {
+                        let steps: Vec<Name> = available
+                            .iter()
+                            .filter(|tech| self.tech_leads_to(g, tech, goal))
+                            .cloned()
+                            .collect();
+                        return self.beeline_step(g, pid, plan.strategy, &steps, true);
+                    }
                     available
                         .iter()
                         .filter(|tech| self.tech_leads_to(g, tech, goal))
@@ -15005,6 +15021,13 @@ impl AdvancedAi {
             };
             if let Some(tech) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
+                    // `beeline-orders-by-value` takes the best-valued step,
+                    // not the cheapest; say which.
+                    let step = if self.beeline_orders_by_value {
+                        "most valuable"
+                    } else {
+                        "cheapest"
+                    };
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
                             if opening_archery_goal.as_deref() == Some(goal) {
@@ -15013,23 +15036,23 @@ impl AdvancedAi {
                                 "unlock Ancient Walls for wartime recovery or a stronger hostile approaching an exposed city before the longer army upgrade path".to_string()
                             } else if barbarian_military_goal.as_deref() == Some(goal) {
                                 format!(
-                                    "the cheapest step toward {}, needed to catch a nearby barbarian army",
+                                    "the {step} step toward {}, needed to catch a nearby barbarian army",
                                     plain(goal)
                                 )
                             } else if domination_siege_goal.as_deref() == Some(goal) {
                                 format!("domination-siege-research: unlock {} to supply the missing wall-breaking capability for the campaign", plain(goal))
                             } else if standing_army_fuel_goal.as_deref() == Some(goal) {
-                                format!("the cheapest step toward {}, needed to reveal fuel for the standing army with no reserve", plain(goal))
+                                format!("the {step} step toward {}, needed to reveal fuel for the standing army with no reserve", plain(goal))
                             } else if wartime_modernization_goal.as_deref() == Some(goal) {
                                 format!(
-                                    "the cheapest step toward {}, needed to modernize the standing army at war",
+                                    "the {step} step toward {}, needed to modernize the standing army at war",
                                     plain(goal)
                                 )
                             } else if domination_campus_goal == Some(goal) {
                                 "unlock campuses for the expanding domination economy".to_string()
                             } else {
                                 format!(
-                                    "the cheapest step toward {}, which {} needs",
+                                    "the {step} step toward {}, which {} needs",
                                     plain(goal),
                                     objective.as_str()
                                 )
@@ -15158,6 +15181,14 @@ impl AdvancedAi {
                 _ => None,
             };
             let goal_pick = forced_goal.and_then(|goal| {
+                if self.beeline_orders_by_value {
+                    let steps: Vec<Name> = available
+                        .iter()
+                        .filter(|civic| self.civic_leads_to(g, civic, goal))
+                        .cloned()
+                        .collect();
+                    return self.beeline_step(g, pid, civic_objective, &steps, false);
+                }
                 available
                     .iter()
                     .filter(|civic| self.civic_leads_to(g, civic, goal))
@@ -15198,10 +15229,15 @@ impl AdvancedAi {
             });
             if let Some(civic) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
+                    let step = if self.beeline_orders_by_value {
+                        "most valuable"
+                    } else {
+                        "cheapest"
+                    };
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
                             format!(
-                                "the cheapest step toward {}, which {} needs",
+                                "the {step} step toward {}, which {} needs",
                                 plain(goal),
                                 objective.as_str()
                             )
@@ -16925,6 +16961,37 @@ impl AdvancedAi {
                 let _ = g.apply(pid, &Action::SlotPolicy { policy: current });
             }
         }
+    }
+
+    /// `beeline-orders-by-value`: the step a forced goal takes next among
+    /// `steps`, its remaining prerequisites the era window offers. Every one
+    /// of them is researched before the goal whatever the order, so the goal
+    /// lands on the same turn either way; the order only decides which unlock
+    /// arrives first. The stock picker takes the cheapest printed price with
+    /// ties broken by name, which put Sailing ahead of Writing (both 50) and
+    /// Military Tactics ahead of Education on a Science seat; this takes the
+    /// best `tech_value` / `civic_value` — the same score the unforced argmax
+    /// ranks by, boost in hand included — with ties to the earlier name.
+    fn beeline_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        strategy: GrandStrategy,
+        steps: &[Name],
+        techs: bool,
+    ) -> Option<Name> {
+        let value = |node: &Name| {
+            if techs {
+                self.tech_value(g, pid, node.as_str(), strategy)
+            } else {
+                self.civic_value(g, pid, node.as_str(), strategy)
+            }
+        };
+        steps
+            .iter()
+            .map(|node| (value(node), *node))
+            .max_by(|a, b| a.0.total_cmp(&b.0).then_with(|| b.1.cmp(&a.1)))
+            .map(|(_, node)| node)
     }
 
     fn tech_value(&self, g: &Game, pid: usize, tech: &str, strategy: GrandStrategy) -> f64 {
