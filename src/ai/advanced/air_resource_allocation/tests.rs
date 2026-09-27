@@ -419,3 +419,42 @@ fn an_oil_upgrade_uses_its_own_supply() {
     assert_eq!(g.units[&tank].kind, "modern_armor");
     assert_eq!(g.strategic_stockpile(0, crate::name!("aluminum")), 8.0);
 }
+
+#[test]
+fn launch_appointment_uses_capture_cavalry_that_does_not_displace_its_wing() {
+    let (mut g, mut ai, _, cities) = fixture(8.0);
+    let objective = g.found_city_for(1, (20, 12), None);
+    g.players[0].explored.extend(g.map.tiles.keys().copied());
+    for cid in cities {
+        let item = Item::Unit {
+            unit: crate::name!("bomber"),
+        };
+        g.apply(
+            0,
+            &Action::Produce {
+                city: cid,
+                item: item.clone(),
+            },
+        )
+        .unwrap();
+        g.cities.get_mut(&cid).unwrap().production = g.item_cost_for_city(0, cid, &item);
+    }
+    next_owned_turn(&mut g);
+    ai.maintain_air_surge(&g, 0);
+    // Appointment starts in Beeline; the next review applies actual readiness.
+    ai.maintain_air_surge(&g, 0);
+    let plan = ai
+        .air_surge_plan
+        .as_ref()
+        .expect("an in-range supplied objective");
+    assert_eq!(plan.objective_city, objective);
+    assert!(
+        matches!(
+            plan.phase,
+            air_surge::AirSurgePhase::Strike | air_surge::AirSurgePhase::Exploit
+        ),
+        "two real aircraft and four capture Cavalry must release the launch; body={}, phase={:?}",
+        plan.body_unit,
+        plan.phase
+    );
+}
