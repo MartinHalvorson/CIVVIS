@@ -12771,6 +12771,59 @@ impl AdvancedAi {
         } else {
             None
         };
+        // A live column should not march away from a city it has nearly
+        // opened. The converse matters too: on the King Babylon front the
+        // army had stripped an unwalled Karkar to 172 HP with a man-at-arms
+        // two tiles away, yet its old order still pointed to fully walled
+        // Malgium. Karkar healed and built Walls before anyone tried to take
+        // it. Permit one narrow change of objective while the old siege has
+        // not breached anything and a healthy land taker can reach the open,
+        // visibly damaged city. Once selected, the ordinary commitment keeps
+        // that foothold as the objective.
+        let capture_opportunity_city = committed_target_city.and_then(|prior_id| {
+            if strategy != GrandStrategy::Conquest
+                || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            {
+                return None;
+            }
+            let prior = g.cities.get(&prior_id)?;
+            if prior.hp < CITY_MAX_HP
+                || prior.wall_hp <= 0
+                || prior.wall_hp < g.city_max_wall_hp(prior)
+            {
+                return None;
+            }
+            let visible = g.player_vision_frame(pid);
+            g.cities
+                .values()
+                .filter(|city| {
+                    city.owner == prior.owner
+                        && city.id != prior_id
+                        && city.hp <= CITY_MAX_HP - 20
+                        && city.wall_hp <= 0
+                        && g.sees(&visible, city.pos)
+                        && !self.capture_stood_down_holds(g, city.id)
+                        && !Self::should_defer_city_capture(g, pid, city.id)
+                })
+                .filter(|city| {
+                    g.units.values().any(|unit| {
+                        let spec = &g.rules.units[unit.kind];
+                        unit.owner == pid
+                            && unit.hp >= 60
+                            && spec.class == "military"
+                            && !spec.has_ranged_attack()
+                            && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                            && g.unit_strength(unit, false) >= 30.0
+                            && g.wdist(unit.pos, city.pos) <= 3
+                    })
+                })
+                .min_by(|left, right| {
+                    self.campaign_city_value(g, pid, left, strategy)
+                        .total_cmp(&self.campaign_city_value(g, pid, right, strategy))
+                        .then(left.id.cmp(&right.id))
+                })
+                .map(|city| city.id)
+        });
         // `capture-go-or-stand-down`: a city the ledger stood down is not
         // ranked again until the stand-down expires; the next-best city of the
         // same rival takes its place. A home emergency is never stood down.
@@ -12795,15 +12848,24 @@ impl AdvancedAi {
         } else {
             ranked_target_city
         };
-        let target_city = committed_target_city.or(ranked_target_city);
+        let target_city = capture_opportunity_city
+            .or(committed_target_city)
+            .or(ranked_target_city);
 
-        if let Some(committed_city) =
-            committed_target_city.filter(|city| Some(*city) != ranked_target_city)
+        if let Some(committed_city) = committed_target_city
+            .filter(|city| capture_opportunity_city.is_none() && Some(*city) != ranked_target_city)
         {
             let city = &g.cities[&committed_city];
             think!(self.journal(), Strategy, Strategy,
                    "Campaign remains aimed at {}", city.name;
                    "the major-war army stays committed until it captures the city or its war target changes";
+                   city.pos);
+        }
+        if let Some(opportunity) = capture_opportunity_city {
+            let city = &g.cities[&opportunity];
+            think!(self.journal(), Strategy, Strategy,
+                   "Campaign seizes open foothold {}", city.name;
+                   "an unbreached prior objective yields to a damaged city with a land taker nearby";
                    city.pos);
         }
 
