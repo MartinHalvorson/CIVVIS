@@ -90,3 +90,74 @@ fn capital_focus_preserves_the_required_capitals_owner_as_the_next_opponent() {
     assert_eq!(plan.target_player, Some(1));
     assert_eq!(plan.target_city, Some(capital));
 }
+
+/// The native King seat saw Kongo's border city within a short march, but
+/// repeatedly planned around Mali and then Inca cities beyond the ordinary
+/// 18-tile declaration gate. A required capital remains the goal after the
+/// frontier opens; it is not an actionable *first* objective from home.
+#[test]
+fn domination_opens_a_near_frontier_before_a_distant_capital() {
+    let mut g = Game::new_full(3, 64, 40, 91_021, 650, 0, false);
+    for pid in 0..3 {
+        let settler = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|id| g.units[id].kind == "settler")
+            .unwrap();
+        g.found_city_for(pid, g.units[&settler].pos, None);
+    }
+    g.current = 0;
+    g.turn = 105;
+    g.record_contact(0, 1);
+    g.record_contact(0, 2);
+    let home = g.cities[&g.player_city_ids(0)[0]].pos;
+    let capitals = [g.player_city_ids(1)[0], g.player_city_ids(2)[0]];
+    let mut far_sites: Vec<_> = g
+        .map
+        .tiles
+        .iter()
+        .filter(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+        .map(|(pos, _)| *pos)
+        .filter(|pos| g.wdist(home, *pos) > 22)
+        .collect();
+    far_sites.sort_by_key(|pos| (pos.0, pos.1));
+    let first_far = far_sites[0];
+    let second_far = far_sites
+        .into_iter()
+        .find(|pos| g.wdist(*pos, first_far) >= 8)
+        .unwrap();
+    g.cities.get_mut(&capitals[0]).unwrap().pos = first_far;
+    g.cities.get_mut(&capitals[1]).unwrap().pos = second_far;
+    let frontier = g
+        .map
+        .tiles
+        .iter()
+        .filter(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+        .map(|(pos, _)| *pos)
+        .filter(|pos| (6..=10).contains(&g.wdist(home, *pos)))
+        .filter(|pos| g.cities.values().all(|city| g.wdist(city.pos, *pos) >= 4))
+        .min_by_key(|pos| (g.wdist(home, *pos), pos.0, pos.1))
+        .unwrap();
+    let border_city = g.found_city_for(1, frontier, Some("Frontier".to_string()));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.belief.observe(&g, 0);
+    assert!(capitals
+        .iter()
+        .all(|city| !AdvancedAi::city_within_declaration_range(&g, 0, g.cities[city].pos)));
+    assert!(AdvancedAi::city_within_declaration_range(
+        &g,
+        0,
+        g.cities[&border_city].pos
+    ));
+
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.strategy, GrandStrategy::Conquest);
+    assert_eq!(plan.target_player, Some(1));
+    assert_eq!(plan.target_city, Some(border_city));
+
+    ai.forced_target_player = Some(2);
+    assert_eq!(ai.assess(&g, 0).target_player, Some(2));
+    ai.forced_target_player = None;
+    g.at_war.insert((0, 2));
+    assert_eq!(ai.assess(&g, 0).target_player, Some(2));
+}
