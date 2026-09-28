@@ -153,3 +153,63 @@ fn completed_campaign_history_survives_a_rebuild_until_peace() {
     ai.remap_campaign_city_memory(&previous, &previous);
     assert_eq!(ai.campaign, Some(expected));
 }
+
+#[test]
+fn completed_foothold_does_not_end_the_active_domination_front() {
+    let mut game = board(&[
+        (0, (6, 12)),
+        (1, (14, 12)), // Required original capital remains with the rival.
+        (1, (17, 15)), // This border city is the campaign's first capture.
+        (2, (24, 12)),
+    ]);
+    let border = game.city_at((17, 15)).unwrap();
+    let mut ai = campaign(&game);
+    ai.campaign.as_mut().unwrap().cities = vec![border];
+    game.cities.get_mut(&border).unwrap().owner = 0;
+    ai.maintain_city_campaign(&mut game, 0);
+    assert_eq!(ai.campaign.as_ref().unwrap().taken, 1);
+    assert!(ai.campaign.as_ref().unwrap().cities.is_empty());
+
+    let mut ordinary = ai.clone();
+    let mut ordinary_board = game.clone();
+    ordinary.city_campaign_diplomacy(&mut ordinary_board, 0);
+    assert!(
+        ordinary_board
+            .pending_deals
+            .iter()
+            .any(|deal| { deal.from == 0 && deal.to == 1 && deal.peace }),
+        "ordinary campaigns still close after their planned capture"
+    );
+
+    let mut domination = ai.clone();
+    domination.victory_target = Some(super::super::VictoryTarget::Domination);
+    domination.enable_one_war_at_a_time();
+    domination.one_war_observe(&game, 0);
+    assert_eq!(domination.one_war_front(), Some(1));
+    domination.city_campaign_diplomacy(&mut game, 0);
+    assert!(
+        !game
+            .pending_deals
+            .iter()
+            .any(|deal| { deal.from == 0 && deal.to == 1 && deal.peace }),
+        "taking the border city must not sue for peace before the capital"
+    );
+    let plan = domination.plan.clone().unwrap();
+    domination.advanced_diplomacy(&mut game, 0, &plan);
+    assert!(
+        !domination.peace_offers.contains(&1),
+        "the full peace desk must keep the active front after its first capture"
+    );
+
+    let mut science = ai;
+    science.victory_target = Some(super::super::VictoryTarget::Science);
+    science.enable_one_war_at_a_time();
+    science.one_war_observe(&game, 0);
+    science.city_campaign_diplomacy(&mut game, 0);
+    assert!(
+        game.pending_deals
+            .iter()
+            .any(|deal| { deal.from == 0 && deal.to == 1 && deal.peace }),
+        "only the active Domination front inherits the longer war"
+    );
+}
