@@ -86,7 +86,9 @@ fn delegated_domination_reserves_one_real_wall_breaker() {
     let (mut g, mut ai, plan, home, target) = siege_gap_case();
     ai.enable_lane_delegates_production_2();
     assert!(ai.lane_delegates_now(Some(VictoryTarget::Domination), true));
-    assert!(ai.reserve_delegated_domination_siege(&mut g, 0, &plan));
+    assert!(ai
+        .reserve_delegated_domination_siege(&mut g, 0, &plan)
+        .is_some());
     assert_eq!(
         g.cities[&home].queue.first(),
         Some(&Item::Unit {
@@ -94,22 +96,28 @@ fn delegated_domination_reserves_one_real_wall_breaker() {
         })
     );
     assert!(
-        !ai.reserve_delegated_domination_siege(&mut g, 0, &plan),
+        ai.reserve_delegated_domination_siege(&mut g, 0, &plan)
+            .is_none(),
         "the queued gun closes the reservation"
     );
 
     g.cities.get_mut(&home).unwrap().queue.clear();
     let gun = g.spawn_unit("catapult", 0, g.cities[&home].pos);
     assert!(
-        !ai.reserve_delegated_domination_siege(&mut g, 0, &plan),
+        ai.reserve_delegated_domination_siege(&mut g, 0, &plan)
+            .is_none(),
         "a fielded gun also closes it"
     );
     g.remove_unit(gun);
     g.cities.get_mut(&target).unwrap().wall_hp = 0;
-    assert!(!ai.reserve_delegated_domination_siege(&mut g, 0, &plan));
+    assert!(ai
+        .reserve_delegated_domination_siege(&mut g, 0, &plan)
+        .is_none());
     g.cities.get_mut(&target).unwrap().wall_hp = 100;
     g.at_war.clear();
-    assert!(!ai.reserve_delegated_domination_siege(&mut g, 0, &plan));
+    assert!(ai
+        .reserve_delegated_domination_siege(&mut g, 0, &plan)
+        .is_none());
 }
 
 #[test]
@@ -135,13 +143,93 @@ fn delegated_siege_reservation_survives_an_appointed_war_plan() {
         recovery_assessments: 0,
     });
 
-    assert!(ai.reserve_delegated_domination_siege(&mut g, 0, &plan));
+    assert!(ai
+        .reserve_delegated_domination_siege(&mut g, 0, &plan)
+        .is_some());
     assert_eq!(
         g.cities[&home].queue.first(),
         Some(&Item::Unit {
             unit: crate::name!("catapult"),
         })
     );
+}
+
+#[test]
+fn invested_wall_breaker_survives_a_later_city_order_unless_defense_claims_it() {
+    let (mut g, ai, plan, home, target) = siege_gap_case();
+    let catapult = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+    let warrior = Item::Unit {
+        unit: crate::name!("warrior"),
+    };
+    g.cities.get_mut(&target).unwrap().wall_hp = 0;
+    g.apply(
+        0,
+        &Action::Produce {
+            city: home,
+            item: catapult.clone(),
+        },
+    )
+    .unwrap();
+    g.cities.get_mut(&home).unwrap().production = 60.0;
+    let claim = ai.invested_wall_breaker_queues(&g, 0, &plan);
+    assert_eq!(claim, vec![(home, catapult.clone())]);
+
+    g.apply(
+        0,
+        &Action::Produce {
+            city: home,
+            item: warrior.clone(),
+        },
+    )
+    .unwrap();
+    let mut defending = g.clone();
+    ai.restore_wall_breaker_queues(
+        &mut defending,
+        0,
+        &plan,
+        &claim,
+        Some(&(home, warrior.clone())),
+    );
+    assert_eq!(defending.cities[&home].queue.first(), Some(&warrior));
+
+    ai.restore_wall_breaker_queues(&mut g, 0, &plan, &claim, None);
+    assert_eq!(g.cities[&home].queue.first(), Some(&catapult));
+    assert_eq!(g.cities[&home].production, 60.0);
+
+    g.at_war.clear();
+    g.apply(
+        0,
+        &Action::Produce {
+            city: home,
+            item: warrior.clone(),
+        },
+    )
+    .unwrap();
+    ai.restore_wall_breaker_queues(&mut g, 0, &plan, &claim, None);
+    assert_eq!(g.cities[&home].queue.first(), Some(&warrior));
+}
+
+#[test]
+fn fresh_delegated_siege_reservation_survives_the_same_pass() {
+    let (mut g, ai, plan, home, _) = siege_gap_case();
+    let claim = ai
+        .reserve_delegated_domination_siege(&mut g, 0, &plan)
+        .unwrap();
+    assert_eq!(claim.0, home);
+    g.apply(
+        0,
+        &Action::Produce {
+            city: home,
+            item: Item::Unit {
+                unit: crate::name!("warrior"),
+            },
+        },
+    )
+    .unwrap();
+    ai.restore_wall_breaker_queues(&mut g, 0, &plan, &[claim.clone()], None);
+    assert_eq!(g.cities[&home].queue.first(), Some(&claim.1));
 }
 
 #[test]

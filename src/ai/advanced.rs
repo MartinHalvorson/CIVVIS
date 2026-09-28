@@ -42620,6 +42620,7 @@ impl AdvancedAi {
         // below, once every ordinary queue writer has had its turn.
         let confirmed_defense_queue =
             self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
+        let mut wall_breaker_claims = self.invested_wall_breaker_queues(g, pid, &plan);
         self.advanced_diplomacy(g, pid, &plan);
         self.advanced_spies(g, pid, &plan);
         self.byzantium_tagma_production(g, pid, &plan);
@@ -42774,7 +42775,9 @@ impl AdvancedAi {
             // The delegated governor never sees the strategic scorer's siege
             // composition reservation. Claim its first wall breaker here.
             if lane_delegating && active_victory_target == Some(VictoryTarget::Domination) {
-                self.reserve_delegated_domination_siege(g, pid, &plan);
+                if let Some(claim) = self.reserve_delegated_domination_siege(g, pid, &plan) {
+                    wall_breaker_claims.push(claim);
+                }
             }
             // Reserve one useful support element before broad production
             // consumes the idle queues of an active foreign-city assault.
@@ -42862,6 +42865,13 @@ impl AdvancedAi {
         // or unrelated unit.
         self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
         self.reapply_confirmed_defense_queue(g, pid, confirmed_defense_queue.as_ref());
+        self.restore_wall_breaker_queues(
+            g,
+            pid,
+            &plan,
+            &wall_breaker_claims,
+            confirmed_defense_queue.as_ref(),
+        );
         // A delegating lane has already spent through the baseline governor.
         if active_victory_target.is_some()
             && !lane_delegating

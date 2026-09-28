@@ -6,6 +6,97 @@ use super::*;
 pub(super) const FIRST_WEAPON_RESERVATION: f64 = 400.0;
 
 impl AdvancedAi {
+    /// Remember wall breakers whose production would otherwise be lost when a
+    /// later city governor writes over the queue. The target can complete
+    /// walls while the gun is under construction, so an active assault keeps
+    /// the commitment even before its first wall is observed.
+    pub(super) fn invested_wall_breaker_queues(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Vec<(u32, Item)> {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || plan.strategy != GrandStrategy::Conquest
+            || !plan
+                .target_city
+                .and_then(|id| g.cities.get(&id))
+                .is_some_and(|target| {
+                    Some(target.owner) == plan.target_player && g.is_at_war(pid, target.owner)
+                })
+        {
+            return Vec::new();
+        }
+        g.player_city_ids(pid)
+            .into_iter()
+            .filter_map(|cid| {
+                let item = g.cities[&cid].queue.first()?;
+                let Item::Unit { unit } = item else {
+                    return None;
+                };
+                let spec = g.rules.units.get(unit)?;
+                (spec.siege
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && g.item_invested_production(cid, item) > 0.0)
+                    .then(|| (cid, item.clone()))
+            })
+            .collect()
+    }
+
+    /// Reclaim a previously chosen wall breaker after all routine queue
+    /// writers. A confirmed defender, recent attack, or another siege weapon
+    /// remains in charge; a completed peace ends this claim.
+    pub(super) fn restore_wall_breaker_queues(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        claimed: &[(u32, Item)],
+        defense_claim: Option<&(u32, Item)>,
+    ) {
+        if !plan
+            .target_city
+            .and_then(|id| g.cities.get(&id))
+            .is_some_and(|target| {
+                Some(target.owner) == plan.target_player && g.is_at_war(pid, target.owner)
+            })
+        {
+            return;
+        }
+        for (cid, item) in claimed {
+            let Some(city) = g.cities.get(cid) else {
+                continue;
+            };
+            if city.owner != pid
+                || plan.threatened_city == Some(*cid)
+                || defense_claim.is_some_and(|(protected, _)| protected == cid)
+                || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+                || city.queue.first().is_some_and(|current| {
+                    matches!(current, Item::Unit { unit }
+                        if g.rules.units.get(unit).is_some_and(|spec| spec.siege))
+                })
+                || !g.can_produce(pid, *cid, item)
+            {
+                continue;
+            }
+            let city_name = city.name.clone();
+            if g.apply(
+                pid,
+                &Action::Produce {
+                    city: *cid,
+                    item: item.clone(),
+                },
+            )
+            .is_ok()
+                && self.journal().wants(crate::reasoning::Level::Decision)
+            {
+                think!(self.journal(), Economy, Decision,
+                    "{} resumes {}", city_name, Self::plain_item(item);
+                    "the active Domination assault's wall breaker was displaced by a later production writer");
+            }
+        }
+    }
+
     /// The delegated city governor does not call `production_value`, where the
     /// ordinary missing-siege reservation lives. Give a walled Domination
     /// assault one real bombardment unit before delegation fills every idle
@@ -15,9 +106,9 @@ impl AdvancedAi {
         g: &mut Game,
         pid: usize,
         plan: &StrategicPlan,
-    ) -> bool {
+    ) -> Option<(u32, Item)> {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
-            return false;
+            return None;
         }
         let Some(target) = plan
             .target_city
@@ -29,14 +120,14 @@ impl AdvancedAi {
                     && g.is_at_war(pid, city.owner)
             })
         else {
-            return false;
+            return None;
         };
         let objective = target.pos;
         let target_name = target.name.clone();
         let counts = self.counts(g, pid);
         if counts.land_siege_power > 0.0 || self.live_war_economy_requires_recovery(g, pid, &counts)
         {
-            return false;
+            return None;
         }
 
         let best = {
@@ -69,25 +160,26 @@ impl AdvancedAi {
             best
         };
         let Some((arrival, city, unit)) = best else {
-            return false;
+            return None;
         };
+        let item = Item::Unit { unit };
         if g.apply(
             pid,
             &Action::Produce {
                 city,
-                item: Item::Unit { unit },
+                item: item.clone(),
             },
         )
         .is_err()
         {
-            return false;
+            return None;
         }
         think!(self.journal(), Military, Decision,
             "{} reserves a {} for the walled assault", g.cities[&city].name, unit;
             "the delegated governor has no land siege weapon; expected arrival at {} in about {arrival:.0} turns",
             target_name;
             objective);
-        true
+        Some((city, item))
     }
 
     /// A roster full of field units can still lack the ability to break walls.
