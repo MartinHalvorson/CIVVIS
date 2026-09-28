@@ -60,6 +60,35 @@ fn staging_gun_without_enough_movement_cannot_stop_on_its_screen() {
 }
 
 #[test]
+fn staging_gun_escapes_a_hostile_city_firing_lane() {
+    let (mut g, cid) = walled_city();
+    let target = g.cities[&cid].pos;
+    let start = (target.0 - 7, target.1);
+    let outpost = (start.0, start.1 + 2);
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    let outpost_id = g.found_city_for(1, outpost, None);
+    g.cities.get_mut(&outpost_id).unwrap().wall_hp = 100;
+    g.at_war.insert((0, 1));
+    let gun = g.spawn_unit("catapult", 0, start);
+    g.units.get_mut(&gun).unwrap().hp = 45;
+    let risk_before = super::super::battle_planner::strike_danger(&g, 0, start, gun);
+    assert!(risk_before > (45.0 - STAGING_GUN_HP_RESERVE) / STAGING_GUN_REPLY_TURNS);
+
+    let city = CityView::of(&g, cid).unwrap();
+    let plan = plan_against(&g, cid);
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    assert!(ai.siege_stage_step(&mut g, 0, gun, &city, &plan));
+    let after = g.units[&gun].pos;
+    assert_ne!(after, start);
+    assert!(super::super::battle_planner::strike_danger(&g, 0, after, gun) < risk_before);
+}
+
+#[test]
 fn a_wall_rebuild_sends_an_unproductive_melee_siege_back_to_staging() {
     let (mut g, cid) = walled_city();
     g.map_script = crate::setup::MapScript::Pangaea;

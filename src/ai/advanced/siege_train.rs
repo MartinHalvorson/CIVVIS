@@ -101,6 +101,10 @@ pub(super) const STAGING_FAR: i32 = 5;
 /// A City Center strikes this far; nothing stands inside it before the
 /// train is staged.
 pub(super) const CITY_STRIKE_RANGE: i32 = 2;
+/// A gun staging without a firing post must survive several enemy replies.
+/// One-turn lethal checks let a hostile city wear it down before it arrives.
+const STAGING_GUN_REPLY_TURNS: f64 = 3.0;
+const STAGING_GUN_HP_RESERVE: f64 = 20.0;
 /// The bill is the defence within [`DEFENDER_RADIUS`] plus the city and its
 /// walls at [`WALL_STRENGTH_PER_100_HP`] a hundred, times this.
 pub(super) const BILL_MARGIN: f64 = 1.25;
@@ -1197,6 +1201,32 @@ impl AdvancedAi {
         }
         let here = g.units[&uid].pos;
         let distance = g.wdist(here, city.pos);
+        let mut gun_danger = (arm_of(g, uid) == Arm::Siege)
+            .then(|| super::battle_planner::DangerField::with_reach(g, pid, true));
+        let gun_risk_limit = (f64::from(g.units[&uid].hp) - STAGING_GUN_HP_RESERVE).max(0.0)
+            / STAGING_GUN_REPLY_TURNS;
+        if let Some(field) = gun_danger.as_mut() {
+            let risk_here = field.danger(here, uid);
+            if risk_here > gun_risk_limit {
+                let safer = g
+                    .nbrs(here)
+                    .into_iter()
+                    .filter(|pos| {
+                        g.can_move(uid, *pos) && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE
+                    })
+                    .map(|pos| (field.danger(pos, uid), g.wdist(pos, city.pos), pos))
+                    .filter(|(risk, _, _)| *risk + 1.0 < risk_here)
+                    .min_by(|a, b| {
+                        a.0.total_cmp(&b.0)
+                            .then_with(|| a.1.cmp(&b.1))
+                            .then_with(|| a.2.cmp(&b.2))
+                    });
+                if let Some((_, _, pos)) = safer {
+                    return self.base.tactical_apply_move(g, pid, uid, pos);
+                }
+                return self.base.fortify_or_stop(g, pid, uid);
+            }
+        }
         if distance <= CITY_STRIKE_RANGE {
             let mut best: Pick<BackOffKey> = None;
             for pos in g.nbrs(here) {
@@ -1225,6 +1255,29 @@ impl AdvancedAi {
                 .route_step(uid, city.pos, STAGING_FAR)
                 .filter(|pos| g.can_move(uid, *pos) && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE)
             {
+                if let Some(field) = gun_danger.as_mut() {
+                    if field.danger(next, uid) > gun_risk_limit {
+                        let safe = g
+                            .nbrs(here)
+                            .into_iter()
+                            .filter(|pos| {
+                                g.can_move(uid, *pos)
+                                    && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE
+                                    && g.wdist(*pos, city.pos) <= distance
+                            })
+                            .map(|pos| (g.wdist(pos, city.pos), field.danger(pos, uid), pos))
+                            .filter(|(_, risk, _)| *risk <= gun_risk_limit)
+                            .min_by(|a, b| {
+                                a.0.cmp(&b.0)
+                                    .then_with(|| a.1.total_cmp(&b.1))
+                                    .then_with(|| a.2.cmp(&b.2))
+                            });
+                        if let Some((_, _, pos)) = safe {
+                            return self.base.tactical_apply_move(g, pid, uid, pos);
+                        }
+                        return self.base.fortify_or_stop(g, pid, uid);
+                    }
+                }
                 return self.base.tactical_apply_move(g, pid, uid, next);
             }
             // A staging column can fill every legal adjacent stopping tile.
@@ -1232,7 +1285,11 @@ impl AdvancedAi {
             // the same whole-path legality and movement bookkeeping as the
             // general mover. The destination remains outside the strike ring.
             if let Some(dest) = g.pass_through_destination(uid, city.pos, STAGING_FAR) {
-                if self.base.path_walk_to(g, pid, uid, dest) {
+                if gun_danger
+                    .as_mut()
+                    .is_none_or(|field| field.danger(dest, uid) <= gun_risk_limit)
+                    && self.base.path_walk_to(g, pid, uid, dest)
+                {
                     return true;
                 }
             }
