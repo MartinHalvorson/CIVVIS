@@ -258,6 +258,45 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32) {
     fixture_with_players(3)
 }
 
+#[test]
+fn a_visible_founder_apostle_wave_keeps_the_condemnation_war_open() {
+    let (mut g, mut ai, mut plan, _) = fixture();
+    g.record_contact(0, 1);
+    g.at_war.insert((0, 1));
+    let apostle = g.spawn_test_unit("apostle", 1, (5, 4));
+    g.units.get_mut(&apostle).unwrap().religion = Some("Buddhism".into());
+    plan.strategy = GrandStrategy::Recovery;
+    plan.target_player = Some(2);
+    plan.target_city = None;
+    let incoming = DiplomaticDeal {
+        id: 1,
+        from: 1,
+        to: 0,
+        give_gold: 0.0,
+        request_gold: 0.0,
+        open_borders: false,
+        friendship: false,
+        peace: true,
+        alliance: None,
+        defensive_pact: false,
+        joint_war_target: None,
+        promise: None,
+        demand: false,
+        expires: g.turn + 10,
+    };
+
+    assert_eq!(ai.adopted_faith_threat(&g, 0).as_deref(), Some("Buddhism"));
+    assert!(ai.adopted_faith_invasion_at_war(&g, 0, 1));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1));
+    assert!(ai.incoming_deal_value(&g, 0, &incoming, &plan) < 0.0);
+
+    g.remove_unit(apostle);
+    assert!(!ai.adopted_faith_invasion_at_war(&g, 0, 1));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(ai.peace_offers.contains(&1));
+}
+
 fn early_warning_fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
     let (mut g, ai, plan, supplier) = fixture_with_players(4);
     let home = g.player_city_ids(0);

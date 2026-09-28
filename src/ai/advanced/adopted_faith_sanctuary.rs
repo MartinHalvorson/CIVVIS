@@ -54,6 +54,38 @@ impl AdvancedAi {
         best.map(|(_, _, faith)| faith)
     }
 
+    /// Peace with a founder whose Apostles are already converting our cities
+    /// removes the army's Condemn Heretic response. Keep that response while
+    /// the founder's faith holds at least half our cities and a visible
+    /// spreader is still within our home defense area.
+    pub(super) fn adopted_faith_invasion_at_war(
+        &self,
+        g: &Game,
+        pid: usize,
+        founder: usize,
+    ) -> bool {
+        if !g.is_at_war(pid, founder) {
+            return false;
+        }
+        let Some(faith) = g.players.get(founder).and_then(|p| p.religion.as_deref()) else {
+            return false;
+        };
+        if self.adopted_faith_threat(g, pid).as_deref() != Some(faith) {
+            return false;
+        }
+        let home = g.player_city_ids(pid);
+        let visible = g.player_visibility(pid);
+        g.player_unit_ids(founder).into_iter().any(|uid| {
+            let unit = &g.units[&uid];
+            g.rules.units[unit.kind].class == "religious"
+                && unit.religion.as_deref() == Some(faith)
+                && visible.contains(&unit.pos)
+                && home
+                    .iter()
+                    .any(|cid| g.wdist(g.cities[cid].pos, unit.pos) <= 6)
+        })
+    }
+
     /// Rebuilding our religious veto must not complete another founder's win.
     pub(super) fn safe_adopted_counterfaith(g: &Game, pid: usize, faith: &str) -> bool {
         let Some(founder) = g.players.iter().find(|p| {

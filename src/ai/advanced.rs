@@ -17644,6 +17644,9 @@ impl AdvancedAi {
             && !self.domination_siege_is_progressing(g, pid, partner, plan)
             && !siege_grace;
         let one_war_peace = self.one_war_peace(g, pid, partner).is_some();
+        if deal.peace && self.adopted_faith_invasion_at_war(g, pid, partner) {
+            return -1_000.0;
+        }
         let denied_partner = plan.target_player == Some(partner)
             && (plan.strategy == GrandStrategy::Conquest
                 || g.is_at_war(pid, partner)
@@ -19929,6 +19932,7 @@ impl AdvancedAi {
                 && g.peace_available_at(pid, *other).is_none();
             if g.is_at_war(pid, *other)
                 && !g.emergency_war_pair(pid, *other)
+                && !self.adopted_faith_invasion_at_war(g, pid, *other)
                 && !g.players[*other].is_minor
                 && !peace_pending
                 && (outmatched
