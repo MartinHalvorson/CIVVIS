@@ -23,8 +23,10 @@
 //! 1. **One front.** Each turn, among the majors we are at war with, one is
 //!    the *campaign front*: an urgent actionable military denial first (unless
 //!    the operator ordered a target), then the front already chosen while it
-//!    is still at war with us, else the appointed war's target, else the plan's,
-//!    else the enemy whose cities are nearest our soldiers. Every other major at war
+//!    is still at war with us. A Domination front that no longer holds any
+//!    required original capital hands the army to another active war that
+//!    does. Otherwise use the appointed war's target, the plan's, then the
+//!    enemy whose cities are nearest our soldiers. Every other major at war
 //!    with us is a *second front*: offered peace every turn, its white peace
 //!    accepted (`incoming_deal_value` +320). A Joint War offer while any war
 //!    burns is refused outright.
@@ -137,6 +139,8 @@ pub(crate) enum OneWarPeace {
     SecondFront,
     /// The required capital is secure and another capital remains to pursue.
     CapitalSecured,
+    /// Another rival now holds this front's original capital.
+    CapitalElsewhere,
     /// Another rival's religious or culture finish outranks optional conquest.
     VictoryThreat,
     /// The campaign front, and the tide has run against us for long enough
@@ -153,6 +157,9 @@ impl OneWarPeace {
             OneWarPeace::CapitalSecured => {
                 "the required capital is secure and another capital remains to pursue"
             }
+            OneWarPeace::CapitalElsewhere => {
+                "this rival's original capital is now held by another opponent"
+            }
             OneWarPeace::VictoryThreat => {
                 "freeing the Domination army to counter a rival victory threat"
             }
@@ -165,10 +172,21 @@ impl OneWarPeace {
 }
 
 impl AdvancedAi {
-    /// A stable captured capital completes this front's Domination purpose.
-    /// Prefer another known capital owner over the defeated rival's remaining
-    /// towns. The ordinary city chooser still enforces occupation safety and
-    /// can prepare through that next rival's frontier before taking its capital.
+    /// A congress vote can jump Diplomatic Victory pressure once, then stay
+    /// flat for the whole congress interval. Below the ordinary denial bar,
+    /// only the projected slope can call that jump urgent. It should still
+    /// prepare a counter, but cannot pin a Domination army to a rival that
+    /// no longer holds any required original capital.
+    fn one_war_projected_diplomacy_below_bar(&self, g: &Game, rival: usize) -> bool {
+        let pressure = self.rival_victory_pressure(g, rival);
+        pressure.strategy == GrandStrategy::Diplomacy && pressure.progress < super::STOCK_DENIAL_BAR
+    }
+
+    /// A stable captured capital, or one captured by a third party, completes
+    /// this front's Domination purpose. Prefer another known capital owner
+    /// over the former owner's ordinary towns. The ordinary city chooser
+    /// still enforces occupation safety and can prepare through that next
+    /// rival's frontier before taking its capital.
     pub(super) fn domination_followup_target(
         &self,
         g: &Game,
@@ -181,9 +199,27 @@ impl AdvancedAi {
         {
             return None;
         }
+        let displaced_owner = completed_rival.and_then(|other| {
+            g.cities
+                .values()
+                .find(|city| {
+                    city.is_capital
+                        && city.original_owner == other
+                        && city.owner != other
+                        && city.owner != pid
+                        && !g.same_team(pid, city.owner)
+                        && g.players
+                            .get(city.owner)
+                            .is_some_and(|player| !player.is_minor && !player.is_barbarian)
+                        && self.campaign_target_legal(g, pid, city.owner)
+                })
+                .map(|city| city.owner)
+        });
         if completed_rival.is_some_and(|other| {
             g.emergency_war_pair(pid, other)
-                || self.urgent_victory_threat(g, other)
+                || (self.urgent_victory_threat(g, other)
+                    && !(displaced_owner.is_some()
+                        && self.one_war_projected_diplomacy_below_bar(g, other)))
                 || g.cities.values().any(|city| {
                     city.owner == other
                         && city.is_capital
@@ -192,6 +228,12 @@ impl AdvancedAi {
                 })
         }) {
             return None;
+        }
+        // We do not need to finish this rival's ordinary towns if a third
+        // party took its original capital. That third party now owns the
+        // Domination objective even when we captured no capital ourselves.
+        if let Some(owner) = displaced_owner {
+            return Some(owner);
         }
         let secured = g.cities.values().any(|city| {
             city.owner == pid
@@ -203,7 +245,23 @@ impl AdvancedAi {
                 && city.loyalty >= 75.0
                 && g.city_loyalty_per_turn(city) >= 0.0
         });
-        if !secured {
+        // A rival can consolidate another major's original capital before
+        // we take one. In that case a former owner with only ordinary towns
+        // is not a useful peacetime target either.
+        let foreign_consolidation = completed_rival.is_none()
+            && g.cities.values().any(|city| {
+                city.is_capital
+                    && city.owner != pid
+                    && city.owner != city.original_owner
+                    && !g.same_team(pid, city.owner)
+                    && g.players
+                        .get(city.owner)
+                        .is_some_and(|owner| !owner.is_minor && !owner.is_barbarian)
+                    && g.players
+                        .get(city.original_owner)
+                        .is_some_and(|founder| !founder.is_minor && !founder.is_barbarian)
+            });
+        if !secured && !foreign_consolidation {
             return None;
         }
         g.cities
@@ -254,8 +312,18 @@ impl AdvancedAi {
     /// the plan's, then the one whose nearest city is nearest to our army,
     /// then the lowest id. The choice sticks while its target stays at war
     /// with us, unless an urgent military denial needs a different active
-    /// front. An explicit operator target keeps its existing precedence.
+    /// front or its known original capital has changed hands and another
+    /// active front holds a required capital. An explicit operator target
+    /// keeps its existing precedence.
     fn one_war_choose_front(&self, g: &Game, pid: usize, enemies: &[usize]) -> Option<usize> {
+        let current = self
+            .one_war
+            .as_ref()
+            .map(|front| front.target)
+            .filter(|target| enemies.contains(target));
+        let capital_handoff = current
+            .and_then(|front| self.domination_followup_target(g, pid, Some(front)))
+            .filter(|target| enemies.contains(target));
         // The declaration gate already admits urgent victory denial. Once
         // that war exists, concentrate on it instead of immediately offering
         // the winning rival peace as a second front. Keep the ordinary rout
@@ -263,16 +331,26 @@ impl AdvancedAi {
         if self.forced_target_player.is_none() {
             if let Some((rival, GrandStrategy::Conquest)) = self.actionable_victory_denial(g, pid) {
                 if enemies.contains(&rival) && self.urgent_victory_threat(g, rival) {
-                    return Some(rival);
+                    // A congress jump can make a subthreshold Diplomatic
+                    // score look urgent even after this rival lost its
+                    // original capital. Follow the active war for that
+                    // capital while retaining the projected warning.
+                    if !(current == Some(rival)
+                        && capital_handoff.is_some()
+                        && self.one_war_projected_diplomacy_below_bar(g, rival))
+                    {
+                        return Some(rival);
+                    }
                 }
             }
         }
-        if let Some(current) = self
-            .one_war
-            .as_ref()
-            .map(|front| front.target)
-            .filter(|target| enemies.contains(target))
-        {
+        // When the front's original capital moves to another rival, the old
+        // war no longer advances Domination. If its new owner is already at
+        // war with us, move the army there and offer the old front peace.
+        if let Some(next) = capital_handoff {
+            return Some(next);
+        }
+        if let Some(current) = current {
             return Some(current);
         }
         if let Some(appointed) = self
@@ -506,11 +584,16 @@ impl AdvancedAi {
         if front.target != other {
             return Some(OneWarPeace::SecondFront);
         }
-        if self
-            .domination_followup_target(g, pid, Some(other))
-            .is_some()
-        {
-            return Some(OneWarPeace::CapitalSecured);
+        if let Some(next) = self.domination_followup_target(g, pid, Some(other)) {
+            let displaced = g
+                .cities
+                .values()
+                .any(|city| city.is_capital && city.original_owner == other && city.owner == next);
+            return Some(if displaced {
+                OneWarPeace::CapitalElsewhere
+            } else {
+                OneWarPeace::CapitalSecured
+            });
         }
         // Keep the current front until peace is actually accepted. A public
         // victory clock is a reason to offer peace, never proof that the old
