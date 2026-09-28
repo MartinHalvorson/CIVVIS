@@ -289,6 +289,12 @@ def partial_summary(tag: str, config: dict, state: dict) -> dict:
     }
 
 
+def is_terminal_result(event: dict) -> bool:
+    """A rival elimination is a game event, not this seat's result."""
+    return (event.get("kind") == "victory"
+            or (event.get("kind") == "defeat" and bool(event.get("ours"))))
+
+
 def record_development(state: dict, event: dict) -> None:
     """Total districts and buildings over our cities, from a `state` frame.
 
@@ -3755,10 +3761,7 @@ def _attach_running_game(args: argparse.Namespace) -> int:
             state["score"] = event.get("score", state["score"])
             if event.get("turn") == OPENING_TEMPO_TURN:
                 state["cities_at_60"] = event.get("cities")
-        if kind == "victory":
-            state["outcome"] = event
-            terminal = True
-        elif kind == "defeat" and bool(event.get("ours")):
+        if is_terminal_result(event):
             state["outcome"] = event
             terminal = True
         elif kind in ("retired",):
@@ -4644,11 +4647,11 @@ def _play(args: argparse.Namespace) -> int:
                   f"{event.get('why') or 'unknown reason'}", file=sys.stderr, flush=True)
         elif kind in ("victory", "defeat", "error"):
             print(f"[{kind}] {json.dumps(event, sort_keys=True)}")
-            if kind in ("victory", "defeat"):
+            if is_terminal_result(event):
                 state["outcome"] = event
 
     def finished(event: dict) -> bool:
-        """Only OUR victory or OUR defeat ends the run.
+        """A game victory or OUR defeat ends the run.
 
         ⚠ This used to stop on any `defeat` event, and a Civilization VI game
         emits one every time ANY player is eliminated — including a rival or a
@@ -4658,14 +4661,12 @@ def _play(args: argparse.Namespace) -> int:
         gets this right — it sets `finished` only when the defeated player is the
         local one — and the harness was throwing that distinction away.
 
-        `victory` carries `won`; `defeat` carries `ours`. Neither is a reason to
-        stop unless it is about us.
+        `victory` names the game's final winner; `defeat` also fires whenever
+        another player is eliminated, so only `ours` makes it terminal.
         """
         kind = event.get("kind")
-        if kind == "victory":
+        if is_terminal_result(event):
             return True
-        if kind == "defeat":
-            return bool(event.get("ours"))
         if kind == "retired" and state.get("operator_retire_event"):
             # This is the exact control-mod acknowledgement for the durable
             # host request, not an inferred game exit or a generic stop.

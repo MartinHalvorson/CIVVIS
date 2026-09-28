@@ -51,6 +51,24 @@ def args(**changes):
     return SimpleNamespace(**values)
 
 
+class TerminalResultTests(unittest.TestCase):
+    def test_rival_and_city_state_eliminations_do_not_end_our_game(self):
+        for player in (1, 6):
+            with self.subTest(player=player):
+                self.assertFalse(civ6_play.is_terminal_result({
+                    "kind": "defeat", "player": player, "local_player": 0,
+                    "ours": False,
+                }))
+
+    def test_our_defeat_and_a_victory_end_the_game(self):
+        self.assertTrue(civ6_play.is_terminal_result({
+            "kind": "defeat", "player": 0, "ours": True,
+        }))
+        self.assertTrue(civ6_play.is_terminal_result({
+            "kind": "victory", "player": 0, "won": True,
+        }))
+
+
 class CityDevelopmentTests(unittest.TestCase):
     """`record_development` is the live half of the conversion comparison.
 
