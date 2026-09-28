@@ -340,6 +340,26 @@ onStatement(6, 7, { StatementType = "MAKE_DEAL", SessionID = 904, DealAction = D
 check("a refused peace sends nothing more", #refused.sends, 1)
 check("the refusal is in the ledger", eventField(lastEvent("peace_response"), "accepted"), "false")
 
+-- ── Peace-only mode keeps trade asks direct but still opens a peace session ──
+CivvisControlConfig.DealSessions = "peace"
+TURN = 90
+local requestedBeforePeaceOnly = #sessions.requested
+local peaceOnlySale, peaceOnlySeller = fixture()
+applyOrder(peaceOnlySeller, 7,
+	{ kind = "sell", subject = "3", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
+check("peace-only sends sales directly", peaceOnlySale.sends[1] and peaceOnlySale.sends[1][1], "equalize")
+check("peace-only sale opens no session", #sessions.requested, requestedBeforePeaceOnly)
+check("peace-only sale does not spend the unanswered budget", trade.unanswered, 0)
+local peaceOnly, peaceOnlyPlayer = fixture({ atWar = true })
+applyOrder(peaceOnlyPlayer, 7, { kind = "peace", subject = "14" }, TURN)
+check("peace-only peace waits for a session", #peaceOnly.sends, 0)
+check("peace-only peace opens a session", #sessions.requested, requestedBeforePeaceOnly + 1)
+onStatement(7, 14, { StatementType = "MAKE_DEAL", SessionID = 907 })
+check("peace-only peace sends in the session", peaceOnly.sends[1] and peaceOnly.sends[1][1], "proposed")
+onStatement(14, 7, { StatementType = "MAKE_DEAL", SessionID = 907,
+	DealAction = DealProposalAction.REJECTED })
+CivvisControlConfig.DealSessions = true
+
 -- ── Unanswered sessions are counted, and the third stands the lane down ──
 for i = 1, 3 do
 	TURN = 100 + i * 10

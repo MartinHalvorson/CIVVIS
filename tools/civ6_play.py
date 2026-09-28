@@ -639,8 +639,9 @@ def build_config(args: argparse.Namespace) -> dict:
     # core wedge immediately after an unanswered MAKE_DEAL session closes.
     # Keep sessions as an explicit opt-in while the direct path remains the
     # safe default for both manual and CIVVIS-driven games.  `None` is the
-    # parser's intentional "choose the safe default" value, while True keeps
-    # an isolated interactive-session experiment available.
+    # parser's intentional "choose the safe default" value. True enables all
+    # sessions; "peace" reserves them for peace proposals so unanswered sales
+    # cannot use up the run's session budget before a capital handoff.
     deal_sessions = getattr(args, "deal_sessions", None)
     if deal_sessions is None:
         deal_sessions = False
@@ -891,7 +892,7 @@ def build_config(args: argparse.Namespace) -> dict:
         # A diplomacy screen is a blocker. Keep its in-game timer explicit and
         # bounded so old launchers cannot silently restore a multi-second close.
         "DialogueSeconds": min(2.0, max(0.0, float(dialogue_seconds))),
-        "DealSessions": bool(deal_sessions),
+        "DealSessions": ("peace" if deal_sessions == "peace" else bool(deal_sessions)),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -5554,8 +5555,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="maximum in-game diplomacy close delay (capped at 2s)")
     ap.add_argument("--deal-sessions", dest="deal_sessions", action="store_true",
                     default=None,
-                    help="use interactive diplomacy deal sessions; Civvis-driven "
-                         "games enable this by default")
+                    help="use interactive diplomacy sessions for all deals")
+    ap.add_argument("--peace-deal-sessions", dest="deal_sessions",
+                    action="store_const", const="peace",
+                    help="use interactive sessions only for peace proposals")
     ap.add_argument("--no-deal-sessions", dest="deal_sessions", action="store_false",
                     help="keep direct diplomacy sends even for a Civvis-driven game")
     # ⚠ Deliberately NOT tied to --announcement-seconds. Every other screen is made
