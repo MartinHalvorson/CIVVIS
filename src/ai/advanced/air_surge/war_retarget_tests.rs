@@ -129,6 +129,42 @@ fn a_wing_already_fighting_its_target_keeps_that_target_on_a_second_front() {
 }
 
 #[test]
+fn an_unready_wartime_wing_leaves_a_ground_siege_on_its_city() {
+    let (mut g, mut ai) = fixture();
+    let air_target = ai.air_surge_plan.as_ref().unwrap().objective_city;
+    let ground_target = g.found_city_for(1, (16, 16), None);
+    g.at_war.insert((0, 1));
+    ai.air_surge_plan.as_mut().unwrap().opened_at_war = true;
+    ai.maintain_air_surge(&g, 0);
+    assert_eq!(
+        ai.air_surge_plan.as_ref().unwrap().phase,
+        AirSurgePhase::Exploit
+    );
+    assert!(!ai.air_surge_status.wing_ready());
+
+    let ground_plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(ground_target),
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    let mut before = ground_plan.clone();
+    ai.apply_air_surge_to_strategy(&mut before);
+    assert_eq!(before.target_city, Some(ground_target));
+
+    ready_wing(&mut g);
+    ai.maintain_air_surge(&g, 0);
+    assert!(ai.air_surge_status.wing_ready());
+    assert!(ai.air_surge_status.escort_ready());
+    let mut after = ground_plan;
+    ai.apply_air_surge_to_strategy(&mut after);
+    assert_eq!(after.target_city, Some(air_target));
+}
+
+#[test]
 fn two_new_fronts_hold_the_elective_strike_without_choosing_an_arbitrary_war() {
     let (mut g, mut ai) = fixture();
     ready_wing(&mut g);

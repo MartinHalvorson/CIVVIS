@@ -1142,14 +1142,18 @@ impl AdvancedAi {
     }
 
     /// Once the package is ready the surge owns the grand strategy, exactly
-    /// as an appointed timed war does. It deliberately does **not** own it
-    /// while the beeline and the buildout run: three techs of Conquest posture
-    /// would pay for the wing with the economy that has to build it.
+    /// as an appointed timed war does. An appointment made during an existing
+    /// war enters Exploit immediately, even with no bombers, so readiness must
+    /// gate that phase too. Otherwise it abandons a live ground siege for an
+    /// air objective the wing cannot yet attack.
     pub(crate) fn apply_air_surge_to_strategy(&self, plan: &mut StrategicPlan) {
         let Some(surge) = &self.air_surge_plan else {
             return;
         };
-        if !matches!(surge.phase, AirSurgePhase::Strike | AirSurgePhase::Exploit) {
+        if !matches!(surge.phase, AirSurgePhase::Strike | AirSurgePhase::Exploit)
+            || (surge.phase == AirSurgePhase::Exploit
+                && !(self.air_surge_status.wing_ready() && self.air_surge_status.escort_ready()))
+        {
             return;
         }
         if plan.strategy != GrandStrategy::Recovery {
