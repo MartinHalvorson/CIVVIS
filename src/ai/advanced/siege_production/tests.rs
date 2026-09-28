@@ -125,6 +125,36 @@ fn delegated_city_queues_reserve_a_second_gun_for_a_live_wall_assault() {
 }
 
 #[test]
+fn delegated_city_queues_reserve_the_first_wall_breaker_before_or_during_war() {
+    for at_war in [false, true] {
+        let (mut g, ai, plan, home, _) = siege_gap_case();
+        if !at_war {
+            g.at_war.clear();
+        }
+        assert_eq!(ai.counts(&g, 0).siege, 0);
+        ai.reserve_active_siege_battery(&mut g, 0, &plan);
+        assert_eq!(
+            g.cities[&home].queue.first(),
+            Some(&Item::Unit {
+                unit: crate::name!("catapult"),
+            }),
+            "the named walled campaign needs a gun even when city queues are delegated"
+        );
+        g.cities.get_mut(&home).unwrap().queue = vec![Item::Building {
+            building: crate::name!("monument"),
+        }];
+        ai.reserve_active_siege_battery(&mut g, 0, &plan);
+        assert_eq!(
+            g.cities[&home].queue.first(),
+            Some(&Item::Unit {
+                unit: crate::name!("catapult"),
+            }),
+            "a delegated write cannot erase the first gun"
+        );
+    }
+}
+
+#[test]
 fn an_unstarted_building_yields_to_the_second_gun_but_invested_work_does_not() {
     for invested in [false, true] {
         let (mut g, ai, plan, home, target) = siege_gap_case();

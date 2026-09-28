@@ -85,8 +85,8 @@ impl AdvancedAi {
 
     /// The live Domination lane can delegate its city queues to the baseline
     /// governor, which never calls `production_value`. Claim one idle or
-    /// unstarted queue before that handoff when a real wall assault has only
-    /// one siege gun.
+    /// unstarted queue before that handoff when a named walled campaign has
+    /// no siege gun, or an active assault has only one gun on its ring.
     pub(super) fn reserve_active_siege_battery(
         &self,
         g: &mut Game,
@@ -97,8 +97,11 @@ impl AdvancedAi {
             || plan.strategy != GrandStrategy::Conquest
             || self.war_plan.is_some()
             || self.live_war_economy_requires_recovery(g, pid, &self.counts(g, pid))
-            || self.counts(g, pid).siege != 1
         {
+            return;
+        }
+        let siege_count = self.counts(g, pid).siege;
+        if siege_count > 1 {
             return;
         }
         let Some(target) = plan.target_city.and_then(|id| g.cities.get(&id)) else {
@@ -106,8 +109,9 @@ impl AdvancedAi {
         };
         if Some(target.owner) != plan.target_player
             || target.wall_hp <= 0
-            || !g.is_at_war(pid, target.owner)
-            || !Self::domination_siege_present(g, pid, target.id)
+            || (siege_count == 1
+                && (!g.is_at_war(pid, target.owner)
+                    || !Self::domination_siege_present(g, pid, target.id)))
         {
             return;
         }
@@ -166,8 +170,12 @@ impl AdvancedAi {
         .is_ok()
         {
             think!(self.journal(), Economy, Decision,
-                "{} starts {} for the active wall siege", g.cities[&city].name, Self::plain_item(&item);
-                "one siege gun is already on the target's ring; a second sustains fire while the first heals");
+            "{} starts {} for the walled campaign", g.cities[&city].name, Self::plain_item(&item);
+            "{}", if siege_count == 0 {
+                "the delegated governor has no wall breaker; the named assault needs its first gun before the army can take a city"
+            } else {
+                "one siege gun is already on the target's ring; a second sustains fire while the first heals"
+            });
         }
     }
 

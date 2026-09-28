@@ -42937,6 +42937,9 @@ impl AdvancedAi {
             &invested_wall_breakers,
             confirmed_defense_queue.as_ref(),
         );
+        // Delegated production can replace a fresh siege reservation before
+        // it has any invested work. Claim it once more after that final write.
+        self.reserve_active_siege_battery(g, pid, &plan);
         // A delegating lane has already spent through the baseline governor.
         if active_victory_target.is_some()
             && !lane_delegating
