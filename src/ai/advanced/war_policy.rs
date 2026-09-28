@@ -35,11 +35,13 @@
 //!   city — **and** either the tide ledger reads net negative over its
 //!   window ([`Tide`], the same exchange `one_war.rs` keeps, here for every
 //!   rival at war, gene or no gene) or an urgent Defend row has gone
-//!   unserved for [`DEFEND_UNSERVED_PATIENCE`] turns. A defensive war with
-//!   a served Defend row and an even tide is fought, not begged. Every other
-//!   peace term (recovery, religion, fatigue, the envoy reclaim, one-war,
-//!   the Science lane's defensive peace) is untouched; the tribute a `0.62`
-//!   rout licensed is not claimed by this term.
+//!   unserved for [`DEFEND_UNSERVED_PATIENCE`] turns. When `one-war-at-a-time`
+//!   owns the active front, its sustained-tide and rout rules own that tide
+//!   decision; a single negative window here cannot abandon its siege. A
+//!   defensive war with a served Defend row and an even tide is fought, not
+//!   begged. Recovery, religion, fatigue, envoy reclaim and the Science
+//!   lane's defensive peace are untouched; the tribute a `0.62` rout
+//!   licensed is not claimed by this term.
 //!
 //! Journal: "Not a target" (Detail) for an excluded rival, the declaration's
 //! blocker in the existing "Holding off war" line, the peace reason in the
@@ -329,7 +331,8 @@ impl AdvancedAi {
     /// The gene's peace term for `other`: the reason, when no Siege row
     /// against them is feasible and either the tide has run against us over
     /// the window or an urgent Defend row has gone unserved for
-    /// [`DEFEND_UNSERVED_PATIENCE`] turns. `None` with the gene off, and
+    /// [`DEFEND_UNSERVED_PATIENCE`] turns. The active one-war front owns its
+    /// own tide patience and rout decision. `None` with the gene off, and
     /// for a war the roster can still win.
     pub(super) fn war_policy_peace(&self, g: &Game, pid: usize, other: usize) -> Option<String> {
         if !self.war_policy_via_board || !g.is_at_war(pid, other) {
@@ -349,7 +352,12 @@ impl AdvancedAi {
         } else {
             format!("no siege against them is feasible ({roster:.0} strength, no city of theirs to bill)")
         };
-        if tide < 0 {
+        let one_war_owns_tide = self.one_war_at_a_time
+            && self
+                .one_war
+                .as_ref()
+                .is_some_and(|front| front.target == other);
+        if tide < 0 && !one_war_owns_tide {
             return Some(format!(
                 "{no_siege} and the tide has run against us ({tide:+}) over the window"
             ));
@@ -381,7 +389,7 @@ mod mobilization_tests;
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::super::GrandStrategy;
+    use super::super::{GrandStrategy, VictoryTarget};
     use super::*;
     use crate::game::{Game, WarLosses, WarRecord};
     use crate::name;
@@ -705,6 +713,31 @@ mod tests {
         assert!(ai.war_policy_peace(&g, 0, 1).is_none());
     }
 
+    #[test]
+    fn active_one_war_front_owns_its_tide_patience() {
+        let (mut g, mut ai) = defended_front(39);
+        ai.retarget(VictoryTarget::Domination);
+        ai.enable_one_war_at_a_time();
+        ai.one_war_observe(&g, 0);
+        assert_eq!(ai.one_war.as_ref().map(|front| front.target), Some(1));
+
+        // A small setback cannot cancel the ongoing siege just because
+        // the board's exact strength bill is temporarily out of reach.
+        record_losses(&mut g, 1, 2, 0);
+        g.turn += 1;
+        ai.war_policy_observe(&g, 0);
+        ai.one_war_observe(&g, 0);
+        assert!(!ai.war_policy_siege_against(&g, 0, 1).0);
+        assert_eq!(ai.war_policy.tides[&1].window_net(), -2);
+        assert!(ai.one_war_peace(&g, 0, 1).is_none());
+        assert!(ai.war_policy_peace(&g, 0, 1).is_none());
+
+        // Without the front controller, the board retains its own peace
+        // rule for an infeasible war with a losing tide.
+        ai.disable_one_war_at_a_time();
+        assert!(ai.war_policy_peace(&g, 0, 1).is_some());
+    }
+
     /// An urgent Defend row left short for the patience sues for peace
     /// when no siege is feasible, even with the tide even.
     #[test]
@@ -747,6 +780,12 @@ mod tests {
         let reason = ai
             .war_policy_peace(&g, 0, 1)
             .expect("the Defend row has gone unserved for the patience");
+        assert!(reason.contains("unserved"), "{reason}");
+        ai.enable_one_war_at_a_time();
+        ai.one_war_observe(&g, 0);
+        let reason = ai
+            .war_policy_peace(&g, 0, 1)
+            .expect("an urgent unserved defense still warrants peace");
         assert!(reason.contains("unserved"), "{reason}");
     }
 }
