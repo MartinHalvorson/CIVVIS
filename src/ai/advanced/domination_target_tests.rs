@@ -111,6 +111,19 @@ fn domination_opens_a_near_frontier_before_a_distant_capital() {
     g.record_contact(0, 1);
     g.record_contact(0, 2);
     let home = g.cities[&g.player_city_ids(0)[0]].pos;
+    while g.player_city_ids(0).len() < 4 {
+        let site = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            .map(|(pos, _)| *pos)
+            .filter(|pos| g.wdist(home, *pos) <= 12)
+            .filter(|pos| g.cities.values().all(|city| g.wdist(city.pos, *pos) >= 4))
+            .min_by_key(|pos| (g.wdist(home, *pos), pos.0, pos.1))
+            .unwrap();
+        g.found_city_for(0, site, None);
+    }
     let capitals = [g.player_city_ids(1)[0], g.player_city_ids(2)[0]];
     let mut far_sites: Vec<_> = g
         .map
@@ -118,7 +131,11 @@ fn domination_opens_a_near_frontier_before_a_distant_capital() {
         .iter()
         .filter(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
         .map(|(pos, _)| *pos)
-        .filter(|pos| g.wdist(home, *pos) > 22)
+        .filter(|pos| {
+            g.player_city_ids(0)
+                .iter()
+                .all(|city| g.wdist(g.cities[city].pos, *pos) > 22)
+        })
         .collect();
     far_sites.sort_by_key(|pos| (pos.0, pos.1));
     let first_far = far_sites[0];
