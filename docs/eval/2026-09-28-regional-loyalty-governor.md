@@ -106,8 +106,10 @@ a low-loyalty city within his aura needs the support. The pass prefers another
 eligible donor, retaining its original safe-source checks. Victor remains a
 fallback when no other eligible donor exists. The preference releases when the
 covered city no longer needs the aura, and is absent with the candidate disabled.
-The recorded-position replays and six-game batches below predate this correction;
-they are evidence for their stated revisions, not validation of this new behavior.
+The original recorded-position replays and six-game batches predate this
+correction; they are evidence for their stated revisions. The new complete-turn
+regressions exercise the competing-emergency behavior, and the recorded-position
+matrix was repeated after the correction as described below.
 
 After the relocation correction, all 12 focused tests pass, including the
 competing-emergency regression, the sole-donor fallback, and recovery/disabled
@@ -115,6 +117,30 @@ behavior. The current library suite passes 4,207 tests with 49 ignored and the
 18 previously confirmed sandbox socket-bind failures explicitly filtered out.
 Those excluded tests still require a socket-permitting environment; this is not
 a claim that the unrestricted full suite passed.
+
+On code revision `b456142959bdfad3d13863ad3b6b4646b2acd56c`, the remaining
+binary/integration suites also pass all 229 tests, and the changed-line Rust
+quality check passes. The failing regression log and these validation logs are
+preserved locally under
+`~/civvis-civ6-runs/analysis/guayaquil-loyalty/relocation-regression/`.
+
+The repeated eight-case/arm offline matrix uses the same recorded configuration
+checks and input snapshots. Every invocation exits zero, its emitted active
+treatment set and Domination target match the intended arm, and **all outbound
+orders** match the earlier configuration-matched replay, including the title
+reservation, Victor appointment, and promotion. This checks that the correction
+retains the original rescue decisions; those snapshots do not contain the new
+competing-emergency regression's constructed situation.
+
+The repeated replay evidence is under
+`~/civvis-civ6-runs/analysis/guayaquil-loyalty/replay/results-b45614295-recorded-domination/`.
+Executable SHA-256:
+`ab8650e81b390c7d8d9591efddea01e31183280c540de69413dae15b720fd241`;
+`provenance.json` SHA-256:
+`eec23392ce0e961014dabb4e95a9974809b466013c169e90eb51bcfdecbdef71`.
+Source identity comes from the clean checkout and successful explicit Cargo
+build before replay. Runtime revision readback is null for this unstamped binary;
+it is recorded as such, not presented as independent source verification.
 
 Before the relocation correction, the focused suite passed all nine tests,
 including a complete turn retaining
