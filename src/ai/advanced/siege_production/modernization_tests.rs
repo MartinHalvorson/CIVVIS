@@ -247,6 +247,22 @@ fn field_cannon_does_not_veto_the_only_available_wall_breaker() {
 }
 
 #[test]
+fn delegated_siege_recruits_trebuchet_when_bombard_lacks_niter() {
+    let (mut g, ai, plan, home) = field_cannon_without_niter_case();
+    let target = plan.target_city.unwrap();
+    let ring = (g.cities[&target].pos.0 - 2, g.cities[&target].pos.1);
+    g.spawn_unit("trebuchet", 0, ring);
+    assert_eq!(ai.counts(&g, 0).siege, 1);
+    ai.reserve_active_siege_battery(&mut g, 0, &plan);
+    assert_eq!(
+        g.cities[&home].queue.first(),
+        Some(&Item::Unit {
+            unit: crate::name!("trebuchet")
+        })
+    );
+}
+
+#[test]
 fn available_bombard_still_replaces_weaker_siege_production() {
     let (mut g, ai, plan, home) = field_cannon_without_niter_case();
     g.players[0]
@@ -288,12 +304,12 @@ fn available_bombard_still_replaces_weaker_siege_production() {
 }
 
 #[test]
-fn an_existing_wall_breaker_closes_the_exception_to_field_fire_comparison() {
+fn one_existing_wall_breaker_does_not_close_an_active_sieges_second_slot() {
     let (mut g, ai, plan, home) = field_cannon_without_niter_case();
     g.spawn_test_unit("trebuchet", 0, g.cities[&home].pos);
     let counts = ai.counts(&g, 0);
     assert_eq!(counts.siege, 1);
-    assert_eq!(
+    assert!(
         ai.production_value(
             &g,
             0,
@@ -303,7 +319,6 @@ fn an_existing_wall_breaker_closes_the_exception_to_field_fire_comparison() {
             },
             &plan,
             &counts
-        ),
-        -2_000.0
+        ) > 0.0
     );
 }

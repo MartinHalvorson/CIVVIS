@@ -42790,6 +42790,7 @@ impl AdvancedAi {
             // useful interrupted work before either routine governor fills
             // the remaining idle cities with unrelated new investments.
             self.reconcile_production_commitments(g, pid, &plan);
+            self.reserve_active_siege_battery(g, pid, &plan);
             let dispatch_target = if lane_delegating {
                 None
             } else {

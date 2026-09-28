@@ -358,7 +358,7 @@ impl AdvancedAi {
                     && g.turn.saturating_sub(siege.assessed) <= 1
                     && g.cities.get(cid).is_some_and(|city| {
                         city.owner == other
-                            && (siege.stage == SiegeStage::Invest
+                            && (matches!(siege.stage, SiegeStage::Invest | SiegeStage::Reduce)
                                 || city.hp < 200
                                 || city.wall_hp < g.city_max_wall_hp(city))
                             && Self::domination_siege_present(g, pid, *cid)
@@ -818,10 +818,20 @@ mod tests {
 
         g.cities.get_mut(&target).unwrap().hp = 200;
         assert!(
-            ai.war_policy_peace(&g, 0, 1).is_some(),
-            "undamaged is not progress"
+            ai.war_policy_peace(&g, 0, 1).is_none(),
+            "a recent reduction keeps its short grace even after repairs"
         );
-        g.cities.get_mut(&target).unwrap().hp = 160;
+        let recovery = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            target_player: None,
+            target_city: None,
+            ..conquest(&g, Some(target))
+        };
+        ai.advanced_diplomacy(&mut g, 0, &recovery);
+        assert!(
+            !ai.peace_offers.contains(&1),
+            "a second-front recovery must not abandon a recent capital reduction"
+        );
         g.units.get_mut(&soldier).unwrap().pos = original;
         assert!(
             ai.war_policy_peace(&g, 0, 1).is_some(),

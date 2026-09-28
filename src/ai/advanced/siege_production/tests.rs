@@ -82,7 +82,7 @@ fn a_full_army_can_add_missing_siege_for_medieval_walls() {
 }
 
 #[test]
-fn an_existing_or_queued_siege_unit_closes_the_composition_exception() {
+fn an_active_walled_siege_reserves_a_second_weapon_and_stops_at_two() {
     for queued in [false, true] {
         let (mut g, ai, plan, home, _) = siege_gap_case();
         let item = Item::Unit {
@@ -95,9 +95,59 @@ fn an_existing_or_queued_siege_unit_closes_the_composition_exception() {
         }
         let counts = ai.counts(&g, 0);
         assert_eq!(counts.siege, 1);
+        assert!(ai.production_value(&g, 0, home, &item, &plan, &counts) > 0.0);
+        g.spawn_unit("catapult", 0, g.cities[&home].pos);
+        let counts = ai.counts(&g, 0);
+        assert_eq!(counts.siege, 2);
         assert_eq!(
             ai.production_value(&g, 0, home, &item, &plan, &counts),
             -2_000.0
+        );
+    }
+}
+
+#[test]
+fn delegated_city_queues_reserve_a_second_gun_for_a_live_wall_assault() {
+    let (mut g, ai, plan, home, target) = siege_gap_case();
+    let ring = (g.cities[&target].pos.0 - 2, g.cities[&target].pos.1);
+    g.spawn_unit("catapult", 0, ring);
+    assert_eq!(ai.counts(&g, 0).siege, 1);
+    ai.reserve_active_siege_battery(&mut g, 0, &plan);
+    assert_eq!(
+        g.cities[&home].queue.first(),
+        Some(&Item::Unit {
+            unit: crate::name!("catapult")
+        })
+    );
+    assert_eq!(ai.counts(&g, 0).siege, 2);
+    ai.reserve_active_siege_battery(&mut g, 0, &plan);
+    assert_eq!(g.cities[&home].queue.len(), 1);
+}
+
+#[test]
+fn an_unstarted_building_yields_to_the_second_gun_but_invested_work_does_not() {
+    for invested in [false, true] {
+        let (mut g, ai, plan, home, target) = siege_gap_case();
+        let ring = (g.cities[&target].pos.0 - 2, g.cities[&target].pos.1);
+        g.spawn_unit("catapult", 0, ring);
+        let city = g.cities.get_mut(&home).unwrap();
+        let monument = Item::Building {
+            building: crate::name!("monument"),
+        };
+        city.queue.push(monument.clone());
+        if invested {
+            city.production = 10.0;
+        }
+        ai.reserve_active_siege_battery(&mut g, 0, &plan);
+        assert_eq!(
+            g.cities[&home].queue.first(),
+            Some(&if invested {
+                monument
+            } else {
+                Item::Unit {
+                    unit: crate::name!("catapult"),
+                }
+            })
         );
     }
 }

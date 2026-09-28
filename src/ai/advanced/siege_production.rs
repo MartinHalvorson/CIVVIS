@@ -6,10 +6,99 @@ use super::*;
 pub(super) const FIRST_WEAPON_RESERVATION: f64 = 400.0;
 
 impl AdvancedAi {
+    /// The live Domination lane can delegate its city queues to the baseline
+    /// governor, which never calls `production_value`. Claim one idle or
+    /// unstarted queue before that handoff when a real wall assault has only
+    /// one siege gun.
+    pub(super) fn reserve_active_siege_battery(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || plan.strategy != GrandStrategy::Conquest
+            || self.war_plan.is_some()
+            || self.live_war_economy_requires_recovery(g, pid, &self.counts(g, pid))
+            || self.counts(g, pid).siege != 1
+        {
+            return;
+        }
+        let Some(target) = plan.target_city.and_then(|id| g.cities.get(&id)) else {
+            return;
+        };
+        if Some(target.owner) != plan.target_player
+            || target.wall_hp <= 0
+            || !g.is_at_war(pid, target.owner)
+            || !Self::domination_siege_present(g, pid, target.id)
+        {
+            return;
+        }
+        let mut best: Option<(f64, f64, u32, Item)> = None;
+        for cid in g.player_city_ids(pid) {
+            let city = &g.cities[&cid];
+            let committed = city.queue.first();
+            let protected = committed.is_some_and(|item| {
+                matches!(item, Item::Unit { unit } if unit.as_str() == "settler")
+                    || matches!(item, Item::Unit { unit } if g.rules.units[unit].siege)
+                    || Self::active_queue_is_defensive(g, item)
+                    || g.item_invested_production(cid, item) > 0.0
+            });
+            if plan.threatened_city == Some(cid)
+                || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+                || protected
+            {
+                continue;
+            }
+            let production = g.city_yields(cid).production.max(1.0);
+            for item in g.producible_items(pid, cid) {
+                let Item::Unit { unit } = &item else { continue };
+                let spec = &g.rules.units[unit];
+                if spec.class != "military"
+                    || !spec.siege
+                    || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                {
+                    continue;
+                }
+                let turns = g.item_remaining_cost_for_city(pid, cid, &item) / production;
+                let strength = spec.ranged_attack_strength();
+                if best
+                    .as_ref()
+                    .is_none_or(|(old_turns, old_strength, old_cid, _)| {
+                        old_strength
+                            .total_cmp(&strength)
+                            .then_with(|| turns.total_cmp(old_turns))
+                            .then_with(|| cid.cmp(old_cid))
+                            .is_lt()
+                    })
+                {
+                    best = Some((turns, strength, cid, item));
+                }
+            }
+        }
+        let Some((_, _, city, item)) = best else {
+            return;
+        };
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city,
+                item: item.clone(),
+            },
+        )
+        .is_ok()
+        {
+            think!(self.journal(), Economy, Decision,
+                "{} starts {} for the active wall siege", g.cities[&city].name, Self::plain_item(&item);
+                "one siege gun is already on the target's ring; a second sustains fire while the first heals");
+        }
+    }
+
     /// A roster full of field units can still lack the ability to break walls.
-    /// Counts include queued units, so only the first siege order gets this
-    /// composition exception to the ordinary army ceiling. An active siege
-    /// keeps this requirement when the empire replans for expansion or recovery.
+    /// Counts include queued units. A named, active assault on walls needs two
+    /// weapons so a wounded first gun does not end the bombardment; an
+    /// unwalled or future campaign still reserves only one. An active siege
+    /// keeps its first order when the empire replans for expansion or recovery.
     pub(super) fn missing_domination_siege(
         &self,
         g: &Game,
@@ -26,19 +115,11 @@ impl AdvancedAi {
         {
             return false;
         }
-        // A full roster of obsolete Catapults is not a modern siege train.
-        // Ten strength is a meaningful step (roughly 50% more damage under
-        // the combat curve). Field formations and queued replacements count;
-        // the governor's queue-excluded census keeps a reservation from
-        // cancelling itself. This still opens only one missing weapon slot.
-        if counts.siege != 0 && spec.ranged_attack_strength() < counts.land_siege_power + 10.0 {
-            return false;
-        }
         if let Some(target) = plan.target_city {
             // The board's declaration gate requires a siege weapon on a
             // walled staging ring. An unwalled target may complete walls while
             // the army marches or fights, so equip a named campaign early.
-            return g.cities.get(&target).is_some_and(|city| {
+            let valid_target = g.cities.get(&target).is_some_and(|city| {
                 Some(city.owner) == plan.target_player
                     && ((city.wall_hp > 0 && g.is_at_war(pid, city.owner))
                         || (self.war_policy_via_board
@@ -48,6 +129,27 @@ impl AdvancedAi {
                             )
                             && self.campaign_target_legal(g, pid, city.owner)))
             });
+            if !valid_target {
+                return false;
+            }
+            let active_walls =
+                g.cities[&target].wall_hp > 0 && g.is_at_war(pid, g.cities[&target].owner);
+            // Two contemporaneous siege units can keep reducing a wall while
+            // one rotates out to heal. Beyond that, require an actual weapon
+            // upgrade: ten strength is roughly 50% more combat damage.
+            return counts.siege
+                < if active_walls && plan.strategy == GrandStrategy::Conquest {
+                    2
+                } else {
+                    1
+                }
+                || spec.ranged_attack_strength() >= counts.land_siege_power + 10.0;
+        }
+
+        // Once any siege weapon is fielded, a targetless defensive replan
+        // preserves only a genuinely stronger queued replacement.
+        if counts.siege != 0 && spec.ranged_attack_strength() < counts.land_siege_power + 10.0 {
+            return false;
         }
 
         // A defensive replan can select a different enemy whose cities have
