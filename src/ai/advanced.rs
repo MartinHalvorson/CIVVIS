@@ -4143,6 +4143,9 @@ pub struct AdvancedAi {
     pub air_surge: bool,
     /// The one surge appointed and not yet finished.
     air_surge_plan: Option<AirSurge>,
+    /// City ownership at the start of the current live host frame. A planned
+    /// capture on the disposable board cannot confirm a native capture.
+    air_surge_observed_owners: Option<BTreeMap<Pos, usize>>,
     /// This frame's combined maneuver, for adapters that observe between phases.
     air_city_assault: Option<AirCityAssault>,
     air_assault_observation: Option<(BTreeSet<Pos>, u32)>,
@@ -8363,6 +8366,7 @@ impl AdvancedAi {
             raid_war: None,
             air_surge: false,
             air_surge_plan: None,
+            air_surge_observed_owners: None,
             air_city_assault: None,
             air_assault_observation: None,
             air_surge_status: AirSurgeStatus::default(),

@@ -276,6 +276,34 @@ check("strike fires once the walk arrived", ops(10), "UNITOPERATION_MOVE_TO,UNIT
 check("queue drained", queue.pendingCount(), 0)
 check("orders_queue reports the landed strike", field(lastEvent("orders_queue"), "strikes_landed"), 1)
 
+-- A host deactivation event can precede its delayed movement callbacks. The
+-- turn-204 capital attack was discarded while its tank was still on the
+-- origin, even though the tank reached the attack tile later that tick.
+reset()
+host.units[144] = { id = 144, kind = "UNIT_TANK", x = 5, y = 5, moves = 5 }
+applyOrders(player, PID, 7, { row(144, "MOVE_TO", 6, 5), row(144, "ATTACK", 7, 5) })
+queue.noteUnitEvent(PID, player, 144)
+queue.drain(player, PID, 7)
+check("early host event keeps the attack queued", queue.pendingCount(), 1)
+check("early host event does not fire the attack", ops(144), "UNITOPERATION_MOVE_TO")
+host.arrive(144)
+queue.drain(player, PID, 7)
+check("late move callback releases the attack", ops(144),
+	"UNITOPERATION_MOVE_TO,UNITOPERATION_MOVE_TO")
+check("late arrival drains the queue", queue.pendingCount(), 0)
+check("late arrival lands the queued strike", field(lastEvent("orders_queue"), "strikes_landed"), 1)
+
+reset()
+host.units[145] = { id = 145, kind = "UNIT_TANK", x = 5, y = 5, moves = 5 }
+applyOrders(player, PID, 7, { row(145, "MOVE_TO", 6, 5), row(145, "ATTACK", 7, 5) })
+queue.noteUnitEvent(PID, player, 145)
+for _ = 1, 29 do queue.drain(player, PID, 7) end
+check("a truly stalled walk is held only through grace", queue.pendingCount(), 1)
+queue.drain(player, PID, 7)
+check("stalled attack is refused after grace", queue.pendingCount(), 0)
+check("stalled refusal remains named", (lastEvent("orders_queue") or ""):
+	find("queue_prior_not_arrived", 1, true) ~= nil, true)
+
 -- 2b. Reaching the requested plot while the host's operation is still active
 -- is not settled. Civilization VI can expose the unit at its destination and
 -- still ignore a follow-up operation until the path deactivates. Once the

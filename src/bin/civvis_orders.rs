@@ -3715,6 +3715,7 @@ fn decide(
     // board shown to the next decision is never a mixture of one real game and one
     // speculative CIVVIS turn.
     let mut planned_game = mirror_state.game.clone();
+    ai.observe_air_surge_city_owners(&mirror_state.game);
     // Firaxis keeps a Trader visible while it is travelling an active route;
     // CIVVIS's native model consumes it into `game.routes`.  The authoritative
     // mirror carries both so the map remains faithful.  Remove only the busy

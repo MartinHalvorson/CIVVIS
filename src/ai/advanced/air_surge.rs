@@ -804,6 +804,17 @@ impl AdvancedAi {
         }
     }
 
+    /// Pin native ownership before planning mutates its disposable board.
+    /// The next host frame replaces this record with its own observation.
+    pub fn observe_air_surge_city_owners(&mut self, g: &Game) {
+        self.air_surge_observed_owners = Some(
+            g.cities
+                .values()
+                .map(|city| (city.pos, city.owner))
+                .collect(),
+        );
+    }
+
     /// Validate and advance the one appointed surge before any subsystem acts.
     /// This is the lifecycle authority: research, production, diplomacy and
     /// movement only read the resulting phase.
@@ -827,9 +838,14 @@ impl AdvancedAi {
             // missing id as a capture; otherwise a sound bomber campaign dies
             // the turn after it was appointed.
             let objective_city = g.city_at(plan.objective_pos);
-            let mut objective_owner = objective_city
-                .and_then(|city| g.cities.get(&city))
-                .map(|city| city.owner);
+            let mut objective_owner = self.air_surge_observed_owners.as_ref().map_or_else(
+                || {
+                    objective_city
+                        .and_then(|city| g.cities.get(&city))
+                        .map(|city| city.owner)
+                },
+                |owners| owners.get(&plan.objective_pos).copied(),
+            );
             if objective_owner == Some(plan.target_player) {
                 // The owner above could only have come from this current
                 // coordinate's city, so the id is safe to carry through the

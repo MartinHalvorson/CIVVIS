@@ -16064,6 +16064,14 @@ CivvisQueue.drain = function(player, pid, turn)
 					-- was re-armed on that plot; nothing else to do this tick.
 				elseif ready and CivvisQueue.dropWatch(subject, entry) then
 					-- The opening walk has landed; nothing follows it.
+				elseif ready and entry.expect ~= nil and not arrived and not spent
+						and entry.wait < grace then
+					-- An operation-ended event can precede the host's move
+					-- callbacks. On turn 204 a tank was still on its origin when
+					-- MOVE_TO looked like a no-op, but reached the requested tile
+					-- later that tick. Dropping its queued ATTACK here lost an open
+					-- capital. Keep the dependent row until arrival or the bounded
+					-- grace limit; a rows-less watch may still release for replan.
 				elseif ready then
 					-- A MOVE_TO can report an operation-ended event, spend its movement,
 					-- or hit the grace cap without reaching the requested plot.  None of

@@ -273,6 +273,31 @@ fn a_captured_counter_objective_is_counted_once_before_the_wing_moves_on() {
 }
 
 #[test]
+fn a_speculative_capture_waits_for_native_ownership_before_redirecting_the_wing() {
+    let (mut observed, mut ai) = fixture();
+    let old_city = ai.air_surge_plan.as_ref().unwrap().objective_city;
+    let replacement = observed.found_city_for(1, (16, 17), None);
+    observed.at_war.insert((0, 1));
+    ai.air_surge_plan.as_mut().unwrap().opened_at_war = true;
+    ai.observe_air_surge_city_owners(&observed);
+
+    let mut projection = observed.speculative_clone();
+    projection.cities.get_mut(&old_city).unwrap().owner = 0;
+    ai.maintain_air_surge(&projection, 0);
+    assert_eq!(ai.air_surge_plan.as_ref().unwrap().objective_city, old_city);
+    assert_eq!(ai.air_surge_census.objectives_captured, 0);
+
+    observed.cities.get_mut(&old_city).unwrap().owner = 0;
+    ai.observe_air_surge_city_owners(&observed);
+    ai.maintain_air_surge(&observed, 0);
+    assert_eq!(
+        ai.air_surge_plan.as_ref().unwrap().objective_city,
+        replacement
+    );
+    assert_eq!(ai.air_surge_census.objectives_captured, 1);
+}
+
+#[test]
 fn a_changed_owner_still_ends_the_plan_when_no_counter_objective_is_available() {
     let (mut g, mut ai) = fixture();
     let old_city = ai.air_surge_plan.as_ref().unwrap().objective_city;
