@@ -13087,8 +13087,11 @@ impl AdvancedAi {
     /// it. The speed-aware deadline similarly extends the raw turn-150 gene on
     /// slower or longer games without removing the endgame reserve.
     fn delegated_cities(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        let restore_space_race = self.base.exclude_space_race;
+        self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
         if !self.plan_city_target && !self.rapid_city_expansion_2 {
             self.base.cities(g, pid);
+            self.base.exclude_space_race = restore_space_race;
             return;
         }
         let restore_target = self.base.w.city_target;
@@ -13115,6 +13118,7 @@ impl AdvancedAi {
             self.base.w.builder_per_city = restore_builders.max(PRODUCTION_BUILDERS_PER_CITY);
         }
         self.base.cities(g, pid);
+        self.base.exclude_space_race = restore_space_race;
         self.base.w.city_target = restore_target;
         self.base.w.settler_stop_turn = restore_stop;
         self.base.w.builder_per_city = restore_builders;
@@ -24333,6 +24337,9 @@ impl AdvancedAi {
     /// The science lane's production pass: the Spaceport queues rebalanced,
     /// then `science_production`.
     fn space_race_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        if self.victory_target == Some(VictoryTarget::Domination) {
+            return;
+        }
         self.rebalance_science_spaceport_queues(g, pid, plan);
         self.science_production(g, pid);
         self.repair_stalled_science_project_queues(g, pid);
@@ -24415,6 +24422,9 @@ impl AdvancedAi {
     }
 
     fn science_production(&self, g: &mut Game, pid: usize) {
+        if self.victory_target == Some(VictoryTarget::Domination) {
+            return;
+        }
         if self.schedule_science_endgame(g, pid) {
             self.science_spaceport_production(g, pid);
             return;
@@ -29728,6 +29738,9 @@ impl AdvancedAi {
                     return -10_000.0;
                 }
                 if family == "spaceport" {
+                    if self.victory_target == Some(VictoryTarget::Domination) {
+                        return -10_000.0;
+                    }
                     let races_science = self.science_drive_active()
                         || self.space_race_lane(g, pid)
                         || self.raced_target() == Some(VictoryTarget::Science)
@@ -30476,7 +30489,8 @@ impl AdvancedAi {
                     // arm can offer is refused here, whatever the seat's
                     // science lead. A lost lane does not get to forbid the
                     // victory that is still open.
-                        && !self.lane_lost)
+                        && (self.victory_target == Some(VictoryTarget::Domination)
+                            || !self.lane_lost))
                     || turns > remaining_turns * 0.8;
                 if forbidden_project {
                     -10_000.0

@@ -2362,6 +2362,10 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `science-building-first`.
     pub(crate) science_building_first: bool,
+    /// A named domination seat must not let the delegated baseline governor
+    /// build a Spaceport or launch project. The King Gran Colombia game won
+    /// by Science at turn 229 while its public plan remained Conquest.
+    pub(crate) exclude_space_race: bool,
     /// Set by a targeted Science controller while its expansion plan still
     /// has a city deficit.  The flag applies to every route through the
     /// activation-item chooser for this turn, so an ordinary city-production
@@ -5051,6 +5055,7 @@ impl BasicAi {
             skip_prophet_race: false,
             enter_prophet_race: false,
             science_building_first: false,
+            exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
@@ -5511,6 +5516,7 @@ impl BasicAi {
             skip_prophet_race: false,
             enter_prophet_race: false,
             science_building_first: false,
+            exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
@@ -12083,7 +12089,10 @@ impl BasicAi {
                 // than this simulator's queue entry.
                 Self::empire_district_family_ready_or_queued(g, pid, "spaceport")
             };
-            if !has_spaceport && g.players[pid].techs.contains(&crate::name!("rocketry")) {
+            if !self.exclude_space_race
+                && !has_spaceport
+                && g.players[pid].techs.contains(&crate::name!("rocketry"))
+            {
                 if let Some(pos) = g
                     .district_sites(cid, crate::name!("spaceport"))
                     .into_iter()
@@ -12116,11 +12125,21 @@ impl BasicAi {
                 .projects
                 .iter()
                 .filter(|(project, spec)| {
-                    !spec.repeatable
+                    (!spec.repeatable
                         || matches!(
                             project.as_str(),
                             "lagrange_laser_station" | "terrestrial_laser_station"
-                        )
+                        ))
+                        && (!self.exclude_space_race
+                            || !matches!(
+                                project.as_str(),
+                                "launch_earth_satellite"
+                                    | "launch_moon_landing"
+                                    | "launch_mars_colony"
+                                    | "exoplanet_expedition"
+                                    | "lagrange_laser_station"
+                                    | "terrestrial_laser_station"
+                            ))
                 })
                 .map(|(project, _)| Item::Project { project: *project })
                 .filter(|item| g.can_produce(pid, cid, item))
@@ -26843,6 +26862,13 @@ mod tests {
             &first,
             Item::District { district, .. } if district == "spaceport"
         ));
+        let mut domination = BasicAi::new();
+        domination.exclude_space_race = true;
+        let conquest_choice = domination.pick_item(&game, 0, launch_city, 2, 2, 2, 2, 1, 10, 5, 5);
+        assert!(
+            !matches!(conquest_choice, Some(Item::District { ref district, .. }) if district == "spaceport"),
+            "the delegated domination governor must leave the launch site alone: {conquest_choice:?}"
+        );
         game.apply(
             0,
             &Action::Produce {
@@ -26857,6 +26883,32 @@ mod tests {
         assert!(
             !matches!(next, Some(Item::District { ref district, .. }) if district == "spaceport"),
             "a queued Spaceport must stop every other city reserving another one: {next:?}"
+        );
+
+        let launch_site = match game.cities[&launch_city].queue.first().unwrap() {
+            Item::District { pos, .. } => *pos,
+            other => panic!("expected the queued Spaceport, got {other:?}"),
+        };
+        game.cities.get_mut(&launch_city).unwrap().queue.clear();
+        game.cities
+            .get_mut(&launch_city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("spaceport"), launch_site);
+        game.map.tiles.get_mut(&launch_site).unwrap().district = Some(crate::name!("spaceport"));
+        let launch = Item::Project {
+            project: crate::name!("launch_earth_satellite"),
+        };
+        assert!(game.can_produce(0, launch_city, &launch));
+        assert_eq!(
+            ai.pick_item(&game, 0, launch_city, 2, 2, 2, 2, 1, 10, 5, 5),
+            Some(launch),
+            "the ordinary governor would start the launch chain"
+        );
+        let conquest_choice = domination.pick_item(&game, 0, launch_city, 2, 2, 2, 2, 1, 10, 5, 5);
+        assert!(
+            !matches!(conquest_choice, Some(Item::Project { ref project }) if project == "launch_earth_satellite"),
+            "the domination governor must spend this queue outside the space race: {conquest_choice:?}"
         );
     }
 

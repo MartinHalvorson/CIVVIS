@@ -32940,6 +32940,69 @@ fn delegated_wide_expansion_extends_the_window_but_defense_stays_first() {
     assert_eq!(ai.base.w.builder_per_city, 0.25);
 }
 
+#[test]
+fn delegated_domination_does_not_start_the_baseline_space_race() {
+    let mut game = Game::new_full(
+        1,
+        30,
+        20,
+        crate::rng::fixture_seed("SPACEPORT", 324_006),
+        650,
+        0,
+        false,
+    );
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let city = game.player_city_ids(0)[0];
+    game.cities.get_mut(&city).unwrap().pop = 10;
+    game.players[0].techs.insert(crate::name!("rocketry"));
+    game.players[0].gold = 1_000.0;
+    game.players[0].gold_per_turn = 100.0;
+    game.turn = 170;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.base.book_pos = 4;
+    ai.base.w.mil_per_city = 0.0;
+    ai.base.w.city_target = 1.0;
+    ai.base.w.settler_stop_turn = 0.0;
+    ai.base.recon_replacement = false;
+    assert!(!game
+        .district_sites(city, crate::name!("spaceport"))
+        .is_empty());
+    let mut control = game.clone();
+    ai.base.cities(&mut control, 0);
+    assert!(
+        matches!(
+            control.cities[&city].queue.first(),
+            Some(Item::District { district, .. }) if district == "spaceport"
+        ),
+        "baseline choice: {:?}",
+        control.cities[&city].queue.first()
+    );
+
+    ai.delegated_cities(&mut game, 0, &plan);
+    assert!(
+        !matches!(game.cities[&city].queue.first(), Some(Item::District { district, .. }) if district == "spaceport"),
+        "the domination assignment must reach the delegated governor"
+    );
+    assert!(
+        !ai.base.exclude_space_race,
+        "the call-local gate must be restored"
+    );
+}
+
 /// Fires-check for `plan_city_target`, at both map scales.
 ///
 /// The criterion is the **outcome** — cities at end — for the same reason
