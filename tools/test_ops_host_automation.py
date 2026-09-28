@@ -264,7 +264,7 @@ class TheWrapperAppliesThePolicyAndNothingElse(unittest.TestCase):
             self.assertNotIn("CIVVIS_STRATEGY", host.launched())
             self.assertIn("ignoring unknown policy key 'CIVVIS_STRATEGY'", host.logged())
 
-    def test_the_pin_must_be_head(self):
+    def test_the_pin_must_name_head_or_a_buildable_tree(self):
         for pin in ("/some/other/tree\n", None):
             with self.subTest(pin=pin), TemporaryDirectory() as raw:
                 host = _Host(raw)
@@ -275,7 +275,25 @@ class TheWrapperAppliesThePolicyAndNothingElse(unittest.TestCase):
                     host.pin.write_text(pin)
                 done = zsh(WRAPPER, env=host.env())
                 self.assertEqual(done.returncode, 64, done.stderr)
-                self.assertIn("must contain exactly 'head'", host.logged())
+                self.assertIn("must contain 'head' or an absolute buildable tree",
+                              host.logged())
+
+    def test_explicit_tree_pin_reaches_the_supervisor(self):
+        with TemporaryDirectory() as raw:
+            host = _Host(raw)
+            host.write_policy()
+            subprocess.run(["git", "-C", str(host.tree), "add", "Cargo.toml"],
+                           check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(host.tree),
+                            "-c", "user.name=Test", "-c", "user.email=test@example.test",
+                            "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"],
+                           check=True, capture_output=True)
+            host.pin.write_text(str(host.tree) + "\n")
+            done = zsh(WRAPPER, env=host.env())
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertEqual(host.launched()["CIVVIS_PINFILE"], str(host.pin))
+            self.assertIn(f"launching from {host.tree} (pin={host.tree})",
+                          host.logged())
 
     def test_the_origin_must_be_the_github_civvis(self):
         with TemporaryDirectory() as raw:
