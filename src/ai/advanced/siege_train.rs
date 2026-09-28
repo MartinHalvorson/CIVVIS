@@ -461,6 +461,31 @@ fn designate_taker(g: &Game, city: &CityView, force: &[u32]) -> Option<u32> {
         .max_by_key(rank)
 }
 
+/// A breach can heal before a melee unit crosses the outer staging ring.
+/// Choose a healthy assigned capturer with a short legal route to an adjacent
+/// tile, even when it cannot complete that route this turn.
+fn approaching_breach_taker(g: &Game, pid: usize, city: &CityView, force: &[u32]) -> Option<u32> {
+    force
+        .iter()
+        .copied()
+        .filter(|uid| {
+            let unit = &g.units[uid];
+            arm_of(g, *uid) == Arm::Melee
+                && unit.hp >= 70
+                && unit.attacks_left > 0
+                && g.wdist(unit.pos, city.pos) <= STAGING_FAR
+                && f64::from(city.hp) <= taker_blow(g, pid, *uid, city.id) + 40.0
+                && g.route_distance(*uid, city.pos, 1)
+                    .is_some_and(|steps| steps <= (STAGING_FAR + 3) as usize)
+        })
+        .min_by(|left, right| {
+            g.wdist(g.units[left].pos, city.pos)
+                .cmp(&g.wdist(g.units[right].pos, city.pos))
+                .then_with(|| unit_power(g, *right).total_cmp(&unit_power(g, *left)))
+                .then_with(|| left.cmp(right))
+        })
+}
+
 /// `anvil`: every member's post for the turn. The city tile goes to the
 /// most wounded member when the board heals, else to a ranged unit; the
 /// fresh unit displaced from the city takes the wounded one's tile; melee
@@ -970,6 +995,18 @@ impl AdvancedAi {
         });
 
         let damage_ready = self.conversion_siege_ready(g, pid, cid, &force);
+        let breach_taker = (city.wall_hp <= 0 && city.hp <= 100 && strength >= bill)
+            .then(|| {
+                designate_taker(g, &city, &force)
+                    .filter(|uid| {
+                        let unit = &g.units[uid];
+                        unit.hp >= 70
+                            && g.wdist(unit.pos, city.pos) <= STAGING_FAR
+                            && f64::from(city.hp) <= taker_blow(g, pid, *uid, cid) + 40.0
+                    })
+                    .or_else(|| approaching_breach_taker(g, pid, &city, &force))
+            })
+            .flatten();
         let record = self.sieges.entry(cid).or_insert(Siege {
             stage: SiegeStage::Stage,
             taker: None,
@@ -979,6 +1016,7 @@ impl AdvancedAi {
         });
         record.assessed = turn;
         let previous = record.stage;
+        let previous_taker = record.taker;
         let mut stage = previous;
         if city.owner == pid {
             stage = SiegeStage::Hold;
@@ -988,7 +1026,14 @@ impl AdvancedAi {
             }
             match stage {
                 SiegeStage::Stage => {
-                    if ((arena && gathered) || staged >= bill) && damage_ready {
+                    // A finished wall and a city within one near taker's
+                    // next blow are an opening that will heal away while the
+                    // rest of the train fills distant staging posts. Keep
+                    // the whole-force bill and positive-damage gate, but let
+                    // a healthy, reachable capturer exploit that breach.
+                    if ((arena && gathered) || staged >= bill || breach_taker.is_some())
+                        && damage_ready
+                    {
                         stage = SiegeStage::Invest;
                     }
                 }
@@ -1006,7 +1051,18 @@ impl AdvancedAi {
             stage,
             SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take
         ) {
-            taker = designate_taker(g, &city, &force);
+            let immediate = designate_taker(g, &city, &force);
+            taker = immediate
+                .filter(|uid| g.units[uid].hp >= 70)
+                .or_else(|| {
+                    previous_taker.filter(|uid| {
+                        city.wall_hp <= 0
+                            && force.contains(uid)
+                            && g.units.get(uid).is_some_and(|unit| unit.hp >= 70)
+                    })
+                })
+                .or(breach_taker)
+                .or(immediate);
             let ready = taker.is_some_and(|uid| {
                 g.wdist(g.units[&uid].pos, city.pos) <= 1
                     && (city.hp <= 0 || f64::from(city.hp) <= taker_blow(g, pid, uid, cid))
@@ -1800,6 +1856,9 @@ mod ownership_tests;
 
 #[cfg(test)]
 mod capture_tests;
+
+#[cfg(test)]
+mod breach_tests;
 
 #[cfg(test)]
 mod landing_tests;
