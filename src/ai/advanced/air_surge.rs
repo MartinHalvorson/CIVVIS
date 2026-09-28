@@ -794,6 +794,17 @@ impl AdvancedAi {
         }
     }
 
+    /// The live unit pass changes its private board before the host has
+    /// accepted its attacks. A projected city capture must not move the wing
+    /// and its land taker to the next city: the attack may only walk the taker
+    /// into range. The next fresh host frame runs normal maintenance and can
+    /// confirm the owner change. Native games have no host to wait for.
+    pub(crate) fn maintain_air_surge_after_units(&mut self, g: &Game, pid: usize) {
+        if g.host_observed.is_empty() {
+            self.maintain_air_surge(g, pid);
+        }
+    }
+
     /// Validate and advance the one appointed surge before any subsystem acts.
     /// This is the lifecycle authority: research, production, diplomacy and
     /// movement only read the resulting phase.
@@ -1673,3 +1684,6 @@ mod readiness;
 
 #[cfg(test)]
 mod modernization_budget_tests;
+
+#[cfg(test)]
+mod capture_confirmation_tests;
