@@ -19112,9 +19112,32 @@ impl AdvancedAi {
             .iter()
             .any(|uid| g.rules.units[g.units[uid].kind].is_melee_capable());
         let ratio = self.local_strength_ratio(g, pid, &units, &[target], objective);
+        // The 3–5 ring is a useful launch check, but closed borders can keep
+        // the last taker just outside it while shooters are already waiting.
+        // Hami stayed unwalled for over thirty turns in a live King game:
+        // three shooters stood on the ring and a full-health Man-at-Arms was
+        // seven tiles away, yet the declaration waited until Mongolia opened
+        // the war for us. Allow that short final march only against an open
+        // city and only when the staged firepower dominates locally.
+        let capturer_close_behind = committed_domination
+            && !has_capturer
+            && units.len() >= 3
+            && ratio >= 1.60
+            && g.city_at(objective)
+                .is_some_and(|cid| g.cities[&cid].owner == target && g.cities[&cid].wall_hp <= 0)
+            && g.player_unit_ids(pid).into_iter().any(|uid| {
+                let unit = &g.units[&uid];
+                let spec = &g.rules.units[unit.kind];
+                spec.class == "military"
+                    && spec.is_melee_capable()
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && unit.hp >= 70
+                    && g.unit_strength(unit, false) >= 30.0
+                    && (6..=8).contains(&g.wdist(unit.pos, objective))
+            });
         let formation_ready = units.len() >= 3 || (units.len() >= 2 && ratio >= 1.60);
         let minimum_ratio = if committed_domination { 0.90 } else { 1.05 };
-        formation_ready && has_capturer && ratio + 1e-9 >= minimum_ratio
+        formation_ready && (has_capturer || capturer_close_behind) && ratio + 1e-9 >= minimum_ratio
     }
 
     /// Drive one melee unit of an ancient rush directly at the objective

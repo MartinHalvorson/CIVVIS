@@ -9950,9 +9950,10 @@ fn conquest_army_stages_before_diplomacy_opens_the_war() {
                     .is_none_or(|city| city.owner != 1)
         })
         .expect("test map has a remote muster position");
-    let army: Vec<u32> = (0..4)
-        .map(|_| game.spawn_test_unit("swordsman", 0, remote))
+    let mut army: Vec<u32> = (0..3)
+        .map(|_| game.spawn_test_unit("crossbowman", 0, remote))
         .collect();
+    army.push(game.spawn_test_unit("swordsman", 0, remote));
     let plan = StrategicPlan {
         strategy: GrandStrategy::Conquest,
         target_player: Some(1),
@@ -9999,6 +10000,34 @@ fn conquest_army_stages_before_diplomacy_opens_the_war() {
         game.units.get_mut(unit).unwrap().pos = position;
     }
     assert!(ai.campaign_staged_for_war(&game, 0, 1, objective, true));
+
+    let taker_ring = game.units[&army[3]].pos;
+    let near_taker = game
+        .wdisk(objective, 7)
+        .into_iter()
+        .find(|position| game.wdist(*position, objective) == 7 && game.city_at(*position).is_none())
+        .expect("test map has a tile for the following taker");
+    let tile = game.map.tiles.get_mut(&near_taker).unwrap();
+    tile.terrain = crate::name!("grassland");
+    tile.feature = None;
+    tile.hills = false;
+    tile.owner_city = None;
+    game.units.get_mut(&army[3]).unwrap().pos = near_taker;
+    assert!(
+        ai.campaign_staged_for_war(&game, 0, 1, objective, true),
+        "an unwalled city can be opened with three staged shooters and a strong taker close behind"
+    );
+    assert!(
+        !ai.campaign_staged_for_war(&game, 0, 1, objective, false),
+        "the shortened taker march belongs only to committed Domination"
+    );
+    game.cities.get_mut(&target_city).unwrap().wall_hp = 100;
+    assert!(
+        !ai.campaign_staged_for_war(&game, 0, 1, objective, true),
+        "standing walls still require a melee unit on the staging ring"
+    );
+    game.cities.get_mut(&target_city).unwrap().wall_hp = 0;
+    game.units.get_mut(&army[3]).unwrap().pos = taker_ring;
 
     ai.advanced_diplomacy(&mut game, 0, &plan);
     assert!(
