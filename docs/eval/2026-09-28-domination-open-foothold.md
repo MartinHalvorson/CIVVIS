@@ -19,5 +19,5 @@ the normal siege commitment pins the selected foothold afterward.
 The focused regression covers a full-HP open city with a heavy chariot, a
 damaged city with a man-at-arms, no nearby taker, and a breached prior
 objective. The `domination_` test selection passed 139 tests. This change is
-queued for the next live game; the recorded game was pinned to revision
+queued for a subsequent live game; the recorded game was pinned to revision
 `f53fe8a68` and cannot measure its effect.
