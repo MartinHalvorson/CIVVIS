@@ -152,3 +152,53 @@ fn military_relief_uses_a_military_donor_before_an_empty_economic_card() {
         Action::UnslotPolicy { policy } if policy.as_str() == "feudal_contract"
     ));
 }
+
+#[test]
+fn wartime_cash_runway_keeps_a_productive_income_card_in_the_armys_slot() {
+    let (mut game, ai, capital) = policy_board();
+    let second = game.found_city_for(0, (15, 8), None);
+    let third = game.found_city_for(0, (15, 13), None);
+    for city in [capital, second, third] {
+        let hub = crate::game::install_test_district(&mut game, city, "commercial_hub");
+        game.map.tiles.get_mut(&hub).unwrap().river_edges[0] = true;
+    }
+    let campus = crate::game::install_test_district(&mut game, capital, "campus");
+    assert_ne!(campus, game.cities[&capital].pos);
+    game.cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+    game.cities.get_mut(&capital).unwrap().pop = 15;
+    game.players[0].civics.insert(crate::name!("ideology"));
+    game.players[0]
+        .policies
+        .insert(crate::name!("economic_union"));
+    game.at_war.insert((0, 1));
+    game.players[0].gold = 50.0;
+    game.players[0].gold_per_turn = 10.0;
+
+    let marginal = ai
+        .domination_wartime_gold_card_pays(&game, 0, true, false, 175.0)
+        .expect("three river Commercial Hubs make the card pay at least 5 Gold");
+    assert!(marginal >= 5.0);
+    let mut healthy = game.clone();
+    healthy.players[0].gold = 500.0;
+    healthy.players[0].gold_per_turn = 60.0;
+    assert_eq!(
+        ai.domination_wartime_gold_card_pays(&healthy, 0, true, false, 175.0),
+        None,
+    );
+
+    ai.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+    assert!(game.players[0]
+        .policies
+        .contains(&crate::name!("economic_union")));
+    ai.strategic_policies(&mut healthy, 0, GrandStrategy::Conquest);
+    assert!(healthy.players[0]
+        .policies
+        .contains(&crate::name!("rationalism")));
+    assert!(!healthy.players[0]
+        .policies
+        .contains(&crate::name!("economic_union")));
+}

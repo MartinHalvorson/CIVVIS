@@ -17197,6 +17197,22 @@ impl AdvancedAi {
             desired.retain(|wanted| *wanted != card);
             desired.insert(0, card);
         }
+        let protect_wartime_income = self.domination_wartime_gold_card_pays(
+            g,
+            pid,
+            at_major_war,
+            staged_conquest,
+            recovery_reserve,
+        );
+        if let Some(marginal) = protect_wartime_income {
+            desired.retain(|card| *card != "economic_union");
+            desired.insert(0, "economic_union");
+            think!(self.journal(), Policies, Detail,
+                   "Economic Union funds the wartime army";
+                   "{:.0} Gold at {:+.1}/turn; the card adds about {marginal:.1} Gold/turn \
+                    and a policy swap must not bankrupt the campaign",
+                   g.players[pid].gold, g.players[pid].gold_per_turn);
+        }
         let desired_set: HashSet<&str> = desired.iter().copied().collect();
         // If circumstances changed, remove a downside-bearing Dark Age card
         // immediately. Isolationism must not coexist with a live Settler.
@@ -17265,6 +17281,9 @@ impl AdvancedAi {
                 .policies
                 .iter()
                 .filter(|current| {
+                    if protect_wartime_income.is_some() && current.as_str() == "economic_union" {
+                        return false;
+                    }
                     if builder_window_card == Some(card) {
                         // Protection applies even when the current card is
                         // absent from this strategy's ordinary portfolio.
