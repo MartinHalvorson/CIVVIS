@@ -39584,6 +39584,19 @@ impl AdvancedAi {
             self.force_groups_dirty |= acted;
             return acted;
         }
+        // The siege has already reserved its finisher. Let that doctrine
+        // spend the unit before an incidental civilian pickup can walk it
+        // away from a capturable city. A stale reservation falls through
+        // when the refreshed group no longer has a live siege objective.
+        if self.unit_is_reserved(uid) {
+            if (self.victory_planning || self.objective_board) && self.force_groups_dirty {
+                self.rebuild_force_groups(g, pid, plan);
+                self.force_groups_dirty = false;
+            }
+            if let Some(acted) = self.siege_doctrine_step(g, pid, uid, plan) {
+                return acted;
+            }
+        }
         if self
             .base
             .capture_adjacent_civilian(g, pid, uid, decline_settlers)
