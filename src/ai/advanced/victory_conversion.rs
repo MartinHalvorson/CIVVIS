@@ -1112,7 +1112,13 @@ impl AdvancedAi {
         if queued >= 2 {
             return 0.0;
         }
-        if self.siege_positive_damage_budget && fills_role {
+        // One wall-breaker is not enough when the measured breach time still
+        // exceeds the train's remaining health. Keep buying a second gun
+        // (subject to the queue cap above) instead of treating the first
+        // gun's mere presence as a completed siege arm.
+        let breach_shortfall =
+            spec.siege && g.cities[&target].wall_hp > 0 && finish > endurance * 0.8;
+        if self.siege_positive_damage_budget && (fills_role || breach_shortfall) {
             return raw * 1.25 / (1.0 + arrival / 10.0);
         }
         if self.reinforce_before_stall

@@ -537,6 +537,43 @@ fn reinforcement_orders_the_missing_breach_role_and_stops_at_the_deadline() {
 }
 
 #[test]
+fn a_single_gun_does_not_hide_a_losing_wall_damage_budget() {
+    let (mut g, mut ai, home, enemy) = board(VictoryTarget::Domination);
+    g.at_war.insert((0, 1));
+    g.cities
+        .get_mut(&enemy)
+        .unwrap()
+        .buildings
+        .push(crate::name!("renaissance_walls"));
+    g.cities.get_mut(&enemy).unwrap().wall_hp = 300;
+    let pos = g.cities[&enemy].pos;
+    g.spawn_test_unit("modern_armor", 1, pos);
+    let gun = g.spawn_test_unit("catapult", 0, (pos.0 - 2, pos.1));
+    let taker = g.spawn_test_unit("swordsman", 0, (pos.0 - 1, pos.1));
+    let (finish, endurance) = ai
+        .conversion_siege_budget(&g, 0, enemy, &[gun, taker])
+        .unwrap();
+    assert!(
+        finish > endurance * 0.8,
+        "{finish} turns against {endurance} endurance"
+    );
+    let item = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+    let quote = ProductionQuote {
+        turns: 5.0,
+        raw: 1000.0,
+    };
+    let plan = plan(&g, enemy, GrandStrategy::Conquest);
+    assert_eq!(
+        ai.conversion_reinforcement_bonus(&g, 0, home, &item, &plan, quote),
+        0.0
+    );
+    ai.enable_siege_positive_damage_budget();
+    assert!(ai.conversion_reinforcement_bonus(&g, 0, home, &item, &plan, quote) > 0.0);
+}
+
+#[test]
 fn capital_router_needs_a_known_reachable_objective_and_keeps_the_opponent() {
     let (mut g, mut ai, _, enemy) = board(VictoryTarget::Domination);
     ai.enable_capital_campaign_router();
