@@ -17550,7 +17550,8 @@ impl AdvancedAi {
         }
         let fatigued = fatigued
             && !self.one_war_presses(g, pid, partner)
-            && !self.domination_siege_is_progressing(g, pid, partner, plan);
+            && !self.domination_siege_is_progressing(g, pid, partner, plan)
+            && !self.domination_siege_train_mobilizing(g, pid, partner, plan);
         let one_war_peace = self.one_war_peace(g, pid, partner).is_some();
         let denied_partner = plan.target_player == Some(partner)
             && (plan.strategy == GrandStrategy::Conquest
@@ -19791,7 +19792,8 @@ impl AdvancedAi {
             let fatigued = self.major_war_since.is_some_and(|started| {
                 g.turn.saturating_sub(started) >= 24
                     && g.turn.saturating_sub(self.last_campaign_progress) >= 12
-            }) && !self.domination_siege_is_progressing(g, pid, *other, plan);
+            }) && !self.domination_siege_is_progressing(g, pid, *other, plan)
+                && !self.domination_siege_train_mobilizing(g, pid, *other, plan);
             let peace_pending = g.pending_deals.iter().any(|deal| {
                 deal.peace
                     && ((deal.from == pid && deal.to == *other)

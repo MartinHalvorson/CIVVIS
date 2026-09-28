@@ -1,5 +1,6 @@
 use super::super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
-use crate::game::Game;
+use super::SIEGE_TRAIN_WAR_LIMIT;
+use crate::game::{Game, Item};
 
 fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
     let mut g = Game::new_full(2, 40, 24, 373200, 300, 0, false);
@@ -47,6 +48,70 @@ fn damage(g: &mut Game, ai: &mut AdvancedAi, city: u32, turn: u32, walls: i32) {
     g.turn = turn;
     g.cities.get_mut(&city).unwrap().wall_hp = walls;
     ai.observe_campaign(g, 0);
+}
+
+#[test]
+fn committed_wall_breaker_survives_fatigue_until_its_bounded_arrival_window_ends() {
+    let (mut g, mut ai, plan, _, _) = fixture();
+    // Native King run civvis-20260928T090730Z: the Ottoman war began on
+    // turn 107, Cuenca started a Bombard on 122, and the peace desk called
+    // the war stalled on 131, before the Bombard emerged on 134.
+    ai.major_war_since = Some(g.turn - 25);
+    let home = g.player_city_ids(0)[0];
+    g.cities.get_mut(&home).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("bombard"),
+    }];
+    assert!(ai.domination_siege_train_mobilizing(&g, 0, 1, &plan));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1));
+
+    let (mut fielded, mut fielded_ai, fielded_plan, _, _) = fixture();
+    fielded_ai.major_war_since = Some(fielded.turn - 27);
+    let gun = fielded.spawn_test_unit("bombard", 0, (8, 10));
+    assert!(fielded_ai.domination_siege_train_mobilizing(&fielded, 0, 1, &fielded_plan));
+    fielded_ai.advanced_diplomacy(&mut fielded, 0, &fielded_plan);
+    assert!(!fielded_ai.peace_offers.contains(&1));
+    fielded.remove_unit(gun);
+    assert!(!fielded_ai.domination_siege_train_mobilizing(&fielded, 0, 1, &fielded_plan));
+
+    let (mut expired, mut expired_ai, expired_plan, _, _) = fixture();
+    expired_ai.major_war_since = Some(expired.turn - SIEGE_TRAIN_WAR_LIMIT);
+    let home = expired.player_city_ids(0)[0];
+    expired.cities.get_mut(&home).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("bombard"),
+    }];
+    assert!(!expired_ai.domination_siege_train_mobilizing(&expired, 0, 1, &expired_plan));
+    expired_ai.advanced_diplomacy(&mut expired, 0, &expired_plan);
+    assert!(expired_ai.peace_offers.contains(&1));
+}
+
+#[test]
+fn white_peace_does_not_interrupt_a_committed_domination_siege_train() {
+    let (mut g, mut ai, plan, _, _) = fixture();
+    ai.major_war_since = Some(g.turn - 25);
+    let home = g.player_city_ids(0)[0];
+    g.cities.get_mut(&home).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("bombard"),
+    }];
+    let deal = crate::game::DiplomaticDeal {
+        id: 1,
+        from: 1,
+        to: 0,
+        give_gold: 0.0,
+        request_gold: 0.0,
+        open_borders: false,
+        friendship: false,
+        peace: true,
+        alliance: None,
+        defensive_pact: false,
+        joint_war_target: None,
+        promise: None,
+        demand: false,
+        expires: g.turn + SIEGE_TRAIN_WAR_LIMIT,
+    };
+    assert!(ai.incoming_deal_value(&g, 0, &deal, &plan) < 0.0);
+    g.turn += SIEGE_TRAIN_WAR_LIMIT - 25;
+    assert!(ai.incoming_deal_value(&g, 0, &deal, &plan) > 0.0);
 }
 
 #[test]
