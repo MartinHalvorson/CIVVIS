@@ -16816,6 +16816,24 @@ impl BasicAi {
             return false;
         }
         let origin = g.units[&uid].pos;
+        // A linked military unit moves its support peer with it.  The live
+        // Coimbra siege (`civvis-20260928T051240Z`, t91–95) let a wounded
+        // Crossbowman chase a captured civilian and dragged its Siege Tower
+        // from two tiles outside the city to six.  Adjacent captures run
+        // before this pursuit and remain free; a multi-tile detour is not
+        // worth taking a ram, tower, medic, or anti-air unit off its job.
+        let carries_support = g.units[&uid]
+            .linked_to
+            .and_then(|peer| g.units.get(&peer))
+            .is_some_and(|peer| {
+                peer.owner == pid
+                    && peer.pos == origin
+                    && peer.linked_to == Some(uid)
+                    && g.rules.units[peer.kind].class == "support"
+            });
+        if carries_support {
+            return false;
+        }
         let reach = g.units[&uid].moves_left.floor() as i32;
         // The barbarian's contract is unchanged: no step with under two
         // movement. A major with one point left still takes the step that

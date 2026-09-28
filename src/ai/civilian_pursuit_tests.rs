@@ -40,6 +40,28 @@ fn unwalled_city_does_not_prevent_civilian_pursuit() {
 }
 
 #[test]
+fn linked_support_carrier_declines_a_multi_tile_civilian_detour() {
+    let (mut g, ai, soldier, city) = pursuit();
+    g.cities.get_mut(&city).unwrap().wall_hp = 0;
+    let origin = g.units[&soldier].pos;
+    let support = g.spawn_test_unit("siege_tower", 0, origin);
+    g.apply(
+        0,
+        &Action::LinkUnits {
+            unit: soldier,
+            with: support,
+        },
+    )
+    .unwrap();
+
+    assert!(!ai.pursue_capturable_civilian(&mut g, 0, soldier, false));
+    assert_eq!(g.units[&soldier].pos, origin);
+    assert_eq!(g.units[&support].pos, origin);
+    assert_eq!(g.units[&soldier].linked_to, Some(support));
+    assert_eq!(g.units[&support].linked_to, Some(soldier));
+}
+
+#[test]
 fn protected_prize_does_not_hide_an_unprotected_alternative() {
     let (mut g, ai, soldier, _) = pursuit();
     let safe = (4, 5);
