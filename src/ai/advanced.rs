@@ -31984,6 +31984,21 @@ impl AdvancedAi {
         let defenses = observed_strength * 1.8
             + observed_hp.max(0) as f64 * 0.12
             + observed_wall_hp.max(0) as f64 * 0.16;
+        // The first city of a Domination campaign is a foothold, not just a
+        // trophy. On the live King Brazil front we selected a 100-wall border
+        // city over a nearby unwalled one; it upgraded to 400 walls during a
+        // 25-turn assault that captured nothing. The generic defensive score
+        // charges only 16 for those first 100 wall HP, less than two tiles of
+        // march. Price the setup and bombardment time when ordering conquest
+        // objectives; a lone walled city is still a valid target.
+        let wall_breach_delay = if strategy == GrandStrategy::Conquest
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && observed_wall_hp > 0
+        {
+            55.0 + observed_wall_hp as f64 * 0.4
+        } else {
+            0.0
+        };
         // See [`AdvancedAi::siege_commitment`]. `defenses` above already prefers
         // a weakened city, but only by ~37 points across the whole health bar —
         // less than the distance terms swing over five tiles. That is why the
@@ -32044,6 +32059,7 @@ impl AdvancedAi {
         core_distance as f64 * 7.0
             + military_distance as f64 * 5.0
             + defenses
+            + wall_breach_delay
             + local_balance
             + approach_cost
             + occupation_risk

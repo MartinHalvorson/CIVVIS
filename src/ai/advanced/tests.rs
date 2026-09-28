@@ -9590,6 +9590,42 @@ fn live_campaign_holds_a_major_war_city_until_capture_or_emergency() {
 }
 
 #[test]
+fn domination_prices_a_fresh_wall_as_a_real_first_capture_delay() {
+    let mut game = Game::new_full(2, 30, 18, 7_112, 300, 0, false);
+    for pid in 0..2 {
+        game.current = pid;
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    let enemy = game.player_city_ids(1)[0];
+    let mut domination = AdvancedAi::targeting(VictoryTarget::Domination);
+    let mut ordinary = AdvancedAi::new();
+    domination.battlefront_observation = false;
+    ordinary.battlefront_observation = false;
+    let score = |ai: &AdvancedAi, game: &Game| {
+        ai.campaign_city_value(game, 0, &game.cities[&enemy], GrandStrategy::Conquest)
+    };
+    let open_domination = score(&domination, &game);
+    let open_ordinary = score(&ordinary, &game);
+    game.cities.get_mut(&enemy).unwrap().wall_hp = 100;
+    let wall_domination = score(&domination, &game);
+    let wall_ordinary = score(&ordinary, &game);
+    assert!(
+        wall_domination - open_domination > 60.0,
+        "the first wall must cost more than five tiles of marching toward an open foothold"
+    );
+    assert!(
+        wall_ordinary - open_ordinary < 60.0,
+        "ordinary Conquest keeps its established city ranking"
+    );
+}
+
+#[test]
 fn campaign_city_ordering_prefers_a_breach_then_the_domination_capital() {
     let mut game = Game::new_full(2, 30, 18, 7_111, 300, 0, false);
     for pid in 0..2 {
