@@ -38,6 +38,7 @@ import json
 import math
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -193,6 +194,61 @@ def decider_provenance_line(orders_bin: Path) -> str:
     digest = binary_sha256(orders_bin)
     return (f"decider binary: revision={revision or 'unknown'} source={source} "
             f"sha256={digest or 'unknown'} path={orders_bin}")
+
+
+def freeze_attempt_decider(orders_bin: Path, tag: str) -> Path:
+    """Keep one executable image across a game and all its autosave reloads.
+
+    A supplied worktree binary can be rebuilt while the match is running.
+    Passing that mutable path to each continuation made the same King game use
+    three revisions at turn 184. Copy it before launch and bind its provenance
+    to the bytes; a changed source cannot rewrite this attempt's decisions.
+    """
+    source = orders_bin.expanduser().resolve()
+    digest = binary_sha256(source)
+    if digest is None:
+        raise OSError(f"cannot checksum decider {source}")
+    revision, source_kind = binary_provenance(source)
+    # Keep preflight failures outside `control/<tag>`: that directory denotes
+    # a launched game to the status and ledger tools.
+    target = RUN_ROOT.parent / "decider-snapshots" / tag / "civvis_orders"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        # A pre-turn failure can retry in the same wall-clock second and reuse
+        # the tag. Keep the image if it is exactly the one already frozen;
+        # never overwrite an earlier attempt with different bytes.
+        manifest = target.with_name(target.name + ".provenance.json")
+        try:
+            frozen = json.loads(manifest.read_text())
+        except (OSError, ValueError):
+            frozen = {}
+        if (binary_sha256(target) == digest
+                and frozen.get("kind") == "frozen_attempt_decider"
+                and frozen.get("sha256") == digest):
+            return target
+        raise FileExistsError(f"attempt decider already exists: {target}")
+    fd, temporary = tempfile.mkstemp(prefix=".civvis_orders-", dir=target.parent)
+    os.close(fd)
+    try:
+        shutil.copy2(source, temporary)
+        if binary_sha256(Path(temporary)) != digest:
+            raise OSError(f"decider changed while copying {source}")
+        os.replace(temporary, target)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+    manifest = target.with_name(target.name + ".provenance.json")
+    provenance = {
+        "schema": 1,
+        "kind": "frozen_attempt_decider",
+        "revision": revision,
+        "sha256": digest,
+        "source_kind": source_kind,
+        "source_path": str(source),
+    }
+    staged = manifest.with_name(manifest.name + ".tmp")
+    staged.write_text(json.dumps(provenance, sort_keys=True) + "\n")
+    os.replace(staged, manifest)
+    return target
 
 
 def dismiss_crash_dialogs() -> None:
@@ -2883,6 +2939,7 @@ def main() -> int:
     played = 0          # attempts that produced a MEASUREMENT — the only budget
     started = 0         # iterations, for the log line only
     blocked_streak = 0
+    batch_decider_sha = None
 
     while played < args.attempts:
         # ⚠ Gate BEFORE the tag, the mod sync and the log files. A blocked start that
@@ -2933,10 +2990,24 @@ def main() -> int:
             return 4
         # ★★★★ The program that will actually play: see `refresh_orders_binary`.
         print(refresh_orders_binary(orders_bin, args.build), flush=True)
-        # `code_rev` names the bridge tree.  A supplied binary may be built from
-        # a different worktree, so record its identity beside the attempt after
-        # any rebuild has completed.
-        print(decider_provenance_line(orders_bin), flush=True)
+        try:
+            attempt_bin = freeze_attempt_decider(orders_bin, tag)
+        except OSError as error:
+            print(f"cannot freeze this attempt's decider: {error}", flush=True)
+            return 4
+        attempt_sha = binary_sha256(attempt_bin)
+        if attempt_sha is None:
+            print(f"cannot verify frozen decider {attempt_bin}", flush=True)
+            return 4
+        if pinned is not None and batch_decider_sha not in (None, attempt_sha):
+            print("THE DECIDER BINARY CHANGED MID-BATCH — "
+                  f"pinned {batch_decider_sha}, now {attempt_sha}. "
+                  "Start a new batch for the new executable.", flush=True)
+            return 4
+        batch_decider_sha = attempt_sha
+        # The bridge checkout and a supplied binary may be different trees.
+        # Report the exact copied image that will drive every continuation.
+        print(decider_provenance_line(attempt_bin), flush=True)
         print(f"\n=== attempt {attempt}/{args.attempts}  {tag}  code={code_rev} ===",
               flush=True)
         # The database path is as much part of a run as its event log.  SQLite
@@ -2948,7 +3019,7 @@ def main() -> int:
         if args.load_save:
             try:
                 load_save, diagnostic = prepare_save_diagnostic(
-                    args, tag, code_rev, orders_bin)
+                    args, tag, code_rev, attempt_bin)
             except (OSError, ValueError) as error:
                 print(f"saved-game diagnostic refused before launch: {error}",
                       file=sys.stderr, flush=True)
@@ -2964,7 +3035,7 @@ def main() -> int:
         prepare_cleanup_ownership(
             tag, baseline_pids=getattr(env, "_LAST_GAME_PIDS", ()))
         play = subprocess.Popen(
-            play_command(args, tag, orders_db, orders_bin, load_save=load_save),
+            play_command(args, tag, orders_db, attempt_bin, load_save=load_save),
             stdout=play_log, stderr=subprocess.STDOUT,
         )
         player_pid = getattr(play, "pid", None)
@@ -3036,7 +3107,7 @@ def main() -> int:
                 cont = f"{tag}-cont{len(resumes) + 1}"
                 if diagnostic is not None:
                     try:
-                        check_diagnostic_pins(diagnostic, orders_bin)
+                        check_diagnostic_pins(diagnostic, attempt_bin)
                         write_diagnostic_marker(cont, diagnostic)
                     except OSError as error:
                         print(f"[resume] diagnostic continuation refused: {error}",
@@ -3075,7 +3146,7 @@ def main() -> int:
                 torn_down = False
                 play = subprocess.Popen(
                     play_command(args, cont, RUN_ROOT / cont / "orders.sqlite",
-                                 orders_bin, load_save=save),
+                                 attempt_bin, load_save=save),
                     stdout=play_log, stderr=subprocess.STDOUT,
                 )
                 player_pid = getattr(play, "pid", None)

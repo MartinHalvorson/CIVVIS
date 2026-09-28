@@ -23,6 +23,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_civvis_climb as climb
+import civ6_brain
 
 
 class CrashAlertCleanupTest(unittest.TestCase):
@@ -754,29 +755,39 @@ class SavedGameDiagnostics(_Harness, unittest.TestCase):
         self.assertEqual(rows, [])
         popen.assert_not_called()
 
-    def test_changed_binary_refuses_diagnostic_recovery(self):
+    def test_changed_source_does_not_change_diagnostic_recovery(self):
         spawned = []
         test = self
         selected = Path(self.tmp.name) / "AutoSave_0207.Civ6Save"
         selected.write_bytes(b"recovery input")
+        first_image = self.orders_bin.read_bytes()
 
         class Recording(FakeProc):
             def __init__(self, argv, *args, **kwargs):
                 spawned.append(argv)
                 super().__init__(argv, *args, **kwargs)
 
-        def frozen(*args):
-            test.orders_bin.write_bytes(b"different decider")
-            return "frozen"
+        calls = 0
+
+        def finish(*args):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                test.orders_bin.write_bytes(b"different decider")
+                return "frozen"
+            return "exited"
 
         with mock.patch.object(climb.subprocess, "Popen", Recording), \
-             mock.patch.object(climb, "wait_watching_the_turn", side_effect=frozen), \
+             mock.patch.object(climb, "wait_watching_the_turn", side_effect=finish), \
              mock.patch.object(climb, "_recent_autosaves", return_value=[selected]):
-            _, rows = self.climb_with([{"last_turn": 208}], attempts=1,
+            _, rows = self.climb_with([{"last_turn": 208}, {"last_turn": 221}], attempts=1,
                                      argv_extra=self.words)
         self.assertEqual(rows, [])
-        self.assertEqual(len(spawned), 1)
-        self.assertIn("binary changed", self.result()["diagnostic_resume_refused"])
+        self.assertEqual(len(spawned), 2)
+        images = [Path(argv[argv.index("--civvis-bin") + 1]) for argv in spawned]
+        self.assertEqual(images[0], images[1])
+        self.assertEqual(images[0].read_bytes(), first_image)
+        self.assertEqual(len(self.result()["resumes"]), 1)
 
     def test_no_native_turn_is_a_single_failed_diagnostic_start(self):
         with mock.patch.object(climb.subprocess, "Popen", wraps=FakeProc) as popen:
@@ -858,6 +869,30 @@ class DeciderProvenanceTests(unittest.TestCase):
         self.assertIn("source=unverified-binary", line)
         self.assertIn(climb.hashlib.sha256(b"decider image").hexdigest(), line)
         self.assertIn(str(binary), line)
+
+    def test_reload_keeps_the_original_decider_after_its_checkout_rebuilds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkout = root / "checkout"
+            binary = checkout / "target" / "release" / "civvis_orders"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"first tested image")
+            (checkout / ".git").mkdir()
+            revision = "a" * 40
+            with mock.patch.object(climb, "RUN_ROOT", root / "runs"), \
+                 mock.patch.object(civ6_brain, "local_revision", return_value=revision):
+                frozen = climb.freeze_attempt_decider(binary, "king-game")
+                binary.write_bytes(b"different rebuild")
+                self.assertEqual(frozen.read_bytes(), b"first tested image")
+                self.assertEqual(civ6_brain.binary_provenance(frozen),
+                                 (revision, "attempt-snapshot"))
+                self.assertEqual(climb.binary_sha256(frozen),
+                                 climb.hashlib.sha256(b"first tested image").hexdigest())
+                with self.assertRaises(FileExistsError):
+                    climb.freeze_attempt_decider(binary, "king-game")
+                frozen.write_bytes(b"tampered snapshot")
+                self.assertEqual(civ6_brain.binary_provenance(frozen),
+                                 (None, "attempt-snapshot-unverified"))
 
 
 class BlockedReasonTests(unittest.TestCase):
@@ -1068,6 +1103,31 @@ class FrozenBuildTests(_Harness, unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertEqual(len(rows), 3)
+
+    def test_a_supplied_binary_rebuild_ends_the_pinned_batch(self):
+        original = climb.freeze_attempt_decider
+        launches = []
+
+        def mutate_after_freeze(source, tag):
+            image = original(source, tag)
+            if not launches:
+                self.orders_bin.write_bytes(b"new executable image")
+            launches.append(image)
+            return image
+
+        with mock.patch.object(climb, "stamp", side_effect=[
+                "20260928T000000Z", "20260928T000001Z"]), \
+             mock.patch.object(climb, "freeze_attempt_decider",
+                               side_effect=mutate_after_freeze), \
+             mock.patch.object(climb.subprocess, "Popen", wraps=FakeProc) as popen:
+            code, rows = self.climb_with(
+                [{"last_turn": 191}, {"last_turn": 240}], attempts=2)
+        self.assertEqual(code, 4)
+        self.assertEqual(len(rows), 1)
+        players = [call for call in popen.call_args_list
+                   if any(Path(arg).name == "civ6_play.py" for arg in call.args[0])]
+        self.assertEqual(len(players), 1)
+        self.assertEqual(launches[0].read_bytes(), b"#!/bin/sh\n")
 
     def test_a_dirty_tree_that_changes_also_ends_the_batch(self):
         """An edit to uncommitted work is a new program too, and `+dirty` hid it."""
