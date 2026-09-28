@@ -4218,50 +4218,6 @@ fn decide(
         .then(|| planned_suzerain_peace_envoy_reclaim(&orders, state))
         .flatten();
 
-    let (host_legal, deferred_peace_retries) =
-        defer_host_peace_retries(orders, state, host_peace_retries);
-    orders = host_legal;
-    if let Some((target, needed)) = envoy_reclaim {
-        let submitted = orders
-            .iter()
-            .any(|order| order.kind == "peace" && order.subject == Some(target));
-        if submitted {
-            let deferred = reserve_envoys_for_submitted_reclaim(
-                &mut orders,
-                target,
-                state.envoys_free.unwrap_or_default(),
-                needed,
-            );
-            note_bits.push(format!(
-                "envoy_reclaim_peace={target} needed={needed} deferred_envoys={deferred}"
-            ));
-        }
-    } else if let Some((suzerain, minor, needed)) = suzerain_envoy_reclaim {
-        let submitted = orders
-            .iter()
-            .any(|order| order.kind == "peace" && order.subject == Some(suzerain));
-        if submitted {
-            let deferred = reserve_envoys_for_submitted_reclaim(
-                &mut orders,
-                minor,
-                state.envoys_free.unwrap_or_default(),
-                needed,
-            );
-            note_bits.push(format!(
-                "envoy_suzerain_reclaim_peace={suzerain} minor={minor} needed={needed} \
-                 deferred_envoys={deferred}"
-            ));
-        }
-    }
-    if !deferred_peace_retries.is_empty() {
-        let targets = deferred_peace_retries
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-        note_bits.push(format!("peace_host_cooldown=[{targets}]"));
-    }
-
     let (activation_safe, deferred_activation_plot_conflicts) =
         defer_great_person_plot_conflicts(orders, state);
     orders = activation_safe;
@@ -4392,6 +4348,54 @@ fn decide(
                 mirror_state.game.players[0].envoys_free
             ));
         }
+    }
+
+    // Record a host peace retry only after the air-assault observation barrier
+    // and the other outbound filters have settled. A planned offer deferred
+    // before a sortie was never submitted, so it cannot start Firaxis's
+    // five-turn retry clock or reserve Envoys for a peace that did not happen.
+    let (host_legal, deferred_peace_retries) =
+        defer_host_peace_retries(orders, state, host_peace_retries);
+    orders = host_legal;
+    if let Some((target, needed)) = envoy_reclaim {
+        let submitted = orders
+            .iter()
+            .any(|order| order.kind == "peace" && order.subject == Some(target));
+        if submitted {
+            let deferred = reserve_envoys_for_submitted_reclaim(
+                &mut orders,
+                target,
+                state.envoys_free.unwrap_or_default(),
+                needed,
+            );
+            note_bits.push(format!(
+                "envoy_reclaim_peace={target} needed={needed} deferred_envoys={deferred}"
+            ));
+        }
+    } else if let Some((suzerain, minor, needed)) = suzerain_envoy_reclaim {
+        let submitted = orders
+            .iter()
+            .any(|order| order.kind == "peace" && order.subject == Some(suzerain));
+        if submitted {
+            let deferred = reserve_envoys_for_submitted_reclaim(
+                &mut orders,
+                minor,
+                state.envoys_free.unwrap_or_default(),
+                needed,
+            );
+            note_bits.push(format!(
+                "envoy_suzerain_reclaim_peace={suzerain} minor={minor} needed={needed} \
+                 deferred_envoys={deferred}"
+            ));
+        }
+    }
+    if !deferred_peace_retries.is_empty() {
+        let targets = deferred_peace_retries
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        note_bits.push(format!("peace_host_cooldown=[{targets}]"));
     }
 
     if !mirror_state.unmapped.is_empty() {
