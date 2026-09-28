@@ -2307,6 +2307,11 @@ pub struct StateUnit {
     pub upgrade_to: Option<String>,
     #[serde(default)]
     pub upgrade_cost: Option<f64>,
+    /// Both `GetUpgradeResourceCost()` returns, resolved by resource Index.
+    #[serde(default)]
+    pub upgrade_resource_cost: Option<f64>,
+    #[serde(default)]
+    pub upgrade_resource: Option<String>,
     #[serde(default)]
     pub upgrade_blocked_reason: Option<String>,
     /// The per-type upkeep the shipped Report screen sums, by formation
@@ -5808,6 +5813,8 @@ const UNIT_KEYS: &[&str] = &[
     // The host's per-unit affordances (docs/FIDELITY.md item 9).
     "upgrade_to",
     "upgrade_cost",
+    "upgrade_resource_cost",
+    "upgrade_resource",
     "upgrade_blocked_reason",
     "maintenance",
     "religious_strength",
@@ -7828,6 +7835,7 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
     let exported = unit.concert_plots.is_some()
         || unit.upgrade_to.is_some()
         || unit.upgrade_cost.is_some()
+        || unit.upgrade_resource_cost.is_some()
         || unit.upgrade_blocked_reason.is_some()
         || unit.maintenance.is_some()
         || unit.religious_strength.is_some()
@@ -7857,6 +7865,19 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
                 .and_then(|to| resolved_civvis_unit_name(&game.rules, to))
                 .map(|name| Name::new(&name)),
             cost: finite(unit.upgrade_cost).filter(|cost| *cost >= 0.0),
+            resources: finite(unit.upgrade_resource_cost)
+                .filter(|cost| *cost >= 0.0)
+                .and_then(|cost| {
+                    let resource = match unit.upgrade_resource.as_deref() {
+                        Some(raw) => match Vocabulary::embedded().resource(raw) {
+                            Resolved::Known(resource) => Some(resource),
+                            _ => return None,
+                        },
+                        None if cost == 0.0 => None,
+                        None => return None,
+                    };
+                    Some(crate::game::HostUnitUpgradeResource { resource, cost })
+                }),
             blocked: unit
                 .upgrade_blocked_reason
                 .clone()
@@ -14813,6 +14834,9 @@ mod host_fact_tests;
 
 #[cfg(test)]
 mod host_resource_price_tests;
+
+#[cfg(test)]
+mod host_upgrade_resource_tests;
 
 #[cfg(test)]
 mod enemy_district_pillage_tests;

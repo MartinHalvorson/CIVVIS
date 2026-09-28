@@ -6055,6 +6055,20 @@ CivvisMenus.resource_cost = function(queue, index, formation)
 	return nil;
 end;
 
+-- UnitPanel_Expansion2.lua:94 reads both returns: resource Index and bill.
+CivvisMenus.upgrade_resource_cost = function(unit)
+	return try(function()
+		local resource, cost = unit:GetUpgradeResourceCost();
+		if type(cost) ~= "number" or not (cost >= 0 and cost < math.huge) then return nil; end
+		if resource == -1 and cost == 0 then return { cost = 0 }; end
+		if type(resource) ~= "number" or not (resource >= 0 and resource < math.huge)
+				or resource % 1 ~= 0 then return nil; end
+		local row = GameInfo.Resources[resource];
+		if row == nil or type(row.ResourceType) ~= "string" or row.ResourceType == "" then return nil; end
+		return { resource = row.ResourceType, cost = cost };
+	end, nil);
+end;
+
 CivvisMenus.buildable = function(city)
 	local queue = city:GetBuildQueue();
 	if queue == nil then return nil; end
@@ -7330,7 +7344,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- first entry crosses as `upgrade_blocked_reason`, and a block the
 		-- host would not name crosses as "unnamed" so the verdict still
 		-- stands. A unit with no successor at all exports none of the three.
-		local upgradeTo, upgradeCost, upgradeBlocked = nil, nil, nil;
+		local upgradeTo, upgradeCost, upgradeBlocked, upgradeResourcePrice = nil, nil, nil, nil;
 		try(function()
 			local hash = CMD["UNITCOMMAND_UPGRADE"];
 			if hash == nil then return; end
@@ -7348,6 +7362,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			local target = kind ~= nil and GameInfo.Units[kind] or nil;
 			upgradeTo = target ~= nil and target.UnitType or nil;
 			upgradeCost = unit:GetUpgradeCost();
+			upgradeResourcePrice = CivvisMenus.upgrade_resource_cost(unit);
 			if now == true then return; end
 			local reasons = (keys ~= nil and type(strict) == "table")
 				and strict[keys.FAILURE_REASONS] or nil;
@@ -7506,6 +7521,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 			-- when a successor exists and the command cannot start this turn.
 			upgrade_to = upgradeTo,
 			upgrade_cost = upgradeCost,
+			upgrade_resource_cost = upgradeResourcePrice and upgradeResourcePrice.cost or nil,
+			upgrade_resource = upgradeResourcePrice and upgradeResourcePrice.resource or nil,
 			upgrade_blocked_reason = upgradeBlocked,
 			-- The per-type bill the shipped ReportScreen.lua:314-334 sums and
 			-- ToolTipHelper.lua:705 prints, by formation the way that screen

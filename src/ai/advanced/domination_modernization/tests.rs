@@ -195,6 +195,7 @@ fn native_quote_and_denial_are_authoritative() {
                     to: Some(crate::name!("crossbowman")),
                     cost: Some(125.0),
                     blocked: (index == 0).then(|| "host refusal".into()),
+                    ..Default::default()
                 }),
                 ..Default::default()
             },
@@ -205,6 +206,43 @@ fn native_quote_and_denial_are_authoritative() {
     assert_eq!(g.units[&units[0]].kind, "archer");
     assert_eq!(g.units[&units[1]].kind, "crossbowman");
     assert_eq!(g.players[0].gold, 31.0);
+}
+
+#[test]
+fn native_material_bill_funds_an_affordable_assault_upgrade() {
+    let (mut g, ai, plan, units) = fixture();
+    g.players[0].techs.insert(crate::name!("iron_working"));
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 15.0);
+    for uid in &units {
+        g.units.get_mut(uid).unwrap().kind = crate::name!("warrior");
+        std::sync::Arc::make_mut(&mut g.host_unit_facts).insert(
+            *uid,
+            crate::game::HostUnitFacts {
+                upgrade: Some(crate::game::HostUnitUpgrade {
+                    to: Some(crate::name!("swordsman")),
+                    cost: Some(25.0),
+                    resources: Some(crate::game::HostUnitUpgradeResource {
+                        resource: Some(crate::name!("iron")),
+                        cost: 10.0,
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+    }
+    assert_eq!(ai.domination_upgrade_need(&g, 0).len(), 2);
+    ai.fund_domination_upgrades(&mut g, 0, &plan);
+    assert_eq!(
+        units
+            .iter()
+            .filter(|uid| g.units[uid].kind == "swordsman")
+            .count(),
+        1
+    );
+    assert_eq!(g.strategic_stockpile(0, crate::name!("iron")), 5.0);
 }
 
 #[test]
