@@ -827,6 +827,51 @@ fn online_opening_named_before_second_city_gets_time_to_build_its_force() {
     assert!(ai.conquest_opening.is_none(), "the bounded window ends");
 }
 
+#[test]
+fn online_opening_keeps_a_full_column_near_the_rally_for_eight_more_turns() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    game.turn = 14;
+    let mut ai = opened(&mut game);
+    game.turn = 20;
+    game.found_city_for(0, at(6, 17), None);
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert_eq!(
+        ai.conquest_opening.as_ref().unwrap().preparing_since,
+        Some(20)
+    );
+
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    bodies(&mut game, 0, "warrior", rally, 2, 3);
+    bodies(&mut game, 0, "warrior", rally, 4, 2);
+    game.turn = 39;
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.as_ref().unwrap();
+    assert_eq!(opening.force.len(), 5);
+    assert_eq!(AdvancedAi::conquest_assembled_share(&game, opening), 0.6);
+    assert_eq!(AdvancedAi::conquest_commit_due(&game, opening), 40);
+
+    game.turn = 40;
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.as_ref().unwrap();
+    assert_eq!(opening.grace_until, Some(48));
+    assert!(ai.conquest_reservation_open(&game));
+
+    let uid = *opening.force.iter().next().unwrap();
+    game.units.get_mut(&uid).unwrap().pos = at(0, 0);
+    game.turn = 41;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert_eq!(
+        AdvancedAi::conquest_commit_due(&game, ai.conquest_opening.as_ref().unwrap()),
+        48,
+        "the extension stays granted when the formation changes"
+    );
+
+    game.turn = 48;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_none(), "the extension is bounded");
+}
+
 // ------------------------------------------------------------- vision guard
 
 #[test]
@@ -956,6 +1001,7 @@ fn the_war_rate_is_counted_from_the_engines_own_kill_counter() {
         city: 0,
         opened: 10,
         preparing_since: Some(10),
+        grace_until: None,
         rally: at(10, 12),
         force: BTreeSet::new(),
         assembled: Some(10),

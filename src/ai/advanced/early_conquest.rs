@@ -179,6 +179,15 @@ pub(crate) const CONQUEST_ASSEMBLY_SHARE: f64 = 0.8;
 /// How close to the rally a body counts as assembled.
 pub(crate) const CONQUEST_ASSEMBLY_RADIUS: i32 = 2;
 
+/// A full force that is still marching gets one bounded extension when at
+/// least three of five bodies are already on the rally's assembly ring and
+/// the other two are within five tiles. In the King Online game on 2026-09-28,
+/// the opening expired on turn 40 with three bodies within two tiles and the
+/// other two four and five tiles away; expiration diverted the whole column.
+pub(crate) const CONQUEST_APPROACHING_SHARE: f64 = 0.6;
+pub(crate) const CONQUEST_APPROACHING_RADIUS: i32 = 5;
+pub(crate) const CONQUEST_APPROACHING_GRACE_TURNS: u32 = 12;
+
 /// Standard turns after the force first assembled that the opening waits for
 /// a bill it can cover. Twenty is `CAMPAIGN_PATIENCE`: the same patience the
 /// shipped campaign gives an unlaunched plan.
@@ -228,6 +237,8 @@ pub(crate) struct ConquestOpening {
     pub(crate) opened: u32,
     /// The turn the empire first had two cities and could reserve the force.
     pub(crate) preparing_since: Option<u32>,
+    /// The fixed end of a short extension granted when the full force nears the rally.
+    pub(crate) grace_until: Option<u32>,
     /// The tile the force gathers on, on our side of the city.
     pub(crate) rally: Pos,
     /// The strike force: the bodies this opening is spending.
@@ -522,16 +533,35 @@ impl AdvancedAi {
     // 2. the reservation
     // ------------------------------------------------------------------
 
-    /// The opening can only be named before the original deadline. Once it
-    /// has a real target and can reserve production, it gets a minimum
-    /// preparation window as well.
-    fn conquest_commit_due(g: &Game, opening: &ConquestOpening) -> u32 {
+    /// The original deadline plus preparation time after reservation opens.
+    fn conquest_commit_base(g: &Game, opening: &ConquestOpening) -> u32 {
         g.standard_duration(CONQUEST_COMMIT_DEADLINE).max(
             opening
                 .opened
                 .max(opening.preparing_since.unwrap_or(opening.opened))
                 .saturating_add(g.standard_duration(CONQUEST_MIN_PREPARATION_TURNS)),
         )
+    }
+
+    /// All five reserved bodies are close enough that another short march
+    /// can assemble the column; an incomplete or distant force gets no grace.
+    fn conquest_force_approaching(g: &Game, opening: &ConquestOpening) -> bool {
+        opening.force.len() == CONQUEST_RANGED + CONQUEST_MELEE
+            && Self::conquest_assembled_share(g, opening) >= CONQUEST_APPROACHING_SHARE
+            && opening.force.iter().all(|uid| {
+                g.units.get(uid).is_some_and(|unit| {
+                    g.wdist(unit.pos, opening.rally) <= CONQUEST_APPROACHING_RADIUS
+                })
+            })
+    }
+
+    /// The opening can only be named before the original deadline. Once it
+    /// has a real target and can reserve production, it gets a minimum
+    /// preparation window. A near-assembled force may receive one fixed,
+    /// bounded extension at that deadline.
+    fn conquest_commit_due(g: &Game, opening: &ConquestOpening) -> u32 {
+        let base = Self::conquest_commit_base(g, opening);
+        base.max(opening.grace_until.unwrap_or(base))
     }
 
     /// Whether the reservation is open at all: the gene is on, an opening
@@ -1048,6 +1078,18 @@ impl AdvancedAi {
                 }
             }
         }
+        if let Some(opening) = self.conquest_opening.as_mut() {
+            let base = Self::conquest_commit_base(g, opening);
+            if opening.grace_until.is_none()
+                && opening.assembled.is_none()
+                && g.turn >= base
+                && Self::conquest_force_approaching(g, opening)
+            {
+                opening.grace_until = Some(
+                    base.saturating_add(g.standard_duration(CONQUEST_APPROACHING_GRACE_TURNS)),
+                );
+            }
+        }
         if let Some(opening) = self.conquest_opening.as_ref() {
             let target_alive = g
                 .players
@@ -1149,6 +1191,7 @@ impl AdvancedAi {
             opened: g.turn,
             preparing_since: (g.player_city_ids(pid).len() >= CONQUEST_FIRST_SETTLER_CITIES)
                 .then_some(g.turn),
+            grace_until: None,
             rally,
             force: BTreeSet::new(),
             assembled: None,
