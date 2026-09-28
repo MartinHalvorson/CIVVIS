@@ -30,7 +30,7 @@ class CrashAlertCleanupTest(unittest.TestCase):
         with mock.patch.object(climb, "run", return_value=""), \
              mock.patch.object(climb.desktop_control, "dismiss_modals", return_value=[]) as dismiss:
             climb.dismiss_crash_dialogs()
-        dismiss.assert_called_once_with(civ6_crashes_only=True)
+        dismiss.assert_called_once_with(crashes_only=True)
 
     def test_accessibility_failure_cannot_break_teardown(self):
         with mock.patch.object(climb, "run", return_value=""), \
