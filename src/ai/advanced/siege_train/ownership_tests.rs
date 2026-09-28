@@ -129,6 +129,48 @@ fn reserved_city_taker_finishes_before_a_distant_builder_pursuit() {
 }
 
 #[test]
+fn siege_shooter_keeps_its_city_assignment_before_a_distant_civilian_pursuit() {
+    let (mut g, mut ai, plan, cid, _, builder) = taker_with_builder(2);
+    let gun = ai.force_groups[0].units[0];
+    assert!(!ai.unit_is_reserved(gun), "only the city taker is reserved");
+    let shooter = g.units.get_mut(&gun).unwrap();
+    shooter.moves_left = 2.0;
+    shooter.attacks_left = 1;
+    shooter.acted = false;
+    shooter.moved = false;
+    let origin = g.units[&gun].pos;
+    let detour = g
+        .wring(origin, 2)
+        .into_iter()
+        .find(|pos| {
+            if g.city_at(*pos).is_some()
+                || !g.unit_ids_at(*pos).is_empty()
+                || g.map
+                    .get(*pos)
+                    .is_none_or(|tile| !g.rules.is_passable(tile) || g.rules.is_water(tile))
+                || g.wdist(*pos, g.cities[&cid].pos) <= g.wdist(origin, g.cities[&cid].pos)
+            {
+                return false;
+            }
+            let mut probe = g.clone();
+            probe.units.get_mut(&builder).unwrap().pos = *pos;
+            ai.base
+                .pursue_capturable_civilian(&mut probe, 0, gun, false)
+        })
+        .expect("a civilian can lure the siege shooter away from the city");
+    g.units.get_mut(&builder).unwrap().pos = detour;
+
+    let city_hp = g.cities[&cid].hp;
+    assert!(ai.advanced_military_step(&mut g, 0, gun, &plan));
+    assert_eq!(
+        g.units[&gun].pos, origin,
+        "the siege shooter stays on its post"
+    );
+    assert!(g.cities[&cid].hp < city_hp, "the shooter reduces the city");
+    assert_eq!(g.units[&builder].owner, 1);
+}
+
+#[test]
 fn obsolete_siege_reservation_still_allows_a_civilian_pickup() {
     let (mut g, mut ai, plan, cid, warrior, builder) = taker_with_builder(1);
     g.cities.get_mut(&cid).unwrap().owner = 0;
@@ -137,9 +179,11 @@ fn obsolete_siege_reservation_still_allows_a_civilian_pickup() {
 }
 
 #[test]
-fn an_unreserved_soldier_can_still_pick_up_a_civilian() {
+fn an_unassigned_soldier_can_still_pick_up_a_civilian() {
     let (mut g, mut ai, plan, cid, warrior, builder) = taker_with_builder(1);
     ai.reserved_units.clear();
+    ai.force_groups
+        .retain(|group| !group.units.contains(&warrior));
     assert!(ai.advanced_military_step(&mut g, 0, warrior, &plan));
     assert_eq!(g.units[&builder].owner, 0);
     assert_eq!(g.cities[&cid].owner, 1);
