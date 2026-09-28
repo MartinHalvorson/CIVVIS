@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import shlex
 import subprocess
 import sys
@@ -72,8 +73,28 @@ def run_one() -> int:
 
     civ6_play._play = play_after_previous_game_exits
     args = game_args()
+    tag = args[args.index("--tag") + 1]
     print("Native verification:", shlex.join(args), flush=True)
-    return civ6_play.main(args)
+    result = civ6_play.main(args)
+    summary_path = civ6_play.RUN_ROOT / tag / "summary.json"
+    if summary_path.is_file():
+        summary = json.loads(summary_path.read_text())
+        outcome = summary.get("outcome") or {}
+        seat = summary.get("seat") or {}
+        victory_types = {
+            victory["index"]: victory["type"]
+            for victory in seat.get("victory_types", [])
+        }
+        victory = victory_types.get(outcome.get("victory"), "unknown")
+        print(
+            f"Native result {tag}: turn={summary.get('last_turn')} "
+            f"won={outcome.get('won')} victory={victory} "
+            f"team={outcome.get('team')} reason={summary.get('reason')}",
+            flush=True,
+        )
+    else:
+        print(f"Native result {tag}: no summary written", flush=True)
+    return result
 
 
 def main() -> int:
