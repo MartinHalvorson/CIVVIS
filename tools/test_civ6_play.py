@@ -2635,6 +2635,20 @@ class PeaceDeterrenceConfigTests(unittest.TestCase):
 
 
 class VisualPopupCaptureFailureTests(unittest.TestCase):
+    def test_live_deal_offer_is_refused(self) -> None:
+        fixture = Path(__file__).resolve().parent / "fixtures" / "deal_refuse_live.jpg"
+        with civ6_play.popup_clear._image_library().open(fixture) as image:
+            frame = image.convert("RGB")
+        rect = (0, 0, 864, 542)
+        with patch.object(civ6_play, "game_window", return_value=rect), \
+             patch.object(civ6_play, "focus_game"), \
+             patch.object(civ6_play.time, "sleep"), \
+             patch.object(civ6_play.popup_clear, "capture", return_value=(frame, 2)), \
+             patch.object(civ6_play.popup_clear, "held_click") as click:
+            result = civ6_play.dismiss_visually_confirmed_popup()
+        self.assertEqual(result, (True, "confirmed deal button"))
+        click.assert_called_once_with((418, 206), rect, 2)
+
     def test_rescue_saves_and_classifies_one_frame(self) -> None:
         frame = mock.Mock()
         frame.size = (1728, 1084)

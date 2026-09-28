@@ -902,6 +902,41 @@ def dialogue_buttons(gray, box):
     return out
 
 
+def deal_refuse_button(rgb):
+    """The Refuse Deal button on a positively identified two-column offer.
+
+    The offer can cover only the left third of the live map, so the broad
+    leader darkness test calls it a map. Require its dark offer body plus the
+    adjacent green Accept and blue Refuse bars before returning the latter.
+    The 2026-09-28 King Gran Colombia game froze at turn 174 on this layout.
+    """
+    w, h = rgb.size
+    px = rgb.load()
+
+    def fraction(box, matching):
+        x0, y0, x1, y1 = (round(value * size) for value, size in
+                           zip(box, (w, h, w, h)))
+        step = max(1, w // 432)
+        hits = samples = 0
+        for y in range(y0, y1, step):
+            for x in range(x0, x1, step):
+                hits += bool(matching(*px[x, y]))
+                samples += 1
+        return hits / max(1, samples)
+
+    dark = fraction((0.06, 0.26, 0.315, 0.45),
+                    lambda r, g, b: max(r, g, b) < 65)
+    green = fraction((0.09, 0.173, 0.185, 0.208),
+                     lambda r, g, b: 35 < r < 100 and g > 80
+                     and g > r * 1.4 and b > r * 1.2)
+    blue = fraction((0.195, 0.173, 0.292, 0.208),
+                    lambda r, g, b: 8 < r < 75 and b > g * 1.25
+                    and g > r * 1.2 and b < 120)
+    if dark > 0.80 and green > 0.20 and blue > 0.60:
+        return (round(w * 0.242), round(h * 0.190))
+    return None
+
+
 def notice_button(rgb, gray):
     """A centered one-button Firaxis notice, such as ``Unit Captured``.
 
@@ -1032,6 +1067,10 @@ def classify(window):
     notice = notice_button(window, grey)
     if notice:
         return "notice", [notice], dark
+
+    deal = deal_refuse_button(window)
+    if deal:
+        return "deal", [deal], dark
 
     pause = pause_menu_button(window)
     if pause:

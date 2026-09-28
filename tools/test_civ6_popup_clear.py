@@ -23,6 +23,21 @@ from civ6_control import popup_clear  # noqa: E402
 
 
 @unittest.skipIf(Image is None, "requires Pillow")
+class DealRefuseTest(unittest.TestCase):
+    def test_live_offer_targets_refuse_while_the_map_is_ignored(self):
+        fixtures = Path(__file__).resolve().parent / "fixtures"
+        with Image.open(fixtures / "deal_refuse_live.jpg") as frame:
+            kind, targets, _ = popup_clear.classify(frame.convert("RGB"))
+            self.assertEqual(kind, "deal")
+            self.assertEqual(len(targets), 1)
+            self.assertTrue(325 < targets[0][0] < 510)
+            self.assertTrue(190 < targets[0][1] < 220)
+            self.assertEqual(popup_clear.click_target(kind, targets, frame.width), targets[0])
+        with Image.open(fixtures / "ordinary_map_live.jpg") as frame:
+            self.assertEqual(popup_clear.classify(frame.convert("RGB"))[0], "map")
+
+
+@unittest.skipIf(Image is None, "requires Pillow")
 class PauseMenuTest(unittest.TestCase):
     def observations(self):
         labels = (("MENU", 0.26), ("RETURN TO GAME", 0.32),

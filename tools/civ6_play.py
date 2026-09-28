@@ -3470,7 +3470,7 @@ def dismiss_visually_confirmed_popup(*, diagnostic_path: Path | None = None) -> 
         # the modal for the next verified poll instead of letting one unreadable
         # frame end the entire game controller.
         return False, "popup capture unavailable"
-    if surface not in ("leader", "notice"):
+    if surface not in ("leader", "notice", "deal"):
         return False, f"no safe visible dialogue ({surface})"
     target = popup_clear.click_target(surface, targets, window.size[0])
     if target is None:
