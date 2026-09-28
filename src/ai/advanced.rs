@@ -12413,6 +12413,43 @@ impl AdvancedAi {
                 && self.campaign_target_legal(g, pid, *target)
         });
         let domination_capital = self.domination_capital_target(g, pid);
+        // A Domination plan that names a distant, weak empire cannot start
+        // its war while a nearer rival has a city inside the declaration
+        // range. Keep the army on an actionable frontier until it can open
+        // that front. Forced targets, urgent denial, and an active war retain
+        // their precedence below.
+        let domination_frontier_target = if strategy == GrandStrategy::Conquest
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && wartime_rivals.is_empty()
+        {
+            major_rivals
+                .iter()
+                .copied()
+                .filter(|rival| self.campaign_target_legal(g, pid, *rival))
+                .filter(|rival| self.war_policy_target_feasible(g, pid, *rival))
+                .filter(|rival| {
+                    g.player_city_ids(*rival)
+                        .iter()
+                        .any(|city| Self::city_within_declaration_range(g, pid, g.cities[city].pos))
+                })
+                .min_by(|left, right| {
+                    self.campaign_target_value_with_culture(
+                        g,
+                        pid,
+                        *left,
+                        rival_culture_pressures.get(left).copied(),
+                    )
+                    .total_cmp(&self.campaign_target_value_with_culture(
+                        g,
+                        pid,
+                        *right,
+                        rival_culture_pressures.get(right).copied(),
+                    ))
+                    .then(left.cmp(right))
+                })
+        } else {
+            None
+        };
         let target_player = if let Some(emergency) = &emergency_objective {
             Some(emergency.target)
         } else if wartime_rivals.is_empty() {
@@ -12429,6 +12466,7 @@ impl AdvancedAi {
                         // must be taken first. Otherwise prefer an eligible
                         // capital before optional economic conquests.
                         .or_else(|| self.domination_followup_target(g, pid, None))
+                        .or(domination_frontier_target)
                         .or_else(|| domination_capital.map(|(owner, _)| owner))
                         // `city_campaign`: the plan's rival before the generic
                         // value sort. See `advanced/city_campaign.rs`.
@@ -12547,6 +12585,44 @@ impl AdvancedAi {
                     .map(|(_, capital)| capital)
             })
             .or(suppression_target_city)
+            // The nearest usable objective of the selected frontier is the
+            // first capture. Prefer its capital when that capital itself is
+            // in range, then take a border city that opens the road to it.
+            .or_else(|| {
+                domination_frontier_target
+                    .filter(|frontier| Some(*frontier) == target_player)
+                    .and_then(|frontier| {
+                        self.domination_capital_target_for(g, pid, Some(frontier))
+                            .filter(|(_, city)| {
+                                Self::city_within_declaration_range(g, pid, g.cities[city].pos)
+                            })
+                            .map(|(_, city)| city)
+                            .or_else(|| {
+                                g.cities
+                                    .values()
+                                    .filter(|city| {
+                                        city.owner == frontier
+                                            && Self::city_within_declaration_range(g, pid, city.pos)
+                                    })
+                                    .min_by(|left, right| {
+                                        self.campaign_city_value(
+                                            g,
+                                            pid,
+                                            left,
+                                            GrandStrategy::Conquest,
+                                        )
+                                        .total_cmp(&self.campaign_city_value(
+                                            g,
+                                            pid,
+                                            right,
+                                            GrandStrategy::Conquest,
+                                        ))
+                                        .then(left.id.cmp(&right.id))
+                                    })
+                                    .map(|city| city.id)
+                            })
+                    })
+            })
             .or_else(|| self.conversion_campaign_target(g, pid, target_player))
             // `city_campaign`: the plan's first city still in the rival's
             // hands. See `advanced/city_campaign.rs`.
@@ -12891,6 +12967,15 @@ impl AdvancedAi {
         distance * 7.0 + g.military_power(other) * 1.5
             - g.score(other) as f64 * 0.35
             - victory_pressure * 2.4
+    }
+
+    /// The ordinary war-opening gate uses this distance from a home city to
+    /// its first objective. Target selection must use the same gate or it can
+    /// keep naming a rival that diplomacy cannot attack.
+    fn city_within_declaration_range(g: &Game, pid: usize, objective: Pos) -> bool {
+        g.player_city_ids(pid)
+            .iter()
+            .any(|city| g.wdist(g.cities[city].pos, objective) <= 18)
     }
 
     /// Campaign value extends the major-rival heuristic to city-states.
@@ -19965,9 +20050,7 @@ impl AdvancedAi {
             .target_city
             .and_then(|cid| g.cities.get(&cid))
             .is_some_and(|target_city| {
-                g.player_city_ids(pid)
-                    .iter()
-                    .any(|cid| g.wdist(g.cities[cid].pos, target_city.pos) <= 18)
+                Self::city_within_declaration_range(g, pid, target_city.pos)
             });
         let committed_domination = self.victory_target == Some(VictoryTarget::Domination);
         // An army that has reached the enemy border is the only practical
