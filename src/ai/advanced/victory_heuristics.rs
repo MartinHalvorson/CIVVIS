@@ -291,6 +291,31 @@ impl AdvancedAi {
         self.domination_capital_target_for(g, pid, None)
     }
 
+    /// If taking a rival's original capital ends the match immediately, that
+    /// capture is also the answer to the rival's victory clock. Use the same
+    /// completion predicate as occupation safety so an unseen or lost home
+    /// capital cannot create a false "last capital" shortcut.
+    pub(super) fn domination_finishing_capital_for(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> Option<u32> {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !self.campaign_target_legal(g, pid, rival)
+        {
+            return None;
+        }
+        g.cities
+            .values()
+            .find(|city| {
+                city.owner == rival
+                    && city.is_capital
+                    && Self::capture_completes_domination(g, pid, city.id)
+            })
+            .map(|city| city.id)
+    }
+
     /// Rank required capitals inside the selected front as well as globally.
     /// A different rival owning the cheapest capital must not erase this
     /// front's capital objective and send the army after an ordinary city.
