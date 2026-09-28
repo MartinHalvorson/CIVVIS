@@ -19946,6 +19946,7 @@ impl AdvancedAi {
                         one_war::OneWarPeace::SecondFront => "one_war:peace:second_front",
                         one_war::OneWarPeace::CapitalSecured => "one_war:peace:capital_secured",
                         one_war::OneWarPeace::VictoryThreat => "one_war:peace:victory_threat",
+                        one_war::OneWarPeace::BlindFront => "one_war:peace:blind_front",
                         one_war::OneWarPeace::TideTurned => "one_war:peace:tide",
                         one_war::OneWarPeace::Rout => "one_war:peace:rout",
                     };

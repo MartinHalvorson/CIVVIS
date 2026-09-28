@@ -54,6 +54,10 @@
 //!    it with nothing in reach — or at once on a rout, `ONE_WAR_ROUT_NET` —
 //!    peace is offered every turn and a white peace accepted. A capture or a
 //!    favourable window stops the clock.
+//! 6. **Drop a blind front.** After a long war with no charted enemy city,
+//!    offer white peace when another major has a known city inside the normal
+//!    declaration range. A flat exchange otherwise never starts the tide
+//!    clock and can pin the campaign indefinitely.
 //!
 //! The deployment genome pins `one-war-at-a-time` on after its +1.00 pp
 //! displayed pooled Diff; the registry row stays a reversible `Kind::OptIn`
@@ -70,6 +74,9 @@ pub(crate) const ONE_WAR_TIDE_WINDOW: u32 = 8;
 /// The tide must run against us for this many standard turns before peace
 /// is sued for on the campaign front — "consistently", not one bad turn.
 pub(crate) const ONE_WAR_TIDE_PATIENCE: u32 = 6;
+/// A war with no known city objective gets this long to find one before a
+/// visible, reachable Domination frontier takes precedence.
+pub(crate) const ONE_WAR_BLIND_FRONT_PATIENCE: u32 = 24;
 /// A window net this far below zero is a rout: sue at once, prizes or not.
 pub(crate) const ONE_WAR_ROUT_NET: i32 = -4;
 /// What a city changing hands weighs against a unit in the exchange.
@@ -139,6 +146,8 @@ pub(crate) enum OneWarPeace {
     CapitalSecured,
     /// Another rival's religious or culture finish outranks optional conquest.
     VictoryThreat,
+    /// The old front has no known city while another rival has a reachable one.
+    BlindFront,
     /// The campaign front, and the tide has run against us for long enough
     /// with nothing left in reach worth the next turn.
     TideTurned,
@@ -155,6 +164,9 @@ impl OneWarPeace {
             }
             OneWarPeace::VictoryThreat => {
                 "freeing the Domination army to counter a rival victory threat"
+            }
+            OneWarPeace::BlindFront => {
+                "the long-running front has no known city, while another reachable rival does"
             }
             OneWarPeace::TideTurned => {
                 "the tide has run against us for long enough and nothing in reach is worth the next turn"
@@ -532,6 +544,33 @@ impl AdvancedAi {
         if front.window_net() <= ONE_WAR_ROUT_NET {
             return Some(OneWarPeace::Rout);
         }
+        // A hostile declaration can pin the one-war campaign to an empire
+        // whose territory has never been charted. A flat exchange never
+        // starts the losing-tide clock, and the ordinary fatigue clause
+        // requires known enemy cities, so that front can hold the army for
+        // the rest of the game. Once a different major's city is both known
+        // and inside the normal declaration range, offer white peace and
+        // let the next assessment choose that concrete frontier. An explicit
+        // operator target still keeps its front.
+        if self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.forced_target_player.is_none()
+            && g.turn.saturating_sub(front.since)
+                >= g.standard_duration(ONE_WAR_BLIND_FRONT_PATIENCE).max(1)
+            && g.player_city_ids(other).is_empty()
+            && g.players.iter().any(|rival| {
+                rival.id != pid
+                    && rival.id != other
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && self.campaign_target_legal(g, pid, rival.id)
+                    && g.player_city_ids(rival.id)
+                        .into_iter()
+                        .any(|cid| Self::city_within_declaration_range(g, pid, g.cities[&cid].pos))
+            })
+        {
+            return Some(OneWarPeace::BlindFront);
+        }
         let against_for = front
             .tide_against_since
             .map(|since| g.turn.saturating_sub(since))?;
@@ -626,3 +665,6 @@ mod capital_handoff_tests;
 
 #[cfg(test)]
 mod urgent_denial_tests;
+
+#[cfg(test)]
+mod blind_front_tests;
