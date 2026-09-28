@@ -74,8 +74,11 @@
 //! [`CampaignPlan::bodies`] bodies, one of them a capturer. And once every
 //! planned city is ours the peace desk offers peace
 //! ([`AdvancedAi::city_campaign_diplomacy`]), the way the raid closes when
-//! it has paid, with [`CAMPAIGN_REPEAT_COOLDOWN`] turns before the next
-//! plan. A plan not launched within [`CAMPAIGN_PATIENCE`] standard turns is
+//! it has paid. A Domination campaign on the active one-war front instead
+//! leaves peace to the war desk, so taking a border city does not end the
+//! advance toward a required capital. After peace, [`CAMPAIGN_REPEAT_COOLDOWN`]
+//! turns pass before the next plan. A plan not launched within
+//! [`CAMPAIGN_PATIENCE`] standard turns is
 //! dropped and re-drawn; while at peace it is refreshed every turn so the
 //! target follows the board, keeping its age when the rival is the same.
 //!
@@ -100,7 +103,7 @@
 //! rows in `genes.rs`, byte-identical when off, and priced apart so the
 //! screen says which half pays.
 
-use super::{AdvancedAi, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan};
+use super::{AdvancedAi, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan, VictoryTarget};
 use crate::game::{effective_strength, Action, City, Game};
 use crate::think;
 use crate::Pos;
@@ -857,8 +860,9 @@ impl AdvancedAi {
         )
     }
 
-    /// The peace desk: a campaign whose every city is ours offers peace,
-    /// once, until it is accepted.
+    /// The peace desk: a completed campaign offers peace until it is
+    /// accepted. On the active Domination front, the war desk's fatigue,
+    /// rout, and capital handoff checks decide when to stop instead.
     pub(crate) fn city_campaign_diplomacy(&mut self, g: &mut Game, pid: usize) {
         if !self.city_campaign_active() {
             return;
@@ -873,6 +877,16 @@ impl AdvancedAi {
                     .get(cid)
                     .is_some_and(|city| city.owner == campaign.target)
             })
+        {
+            return;
+        }
+        // A one-city plan is only the first foothold in a Domination war.
+        // The next enemy city may still be behind fog when that foothold
+        // falls. Do not sue for peace before the army can see its next
+        // objective: the ordinary war desk already handles a stalled front,
+        // a rout, or a secured capital.
+        if self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.one_war_front() == Some(campaign.target)
         {
             return;
         }
