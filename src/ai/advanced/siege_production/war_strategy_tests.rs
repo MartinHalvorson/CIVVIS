@@ -93,6 +93,65 @@ fn a_board_gated_domination_plan_builds_its_wall_breaker_before_war() {
     ));
 }
 
+#[test]
+fn an_unwalled_campaign_equips_a_wall_breaker_before_the_enemy_builds_walls() {
+    let (mut g, mut ai, mut plan, home, target) = siege_gap_case();
+    g.at_war.clear();
+    g.record_contact(0, 1);
+    g.cities.get_mut(&target).unwrap().wall_hp = 0;
+    plan.strategy = GrandStrategy::Expansion;
+    ai.war_policy_via_board = true;
+    let catapult = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+
+    assert!(ai.missing_domination_siege(
+        &g,
+        0,
+        home,
+        &plan,
+        &ai.counts(&g, 0),
+        &g.rules.units["catapult"]
+    ));
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(g.cities[&home].queue.first(), Some(&catapult));
+}
+
+#[test]
+fn the_first_campaign_weapon_reserves_an_idle_queue_ahead_of_a_builder() {
+    let (mut g, mut ai, mut plan, home, target) = siege_gap_case();
+    g.at_war.clear();
+    g.record_contact(0, 1);
+    g.cities.get_mut(&target).unwrap().wall_hp = 0;
+    plan.strategy = GrandStrategy::Expansion;
+    ai.war_policy_via_board = true;
+    ai.enable_first_builder_reserve();
+    for uid in g.player_unit_ids(0) {
+        if g.units[&uid].kind == "builder" {
+            g.remove_unit(uid);
+        }
+    }
+    assert_eq!(ai.counts(&g, 0).builders, 0);
+    let mut without_campaign = ai.clone();
+    without_campaign.war_policy_via_board = false;
+    let mut baseline = g.clone();
+    without_campaign.advanced_production(&mut baseline, 0, &plan, false);
+    assert_eq!(
+        baseline.cities[&home].queue.first(),
+        Some(&Item::Unit {
+            unit: crate::name!("builder")
+        }),
+        "the ordinary builder reservation would claim this idle queue"
+    );
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(
+        g.cities[&home].queue.first(),
+        Some(&Item::Unit {
+            unit: crate::name!("catapult")
+        })
+    );
+}
+
 fn assert_war_strategy_equips_siege(strategy: GrandStrategy) {
     let (mut g, mut ai, mut plan, home, _) = siege_gap_case();
     plan.strategy = strategy;

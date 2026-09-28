@@ -48,6 +48,28 @@ fn missing_siege_research_unlocks_engineering_before_the_war() {
 }
 
 #[test]
+fn board_gated_domination_prepares_engineering_before_an_unwalled_campaign() {
+    let (mut g, mut ai, mut plan) = board();
+    g.cities
+        .get_mut(&plan.target_city.unwrap())
+        .unwrap()
+        .wall_hp = 0;
+    plan.strategy = GrandStrategy::Expansion;
+    assert_eq!(ai.domination_siege_research_goal(&g, 0, &plan), None);
+    ai.enable_war_policy_via_board();
+    assert_eq!(
+        ai.domination_siege_research_goal(&g, 0, &plan),
+        Some(name!("engineering"))
+    );
+    let ancestors = g.rules.tech_ancestors["engineering"].clone();
+    g.players[0]
+        .techs
+        .extend(ancestors.iter().map(|tech| Name::new(tech)));
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].research.as_deref(), Some("engineering"));
+}
+
+#[test]
 fn siege_research_stops_for_unlocked_fielded_or_queued_capability() {
     let (mut g, ai, plan) = board();
     g.players[0].techs.insert(name!("engineering"));

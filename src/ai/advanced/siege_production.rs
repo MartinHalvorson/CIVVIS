@@ -20,6 +20,7 @@ impl AdvancedAi {
         spec: &crate::rules::UnitSpec,
     ) -> bool {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || spec.class != "military"
             || !spec.siege
             || matches!(spec.domain.as_deref(), Some("sea" | "air"))
         {
@@ -34,15 +35,17 @@ impl AdvancedAi {
             return false;
         }
         if let Some(target) = plan.target_city {
-            // The board's declaration gate requires a siege weapon on the
-            // staging ring. Reserving it only after war begins can leave a
-            // walled prewar objective waiting on a weapon nobody orders.
+            // The board's declaration gate requires a siege weapon on a
+            // walled staging ring. An unwalled target may complete walls while
+            // the army marches or fights, so equip a named campaign early.
             return g.cities.get(&target).is_some_and(|city| {
                 Some(city.owner) == plan.target_player
-                    && city.wall_hp > 0
-                    && (g.is_at_war(pid, city.owner)
+                    && ((city.wall_hp > 0 && g.is_at_war(pid, city.owner))
                         || (self.war_policy_via_board
-                            && plan.strategy == GrandStrategy::Conquest
+                            && matches!(
+                                plan.strategy,
+                                GrandStrategy::Conquest | GrandStrategy::Expansion
+                            )
                             && self.campaign_target_legal(g, pid, city.owner)))
             });
         }

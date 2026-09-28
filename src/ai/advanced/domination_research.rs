@@ -1,8 +1,10 @@
 //! Research the missing wall-breaking capability before an expedition stalls.
 //!
-//! A Conquest target with observed walls is a concrete technology debt. This
-//! opt-in unlocks the cheapest missing land siege technology only while the
-//! empire has neither a siege unit committed nor an unlocked siege design.
+//! A Conquest target with observed walls is a concrete technology debt. When
+//! board-gated Domination has a named campaign, prepare the first weapon even
+//! before walls appear: an unwalled target can build them during the march.
+//! This opt-in unlocks the cheapest missing land siege technology only while
+//! the empire has neither a siege unit committed nor an unlocked siege design.
 //! Production, strategic materials and later modernization remain separate
 //! decisions. Existing defensive and appointed breakthrough goals run first.
 
@@ -31,7 +33,15 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<Name> {
-        if !self.domination_siege_research || plan.strategy != GrandStrategy::Conquest {
+        let anticipatory_campaign = self.war_policy_via_board
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && matches!(
+                plan.strategy,
+                GrandStrategy::Conquest | GrandStrategy::Expansion
+            );
+        if !self.domination_siege_research
+            || (plan.strategy != GrandStrategy::Conquest && !anticipatory_campaign)
+        {
             return None;
         }
         let city = g.cities.get(&plan.target_city?)?;
@@ -51,7 +61,7 @@ impl AdvancedAi {
         } else {
             city.wall_hp
         };
-        if walls <= 0 {
+        if walls <= 0 && !anticipatory_campaign {
             return None;
         }
         let land_siege = |kind: Name| {

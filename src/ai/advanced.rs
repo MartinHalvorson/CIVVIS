@@ -26824,6 +26824,53 @@ impl AdvancedAi {
                     }
                 }
             }
+            // A named Domination campaign needs one actual wall breaker.
+            // The ordinary score can lose every idle queue to Builders,
+            // Traders and infrastructure even after Engineering is unlocked;
+            // the opponent can finish walls during that delay. Local defense
+            // above still takes priority, and the census closes this one-unit
+            // reservation as soon as a weapon is fielded or queued.
+            if committed.is_none() && plan.threatened_city != Some(cid) {
+                let first_weapon = g
+                    .producible_items(pid, cid)
+                    .into_iter()
+                    .filter(|item| match item {
+                        Item::Unit { unit } => self.missing_domination_siege(
+                            g,
+                            pid,
+                            cid,
+                            plan,
+                            &counts,
+                            &g.rules.units[unit],
+                        ),
+                        _ => false,
+                    })
+                    .min_by(|left, right| {
+                        self.production_build_turns(g, pid, cid, left)
+                            .total_cmp(&self.production_build_turns(g, pid, cid, right))
+                    });
+                if let Some(item) = first_weapon {
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                    {
+                        if self.journal().wants(crate::reasoning::Level::Decision) {
+                            let city_name = g.cities[&cid].name.clone();
+                            think!(self.journal(), Military, Decision,
+                                "{} starts {} for the Domination campaign", city_name, Self::plain_item(&item);
+                                "the first wall breaker is missing from the field and queues");
+                        }
+                        counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
+                        continue;
+                    }
+                }
+            }
             if committed.is_none() && self.resume_city_production(g, pid, cid, plan, &counts) {
                 self.clear_idle_production_streak(cid);
                 continue;
