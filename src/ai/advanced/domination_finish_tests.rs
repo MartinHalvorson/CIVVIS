@@ -152,3 +152,50 @@ fn team_require_n_uses_the_engines_first_qualifying_member() {
     assert_eq!(result.winner, Some(0));
     assert!(result.winning_players().contains(&2));
 }
+
+#[test]
+fn a_diplomatic_match_clock_routes_the_army_to_its_last_required_capital() {
+    let (mut g, home, capital) = board();
+    // The old front has already yielded its original capital, but still has
+    // a town and an active war. This is the live failure shape: the ordinary
+    // denial response switches to Diplomacy while the army mops up that town.
+    let old_front_town = g.found_city_for(2, at(14, 18), None);
+    g.cities.get_mut(&old_front_town).unwrap().is_capital = false;
+    g.at_war.remove(&(0, 1));
+    g.at_war.insert((0, 2));
+    g.players[1].dvp = 16;
+
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_deny_while_targeted();
+    ai.enable_stock_denial_lead_time();
+    ai.enable_denial_outranks_expansion();
+    assert_eq!(
+        ai.actionable_victory_denial(&g, 0),
+        Some((1, GrandStrategy::Diplomacy)),
+        "the public 16-point clock must be the actual competing plan"
+    );
+    assert_eq!(ai.domination_finishing_capital_for(&g, 0, 1), Some(capital));
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.strategy, GrandStrategy::Conquest);
+    assert_eq!(plan.target_player, Some(1));
+    assert_eq!(g.cities[&plan.target_city.unwrap()].owner, 1);
+
+    let mut forced = ai.clone();
+    forced.forced_target_player = Some(2);
+    assert_eq!(forced.assess(&g, 0).target_player, Some(2));
+
+    let mut one_war = ai.clone();
+    one_war.enable_one_war_at_a_time();
+    one_war.one_war_observe(&g, 0);
+    assert_eq!(one_war.assess(&g, 0).target_player, Some(2));
+
+    let mut threatened = g.clone();
+    threatened.spawn_test_unit("giant_death_robot", 2, at(5, 8));
+    let defensive = ai.assess(&threatened, 0);
+    assert_eq!(defensive.strategy, GrandStrategy::Recovery);
+    assert_eq!(defensive.target_player, Some(2));
+
+    g.cities.get_mut(&home).unwrap().owner = 2;
+    assert_eq!(ai.domination_finishing_capital_for(&g, 0, 1), None);
+    assert_eq!(ai.assess(&g, 0).strategy, GrandStrategy::Diplomacy);
+}

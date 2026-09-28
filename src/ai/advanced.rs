@@ -12180,6 +12180,10 @@ impl AdvancedAi {
         let rival_culture_pressures = self.rival_culture_pressures(g);
         let actionable_denial =
             self.actionable_victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures);
+        let domination_finish = actionable_denial.and_then(|(rival, _)| {
+            self.domination_finishing_capital_for(g, pid, rival)
+                .map(|city| (rival, city))
+        });
         let emergency_objective = g.emergency_objective(pid).cloned();
         // Each arm carries the reason it fired. The strings are static and
         // cost nothing to build; they exist so the spectator's reasoning log
@@ -12260,6 +12264,11 @@ impl AdvancedAi {
             (
                 GrandStrategy::Conquest,
                 "a neighbour is inside the ancient window and cannot wall in time",
+            )
+        } else if domination_finish.is_some() {
+            (
+                GrandStrategy::Conquest,
+                "the rival's original capital completes Domination before its victory clock",
             )
         } else if let Some((_, counter)) = actionable_denial.filter(|(rival, _)| {
             self.denial_outranks_expansion || self.domination_counter_target(g, *rival)
@@ -12420,6 +12429,14 @@ impl AdvancedAi {
                 .unwrap_or(false)
                 && self.campaign_target_legal(g, pid, *target)
         });
+        let finishing_front = domination_finish.filter(|(rival, _)| {
+            strategy == GrandStrategy::Conquest
+                && rush_victim.is_none()
+                && forced_target.is_none()
+                && (!self.one_war_at_a_time
+                    || wartime_rivals.is_empty()
+                    || wartime_rivals.contains(rival))
+        });
         let domination_capital = self.domination_capital_target(g, pid);
         // A Domination plan that names a distant, weak empire cannot start
         // its war while a nearer rival has a city inside the declaration
@@ -12460,6 +12477,8 @@ impl AdvancedAi {
         };
         let target_player = if let Some(emergency) = &emergency_objective {
             Some(emergency.target)
+        } else if let Some((rival, _)) = finishing_front {
+            Some(rival)
         } else if wartime_rivals.is_empty() {
             // The rush already chose, on nearness and weakness, and the
             // generic value sort would happily re-aim the column at a richer
