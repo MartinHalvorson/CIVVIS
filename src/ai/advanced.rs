@@ -42642,6 +42642,11 @@ impl AdvancedAi {
             };
             let adaptive_expansion_dispatch =
                 self.adaptive_expansion_dispatches(&plan, dispatch_target);
+            // The delegated governor never sees the strategic scorer's siege
+            // composition reservation. Claim its first wall breaker here.
+            if lane_delegating && active_victory_target == Some(VictoryTarget::Domination) {
+                self.reserve_delegated_domination_siege(g, pid, &plan);
+            }
             // Reserve one useful support element before broad production
             // consumes the idle queues of an active foreign-city assault.
             let city_assault_support_reserved =
