@@ -39967,15 +39967,22 @@ impl AdvancedAi {
             self.force_groups_dirty |= acted;
             return acted;
         }
-        // The siege has already reserved its finisher. Let that doctrine
-        // spend the unit before an incidental civilian pickup can walk it
-        // away from a capturable city. A stale reservation falls through
-        // when the refreshed group no longer has a live siege objective.
-        if self.unit_is_reserved(uid) {
-            if (self.victory_planning || self.objective_board) && self.force_groups_dirty {
-                self.rebuild_force_groups(g, pid, plan);
-                self.force_groups_dirty = false;
-            }
+        // Refresh assignments before an incidental civilian pickup can pull a
+        // siege member off its city's ring. The finisher was already protected
+        // here; the shooters and screens need the same first decision.
+        if (self.victory_planning || self.objective_board) && self.force_groups_dirty {
+            self.rebuild_force_groups(g, pid, plan);
+            self.force_groups_dirty = false;
+        }
+        let assigned_siege = (self.siege_train || self.siege_positive_damage_budget)
+            && self.force_groups.iter().any(|group| {
+                group.domain == ForceDomain::Land
+                    && group.units.contains(&uid)
+                    && g.city_at(group.objective).is_some_and(|cid| {
+                        g.cities[&cid].owner != pid && g.is_at_war(pid, g.cities[&cid].owner)
+                    })
+            });
+        if self.unit_is_reserved(uid) || assigned_siege {
             if let Some(acted) = self.siege_doctrine_step(g, pid, uid, plan) {
                 return acted;
             }
