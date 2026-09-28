@@ -34,10 +34,16 @@ impl AdvancedAi {
             return false;
         }
         if let Some(target) = plan.target_city {
+            // The board's declaration gate requires a siege weapon on the
+            // staging ring. Reserving it only after war begins can leave a
+            // walled prewar objective waiting on a weapon nobody orders.
             return g.cities.get(&target).is_some_and(|city| {
                 Some(city.owner) == plan.target_player
                     && city.wall_hp > 0
-                    && g.is_at_war(pid, city.owner)
+                    && (g.is_at_war(pid, city.owner)
+                        || (self.war_policy_via_board
+                            && plan.strategy == GrandStrategy::Conquest
+                            && self.campaign_target_legal(g, pid, city.owner)))
             });
         }
 

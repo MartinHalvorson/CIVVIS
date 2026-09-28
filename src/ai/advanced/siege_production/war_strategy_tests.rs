@@ -63,6 +63,36 @@ fn a_recovering_empire_keeps_the_first_siege_weapon_requirement() {
     assert_war_strategy_equips_siege(GrandStrategy::Recovery);
 }
 
+#[test]
+fn a_board_gated_domination_plan_builds_its_wall_breaker_before_war() {
+    let (mut g, mut ai, plan, home, _) = siege_gap_case();
+    g.at_war.clear();
+    g.record_contact(0, 1);
+    ai.war_policy_via_board = true;
+    let catapult = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+
+    assert!(ai.missing_domination_siege(
+        &g,
+        0,
+        home,
+        &plan,
+        &ai.counts(&g, 0),
+        &g.rules.units["catapult"]
+    ));
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(g.cities[&home].queue.first(), Some(&catapult));
+    assert!(!ai.missing_domination_siege(
+        &g,
+        0,
+        home,
+        &plan,
+        &ai.counts(&g, 0),
+        &g.rules.units["catapult"]
+    ));
+}
+
 fn assert_war_strategy_equips_siege(strategy: GrandStrategy) {
     let (mut g, mut ai, mut plan, home, _) = siege_gap_case();
     plan.strategy = strategy;
