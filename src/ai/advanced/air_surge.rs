@@ -185,7 +185,8 @@ pub(crate) struct AirSurge {
     /// means the empire could field no cavalry and the surge fell back to its
     /// strongest melee body.
     pub(crate) body_is_cavalry: bool,
-    /// Whether the appointment was made *into* a war already running.
+    /// Whether this surge is fighting a war we did not declare, either because
+    /// the appointment was made into one or the target opened it later.
     ///
     /// ★★★ THIS IS THE COUNTER-ATTACK HALF. A Bomber is as useful against a
     /// civilization attacking us as against one we chose, and the empire that
@@ -896,8 +897,19 @@ impl AdvancedAi {
                 self.record_air_surge_abort(g, "diplomacy made war illegal");
                 ended = true;
             } else if at_war && plan.declared_turn.is_none() && !plan.opened_at_war {
-                self.record_air_surge_abort(g, "target opened the war first");
-                ended = true;
+                if self.active_victory_target(g) == Some(VictoryTarget::Domination) {
+                    // The rival's declaration removes our diplomatic wait; it
+                    // does not make the already funded wing or capture body
+                    // obsolete. Exploit still waits for readiness before it
+                    // can redirect a ground siege to the air objective.
+                    plan.opened_at_war = true;
+                    think!(self.journal(), Military, Strategy,
+                           "Keeping the air surge after the target opened war";
+                           "the bomber wing and capture body remain appointed against the same city");
+                } else {
+                    self.record_air_surge_abort(g, "target opened the war first");
+                    ended = true;
+                }
             } else if (plan.declared_turn.is_some() || plan.opened_at_war) && !at_war {
                 self.record_air_surge_abort(g, "peace closed the war");
                 ended = true;

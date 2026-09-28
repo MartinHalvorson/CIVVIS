@@ -165,6 +165,45 @@ fn an_unready_wartime_wing_leaves_a_ground_siege_on_its_city() {
 }
 
 #[test]
+fn a_target_declaration_keeps_the_domination_wing_without_interrupting_a_ground_siege() {
+    let (mut g, mut ai) = fixture();
+    let air_target = ai.air_surge_plan.as_ref().unwrap().objective_city;
+    let ground_target = g.found_city_for(1, (16, 16), None);
+    g.at_war.insert((0, 1));
+
+    ai.maintain_air_surge(&g, 0);
+    let surge = ai
+        .air_surge_plan
+        .as_ref()
+        .expect("the invested wing survives");
+    assert_eq!(surge.objective_city, air_target);
+    assert!(surge.opened_at_war);
+    assert_eq!(surge.phase, AirSurgePhase::Exploit);
+    assert_eq!(surge.appointed_turn, 140);
+    assert!(ai.air_surge_census.aborts.is_empty());
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
+
+    let ground_plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(ground_target),
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    let mut before = ground_plan.clone();
+    ai.apply_air_surge_to_strategy(&mut before);
+    assert_eq!(before.target_city, Some(ground_target));
+
+    ready_wing(&mut g);
+    ai.maintain_air_surge(&g, 0);
+    let mut after = ground_plan;
+    ai.apply_air_surge_to_strategy(&mut after);
+    assert_eq!(after.target_city, Some(air_target));
+}
+
+#[test]
 fn two_new_fronts_hold_the_elective_strike_without_choosing_an_arbitrary_war() {
     let (mut g, mut ai) = fixture();
     ready_wing(&mut g);

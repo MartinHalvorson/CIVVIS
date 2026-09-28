@@ -229,12 +229,16 @@ fn urgent_domination_target_opening_war_keeps_the_existing_air_investment() {
 }
 
 #[test]
-fn an_unexpected_nonurgent_war_still_ends_the_elective_air_plan() {
+fn an_unexpected_nonurgent_war_keeps_the_domination_air_investment() {
     let (mut g, mut ai, _) = staged_domination_denial();
     g.players[1].dvp = 0;
     assert!(!ai.urgent_victory_threat(&g, 1));
     g.at_war.insert((0, 1));
     ai.maintain_air_surge(&g, 0);
-    assert!(ai.air_surge_plan.is_none());
-    assert!(ai.air_surge_cooldown_until > g.turn);
+    let surge = ai.air_surge_plan.as_ref().expect("keep the appointed wing");
+    assert!(surge.opened_at_war);
+    assert_eq!(surge.phase, AirSurgePhase::Exploit);
+    assert_eq!(surge.appointed_turn, 140);
+    assert_eq!(ai.air_surge_cooldown_until, 0);
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
 }
