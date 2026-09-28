@@ -35,6 +35,21 @@ the saved title in BasicAi's ancillary research pass. A regression through
 `AdvancedAi::take_turn` failed with zero titles retained instead of one.
 Therefore the reservation must also suppress that fallback governor spending.
 
+## Replay after the fallback correction
+
+Rebuilt revision `96f6ff3d0f69005ee9e4cb565b36cac0d0e766a6`; executable SHA-256
+`013437c1f2b210cbfe585afe5221e9f1891c057b5a34e3c8c5bfa55c3c01308f`. All eight case/arm invocations exited successfully.
+The controls still promote Pingala. With the regional gene enabled:
+
+- Observed t102 and t108 first frames emit **no governor order**: the first
+  title is now retained instead of being consumed by a fallback Liang appointment.
+- The t108 saved-title counterfactual appoints Victor in Caracas (131073).
+- The simulated post-appointment t108 frame promotes Garrison Commander.
+
+This verifies the controller's complete offline decision/output path on the
+recorded inputs. It does not verify native operation execution or subsequent
+city survival. No live game was modified by these replays.
+
 ## Native governor evidence
 
 Installed Gathering Storm `DLC/Expansion2/Data/Expansion1_Governors.xml:249-250`
@@ -70,8 +85,13 @@ wording alone. This PR changes no simulation mechanic.
 The focused suite now passes all nine tests, including a complete turn retaining
 the reserved title and a subsequent controlled-player turn releasing it after
 pressure recovers. The ancillary pass continues its other work and suppresses
-only fallback governor spending while the reservation is active. A rebuilt
-mirror replay still needs to verify the outbound native orders.
+only fallback governor spending while the reservation is active. The 191 existing
+BasicAi tests also pass (two ignored), and all three registry append-point tests
+pass. The rebuilt mirror replay verifies the outbound orders as recorded above.
+
+A six-game exploratory simulation probe is running from code revision
+`96f6ff3d0`, with only this gene varied, seeds 38450000–38450005 and three workers.
+The small probe is not evidence of a win-rate improvement.
 
 Natural firing evidence, opportunity-cost evaluation, generated gene metadata,
 the full suite, and integration checks remain pending. No live or simulation
