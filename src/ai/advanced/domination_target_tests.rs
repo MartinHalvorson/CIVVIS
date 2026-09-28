@@ -267,3 +267,64 @@ fn domination_takes_a_short_border_city_before_a_declaration_reachable_capital()
     assert_eq!(plan.target_player, Some(1));
     assert_eq!(plan.target_city, Some(frontier));
 }
+
+/// In native King run `civvis-20260928T215559Z`, the first objective stayed
+/// Pokrovka from turn 69 despite unwalled Pazyryk appearing two tiles nearer
+/// to Guayaquil. The army opened on Pokrovka at turn 94, lost its early siege
+/// guns there, and still had no original capital at the turn-235 loss.
+#[test]
+fn domination_opens_the_unwalled_foothold_before_a_near_walled_capital() {
+    let mut g = Game::new_full(2, 36, 22, 91_023, 650, 0, false);
+    for unit in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(unit);
+    }
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+    }
+    g.found_city_for(0, (6, 12), None);
+    let capital = g.found_city_for(1, (13, 12), None);
+    let foothold = g.found_city_for(1, (11, 11), None);
+    g.cities.get_mut(&capital).unwrap().wall_hp = 100;
+    g.cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .push(crate::name!("walls"));
+    g.current = 0;
+    g.turn = 69;
+    g.record_contact(0, 1);
+    g.players[0].explored.extend(g.map.tiles.keys().copied());
+    assert_eq!(
+        g.wdist(
+            g.cities[&g.player_city_ids(0)[0]].pos,
+            g.cities[&capital].pos
+        ),
+        7
+    );
+    assert_eq!(
+        g.wdist(
+            g.cities[&g.player_city_ids(0)[0]].pos,
+            g.cities[&foothold].pos
+        ),
+        5
+    );
+
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.belief.observe(&g, 0);
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.strategy, GrandStrategy::Expansion);
+    assert_eq!(plan.target_player, Some(1));
+    assert_eq!(plan.target_city, Some(foothold));
+
+    let mut walled_frontier = g.clone();
+    walled_frontier.cities.get_mut(&foothold).unwrap().wall_hp = 100;
+    assert_eq!(ai.assess(&walled_frontier, 0).target_city, Some(capital));
+
+    ai.enable_siege_commitment();
+    ai.plan = Some(plan);
+    g.at_war.insert((0, 1));
+    assert_eq!(ai.assess(&g, 0).target_city, Some(foothold));
+}
