@@ -1389,6 +1389,12 @@ pub struct QueryCache {
     /// query can change — so the answer is kept for the memo scope, exactly
     /// like `appeal`.
     tile_yields: std::cell::RefCell<Option<BTreeMap<Pos, Yields>>>,
+    /// `district_yields` per standing district. One city-yield derivation
+    /// asks each of its districts three times — the citizen strategy, the
+    /// citizen plan's fixed food, then the sum — and a district's yields
+    /// read only the board, so the answer is kept for the memo scope like
+    /// `tile_yields`.
+    district_yields: std::cell::RefCell<Option<BTreeMap<(Name, Pos), Yields>>>,
     traversal: std::cell::RefCell<Option<BTreeMap<u32, TraversalClass>>>,
     /// Every unit currently flying a patrol, as `(owner, tile)`.
     ///
@@ -1672,6 +1678,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.yields.borrow_mut() = None;
             *self.game.query_memo.appeal.borrow_mut() = None;
             *self.game.query_memo.tile_yields.borrow_mut() = None;
+            *self.game.query_memo.district_yields.borrow_mut() = None;
             *self.game.query_memo.traversal.borrow_mut() = None;
             *self.game.query_memo.air_patrols.borrow_mut() = None;
             *self.game.query_memo.passage_improvements.borrow_mut() = None;

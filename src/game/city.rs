@@ -852,6 +852,19 @@ impl Game {
 
     pub fn district_yields(&self, dname: impl AsName, dpos: Pos) -> Yields {
         let dname = dname.as_name();
+        if let Some(memo) = self.query_memo.district_yields.borrow().as_ref() {
+            if let Some(yields) = memo.get(&(dname, dpos)) {
+                return *yields;
+            }
+        }
+        let yields = self.district_yields_uncached(dname, dpos);
+        if let Some(memo) = self.query_memo.district_yields.borrow_mut().as_mut() {
+            memo.insert((dname, dpos), yields);
+        }
+        yields
+    }
+
+    fn district_yields_uncached(&self, dname: Name, dpos: Pos) -> Yields {
         let spec = &self.rules.districts[dname];
         let mut ys = spec.yields;
         ys.add(self.district_adjacency(dname, dpos, None));
@@ -3411,6 +3424,7 @@ impl Game {
             *self.query_memo.yields.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.appeal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.tile_yields.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.district_yields.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.air_patrols.borrow_mut() = None;
             *self.query_memo.passage_improvements.borrow_mut() = None;
