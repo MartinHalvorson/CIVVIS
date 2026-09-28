@@ -863,6 +863,24 @@ def binary_provenance(binary: Path) -> tuple[str | None, str]:
     except OSError:
         resolved = binary.expanduser()
 
+    # A climb can snapshot its decider before the first turn. Its checkout may
+    # advance while Civ VI is parked or reloading, so HEAD beside
+    # the original executable no longer proves the copied image's revision.
+    manifest = resolved.with_name(resolved.name + ".provenance.json")
+    if manifest.exists():
+        try:
+            frozen = json.loads(manifest.read_text())
+            revision = frozen.get("revision")
+            if (frozen.get("schema") == 1
+                    and frozen.get("kind") == "frozen_attempt_decider"
+                    and frozen.get("sha256") == binary_sha256(resolved)
+                    and isinstance(revision, str)
+                    and GIT_SHA.fullmatch(revision)):
+                return revision, "attempt-snapshot"
+        except (OSError, ValueError, TypeError):
+            pass
+        return None, "attempt-snapshot-unverified"
+
     published = resolved.parent
     if (GIT_SHA.fullmatch(published.name)
             and published.parent.name == "published"):
