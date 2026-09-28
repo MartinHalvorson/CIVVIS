@@ -13038,6 +13038,89 @@ fn a_rivals_districts_and_wonders_cross_with_the_plots() {
 }
 
 #[test]
+fn a_visible_rival_encampment_adds_its_second_city_strike() {
+    let side = 16;
+    let mut plots: Vec<Plot> = (0..side)
+        .flat_map(|x| (0..side).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+        .collect();
+    for tile in &mut plots {
+        match (tile.x, tile.y) {
+            (2, 2) => {
+                tile.o = 0;
+                tile.d = Some("DISTRICT_CITY_CENTER".to_string());
+            }
+            (10, 10) => {
+                tile.o = 3;
+                tile.d = Some("DISTRICT_CITY_CENTER".to_string());
+            }
+            (12, 10) => {
+                tile.o = 3;
+                tile.d = Some("DISTRICT_ENCAMPMENT".to_string());
+                tile.dc = Some(true);
+            }
+            _ => {}
+        }
+    }
+    let snapshot = |plots: Vec<Plot>| {
+        Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: side,
+            height: side,
+            chunk: 1,
+            plots,
+        }])
+    };
+    let mut state = StateSnapshot {
+        turn: 60,
+        ..StateSnapshot::default()
+    };
+    state.cities.push(StateCity {
+        id: 1,
+        name: "Rome".to_string(),
+        x: 2,
+        y: 2,
+        capital: true,
+        ..StateCity::default()
+    });
+    state.rivals.push(StateRival {
+        player: 3,
+        civ: "CIVILIZATION_SCOTLAND".to_string(),
+        at_war: true,
+        cities: vec![StateCity {
+            id: 3,
+            name: "Stirling".to_string(),
+            x: 10,
+            y: 10,
+            max_wall_damage: 100.0,
+            wall_damage: 0.0,
+            ranged_strength: Some(60.0),
+            ..StateCity::default()
+        }],
+        ..StateRival::default()
+    });
+    let encampment = crate::hex::offset_to_axial(12, 10);
+    let rebuilt = rebuild_from_state(&snapshot(plots.clone()), &state, 4, 1, 250, 0);
+    let cid = rebuilt.known_city_ids[&3];
+    assert_eq!(rebuilt.game.encampment_at(encampment), Some(cid));
+    assert_eq!(rebuilt.game.cities[&cid].encampment_wall_hp, 100);
+    assert!(rebuilt
+        .game
+        .encampment_can_strike(&rebuilt.game.cities[&cid]));
+
+    plots
+        .iter_mut()
+        .find(|tile| (tile.x, tile.y) == (12, 10))
+        .unwrap()
+        .p = true;
+    let pillaged = rebuild_from_state(&snapshot(plots), &state, 4, 1, 250, 0);
+    let cid = pillaged.known_city_ids[&3];
+    assert_eq!(pillaged.game.encampment_at(encampment), None);
+    assert!(!pillaged
+        .game
+        .encampment_can_strike(&pillaged.game.cities[&cid]));
+}
+
+#[test]
 fn a_settler_does_not_found_a_city_that_population_pressure_will_erase() {
     // Geometry reproduces the live failure at a smaller offset: the doomed
     // site is eight tiles from our population-six city and six from the rival's,

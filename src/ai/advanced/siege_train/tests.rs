@@ -89,6 +89,35 @@ fn open_approach_reaches_the_post_without_displacing_a_friendly_builder() {
 }
 
 #[test]
+fn wounded_knight_waits_out_a_lethal_city_volley_before_taking_its_post() {
+    let (mut g, cid) = walled_city();
+    let city = g.cities[&cid].pos;
+    let start = (city.0 - 3, city.1);
+    let transit = (city.0 - 2, city.1);
+    let post = (city.0 - 1, city.1);
+    for pos in [start, transit, post] {
+        let tile = g.map.tiles.get_mut(&pos).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    let uid = g.spawn_unit("knight", 0, start);
+    g.units.get_mut(&uid).unwrap().hp = 70;
+    std::sync::Arc::make_mut(&mut g.observed_city_ranged_strength).insert(cid, 95.0);
+    assert!(
+        super::super::battle_planner::strike_danger(&g, 0, transit, uid) + 20.0 >= 70.0,
+        "the first exposed tile would leave no reserve for another volley"
+    );
+    let mut ai = AdvancedAi::new();
+    assert_eq!(ai.approach(&mut g, 0, uid, post, city), None);
+    assert_eq!(g.units[&uid].pos, start);
+
+    std::sync::Arc::make_mut(&mut g.observed_city_ranged_strength).insert(cid, 3.0);
+    assert_eq!(ai.approach(&mut g, 0, uid, post, city), Some(true));
+    assert_eq!(g.units[&uid].pos, post);
+}
+
+#[test]
 fn siege_assigns_a_reachable_post_instead_of_a_closer_sealed_pocket() {
     let (mut g, cid) = walled_city();
     let city = g.cities[&cid].pos;

@@ -1461,6 +1461,15 @@ impl AdvancedAi {
             else {
                 break;
             };
+            // A post inside the city's firing ring can be covered by more
+            // than one city or Encampment. Do not march a body into a stand
+            // where the forward model expects the next volley to finish it.
+            if g.wdist(next, city_pos) <= CITY_STRIKE_RANGE
+                && f64::from(unit.hp)
+                    <= super::battle_planner::strike_danger(g, pid, next, uid) + 20.0
+            {
+                break;
+            }
             if !self.base.tactical_apply_move(g, pid, uid, next) {
                 break;
             }

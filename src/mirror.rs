@@ -10752,6 +10752,35 @@ fn apply_observed_host_metrics(
                 .map(|_| owner)
         })
         .collect();
+    apply_foreign_encampment_health(game);
+}
+
+/// Rival city records omit districts, but the revealed plot export names
+/// completed Encampments and whether they are pillaged. Give those districts
+/// a standing health bar and the city's observed wall tier after the city
+/// readings land, so tactical danger counts their ranged strike. Without this
+/// a mounted unit can walk into both a city and its Encampment volley while
+/// the forward model prices only the city.
+fn apply_foreign_encampment_health(game: &mut crate::game::Game) {
+    let observed: Vec<(u32, bool, i32)> = game
+        .cities
+        .values()
+        .filter(|city| city.owner != 0)
+        .filter_map(|city| {
+            let pos = city.districts.iter().find_map(|(name, pos)| {
+                (game.district_family(*name) == crate::name!("encampment")).then_some(*pos)
+            })?;
+            let pillaged = game.map.get(pos).is_some_and(|tile| tile.pillaged);
+            let wall_max = game.city_max_wall_hp(city).max(city.wall_hp);
+            Some((city.id, pillaged, wall_max))
+        })
+        .collect();
+    for (cid, pillaged, wall_max) in observed {
+        let city = &mut game.cities.get_mut(&cid).expect("observed city");
+        city.encampment_pillaged = pillaged;
+        city.encampment_hp = if pillaged { 0 } else { 100 };
+        city.encampment_wall_hp = if pillaged { 0 } else { wall_max };
+    }
 }
 
 /// Seat the World Congress diplomatic standing, including the majors this seat
