@@ -9590,6 +9590,121 @@ fn live_campaign_holds_a_major_war_city_until_capture_or_emergency() {
 }
 
 #[test]
+fn domination_column_takes_a_damaged_open_foothold_before_a_fresh_walled_target() {
+    let mut game = Game::new_full(2, 30, 18, 7_113, 300, 0, false);
+    for pid in 0..2 {
+        game.current = pid;
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    let walled = game.player_city_ids(1)[0];
+    let outpost_pos = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(pos, tile)| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && tile.owner_city.is_none()
+                && game.wdist(game.cities[&walled].pos, **pos) >= 4
+                && game
+                    .cities
+                    .values()
+                    .all(|city| game.wdist(city.pos, **pos) >= 4)
+        })
+        .map(|(pos, _)| *pos)
+        .next()
+        .unwrap();
+    game.current = 1;
+    let settler = game.spawn_test_unit("settler", 1, outpost_pos);
+    game.apply(1, &Action::FoundCity { unit: settler }).unwrap();
+    let open = game
+        .player_city_ids(1)
+        .into_iter()
+        .find(|city| *city != walled)
+        .unwrap();
+    game.current = 0;
+    game.turn = 115;
+    for pos in game.map.tiles.keys().copied().collect::<Vec<_>>() {
+        if game.player_city_ids(0).len() >= 6 {
+            break;
+        }
+        if game
+            .map
+            .get(pos)
+            .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            && game
+                .cities
+                .values()
+                .all(|city| game.wdist(city.pos, pos) >= 4)
+        {
+            game.found_city_for(0, pos, None);
+        }
+    }
+    assert_eq!(game.player_city_ids(0).len(), 6);
+    game.at_war.insert((0, 1));
+    game.spawn_test_unit("scout", 0, game.cities[&open].pos);
+    game.spawn_test_unit("scout", 0, game.cities[&walled].pos);
+    game.cities
+        .get_mut(&walled)
+        .unwrap()
+        .buildings
+        .push(crate::name!("walls"));
+    game.cities.get_mut(&walled).unwrap().wall_hp = 100;
+
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_siege_commitment();
+    ai.plan = Some(StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(walled),
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn.saturating_sub(1),
+        rush: false,
+    });
+    ai.belief.observe(&game, 0);
+    assert_eq!(ai.assess(&game, 0).target_city, Some(walled));
+
+    game.cities.get_mut(&open).unwrap().hp = 175;
+    assert_eq!(
+        ai.assess(&game, 0).target_city,
+        Some(walled),
+        "damage without a nearby land taker is no reason to redirect"
+    );
+    let taker_pos = game
+        .nbrs(game.cities[&open].pos)
+        .into_iter()
+        .find(|pos| {
+            game.map
+                .get(*pos)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        })
+        .unwrap();
+    game.spawn_test_unit("man_at_arms", 0, taker_pos);
+    ai.belief.observe(&game, 0);
+    let opportunity = ai.assess(&game, 0);
+    assert_eq!(opportunity.strategy, GrandStrategy::Conquest);
+    assert_eq!(
+        opportunity.target_city,
+        Some(open),
+        "a nearby melee column should finish its damaged open foothold"
+    );
+
+    game.cities.get_mut(&walled).unwrap().wall_hp = 60;
+    assert_eq!(
+        ai.assess(&game, 0).target_city,
+        Some(walled),
+        "an already breached objective keeps its own invested assault"
+    );
+}
+
+#[test]
 fn domination_prices_a_fresh_wall_as_a_real_first_capture_delay() {
     let mut game = Game::new_full(2, 30, 18, 7_112, 300, 0, false);
     for pid in 0..2 {
