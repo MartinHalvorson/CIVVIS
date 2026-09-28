@@ -67,7 +67,12 @@ wording alone. This PR changes no simulation mechanic.
 
 ## Remaining validation
 
-The candidate must pass the full-turn regression and a rebuilt mirror replay.
+The focused suite now passes all nine tests, including a complete turn retaining
+the reserved title and a subsequent controlled-player turn releasing it after
+pressure recovers. The ancillary pass continues its other work and suppresses
+only fallback governor spending while the reservation is active. A rebuilt
+mirror replay still needs to verify the outbound native orders.
+
 Natural firing evidence, opportunity-cost evaluation, generated gene metadata,
 the full suite, and integration checks remain pending. No live or simulation
 win-rate improvement is established by the focused tests or these replays.

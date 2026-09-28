@@ -220,7 +220,10 @@ fn title_reservation_survives_the_complete_turn() {
         "the ancillary fallback must not spend the title reserved by the strategic planner"
     );
     assert!(!g.players[0].governor_roster.contains_key("liang"));
+    // take_turn ends our turn. Prepare the next controlled-player frame,
+    // as the native mirror does, rather than ask us to act on a rival's turn.
     g.turn += 1;
+    g.current = 0;
     Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(target, 1.0);
     ai.take_turn(&mut g, 0);
     assert_eq!(
