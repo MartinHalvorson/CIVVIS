@@ -1002,14 +1002,18 @@ impl AdvancedAi {
             };
             let damage = expected_damage(attack, g.city_strength(cid));
             city_dps += damage;
-            wall_dps += damage
-                * if spec.siege {
-                    1.0
-                } else if ranged {
-                    0.5
-                } else {
-                    0.15
-                };
+            // A melee body the train holds at a strong wall cannot supply
+            // the wall damage that would make the siege ready to invest.
+            let wall_multiplier = if spec.siege {
+                1.0
+            } else if ranged {
+                0.5
+            } else if super::siege_train::melee_wall_attack_allowed(g, pid, *uid, cid) {
+                0.15
+            } else {
+                0.0
+            };
+            wall_dps += damage * wall_multiplier;
             let incoming =
                 expected_damage(g.city_ranged_strength(cid), g.unit_strength(unit, false));
             endurance += (unit.hp as f64 - 20.0).max(0.0) / incoming.max(1.0);

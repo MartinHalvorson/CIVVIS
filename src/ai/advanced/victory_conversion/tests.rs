@@ -429,6 +429,39 @@ fn siege_budget_rejects_an_archer_only_train_and_accepts_a_capable_force() {
 }
 
 #[test]
+fn siege_budget_does_not_credit_melee_that_will_hold_outside_strong_walls() {
+    let (mut g, mut ai, _, enemy) = board(VictoryTarget::Domination);
+    g.at_war.insert((0, 1));
+    g.cities
+        .get_mut(&enemy)
+        .unwrap()
+        .buildings
+        .push(crate::name!("walls"));
+    let full_wall = g.city_max_wall_hp(&g.cities[&enemy]);
+    assert!(full_wall > 0);
+    g.cities.get_mut(&enemy).unwrap().wall_hp = full_wall;
+    let force: Vec<_> = g
+        .nbrs(g.cities[&enemy].pos)
+        .into_iter()
+        .map(|pos| g.spawn_test_unit("modern_armor", 0, pos))
+        .collect();
+    ai.enable_siege_positive_damage_budget();
+    let (turns, _) = ai.conversion_siege_budget(&g, 0, enemy, &force).unwrap();
+    assert!(
+        turns.is_infinite(),
+        "the force has no executable wall damage"
+    );
+    assert!(!ai.conversion_siege_ready(&g, 0, enemy, &force));
+
+    g.cities.get_mut(&enemy).unwrap().wall_hp = full_wall / 5;
+    let (turns, _) = ai.conversion_siege_budget(&g, 0, enemy, &force).unwrap();
+    assert!(
+        turns.is_finite(),
+        "melee can strike a wall at one fifth health"
+    );
+}
+
+#[test]
 fn reinforcement_orders_the_missing_breach_role_and_stops_at_the_deadline() {
     let (mut g, mut ai, home, enemy) = board(VictoryTarget::Domination);
     g.at_war.insert((0, 1));
