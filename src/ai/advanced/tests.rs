@@ -49893,3 +49893,81 @@ fn an_expansion_district_is_worth_the_hall_it_hosts() {
         );
     }
 }
+
+/// `domination-ignores-city-states`: an assigned Domination seat's campaign
+/// ranking leaves city-states out; off, and for any other lane, they stay
+/// candidates exactly as before.
+#[test]
+fn domination_ignores_city_states_is_a_domination_only_opt_in() {
+    let game = Game::new_full(2, 24, 16, 91_011, 250, 2, false);
+    let mut domination = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert!(
+        !domination.domination_ignores_city_states,
+        "the gene ships off"
+    );
+    assert!(!AdvancedAi::new().domination_ignores_city_states);
+    assert!(
+        domination.conquest_campaign_considers_city_states(&game),
+        "off, a city-state stays a campaign candidate"
+    );
+    domination.enable_domination_ignores_city_states();
+    assert!(
+        !domination.conquest_campaign_considers_city_states(&game),
+        "on, the Domination seat's ranking names no city-state"
+    );
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.enable_domination_ignores_city_states();
+    assert!(
+        science.conquest_campaign_considers_city_states(&game),
+        "only the Domination lane drops them"
+    );
+    domination.disable_domination_ignores_city_states();
+    assert!(domination.conquest_campaign_considers_city_states(&game));
+    assert!(super::GENES
+        .iter()
+        .any(|gene| gene.tag == "domination-ignores-city-states" && gene.opt_in()));
+}
+
+/// `domination-specializes-earlier`: an assigned Domination lane leaves its
+/// development half at 40% of the clock; off, and for any other lane, the
+/// shared halfway clock stands.
+#[test]
+fn domination_specializes_earlier_moves_only_the_domination_clock() {
+    let mut game = Game::new_full(2, 24, 16, 91_013, 250, 0, false);
+    game.turn = 110;
+    let mut domination = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert!(
+        !domination.domination_specializes_earlier,
+        "the gene ships off"
+    );
+    let off = domination.phase_specialization_active(&game);
+    domination.enable_domination_specializes_earlier();
+    assert!(
+        domination.phase_specialization_active(&game),
+        "on, turn 110 of 250 is past 40%"
+    );
+    assert!(!off, "off, turn 110 of 250 is still the development half");
+    game.turn = 90;
+    assert!(
+        !domination.phase_specialization_active(&game),
+        "turn 90 is before 40%"
+    );
+    game.turn = 110;
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.enable_domination_specializes_earlier();
+    assert_eq!(
+        science.phase_specialization_active(&game),
+        AdvancedAi::targeting(VictoryTarget::Science).phase_specialization_active(&game),
+        "only the Domination lane's clock moves"
+    );
+    let mut emperor = Game::new_full(2, 24, 16, 91_013, 250, 0, false);
+    emperor.difficulty = "emperor".to_string();
+    emperor.turn = 110;
+    assert!(
+        !domination.phase_specialization_active(&emperor),
+        "above King the shared halfway clock stands"
+    );
+    assert!(super::GENES
+        .iter()
+        .any(|gene| gene.tag == "domination-specializes-earlier" && gene.opt_in()));
+}

@@ -11922,7 +11922,7 @@ impl Game {
             + self.players[pid]
                 .policies
                 .iter()
-                .filter_map(|name| self.rules.policies.get(name)?.effects.get(effect))
+                .filter_map(|name| self.rules.policies.get_interned(*name)?.effects.get(effect))
                 .sum::<f64>()
     }
 
@@ -12064,7 +12064,7 @@ impl Game {
             + self.players[pid]
                 .policies
                 .iter()
-                .filter_map(|name| self.rules.policies.get(name))
+                .filter_map(|name| self.rules.policies.get_interned(*name))
                 .filter(|spec| spec.unit_eras.is_empty() || spec.unit_eras.contains(&era))
                 .filter(|spec| {
                     !spec

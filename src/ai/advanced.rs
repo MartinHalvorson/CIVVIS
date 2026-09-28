@@ -1203,6 +1203,16 @@ impl std::str::FromStr for VictoryTarget {
 /// recorded live win came from (4-6 cities at t60, 9 of 9 in, 0 of 128 out).
 pub(crate) const DOMINATION_HANDOVER_CITIES: usize = 4;
 
+/// `domination-specializes-earlier`: the share of the game clock (percent)
+/// after which an assigned Domination lane leaves its development half. 40%
+/// is turn 100 of the ladder's 250; the shared clock is halfway (turn 125).
+pub(crate) const DOMINATION_SPECIALIZATION_PERCENT: u32 = 40;
+/// `domination-specializes-earlier` acts only up to this rung's `order`
+/// (King = 4). At Emperor the same clock measured −1.06 pp (z −2.33) and
+/// three more eliminations over 32 paired games: the stronger rivals punish
+/// the earlier war, so the shared halfway clock stands there.
+pub(crate) const DOMINATION_SPECIALIZATION_MAX_ORDER: usize = 4;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StrategicPlan {
     pub strategy: GrandStrategy,
@@ -1805,6 +1815,21 @@ const SETTLEMENT_GLOBAL_PREFILTER_LIMIT: usize = 512;
 /// still leaving the fleet pool available to the wider AI frontiers.
 const SETTLEMENT_SCORE_MAX_WORKERS: usize = 4;
 
+/// The lane progress table of one seat, kept for one controller turn. A
+/// controller clone is a speculative branch and starts without it, as the
+/// settlement atlas does.
+/// The turn, the seat, the map epoch and the table.
+type LaneProgressEntry = (u32, usize, u64, [i32; 4]);
+
+#[derive(Default)]
+struct LaneProgressCache(RefCell<Option<LaneProgressEntry>>);
+
+impl Clone for LaneProgressCache {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
 /// The part of a settlement score that does not depend on the settler's
 /// origin or on live unit positions. It is safe to reuse for every city and
 /// settler while the map and city layout remain unchanged. Threat, support,
@@ -1931,6 +1956,9 @@ pub struct AdvancedAi {
     /// authoritative controller remains single-threaded; worker clones own
     /// their own empty/copy-on-write atlas state.
     settlement_atlas: RefCell<SettlementAtlas>,
+    /// `lane_progress_table` for one seat, kept for the turn: the turn, the
+    /// seat, the map epoch and the table. Cleared at the start of each turn.
+    lane_progress_cache: LaneProgressCache,
     /// `lane-release-when-hopeless`: the verdict on the assigned victory lane,
     /// recomputed once per acting turn in `take_turn_inner` because
     /// `Game::victory_races` walks every city of every major and the readers
@@ -5131,6 +5159,21 @@ pub struct AdvancedAi {
     /// guarded permission is rechecked while the ordinary escort walks it.
     air_resource_colony_target: Option<(u32, Pos)>,
     // ---- append: c-d ------------------------------------------------
+    /// `domination-specializes-earlier`: an assigned Domination lane's
+    /// development half ends at [`DOMINATION_SPECIALIZATION_PERCENT`] of the
+    /// clock (turn 100 of 250) instead of halfway, so it turns to Conquest
+    /// while the rivals' lead is still smaller — at King and below only
+    /// ([`DOMINATION_SPECIALIZATION_MAX_ORDER`]). On the King ladder proxy it
+    /// nearly tripled foreign cities held over 64 paired games. See
+    /// `AdvancedAi::phase_specialization_active`.
+    domination_specializes_earlier: bool,
+    /// `domination-ignores-city-states`: an assigned Domination seat leaves
+    /// city-states out of the campaign's fallback target ranking. A captured
+    /// city-state counts nothing toward Domination (foreign original
+    /// capitals do), yet on the King ladder proxy the ranking opened a
+    /// city-state war in 7 of 16 games and the war then held the front for
+    /// dozens of turns. See `AdvancedAi::conquest_campaign_considers_city_states`.
+    domination_ignores_city_states: bool,
     /// Version 2 of the Culture clock forecast: project secular and religious
     /// Tourism through each rival's current international modifiers. The
     /// original forecast treats every rival as a full-strength market, even
@@ -8160,6 +8203,7 @@ impl AdvancedAi {
             force_groups: Vec::new(),
             force_groups_dirty: false,
             settlement_atlas: RefCell::new(SettlementAtlas::default()),
+            lane_progress_cache: LaneProgressCache::default(),
             lane_lost: false,
             narrows_atlas: RefCell::new(chokepoints::NarrowsAtlas::default()),
             work_pool: None,
@@ -8392,6 +8436,8 @@ impl AdvancedAi {
 
             air_resource_colony_target: None,
             // ---- append: c-d ----------------------------------------
+            domination_specializes_earlier: false,
+            domination_ignores_city_states: false,
             culture_lane_forecast_2: false,
             capture_hold_chain: false,
             capital_campaign_router: false,
@@ -11129,6 +11175,25 @@ impl AdvancedAi {
     /// preferences `victory_focus` adds are not progress and stay out of it,
     /// so a caller can read a rate from two readings.
     fn lane_progress_table(&self, g: &Game, pid: usize) -> [i32; 4] {
+        // Like the settlement atlas, the cache lives only inside an active
+        // controller turn; any other caller keeps the uncached reading.
+        if self.battlefront_frame.is_none() {
+            return self.lane_progress_table_uncached(g, pid);
+        }
+        let epoch = g.map.tiles.epoch();
+        if let Some((turn, seat, map_epoch, table)) = *self.lane_progress_cache.0.borrow() {
+            if turn == g.turn && seat == pid && map_epoch == epoch {
+                return table;
+            }
+        }
+        let table = self.lane_progress_table_uncached(g, pid);
+        self.lane_progress_cache
+            .0
+            .replace(Some((g.turn, pid, epoch, table)));
+        table
+    }
+
+    fn lane_progress_table_uncached(&self, g: &Game, pid: usize) -> [i32; 4] {
         let player = &g.players[pid];
         let living_majors: Vec<usize> = g
             .players
@@ -12382,7 +12447,9 @@ impl AdvancedAi {
                                 .filter(|rival| self.campaign_target_legal(g, pid, *rival))
                                 .filter(|rival| self.war_policy_target_feasible(g, pid, *rival))
                                 .collect();
-                            if strategy == GrandStrategy::Conquest {
+                            if strategy == GrandStrategy::Conquest
+                                && self.conquest_campaign_considers_city_states(g)
+                            {
                                 candidates.extend(
                                     g.players
                                         .iter()
@@ -23186,6 +23253,19 @@ impl AdvancedAi {
         let culture_buildup = self.victory_target == Some(VictoryTarget::Culture)
             && g.max_turns > 0
             && g.turn.saturating_mul(3) >= g.max_turns.min(g.game_speed.turn_limit());
+        // `domination-specializes-earlier`: an assigned Domination lane turns
+        // to Conquest at 40% of the clock rather than halfway. See
+        // `AdvancedAi::domination_specializes_earlier`.
+        if self.domination_specializes_earlier
+            && self.victory_target == Some(VictoryTarget::Domination)
+            && g.max_turns > 0
+            && g.difficulty_spec().order <= DOMINATION_SPECIALIZATION_MAX_ORDER
+        {
+            return !self.victory_planning
+                || g.turn.saturating_mul(100)
+                    >= g.max_turns.min(g.game_speed.turn_limit())
+                        * DOMINATION_SPECIALIZATION_PERCENT;
+        }
         !self.victory_planning || culture_buildup || Self::victory_specialization_active(g)
     }
 
@@ -31536,6 +31616,17 @@ impl AdvancedAi {
     /// occupation pressure, development, and victory-denial value. It is the
     /// campaign analogue of a chess engine's move ordering: forces search the
     /// most forcing and profitable front first rather than the first legal one.
+    /// Whether the Conquest campaign's fallback ranking may name a city-state.
+    /// Always, except for an assigned Domination seat with
+    /// `domination-ignores-city-states` on: its victory counts foreign
+    /// original capitals, and a city-state war it opens becomes the plan's
+    /// front (`wartime_rivals`) until it ends, so the army that should be
+    /// marching on a capital besieges a city worth nothing to the lane.
+    fn conquest_campaign_considers_city_states(&self, g: &Game) -> bool {
+        !(self.domination_ignores_city_states
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination))
+    }
+
     fn campaign_city_value(
         &self,
         g: &Game,
@@ -42028,6 +42119,7 @@ impl AdvancedAi {
         self.builder_support.clear();
         self.battlefront_frame = None;
         self.settlement_atlas.borrow_mut().clear();
+        self.lane_progress_cache.0.replace(None);
         // Before anything in this turn is priced. Every science term downstream
         // reads this one number, so the horizon cannot drift between the
         // production ordering, the citizen governor, and the search evaluator.
@@ -42312,6 +42404,7 @@ impl AdvancedAi {
         // pricing, so the production pass starts a fresh static atlas from
         // the final pre-production state.
         self.settlement_atlas.borrow_mut().clear();
+        self.lane_progress_cache.0.replace(None);
 
         // `border-parity-2`: the severe-deficit preemption, beside the siege
         // reclaim it mirrors.
