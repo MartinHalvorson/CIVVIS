@@ -301,6 +301,17 @@ Immortal on the same 32 seeds:
 | … and `peacetime-deterrence` off, against befriend on | +0.29 pp | +1.35 | 0.22 → 0.16 |
 | **both, against the deployed genome** | **+1.56 pp** | **+3.82** | **0.97 → 0.16** |
 
+**One rung up, and the live seat.** The same package at **Deity** (Science
+lane, 32 paired, seeds 76000000+, main `5f96726`) reads **+1.13 pp (z +3.17)**:
+the seat survived in 32 of 32 games against 29, and cities lost fell 0.84 → 0.16. Deity games
+end at a median t146, a rival's Science finish in 28 of 32. At the live seat's
+own configuration (King, Domination lane, Gran Colombia, the forced list with
+#3834/#3836, main `6a92289`, 32 paired, seeds 38210000+), `befriend-the-strongest`
+alone reads **+4.09 pp (z +3.42)**, with the seat surviving 32 of 32 against 26 and
+cities lost falling 3.03 → 0.81 — but it declared 14 wars against 27 and held 7 foreign
+cities against 14 and 0 capitals against 1: on a seat whose goal is a
+Domination victory it trades conquest for survival.
+
 This is the third independent Immortal block for `befriend-the-strongest`.
 
 **Which lane under the package** (Immortal, 32 paired, seeds 73000000+, every
