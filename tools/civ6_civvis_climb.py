@@ -2166,7 +2166,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
 
 def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, args,
                          started_at: float, latest=None, recent=None,
-                         used_saves=None) -> Path | None:
+                         used_saves=None, stride_index: int | None = None) -> Path | None:
     """The autosave a frozen or natively crashed attempt should reload, or None.
 
     ★★★★★ A FROZEN GAME WAS SCORED AS A LOSS WITH ITS SAVE ON DISK. Three
@@ -2260,7 +2260,14 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     # parked board there.
     if len(saves) > 1:
         saves = saves[1:]
-    step = RESUME_STEPS[min(resumes_so_far, len(RESUME_STEPS) - 1)]
+    # The total count still enforces the batch's recovery budget. A new freeze
+    # turn at least two turns later starts a new rollback episode: after
+    # escaping t88 and reaching t112, going 25 saves back re-enters the t88
+    # deadlock instead of testing t111. An adjacent freeze keeps stepping back;
+    # one-back from t89 would land on the board that froze at t88.
+    # Callers that do not track episodes keep the historical stride sequence.
+    episode_index = resumes_so_far if stride_index is None else max(0, stride_index)
+    step = RESUME_STEPS[min(episode_index, len(RESUME_STEPS) - 1)]
     index = min(step, len(saves) - 1)
     if not 0 <= index < len(saves):
         return None
@@ -2274,9 +2281,10 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     return None
 
 
-# How far back each successive resume reaches, as an index into the autosaves
-# (newest first, with the parked turn's own save already removed). So the first
-# attempt reloads ONE turn back and the second FOUR.
+# How far back each consecutive resume of the same or adjacent freeze turn
+# reaches, as an index into the autosaves (newest first, with the parked save
+# already removed). A new freeze after real progress restarts at one back;
+# the total six-resume budget and used-save exclusion still apply.
 #
 # ⚠⚠ ADJACENT BOUNDARIES REPLAY INTO THE SAME DEADLOCK. Walking back one save at
 # a time samples a board that is nearly identical, and the park is deterministic
@@ -2294,11 +2302,10 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
 # ⚠ n=3. If a later run escapes at two-back this stride is wrong; the number to
 # watch is which index the escaping resume used.
 #
-# The third step (nine back) exists because the budget rose to three: a game can
-# park more than once. Run `civvis-20260830T223229Z` parked at t66, was rescued
-# ONE turn back, played 27 more turns, and parked again at t93 — a genuinely new
-# deadlock, not a replay of the first. Without a distinct third index the extra
-# attempt would reload the same save as the second.
+# The third step (nine back) exists because the same deadlock can survive both
+# earlier strides. A game that escapes and later freezes at another turn starts
+# a new stride sequence once it has advanced at least two turns, because its
+# nearby saves represent a new board.
 #
 # ⚠⚠ AND THE STRIDES PAST THE THIRD MUST KEEP WALKING, because the budget is six
 # (#2861) and a deterministic park survives strides. Three of the seven parks on
@@ -2311,6 +2318,20 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
 # oldest autosave on disk clamps to the oldest rather than giving up: a short
 # list is still a different board from the one that parked.
 RESUME_STEPS: tuple[int, ...] = (0, 3, 8, 15, 24, 35)
+
+
+def resume_stride_index(resumes: list[dict], frozen_turn: int | None) -> int:
+    """Count recent freezes at this turn or one turn earlier, newest first."""
+    count = 0
+    last = frozen_turn
+    for resume in reversed(resumes):
+        previous = resume.get("from_turn")
+        if (not isinstance(last, int) or not isinstance(previous, int)
+                or not 0 <= last - previous <= 1):
+            break
+        count += 1
+        last = previous
+    return count
 
 
 def _autosave_turn(save: Path) -> int | None:
@@ -3008,6 +3029,7 @@ def main() -> int:
                 save = resume_from_autosave(
                     record, why, len(resumes), args, attempt_started_at,
                     used_saves={resume["save"] for resume in resumes},
+                    stride_index=resume_stride_index(resumes, record.get("last_turn")),
                 )
                 if save is None:
                     break
