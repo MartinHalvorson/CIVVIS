@@ -50,7 +50,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use super::objective_board::{ObjectiveKey, ObjectiveKind};
 use super::one_war::{ONE_WAR_CITY_WEIGHT, ONE_WAR_TIDE_WINDOW};
-use super::{AdvancedAi, StrategicPlan};
+use super::{AdvancedAi, StrategicPlan, VictoryTarget};
 use crate::game::Game;
 use crate::think;
 
@@ -287,6 +287,20 @@ impl AdvancedAi {
                 "the Siege row for {} asks {need:.0} strength and {strength:.0} is staged on its ring in {} bodies",
                 city.name,
                 staged.len()
+            )));
+        }
+        // Strength alone cannot remove walls. The Domination production and
+        // research reservations prepare a siege weapon before war; wait until
+        // that weapon has actually joined the army on the staging ring.
+        if self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && city.wall_hp > 0
+            && !staged
+                .iter()
+                .any(|uid| g.rules.units[g.units[uid].kind].siege)
+        {
+            return Some(Err(format!(
+                "the walled Siege row for {} has no wall breaker staged on its ring",
+                city.name
             )));
         }
         Some(Ok(()))
@@ -629,6 +643,44 @@ mod tests {
             panic!("a second front must hold the declaration");
         };
         assert!(reason.contains("another major war"), "{reason}");
+    }
+
+    #[test]
+    fn domination_waits_for_a_staged_wall_breaker_before_attacking_walls() {
+        let mut g = flat_board(3401, &[at(6, 8), at(20, 8)]);
+        let target = city_of(&g, 1, at(20, 8));
+        g.cities.get_mut(&target).unwrap().wall_hp = 100;
+        let plan = conquest(&g, Some(target));
+        let mut ai = on();
+        ai.retarget(VictoryTarget::Domination);
+        let ring: Vec<crate::Pos> = g
+            .wdisk(g.cities[&target].pos, 5)
+            .into_iter()
+            .filter(|pos| (3..=5).contains(&g.wdist(*pos, g.cities[&target].pos)))
+            .collect();
+        for pos in ring.iter().copied().take(20) {
+            spawn(&mut g, "swordsman", 0, pos);
+        }
+        let Some(Err(reason)) = ai.war_policy_declaration(&g, 0, 1, &plan) else {
+            panic!("walled objective must hold for a wall breaker");
+        };
+        assert!(reason.contains("no wall breaker staged"), "{reason}");
+
+        let catapult = spawn(&mut g, "catapult", 0, at(7, 8));
+        assert!(matches!(
+            ai.war_policy_declaration(&g, 0, 1, &plan),
+            Some(Err(reason)) if reason.contains("no wall breaker staged")
+        ));
+        let staging_tile = ring
+            .into_iter()
+            .find(|pos| g.unit_ids_at(*pos).is_empty())
+            .expect("spare staging tile");
+        g.units.get_mut(&catapult).unwrap().pos = staging_tile;
+        assert_eq!(ai.war_policy_declaration(&g, 0, 1, &plan), Some(Ok(())));
+
+        g.units.get_mut(&catapult).unwrap().pos = at(7, 8);
+        g.cities.get_mut(&target).unwrap().wall_hp = 0;
+        assert_eq!(ai.war_policy_declaration(&g, 0, 1, &plan), Some(Ok(())));
     }
 
     /// Our capital at war and under pressure from three warriors, the
