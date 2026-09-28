@@ -1115,8 +1115,14 @@ impl AdvancedAi {
         // helper requires at least two units and releases the slot as soon
         // as their immediate successor is unlocked. Finish the last air tech
         // rather than interrupting the breakthrough at the end of the chain.
+        // The live King surge upgraded its tank line through Composites, then
+        // let another ground upgrade take research through Combined Arms and
+        // Nuclear Fission. The war ended before Advanced Flight was touched.
+        // One immediate modernization is useful; chaining a second one turns
+        // an appointed air package into an endless ground-tech queue.
         if self.air_surge_2
             && Self::air_surge_missing_techs(g, pid) > 1
+            && !g.players[pid].techs.contains(&crate::name!("composites"))
             && self.wartime_modernization_tech(g, pid).is_some_and(|goal| {
                 let supplied_air = self.active_victory_target(g) == Some(VictoryTarget::Domination)
                     && Self::air_surge_metal_ready(g, pid)

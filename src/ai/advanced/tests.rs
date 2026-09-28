@@ -37316,6 +37316,32 @@ fn the_v2_surge_replaces_v1_and_a_plain_seat_feels_nothing() {
     assert!(!AdvancedAi::legacy().air_surge_2);
 }
 
+#[test]
+fn a_modernized_ground_army_finishes_the_appointed_air_surge() {
+    let (mut game, _, _) = air_surge_fixture(941_154);
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    let home = game.cities[&game.player_city_ids(0)[0]].pos;
+    for _ in 0..2 {
+        game.spawn_test_unit("artillery", 0, home);
+    }
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_air_surge_2();
+    ai.maintain_air_surge(&game, 0);
+    assert!(ai.air_surge_active());
+    assert!(
+        ai.wartime_modernization_tech(&game, 0).is_some(),
+        "a second land upgrade must actually compete for research"
+    );
+    game.players[0].techs.insert(crate::name!("composites"));
+    assert!(ai.wartime_modernization_tech(&game, 0).is_some());
+    assert_eq!(
+        ai.air_surge_research_goal(&game, 0),
+        Some(air_surge::AIR_SURGE_GOAL_TECH),
+        "once the tank line is modernized, another land upgrade cannot indefinitely postpone the wing"
+    );
+}
+
 /// The Formal-War clock runs through the buildout. A lane seat assesses no
 /// rival, so `advanced_diplomacy` needs the surge to hand it a target while
 /// the wing arms — v1 never does, v2 does, and a counter appointed into a
