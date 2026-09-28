@@ -156,6 +156,7 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
         "keshig" => "MONGOLIAN_KESHIG",
         "winged_hussar" => "POLISH_HUSSAR",
         "oromo_cavalry" => "ETHIOPIAN_OROMO_CAVALRY",
+        "llanero" => "COLOMBIAN_LLANERO",
         "toa" => "MAORI_TOA",
         "crouching_tiger" => "CHINESE_CROUCHING_TIGER",
         "gaesatae" => "GAUL_GAESATAE",

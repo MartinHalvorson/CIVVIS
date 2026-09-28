@@ -3629,9 +3629,13 @@ mod tests {
         // 4-move, 35-strength Galley successor was visible in the installed
         // `Expansion2_Units_Major.xml` row but CIVVIS had been falling back to
         // the weaker generic Galley.
+        // Moved again by modeling Gran Colombia's Llanero from the installed
+        // `GranColombia_Maya_Units.xml` and `GranColombia_Maya_Expansion2.xml`
+        // rows. The native host offers it for Horses, while an unmodeled
+        // Cuirassier plan had no buildable land capturer for its bomber siege.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:e69039571d195263"
+            "fnv1a64:57fd8a818d0d5472"
         );
     }
 
@@ -3645,6 +3649,23 @@ mod tests {
         assert_eq!(tagma.cost, 220.0);
         assert_eq!(tagma.maintenance, 4.0);
         assert_eq!(tagma.upgrade_to.as_deref(), Some("cuirassier"));
+
+        let llanero = &rules.units["llanero"];
+        assert_eq!(
+            (
+                llanero.cost,
+                llanero.maintenance,
+                llanero.moves,
+                llanero.strength
+            ),
+            (330.0, 2.0, 5.0, 62.0)
+        );
+        assert_eq!(llanero.tech, Some(crate::name!("military_science")));
+        assert_eq!(llanero.requires_resource, Some(crate::name!("horses")));
+        assert_eq!(llanero.resource_cost, 20.0);
+        assert_eq!(llanero.unique_to.as_deref(), Some("Gran Colombia"));
+        assert_eq!(llanero.replaces, Some(crate::name!("cavalry")));
+        assert_eq!(llanero.upgrade_to, Some(crate::name!("helicopter")));
 
         let prasat = &rules.buildings["prasat"];
         assert_eq!(prasat.yields.faith, 6.0);
@@ -4211,6 +4232,7 @@ mod tests {
             ("courser", "cavalry"),
             ("oromo_cavalry", "cavalry"),
             ("cavalry", "helicopter"),
+            ("llanero", "helicopter"),
             ("heavy_chariot", "knight"),
             ("knight", "cuirassier"),
             ("tagma", "cuirassier"),
@@ -4294,7 +4316,7 @@ mod tests {
         let rules = Rules::embedded();
         assert_eq!(rules.techs.len(), 77);
         assert_eq!(rules.civics.len(), 61);
-        assert_eq!(rules.units.len(), 101);
+        assert_eq!(rules.units.len(), 102);
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);

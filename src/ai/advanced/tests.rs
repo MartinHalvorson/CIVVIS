@@ -7289,6 +7289,42 @@ fn an_impossible_victory_denial_keeps_a_stale_major_war_defensive() {
 }
 
 #[test]
+fn observed_online_exoplanet_clock_outranks_a_slower_diplomatic_race() {
+    let mut game = Game::new_full(2, 24, 16, 91_528, 650, 0, false);
+    game.turn = 215;
+    game.players[1].dvp = 16;
+    game.players[1].science_projects.extend([
+        "launch_earth_satellite".to_string(),
+        "launch_moon_landing".to_string(),
+        "launch_mars_colony".to_string(),
+        "exoplanet_expedition".to_string(),
+    ]);
+    let observed = std::sync::Arc::make_mut(&mut game.observed_public_empire_stats)
+        .entry(1)
+        .or_default();
+    observed.science_victory_points = Some(14.0);
+    observed.science_victory_points_needed = Some(25.0);
+    observed.science_victory_points_per_turn = Some(6.0);
+    assert_eq!(game.players[1].exoplanet_distance, 0.0);
+    assert_eq!(game.victory_races(1, 0).exoplanet_distance, 14.0);
+
+    let ai = AdvancedAi::new();
+    assert_eq!(ai.rival_pressure(&game, 1), (GrandStrategy::Science, 90));
+    assert!(ai.denial_is_urgent(&game, 1));
+
+    std::sync::Arc::make_mut(&mut game.observed_public_empire_stats)
+        .get_mut(&1)
+        .unwrap()
+        .science_victory_points = Some(20.0);
+    assert_eq!(ai.rival_pressure(&game, 1), (GrandStrategy::Science, 95));
+
+    // A non-mirrored game still reads the simulator's native 50-point trip.
+    std::sync::Arc::make_mut(&mut game.observed_public_empire_stats).remove(&1);
+    game.players[1].exoplanet_distance = 14.0;
+    assert_eq!(ai.rival_pressure(&game, 1), (GrandStrategy::Science, 84));
+}
+
+#[test]
 fn a_released_recovery_posture_does_not_rearm_next_turn() {
     let (mut game, _) = outgunned_at_war_fixture();
     game.turn = 100;
@@ -35887,6 +35923,46 @@ fn the_capture_body_is_cavalry_when_the_empire_can_field_one() {
         AdvancedAi::air_surge_body(&game, 0).expect("melee is always available");
     assert!(!is_cavalry, "{fallback} is still a cavalry line");
     assert!(game.rules.units[fallback].is_melee_capable());
+}
+
+#[test]
+fn gran_colombia_air_surge_uses_the_llanero_on_a_native_menu() {
+    let (mut game, _, _) = air_surge_fixture(941_118);
+    game.players[0].civ = "Gran Colombia".to_string();
+    game.players[0].techs.insert(crate::name!("ballistics"));
+    game.players[0]
+        .techs
+        .insert(crate::name!("military_science"));
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("horses"), 25.0);
+    let city = game.player_city_ids(0)[0];
+    std::sync::Arc::make_mut(&mut game.host_buildable).insert(
+        city,
+        std::collections::BTreeMap::from([(
+            "unit:llanero".to_string(),
+            crate::game::HostMenuEntry {
+                cost: Some(330.0),
+                turns: Some(5.0),
+            },
+        )]),
+    );
+    assert_eq!(
+        game.player_unit_replacement(0, crate::name!("cavalry")),
+        "llanero"
+    );
+    assert!(game.can_produce(
+        0,
+        city,
+        &Item::Unit {
+            unit: crate::name!("llanero")
+        }
+    ));
+    assert_eq!(
+        AdvancedAi::air_surge_body(&game, 0),
+        Some((crate::name!("llanero"), true)),
+        "the native menu offers Llaneros, not the stronger but unavailable Cuirassier"
+    );
 }
 
 /// The beeline is the point of the appointment: while it runs, research is

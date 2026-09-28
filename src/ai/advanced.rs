@@ -11411,8 +11411,12 @@ impl AdvancedAi {
             // defender needs time to raise, route, and deploy a counterforce,
             // so its launch itself must cross the generic denial threshold;
             // waiting for the first six light-years discarded that reaction
-            // window while the rival was already on the victory clock.
-            78 + (22.0 * player.exoplanet_distance / 50.0).clamp(0.0, 22.0) as i32
+            // window while the rival was already on the victory clock. Read
+            // the host's public distance and game-speed target when mirrored:
+            // the simulator field stays at zero there, and Online needs only
+            // 25 points rather than the simulator's 50.
+            78 + (22.0 * g.science_victory_points(pid) / g.science_victory_points_needed(pid))
+                .clamp(0.0, 22.0) as i32
         } else if player.science_projects.contains("launch_mars_colony") {
             65
         } else if player.science_projects.contains("launch_moon_landing") {
@@ -19873,6 +19877,7 @@ impl AdvancedAi {
                     let key = match peace {
                         one_war::OneWarPeace::SecondFront => "one_war:peace:second_front",
                         one_war::OneWarPeace::CapitalSecured => "one_war:peace:capital_secured",
+                        one_war::OneWarPeace::CapitalElsewhere => "one_war:peace:capital_elsewhere",
                         one_war::OneWarPeace::VictoryThreat => "one_war:peace:victory_threat",
                         one_war::OneWarPeace::TideTurned => "one_war:peace:tide",
                         one_war::OneWarPeace::Rout => "one_war:peace:rout",
@@ -42644,6 +42649,11 @@ impl AdvancedAi {
             };
             let adaptive_expansion_dispatch =
                 self.adaptive_expansion_dispatches(&plan, dispatch_target);
+            // The delegated governor never sees the strategic scorer's siege
+            // composition reservation. Claim its first wall breaker here.
+            if lane_delegating && active_victory_target == Some(VictoryTarget::Domination) {
+                self.reserve_delegated_domination_siege(g, pid, &plan);
+            }
             // Reserve one useful support element before broad production
             // consumes the idle queues of an active foreign-city assault.
             let city_assault_support_reserved =

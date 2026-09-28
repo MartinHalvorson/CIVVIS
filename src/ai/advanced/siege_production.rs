@@ -6,6 +6,92 @@ use super::*;
 pub(super) const FIRST_WEAPON_RESERVATION: f64 = 400.0;
 
 impl AdvancedAi {
+    /// The delegated city governor does not call `production_value`, where the
+    /// ordinary missing-siege reservation lives. Give a walled Domination
+    /// assault one real bombardment unit before delegation fills every idle
+    /// queue. A fielded or queued land gun closes this reservation.
+    pub(super) fn reserve_delegated_domination_siege(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        if self.war_plan.is_some()
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        {
+            return false;
+        }
+        let Some(target) = plan
+            .target_city
+            .and_then(|cid| g.cities.get(&cid))
+            .filter(|city| {
+                city.wall_hp > 0
+                    && city.owner != pid
+                    && !g.players[city.owner].is_minor
+                    && g.is_at_war(pid, city.owner)
+            })
+        else {
+            return false;
+        };
+        let objective = target.pos;
+        let target_name = target.name.clone();
+        let counts = self.counts(g, pid);
+        if counts.land_siege_power > 0.0 || self.live_war_economy_requires_recovery(g, pid, &counts)
+        {
+            return false;
+        }
+
+        let best = {
+            let _memo = g.query_memo();
+            let mut best: Option<(f64, u32, Name)> = None;
+            for cid in g.player_city_ids(pid) {
+                if !g.cities[&cid].queue.is_empty() || plan.threatened_city == Some(cid) {
+                    continue;
+                }
+                for item in g.producible_items(pid, cid) {
+                    let Item::Unit { unit } = item else { continue };
+                    let spec = &g.rules.units[&unit];
+                    if spec.class != "military"
+                        || !spec.siege
+                        || !spec.has_ranged_attack()
+                        || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    {
+                        continue;
+                    }
+                    let arrival = self.production_build_turns(g, pid, cid, &item)
+                        + f64::from(g.wdist(g.cities[&cid].pos, objective)) / spec.moves.max(1.0);
+                    if best.as_ref().is_none_or(|(old, old_city, old_unit)| {
+                        arrival.total_cmp(old).is_lt()
+                            || (arrival == *old && (cid, unit) < (*old_city, *old_unit))
+                    }) {
+                        best = Some((arrival, cid, unit));
+                    }
+                }
+            }
+            best
+        };
+        let Some((arrival, city, unit)) = best else {
+            return false;
+        };
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city,
+                item: Item::Unit { unit },
+            },
+        )
+        .is_err()
+        {
+            return false;
+        }
+        think!(self.journal(), Military, Decision,
+            "{} reserves a {} for the walled assault", g.cities[&city].name, unit;
+            "the delegated governor has no land siege weapon; expected arrival at {} in about {arrival:.0} turns",
+            target_name;
+            objective);
+        true
+    }
+
     /// A roster full of field units can still lack the ability to break walls.
     /// Counts include queued units, so only the first siege order gets this
     /// composition exception to the ordinary army ceiling. An active siege

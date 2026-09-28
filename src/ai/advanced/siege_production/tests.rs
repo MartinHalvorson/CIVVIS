@@ -82,6 +82,37 @@ fn a_full_army_can_add_missing_siege_for_medieval_walls() {
 }
 
 #[test]
+fn delegated_domination_reserves_one_real_wall_breaker() {
+    let (mut g, mut ai, plan, home, target) = siege_gap_case();
+    ai.enable_lane_delegates_production_2();
+    assert!(ai.lane_delegates_now(Some(VictoryTarget::Domination), true));
+    assert!(ai.reserve_delegated_domination_siege(&mut g, 0, &plan));
+    assert_eq!(
+        g.cities[&home].queue.first(),
+        Some(&Item::Unit {
+            unit: crate::name!("catapult"),
+        })
+    );
+    assert!(
+        !ai.reserve_delegated_domination_siege(&mut g, 0, &plan),
+        "the queued gun closes the reservation"
+    );
+
+    g.cities.get_mut(&home).unwrap().queue.clear();
+    let gun = g.spawn_unit("catapult", 0, g.cities[&home].pos);
+    assert!(
+        !ai.reserve_delegated_domination_siege(&mut g, 0, &plan),
+        "a fielded gun also closes it"
+    );
+    g.remove_unit(gun);
+    g.cities.get_mut(&target).unwrap().wall_hp = 0;
+    assert!(!ai.reserve_delegated_domination_siege(&mut g, 0, &plan));
+    g.cities.get_mut(&target).unwrap().wall_hp = 100;
+    g.at_war.clear();
+    assert!(!ai.reserve_delegated_domination_siege(&mut g, 0, &plan));
+}
+
+#[test]
 fn an_existing_or_queued_siege_unit_closes_the_composition_exception() {
     for queued in [false, true] {
         let (mut g, ai, plan, home, _) = siege_gap_case();

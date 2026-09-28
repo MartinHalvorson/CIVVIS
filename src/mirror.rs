@@ -6549,6 +6549,7 @@ fn civvis_node_name<T>(
             "mongolian_keshig" => Some("keshig"),
             "polish_hussar" => Some("winged_hussar"),
             "ethiopian_oromo_cavalry" => Some("oromo_cavalry"),
+            "colombian_llanero" => Some("llanero"),
             "maori_toa" => Some("toa"),
             "chinese_crouching_tiger" => Some("crouching_tiger"),
             "gaul_gaesatae" => Some("gaesatae"),
