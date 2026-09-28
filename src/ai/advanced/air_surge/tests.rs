@@ -229,11 +229,33 @@ fn urgent_domination_target_opening_war_keeps_the_existing_air_investment() {
 }
 
 #[test]
-fn an_unexpected_nonurgent_war_still_ends_the_elective_air_plan() {
+fn a_nonurgent_target_opening_war_keeps_the_existing_air_investment() {
     let (mut g, mut ai, _) = staged_domination_denial();
     g.players[1].dvp = 0;
     assert!(!ai.urgent_victory_threat(&g, 1));
     g.at_war.insert((0, 1));
+    ai.maintain_air_surge(&g, 0);
+    let surge = ai.air_surge_plan.as_ref().expect("keep the planned attack");
+    assert!(surge.opened_at_war);
+    assert_eq!(surge.declared_turn, None);
+    assert_eq!(surge.appointed_turn, 140);
+    assert_eq!(surge.phase, AirSurgePhase::Exploit);
+    assert_eq!(ai.air_surge_cooldown_until, 0);
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
+}
+
+#[test]
+fn a_threatened_home_city_stands_down_the_unready_air_plan() {
+    let (mut g, mut ai, _) = staged_domination_denial();
+    g.players[1].dvp = 0;
+    g.at_war.insert((0, 1));
+    let barbarian = g.players.iter().find(|p| p.is_barbarian).unwrap().id;
+    g.at_war.insert((0, barbarian));
+    for _ in 0..5 {
+        g.spawn_test_unit("modern_armor", barbarian, (11, 12));
+    }
+    assert!(ai.threatened_city(&g, 0).is_some());
+
     ai.maintain_air_surge(&g, 0);
     assert!(ai.air_surge_plan.is_none());
     assert!(ai.air_surge_cooldown_until > g.turn);

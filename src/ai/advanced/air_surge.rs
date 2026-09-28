@@ -185,7 +185,8 @@ pub(crate) struct AirSurge {
     /// means the empire could field no cavalry and the surge fell back to its
     /// strongest melee body.
     pub(crate) body_is_cavalry: bool,
-    /// Whether the appointment was made *into* a war already running.
+    /// Whether the appointment joined a war that we did not declare, either
+    /// because it was already running or because the target opened it first.
     ///
     /// ★★★ THIS IS THE COUNTER-ATTACK HALF. A Bomber is as useful against a
     /// civilization attacking us as against one we chose, and the empire that
@@ -887,8 +888,20 @@ impl AdvancedAi {
                 self.record_air_surge_abort(g, "diplomacy made war illegal");
                 ended = true;
             } else if at_war && plan.declared_turn.is_none() && !plan.opened_at_war {
-                self.record_air_surge_abort(g, "target opened the war first");
-                ended = true;
+                if self.active_victory_target(g) == Some(VictoryTarget::Domination)
+                    && self.threatened_city(g, pid).is_none()
+                {
+                    // The planned target has saved us the declaration. Keep
+                    // the wing and its capture bodies under construction; an
+                    // unready wing cannot displace the ground campaign.
+                    plan.opened_at_war = true;
+                    think!(self.journal(), Military, Strategy,
+                           "The air surge target opened the war";
+                           "keeping the existing wing and capture force on its objective");
+                } else {
+                    self.record_air_surge_abort(g, "target opened the war first");
+                    ended = true;
+                }
             } else if (plan.declared_turn.is_some() || plan.opened_at_war) && !at_war {
                 self.record_air_surge_abort(g, "peace closed the war");
                 ended = true;
