@@ -19888,6 +19888,7 @@ impl AdvancedAi {
             // turns)"; every other term stands. See
             // `advanced/war_policy.rs`.
             let policy_peace = self.war_policy_peace(g, pid, *other);
+            let religious_interception = self.religious_interception_holds_war(g, pid, *other);
             let outmatched = if self.war_policy_via_board {
                 policy_peace.is_some()
             } else {
@@ -19908,6 +19909,7 @@ impl AdvancedAi {
                 && !g.emergency_war_pair(pid, *other)
                 && !g.players[*other].is_minor
                 && !peace_pending
+                && !religious_interception
                 && (outmatched
                     || (plan.strategy == GrandStrategy::Recovery
                         && plan.target_player != Some(*other))

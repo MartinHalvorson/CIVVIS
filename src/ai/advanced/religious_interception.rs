@@ -1,6 +1,50 @@
 use super::*;
 
+fn visible_home_spreaders(g: &Game, pid: usize, rival: usize, faith: &str) -> Vec<u32> {
+    let visible = g.player_visibility(pid);
+    g.player_unit_ids(rival)
+        .into_iter()
+        .filter(|uid| {
+            let unit = &g.units[uid];
+            g.rules.units[unit.kind].class == "religious"
+                && unit.religion.as_deref() == Some(faith)
+                && visible.contains(&unit.pos)
+                && g.player_city_ids(pid)
+                    .iter()
+                    .any(|cid| g.wdist(g.cities[cid].pos, unit.pos) <= 6)
+        })
+        .collect()
+}
+
 impl AdvancedAi {
+    /// A war opened to stop an approaching religious victory should remain
+    /// open while that founder still has visible spreaders near our cities.
+    /// Once the local threat or the rival's victory stake recedes, ordinary
+    /// peace evaluation resumes.
+    pub(super) fn religious_interception_holds_war(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> bool {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !self.deny_leaders
+            || !g.is_at_war(pid, rival)
+        {
+            return false;
+        }
+        let Some(stakes) = self.religious_veto_engaged(g, pid) else {
+            return false;
+        };
+        if stakes.founder != rival || stakes.our_converted == 0 {
+            return false;
+        }
+        let Some(faith) = g.players[rival].religion.as_deref() else {
+            return false;
+        };
+        !visible_home_spreaders(g, pid, rival, faith).is_empty()
+    }
+
     /// A religious match point can be intercepted at home even before a scout
     /// finds the founder's cities. Promise a legal condemnation, not a distant
     /// siege: replay the declaration and the same-turn interception first.
@@ -16,7 +60,6 @@ impl AdvancedAi {
         {
             return false;
         }
-        let visible = g.player_visibility(pid);
         for (rival, pressure) in self.ranked_rival_victory_pressures(g, pid, &BTreeMap::new()) {
             if pressure.strategy != GrandStrategy::Religion
                 || !self.victory_pressure_is_urgent(g, rival, pressure)
@@ -27,19 +70,7 @@ impl AdvancedAi {
             let Some(faith) = g.players[rival].religion.as_deref() else {
                 continue;
             };
-            let spreaders: Vec<_> = g
-                .player_unit_ids(rival)
-                .into_iter()
-                .filter(|uid| {
-                    let u = &g.units[uid];
-                    g.rules.units[u.kind].class == "religious"
-                        && u.religion.as_deref() == Some(faith)
-                        && visible.contains(&u.pos)
-                        && g.player_city_ids(pid)
-                            .iter()
-                            .any(|cid| g.wdist(g.cities[cid].pos, u.pos) <= 6)
-                })
-                .collect();
+            let spreaders = visible_home_spreaders(g, pid, rival, faith);
             if spreaders.is_empty() {
                 continue;
             }
