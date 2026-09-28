@@ -1969,7 +1969,7 @@ class PassThroughFlagsReachTheGame(unittest.TestCase):
 
 
 class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
-    """A frozen attempt is reloaded from its latest autosave, not scored as it fell.
+    """A frozen or crashed attempt reloads an autosave, not its partial score.
 
     ★★★★★ Three leading games died on the 900 s watchdog on 2026-08-16 with a
     turn-fresh `AutoSave_NNNN.Civ6Save` on disk (t178 leading 804 vs 715, t207,
@@ -1993,7 +1993,7 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
             climb.resume_from_autosave(frozen, "frozen", 0, args, 1234.5, latest=finder),
             Path("/saves/AutoSave_0102.Civ6Save"))
         self.assertEqual(seen, [1234.5], "only autosaves written since the attempt began")
-        # Not frozen: a timeout, a locked screen, a normal exit — no resume.
+        # No crash evidence: a timeout, a locked screen, a normal exit — no resume.
         for why in ("timeout", "locked", "exited", None):
             self.assertIsNone(climb.resume_from_autosave(frozen, why, 0, args, 0.0, latest=finder))
         # Too early to be worth the load flow.
@@ -2009,6 +2009,45 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         # No autosave since the attempt began: nothing to reload.
         self.assertIsNone(climb.resume_from_autosave(frozen, "frozen", 0, args, 0.0,
                                                      latest=lambda newer_than=None: None))
+
+    def test_native_crash_reloads_only_without_a_game_result(self):
+        args = self._Args()
+        save = Path("/saves/AutoSave_0199.Civ6Save")
+        crashed = {"last_turn": 200, "reason": "game exited", "game_stopped": True}
+        finder = lambda newer_than=None: save
+        self.assertEqual(climb.resume_from_autosave(
+            crashed, "exited", 0, args, 1234.5, latest=finder), save)
+        for changed in ({"game_stopped": False}, {"reason": "stopped"},
+                        {"end_screen_turn": 200}, {"retire_requested": True}):
+            record = {**crashed, **changed}
+            self.assertIsNone(climb.resume_from_autosave(
+                record, "exited", 0, args, 1234.5, latest=finder))
+        self.assertIsNone(climb.resume_from_autosave(
+            crashed, "exited", args.max_resumes, args, 1234.5, latest=finder))
+
+    def test_crashed_game_is_reloaded_instead_of_spending_a_new_attempt(self):
+        newest = Path("/saves/AutoSave_0200.Civ6Save")
+        selected = Path("/saves/AutoSave_0199.Civ6Save")
+        spawned = []
+
+        class Recording(FakeProc):
+            def __init__(self, argv, *args, **kwargs):
+                spawned.append(list(argv))
+                super().__init__(argv, *args, **kwargs)
+
+        with mock.patch.object(climb, "wait_watching_the_turn",
+                               side_effect=["exited", "exited"]), \
+             mock.patch.object(climb, "_recent_autosaves",
+                               return_value=[newest, selected]), \
+             mock.patch.object(climb.subprocess, "Popen", Recording):
+            _, rows = self.climb_with([
+                {"last_turn": 200, "reason": "game exited", "game_stopped": True},
+                {"last_turn": 240, "reason": "finished"},
+            ], attempts=1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["last_turn"], 240)
+        self.assertEqual(rows[0]["resumes"][0]["save"], selected.name)
+        self.assertEqual(len([argv for argv in spawned if "--load-save" in argv]), 1)
 
     def test_successive_resumes_step_back_instead_of_reloading_the_same_hang(self):
         args = self._Args()

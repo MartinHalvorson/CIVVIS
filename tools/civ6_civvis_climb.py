@@ -2166,7 +2166,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
 def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, args,
                          started_at: float, latest=None, recent=None,
                          used_saves=None) -> Path | None:
-    """The autosave a frozen attempt should be reloaded from, or None.
+    """The autosave a frozen or natively crashed attempt should reload, or None.
 
     ★★★★★ A FROZEN GAME WAS SCORED AS A LOSS WITH ITS SAVE ON DISK. Three
     leading games died on the 900 s watchdog on 2026-08-16 alone:
@@ -2182,7 +2182,7 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     ticks the Autosaves filter the list hides them behind).
 
     Resumes only what is worth resuming: the attempt was killed as `frozen`
-    (a timeout or a locked screen is a different story), reached
+    or Civ VI itself exited without an ending, reached
     `--resume-min-turn`, did not already reach an end screen, the resume
     budget is not spent, and an autosave written since the attempt began
     exists (never one from an earlier game). The live caller also supplies the
@@ -2190,7 +2190,14 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     make a later stride clamp back onto the same board. Everything else falls
     through to the ledger exactly as before.
     """
-    if why != "frozen" or resumes_so_far >= args.max_resumes:
+    # A native Civ VI abort can follow a perfectly fresh turn. On
+    # 2026-09-28 the core SIGABRTed at t200 with per-turn autosaves enabled.
+    # The watcher returned "exited" and the supervisor started a new game. Require
+    # the harness's explicit crash reason and stopped flag; an ordinary exit,
+    # operator stop, or game-over screen must never restart a finished match.
+    native_crash = (why == "exited" and record.get("reason") == "game exited"
+                    and record.get("game_stopped") is True)
+    if (why != "frozen" and not native_crash) or resumes_so_far >= args.max_resumes:
         return None
     # ⚠ A historical score-retired game must stay retired.  Current
     # verification policy never makes that automatic score call, but old rows
@@ -3022,7 +3029,8 @@ def main() -> int:
                 except OSError as error:
                     print(f"[resume] selected save snapshot failed: {error}; "
                           "retaining original reload", flush=True)
-                print(f"[resume] {run_tag} froze at turn {record.get('last_turn')}; "
+                ended_how = "froze" if why == "frozen" else "crashed"
+                print(f"[resume] {run_tag} {ended_how} at turn {record.get('last_turn')}; "
                       f"reloading {save.name} under {cont} (resume {len(resumes) + 1} "
                       f"of {args.max_resumes})", flush=True)
                 resumes.append({"tag": cont, "from_turn": record.get("last_turn"),
