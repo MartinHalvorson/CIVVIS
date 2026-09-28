@@ -151,6 +151,29 @@ fn spent_bombers_allow_capture_from_the_next_observed_board() {
 }
 
 #[test]
+fn observed_breach_is_claimed_even_after_the_plan_switches_to_another_city() {
+    let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+    let next = plan.target_city.unwrap();
+    let breached = g.found_city_for(1, (26, 10), None);
+    g.relocate(cavalry, (24, 10));
+    g.cities.get_mut(&breached).unwrap().hp = 0;
+    for uid in bombers {
+        g.units.get_mut(&uid).unwrap().moves_left = 0.0;
+    }
+    ai.observe_air_assault_frame(BTreeSet::from([(26, 10)]), 0);
+
+    let before = g.log.len();
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+    assert!(reserved.contains(&cavalry));
+    assert_eq!(g.cities[&breached].owner, 0);
+    assert_eq!(g.cities[&next].owner, 1);
+    assert!(g.log.iter().skip(before).any(|(_, action)| {
+        matches!(action, Action::Attack { unit, target } if *unit == cavalry && *target == (26, 10))
+    }));
+    assert!(ai.planned_air_city_assault().unwrap().aircraft.is_empty());
+}
+
+#[test]
 fn an_unused_bomber_does_not_delay_capture_of_an_already_breached_city() {
     let (mut g, mut ai, plan, cavalry, _) = fixture();
     g.relocate(cavalry, (18, 10));

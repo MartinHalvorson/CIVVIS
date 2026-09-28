@@ -60,6 +60,47 @@ impl AdvancedAi {
         if !self.air_surge_enabled() || plan.strategy != GrandStrategy::Conquest {
             return reserved;
         }
+        // A sortie can leave a city defenseless on one host frame, then the
+        // fresh strategic plan can select the next capital before the cavalry
+        // receives its deferred order. Finish the observed breach first.
+        let mut breached: Vec<u32> = g
+            .cities
+            .values()
+            .filter(|city| {
+                city.owner != pid
+                    && g.is_at_war(pid, city.owner)
+                    && city.hp <= 0
+                    && city.wall_hp <= 0
+                    && self.air_assault_target_visible(g, pid, city.pos)
+            })
+            .map(|city| city.id)
+            .collect();
+        breached.sort_by_key(|cid| {
+            let city = &g.cities[cid];
+            (Some(*cid) != plan.target_city, !city.is_capital, *cid)
+        });
+        for cid in breached {
+            let target = g.cities[&cid].pos;
+            let Some(opening) = self.air_assault_opening(g, pid, target, false) else {
+                continue;
+            };
+            let Some(actions) = self.air_assault_capture(&opening.board, pid, opening.cavalry, cid)
+            else {
+                continue;
+            };
+            if actions.iter().all(|action| g.apply(pid, action).is_ok()) {
+                self.resolve_city_dispositions(g, pid, plan.strategy);
+                reserved.insert(opening.cavalry);
+                self.air_city_assault = Some(AirCityAssault {
+                    target,
+                    cavalry: opening.cavalry,
+                    spot: opening.spot,
+                    moved_to_spot: false,
+                    aircraft: Vec::new(),
+                });
+                return reserved;
+            }
+        }
         let Some(city) = plan.target_city.and_then(|id| g.cities.get(&id)) else {
             return reserved;
         };
@@ -265,14 +306,10 @@ impl AdvancedAi {
                 };
                 actions.push(action);
             }
-            let finish = if after.cities[&cid].hp <= 0 {
-                Action::Move {
-                    unit: uid,
-                    to: target,
-                }
-            } else {
-                Action::Attack { unit: uid, target }
-            };
+            // Even a city at zero HP is still an enemy city. Ordinary movement
+            // cannot enter it in the model, and the host needs an attack move
+            // to transfer ownership.
+            let finish = Action::Attack { unit: uid, target };
             if after.apply(pid, &finish).is_err()
                 || after.cities.get(&cid).is_none_or(|city| city.owner != pid)
                 || after.units.get(&uid).is_none_or(|unit| unit.hp < 30)
