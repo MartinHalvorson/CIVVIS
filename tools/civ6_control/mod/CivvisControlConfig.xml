@@ -116,6 +116,16 @@
 		<Row SourceGroup="Game" SourceId="RULESET" SourceValue="CIVVIS_DEFAULT_RULESET"
 			 TargetGroup="Game" TargetId="GAME_SPEED_TYPE" TargetValue="CIVVIS_DEFAULT_SPEED"
 			 Hash="1" Static="1"/>
+		<!-- Defaults alone do not replace the Online speed's 250-turn clock on
+		     the direct Create Game path. The in-game SetMaxTurns(650) changes
+		     GameConfiguration but leaves Game.GetMaxGameTurns() at 250. Apply
+		     both values before the game exists, beside the working speed update. -->
+		<Row SourceGroup="Game" SourceId="RULESET" SourceValue="CIVVIS_DEFAULT_RULESET"
+			 TargetGroup="Game" TargetId="GAME_TURN_LIMIT" TargetValue="TURNLIMIT_CUSTOM"
+			 Hash="1" Static="1"/>
+		<Row SourceGroup="Game" SourceId="RULESET" SourceValue="CIVVIS_DEFAULT_RULESET"
+			 TargetGroup="Game" TargetId="GAME_MAX_TURNS" TargetValue="CIVVIS_DEFAULT_MAX_TURNS"
+			 Static="1"/>
 	</ConfigurationUpdates>
 	<!-- install.py retains this one-row whitelist only when a leader was
 	     requested.  The normal Random selection is then forced to the requested
