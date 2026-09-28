@@ -1527,6 +1527,14 @@ impl AdvancedAi {
                         if unit.domain != domain {
                             continue;
                         }
+                        // A combat unit carrying linked support is already a
+                        // formation. Sending it to guard a civilian drags the
+                        // support out of the army with it.
+                        if row.kind == ObjectiveKind::Escort
+                            && super::siege_train::linked_support_carrier(g, *uid)
+                        {
+                            continue;
+                        }
                         if row.kind == ObjectiveKind::Recon && !unit.recon {
                             continue;
                         }

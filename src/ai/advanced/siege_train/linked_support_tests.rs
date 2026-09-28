@@ -1,5 +1,6 @@
 use super::tests::{at_distance, plan_against, ring_of, walled_city};
 use super::*;
+use crate::ai::advanced::objective_board::ObjectiveKey;
 
 fn linked_pair(g: &mut Game, pos: Pos, support: &str, support_first: bool) -> (u32, u32) {
     let (carrier, peer) = if support_first {
@@ -25,6 +26,28 @@ fn planner() -> AdvancedAi {
     ai.enable_objective_board();
     ai.enable_siege_train();
     ai
+}
+
+fn normal_walled_city() -> (Game, u32) {
+    let mut g = Game::new_full(2, 36, 22, 384_600, 160, 0, false);
+    for pid in 0..2 {
+        g.current = pid;
+        let settler = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .expect("starting settler");
+        g.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
+    }
+    for uid in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(uid);
+    }
+    g.current = 0;
+    g.turn = 60;
+    g.at_war.insert((0, 1));
+    let cid = g.player_city_ids(1)[0];
+    g.cities.get_mut(&cid).unwrap().wall_hp = 100;
+    (g, cid)
 }
 
 #[test]
@@ -61,6 +84,63 @@ fn linked_support_carrier_joins_the_siege_and_moves_the_pair() {
         assert_eq!(g.units[&carrier].linked_to, Some(support));
         assert_eq!(g.units[&support].linked_to, Some(carrier));
     }
+}
+
+#[test]
+fn linked_support_carrier_stays_with_the_siege_instead_of_escorting_a_builder() {
+    let (mut g, cid) = normal_walled_city();
+    let approach = at_distance(&g, cid, 6);
+    let (carrier, support) = linked_pair(&mut g, approach[0], "siege_tower", false);
+    g.spawn_test_unit("bombard", 0, approach[1]);
+    for pos in approach.iter().skip(2).take(5) {
+        g.spawn_test_unit("pike_and_shot", 0, *pos);
+    }
+    let defenders: Vec<u32> = ring_of(&g, cid)
+        .into_iter()
+        .map(|pos| g.spawn_test_unit("infantry", 1, pos))
+        .collect();
+
+    let mut ai = planner();
+    let plan = plan_against(&g, cid);
+    ai.rebuild_force_groups(&g, 0, &plan);
+    assert!(
+        ai.objective_board()
+            .forces
+            .iter()
+            .find(|force| force.objective_key == ObjectiveKey::Siege(cid))
+            .is_some_and(|force| force.units.contains(&carrier)),
+        "the supported carrier first joins the high-bill siege"
+    );
+
+    for defender in defenders {
+        g.remove_unit(defender);
+    }
+    let builder = g.spawn_test_unit("builder", 0, approach[0]);
+    g.turn += 1;
+    ai.rebuild_force_groups(&g, 0, &plan);
+
+    let siege = ai
+        .objective_board()
+        .forces
+        .iter()
+        .find(|force| force.objective_key == ObjectiveKey::Siege(cid))
+        .expect("the city remains an active siege objective");
+    assert!(
+        siege.units.contains(&carrier),
+        "the breach-support carrier must remain with its city objective"
+    );
+    let escort = ai
+        .objective_board()
+        .forces
+        .iter()
+        .find(|force| force.objective_key == ObjectiveKey::Escort(builder))
+        .expect("another military unit can still serve the builder row");
+    assert!(
+        !escort.units.contains(&carrier),
+        "a civilian escort must not pull the linked formation off the siege"
+    );
+    assert_eq!(g.units[&carrier].linked_to, Some(support));
+    assert_eq!(g.units[&support].linked_to, Some(carrier));
 }
 
 #[test]
