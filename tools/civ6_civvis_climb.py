@@ -241,10 +241,11 @@ def dismiss_crash_dialogs() -> None:
     end tell
     """
     run(["osascript", "-e", script], timeout=25.0)
-    # Newer macOS crash alerts belong to UserNotificationCenter. Its other
-    # windows may be permission prompts, so use the text-gated crash-only path.
+    # Newer macOS crash alerts belong to UserNotificationCenter. Chrome can
+    # leave one over the display too. Its other windows may be permission
+    # prompts, so use the text-gated crash-only path.
     try:
-        desktop_control.dismiss_modals(civ6_crashes_only=True)
+        desktop_control.dismiss_modals(crashes_only=True)
     except Exception:
         pass  # Accessibility being unavailable must not prevent recovery.
 
