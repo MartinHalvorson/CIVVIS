@@ -328,3 +328,75 @@ fn domination_opens_the_unwalled_foothold_before_a_near_walled_capital() {
     g.at_war.insert((0, 1));
     assert_eq!(ai.assess(&g, 0).target_city, Some(foothold));
 }
+
+/// The King Japan front kept a fully walled Muscat order while a land army
+/// stood 3-5 tiles from three other Japanese cities and 17 from Muscat.
+/// Commitment should preserve a real siege, not a march that never arrived.
+#[test]
+fn domination_retargets_untouched_distant_walls_to_the_armys_front() {
+    let mut g = Game::new_full(2, 64, 40, 91_024, 650, 0, false);
+    for unit in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(unit);
+    }
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+    }
+    g.found_city_for(0, (6, 12), None);
+    g.found_city_for(1, (45, 30), Some("Enemy Capital".to_string()));
+    let prior = g.found_city_for(1, (35, 20), Some("Distant Walls".to_string()));
+    let nearer = g.found_city_for(1, (13, 12), Some("Near Walls".to_string()));
+    for city in [prior, nearer] {
+        let target = g.cities.get_mut(&city).unwrap();
+        target.buildings.extend([
+            crate::name!("walls"),
+            crate::name!("medieval_walls"),
+            crate::name!("renaissance_walls"),
+        ]);
+        let wall_hp = g.city_max_wall_hp(&g.cities[&city]);
+        g.cities.get_mut(&city).unwrap().wall_hp = wall_hp;
+    }
+    let soldier = g.spawn_test_unit("tank", 0, (11, 12));
+    g.current = 0;
+    g.turn = 200;
+    g.record_contact(0, 1);
+    g.at_war.insert((0, 1));
+    g.players[0].explored.extend(g.map.tiles.keys().copied());
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_siege_commitment();
+    ai.belief.observe(&g, 0);
+    ai.plan = Some(StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(prior),
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: g.turn,
+        rush: false,
+    });
+    assert!(g.wdist(g.units[&soldier].pos, g.cities[&prior].pos) >= 17);
+    assert!(g.wdist(g.units[&soldier].pos, g.cities[&nearer].pos) <= 3);
+    assert!(!g.cities[&prior].is_capital);
+    assert_eq!(
+        ai.stale_domination_objective_city(&g, 0, prior, GrandStrategy::Conquest),
+        Some(nearer)
+    );
+    assert_eq!(ai.assess(&g, 0).target_city, Some(nearer));
+
+    let screen = g.spawn_test_unit("tank", 0, (32, 20));
+    assert!(g.wdist(g.units[&screen].pos, g.cities[&prior].pos) <= 6);
+    assert_eq!(
+        ai.stale_domination_objective_city(&g, 0, prior, GrandStrategy::Conquest),
+        None,
+        "a staged force keeps its walled objective"
+    );
+    g.remove_unit(screen);
+    g.cities.get_mut(&prior).unwrap().wall_hp -= 50;
+    assert_eq!(
+        ai.stale_domination_objective_city(&g, 0, prior, GrandStrategy::Conquest),
+        None,
+        "damage already done to the original wall keeps the siege"
+    );
+}
