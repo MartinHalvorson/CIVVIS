@@ -7,9 +7,10 @@ pub(super) const FIRST_WEAPON_RESERVATION: f64 = 400.0;
 
 impl AdvancedAi {
     /// Keep a nearly finished wall breaker through a delegated city review.
-    /// In the live King assault on Methone, Guayaquil had 105/140 production
-    /// in a Bombard, but the later baseline governor replaced it with a Field
-    /// Cannon. No siege weapon then reached the walls before peace was offered.
+    /// In the live King assault on Methone, Guayaquil had 87/100 production
+    /// in a Trebuchet, but the later baseline governor replaced it while
+    /// Methone was still unwalled. It finished walls two turns later and no
+    /// siege weapon reached them before peace was offered.
     pub(super) fn invested_wall_breaker_queues(
         &self,
         g: &Game,
@@ -21,7 +22,9 @@ impl AdvancedAi {
             || !plan
                 .target_city
                 .and_then(|id| g.cities.get(&id))
-                .is_some_and(|target| target.wall_hp > 0 && g.is_at_war(pid, target.owner))
+                .is_some_and(|target| {
+                    Some(target.owner) == plan.target_player && g.is_at_war(pid, target.owner)
+                })
         {
             return Vec::new();
         }

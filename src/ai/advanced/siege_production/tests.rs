@@ -231,7 +231,19 @@ fn invested_siege_queue_survives_a_later_non_siege_city_order() {
     assert!(ai.invested_wall_breaker_queues(&g, 0, &plan).is_empty());
     g.at_war.insert((0, 1));
     g.cities.get_mut(&target).unwrap().wall_hp = 0;
-    assert!(ai.invested_wall_breaker_queues(&g, 0, &plan).is_empty());
+    let claim = ai.invested_wall_breaker_queues(&g, 0, &plan);
+    assert_eq!(claim, vec![(home, catapult.clone())]);
+    g.apply(
+        0,
+        &Action::Produce {
+            city: home,
+            item: warrior,
+        },
+    )
+    .unwrap();
+    ai.restore_invested_wall_breaker_queues(&mut g, 0, &plan, &claim, None);
+    assert_eq!(g.cities[&home].queue.first(), Some(&catapult));
+    assert_eq!(g.cities[&home].production, 60.0);
 }
 
 #[test]
