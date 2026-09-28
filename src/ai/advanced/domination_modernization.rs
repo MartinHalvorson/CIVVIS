@@ -22,8 +22,7 @@ impl AdvancedAi {
                 }
                 let target = g.unit_upgrade_target(pid, unit.kind)?;
                 let to = &g.rules.units[target];
-                let (_, resources) =
-                    g.unit_upgrade_price_in_formation(pid, unit.kind, target, unit.formation)?;
+                let resources = g.unit_upgrade_resource_price(pid, uid, target)?;
                 if !self.air_resource_upgrade_preserves_wing(g, pid, uid, target, resources) {
                     return None;
                 }
