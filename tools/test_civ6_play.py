@@ -148,12 +148,14 @@ class SharedDesktopRescueTests(unittest.TestCase):
             self.assertFalse(civ6_play.shared_desktop_in_use())
 
     def test_focus_upkeep_defers_to_a_present_operator(self):
-        with patch.object(civ6_play, "shared_desktop_in_use", return_value=True), \
+        with patch.object(civ6_play.time, "monotonic", return_value=2.0), \
+             patch.object(civ6_play, "shared_desktop_in_use", return_value=True), \
              patch.object(civ6_play, "screen_locked", return_value=False), \
              patch.object(civ6_play, "focus_game") as focus:
             self.assertEqual(civ6_play.maintain_game_focus(1.0, 0.0), 0.0)
         focus.assert_not_called()
-        with patch.object(civ6_play, "shared_desktop_in_use", return_value=False), \
+        with patch.object(civ6_play.time, "monotonic", return_value=2.0), \
+             patch.object(civ6_play, "shared_desktop_in_use", return_value=False), \
              patch.object(civ6_play, "screen_locked", return_value=False), \
              patch.object(civ6_play, "focus_game") as focus:
             self.assertGreater(civ6_play.maintain_game_focus(1.0, 0.0), 0.0)
@@ -1060,6 +1062,7 @@ class Civ6PlayTest(unittest.TestCase):
         )
 
     def test_play_waits_for_unlock_then_launches(self) -> None:
+        cleanup_order = []
         with patch.object(civ6_play.vision, "available", return_value=True), \
              patch.object(civ6_play, "hold_macos_awake") as hold_awake, \
              patch.object(civ6_play, "screen_locked",
@@ -1069,7 +1072,11 @@ class Civ6PlayTest(unittest.TestCase):
              patch.object(civ6_play.gamelock, "acquire", return_value=True) as acquire, \
              patch.object(civ6_play.gamelock, "release") as release, \
              patch.object(civ6_play.launcher, "stop") as stop, \
+             patch.object(civ6_play, "_uninstall_owned_mod") as uninstall, \
              patch.object(civ6_play, "_play", return_value=0) as run:
+            stop.side_effect = lambda: cleanup_order.append("stop")
+            uninstall.side_effect = lambda *_: cleanup_order.append("uninstall")
+            release.side_effect = lambda: cleanup_order.append("release")
             result = civ6_play.play(args(tag="unlock-test", lock_wait=0.0))
 
         self.assertEqual(result, 0)
@@ -1083,7 +1090,24 @@ class Civ6PlayTest(unittest.TestCase):
             "unlock-test", wait_s=0.0, require_verification_intent=True)
         run.assert_called_once()
         stop.assert_called_once()
+        uninstall.assert_called_once_with("unlock-test", False)
         release.assert_called_once()
+        self.assertEqual(cleanup_order, ["stop", "uninstall", "release"])
+
+    def test_exit_cleanup_never_uninstalls_a_successor_control_mod(self) -> None:
+        with patch.object(civ6_play.modinstall, "installed_config",
+                          return_value={"RunTag": "new-game"}) as installed, \
+             patch.object(civ6_play.modinstall, "uninstall") as uninstall:
+            civ6_play._uninstall_owned_mod("old-game")
+            installed.assert_called_once_with()
+            uninstall.assert_not_called()
+
+        with patch.object(civ6_play.modinstall, "installed_config",
+                          return_value={"RunTag": "own-game"}), \
+             patch.object(civ6_play.modinstall, "uninstall",
+                          return_value=True) as uninstall:
+            civ6_play._uninstall_owned_mod("own-game")
+            uninstall.assert_called_once_with()
 
     def test_play_reports_an_explicit_operator_halt_instead_of_free_lock(self) -> None:
         halt = ("the game is explicitly halted since 2026-08-31T23:16:59Z "

@@ -3556,6 +3556,26 @@ def apply_verification_options() -> dict[str, dict[str, tuple]]:
     return applied
 
 
+def _uninstall_owned_mod(tag: str, preinstalled_mod: bool = False) -> None:
+    """Remove this run's control mod only while its tag still owns the install.
+
+    A waiting successor can acquire the game lock as soon as ``play`` returns.
+    The process-wide atexit handler runs later, so it must never remove a
+    successor's installation.
+    """
+    if preinstalled_mod:
+        print("leaving the preinstalled control mod for its authorized owner")
+        return
+    try:
+        installed = modinstall.installed_config()
+        if installed is None or installed.get("RunTag") != tag:
+            return
+        if modinstall.uninstall():
+            print("uninstalled the control mod; Civ6.app is vanilla again")
+    except Exception as error:  # noqa: BLE001 - an exit path must not raise
+        print(f"control mod uninstall failed (remove by hand): {error}")
+
+
 def play(args: argparse.Namespace) -> int:
     legacy_score_ratio = getattr(args, "restart_below_leader_ratio", 0.0)
     if legacy_score_ratio not in (0, 0.0):
@@ -3614,9 +3634,19 @@ def play(args: argparse.Namespace) -> int:
     finally:
         # The installation is exclusively ours while this lock is held. An
         # interrupt or unexpected exception must not leave the game advancing
-        # after its event stream and mirror have stopped.
-        launcher.stop()
-        gamelock.release()
+        # after its event stream and mirror have stopped. Uninstall before
+        # releasing the lock, or our atexit handler can race the next run's
+        # installation.
+        try:
+            launcher.stop()
+        finally:
+            try:
+                _uninstall_owned_mod(
+                    args.tag,
+                    os.environ.get("CIVVIS_PREINSTALLED_CONTROL_MOD") == "1",
+                )
+            finally:
+                gamelock.release()
 
 
 def _attach_running_game(args: argparse.Namespace) -> int:
@@ -4253,20 +4283,9 @@ def _play(args: argparse.Namespace) -> int:
     # player's Civ6.app. Left behind, it loads into MANUAL games: measured
     # 2026-08-31, a hand-started game opened on turn 2 under the leftover
     # agent, and restarting under the broken bundle seal crashed the game.
-    # Registered beside `stop_brain`, so the SIGTERM SystemExit below runs it
-    # on the supervisor's ordinary teardown too; the next verification run
-    # reinstalls at startup, so removal costs nothing but the file writes.
-    def _uninstall_mod():
-        if preinstalled_mod:
-            print("leaving the preinstalled control mod for its authorized owner")
-            return
-        try:
-            if modinstall.uninstall():
-                print("uninstalled the control mod; Civ6.app is vanilla again")
-        except Exception as error:  # noqa: BLE001 - an exit path must not raise
-            print(f"control mod uninstall failed (remove by hand): {error}")
-
-    atexit.register(_uninstall_mod)
+    # Kept as a fallback for direct _play callers or an early exception, but
+    # ownership is checked so it cannot remove a successor's installation.
+    atexit.register(_uninstall_owned_mod, config["RunTag"], preinstalled_mod)
 
     # ⚠ atexit does NOT run on SIGTERM. CPython's default SIGTERM disposition
     # terminates the process outright, so `stop_brain` above never fires and the
