@@ -11411,8 +11411,12 @@ impl AdvancedAi {
             // defender needs time to raise, route, and deploy a counterforce,
             // so its launch itself must cross the generic denial threshold;
             // waiting for the first six light-years discarded that reaction
-            // window while the rival was already on the victory clock.
-            78 + (22.0 * player.exoplanet_distance / 50.0).clamp(0.0, 22.0) as i32
+            // window while the rival was already on the victory clock. Read
+            // the host's public distance and game-speed target when mirrored:
+            // the simulator field stays at zero there, and Online needs only
+            // 25 points rather than the simulator's 50.
+            78 + (22.0 * g.science_victory_points(pid) / g.science_victory_points_needed(pid))
+                .clamp(0.0, 22.0) as i32
         } else if player.science_projects.contains("launch_mars_colony") {
             65
         } else if player.science_projects.contains("launch_moon_landing") {
