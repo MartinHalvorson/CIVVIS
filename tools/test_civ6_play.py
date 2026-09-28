@@ -1933,12 +1933,46 @@ class ExitConfirmationTests(unittest.TestCase):
 
         with mock.patch.object(civ6_play, "game_window", return_value=self.BOUNDS), \
              mock.patch.object(civ6_play, "screenshot", return_value=True), \
+             mock.patch.object(civ6_play, "_quit_yes_point_from_palette",
+                               return_value=None), \
              mock.patch.object(civ6_play, "_observed_label_points", labels), \
              mock.patch.object(civ6_play, "focus_game"), \
              mock.patch.object(civ6_play, "click_at",
                                side_effect=lambda x, y: clicks.append((x, y))):
             answered = civ6_play.confirm_exit_dialog()
         return answered, clicks
+
+    @unittest.skipUnless(HAS_PILLOW, "Pillow is needed to read a saved screen")
+    def test_new_yes_no_palette_needs_both_buttons_and_the_dialog_panel(self):
+        from PIL import Image, ImageDraw
+
+        # The host captures Retina pixels but clicks in Quartz points.
+        desktop = (1728, 1117)
+        size = (3456, 2234)
+        yes = (int(self.BOUNDS[2] * .44),
+               int(self.BOUNDS[1] + self.BOUNDS[3] * .56))
+        no = (int(self.BOUNDS[2] * .56), yes[1])
+        panel = (int(self.BOUNDS[2] * .50),
+                 int(self.BOUNDS[1] + self.BOUNDS[3] * .52))
+        with tempfile.TemporaryDirectory() as directory:
+            shot = Path(directory) / "exit-dialog.png"
+            image = Image.new("RGB", size, (10, 16, 25))
+            draw = ImageDraw.Draw(image)
+            def box(center, half_width, half_height):
+                return (2*(center[0]-half_width), 2*(center[1]-half_height),
+                        2*(center[0]+half_width), 2*(center[1]+half_height))
+
+            draw.rectangle(box(yes, 24, 6), fill=(108, 35, 32))
+            draw.rectangle(box(no, 24, 6), fill=(11, 36, 67))
+            draw.rectangle(box(panel, 6, 6), fill=(181, 203, 209))
+            image.save(shot)
+            with mock.patch.object(civ6_play, "desktop_size", return_value=desktop):
+                self.assertEqual(civ6_play._quit_yes_point_from_palette(
+                    shot, self.BOUNDS), yes)
+                draw.rectangle(box(no, 24, 6), fill=(10, 16, 25))
+                image.save(shot)
+                self.assertIsNone(civ6_play._quit_yes_point_from_palette(
+                    shot, self.BOUNDS))
 
     def test_ok_is_cancel_mirrored_about_the_heading(self):
         """⚠⚠ OK CANNOT BE FOUND BY OCR — the readers demand an exact match
