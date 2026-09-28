@@ -1734,6 +1734,20 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("<DefaultValue>650</DefaultValue>", rendered)
         self.assertIn("<DefaultValue>TURNLIMIT_CUSTOM</DefaultValue>", rendered)
         self.assertIn(
+            'SourceId="RULESET" SourceValue="RULESET_EXPANSION_2"\n'
+            '\t\t\t TargetGroup="Game" TargetId="GAME_TURN_LIMIT" '
+            'TargetValue="TURNLIMIT_CUSTOM"\n'
+            '\t\t\t Hash="1" Static="1"',
+            rendered,
+        )
+        self.assertIn(
+            'SourceId="RULESET" SourceValue="RULESET_EXPANSION_2"\n'
+            '\t\t\t TargetGroup="Game" TargetId="GAME_MAX_TURNS" '
+            'TargetValue="650"\n'
+            '\t\t\t Static="1"',
+            rendered,
+        )
+        self.assertIn(
             'Ruleset="RULESET_EXPANSION_2" PlayerId="0" '
             'Domain="Players:Expansion2_Players" Value="LEADER_TRAJAN"',
             rendered,
