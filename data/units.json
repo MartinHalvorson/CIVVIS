@@ -820,6 +820,13 @@
     "promotion_class": "light_cavalry", "zone_of_control": true,
     "upgrade_to": "helicopter"
   },
+  "llanero": {
+    "class": "military", "cost": 330, "maintenance": 2, "moves": 5, "strength": 62,
+    "tech": "military_science", "requires_resource": "horses", "resource_cost": 20,
+    "unique_to": "Gran Colombia", "replaces": "cavalry", "cavalry": true,
+    "promotion_class": "light_cavalry", "zone_of_control": true,
+    "upgrade_to": "helicopter"
+  },
   "line_infantry": {
     "class": "military", "cost": 360, "maintenance": 5, "moves": 2, "strength": 65,
     "tech": "military_science", "requires_resource": "niter", "resource_cost": 20, "promotion_class": "melee", "zone_of_control": true,

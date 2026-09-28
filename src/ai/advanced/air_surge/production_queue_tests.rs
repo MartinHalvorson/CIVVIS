@@ -84,6 +84,85 @@ fn stealth_fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
 }
 
 #[test]
+fn launch_escort_starts_before_the_third_bomber() {
+    let (mut g, mut ai, _, first, second) = fixture();
+    g.players[0].civ = "Gran Colombia".to_string();
+    g.players[0].techs.insert(name!("military_science"));
+    g.players[0]
+        .strategic_resources
+        .insert(name!("horses"), 100.0);
+    ai.air_surge_plan.as_mut().unwrap().body_unit = name!("llanero");
+    ai.air_surge_plan.as_mut().unwrap().body_is_cavalry = true;
+    for cid in [first, second] {
+        let source = *g.cities[&cid]
+            .owned_tiles
+            .iter()
+            .find(|pos| **pos != g.cities[&cid].pos)
+            .unwrap();
+        let tile = g.map.tiles.get_mut(&source).unwrap();
+        tile.resource = Some(name!("aluminum"));
+        tile.improvement = Some(name!("mine"));
+    }
+    let field = g.district_sites(first, name!("aerodrome"))[0];
+    g.cities
+        .get_mut(&first)
+        .unwrap()
+        .districts
+        .insert(name!("aerodrome"), field);
+    g.map.tiles.get_mut(&field).unwrap().district = Some(name!("aerodrome"));
+    for cid in [first, second] {
+        g.spawn_test_unit("bomber", 0, g.cities[&cid].pos);
+    }
+    ai.air_surge_status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 4);
+    assert_eq!(ai.air_surge_status.bombers_committed, 2);
+    assert_eq!(ai.air_surge_status.bodies_committed, 0);
+    assert!(g.can_produce(
+        0,
+        first,
+        &Item::Unit {
+            unit: name!("llanero")
+        }
+    ));
+    assert!(g.can_produce(
+        0,
+        first,
+        &Item::Unit {
+            unit: name!("bomber")
+        }
+    ));
+
+    assert!(ai.air_surge_production(&mut g, 0));
+    let escort_city = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| !g.cities[cid].queue.is_empty())
+        .unwrap();
+    assert_eq!(
+        g.cities[&escort_city].queue.first(),
+        Some(&Item::Unit {
+            unit: name!("llanero")
+        }),
+        "two committed bombers must release the first land capturer"
+    );
+
+    g.cities.get_mut(&escort_city).unwrap().queue.clear();
+    for pos in [(7, 12), (8, 12)] {
+        g.spawn_test_unit("llanero", 0, pos);
+    }
+    ai.air_surge_status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert_eq!(ai.air_surge_status.bodies_committed, 2);
+    assert!(ai.air_surge_production(&mut g, 0));
+    assert_eq!(
+        g.cities[&first].queue.first(),
+        Some(&Item::Unit {
+            unit: name!("bomber")
+        }),
+        "the third bomber resumes after the launch escort is covered"
+    );
+}
+
+#[test]
 fn active_package_keeps_existing_and_queued_bomber_generations() {
     let (mut g, mut ai, plan, first, second) = stealth_fixture();
     g.spawn_test_unit("jet_bomber", 0, g.cities[&first].pos);

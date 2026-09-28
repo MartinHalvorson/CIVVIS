@@ -10632,6 +10632,10 @@ fn host_menu_rows_translate_to_the_gates_keys() {
     let key = |civ6: &str, tier: Option<u8>| host_production_key(&rules, civ6, tier);
     assert_eq!(key("UNIT_WARRIOR", None).as_deref(), Some("unit:warrior"));
     assert_eq!(
+        key("UNIT_COLOMBIAN_LLANERO", None).as_deref(),
+        Some("unit:llanero")
+    );
+    assert_eq!(
         key("UNIT_WARRIOR", Some(1)).as_deref(),
         Some("formation:warrior:1")
     );

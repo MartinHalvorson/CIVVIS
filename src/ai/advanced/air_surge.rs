@@ -337,12 +337,21 @@ impl AdvancedAi {
     /// else the strongest land melee body it can build today. Returns the
     /// unit and whether it is cavalry, so the journal can say which happened.
     pub(crate) fn air_surge_body(g: &Game, pid: usize) -> Option<(Name, bool)> {
+        let host_menu_present = !g.host_buildable.is_empty();
+        let cities = host_menu_present.then(|| g.player_city_ids(pid));
         let buildable = |unit: &Name| {
             let spec = &g.rules.units[*unit];
             spec.class == "military"
                 && spec.is_melee_capable()
                 && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
                 && Self::war_unit_unlocked(g, pid, *unit)
+                // The native host's positive menu is authoritative. Gran
+                // Colombia offers Llaneros for Horses but no Cuirassiers
+                // without Iron; selecting the stronger unbuildable unit left
+                // the bomber surge with zero capture bodies.
+                && cities.as_ref().is_none_or(|cities| {
+                    cities.iter().any(|cid| g.can_produce(pid, *cid, &Item::Unit { unit: *unit }))
+                })
         };
         let strongest = |cavalry_only: bool| {
             Self::player_unit_catalog(g, pid)
@@ -1344,12 +1353,14 @@ impl AdvancedAi {
         let field = Self::air_surge_field(g, pid);
         let bomber = Self::air_surge_bomber(g, pid);
         // The airfield first: nothing else in the package can be trained
-        // until one city holds it. Then the wing, then the escort that takes
-        // the city the wing empties.
+        // until one city holds it. Commit the two-plane launch wing, then
+        // the two land capturers before filling the follow-through wing.
         let wants_field = status.aerodromes_committed == 0;
         let bomber_goal = Self::air_surge_bomber_goal(g, pid);
         let wants_bomber = status.bombers_committed < bomber_goal;
         let wants_body = status.metal_ready && status.bodies_committed < AIR_SURGE_BODIES;
+        let launch_wing_committed = status.bombers_committed >= AIR_SURGE_LAUNCH_BOMBERS;
+        let launch_escort_missing = status.bodies_committed < AIR_SURGE_LAUNCH_BODIES;
         if !wants_field && !wants_bomber && !wants_body {
             return false;
         }
@@ -1416,12 +1427,22 @@ impl AdvancedAi {
                     {
                         0
                     }
-                    Item::Unit { unit } if wants_bomber && Self::air_surge_is_bomber(g, *unit) => 1,
+                    Item::Unit { unit } if wants_bomber && Self::air_surge_is_bomber(g, *unit) => {
+                        if launch_wing_committed && launch_escort_missing && wants_body {
+                            2
+                        } else {
+                            1
+                        }
+                    }
                     Item::Unit { unit }
                         if wants_body
                             && Self::war_unit_is_at_least(g, pid, *unit, plan.body_unit) =>
                     {
-                        2
+                        if launch_wing_committed && launch_escort_missing {
+                            1
+                        } else {
+                            2
+                        }
                     }
                     _ => continue,
                 };

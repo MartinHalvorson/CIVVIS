@@ -331,7 +331,7 @@ const CIV6_UNIT_ICON_TYPES = [
   "giant_death_robot", "guru", "heavy_chariot", "helicopter", "hoplite",
   "horseman", "hypaspist", "infantry", "inquisitor", "ironclad", "jet_bomber",
   "jet_fighter", "keshig", "knight", "kongo_shield_bearer", "legion",
-  "line_infantry", "machine_gun", "man_at_arms", "mandekalu_cavalry",
+  "line_infantry", "llanero", "machine_gun", "man_at_arms", "mandekalu_cavalry",
   "maryannu_chariot_archer", "mechanized_infantry", "medic", "military_engineer", "missile_cruiser",
   "missionary", "mobile_sam", "modern_armor", "modern_at", "musketman",
   "naturalist", "nau", "nihang", "nuclear_submarine", "observation_balloon",

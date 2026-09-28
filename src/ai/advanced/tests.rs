@@ -35889,6 +35889,46 @@ fn the_capture_body_is_cavalry_when_the_empire_can_field_one() {
     assert!(game.rules.units[fallback].is_melee_capable());
 }
 
+#[test]
+fn gran_colombia_air_surge_uses_the_llanero_on_a_native_menu() {
+    let (mut game, _, _) = air_surge_fixture(941_118);
+    game.players[0].civ = "Gran Colombia".to_string();
+    game.players[0].techs.insert(crate::name!("ballistics"));
+    game.players[0]
+        .techs
+        .insert(crate::name!("military_science"));
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("horses"), 25.0);
+    let city = game.player_city_ids(0)[0];
+    std::sync::Arc::make_mut(&mut game.host_buildable).insert(
+        city,
+        std::collections::BTreeMap::from([(
+            "unit:llanero".to_string(),
+            crate::game::HostMenuEntry {
+                cost: Some(330.0),
+                turns: Some(5.0),
+            },
+        )]),
+    );
+    assert_eq!(
+        game.player_unit_replacement(0, crate::name!("cavalry")),
+        "llanero"
+    );
+    assert!(game.can_produce(
+        0,
+        city,
+        &Item::Unit {
+            unit: crate::name!("llanero")
+        }
+    ));
+    assert_eq!(
+        AdvancedAi::air_surge_body(&game, 0),
+        Some((crate::name!("llanero"), true)),
+        "the native menu offers Llaneros, not the stronger but unavailable Cuirassier"
+    );
+}
+
 /// The beeline is the point of the appointment: while it runs, research is
 /// forced onto the cheapest legal step toward Advanced Flight instead of the
 /// argmax the lane would otherwise take.
