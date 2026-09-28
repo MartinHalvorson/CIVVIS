@@ -535,6 +535,11 @@ const RUSH_STAGING_RANGE: i32 = 3;
 /// the capital march consumes the whole war. The diplomatic opening gate is
 /// wider; it does not mean an 18-tile capital is the best first siege.
 const DOMINATION_FIRST_CAPTURE_MARCH: i32 = 8;
+/// A fully defended objective with no army near it can yield to a city at
+/// least this much closer to the field force. The gap keeps the replacement
+/// from becoming another continuously changing march order.
+const STALE_DOMINATION_MARCH_GAIN: i32 = 8;
+const STALE_DOMINATION_VALUE_GAIN: f64 = 50.0;
 
 /// One appointed midgame offensive is a four-body package. Four is the
 /// smallest force that can occupy most of a city ring while preserving a
@@ -11949,6 +11954,68 @@ impl AdvancedAi {
             .map(|city| city.id)
     }
 
+    /// Break a stale march to an untouched walled city only when a different
+    /// city of the same rival is already within the field army's short march.
+    /// An army on the original siege ring, or damage to its defenses, keeps
+    /// the existing commitment.
+    fn stale_domination_objective_city(
+        &self,
+        g: &Game,
+        pid: usize,
+        prior_id: u32,
+        strategy: GrandStrategy,
+    ) -> Option<u32> {
+        if !self.siege_commitment
+            || strategy != GrandStrategy::Conquest
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        {
+            return None;
+        }
+        let prior = g.cities.get(&prior_id)?;
+        if !g.is_at_war(pid, prior.owner)
+            || g.players[prior.owner].is_minor
+            || g.players[prior.owner].is_barbarian
+            || prior.hp < CITY_MAX_HP
+            || prior.wall_hp <= 0
+            || prior.wall_hp < g.city_max_wall_hp(prior)
+        {
+            return None;
+        }
+        let army = self.campaign_field_army(g, pid);
+        let nearest = |pos| army.iter().map(|uid| g.wdist(g.units[uid].pos, pos)).min();
+        let prior_distance = nearest(prior.pos)?;
+        if prior_distance <= SIEGE_COMMITMENT_REACH {
+            return None;
+        }
+        let prior_value = self.campaign_city_value(g, pid, prior, strategy);
+        let visible = g.player_vision_frame(pid);
+        g.cities
+            .values()
+            .filter(|city| {
+                city.owner == prior.owner
+                    && city.id != prior_id
+                    && city.wall_hp > 0
+                    && g.sees(&visible, city.pos)
+                    && !self.capture_stood_down_holds(g, city.id)
+                    && !Self::should_defer_city_capture(g, pid, city.id)
+            })
+            .filter_map(|city| {
+                let distance = nearest(city.pos)?;
+                let value = self.campaign_city_value(g, pid, city, strategy);
+                (distance <= DOMINATION_FIRST_CAPTURE_MARCH
+                    && prior_distance - distance >= STALE_DOMINATION_MARCH_GAIN
+                    && value + STALE_DOMINATION_VALUE_GAIN < prior_value)
+                    .then_some((value, distance, city.id))
+            })
+            .min_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then(left.1.cmp(&right.1))
+                    .then(left.2.cmp(&right.2))
+            })
+            .map(|(_, _, city)| city)
+    }
+
     fn assess(&self, g: &Game, pid: usize) -> StrategicPlan {
         // The outlook reads one immutable snapshot. Reuse city and empire
         // derivations across its rival and settlement comparisons.
@@ -12905,6 +12972,9 @@ impl AdvancedAi {
         // selected, the ordinary commitment keeps that foothold as its goal.
         let capture_opportunity_city = committed_target_city
             .and_then(|prior_id| self.capture_opportunity_city(g, pid, prior_id, strategy));
+        let stale_walled_city = committed_target_city
+            .filter(|_| capture_opportunity_city.is_none())
+            .and_then(|prior_id| self.stale_domination_objective_city(g, pid, prior_id, strategy));
         // `capture-go-or-stand-down`: a city the ledger stood down is not
         // ranked again until the stand-down expires; the next-best city of the
         // same rival takes its place. A home emergency is never stood down.
@@ -12930,12 +13000,15 @@ impl AdvancedAi {
             ranked_target_city
         };
         let target_city = capture_opportunity_city
+            .or(stale_walled_city)
             .or(committed_target_city)
             .or(ranked_target_city);
 
-        if let Some(committed_city) = committed_target_city
-            .filter(|city| capture_opportunity_city.is_none() && Some(*city) != ranked_target_city)
-        {
+        if let Some(committed_city) = committed_target_city.filter(|city| {
+            capture_opportunity_city.is_none()
+                && stale_walled_city.is_none()
+                && Some(*city) != ranked_target_city
+        }) {
             let city = &g.cities[&committed_city];
             think!(self.journal(), Strategy, Strategy,
                    "Campaign remains aimed at {}", city.name;
@@ -12947,6 +13020,13 @@ impl AdvancedAi {
             think!(self.journal(), Strategy, Strategy,
                    "Campaign seizes open foothold {}", city.name;
                    "an unbreached prior objective yields to a weaker unwalled city with a land taker nearby";
+                   city.pos);
+        }
+        if let Some(nearer) = stale_walled_city {
+            let city = &g.cities[&nearer];
+            think!(self.journal(), Strategy, Strategy,
+                   "Campaign abandons distant untouched walls for {}", city.name;
+                   "a land force is within a short march of this cheaper walled objective, while none reached the old siege";
                    city.pos);
         }
 
