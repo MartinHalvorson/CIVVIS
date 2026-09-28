@@ -39792,6 +39792,30 @@ fn one_war_holds_a_declaration_while_another_war_burns() {
 }
 
 #[test]
+fn one_war_releases_an_eliminated_front_for_the_next_capital() {
+    let (mut game, old_plan) = one_war_board();
+    game.at_war.remove(&(0, 2));
+    let last_city = game.player_city_ids(1)[0];
+    game.cities.remove(&last_city);
+    assert!(game.players[1].alive && game.is_at_war(0, 1));
+    assert!(game.player_city_ids(1).is_empty());
+
+    let mut ai = AdvancedAi::new();
+    ai.victory_target = Some(VictoryTarget::Domination);
+    ai.enable_one_war_at_a_time();
+    ai.plan = Some(old_plan);
+    ai.one_war_observe(&game, 0);
+    assert_eq!(ai.one_war_front(), None);
+    assert!(ai.one_war_enemies(&game, 0).is_empty());
+    assert!(!ai.one_war_holds_declaration(&game, 0, 2));
+    assert_eq!(
+        ai.assess(&game, 0).target_player,
+        Some(2),
+        "the remaining rival is the campaign front despite the stale war"
+    );
+}
+
+#[test]
 fn one_war_presses_a_breaking_city_and_sues_on_a_rout() {
     let (mut game, plan) = one_war_board();
     game.at_war.remove(&(0, 2));
@@ -41596,12 +41620,21 @@ fn a_war_is_ours_when_the_engine_says_we_declared_it() {
     assert!(!ai.every_major_war_was_declared_on_us(&peace, 0));
 }
 
-/// The gene reaches the plan. On a board where a rival opened the war, our own
-/// lane is live and nothing of ours is threatened, the shipped ladder pins
-/// Conquest and the gene hands the plan to the lane.
+/// The gene reaches the plan. On a board where a city-owning rival opened the
+/// war, our own lane is live and nothing of ours is threatened, the ordinary
+/// planner pins Conquest and the gene hands the plan to the lane.
 #[test]
 fn an_unchosen_war_stops_pinning_the_grand_strategy() {
     let mut game = Game::new(4, 46, 30, 7_703, 250, 6);
+    for pid in [0, 1] {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("each side starts with a settler");
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+    }
     game.turn = 90;
     game.current = 0;
     // A live Diplomacy lane: ten of the twenty points reads 50, above
@@ -41621,7 +41654,7 @@ fn an_unchosen_war_stops_pinning_the_grand_strategy() {
     assert_eq!(
         shipped.assess(&game, 0).strategy,
         GrandStrategy::Conquest,
-        "the shipped ladder pins Conquest on any war"
+        "a war with a city-owning rival pins Conquest"
     );
     let kept = ai.assess(&game, 0);
     assert_ne!(

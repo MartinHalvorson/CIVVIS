@@ -284,7 +284,9 @@ impl AdvancedAi {
             .map(|city| city.owner)
     }
 
-    /// The living majors we are at war with.
+    /// The living majors whose cities still form a war front. A defeated
+    /// rival can remain alive and at war in a live host after losing its last
+    /// city; that stale war must not hold the next capital's declaration.
     pub(crate) fn one_war_enemies(&self, g: &Game, pid: usize) -> Vec<usize> {
         g.players
             .iter()
@@ -293,6 +295,7 @@ impl AdvancedAi {
                     && other.alive
                     && !other.is_minor
                     && !other.is_barbarian
+                    && !g.player_city_ids(other.id).is_empty()
                     && g.is_at_war(pid, other.id)
             })
             .map(|other| other.id)

@@ -9961,13 +9961,7 @@ impl AdvancedAi {
         if g.turn.saturating_add(reserve) >= g.max_turns {
             return false;
         }
-        !g.players.iter().any(|player| {
-            player.id != pid
-                && player.alive
-                && !player.is_minor
-                && !player.is_barbarian
-                && g.is_at_war(pid, player.id)
-        })
+        self.one_war_enemies(g, pid).is_empty()
     }
 
     /// One staging predicate is shared by lifecycle phase selection and the
@@ -11982,10 +11976,18 @@ impl AdvancedAi {
         // City-states follow their Suzerain into wars and can also be attacked
         // directly. Once hostilities exist they are real campaign actors, not
         // an uncoordinated side task for whichever unit happens to be nearby.
+        // A rival with no cities may still be marked alive and at war by the
+        // host, but has no campaign objective and must not pin this front.
         let wartime_rivals: Vec<usize> = g
             .players
             .iter()
-            .filter(|p| p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id))
+            .filter(|p| {
+                p.id != pid
+                    && p.alive
+                    && !p.is_barbarian
+                    && !g.player_city_ids(p.id).is_empty()
+                    && g.is_at_war(pid, p.id)
+            })
             .map(|p| p.id)
             .collect();
         let wartime_majors: Vec<usize> = wartime_rivals
@@ -20232,10 +20234,9 @@ impl AdvancedAi {
                 );
             }
         }
-        let major_wars = rivals
-            .iter()
-            .filter(|o| !g.players[**o].is_minor && g.is_at_war(pid, **o))
-            .count();
+        // The host can keep an eliminated major alive and at war. That war
+        // still matters tactically, but cannot veto a new capital campaign.
+        let major_wars = self.one_war_enemies(g, pid).len();
         if major_wars > 0
             && matches!(
                 plan.strategy,
