@@ -178,3 +178,92 @@ fn domination_opens_a_near_frontier_before_a_distant_capital() {
     g.at_war.insert((0, 2));
     assert_eq!(ai.assess(&g, 0).target_player, Some(2));
 }
+
+/// Native King run `civvis-20260928T082855Z` chose Thăng Long as its first
+/// siege with a border city six tiles from home. After 33 turns at war, no
+/// unit had reached the capital's ring and the peace desk called it stalled.
+/// The 18-tile declaration gate is too broad for first-capture priority.
+#[test]
+fn domination_takes_a_short_border_city_before_a_declaration_reachable_capital() {
+    let mut g = Game::new_full(2, 64, 40, 91_022, 650, 0, false);
+    for pid in 0..2 {
+        let settler = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|id| g.units[id].kind == "settler")
+            .unwrap();
+        g.found_city_for(pid, g.units[&settler].pos, None);
+    }
+    g.current = 0;
+    g.turn = 105;
+    g.record_contact(0, 1);
+    let home = g.cities[&g.player_city_ids(0)[0]].pos;
+    while g.player_city_ids(0).len() < 4 {
+        let site = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            .map(|(pos, _)| *pos)
+            .filter(|pos| g.wdist(home, *pos) <= 12)
+            .filter(|pos| g.cities.values().all(|city| g.wdist(city.pos, *pos) >= 4))
+            .min_by_key(|pos| (g.wdist(home, *pos), pos.0, pos.1))
+            .unwrap();
+        g.found_city_for(0, site, None);
+    }
+    let home_sites: Vec<_> = g
+        .player_city_ids(0)
+        .iter()
+        .map(|city| g.cities[city].pos)
+        .collect();
+    let capital = g.player_city_ids(1)[0];
+    let capital_site = g
+        .map
+        .tiles
+        .iter()
+        .filter(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+        .map(|(pos, _)| *pos)
+        .find(|pos| {
+            (14..=17).contains(
+                &home_sites
+                    .iter()
+                    .map(|mine| g.wdist(*mine, *pos))
+                    .min()
+                    .unwrap(),
+            )
+        })
+        .unwrap();
+    g.cities.get_mut(&capital).unwrap().pos = capital_site;
+    let frontier_site = g
+        .map
+        .tiles
+        .iter()
+        .filter(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+        .map(|(pos, _)| *pos)
+        .find(|pos| {
+            (5..=8).contains(
+                &home_sites
+                    .iter()
+                    .map(|mine| g.wdist(*mine, *pos))
+                    .min()
+                    .unwrap(),
+            ) && (4..=12).contains(&g.wdist(*pos, capital_site))
+        })
+        .unwrap();
+    let frontier = g.found_city_for(1, frontier_site, Some("Frontier".to_string()));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.belief.observe(&g, 0);
+    assert!(AdvancedAi::city_within_declaration_range(
+        &g,
+        0,
+        g.cities[&capital].pos
+    ));
+    assert!(home_sites
+        .iter()
+        .any(|mine| g.wdist(*mine, g.cities[&frontier].pos) <= DOMINATION_FIRST_CAPTURE_MARCH));
+
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.strategy, GrandStrategy::Conquest);
+    assert_eq!(plan.target_player, Some(1));
+    assert_eq!(plan.target_city, Some(frontier));
+}

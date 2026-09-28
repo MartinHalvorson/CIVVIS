@@ -531,6 +531,10 @@ const RUSH_ARMY: usize = 4;
 /// treatment asks whether a current land melee unit can route to this edge;
 /// it is not a fitted reach threshold.
 const RUSH_STAGING_RANGE: i32 = 3;
+/// A first capture this far from home can become a usable forward base before
+/// the capital march consumes the whole war. The diplomatic opening gate is
+/// wider; it does not mean an 18-tile capital is the best first siege.
+const DOMINATION_FIRST_CAPTURE_MARCH: i32 = 8;
 
 /// One appointed midgame offensive is a four-body package. Four is the
 /// smallest force that can occupy most of a city ring while preserving a
@@ -12562,7 +12566,48 @@ impl AdvancedAi {
                         .map(|(rival, _)| rival)
                 })
         };
-        let suppression_target_city = actionable_denial
+        // A Domination army needs a first foothold it can reach in this war,
+        // even when an urgent religious counter selected a founder's distant
+        // Holy Site. The direct infrastructure target remains first for
+        // Science and Culture, and emergency defence and a rush outrank this
+        // choice below.
+        let short_domination_city = if strategy == GrandStrategy::Conquest
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && wartime_rivals.is_empty()
+        {
+            target_player
+                .filter(|target| !g.players[*target].is_minor)
+                .and_then(|target| {
+                    let short_capital = self
+                        .domination_capital_target_for(g, pid, Some(target))
+                        .map(|(_, city)| city)
+                        .filter(|city| {
+                            Self::city_within_first_capture_march(g, pid, g.cities[city].pos)
+                        });
+                    short_capital.or_else(|| {
+                        g.cities
+                            .values()
+                            .filter(|city| {
+                                city.owner == target
+                                    && Self::city_within_first_capture_march(g, pid, city.pos)
+                            })
+                            .min_by(|left, right| {
+                                self.campaign_city_value(g, pid, left, GrandStrategy::Conquest)
+                                    .total_cmp(&self.campaign_city_value(
+                                        g,
+                                        pid,
+                                        right,
+                                        GrandStrategy::Conquest,
+                                    ))
+                                    .then(left.id.cmp(&right.id))
+                            })
+                            .map(|city| city.id)
+                    })
+                })
+        } else {
+            None
+        };
+        let suppression_target = actionable_denial
             .filter(|(rival, counter)| {
                 *counter == GrandStrategy::Conquest && target_player == Some(*rival)
             })
@@ -12573,7 +12618,9 @@ impl AdvancedAi {
                     rival_culture_pressures.get(&rival).copied(),
                 );
                 self.victory_suppression_city(g, pid, rival, pressure)
+                    .map(|city| (city, pressure.strategy))
             });
+        let suppression_target_city = suppression_target.map(|(city, _)| city);
         let ranked_target_city = emergency_objective
             .as_ref()
             .map(|emergency| emergency.city)
@@ -12588,33 +12635,46 @@ impl AdvancedAi {
                     .filter(|(target, _)| target_player == Some(*target))
                     .map(|(_, capital)| capital)
             })
-            .or(suppression_target_city)
+            .or_else(|| {
+                if matches!(suppression_target, Some((_, GrandStrategy::Religion))) {
+                    suppression_target_city
+                        .filter(|city| {
+                            Self::city_within_first_capture_march(g, pid, g.cities[city].pos)
+                        })
+                        .or(short_domination_city)
+                        .or(suppression_target_city)
+                } else {
+                    suppression_target_city.or(short_domination_city)
+                }
+            })
             // The nearest usable objective of the selected frontier is the
-            // first capture. Prefer its capital when that capital itself is
-            // in range, then take a border city that opens the road to it.
+            // first capture. Prefer its capital when it is a short march.
+            // Otherwise take a nearby border city before crossing the whole
+            // declaration range to the capital; the first capture supplies
+            // a forward base for the next siege.
             .or_else(|| {
                 domination_frontier_target
                     .filter(|frontier| Some(*frontier) == target_player)
                     .and_then(|frontier| {
-                        self.domination_capital_target_for(g, pid, Some(frontier))
+                        let capital = self
+                            .domination_capital_target_for(g, pid, Some(frontier))
                             .filter(|(_, city)| {
                                 Self::city_within_declaration_range(g, pid, g.cities[city].pos)
                             })
-                            .map(|(_, city)| city)
-                            .or_else(|| {
-                                g.cities
-                                    .values()
-                                    .filter(|city| {
-                                        city.owner == frontier
-                                            && Self::city_within_declaration_range(g, pid, city.pos)
-                                    })
-                                    .min_by(|left, right| {
-                                        self.campaign_city_value(
-                                            g,
-                                            pid,
-                                            left,
-                                            GrandStrategy::Conquest,
-                                        )
+                            .map(|(_, city)| city);
+                        let short_march = |city: &crate::game::City| {
+                            Self::city_within_first_capture_march(g, pid, city.pos)
+                        };
+                        let best = |nearby_only: bool| {
+                            g.cities
+                                .values()
+                                .filter(|city| {
+                                    city.owner == frontier
+                                        && Self::city_within_declaration_range(g, pid, city.pos)
+                                        && (!nearby_only || short_march(city))
+                                })
+                                .min_by(|left, right| {
+                                    self.campaign_city_value(g, pid, left, GrandStrategy::Conquest)
                                         .total_cmp(&self.campaign_city_value(
                                             g,
                                             pid,
@@ -12622,9 +12682,14 @@ impl AdvancedAi {
                                             GrandStrategy::Conquest,
                                         ))
                                         .then(left.id.cmp(&right.id))
-                                    })
-                                    .map(|city| city.id)
-                            })
+                                })
+                                .map(|city| city.id)
+                        };
+                        capital
+                            .filter(|city| short_march(&g.cities[city]))
+                            .or_else(|| best(true))
+                            .or(capital)
+                            .or_else(|| best(false))
                     })
             })
             .or_else(|| self.conversion_campaign_target(g, pid, target_player))
@@ -12980,6 +13045,12 @@ impl AdvancedAi {
         g.player_city_ids(pid)
             .iter()
             .any(|city| g.wdist(g.cities[city].pos, objective) <= 18)
+    }
+
+    fn city_within_first_capture_march(g: &Game, pid: usize, objective: Pos) -> bool {
+        g.player_city_ids(pid)
+            .iter()
+            .any(|city| g.wdist(g.cities[city].pos, objective) <= DOMINATION_FIRST_CAPTURE_MARCH)
     }
 
     /// Campaign value extends the major-rival heuristic to city-states.
