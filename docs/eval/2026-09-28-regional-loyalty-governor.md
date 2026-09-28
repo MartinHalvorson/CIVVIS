@@ -227,3 +227,58 @@ setup, binary, and noncandidate-genome mismatches. Checks using temporary copies
 verified that it detects altered scores and histories, excludes an incomplete
 pair, and rejects those mismatches. Synthetic check inputs were discarded and
 never included in the game evidence.
+
+## Firing-gate audit and integration requirements
+
+A direct audit of `gene_fires.firing_evidence()` against a temporary directory
+containing only the actual six-game analysis accepts `regional-loyalty-governor`
+as fired. The matched comparison still reports zero exported divergence in all
+six games. This reproduces the gate's design mismatch; it does not establish
+that every action was identical. The artifact has not been added to the ledger
+or committed firing sources. Local audit receipt:
+`~/civvis-civ6-runs/analysis/guayaquil-loyalty/firing-gate-audit.json`, SHA-256
+`9af98f478b5c0b673133919bc2166a8629b56428ceefbb84750b9fe64c9f9f1a`.
+
+At revision `e3751e8e6`, `python3 tools/genes.py check` reports only
+`docs/GENE_RANKING_EVIDENCE.md` as generated-file drift. The actual firing survey
+reports this candidate as the sole unproven gene, with no waiver. Do not satisfy
+that gate by submitting the misleading marginal contrast. Integration needs
+properly scoped firing evidence or an explicit waiver explaining the uncovered
+whole-game regime, plus generated metadata and remote checks. GitHub remains
+unreachable, so expanding PR ownership and completing integration are pending.
+
+## Broader city-loss audit
+
+The five completed native games and three newer retired attempts contain 11
+`city_lost` exports across 25 event logs. Recovery metadata matters: the winning
+game's fifth continuation reloaded `AutoSave_0209.Civ6Save` after the fourth had
+reached t234. Its earlier t217 and t223 losses belong to the discarded path.
+The audit verifies every declared reload's saved turn against its continuation's
+first observed state and separates superseded events. No loss lies exactly on
+a reload boundary requiring manual resolution.
+
+The retained paths contain nine recorded city losses: eight in completed games
+and one in a retired attempt. Eight have a final reported loyalty and rate that
+would exhaust loyalty on the next turn; all nine have an assigned governor in
+the matching last-held state. Four report zero city and wall damage. These are
+snapshot warnings, not independent proof of the cause of each transfer. Every
+falling city's final rate is below -4, so adding four at that last snapshot would
+not stabilize it. This candidate requires earlier opportunities and is not a
+general solution for the observed loss pattern.
+
+Four retained losses in the eventual winning game occur while the assigned
+governor is still establishing. For two, native occupation events establish
+the capture-to-loss interval directly in `civvis-20260927T225002Z-cont4/events.jsonl`:
+Ulski is occupied at t192 (line 18559) and lost at t195 (19097); Apu is kept and
+occupied at t203 (21360, 21397) and lost at t206 (22108). Their final rates are
+-19.4297 and -20.3516 respectively. Both relevant continuations' emitted genomes
+select Domination and omit `capture-hold-chain`. That existing opt-in is a
+follow-up evaluation candidate, not a demonstrated fix or permission to enable
+it without evaluating the recorded decisions.
+
+The reproducible audit and its source hashes, recovery-chain records, and
+per-loss snapshots are saved locally as
+`~/civvis-civ6-runs/analysis/recent-city-losses.py` and `recent-city-losses.json`.
+Report SHA-256:
+`ed5976124c7d27552364f344a9865dee14aca80773f38fa35f8440d5e3d0b34b`.
+Retired attempts remain separate from completed game outcomes.
