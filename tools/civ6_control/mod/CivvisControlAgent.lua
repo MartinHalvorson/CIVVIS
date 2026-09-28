@@ -16165,6 +16165,7 @@ CivvisBoard = { stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
 	                         escort_cap_unresolved = 0, escort_shadow_injected = 0,
 	                         escort_shadow_applied = 0, escort_shadow_refused = 0,
 	                         escort_shadow_held = 0,
+	                         settler_founding_shelter_allowed = 0,
 	                         settler_scout_capture_held = 0,
 	                         settler_scout_guard_held = 0,
 	                         settler_barbarian_combat_capture_held = 0,
@@ -16181,6 +16182,7 @@ CivvisBoard.reset = function()
 	                     escort_cap_unresolved = 0, escort_shadow_injected = 0,
 	                     escort_shadow_applied = 0, escort_shadow_refused = 0,
 	                     escort_shadow_held = 0,
+	                     settler_founding_shelter_allowed = 0,
 	                     settler_scout_capture_held = 0,
 	                     settler_scout_guard_held = 0,
 	                     settler_barbarian_combat_capture_held = 0,
@@ -16758,6 +16760,95 @@ CivvisBoard.syncCappedSettlerEscorts = function(pid, turn, rows)
 	end
 end;
 
+-- A founded city is stronger shelter than leaving its Settler beside a raider.
+-- CIVVIS can deliberately emit the atomic-looking sequence MOVE_TO(site),
+-- FOUND_CITY(site) after proving that the new city survives the visible attack.
+-- The host bridge used to veto that MOVE_TO as an exposed civilian leg, then
+-- refuse the off-site FOUND_CITY, leaving the Settler on the threatened origin
+-- until its weakened guard died.  That is the turn-18/20 loss in
+-- civvis-20260928T032649Z.
+--
+-- Preserve the capture floor for every ordinary walk.  Exempt only the exact
+-- one-step hand-off that the live host can prove retains movement to found:
+-- one MOVE_TO and one matching FOUND_CITY for the same Settler, the native path
+-- is precisely origin -> site this turn, the path has no river obstacle, and
+-- the Settler has strictly more movement than the site's native movement cost.
+-- WorldInput.lua:961/1052/1094 reads the same `plots`, `turns`, and `obstacles`
+-- path fields; PlotToolTip.lua:659 exposes the destination movement cost.
+CivvisBoard.allowImmediateFoundingShelterLegs = function(pid, turn, rows)
+	if cfg.SettlerFoundingShelterHandoff == false then return; end
+	local plans = {};
+	for _, row in ipairs(rows) do
+		if tostring(row.kind or "") == "unit" then
+			local subject = tonumber(row.subject);
+			local verb = tostring(row.verb or "");
+			if subject ~= nil and (verb == "MOVE_TO" or verb == "FOUND_CITY") then
+				local plan = plans[subject];
+				if plan == nil then
+					plan = { moves = {}, founds = {} };
+					plans[subject] = plan;
+				end
+				if verb == "MOVE_TO" then
+					plan.moves[#plan.moves + 1] = row;
+				else
+					plan.founds[#plan.founds + 1] = row;
+				end
+			end
+		end
+	end
+	for subject, plan in pairs(plans) do
+		if #plan.moves == 1 and #plan.founds == 1 then
+			local move, found = plan.moves[1], plan.founds[1];
+			local x, y = tonumber(move.x), tonumber(move.y);
+			if x ~= nil and y ~= nil and tonumber(found.x) == x and tonumber(found.y) == y then
+				local settler = liveUnit(pid, subject);
+				local fromX = tonumber(try(function() return settler:GetX(); end, nil));
+				local fromY = tonumber(try(function() return settler:GetY(); end, nil));
+				local moves = tonumber(try(function() return settler:GetMovesRemaining(); end, nil));
+				local destination = try(function() return Map.GetPlotIndex(x, y); end, nil);
+				local origin = fromX ~= nil and fromY ~= nil
+					and try(function() return Map.GetPlotIndex(fromX, fromY); end, nil) or nil;
+				local plot = destination ~= nil
+					and try(function() return Map.GetPlotByIndex(destination); end, nil) or nil;
+				local cost = tonumber(try(function() return plot:GetMovementCost(); end, nil));
+				local distance = fromX ~= nil and fromY ~= nil
+					and tonumber(try(function()
+						return Map.GetPlotDistance(fromX, fromY, x, y);
+					end, -1)) or -1;
+				local path = destination ~= nil and try(function()
+					return UnitManager.GetMoveToPathEx(settler, destination);
+				end, nil) or nil;
+				local count, obstacleCount = 0, 0;
+				if path ~= nil and type(path.plots) == "table" then
+					for _ in pairs(path.plots) do count = count + 1; end
+				end
+				if path ~= nil and type(path.obstacles) == "table" then
+					for _ in pairs(path.obstacles) do obstacleCount = obstacleCount + 1; end
+				else
+					obstacleCount = -1;
+				end
+				local lastTurn = path ~= nil and type(path.turns) == "table"
+					and tonumber(path.turns[count]) or nil;
+				local reaches = settler ~= nil and CivvisBoard.reachesThisTurn(settler, x, y);
+				if settler ~= nil and unitTypeName(settler) == "UNIT_SETTLER"
+						and distance == 1 and moves ~= nil and cost ~= nil and cost >= 0
+						and moves > cost and count == 2 and obstacleCount == 0
+						and path.plots[1] == origin and path.plots[2] == destination
+						and lastTurn ~= nil and lastTurn <= 1 and reaches then
+					move._civvis_founding_shelter = true;
+					CivvisBoard.stats.settler_founding_shelter_allowed =
+						CivvisBoard.stats.settler_founding_shelter_allowed + 1;
+					emit("settler_founding_shelter_allowed", {
+						turn = turn, settler = subject,
+						from = { fromX, fromY }, site = { x, y },
+						moves = moves, movement_cost = cost,
+					});
+				end
+			end
+		end
+	end
+end;
+
 -- A live host observed the new Rome settler leave its city for a tile beside a
 -- visible barbarian scout, then disappear before the next state export
 -- (civvis-20260826T153014Z, turn 10).  Do not turn that one observation into a
@@ -16838,6 +16929,7 @@ CivvisBoard.holdVisibleScoutCaptureLegs = function(pid, turn, rows)
 		local settlerId = tonumber(row.subject);
 		local wantX, wantY = tonumber(row.x), tonumber(row.y);
 		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+				and row._civvis_founding_shelter ~= true
 				and settlerId ~= nil and wantX ~= nil and wantY ~= nil and held[settlerId] == nil then
 			local settler = liveUnit(pid, settlerId);
 			if settler ~= nil and unitTypeName(settler) == "UNIT_SETTLER" then
@@ -17118,6 +17210,7 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 		local wantX, wantY = tonumber(row.x), tonumber(row.y);
 		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
 				and row._civvis_settler_scout_hold ~= true
+				and row._civvis_founding_shelter ~= true
 				and settlerId ~= nil and wantX ~= nil and wantY ~= nil and held[settlerId] == nil then
 			local settler = liveUnit(pid, settlerId);
 			if settler ~= nil and unitTypeName(settler) == "UNIT_SETTLER" then
@@ -17950,6 +18043,7 @@ local function applyOrders(player, pid, turn, rows)
 	-- applied.  A host-only shadow row is deliberately outside the CIVVIS order
 	-- counts and verdict: it is an actuation safety repair, not a new decision.
 	CivvisBoard.syncCappedSettlerEscorts(pid, turn, rows);
+	CivvisBoard.allowImmediateFoundingShelterLegs(pid, turn, rows);
 	CivvisBoard.holdVisibleScoutCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdVisibleBarbarianCombatCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdVisibleBuilderCaptureLegs(pid, turn, rows);
@@ -18320,6 +18414,10 @@ local function applyOrders(player, pid, turn, rows)
 		escort_shadow_applied = CivvisBoard.stats.escort_shadow_applied,
 		escort_shadow_refused = CivvisBoard.stats.escort_shadow_refused,
 		escort_shadow_held = CivvisBoard.stats.escort_shadow_held,
+		-- Exact adjacent MOVE_TO + FOUND_CITY hand-offs that retained enough
+		-- native movement to put the city in place before the hostile turn.
+		settler_founding_shelter_allowed =
+			CivvisBoard.stats.settler_founding_shelter_allowed,
 		-- Settler legs held because their actual host destination was adjacent
 		-- to a visible barbarian scout and no proven guard could share it.
 		settler_scout_capture_held = CivvisBoard.stats.settler_scout_capture_held,

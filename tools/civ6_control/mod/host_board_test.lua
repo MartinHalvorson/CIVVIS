@@ -37,6 +37,8 @@
 --      escape treatment, and a safe escort preserves the move.
 --  18. A civilian cannot enter an active forest/jungle fire tile, while a
 --      burnt tile remains legal and combat units keep ordinary movement.
+--  19. An exact one-step MOVE_TO + FOUND_CITY shelter hand-off bypasses the
+--      raider hold only with host-proven movement left after arrival.
 --
 -- Run: lua5.1 tools/civ6_control/mod/host_board_test.lua
 
@@ -65,6 +67,7 @@ DirectionTypes = {
 local function plotIndex(x, y) return y * 100 + x end
 local featurePlots = {}
 local terrainPlots = {}
+local movementCosts = {}
 Map = {
 	GetPlotDistance = function(x1, y1, x2, y2) return math.max(math.abs(x1 - x2), math.abs(y1 - y2)) end,
 	GetPlot = function(x, y)
@@ -86,7 +89,11 @@ Map = {
 	end,
 	GetPlotIndex = function(x, y) return plotIndex(x, y) end,
 	GetPlotByIndex = function(index)
-		return { GetX = function() return index % 100 end, GetY = function() return math.floor(index / 100) end }
+		return {
+			GetX = function() return index % 100 end,
+			GetY = function() return math.floor(index / 100) end,
+			GetMovementCost = function() return movementCosts[index] or 1 end,
+		}
 	end,
 }
 GameInfo = setmetatable({}, { __index = function(_, k)
@@ -149,7 +156,11 @@ UnitManager = {
 		if u == nil or u.gone then return nil end
 		return unitObject(u)
 	end,
-	CanStartOperation = function(unit) return not host.blocked[unit.GetID()] end,
+	CanStartOperation = function(unit, hash)
+		local u = host.units[unit.GetID()]
+		return not host.blocked[unit.GetID()]
+			and (hash ~= "UNITOPERATION_FOUND_CITY" or u.moves > 0)
+	end,
 	RequestOperation = function(unit, hash, params)
 		local u = host.units[unit.GetID()]
 		host.ops[#host.ops + 1] = { id = u.id, op = hash, x = params and params.x, y = params and params.y }
@@ -167,6 +178,7 @@ function host.arrive(id)
 	local u = host.units[id]
 	if u.pendingX ~= nil then
 		u.x, u.y = u.pendingX, u.pendingY
+		u.moves = math.max(0, u.moves - (movementCosts[plotIndex(u.x, u.y)] or 1))
 		u.pendingX, u.pendingY = nil, nil
 	end
 end
@@ -259,7 +271,9 @@ local function reset()
 		host.queued, host.blocked, LOG = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
 	featurePlots = {}
 	terrainPlots = {}
+	movementCosts = {}
 	config.SettlerEscortCapSync = nil
+	config.SettlerFoundingShelterHandoff = nil
 	queue.reset(7); board.reset()
 end
 
@@ -584,6 +598,77 @@ host.paths["32:" .. plotIndex(1, 2)] = {
 	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 } }
 applyOrders(player, PID, 7, { row(32, "MOVE_TO", 1, 2) })
 check("invisible scout: setter still moves", ops(32), "UNITOPERATION_MOVE_TO@1,2")
+
+-- The turn-18 shelter plan in civvis-20260928T032649Z was internally sound:
+-- the three-move Settler had a one-point step onto an adjacent chosen city
+-- site and an exact FOUND_CITY follow-up.  The generic raider hold vetoed the
+-- step, so founding never ran and the Settler remained beside the raiders
+-- until its guard died.  Let that narrow host-proven hand-off complete: the
+-- failed off-site found is queued behind the walk and fires after arrival.
+reset()
+host.units[58] = { id = 58, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 3 }
+host.barbarians[106] = { id = 106, kind = "UNIT_SCOUT", x = 1, y = 3, moves = 0 }
+host.barbarians[107] = { id = 107, kind = "UNIT_HORSEMAN", x = 2, y = 3, moves = 0 }
+host.paths["58:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 }, obstacles = {} }
+movementCosts[plotIndex(1, 2)] = 1
+applyOrders(player, PID, 7, { row(58, "MOVE_TO", 1, 2), row(58, "FOUND_CITY", 1, 2) })
+check("founding shelter: exposed one-step walk is sent", ops(58), "UNITOPERATION_MOVE_TO@1,2")
+check("founding shelter: scout hold is bypassed", lastEvent("settler_scout_capture_hold"), nil)
+check("founding shelter: combat hold is bypassed",
+	lastEvent("settler_barbarian_combat_capture_hold"), nil)
+check("founding shelter: exact reserve is recorded",
+	has(lastEvent("settler_founding_shelter_allowed"), '"moves":3')
+	and has(lastEvent("settler_founding_shelter_allowed"), '"movement_cost":1'), true)
+check("founding shelter: orders count the hand-off",
+	has(lastEvent("orders"), '"settler_founding_shelter_allowed":1'), true)
+host.arrive(58)
+check("founding shelter: arrival retains founding movement", host.units[58].moves, 2)
+queue.drain(player, PID, 7)
+queue.drain(player, PID, 7)
+check("founding shelter: queued found fires on arrival", ops(58),
+	"UNITOPERATION_MOVE_TO@1,2;UNITOPERATION_FOUND_CITY@nil,nil")
+
+-- A matching intent is not enough without movement left after the step.  The
+-- ordinary capture floor remains in force when arrival would exhaust the unit.
+reset()
+host.units[58] = { id = 58, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 1 }
+host.barbarians[106] = { id = 106, kind = "UNIT_SCOUT", x = 1, y = 3, moves = 0 }
+host.paths["58:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 }, obstacles = {} }
+movementCosts[plotIndex(1, 2)] = 1
+applyOrders(player, PID, 7, { row(58, "MOVE_TO", 1, 2), row(58, "FOUND_CITY", 1, 2) })
+check("founding shelter: exhausted arrival stays held", ops(58), "")
+check("founding shelter: exhausted arrival emits no allowance",
+	lastEvent("settler_founding_shelter_allowed"), nil)
+
+-- Crossing a river can consume the remaining allowance independently of the
+-- destination's terrain cost.  WorldInput exposes that crossing in the native
+-- path's obstacles list, so the bridge must keep the conservative hold.
+reset()
+host.units[58] = { id = 58, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 3 }
+host.barbarians[106] = { id = 106, kind = "UNIT_SCOUT", x = 1, y = 3, moves = 0 }
+host.paths["58:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 },
+	obstacles = { plotIndex(1, 1) } }
+movementCosts[plotIndex(1, 2)] = 1
+applyOrders(player, PID, 7, { row(58, "MOVE_TO", 1, 2), row(58, "FOUND_CITY", 1, 2) })
+check("founding shelter: river arrival stays held", ops(58), "")
+check("founding shelter: river arrival emits no allowance",
+	lastEvent("settler_founding_shelter_allowed"), nil)
+
+-- The founding row must name the exact same site.  A nearby or stale found
+-- target cannot turn an otherwise exposed travel leg into a shelter hand-off.
+reset()
+host.units[58] = { id = 58, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 3 }
+host.barbarians[106] = { id = 106, kind = "UNIT_SCOUT", x = 1, y = 3, moves = 0 }
+host.paths["58:" .. plotIndex(1, 2)] = {
+	plots = { plotIndex(1, 1), plotIndex(1, 2) }, turns = { 0, 1 }, obstacles = {} }
+movementCosts[plotIndex(1, 2)] = 1
+applyOrders(player, PID, 7, { row(58, "MOVE_TO", 1, 2), row(58, "FOUND_CITY", 2, 2) })
+check("founding shelter: mismatched site stays held", ops(58), "")
+check("founding shelter: mismatched site emits no allowance",
+	lastEvent("settler_founding_shelter_allowed"), nil)
 
 -- The live loss geometry: a visible non-scout combat unit beside the actual
 -- leg holds both a travelling settler and the explicit escort that the host
