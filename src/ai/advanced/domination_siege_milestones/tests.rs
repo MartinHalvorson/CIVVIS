@@ -1,3 +1,4 @@
+use super::super::siege_train::{Siege, SiegeStage};
 use super::super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
 use crate::game::Game;
 
@@ -56,6 +57,62 @@ fn substantial_domination_siege_progress_prevents_stalled_peace() {
     damage(&mut g, &mut ai, city, 121, 240);
     ai.advanced_diplomacy(&mut g, 0, &plan);
     assert!(!ai.peace_offers.contains(&1));
+}
+
+#[test]
+fn a_fresh_investment_keeps_both_peace_desks_open_for_the_assault() {
+    let (mut g, mut ai, plan, city, _) = fixture();
+    ai.sieges.insert(
+        city,
+        Siege {
+            stage: SiegeStage::Invest,
+            taker: None,
+            entered: g.turn,
+            assessed: g.turn,
+            posts: Default::default(),
+        },
+    );
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(
+        !ai.peace_offers.contains(&1),
+        "fatigue cannot end a fresh investment"
+    );
+
+    let mut recovery = plan.clone();
+    recovery.strategy = GrandStrategy::Recovery;
+    recovery.target_player = None;
+    ai.advanced_diplomacy(&mut g, 0, &recovery);
+    assert!(
+        !ai.peace_offers.contains(&1),
+        "brief Recovery cannot abandon it"
+    );
+
+    let incoming = crate::game::DiplomaticDeal {
+        id: 1,
+        from: 1,
+        to: 0,
+        give_gold: 0.0,
+        request_gold: 0.0,
+        open_borders: false,
+        friendship: false,
+        peace: true,
+        alliance: None,
+        defensive_pact: false,
+        joint_war_target: None,
+        promise: None,
+        demand: false,
+        expires: 150,
+    };
+    assert!(ai.incoming_deal_value(&g, 0, &incoming, &recovery) < 0.0);
+
+    g.turn += g.standard_duration(12) + 1;
+    ai.sieges.get_mut(&city).unwrap().assessed = g.turn;
+    ai.advanced_diplomacy(&mut g, 0, &recovery);
+    assert!(
+        ai.peace_offers.contains(&1),
+        "the grace expires if no blow lands"
+    );
+    assert!(ai.incoming_deal_value(&g, 0, &incoming, &recovery) > 0.0);
 }
 
 #[test]

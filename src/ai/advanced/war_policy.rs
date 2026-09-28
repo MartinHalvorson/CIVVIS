@@ -40,8 +40,8 @@
 //!   peace term (recovery, religion, fatigue, the envoy reclaim, one-war,
 //!   the Science lane's defensive peace) is untouched; the tribute a `0.62`
 //!   rout licensed is not claimed by this term. An active Domination siege
-//!   reducing a damaged city gets a bounded twelve-turn grace period before
-//!   this board term may end it.
+//!   investing a city or reducing its defenses gets a bounded twelve-turn
+//!   stage grace before this board term may end it.
 //!
 //! Journal: "Not a target" (Detail) for an excluded rival, the declaration's
 //! blocker in the existing "Holding off war" line, the peace reason in the
@@ -343,20 +343,24 @@ impl AdvancedAi {
         (feasible, least, roster)
     }
 
-    /// A brief grace period for a real Domination siege already reducing a
-    /// city. A marginal change in the board's strength bill must not close a
-    /// fight that has reached the walls. A stale or distant siege gets no
-    /// exemption, and the ordinary peace term resumes after twelve turns in
-    /// this stage unless the bill becomes feasible again.
-    fn war_policy_active_domination_siege(&self, g: &Game, pid: usize, other: usize) -> bool {
+    /// A brief grace period for a real Domination siege investing or reducing
+    /// a city. A narrow change in the board's bill or the global fatigue
+    /// clock must not close an assault before its damage milestones. A stale
+    /// or distant siege gets no exemption; each active stage has at most
+    /// twelve turns to advance.
+    pub(super) fn domination_siege_has_grace(&self, g: &Game, pid: usize, other: usize) -> bool {
         self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && self.sieges.iter().any(|(cid, siege)| {
-                matches!(siege.stage, SiegeStage::Reduce | SiegeStage::Take)
-                    && g.turn.saturating_sub(siege.entered) <= g.standard_duration(12)
+                matches!(
+                    siege.stage,
+                    SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take
+                ) && g.turn.saturating_sub(siege.entered) <= g.standard_duration(12)
                     && g.turn.saturating_sub(siege.assessed) <= 1
                     && g.cities.get(cid).is_some_and(|city| {
                         city.owner == other
-                            && (city.hp < 200 || city.wall_hp < g.city_max_wall_hp(city))
+                            && (siege.stage == SiegeStage::Invest
+                                || city.hp < 200
+                                || city.wall_hp < g.city_max_wall_hp(city))
                             && Self::domination_siege_present(g, pid, *cid)
                     })
             })
@@ -375,7 +379,7 @@ impl AdvancedAi {
         if feasible {
             return None;
         }
-        if self.war_policy_active_domination_siege(g, pid, other) {
+        if self.domination_siege_has_grace(g, pid, other) {
             return None;
         }
         let tide = self

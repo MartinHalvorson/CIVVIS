@@ -17619,9 +17619,11 @@ impl AdvancedAi {
         if self.one_war_refuses_joint_war(g, pid, deal) {
             return -1_000.0;
         }
+        let siege_grace = self.domination_siege_has_grace(g, pid, partner);
         let fatigued = fatigued
             && !self.one_war_presses(g, pid, partner)
-            && !self.domination_siege_is_progressing(g, pid, partner, plan);
+            && !self.domination_siege_is_progressing(g, pid, partner, plan)
+            && !siege_grace;
         let one_war_peace = self.one_war_peace(g, pid, partner).is_some();
         let denied_partner = plan.target_player == Some(partner)
             && (plan.strategy == GrandStrategy::Conquest
@@ -17632,6 +17634,11 @@ impl AdvancedAi {
         if deal.peace {
             value += if my_power < partner_power * 0.85 || fatigued || one_war_peace {
                 320.0
+            } else if siege_grace {
+                // An invested city is a live Domination objective even when
+                // Recovery briefly owns the strategic plan. The opponent's
+                // incoming white peace must not end its opening assault.
+                -260.0
             } else if denied_partner {
                 // Recovery is a temporary battlefield posture, not an order
                 // to abandon the campaign. A locally threatened city can put
@@ -19859,10 +19866,12 @@ impl AdvancedAi {
                 .war_plan
                 .as_ref()
                 .is_some_and(|war| war.phase == WarPhase::Exploit && war.target_player == *other);
+            let siege_grace = self.domination_siege_has_grace(g, pid, *other);
             let fatigued = self.major_war_since.is_some_and(|started| {
                 g.turn.saturating_sub(started) >= 24
                     && g.turn.saturating_sub(self.last_campaign_progress) >= 12
-            }) && !self.domination_siege_is_progressing(g, pid, *other, plan);
+            }) && !self.domination_siege_is_progressing(g, pid, *other, plan)
+                && !siege_grace;
             let peace_pending = g.pending_deals.iter().any(|deal| {
                 deal.peace
                     && ((deal.from == pid && deal.to == *other)
@@ -19905,7 +19914,8 @@ impl AdvancedAi {
                 && !peace_pending
                 && (outmatched
                     || (plan.strategy == GrandStrategy::Recovery
-                        && plan.target_player != Some(*other))
+                        && plan.target_player != Some(*other)
+                        && !siege_grace)
                     || (self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                         && !appointed_objective)
