@@ -113,12 +113,18 @@ environment permitting local binds. The repository's changed-line Rust quality
 check (`rust_quality.py --base 10b26acd0 --head HEAD`) passed: owned changes are
 formatted and warning-free.
 
-A six-game exploratory simulation probe is running from code revision
+A six-game exploratory simulation probe completed from code revision
 `96f6ff3d0`, with only this gene varied, seeds 38450000–38450005 and three workers.
 The probe header records six players on 74×46 Continents, nine city-states,
 Online speed, 250 turns, Prince major difficulty, Deity barbarians, and the
 observed-player contract. The tested opt-in is drawn independently at p=0.25;
 other genes stay at their published defaults. The header records a clean build.
+
+Seven of 36 seats drew the candidate. Those seats won 1/7 games; the other
+seats won 5/29. The analyzer reports a marginal win contrast of -2.956 percentage
+points with standard error 15.641 points, and a score-share contrast of -0.237
+points with standard error 2.768 points. Both are unresolved. These are seat
+contrasts within six games, not 36 independent games.
 
 The small probe is not evidence of a win-rate improvement. The current screen's
 `independent` design also means that a nonzero marginal contrast is not by itself
@@ -132,7 +138,7 @@ Natural firing evidence, opportunity-cost evaluation, generated gene metadata,
 the full suite, and integration checks remain pending. No live or simulation
 win-rate improvement is established by the focused tests or these replays.
 
-A matched six-seed deployment-genome control is also running. Code inspection
+A matched six-seed deployment-genome control also completed. Code inspection
 shows that `--deployment-genome` pins every gene to its published default using
 the same `on_probabilities` machinery. Because the candidate is default-off,
 this supplies the all-off control without changing the other genes. Compare
@@ -140,3 +146,35 @@ headers and seat assignments before comparing game outcomes; the initial
 `--p-on 0` invocation was rejected before any game ran, so the control uses the
 supported deployment-genome mode. This is a firing/outcome-divergence check,
 not an additional independent sample for estimating a win-rate improvement.
+
+All six seed pairs have identical exported game and seat fields, including the
+full exported trajectory and victory-portfolio histories, after excluding wall
+time and the separately verified candidate genome bit. The comparison verifies
+matching setup, civilizations, assigned victory targets, all other genome bits,
+and the executable hash. Five pairs had at least one candidate-enabled seat;
+seed 38450002 had none and supplies a negative control. There is **no observed
+outcome or trajectory divergence** in this batch. This does not establish that
+every individual action was identical: the exports are not complete action logs.
+It does show why the nonzero marginal contrast above cannot establish an effect
+of the candidate. Keep it default-off; direct decision replay and whole-game
+benefit remain separate questions.
+
+Both arms used executable SHA-256
+`b39c803aa81fa86998c5ae001e2db3fccb31334cdbe2ffcbad7048de9615fb04`.
+The control header records clean revision `4aff6e9db`, a documentation-only
+successor to the treatment's clean revision `96f6ff3d0`; their executable and
+gene fingerprints match. Local evidence is preserved under
+`~/civvis-civ6-runs/analysis/guayaquil-loyalty/simulation-probe/`:
+
+- `regional-loyalty-probe-6.jsonl`, SHA-256
+  `ae7cd69f07e2a111af6af88a3232afa60f6e1094aefddc123f79642b5b2de82a`.
+- `regional-loyalty-control-6.jsonl`, SHA-256
+  `12c9c35eb657e3b45540d4b28d26c4ceddd195d9da4a1a330970f7227f92251f`.
+- `regional-loyalty-paired-comparison.json`, SHA-256
+  `2986b6b2a06f25217e1347de70305cdd9f2b3f0125f39345bdefb3777015b5e8`.
+
+The sibling `compare_probes.py` compares only complete six-seat pairs and rejects
+setup, binary, and noncandidate-genome mismatches. Checks using temporary copies
+verified that it detects altered scores and histories, excludes an incomplete
+pair, and rejects those mismatches. Synthetic check inputs were discarded and
+never included in the game evidence.
