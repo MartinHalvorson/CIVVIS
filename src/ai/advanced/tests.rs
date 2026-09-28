@@ -9673,6 +9673,25 @@ fn domination_column_takes_a_damaged_open_foothold_before_a_fresh_walled_target(
     assert!(!ai.plan_stale(&game, 0));
     assert_eq!(ai.assess(&game, 0).target_city, Some(walled));
 
+    let taker_pos = game
+        .nbrs(game.cities[&open].pos)
+        .into_iter()
+        .find(|pos| {
+            game.map
+                .get(*pos)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        })
+        .unwrap();
+    let mut fresh = game.clone();
+    let mut early = ai.clone();
+    fresh.spawn_test_unit("heavy_chariot", 0, taker_pos);
+    early.belief.observe(&fresh, 0);
+    assert!(
+        early.plan_stale(&fresh, 0),
+        "a healthy early taker can seize a weaker open foothold before it builds Walls"
+    );
+    assert_eq!(early.assess(&fresh, 0).target_city, Some(open));
+
     game.cities.get_mut(&open).unwrap().hp = 175;
     assert!(
         !ai.plan_stale(&game, 0),
@@ -9683,15 +9702,6 @@ fn domination_column_takes_a_damaged_open_foothold_before_a_fresh_walled_target(
         Some(walled),
         "damage without a nearby land taker is no reason to redirect"
     );
-    let taker_pos = game
-        .nbrs(game.cities[&open].pos)
-        .into_iter()
-        .find(|pos| {
-            game.map
-                .get(*pos)
-                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-        })
-        .unwrap();
     game.spawn_test_unit("man_at_arms", 0, taker_pos);
     ai.belief.observe(&game, 0);
     assert!(

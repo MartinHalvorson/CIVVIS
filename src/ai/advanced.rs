@@ -11917,26 +11917,33 @@ impl AdvancedAi {
             return None;
         }
         let visible = g.player_vision_frame(pid);
+        let prior_strength = g.city_strength(prior_id);
         g.cities
             .values()
             .filter(|city| {
+                let weakened = city.hp <= CITY_MAX_HP - 20;
+                let fresh_foothold =
+                    city.hp == CITY_MAX_HP && g.city_strength(city.id) < prior_strength;
                 city.owner == prior.owner
                     && city.id != prior_id
-                    && city.hp <= CITY_MAX_HP - 20
+                    && (weakened || fresh_foothold)
                     && city.wall_hp <= 0
                     && g.sees(&visible, city.pos)
                     && !self.capture_stood_down_holds(g, city.id)
                     && !Self::should_defer_city_capture(g, pid, city.id)
             })
             .filter(|city| {
+                let fresh = city.hp == CITY_MAX_HP;
+                let minimum_hp = if fresh { 70 } else { 60 };
+                let minimum_strength = if fresh { 25.0 } else { 30.0 };
                 g.units.values().any(|unit| {
                     let spec = &g.rules.units[unit.kind];
                     unit.owner == pid
-                        && unit.hp >= 60
+                        && unit.hp >= minimum_hp
                         && spec.class == "military"
                         && !spec.has_ranged_attack()
                         && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
-                        && g.unit_strength(unit, false) >= 30.0
+                        && g.unit_strength(unit, false) >= minimum_strength
                         && g.wdist(unit.pos, city.pos) <= 3
                 })
             })
@@ -12843,11 +12850,12 @@ impl AdvancedAi {
         // opened. The converse matters too: on the King Babylon front the
         // army had stripped an unwalled Karkar to 172 HP with a man-at-arms
         // two tiles away, yet its old order still pointed to fully walled
-        // Malgium. Karkar healed and built Walls before anyone tried to take
-        // it. Permit one narrow change of objective while the old siege has
-        // not breached anything and a healthy land taker can reach the open,
-        // visibly damaged city. Once selected, the ordinary commitment keeps
-        // that foothold as the objective.
+        // Malgium. On the King Japan front Kyoto finished Walls while Nagoya
+        // was still open with a healthy chariot three tiles away. An open
+        // foothold can close before it takes damage. Permit one narrow
+        // change of objective while the old siege has not breached anything
+        // and a land taker can reach a visibly weaker, unwalled city. Once
+        // selected, the ordinary commitment keeps that foothold as its goal.
         let capture_opportunity_city = committed_target_city
             .and_then(|prior_id| self.capture_opportunity_city(g, pid, prior_id, strategy));
         // `capture-go-or-stand-down`: a city the ledger stood down is not
@@ -12891,7 +12899,7 @@ impl AdvancedAi {
             let city = &g.cities[&opportunity];
             think!(self.journal(), Strategy, Strategy,
                    "Campaign seizes open foothold {}", city.name;
-                   "an unbreached prior objective yields to a damaged city with a land taker nearby";
+                   "an unbreached prior objective yields to a weaker unwalled city with a land taker nearby";
                    city.pos);
         }
 
