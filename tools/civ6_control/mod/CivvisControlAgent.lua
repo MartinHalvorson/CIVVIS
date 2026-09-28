@@ -20054,6 +20054,31 @@ local function tick()
 							                 { REASON = "UserForced" });
 						end);
 					end
+					-- Run civvis-20260928T150733Z reached turn 136 three times:
+					-- this was the first blocker, then the UI waited on an idle
+					-- galley. The game core went quiet before the unit blocker could
+					-- be observed. All governor titles were already spent, so the
+					-- opportunity was a reminder, not a decision left to make. Park
+					-- ready units while we still have this callback, then end the
+					-- turn in the same pass instead of waiting for another sighting.
+					if name == "ENDTURN_BLOCKING_GOVERNOR_OPPORTUNITY"
+						and try(function()
+							local governors = player:GetGovernors();
+							return governors:GetGovernorPoints() <= governors:GetGovernorPointsSpent();
+						end, false) then
+						local parked = parkReadyUnits(player);
+						local dropped = dismissBlocker(pid, blocker);
+						answered = answered .. "+parked:" .. parked .. "+forced";
+						emit("dismissed", { turn = turn, blocker = name,
+						                    dismissed = dropped, attempts = attempts,
+						                    answered = answered, parked = parked,
+						                    forfeit = 0, forced = true, same_pass = true });
+						same_pass_forced = true;
+						pcall(function()
+							CivvisQueue.requestEndTurn(turn,
+							                 { REASON = "UserForced" });
+						end);
+					end
 					-- ⚠⚠⚠ THE SAME CLAIM-NOT-CHECK DEFECT, ON THE POLICY SLOT.
 					-- Parking the ready units repaired it for `ENDTURN_BLOCKING_UNITS`;
 					-- `FILL_CIVIC_SLOT` was left claiming completion over a slot that is

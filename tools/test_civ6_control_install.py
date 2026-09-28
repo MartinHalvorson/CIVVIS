@@ -1986,6 +1986,19 @@ class UnitsBlockerForfeitTest(unittest.TestCase):
         self.assertIn("same_pass_forced = true", units)
         self.assertIn("and not same_pass_forced", self.escalation)
 
+    def test_governor_reminder_parks_a_masked_idle_unit_in_the_same_pass(self) -> None:
+        """The turn-136 governor reminder masked a galley needing orders."""
+        governor = self.source.split(
+            'if name == "ENDTURN_BLOCKING_GOVERNOR_OPPORTUNITY"', 1
+        )[1].split("-- ⚠⚠⚠ THE SAME CLAIM-NOT-CHECK DEFECT, ON THE POLICY SLOT.", 1)[0]
+        self.assertIn("GetGovernorPoints() <= governors:GetGovernorPointsSpent()", governor)
+        parked = governor.index("parkReadyUnits(player)")
+        dismissed = governor.index("dismissBlocker(pid, blocker)")
+        forced = governor.index('REASON = "UserForced"')
+        self.assertLess(parked, dismissed)
+        self.assertLess(dismissed, forced)
+        self.assertIn("same_pass_forced = true", governor)
+
     def test_forcing_is_reserved_for_the_three_blockers_the_engine_refuses(self) -> None:
         """The trio `ActionPanel.DoEndTurn` special-cases, and only those.
 
