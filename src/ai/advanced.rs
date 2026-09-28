@@ -43038,7 +43038,7 @@ impl AdvancedAi {
         // rather than leaving its floors and treasury reserve live until the
         // ordinary five-turn strategic cadence.
         self.maintain_war_plan(g, pid);
-        self.maintain_air_surge(g, pid);
+        self.maintain_air_surge_after_units(g, pid);
         // A settler can found a city during the unit pass. Refresh the map so
         // the durable directive state covers that new city as well as the
         // cities that received production guidance earlier in the turn.
