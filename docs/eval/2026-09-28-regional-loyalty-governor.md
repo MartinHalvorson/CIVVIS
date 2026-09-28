@@ -282,3 +282,66 @@ per-loss snapshots are saved locally as
 Report SHA-256:
 `ed5976124c7d27552364f344a9865dee14aca80773f38fa35f8440d5e3d0b34b`.
 Retired attempts remain separate from completed game outcomes.
+
+## Apu decision replay and missing occupation readback
+
+Four unmodified snapshots from the retained path were replayed with the recorded
+Domination configuration: t203 before capture, t203 just after capture, and t204
+frames 0 and 1. The emitted control genome matches all 184 recorded active tags;
+the treatment adds only the existing `capture-hold-chain` opt-in. All eight
+invocations succeed and all outbound orders match between the two arms. In
+particular, both keep Apu, assign Magnus, select Modern Armor production, and
+order Modern Armor 13369364 to attack (32,27) on t204 frame 1.
+
+The corresponding native transition is directly observable in
+`civvis-20260927T225002Z-cont4/events.jsonl`: state line 21644 has that unit on
+Apu's City Center (33,25), the attack is requested at 21649, and `host_move` at
+21654 moves it to (33,26). State 21656 has no unit on the City Center. Apu's
+reported loyalty rate changes from -16.3516 to -24.3516; defense also falls from
+107 to 104. Its other exported city fields, governors, and policies are unchanged.
+Gathering Storm's shipped `Expansion2_GlobalParameters.xml:152` sets
+`IDENTITY_PER_TURN_FROM_MARTIAL_LAW` to eight, consistent with losing the occupied
+city's garrison support. This is a natural transition, not an isolated intervention;
+even retaining the garrison would leave a negative rate, so it is not evidence
+of lasting survival.
+
+A separate read-only diagnostic constructs `LiveMirror` from the same snapshots
+using the compiled library. In all three post-capture frames, Apu's owner is 0,
+original owner is 3, that former owner is alive, and **`occupied_from` is null**.
+Immediately after capture, `captured_from` is correctly 3; it clears after the
+Keep decision, as intended for that transient field. The persistent occupation
+state is a separate fact and is missing. The diagnostic also reads back the
+native 250-turn limit: the fallback 650-turn command argument does not override
+the seat's exported clock.
+
+Source inspection corroborates the missing field: `apply_city_capture` maps
+founder and pending capture decision, but does not populate occupation. The
+occupation-garrison assignment and the capture-hold production/governor checks
+require `occupied_from`; enabling the opt-in cannot supply missing native facts.
+The shipped GS UI `DLC/Expansion2/UI/Replacements/CitySupport.lua:576` reads
+`pCity:IsOccupied()`. The next implementation should export and mirror that
+observed state, distinguish it from the pending disposition, and verify its
+clearing after occupation ends. Original ownership alone is not an adequate
+replacement for an occupation observation. Retaining or replacing an existing
+garrison also needs evaluation: the current assignment pass selects unoccupied
+City Centers and runs after earlier tactical actions.
+
+Evidence is preserved under
+`~/civvis-civ6-runs/analysis/apu-capture-retention/`:
+
+- `manifest.json` records exact input prefixes and the recorded genome;
+  SHA-256 `52871ef26db3536be1b463be1233a3473a9436899202850161e9aef2bd64edef`.
+- `results-b45614295/provenance.json` records the eight commands and readbacks;
+  SHA-256 `09718a9dbbc54325edbc45de35a67d21b216c84729bab6b3a20e02f84bba4911`.
+- `garrison-departure.json` retains both native states and intervening events;
+  SHA-256 `1df3c371694a12acfe5a444d716bc1e5efbbfe5682f73d7e8f8e8efea3ee96f3`.
+- `mirror-occupation.json` records the reconstructed field values and diagnostic
+  source/library hashes;
+  SHA-256 `fe5ddd39a91790f0bba8aaef8cae70bb8802cf5ac78823dbd6913081b82ac1cc`.
+
+The decision executable is the previously verified `b45614295` build; subsequent
+commits change documentation only. This investigation sends no live orders and
+does not enable the capture-hold gene in deployment. The separate
+`native-occupation-readback` task launcher failed at `gh auth status`; GitHub API
+requests and pushes are also failing in this environment. Its implementation
+requires a fresh task branch and ownership PR once GitHub is accessible.
