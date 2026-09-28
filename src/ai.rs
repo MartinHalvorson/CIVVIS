@@ -15508,7 +15508,7 @@ impl BasicAi {
             // best horizons until one has a route through territory the unit
             // may actually enter. `route_step` keeps a Scout on its side of a
             // known closed border without inspecting hidden actors.
-            candidates.sort_by_key(|target| {
+            candidates.sort_by_cached_key(|target| {
                 std::cmp::Reverse((
                     island_home.as_ref().map_or(0, |home_landmass| {
                         self.island_landfall_value(g, pid, uid, *target, home_landmass)
