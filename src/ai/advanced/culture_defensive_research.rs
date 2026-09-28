@@ -68,11 +68,27 @@ impl AdvancedAi {
         cid: u32,
         visible: &crate::world::TileBits,
     ) -> bool {
-        let Some(city) = g
-            .cities
+        if g.cities
             .get(&cid)
-            .filter(|city| city.owner == pid && g.city_max_wall_hp(city) == 0)
-        else {
+            .is_none_or(|city| g.city_max_wall_hp(city) > 0)
+        {
+            return false;
+        }
+        Self::strong_attacker_approaches_city(g, pid, cid, visible, 4)
+    }
+
+    /// The same visible, reachable strength warning also protects a walled
+    /// original capital during a major war. A six-step warning gives its
+    /// production queue lead time against a mounted attacker while leaving
+    /// the ordinary unwalled-city threshold at four steps.
+    pub(super) fn strong_attacker_approaches_city(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        visible: &crate::world::TileBits,
+        max_steps: usize,
+    ) -> bool {
+        let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
             return false;
         };
         let defense = g.city_strength(cid).max(1.0);
@@ -86,13 +102,13 @@ impl AdvancedAi {
                 && g.map
                     .get(unit.pos)
                     .is_some_and(|tile| !g.rules.is_water(tile))
-                && g.wdist(city.pos, unit.pos) <= 4
+                && g.wdist(city.pos, unit.pos) <= max_steps as i32
                 && g.sees(visible, unit.pos)
                 && g.unit_visible_to(unit.id, pid)
                 && crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
                     >= defense * IMMINENT_ATTACK_STRENGTH_RATIO
                 && g.route_distance(unit.id, city.pos, 1)
-                    .is_some_and(|steps| steps <= 4)
+                    .is_some_and(|steps| steps <= max_steps)
         })
     }
 }

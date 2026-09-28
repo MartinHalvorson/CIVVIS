@@ -25542,7 +25542,15 @@ impl AdvancedAi {
                 .or(preemptive_defence)
                 .or_else(|| {
                     let visible = approach_visible.as_ref()?;
-                    if !Self::strong_attacker_approaches_unwalled_city(g, pid, city, visible) {
+                    let walled_original_capital = g.cities.get(&city).is_some_and(|center| {
+                        center.is_capital
+                            && center.original_owner == pid
+                            && g.city_max_wall_hp(center) > 0
+                    });
+                    if !Self::strong_attacker_approaches_unwalled_city(g, pid, city, visible)
+                        && !(walled_original_capital
+                            && Self::strong_attacker_approaches_city(g, pid, city, visible, 6))
+                    {
                         return None;
                     }
                     self.preemptive_major_war_defense_item(
