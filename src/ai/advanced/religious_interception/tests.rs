@@ -81,3 +81,27 @@ fn religious_interception_preserves_nonurgent_and_executable_action_gates() {
         assert!(g.units.contains_key(&missionary));
     }
 }
+
+#[test]
+fn a_visible_spreader_keeps_the_religious_front_open_until_the_threat_recedes() {
+    let (mut g, mut ai, _, _, missionary) = fixture();
+    ai.enable_religious_veto_defence();
+    let home = g.player_city_ids(0)[0];
+    g.cities
+        .get_mut(&home)
+        .unwrap()
+        .pressure
+        .insert("Islam".into(), 1000.0);
+    g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+    assert!(ai.religious_interception_holds_war(&g, 0, 1));
+
+    g.units.get_mut(&missionary).unwrap().pos = (18, 8);
+    assert!(!ai.religious_interception_holds_war(&g, 0, 1));
+    g.units.get_mut(&missionary).unwrap().pos = (4, 8);
+    Arc::make_mut(&mut g.observed_majority_religion).remove(&2);
+    assert!(!ai.religious_interception_holds_war(&g, 0, 1));
+
+    Arc::make_mut(&mut g.observed_majority_religion).insert(2, "Islam".into());
+    ai.disable_religious_veto_defence();
+    assert!(!ai.religious_interception_holds_war(&g, 0, 1));
+}
