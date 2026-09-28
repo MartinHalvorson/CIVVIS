@@ -3155,7 +3155,7 @@ pub struct Spy {
 /// The host's own verdict on a mirrored unit's upgrade — the loose and strict
 /// `UnitManager.CanStartCommand(unit, UNITCOMMAND_UPGRADE, …)` reads the
 /// shipped `Base/Assets/UI/Panels/UnitPanel.lua:468-483` makes, with
-/// `Unit:GetUpgradeCost()` as the bill. Native games never fill one.
+/// `Unit:GetUpgradeCost()` as the bill. Simulator games never fill one.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug, Default)]
 pub struct HostUnitUpgrade {
     /// The successor the host names (`UnitCommandResults.UNIT_TYPE`), as the
@@ -3165,11 +3165,21 @@ pub struct HostUnitUpgrade {
     /// The Gold the host would charge, as `GetUpgradeCost()` quotes it.
     #[serde(default)]
     pub cost: Option<f64>,
+    /// Complete strategic-resource bill from `GetUpgradeResourceCost()`.
+    #[serde(default)]
+    pub resources: Option<HostUnitUpgradeResource>,
     /// The first `FAILURE_REASONS` entry when a successor exists and the
     /// command cannot start this turn. `Some` is final: the order would be
     /// refused on arrival.
     #[serde(default)]
     pub blocked: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct HostUnitUpgradeResource {
+    /// None only when the host positively reports no material and a zero bill.
+    pub resource: Option<Name>,
+    pub cost: f64,
 }
 
 /// What an authoritative host said about one of the mirrored seat's units
@@ -12302,6 +12312,37 @@ impl Game {
         self.unit_gold_upgrade_detail(pid, uid).ok()
     }
 
+    /// Price this unit's exact successor, including its formation and policy
+    /// modifiers. Funding may read a blocked offer; this grants no permission
+    /// to upgrade here. Unknown host bills retain the ordinary direct quote.
+    pub fn unit_upgrade_resource_price(&self, pid: usize, uid: u32, target: Name) -> Option<f64> {
+        let unit = self.units.get(&uid).filter(|unit| unit.owner == pid)?;
+        self.host_upgrade_resource_price(uid, target).or_else(|| {
+            self.unit_upgrade_price_in_formation(pid, unit.kind, target, unit.formation)
+                .map(|(_, resources)| resources)
+        })
+    }
+
+    fn host_upgrade_resource_price(&self, uid: u32, target: Name) -> Option<f64> {
+        let spec = self.rules.units.get_interned(target)?;
+        if let Some(bill) = self
+            .host_unit_facts
+            .get(&uid)
+            .and_then(|facts| facts.upgrade.as_ref())
+            .filter(|offer| offer.to == Some(target))
+            .and_then(|offer| offer.resources.as_ref())
+            .filter(|bill| {
+                bill.cost.is_finite()
+                    && bill.cost >= 0.0
+                    && (bill.resource == spec.requires_resource
+                        || (bill.resource.is_none() && bill.cost == 0.0))
+            })
+        {
+            return Some(bill.cost);
+        }
+        None
+    }
+
     /// The same offer, with the first failing precondition named. Diagnostics
     /// and the AI both need to tell "no successor exists" apart from "not
     /// here, not yet, or not affordable".
@@ -12326,9 +12367,9 @@ impl Game {
         // named block is final: the order would be refused on arrival, which
         // is what 933 `UPGRADE` refusals over the 08-04/08-05 runs were. A
         // successor the host names is priced at the host's Gold, checked
-        // against the treasury this frame still holds; only the strategic
-        // material comes from the board's quote, since the host says nothing
-        // about it beyond "can". Absent — an older mod, or a unit with no
+        // against the treasury this frame still holds. The native material
+        // bill crosses separately from `GetUpgradeResourceCost()`. Absent —
+        // an older mod, or a unit with no
         // successor at all — the board's own rules decide, unchanged.
         if let Some(verdict) = self
             .host_unit_facts
@@ -12348,7 +12389,21 @@ impl Game {
                 if self.players[pid].gold + f64::EPSILON < gold {
                     return Err("not enough gold");
                 }
-                let resources = quote.map_or(0.0, |(_, resources)| resources);
+                let resources = self
+                    .unit_upgrade_resource_price(pid, uid, target)
+                    .unwrap_or(0.0);
+                // The native permission was observed before this planning
+                // turn's earlier upgrades spent material. A known exact bill
+                // can check the remaining stock, just as the Gold quote does.
+                // Older exports retain their authoritative permission because
+                // their modeled bill may disagree with the native one.
+                if self.host_upgrade_resource_price(uid, target).is_some() {
+                    if let Some(resource) = self.rules.units[target].requires_resource {
+                        if self.strategic_stockpile(pid, resource) + f64::EPSILON < resources {
+                            return Err("not enough strategic material");
+                        }
+                    }
+                }
                 return Ok((target, gold, resources));
             }
         }
@@ -36138,6 +36193,9 @@ mod unit_upgrade_price_tests;
 
 #[cfg(test)]
 mod host_resource_price_tests;
+
+#[cfg(test)]
+mod host_upgrade_resource_tests;
 
 #[cfg(test)]
 mod regional_building_tests;
