@@ -37,6 +37,7 @@ fn fixture() -> (Game, AdvancedAi, u32, u32, u32) {
         target: 1,
         city: target,
         opened: 19,
+        preparing_since: Some(19),
         rally: (15, 12),
         force: [uid].into_iter().collect(),
         assembled: Some(28),

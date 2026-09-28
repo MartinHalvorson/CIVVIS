@@ -801,6 +801,32 @@ fn online_opening_seen_four_turns_before_deadline_gets_time_to_assemble() {
     assert!(ai.conquest_opening.is_none(), "the bounded window ends");
 }
 
+#[test]
+fn online_opening_named_before_second_city_gets_time_to_build_its_force() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    game.turn = 14;
+    let mut ai = opened(&mut game);
+    let opening = ai.conquest_opening.as_ref().unwrap();
+    assert_eq!(opening.preparing_since, None);
+    assert_eq!(AdvancedAi::conquest_commit_due(&game, opening), 40);
+
+    game.turn = 25;
+    game.found_city_for(0, at(6, 17), None);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.as_ref().unwrap();
+    assert_eq!(opening.preparing_since, Some(25));
+    assert_eq!(AdvancedAi::conquest_commit_due(&game, opening), 45);
+
+    game.turn = 40;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_reservation_open(&game));
+
+    game.turn = 45;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_none(), "the bounded window ends");
+}
+
 // ------------------------------------------------------------- vision guard
 
 #[test]
@@ -929,6 +955,7 @@ fn the_war_rate_is_counted_from_the_engines_own_kill_counter() {
         target: 1,
         city: 0,
         opened: 10,
+        preparing_since: Some(10),
         rally: at(10, 12),
         force: BTreeSet::new(),
         assembled: Some(10),
