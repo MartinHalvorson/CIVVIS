@@ -1818,8 +1818,11 @@ const SETTLEMENT_SCORE_MAX_WORKERS: usize = 4;
 /// The lane progress table of one seat, kept for one controller turn. A
 /// controller clone is a speculative branch and starts without it, as the
 /// settlement atlas does.
+/// The turn, the seat, the map epoch and the table.
+type LaneProgressEntry = (u32, usize, u64, [i32; 4]);
+
 #[derive(Default)]
-struct LaneProgressCache(RefCell<Option<(u32, usize, u64, [i32; 4])>>);
+struct LaneProgressCache(RefCell<Option<LaneProgressEntry>>);
 
 impl Clone for LaneProgressCache {
     fn clone(&self) -> Self {
