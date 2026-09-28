@@ -20055,10 +20055,10 @@ impl AdvancedAi {
         if self.conquest_declaration(g, pid) {
             return;
         }
-        // `city_campaign`: a campaign whose every city is ours offers peace,
-        // the way the raid closes when it has paid. See
+        // `city_campaign`: a completed appointment offers peace unless the
+        // Domination army is already at a newly named city of that rival. See
         // `advanced/city_campaign.rs`.
-        self.city_campaign_diplomacy(g, pid);
+        self.city_campaign_diplomacy(g, pid, plan);
         // See `air_surge_diplomacy_target` (`air-surge-2`): while the surge
         // beelines and arms, a lane seat assesses no rival, so without this
         // fallback the Arm-phase denounce below was unreachable and the

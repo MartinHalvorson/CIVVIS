@@ -74,8 +74,10 @@
 //! [`CampaignPlan::bodies`] bodies, one of them a capturer. And once every
 //! planned city is ours the peace desk offers peace
 //! ([`AdvancedAi::city_campaign_diplomacy`]), the way the raid closes when
-//! it has paid, with [`CAMPAIGN_REPEAT_COOLDOWN`] turns before the next
-//! plan. A plan not launched within [`CAMPAIGN_PATIENCE`] standard turns is
+//! it has paid. A Domination army already at a newly named city of that rival
+//! continues the siege first. After peace, the next plan waits
+//! [`CAMPAIGN_REPEAT_COOLDOWN`] turns. A plan not
+//! launched within [`CAMPAIGN_PATIENCE`] standard turns is
 //! dropped and re-drawn; while at peace it is refreshed every turn so the
 //! target follows the board, keeping its age when the rival is the same.
 //!
@@ -101,6 +103,7 @@
 //! screen says which half pays.
 
 use super::{AdvancedAi, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan};
+use crate::ai::VictoryTarget;
 use crate::game::{effective_strength, Action, City, Game};
 use crate::think;
 use crate::Pos;
@@ -858,8 +861,14 @@ impl AdvancedAi {
     }
 
     /// The peace desk: a campaign whose every city is ours offers peace,
-    /// once, until it is accepted.
-    pub(crate) fn city_campaign_diplomacy(&mut self, g: &mut Game, pid: usize) {
+    /// once, until it is accepted. A Domination army already at the next
+    /// city keeps the war open while that new objective is actionable.
+    pub(crate) fn city_campaign_diplomacy(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
         if !self.city_campaign_active() {
             return;
         }
@@ -872,6 +881,31 @@ impl AdvancedAi {
                 g.cities
                     .get(cid)
                     .is_some_and(|city| city.owner == campaign.target)
+            })
+        {
+            return;
+        }
+        // The one-city appointment can finish while the main Domination plan
+        // has already named another city of the same rival. In the live King
+        // run, a Warrior took Ternate and the army reached walled Tuban, but
+        // this desk offered peace on every turn of Tuban's siege. Continue
+        // only while land soldiers are actually at the new city; a distant
+        // name alone cannot keep an unproductive war alive.
+        if self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && plan.target_player == Some(campaign.target)
+            && plan.target_city.is_some_and(|cid| {
+                g.cities.get(&cid).is_some_and(|city| {
+                    city.owner == campaign.target
+                        && g.units.values().any(|unit| {
+                            unit.owner == pid
+                                && g.rules.units[unit.kind].class == "military"
+                                && !matches!(
+                                    g.rules.units[unit.kind].domain.as_deref(),
+                                    Some("sea" | "air")
+                                )
+                                && g.wdist(unit.pos, city.pos) <= 3
+                        })
+                })
             })
         {
             return;
@@ -1115,6 +1149,57 @@ mod tests {
         {
             game.players[pid].techs.insert(tech);
         }
+    }
+
+    #[test]
+    fn a_domination_siege_at_the_next_city_keeps_a_completed_one_city_war_open() {
+        let mut game = flat_board(80_304, &[(6, 10), (16, 10)]);
+        game.found_city_for(0, (12, 10), None);
+        let next = game.player_city_ids(1)[0];
+        let soldier = game.spawn_test_unit("warrior", 0, (14, 10));
+        game.at_war.insert((0, 1));
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_city_campaign_2();
+        ai.retarget(VictoryTarget::Domination);
+        ai.campaign = Some(CampaignPlan {
+            target: 1,
+            cities: Vec::new(),
+            requirement: 40.0,
+            bodies: 2,
+            planned: 50,
+            declared: Some(55),
+            taken: 1,
+        });
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(next),
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        ai.city_campaign_diplomacy(&mut game, 0, &plan);
+        assert!(ai.peace_offers.is_empty(), "the nearby siege continues");
+
+        let mut distant = game.clone();
+        distant.units.get_mut(&soldier).unwrap().pos = (6, 10);
+        let mut distant_ai = ai.clone();
+        distant_ai.city_campaign_diplomacy(&mut distant, 0, &plan);
+        assert!(
+            distant_ai.peace_offers.contains(&1),
+            "a mere distant objective does not prolong the completed campaign"
+        );
+
+        let mut other_lane = ai.clone();
+        other_lane.retarget(VictoryTarget::Science);
+        other_lane.city_campaign_diplomacy(&mut game, 0, &plan);
+        assert!(
+            other_lane.peace_offers.contains(&1),
+            "the extension belongs only to Domination"
+        );
     }
 
     /// Three empires: ours with six Warriors and a second city, a weak
