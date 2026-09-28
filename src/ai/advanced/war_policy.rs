@@ -40,8 +40,8 @@
 //!   peace term (recovery, religion, fatigue, the envoy reclaim, one-war,
 //!   the Science lane's defensive peace) is untouched; the tribute a `0.62`
 //!   rout licensed is not claimed by this term. An active Domination siege
-//!   investing a city or reducing its defenses gets a bounded twelve-turn
-//!   stage grace before this board term may end it.
+//!   investing a city gets a bounded twelve-turn stage grace; a live breach
+//!   through standing walls gets longer to finish before this term may end it.
 //!
 //! Journal: "Not a target" (Detail) for an excluded rival, the declaration's
 //! blocker in the existing "Holding off war" line, the peace reason in the
@@ -346,17 +346,29 @@ impl AdvancedAi {
     /// A brief grace period for a real Domination siege investing or reducing
     /// a city. A narrow change in the board's bill or the global fatigue
     /// clock must not close an assault before its damage milestones. A stale
-    /// or distant siege gets no exemption; each active stage has at most
-    /// twelve turns to advance.
+    /// or distant siege gets no exemption. A reducing siege with at least 20
+    /// wall HP already stripped has up to eighty standard turns from stage
+    /// entry: the live King assaults kept suing for peace after a few shots
+    /// through 400-point walls, wasting the army's staged and invested work.
     pub(super) fn domination_siege_has_grace(&self, g: &Game, pid: usize, other: usize) -> bool {
         self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && self.sieges.iter().any(|(cid, siege)| {
                 matches!(
                     siege.stage,
                     SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take
-                ) && g.turn.saturating_sub(siege.entered) <= g.standard_duration(12)
-                    && g.turn.saturating_sub(siege.assessed) <= 1
+                ) && g.turn.saturating_sub(siege.assessed) <= 1
                     && g.cities.get(cid).is_some_and(|city| {
+                        let breached_wall = siege.stage == SiegeStage::Reduce
+                            && city.wall_hp > 0
+                            && g.city_max_wall_hp(city).saturating_sub(city.wall_hp) >= 20;
+                        let grace = if breached_wall {
+                            g.standard_duration(80)
+                        } else {
+                            g.standard_duration(12)
+                        };
+                        if g.turn.saturating_sub(siege.entered) > grace {
+                            return false;
+                        }
                         city.owner == other
                             && (matches!(siege.stage, SiegeStage::Invest | SiegeStage::Reduce)
                                 || city.hp < 200
@@ -843,6 +855,27 @@ mod tests {
         assert!(
             ai.war_policy_peace(&g, 0, 1).is_some(),
             "the grace period ends"
+        );
+
+        // Walls that have actually been breached keep a present reducing
+        // column at work longer; one scratch is not enough to buy that time.
+        g.cities
+            .get_mut(&target)
+            .unwrap()
+            .buildings
+            .push(crate::name!("walls"));
+        g.cities.get_mut(&target).unwrap().wall_hp = 99;
+        assert!(ai.war_policy_peace(&g, 0, 1).is_some());
+        g.cities.get_mut(&target).unwrap().wall_hp = 70;
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_none(),
+            "a real breach must not be abandoned on the short stage clock"
+        );
+        g.turn = ai.sieges[&target].entered + g.standard_duration(80) + 1;
+        ai.sieges.get_mut(&target).unwrap().assessed = g.turn;
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_some(),
+            "even a breached siege has a finite commitment"
         );
 
         ai.sieges.get_mut(&target).unwrap().entered = g.turn;
