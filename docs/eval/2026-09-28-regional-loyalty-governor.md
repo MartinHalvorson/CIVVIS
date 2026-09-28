@@ -94,7 +94,30 @@ wording alone. This PR changes no simulation mechanic.
 
 ## Remaining validation
 
-The focused suite now passes all nine tests, including a complete turn retaining
+A subsequent complete-turn regression exposed another interaction: with two
+titles and a distant, ungoverned loyalty emergency, the regional planner appoints
+and promotes Victor correctly, then the baseline emergency pass immediately
+moves him away. The regression failed with Victor in the distant city rather
+than the regional anchor, even though Pingala could safely address the other
+emergency. This is a constructed integration case, not an observed native loss.
+
+The candidate now gives the emergency pass a preference to retain Victor while
+a low-loyalty city within his aura needs the support. The pass prefers another
+eligible donor, retaining its original safe-source checks. Victor remains a
+fallback when no other eligible donor exists. The preference releases when the
+covered city no longer needs the aura, and is absent with the candidate disabled.
+The recorded-position replays and six-game batches below predate this correction;
+they are evidence for their stated revisions, not validation of this new behavior.
+
+After the relocation correction, all 12 focused tests pass, including the
+competing-emergency regression, the sole-donor fallback, and recovery/disabled
+behavior. The current library suite passes 4,207 tests with 49 ignored and the
+18 previously confirmed sandbox socket-bind failures explicitly filtered out.
+Those excluded tests still require a socket-permitting environment; this is not
+a claim that the unrestricted full suite passed.
+
+Before the relocation correction, the focused suite passed all nine tests,
+including a complete turn retaining
 the reserved title and a subsequent controlled-player turn releasing it after
 pressure recovers. The ancillary pass continues its other work and suppresses
 only fallback governor spending while the reservation is active. The 191 existing

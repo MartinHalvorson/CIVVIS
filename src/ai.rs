@@ -8353,6 +8353,15 @@ impl BasicAi {
     /// the old threshold is treated as an emergency in its own right so a city
     /// already in trouble is never ranked behind a healthy one.
     fn reassign_governor_for_loyalty(&self, g: &mut Game, pid: usize) -> bool {
+        self.reassign_governor_for_loyalty_preserving(g, pid, None)
+    }
+
+    fn reassign_governor_for_loyalty_preserving(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        regional_anchor: Option<&str>,
+    ) -> bool {
         let target = g
             .player_city_ids(pid)
             .into_iter()
@@ -8387,6 +8396,10 @@ impl BasicAi {
                     || (source_loyalty >= 90.0 && source_loyalty - target_loyalty >= 20.0))
                     .then_some((
                         state.city.is_none(),
+                        // Prefer another safe donor before interrupting regional
+                        // support. The anchor remains a fallback if it is the
+                        // only governor able to address this emergency.
+                        regional_anchor != Some(governor.as_str()),
                         governor == "victor",
                         source_loyalty,
                         std::cmp::Reverse(*governor),
@@ -8397,10 +8410,11 @@ impl BasicAi {
                 left.0
                     .cmp(&right.0)
                     .then(left.1.cmp(&right.1))
-                    .then(left.2.total_cmp(&right.2))
-                    .then(left.3.cmp(&right.3))
+                    .then(left.2.cmp(&right.2))
+                    .then(left.3.total_cmp(&right.3))
+                    .then(left.4.cmp(&right.4))
             })
-            .map(|(_, _, _, _, action)| action);
+            .map(|(_, _, _, _, _, action)| action);
         action.is_some_and(|action| g.apply(pid, &action).is_ok())
     }
 

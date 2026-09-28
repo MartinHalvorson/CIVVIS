@@ -42454,7 +42454,11 @@ impl AdvancedAi {
         // emergency pass that protects an ungoverned city with a measured
         // Loyalty collapse. The frozen controller keeps its old path.
         if self.base.loyalty_rate_alarm {
-            self.base.reassign_governor_for_loyalty(g, pid);
+            let regional_anchor = self
+                .regional_loyalty_support_in_use(g, pid)
+                .then_some("victor");
+            self.base
+                .reassign_governor_for_loyalty_preserving(g, pid, regional_anchor);
         }
         // Keep the mature ancillary systems: governments, policies, beliefs,
         // religions, and envoys. Research is already selected.

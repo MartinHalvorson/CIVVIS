@@ -232,3 +232,72 @@ fn title_reservation_survives_the_complete_turn() {
         "normal spending resumes on the complete turn when the pressure recovers"
     );
 }
+
+#[test]
+fn regional_rescue_survives_a_competing_ungoverned_emergency() {
+    use crate::ai::Ai;
+    let (mut g, mut ai, _, target, anchor) = board();
+    let remote = g.found_city_for(0, (26, 18), None);
+    assert!(g.wdist(g.cities[&remote].pos, g.cities[&target].pos) > 9);
+    g.cities.get_mut(&remote).unwrap().loyalty = 20.0;
+    Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(remote, -5.0);
+    g.players[0]
+        .counters
+        .insert("district_governor_titles".into(), 6);
+    ai.base.loyalty_rate_alarm = true;
+    ai.take_turn(&mut g, 0);
+    let victor = &g.players[0].governor_roster["victor"];
+    assert!(victor.promotions.contains("garrison_commander"));
+    assert_eq!(
+        victor.city,
+        Some(anchor),
+        "the later emergency pass must not remove the regional support just funded"
+    );
+    assert!(
+        g.players[0].governors.contains(&remote),
+        "another safe governor should still address the ungoverned emergency"
+    );
+}
+
+#[test]
+fn regional_anchor_remains_available_when_no_safe_alternative_exists() {
+    use crate::ai::Ai;
+    let (mut g, mut ai, _, _, anchor) = board();
+    let capital = g.players[0].governor_roster["pingala"].city.unwrap();
+    g.cities.get_mut(&capital).unwrap().loyalty = 80.0;
+    let remote = g.found_city_for(0, (26, 18), None);
+    g.cities.get_mut(&remote).unwrap().loyalty = 20.0;
+    Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(remote, -5.0);
+    g.players[0]
+        .counters
+        .insert("district_governor_titles".into(), 6);
+    ai.base.loyalty_rate_alarm = true;
+    ai.take_turn(&mut g, 0);
+    assert_ne!(anchor, remote);
+    assert_eq!(g.players[0].governor_roster["victor"].city, Some(remote));
+}
+
+#[test]
+fn recovered_or_disabled_regional_support_keeps_the_original_donor_order() {
+    use crate::ai::Ai;
+    for disable in [false, true] {
+        let (mut g, mut ai, plan, target, _) = board();
+        g.players[0]
+            .counters
+            .insert("district_governor_titles".into(), 6);
+        ai.strategic_governors(&mut g, 0, &plan);
+        if disable {
+            ai.disable_regional_loyalty_governor();
+        } else {
+            // Even after subtracting the aura, this city no longer declines.
+            Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(target, 4.0);
+        }
+        assert!(!ai.regional_loyalty_support_in_use(&g, 0));
+        let remote = g.found_city_for(0, (26, 18), None);
+        g.cities.get_mut(&remote).unwrap().loyalty = 20.0;
+        Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(remote, -5.0);
+        ai.base.loyalty_rate_alarm = true;
+        ai.take_turn(&mut g, 0);
+        assert_eq!(g.players[0].governor_roster["victor"].city, Some(remote));
+    }
+}

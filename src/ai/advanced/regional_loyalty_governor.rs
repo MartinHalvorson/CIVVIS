@@ -14,6 +14,42 @@ impl AdvancedAi {
         self.regional_loyalty_governor = false;
     }
 
+    /// Keep the emergency relocation pass from needlessly interrupting a
+    /// regional rescue. Low loyalty alone is insufficient: the covered city
+    /// must still need the aura to avoid a negative rate. Before establishment,
+    /// the observed rate may not include the pending aura yet; retaining the
+    /// assignment also lets that already-funded support arrive.
+    pub(super) fn regional_loyalty_support_in_use(&self, g: &Game, pid: usize) -> bool {
+        if !self.regional_loyalty_governor {
+            return false;
+        }
+        let Some(victor) = g.players[pid].governor_roster.get("victor") else {
+            return false;
+        };
+        if !victor.promotions.contains("garrison_commander") {
+            return false;
+        }
+        let Some(anchor) = victor.city.and_then(|city| g.cities.get(&city)) else {
+            return false;
+        };
+        let bonus = g
+            .rules
+            .governors
+            .get("victor")
+            .and_then(|spec| spec.promotions.get("garrison_commander"))
+            .and_then(|promotion| promotion.effects.get("nearby_city_loyalty"))
+            .copied()
+            .unwrap_or(0.0);
+        bonus > 0.0
+            && anchor.owner == pid
+            && g.player_city_ids(pid).into_iter().any(|cid| {
+                let city = &g.cities[&cid];
+                city.loyalty <= 50.0
+                    && g.wdist(anchor.pos, city.pos) <= 9
+                    && g.city_loyalty_per_turn(city) < bonus
+            })
+    }
+
     /// Return the next action and the titles the complete rescue requires.
     /// Saving a single title avoids starting a two-title response only after
     /// the ordinary promotion ladder has already spent its first half.
