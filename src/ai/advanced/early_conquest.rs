@@ -146,9 +146,9 @@ pub(crate) const CONQUEST_COMMIT_DEADLINE: u32 = 60;
 /// A target first seen near the end of that window still needs time to
 /// assemble the five reserved bodies. On Online speed the standard deadline
 /// is turn 40: the King Gran Colombia seat named Trà Kiệu on turn 36, then
-/// released the opening on turn 40 before any force could assemble. Keep the
-/// original deadline for an early target, but give a late one twenty Online
-/// turns to build and rally before releasing its reservation.
+/// released the opening on turn 40 before any force could assemble. The same
+/// window starts when a second city lets the capital reserve production if
+/// that happens after the target is named.
 pub(crate) const CONQUEST_MIN_PREPARATION_TURNS: u32 = 30;
 
 /// Ranged bodies the capital reserves. Three shooters take a city's hit
@@ -226,6 +226,8 @@ pub(crate) struct ConquestOpening {
     pub(crate) city: u32,
     /// The turn the target was first named.
     pub(crate) opened: u32,
+    /// The turn the empire first had two cities and could reserve the force.
+    pub(crate) preparing_since: Option<u32>,
     /// The tile the force gathers on, on our side of the city.
     pub(crate) rally: Pos,
     /// The strike force: the bodies this opening is spending.
@@ -521,11 +523,13 @@ impl AdvancedAi {
     // ------------------------------------------------------------------
 
     /// The opening can only be named before the original deadline. Once it
-    /// has a real target, it gets a minimum preparation window as well.
+    /// has a real target and can reserve production, it gets a minimum
+    /// preparation window as well.
     fn conquest_commit_due(g: &Game, opening: &ConquestOpening) -> u32 {
         g.standard_duration(CONQUEST_COMMIT_DEADLINE).max(
             opening
                 .opened
+                .max(opening.preparing_since.unwrap_or(opening.opened))
                 .saturating_add(g.standard_duration(CONQUEST_MIN_PREPARATION_TURNS)),
         )
     }
@@ -1037,6 +1041,13 @@ impl AdvancedAi {
             return;
         }
         self.conquest_count_losses(g);
+        if g.player_city_ids(pid).len() >= CONQUEST_FIRST_SETTLER_CITIES {
+            if let Some(opening) = self.conquest_opening.as_mut() {
+                if opening.preparing_since.is_none() {
+                    opening.preparing_since = Some(g.turn);
+                }
+            }
+        }
         if let Some(opening) = self.conquest_opening.as_ref() {
             let target_alive = g
                 .players
@@ -1136,6 +1147,8 @@ impl AdvancedAi {
             target,
             city,
             opened: g.turn,
+            preparing_since: (g.player_city_ids(pid).len() >= CONQUEST_FIRST_SETTLER_CITIES)
+                .then_some(g.turn),
             rally,
             force: BTreeSet::new(),
             assembled: None,
