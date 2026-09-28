@@ -39,9 +39,12 @@
 //!   owns the active front, its sustained-tide and rout rules own that tide
 //!   decision; a single negative window here cannot abandon its siege. A
 //!   defensive war with a served Defend row and an even tide is fought, not
-//!   begged. Recovery, religion, fatigue, envoy reclaim and the Science
-//!   lane's defensive peace are untouched; the tribute a `0.62` rout
-//!   licensed is not claimed by this term.
+//!   begged. A live Domination siege also defers recovery and fatigue peace.
+//!   Religion, envoy reclaim and the Science lane's defensive peace keep
+//!   their own rules; the tribute a `0.62` rout licensed is not claimed by
+//!   this term. A present siege gets twelve standard turns to invest; a live
+//!   breach through standing walls gets up to eighty before these terms may
+//!   end it.
 //!
 //! Journal: "Not a target" (Detail) for an excluded rival, the declaration's
 //! blocker in the existing "Holding off war" line, the peace reason in the
@@ -52,7 +55,8 @@ use std::collections::{BTreeMap, VecDeque};
 
 use super::objective_board::{ObjectiveKey, ObjectiveKind};
 use super::one_war::{ONE_WAR_CITY_WEIGHT, ONE_WAR_TIDE_WINDOW};
-use super::{AdvancedAi, StrategicPlan};
+use super::siege_train::SiegeStage;
+use super::{AdvancedAi, StrategicPlan, VictoryTarget};
 use crate::game::Game;
 use crate::think;
 
@@ -328,6 +332,37 @@ impl AdvancedAi {
         (feasible, least, roster)
     }
 
+    /// A present Domination siege gets a short stage grace. A reducing
+    /// column that has breached at least 20 wall HP gets a longer, bounded
+    /// chance to finish the attack through standing walls.
+    pub(super) fn domination_siege_has_grace(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.sieges.iter().any(|(cid, siege)| {
+                matches!(
+                    siege.stage,
+                    SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take
+                ) && g.turn.saturating_sub(siege.assessed) <= 1
+                    && g.cities.get(cid).is_some_and(|city| {
+                        let breached_wall = siege.stage == SiegeStage::Reduce
+                            && city.wall_hp > 0
+                            && g.city_max_wall_hp(city).saturating_sub(city.wall_hp) >= 20;
+                        let grace = if breached_wall {
+                            g.standard_duration(80)
+                        } else {
+                            g.standard_duration(12)
+                        };
+                        if g.turn.saturating_sub(siege.entered) > grace {
+                            return false;
+                        }
+                        city.owner == other
+                            && (matches!(siege.stage, SiegeStage::Invest | SiegeStage::Reduce)
+                                || city.hp < 200
+                                || city.wall_hp < g.city_max_wall_hp(city))
+                            && Self::domination_siege_present(g, pid, *cid)
+                    })
+            })
+    }
+
     /// The gene's peace term for `other`: the reason, when no Siege row
     /// against them is feasible and either the tide has run against us over
     /// the window or an urgent Defend row has gone unserved for
@@ -340,6 +375,9 @@ impl AdvancedAi {
         }
         let (feasible, need, roster) = self.war_policy_siege_against(g, pid, other);
         if feasible {
+            return None;
+        }
+        if self.domination_siege_has_grace(g, pid, other) {
             return None;
         }
         let tide = self
@@ -736,6 +774,91 @@ mod tests {
         // rule for an infeasible war with a losing tide.
         ai.disable_one_war_at_a_time();
         assert!(ai.war_policy_peace(&g, 0, 1).is_some());
+    }
+
+    #[test]
+    fn a_damaged_city_under_active_domination_siege_gets_time_to_finish() {
+        let (mut g, mut ai) = defended_front(3_801);
+        record_losses(&mut g, 1, 3, 0);
+        g.turn += 1;
+        ai.war_policy_observe(&g, 0);
+        ai.retarget(VictoryTarget::Domination);
+        assert!(ai.war_policy_peace(&g, 0, 1).is_some());
+
+        let target = city_of(&g, 1, at(24, 8));
+        let soldier = g.player_unit_ids(0)[0];
+        let original = g.units[&soldier].pos;
+        g.units.get_mut(&soldier).unwrap().pos = at(21, 8);
+        g.cities.get_mut(&target).unwrap().hp = 160;
+        ai.sieges.insert(
+            target,
+            super::super::siege_train::Siege {
+                stage: SiegeStage::Reduce,
+                taker: None,
+                entered: g.turn,
+                assessed: g.turn,
+                posts: BTreeMap::new(),
+            },
+        );
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_none(),
+            "the live siege continues"
+        );
+
+        g.cities.get_mut(&target).unwrap().hp = 200;
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_none(),
+            "a recent reduction keeps its short grace even after repairs"
+        );
+        let recovery = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            target_player: None,
+            target_city: None,
+            ..conquest(&g, Some(target))
+        };
+        ai.advanced_diplomacy(&mut g, 0, &recovery);
+        assert!(
+            !ai.peace_offers.contains(&1),
+            "recovery must not abandon a recent capital reduction"
+        );
+        g.units.get_mut(&soldier).unwrap().pos = original;
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_some(),
+            "the army must remain nearby"
+        );
+        g.units.get_mut(&soldier).unwrap().pos = at(21, 8);
+        g.turn += g.standard_duration(12) + 1;
+        ai.sieges.get_mut(&target).unwrap().assessed = g.turn;
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_some(),
+            "the grace period ends"
+        );
+
+        g.cities
+            .get_mut(&target)
+            .unwrap()
+            .buildings
+            .push(crate::name!("walls"));
+        g.cities.get_mut(&target).unwrap().wall_hp = 99;
+        assert!(ai.war_policy_peace(&g, 0, 1).is_some());
+        g.cities.get_mut(&target).unwrap().wall_hp = 70;
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_none(),
+            "a real breach must not be abandoned on the short stage clock"
+        );
+        g.turn = ai.sieges[&target].entered + g.standard_duration(80) + 1;
+        ai.sieges.get_mut(&target).unwrap().assessed = g.turn;
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_some(),
+            "even a breached siege has a finite commitment"
+        );
+
+        ai.sieges.get_mut(&target).unwrap().entered = g.turn;
+        ai.retarget(VictoryTarget::Science);
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_some(),
+            "other lanes get no grace"
+        );
     }
 
     /// An urgent Defend row left short for the patience sues for peace

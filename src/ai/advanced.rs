@@ -19883,11 +19883,13 @@ impl AdvancedAi {
                 .war_plan
                 .as_ref()
                 .is_some_and(|war| war.phase == WarPhase::Exploit && war.target_player == *other);
+            let siege_grace = self.domination_siege_has_grace(g, pid, *other);
             let fatigued = self.major_war_since.is_some_and(|started| {
                 g.turn.saturating_sub(started) >= 24
                     && g.turn.saturating_sub(self.last_campaign_progress) >= 12
             }) && !self.domination_siege_is_progressing(g, pid, *other, plan)
-                && !self.domination_siege_train_mobilizing(g, pid, *other, plan);
+                && !self.domination_siege_train_mobilizing(g, pid, *other, plan)
+                && !siege_grace;
             let peace_pending = g.pending_deals.iter().any(|deal| {
                 deal.peace
                     && ((deal.from == pid && deal.to == *other)
@@ -19931,7 +19933,8 @@ impl AdvancedAi {
                 && !religious_interception
                 && (outmatched
                     || (plan.strategy == GrandStrategy::Recovery
-                        && plan.target_player != Some(*other))
+                        && plan.target_player != Some(*other)
+                        && !siege_grace)
                     || (self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                         && !appointed_objective)

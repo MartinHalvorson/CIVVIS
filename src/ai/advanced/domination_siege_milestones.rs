@@ -72,7 +72,7 @@ impl AdvancedAi {
         })
     }
 
-    fn domination_siege_present(g: &Game, pid: usize, city: u32) -> bool {
+    pub(super) fn domination_siege_present(g: &Game, pid: usize, city: u32) -> bool {
         let Some(city) = g.cities.get(&city) else {
             return false;
         };

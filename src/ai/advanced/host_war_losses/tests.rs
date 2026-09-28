@@ -63,6 +63,11 @@ fn confirmed_host_losses_drive_rout_and_board_peace_without_a_simulator_war() {
     losses(&mut state, 1, Some(0), 1);
     observe(&mut g, &mut ai, &mut state);
     assert_eq!(ai.one_war_peace(&g, 0, 1), Some(one_war::OneWarPeace::Rout));
+    assert!(
+        ai.war_policy_peace(&g, 0, 1).is_none(),
+        "one-war owns the active front's tide decision"
+    );
+    ai.disable_one_war_at_a_time();
     assert!(ai
         .war_policy_peace(&g, 0, 1)
         .is_some_and(|why| why.contains("tide has run against us")));
