@@ -16,8 +16,12 @@ replay or evidence of later survival.
 ## Decision replay that exposed the integration defect
 
 Binary built from `e17569a46`; source log prefixes retain first decision frames,
-not the later frames after the title was spent. Replay reads snapshots and
-prints orders; no orders are sent to Civilization VI.
+not the later frames after the title was spent. The initial replay used the CLI's
+default Science target and deployment switches, rather than the recorded
+Domination configuration. It exposed the fallback spending defect, but was not
+a configuration-matched replay. The corrected comparison below supplies and
+reads back the recorded configuration. Replay reads snapshots and prints
+orders; no orders are sent to Civilization VI.
 
 | Case | Control | Regional candidate at e17569a46 |
 | --- | --- | --- |
@@ -37,8 +41,16 @@ Therefore the reservation must also suppress that fallback governor spending.
 
 ## Replay after the fallback correction
 
-Rebuilt revision `96f6ff3d0f69005ee9e4cb565b36cac0d0e766a6`; executable SHA-256
-`013437c1f2b210cbfe585afe5221e9f1891c057b5a34e3c8c5bfa55c3c01308f`. All eight case/arm invocations exited successfully.
+Source revision `96f6ff3d0f69005ee9e4cb565b36cac0d0e766a6`; executable SHA-256
+`4bc2678373cb7bd2b5a0e96254e69f59051bd8a6961be0ebd40d26f46161c840`. All eight case/arm invocations exited successfully.
+The recorded `why.log:1` genome, still active at t102 and t108, selects
+Domination and 16 forced switches. The corrected replay supplies those switches,
+four players, and the recorded 650-turn clock. Its emitted genome is checked
+against all 186 recorded active treatments: the control matches exactly, and
+the treatment adds only `regional-loyalty-governor`. The victory target is also
+read back as Domination. The earlier Science/default replay is retained as
+separate evidence; it is not used as the configuration-matched comparison.
+
 The controls still promote Pingala. With the regional gene enabled:
 
 - Observed t102 and t108 first frames emit **no governor order**: the first
@@ -47,8 +59,8 @@ The controls still promote Pingala. With the regional gene enabled:
 - The simulated post-appointment t108 frame promotes Garrison Commander.
 
 This verifies the controller's complete offline decision/output path on the
-recorded inputs. It does not verify native operation execution or subsequent
-city survival. No live game was modified by these replays.
+recorded inputs and configuration. It does not verify native operation execution
+or subsequent city survival. No live game was modified by these replays.
 
 ## Native governor evidence
 
@@ -89,10 +101,42 @@ only fallback governor spending while the reservation is active. The 191 existin
 BasicAi tests also pass (two ignored), and all three registry append-point tests
 pass. The rebuilt mirror replay verifies the outbound orders as recorded above.
 
+The full local `cargo test --profile ci --locked` attempt reached the library
+suite: 4,204 passed, 18 failed, 49 ignored. Every failure was a server test
+attempting to bind a socket and receiving `PermissionDenied: Operation not
+permitted` in the restricted sandbox. The command exited 101 and is not a green
+full-suite result. A separate `cargo test --profile ci --locked --bins --test
+'*'` run completed the remaining default binary/integration suites: 229 passed,
+zero failed. `cargo test --profile ci --locked --doc` also exited successfully,
+with all four documentation tests ignored. Socket tests still require an
+environment permitting local binds. The repository's changed-line Rust quality
+check (`rust_quality.py --base 10b26acd0 --head HEAD`) passed: owned changes are
+formatted and warning-free.
+
 A six-game exploratory simulation probe is running from code revision
 `96f6ff3d0`, with only this gene varied, seeds 38450000–38450005 and three workers.
-The small probe is not evidence of a win-rate improvement.
+The probe header records six players on 74×46 Continents, nine city-states,
+Online speed, 250 turns, Prince major difficulty, Deity barbarians, and the
+observed-player contract. The tested opt-in is drawn independently at p=0.25;
+other genes stay at their published defaults. The header records a clean build.
+
+The small probe is not evidence of a win-rate improvement. The current screen's
+`independent` design also means that a nonzero marginal contrast is not by itself
+proof of firing: chance assignment can associate an inert flag with the winner.
+`tools/gene_fires.py` still describes its accepted statistics as paired. The
+recorded-position control/treatment replays above provide direct decision-level
+evidence separately; do not claim that a six-game contrast establishes a causal
+improvement or that the firing gate repairs this design mismatch.
 
 Natural firing evidence, opportunity-cost evaluation, generated gene metadata,
 the full suite, and integration checks remain pending. No live or simulation
 win-rate improvement is established by the focused tests or these replays.
+
+A matched six-seed deployment-genome control is also running. Code inspection
+shows that `--deployment-genome` pins every gene to its published default using
+the same `on_probabilities` machinery. Because the candidate is default-off,
+this supplies the all-off control without changing the other genes. Compare
+headers and seat assignments before comparing game outcomes; the initial
+`--p-on 0` invocation was rejected before any game ran, so the control uses the
+supported deployment-genome mode. This is a firing/outcome-divergence check,
+not an additional independent sample for estimating a win-rate improvement.
