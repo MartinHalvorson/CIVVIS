@@ -104,6 +104,7 @@ fn the_named_constants_are_the_ones_the_design_states() {
     assert_eq!(CONQUEST_REACH_TILES, 12);
     assert_eq!(CONQUEST_MAX_RIVAL_CITIES, 3);
     assert_eq!(CONQUEST_COMMIT_DEADLINE, 60);
+    assert_eq!(CONQUEST_ASSEMBLY_GRACE, 20);
     assert_eq!(CONQUEST_RANGED, 3);
     assert_eq!(CONQUEST_MELEE, 2);
     assert_eq!(CONQUEST_ABANDON_TURNS, 20);
@@ -778,6 +779,41 @@ fn an_opening_that_never_assembles_expires_at_the_commit_deadline() {
     game.turn += 1;
     ai.maintain_conquest_opening(&mut game, 0);
     assert!(ai.conquest_opening.is_none());
+}
+
+#[test]
+fn a_late_found_opening_keeps_its_bounded_assembly_window() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    let global_deadline = game.standard_duration(CONQUEST_COMMIT_DEADLINE);
+    assert_eq!(global_deadline, 40, "the native Online-speed cutoff");
+    game.turn = global_deadline - 4;
+    let mut ai = opened(&mut game);
+    let opening = ai.conquest_opening.as_ref().unwrap();
+    assert_eq!(opening.opened, 36);
+    let assembly_deadline = AdvancedAi::conquest_assembly_deadline(&game, opening);
+    assert!(assembly_deadline > global_deadline);
+    assert_eq!(
+        assembly_deadline,
+        opening.opened + game.standard_duration(CONQUEST_ASSEMBLY_GRACE)
+    );
+
+    game.turn = global_deadline;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(
+        ai.conquest_opening.is_some(),
+        "the late opening is still live"
+    );
+    assert!(ai.conquest_reservation_open(&game));
+    assert!(!AdvancedAi::new().conquest_reservation_open(&game));
+
+    game.turn = assembly_deadline;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(
+        ai.conquest_opening.is_none(),
+        "an unassembled force is released"
+    );
+    assert!(!ai.conquest_reservation_open(&game));
 }
 
 // ------------------------------------------------------------- vision guard

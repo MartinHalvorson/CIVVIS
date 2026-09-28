@@ -41,8 +41,8 @@
 //!    visibility frame for what stands on them. It never reads a city or a
 //!    defender the seat has not seen.
 //! 2. **The reservation** ([`AdvancedAi::conquest_reservation`]). While a
-//!    target stands and the standard turn is before
-//!    [`CONQUEST_COMMIT_DEADLINE`], the CAPITAL's production is reserved for
+//!    target stands before its assembly deadline, the CAPITAL's production
+//!    is reserved for
 //!    [`CONQUEST_RANGED`] ranged bodies and [`CONQUEST_MELEE`] melee bodies,
 //!    and — when the best shooter the empire can train is a range-one
 //!    Slinger — the research picker chases the node that upgrades it, by the
@@ -136,12 +136,18 @@ pub(crate) const CONQUEST_REACH_TILES: i32 = 12;
 /// capital is a decisive prize; it is a war, and this gene is an opening.
 pub(crate) const CONQUEST_MAX_RIVAL_CITIES: usize = 3;
 
-/// The standard turn by which the force must have committed. Sixty is the
+/// Standard turn by which a new opening must name its target. Sixty is the
 /// end of the window in which the rung's handicap is still small and a city
-/// is still defended by one or two Ancient bodies; it is also the turn the
-/// opening band (`4–6 cities @ t60`) is measured at, so the reservation
-/// cannot run past the expansion decision it competes with.
+/// is still defended by one or two Ancient bodies. An opening named just
+/// before this turn retains a bounded assembly window below.
 pub(crate) const CONQUEST_COMMIT_DEADLINE: u32 = 60;
+
+/// Give a newly discovered target time to gather the reserved force. On the
+/// live Online-speed seat, Coimbra was named at t36 and the opening expired
+/// at t40, four turns later, before the force could assemble. The global
+/// deadline still prevents a new opening after its window; this only keeps an
+/// existing commitment alive for up to twenty standard turns from discovery.
+pub(crate) const CONQUEST_ASSEMBLY_GRACE: u32 = 20;
 
 /// Ranged bodies the capital reserves. Three shooters take a city's hit
 /// points down without ever standing in the counter-attack.
@@ -512,13 +518,22 @@ impl AdvancedAi {
     // 2. the reservation
     // ------------------------------------------------------------------
 
+    /// An opening found near the global cutoff gets time to assemble. Early
+    /// openings still expire at the original deadline if they never gather.
+    fn conquest_assembly_deadline(g: &Game, opening: &ConquestOpening) -> u32 {
+        g.standard_duration(CONQUEST_COMMIT_DEADLINE).max(
+            opening
+                .opened
+                .saturating_add(g.standard_duration(CONQUEST_ASSEMBLY_GRACE)),
+        )
+    }
+
     /// Whether the reservation is open at all: the gene is on, an opening
-    /// stands, the war has not opened yet, and the standard turn is before
-    /// the commit deadline.
+    /// stands, the war has not opened yet, and the assembly window remains.
     fn conquest_reservation_open(&self, g: &Game) -> bool {
         self.early_conquest_opening
             && self.conquest_opening.as_ref().is_some_and(|opening| {
-                opening.declared.is_none() && g.turn < g.standard_duration(CONQUEST_COMMIT_DEADLINE)
+                opening.declared.is_none() && g.turn < Self::conquest_assembly_deadline(g, opening)
             })
     }
 
@@ -793,7 +808,7 @@ impl AdvancedAi {
         if opening.declared.is_some()
             || !opening.force.contains(&uid)
             || (opening.assembled.is_none()
-                && g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE))
+                && g.turn >= Self::conquest_assembly_deadline(g, opening))
             || !self.campaign_target_legal(g, pid, opening.target)
             || self.all_reserved_civilian_guards().contains(&uid)
         {
@@ -1070,7 +1085,7 @@ impl AdvancedAi {
                         return;
                     }
                 }
-                if g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE)
+                if g.turn >= Self::conquest_assembly_deadline(g, &opening)
                     && opening.assembled.is_none()
                 {
                     self.conquest_release(
