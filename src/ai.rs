@@ -2306,6 +2306,10 @@ pub struct BasicAi {
     /// proof of siege that fog cannot suppress, and it self-clears because
     /// Civ 6 city health regenerates once the siege lifts.
     pub(crate) garrison_under_fire: bool,
+    /// An assigned Domination lane may delegate routine city production here,
+    /// but its launch pad and space projects belong only to a Science plan.
+    /// AdvancedAi sets this for the delegated call and restores it afterwards.
+    pub(crate) suppress_space_race_production: bool,
     /// `threatened-city-reserve`: Gold `spend_gold` must leave in the
     /// treasury on top of its own reserve. The deployed controller sets it
     /// to one emergency defender's price while a city of ours is threatened
@@ -5043,6 +5047,7 @@ impl BasicAi {
             barbarian_tactics: true,
             amenity_districts: false,
             garrison_under_fire: false,
+            suppress_space_race_production: false,
             reserve_floor: 0.0,
             district_coverage: false,
             district_coverage_2: false,
@@ -5503,6 +5508,7 @@ impl BasicAi {
             barbarian_tactics: true,
             amenity_districts: false,
             garrison_under_fire: false,
+            suppress_space_race_production: false,
             reserve_floor: 0.0,
             district_coverage: false,
             district_coverage_2: false,
@@ -12083,7 +12089,10 @@ impl BasicAi {
                 // than this simulator's queue entry.
                 Self::empire_district_family_ready_or_queued(g, pid, "spaceport")
             };
-            if !has_spaceport && g.players[pid].techs.contains(&crate::name!("rocketry")) {
+            if !self.suppress_space_race_production
+                && !has_spaceport
+                && g.players[pid].techs.contains(&crate::name!("rocketry"))
+            {
                 if let Some(pos) = g
                     .district_sites(cid, crate::name!("spaceport"))
                     .into_iter()
@@ -12116,11 +12125,13 @@ impl BasicAi {
                 .projects
                 .iter()
                 .filter(|(project, spec)| {
-                    !spec.repeatable
+                    (!spec.repeatable
                         || matches!(
                             project.as_str(),
                             "lagrange_laser_station" | "terrestrial_laser_station"
-                        )
+                        ))
+                        && (!self.suppress_space_race_production
+                            || spec.district != Some(crate::name!("spaceport")))
                 })
                 .map(|(project, _)| Item::Project { project: *project })
                 .filter(|item| g.can_produce(pid, cid, item))

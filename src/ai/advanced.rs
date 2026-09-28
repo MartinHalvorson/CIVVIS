@@ -13087,8 +13087,12 @@ impl AdvancedAi {
     /// it. The speed-aware deadline similarly extends the raw turn-150 gene on
     /// slower or longer games without removing the endgame reserve.
     fn delegated_cities(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        let restore_space_race = self.base.suppress_space_race_production;
+        self.base.suppress_space_race_production =
+            self.active_victory_target(g) == Some(VictoryTarget::Domination);
         if !self.plan_city_target && !self.rapid_city_expansion_2 {
             self.base.cities(g, pid);
+            self.base.suppress_space_race_production = restore_space_race;
             return;
         }
         let restore_target = self.base.w.city_target;
@@ -13118,6 +13122,7 @@ impl AdvancedAi {
         self.base.w.city_target = restore_target;
         self.base.w.settler_stop_turn = restore_stop;
         self.base.w.builder_per_city = restore_builders;
+        self.base.suppress_space_race_production = restore_space_race;
     }
 
     /// Lower is a more attractive rival: nearby, weak empires with valuable
@@ -29728,6 +29733,12 @@ impl AdvancedAi {
                     return -10_000.0;
                 }
                 if family == "spaceport" {
+                    // A Domination assignment may still visit this scorer
+                    // during an appointed war. Keep that path from starting
+                    // the same unrelated launch site as the delegated cities.
+                    if self.active_victory_target(g) == Some(VictoryTarget::Domination) {
+                        return -10_000.0;
+                    }
                     let races_science = self.science_drive_active()
                         || self.space_race_lane(g, pid)
                         || self.raced_target() == Some(VictoryTarget::Science)

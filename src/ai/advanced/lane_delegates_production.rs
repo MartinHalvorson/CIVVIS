@@ -65,9 +65,102 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{GrandStrategy, StrategicPlan};
     use super::*;
     use crate::ai::{run_game, Ai};
-    use crate::game::{Game, GameOptions};
+    use crate::game::{Action, Game, GameOptions, Item};
+
+    #[test]
+    fn domination_delegation_does_not_build_a_science_victory() {
+        let mut game = Game::new_full(1, 30, 20, 324_006, 250, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().pop = 10;
+        game.players[0].techs.insert(crate::name!("rocketry"));
+        assert!(!game
+            .district_sites(city, crate::name!("spaceport"))
+            .is_empty());
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 1,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let configured = |target| {
+            let mut ai = AdvancedAi::targeting(target);
+            ai.enable_lane_delegates_production_2();
+            ai.base.book_pos = 4;
+            ai.base.w.city_target = 1.0;
+            ai.base.w.mil_per_city = 0.0;
+            ai.base.w.builder_per_city = 0.0;
+            ai.disable_recon_replacement();
+            ai.disable_naval_recon();
+            ai
+        };
+
+        let mut science = configured(VictoryTarget::Science);
+        science.delegated_cities(&mut game, 0, &plan);
+        let spaceport = match game.cities[&city].queue.first() {
+            Some(Item::District { district, pos }) if district == "spaceport" => *pos,
+            queue => panic!("Science delegation should start a Spaceport: {queue:?}"),
+        };
+
+        game.cities.get_mut(&city).unwrap().queue.clear();
+        let mut domination = configured(VictoryTarget::Domination);
+        let spaceport_item = Item::District {
+            district: crate::name!("spaceport"),
+            pos: spaceport,
+        };
+        assert!(
+            domination.production_value(
+                &game,
+                0,
+                city,
+                &spaceport_item,
+                &plan,
+                &domination.counts(&game, 0)
+            ) < -1_000.0,
+            "the strategic governor must also reserve production for Domination"
+        );
+        domination.delegated_cities(&mut game, 0, &plan);
+        assert!(
+            !matches!(
+                game.cities[&city].queue.first(),
+                Some(Item::District { district, .. }) if district == "spaceport"
+            ),
+            "Domination delegated a Spaceport"
+        );
+
+        game.cities.get_mut(&city).unwrap().queue.clear();
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("spaceport"), spaceport);
+        science.delegated_cities(&mut game, 0, &plan);
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Project { project }) if project == "launch_earth_satellite"
+        ));
+        game.cities.get_mut(&city).unwrap().queue.clear();
+        domination.delegated_cities(&mut game, 0, &plan);
+        assert!(
+            !matches!(
+                game.cities[&city].queue.first(),
+                Some(Item::Project { project }) if project == "launch_earth_satellite"
+            ),
+            "Domination delegated a satellite launch"
+        );
+    }
 
     #[test]
     fn only_an_assigned_lane_delegates_and_only_before_specialization() {
