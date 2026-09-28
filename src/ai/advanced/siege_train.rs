@@ -1035,7 +1035,14 @@ impl AdvancedAi {
         if city.owner == pid {
             stage = SiegeStage::Hold;
         } else {
-            if stage != SiegeStage::Stage && !arena && strength < ABORT_SHARE * bill {
+            // A wall rebuilt behind the ring can invalidate the damage
+            // budget even while the nominal force still covers the bill.
+            // Regroup for breach support instead of remaining in Reduce with
+            // no attack that can finish before the force is exhausted.
+            if stage != SiegeStage::Stage
+                && !arena
+                && (strength < ABORT_SHARE * bill || (!damage_ready && breach_taker.is_none()))
+            {
                 stage = SiegeStage::Stage;
             }
             match stage {
