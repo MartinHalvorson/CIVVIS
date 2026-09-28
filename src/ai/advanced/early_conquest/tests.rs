@@ -104,6 +104,7 @@ fn the_named_constants_are_the_ones_the_design_states() {
     assert_eq!(CONQUEST_REACH_TILES, 12);
     assert_eq!(CONQUEST_MAX_RIVAL_CITIES, 3);
     assert_eq!(CONQUEST_COMMIT_DEADLINE, 60);
+    assert_eq!(CONQUEST_MIN_PREPARATION_TURNS, 30);
     assert_eq!(CONQUEST_RANGED, 3);
     assert_eq!(CONQUEST_MELEE, 2);
     assert_eq!(CONQUEST_ABANDON_TURNS, 20);
@@ -778,6 +779,26 @@ fn an_opening_that_never_assembles_expires_at_the_commit_deadline() {
     game.turn += 1;
     ai.maintain_conquest_opening(&mut game, 0);
     assert!(ai.conquest_opening.is_none());
+}
+
+#[test]
+fn online_opening_seen_four_turns_before_deadline_gets_time_to_assemble() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    game.turn = 36;
+    let mut ai = opened(&mut game);
+    let opening = ai.conquest_opening.as_ref().unwrap();
+    assert_eq!(game.standard_duration(CONQUEST_COMMIT_DEADLINE), 40);
+    assert_eq!(AdvancedAi::conquest_commit_due(&game, opening), 56);
+
+    game.turn = 40;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_some(), "the opening still has time");
+    assert!(ai.conquest_reservation_open(&game));
+
+    game.turn = 56;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_none(), "the bounded window ends");
 }
 
 // ------------------------------------------------------------- vision guard

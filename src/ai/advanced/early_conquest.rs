@@ -41,8 +41,9 @@
 //!    visibility frame for what stands on them. It never reads a city or a
 //!    defender the seat has not seen.
 //! 2. **The reservation** ([`AdvancedAi::conquest_reservation`]). While a
-//!    target stands and the standard turn is before
-//!    [`CONQUEST_COMMIT_DEADLINE`], the CAPITAL's production is reserved for
+//!    target is named before [`CONQUEST_COMMIT_DEADLINE`], the CAPITAL's
+//!    production is reserved through that deadline or a minimum preparation
+//!    window, whichever is later, for
 //!    [`CONQUEST_RANGED`] ranged bodies and [`CONQUEST_MELEE`] melee bodies,
 //!    and — when the best shooter the empire can train is a range-one
 //!    Slinger — the research picker chases the node that upgrades it, by the
@@ -136,12 +137,19 @@ pub(crate) const CONQUEST_REACH_TILES: i32 = 12;
 /// capital is a decisive prize; it is a war, and this gene is an opening.
 pub(crate) const CONQUEST_MAX_RIVAL_CITIES: usize = 3;
 
-/// The standard turn by which the force must have committed. Sixty is the
+/// The last standard turn on which a new opening can be named. Sixty is the
 /// end of the window in which the rung's handicap is still small and a city
-/// is still defended by one or two Ancient bodies; it is also the turn the
-/// opening band (`4–6 cities @ t60`) is measured at, so the reservation
-/// cannot run past the expansion decision it competes with.
+/// is still defended by one or two Ancient bodies. An opening named late in
+/// this window may finish its minimum preparation after turn sixty.
 pub(crate) const CONQUEST_COMMIT_DEADLINE: u32 = 60;
+
+/// A target first seen near the end of that window still needs time to
+/// assemble the five reserved bodies. On Online speed the standard deadline
+/// is turn 40: the King Gran Colombia seat named Trà Kiệu on turn 36, then
+/// released the opening on turn 40 before any force could assemble. Keep the
+/// original deadline for an early target, but give a late one twenty Online
+/// turns to build and rally before releasing its reservation.
+pub(crate) const CONQUEST_MIN_PREPARATION_TURNS: u32 = 30;
 
 /// Ranged bodies the capital reserves. Three shooters take a city's hit
 /// points down without ever standing in the counter-attack.
@@ -512,13 +520,22 @@ impl AdvancedAi {
     // 2. the reservation
     // ------------------------------------------------------------------
 
+    /// The opening can only be named before the original deadline. Once it
+    /// has a real target, it gets a minimum preparation window as well.
+    fn conquest_commit_due(g: &Game, opening: &ConquestOpening) -> u32 {
+        g.standard_duration(CONQUEST_COMMIT_DEADLINE).max(
+            opening
+                .opened
+                .saturating_add(g.standard_duration(CONQUEST_MIN_PREPARATION_TURNS)),
+        )
+    }
+
     /// Whether the reservation is open at all: the gene is on, an opening
-    /// stands, the war has not opened yet, and the standard turn is before
-    /// the commit deadline.
+    /// stands, the war has not opened yet, and its preparation has not expired.
     fn conquest_reservation_open(&self, g: &Game) -> bool {
         self.early_conquest_opening
             && self.conquest_opening.as_ref().is_some_and(|opening| {
-                opening.declared.is_none() && g.turn < g.standard_duration(CONQUEST_COMMIT_DEADLINE)
+                opening.declared.is_none() && g.turn < Self::conquest_commit_due(g, opening)
             })
     }
 
@@ -792,8 +809,7 @@ impl AdvancedAi {
         let opening = self.conquest_opening.as_ref()?;
         if opening.declared.is_some()
             || !opening.force.contains(&uid)
-            || (opening.assembled.is_none()
-                && g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE))
+            || (opening.assembled.is_none() && g.turn >= Self::conquest_commit_due(g, opening))
             || !self.campaign_target_legal(g, pid, opening.target)
             || self.all_reserved_civilian_guards().contains(&uid)
         {
@@ -1070,9 +1086,7 @@ impl AdvancedAi {
                         return;
                     }
                 }
-                if g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE)
-                    && opening.assembled.is_none()
-                {
+                if g.turn >= Self::conquest_commit_due(g, &opening) && opening.assembled.is_none() {
                     self.conquest_release(
                         g,
                         "the commit deadline passed before the force ever assembled",
