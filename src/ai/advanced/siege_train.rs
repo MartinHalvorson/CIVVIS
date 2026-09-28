@@ -1112,6 +1112,10 @@ impl AdvancedAi {
                 .get(&cid)
                 .map(|c| c.name.clone())
                 .unwrap_or_default();
+            let damage_budget = self
+                .conversion_siege_budget(g, pid, cid, &force)
+                .map(|(turns, endurance)| format!("{turns:.1} turns / {endurance:.1} endurance"))
+                .unwrap_or_else(|| "unknown".to_string());
             let taker_note = match taker {
                 Some(uid) => format!(", taker {} reserved", g.units[&uid].kind),
                 None => String::new(),
@@ -1119,7 +1123,8 @@ impl AdvancedAi {
             think!(self.journal(), Military, Decision,
                 "Siege of {name}: {}", stage.as_str();
                 "ring {sealed}/{ring} sealed, walls {}/{}, city {}/200, {} of {} units staged, \
-                 {strength:.0} strength against a bill of {bill:.0}{taker_note}",
+                 {strength:.0} strength ({staged:.0} near) against a bill of {bill:.0}; \
+                 damage ready {damage_ready} with {damage_budget}{taker_note}",
                 city.wall_hp, city.wall_max, city.hp,
                 force.iter().filter(|uid| g.wdist(g.units[uid].pos, city.pos) <= STAGING_FAR).count(),
                 force.len();
