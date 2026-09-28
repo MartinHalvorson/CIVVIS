@@ -121,6 +121,35 @@ fn delegated_domination_reserves_one_real_wall_breaker() {
 }
 
 #[test]
+fn delegated_domination_reserves_another_gun_when_the_first_cannot_breach() {
+    let (mut g, mut ai, plan, home, target) = siege_gap_case();
+    ai.enable_lane_delegates_production_2();
+    ai.enable_siege_positive_damage_budget();
+    let pos = g.cities[&target].pos;
+    g.cities
+        .get_mut(&target)
+        .unwrap()
+        .buildings
+        .push(crate::name!("renaissance_walls"));
+    g.cities.get_mut(&target).unwrap().wall_hp = 300;
+    g.spawn_unit("modern_armor", 1, pos);
+    let gun = g.spawn_unit("catapult", 0, (pos.0 - 2, pos.1));
+    let taker = g.spawn_unit("swordsman", 0, (pos.0 - 1, pos.1));
+    let (finish, endurance) = ai
+        .conversion_siege_budget(&g, 0, target, &[gun, taker])
+        .expect("the active siege is visible");
+    assert!(finish > endurance * 0.8);
+    assert_eq!(ai.counts(&g, 0).siege, 1);
+    assert!(ai
+        .reserve_delegated_domination_siege(&mut g, 0, &plan)
+        .is_some());
+    assert!(matches!(
+        g.cities[&home].queue.first(),
+        Some(Item::Unit { unit }) if g.rules.units[unit].siege
+    ));
+}
+
+#[test]
 fn delegated_siege_reservation_survives_an_appointed_war_plan() {
     let (mut g, mut ai, plan, home, target) = siege_gap_case();
     ai.enable_lane_delegates_production_2();

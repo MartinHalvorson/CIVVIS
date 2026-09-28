@@ -100,7 +100,8 @@ impl AdvancedAi {
     /// The delegated city governor does not call `production_value`, where the
     /// ordinary missing-siege reservation lives. Give a walled Domination
     /// assault one real bombardment unit before delegation fills every idle
-    /// queue. A fielded or queued land gun closes this reservation.
+    /// queue. A fielded or queued land gun normally closes this reservation;
+    /// a failed positive damage budget can reserve up to three in total.
     pub(super) fn reserve_delegated_domination_siege(
         &self,
         g: &mut Game,
@@ -125,7 +126,23 @@ impl AdvancedAi {
         let objective = target.pos;
         let target_name = target.name.clone();
         let counts = self.counts(g, pid);
-        if counts.land_siege_power > 0.0 || self.live_war_economy_requires_recovery(g, pid, &counts)
+        let nearby_force: Vec<_> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|id| g.wdist(g.units[id].pos, objective) <= 5)
+            .collect();
+        let nearby_taker = nearby_force.iter().any(|id| {
+            let spec = &g.rules.units[g.units[id].kind];
+            spec.is_melee_capable() && spec.ranged_strength == 0.0 && spec.bombard_strength == 0.0
+        });
+        let breach_shortfall = self.siege_positive_damage_budget
+            && counts.siege < 3
+            && nearby_taker
+            && self
+                .conversion_siege_budget(g, pid, target.id, &nearby_force)
+                .is_some_and(|(finish, endurance)| finish > endurance * 0.8);
+        if (counts.land_siege_power > 0.0 && !breach_shortfall)
+            || self.live_war_economy_requires_recovery(g, pid, &counts)
         {
             return None;
         }
@@ -176,7 +193,8 @@ impl AdvancedAi {
         }
         think!(self.journal(), Military, Decision,
             "{} reserves a {} for the walled assault", g.cities[&city].name, unit;
-            "the delegated governor has no land siege weapon; expected arrival at {} in about {arrival:.0} turns",
+            "{}; expected arrival at {} in about {arrival:.0} turns",
+            if breach_shortfall { "the staged force cannot breach before its health runs out" } else { "the delegated governor has no land siege weapon" },
             target_name;
             objective);
         Some((city, item))
