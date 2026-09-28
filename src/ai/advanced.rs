@@ -1815,6 +1815,21 @@ const SETTLEMENT_GLOBAL_PREFILTER_LIMIT: usize = 512;
 /// still leaving the fleet pool available to the wider AI frontiers.
 const SETTLEMENT_SCORE_MAX_WORKERS: usize = 4;
 
+/// The lane progress table of one seat, kept for one controller turn. A
+/// controller clone is a speculative branch and starts without it, as the
+/// settlement atlas does.
+/// The turn, the seat, the map epoch and the table.
+type LaneProgressEntry = (u32, usize, u64, [i32; 4]);
+
+#[derive(Default)]
+struct LaneProgressCache(RefCell<Option<LaneProgressEntry>>);
+
+impl Clone for LaneProgressCache {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
 /// The part of a settlement score that does not depend on the settler's
 /// origin or on live unit positions. It is safe to reuse for every city and
 /// settler while the map and city layout remain unchanged. Threat, support,
@@ -1941,6 +1956,9 @@ pub struct AdvancedAi {
     /// authoritative controller remains single-threaded; worker clones own
     /// their own empty/copy-on-write atlas state.
     settlement_atlas: RefCell<SettlementAtlas>,
+    /// `lane_progress_table` for one seat, kept for the turn: the turn, the
+    /// seat, the map epoch and the table. Cleared at the start of each turn.
+    lane_progress_cache: LaneProgressCache,
     /// `lane-release-when-hopeless`: the verdict on the assigned victory lane,
     /// recomputed once per acting turn in `take_turn_inner` because
     /// `Game::victory_races` walks every city of every major and the readers
@@ -8185,6 +8203,7 @@ impl AdvancedAi {
             force_groups: Vec::new(),
             force_groups_dirty: false,
             settlement_atlas: RefCell::new(SettlementAtlas::default()),
+            lane_progress_cache: LaneProgressCache::default(),
             lane_lost: false,
             narrows_atlas: RefCell::new(chokepoints::NarrowsAtlas::default()),
             work_pool: None,
@@ -11156,6 +11175,25 @@ impl AdvancedAi {
     /// preferences `victory_focus` adds are not progress and stay out of it,
     /// so a caller can read a rate from two readings.
     fn lane_progress_table(&self, g: &Game, pid: usize) -> [i32; 4] {
+        // Like the settlement atlas, the cache lives only inside an active
+        // controller turn; any other caller keeps the uncached reading.
+        if self.battlefront_frame.is_none() {
+            return self.lane_progress_table_uncached(g, pid);
+        }
+        let epoch = g.map.tiles.epoch();
+        if let Some((turn, seat, map_epoch, table)) = *self.lane_progress_cache.0.borrow() {
+            if turn == g.turn && seat == pid && map_epoch == epoch {
+                return table;
+            }
+        }
+        let table = self.lane_progress_table_uncached(g, pid);
+        self.lane_progress_cache
+            .0
+            .replace(Some((g.turn, pid, epoch, table)));
+        table
+    }
+
+    fn lane_progress_table_uncached(&self, g: &Game, pid: usize) -> [i32; 4] {
         let player = &g.players[pid];
         let living_majors: Vec<usize> = g
             .players
@@ -42081,6 +42119,7 @@ impl AdvancedAi {
         self.builder_support.clear();
         self.battlefront_frame = None;
         self.settlement_atlas.borrow_mut().clear();
+        self.lane_progress_cache.0.replace(None);
         // Before anything in this turn is priced. Every science term downstream
         // reads this one number, so the horizon cannot drift between the
         // production ordering, the citizen governor, and the search evaluator.
@@ -42365,6 +42404,7 @@ impl AdvancedAi {
         // pricing, so the production pass starts a fresh static atlas from
         // the final pre-production state.
         self.settlement_atlas.borrow_mut().clear();
+        self.lane_progress_cache.0.replace(None);
 
         // `border-parity-2`: the severe-deficit preemption, beside the siege
         // reclaim it mirrors.
