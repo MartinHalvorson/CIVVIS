@@ -113,6 +113,38 @@ fn delegated_domination_reserves_one_real_wall_breaker() {
 }
 
 #[test]
+fn delegated_siege_reservation_survives_an_appointed_war_plan() {
+    let (mut g, mut ai, plan, home, target) = siege_gap_case();
+    ai.enable_lane_delegates_production_2();
+    ai.war_plan = Some(WarPlan {
+        target_player: 1,
+        objective_city: target,
+        breakthrough_tech: crate::name!("engineering"),
+        assault_unit: crate::name!("catapult"),
+        predecessor: None,
+        breach_unit: None,
+        estimated_research_turns: 0,
+        estimated_production_turns: 3,
+        estimated_upgrade_gold: 0.0,
+        estimated_march_turns: 2,
+        phase: WarPhase::Strike,
+        appointed_turn: g.turn - 5,
+        tech_turn: Some(g.turn - 4),
+        declared_turn: Some(g.turn - 3),
+        last_reviewed_turn: g.turn,
+        recovery_assessments: 0,
+    });
+
+    assert!(ai.reserve_delegated_domination_siege(&mut g, 0, &plan));
+    assert_eq!(
+        g.cities[&home].queue.first(),
+        Some(&Item::Unit {
+            unit: crate::name!("catapult"),
+        })
+    );
+}
+
+#[test]
 fn an_existing_or_queued_siege_unit_closes_the_composition_exception() {
     for queued in [false, true] {
         let (mut g, ai, plan, home, _) = siege_gap_case();

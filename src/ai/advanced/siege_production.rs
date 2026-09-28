@@ -16,9 +16,7 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> bool {
-        if self.war_plan.is_some()
-            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
-        {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
             return false;
         }
         let Some(target) = plan
