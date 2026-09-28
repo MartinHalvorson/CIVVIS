@@ -624,10 +624,21 @@ class RetentionKeepsWhatTheLadderReads(unittest.TestCase):
             for run in (old, legacy, young):
                 run.mkdir()
                 (run / "events.jsonl").write_text('{"kind": "state"}\n')
+            snapshots = Path(raw) / "decider-snapshots"
+            snapshots.mkdir()
+            old_snapshot = snapshots / old.name
+            young_snapshot = snapshots / young.name
+            orphan_snapshot = snapshots / "civvis-orphan"
+            for snapshot in (old_snapshot, young_snapshot, orphan_snapshot):
+                snapshot.mkdir()
+                (snapshot / "civvis_orders").write_bytes(b"decider")
             now = time.time()
             os.utime(old, (now - 25 * 3600, now - 25 * 3600))
             os.utime(legacy, (now - 26 * 3600, now - 26 * 3600))
             os.utime(young, (now - 23 * 3600, now - 23 * 3600))
+            os.utime(old_snapshot, (now - 25 * 3600, now - 25 * 3600))
+            os.utime(young_snapshot, (now - 23 * 3600, now - 23 * 3600))
+            os.utime(orphan_snapshot, (now - 25 * 3600, now - 25 * 3600))
             for ledger in ("ladder.json", "civvis_ladder.jsonl"):
                 (root / ledger).write_text("{}")
                 os.utime(root / ledger, (now - 9 * 86400, now - 9 * 86400))
@@ -640,7 +651,9 @@ class RetentionKeepsWhatTheLadderReads(unittest.TestCase):
             self.assertIn("civvis-old", dry.stdout)
             self.assertIn("empire-wide-validation", dry.stdout)
             self.assertNotIn("civvis-young", dry.stdout)
+            self.assertIn("would prune snapshot", dry.stdout)
             self.assertTrue(old.is_dir() and legacy.is_dir(), "a dry run deletes nothing")
+            self.assertTrue(old_snapshot.is_dir(), "a dry run keeps its binary copy")
             self.assertFalse(log.exists(), "a dry run writes no ledger line")
 
             done = zsh(PRUNE, env=env)
@@ -648,9 +661,13 @@ class RetentionKeepsWhatTheLadderReads(unittest.TestCase):
             self.assertFalse(old.exists())
             self.assertFalse(legacy.exists())
             self.assertTrue(young.is_dir())
+            self.assertFalse(old_snapshot.exists())
+            self.assertTrue(young_snapshot.is_dir())
+            self.assertFalse(orphan_snapshot.exists())
             for ledger in ("ladder.json", "civvis_ladder.jsonl"):
                 self.assertTrue((root / ledger).is_file(), f"{ledger} is the ladder's memory")
-            self.assertIn("pruned 2 run dir(s)", log.read_text())
+            self.assertIn("pruned 2 run dir(s) and 2 snapshot dir(s)",
+                          log.read_text())
 
     def test_an_open_old_run_is_skipped_until_it_is_safe_to_remove(self):
         with TemporaryDirectory() as raw:
@@ -659,9 +676,17 @@ class RetentionKeepsWhatTheLadderReads(unittest.TestCase):
             in_use, closed = root / "civvis-in-use", root / "civvis-closed"
             in_use.mkdir()
             closed.mkdir()
+            snapshots = Path(raw) / "decider-snapshots"
+            snapshots.mkdir()
+            in_use_snapshot = snapshots / in_use.name
+            closed_snapshot = snapshots / closed.name
+            in_use_snapshot.mkdir()
+            closed_snapshot.mkdir()
             now = time.time()
             os.utime(in_use, (now - 25 * 3600, now - 25 * 3600))
             os.utime(closed, (now - 25 * 3600, now - 25 * 3600))
+            os.utime(in_use_snapshot, (now - 25 * 3600, now - 25 * 3600))
+            os.utime(closed_snapshot, (now - 25 * 3600, now - 25 * 3600))
             fake_bin = Path(raw) / "bin"
             fake_bin.mkdir()
             lsof = fake_bin / "lsof"
@@ -675,6 +700,8 @@ class RetentionKeepsWhatTheLadderReads(unittest.TestCase):
             self.assertEqual(done.returncode, 0, done.stderr)
             self.assertTrue(in_use.is_dir(), "an open run is never pruned")
             self.assertFalse(closed.exists())
+            self.assertTrue(in_use_snapshot.is_dir(), "a live continuation keeps its decider")
+            self.assertFalse(closed_snapshot.exists())
             self.assertIn("skip in-use", log.read_text())
 
     def test_an_absent_root_is_a_quiet_exit(self):
