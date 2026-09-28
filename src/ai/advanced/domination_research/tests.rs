@@ -57,6 +57,7 @@ fn board_gated_domination_prepares_engineering_before_an_unwalled_campaign() {
     plan.strategy = GrandStrategy::Expansion;
     assert_eq!(ai.domination_siege_research_goal(&g, 0, &plan), None);
     ai.enable_war_policy_via_board();
+    ai.battlefront_observation = true;
     assert_eq!(
         ai.domination_siege_research_goal(&g, 0, &plan),
         Some(name!("engineering"))

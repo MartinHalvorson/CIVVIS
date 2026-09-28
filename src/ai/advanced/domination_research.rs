@@ -52,17 +52,22 @@ impl AdvancedAi {
         {
             return None;
         }
-        let walls = if self.battlefront_observation {
-            let report = self.remembered_city(city.id)?;
-            if report.owner != city.owner {
+        if !anticipatory_campaign {
+            // Only the reactive path needs wall intelligence. A named board-
+            // gated campaign is preparing for future walls, so waiting for a
+            // wall report can defeat that preparation on the first sighting.
+            let walls = if self.battlefront_observation {
+                let report = self.remembered_city(city.id)?;
+                if report.owner != city.owner {
+                    return None;
+                }
+                report.wall_hp
+            } else {
+                city.wall_hp
+            };
+            if walls <= 0 {
                 return None;
             }
-            report.wall_hp
-        } else {
-            city.wall_hp
-        };
-        if walls <= 0 && !anticipatory_campaign {
-            return None;
         }
         let land_siege = |kind: Name| {
             let spec = &g.rules.units[kind];
