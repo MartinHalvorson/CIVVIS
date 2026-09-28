@@ -429,6 +429,34 @@ fn siege_budget_rejects_an_archer_only_train_and_accepts_a_capable_force() {
 }
 
 #[test]
+fn staged_siege_can_budget_a_last_seen_city_outside_current_sight() {
+    let (mut g, mut ai, _, enemy) = board(VictoryTarget::Domination);
+    g.at_war.insert((0, 1));
+    let city_pos = g.cities[&enemy].pos;
+    g.cities
+        .get_mut(&enemy)
+        .unwrap()
+        .buildings
+        .push(crate::name!("walls"));
+    g.cities.get_mut(&enemy).unwrap().wall_hp = 100;
+    let gun = g.spawn_test_unit("rocket_artillery", 0, (city_pos.0 - 5, city_pos.1));
+    let taker = g.spawn_test_unit("modern_armor", 0, (city_pos.0 - 4, city_pos.1));
+    let force = [gun, taker];
+    assert!(!g.player_visibility(0).contains(&city_pos));
+    ai.enable_siege_positive_damage_budget();
+    g.players[0].remembered_cities.remove(&enemy);
+    assert!(ai.conversion_siege_budget(&g, 0, enemy, &force).is_none());
+
+    let memory = g.remember_city(&g.cities[&enemy]);
+    g.players[0].remembered_cities.insert(enemy, memory);
+    let (turns, endurance) = ai
+        .conversion_siege_budget(&g, 0, enemy, &force)
+        .expect("a known city keeps a siege budget through fog");
+    assert!(turns.is_finite(), "a gun and taker can breach: {turns}");
+    assert!(endurance > 0.0);
+}
+
+#[test]
 fn siege_budget_does_not_credit_melee_that_will_hold_outside_strong_walls() {
     let (mut g, mut ai, _, enemy) = board(VictoryTarget::Domination);
     g.at_war.insert((0, 1));

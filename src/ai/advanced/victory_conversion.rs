@@ -975,9 +975,20 @@ impl AdvancedAi {
         force: &[u32],
     ) -> Option<(f64, f64)> {
         let city = g.cities.get(&cid)?;
-        if !g.player_visibility(pid).contains(&city.pos) {
-            return None;
-        }
+        // A siege staged outside the city's strike radius can lose current
+        // sight of a city it has already found. Requiring live visibility
+        // here trapped the column in Stage and also disabled its siege-unit
+        // production bonus. Use the last-seen health budget until a unit
+        // closes to refresh it; unknown cities still have no estimate.
+        let (wall_hp, city_hp) = if g.player_visibility(pid).contains(&city.pos) {
+            (city.wall_hp, city.hp)
+        } else {
+            let memory = g.players[pid]
+                .remembered_cities
+                .get(&cid)
+                .filter(|memory| memory.owner == city.owner && memory.pos == city.pos)?;
+            (memory.wall_hp, memory.hp)
+        };
         let mut wall_dps = 0.0;
         let mut city_dps = 0.0;
         let mut endurance = 0.0_f64;
@@ -1025,11 +1036,11 @@ impl AdvancedAi {
         } else {
             20.0
         };
-        if !taker || city_dps <= heal || (city.wall_hp > 0 && wall_dps <= 0.0) {
+        if !taker || city_dps <= heal || (wall_hp > 0 && wall_dps <= 0.0) {
             return Some((f64::INFINITY, endurance));
         }
-        let turns = city.wall_hp.max(0) as f64 / wall_dps.max(1.0)
-            + city.hp.max(0) as f64 / (city_dps - heal);
+        let turns =
+            wall_hp.max(0) as f64 / wall_dps.max(1.0) + city_hp.max(0) as f64 / (city_dps - heal);
         Some((turns + 1.0, endurance))
     }
 
