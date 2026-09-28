@@ -24201,6 +24201,9 @@ impl AdvancedAi {
     /// The science lane's production pass: the Spaceport queues rebalanced,
     /// then `science_production`.
     fn space_race_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        if self.victory_target == Some(VictoryTarget::Domination) {
+            return;
+        }
         self.rebalance_science_spaceport_queues(g, pid, plan);
         self.science_production(g, pid);
         self.repair_stalled_science_project_queues(g, pid);
@@ -24283,6 +24286,9 @@ impl AdvancedAi {
     }
 
     fn science_production(&self, g: &mut Game, pid: usize) {
+        if self.victory_target == Some(VictoryTarget::Domination) {
+            return;
+        }
         if self.schedule_science_endgame(g, pid) {
             self.science_spaceport_production(g, pid);
             return;
@@ -28587,6 +28593,23 @@ impl AdvancedAi {
     ) -> f64 {
         let city = &g.cities[&cid];
         let city_count = g.player_city_ids(pid).len();
+        if self.victory_target == Some(VictoryTarget::Domination)
+            && matches!(item,
+                Item::District { district, .. } if g.district_family(*district) == "spaceport"
+            )
+        {
+            return -10_000.0;
+        }
+        if self.victory_target == Some(VictoryTarget::Domination)
+            && matches!(item,
+                Item::Project { project } if matches!(project.as_str(),
+                    "launch_earth_satellite" | "launch_moon_landing" | "launch_mars_colony"
+                    | "exoplanet_expedition" | "lagrange_laser_station"
+                    | "terrestrial_laser_station")
+            )
+        {
+            return -10_000.0;
+        }
         if !self.air_resource_item_preserves_wing(g, pid, cid, item) {
             return -10_000.0;
         }
@@ -42668,6 +42691,7 @@ impl AdvancedAi {
         // below, once every ordinary queue writer has had its turn.
         let confirmed_defense_queue =
             self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
+        let invested_wall_breakers = self.invested_wall_breaker_queues(g, pid, &plan);
         self.advanced_diplomacy(g, pid, &plan);
         self.advanced_spies(g, pid, &plan);
         self.byzantium_tagma_production(g, pid, &plan);
@@ -42906,6 +42930,13 @@ impl AdvancedAi {
         // or unrelated unit.
         self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
         self.reapply_confirmed_defense_queue(g, pid, confirmed_defense_queue.as_ref());
+        self.restore_invested_wall_breaker_queues(
+            g,
+            pid,
+            &plan,
+            &invested_wall_breakers,
+            confirmed_defense_queue.as_ref(),
+        );
         // A delegating lane has already spent through the baseline governor.
         if active_victory_target.is_some()
             && !lane_delegating

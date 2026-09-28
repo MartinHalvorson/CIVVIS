@@ -6,6 +6,83 @@ use super::*;
 pub(super) const FIRST_WEAPON_RESERVATION: f64 = 400.0;
 
 impl AdvancedAi {
+    /// Keep a nearly finished wall breaker through a delegated city review.
+    /// In the live King assault on Methone, Guayaquil had 105/140 production
+    /// in a Bombard, but the later baseline governor replaced it with a Field
+    /// Cannon. No siege weapon then reached the walls before peace was offered.
+    pub(super) fn invested_wall_breaker_queues(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Vec<(u32, Item)> {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || plan.strategy != GrandStrategy::Conquest
+            || !plan
+                .target_city
+                .and_then(|id| g.cities.get(&id))
+                .is_some_and(|target| target.wall_hp > 0 && g.is_at_war(pid, target.owner))
+        {
+            return Vec::new();
+        }
+        g.player_city_ids(pid)
+            .into_iter()
+            .filter_map(|cid| {
+                let item = g.cities[&cid].queue.first()?;
+                let Item::Unit { unit } = item else {
+                    return None;
+                };
+                let spec = g.rules.units.get(unit)?;
+                (spec.siege
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && g.item_invested_production(cid, item) > 0.0)
+                    .then(|| (cid, item.clone()))
+            })
+            .collect()
+    }
+
+    pub(super) fn restore_invested_wall_breaker_queues(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        claimed: &[(u32, Item)],
+        defense_claim: Option<&(u32, Item)>,
+    ) {
+        for (cid, item) in claimed {
+            let Some(city) = g.cities.get(cid) else {
+                continue;
+            };
+            if city.owner != pid
+                || plan.threatened_city == Some(*cid)
+                || defense_claim.is_some_and(|(protected, _)| protected == cid)
+                || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+                || city.queue.first().is_some_and(|current| {
+                    matches!(current, Item::Unit { unit }
+                        if g.rules.units.get(unit).is_some_and(|spec| spec.siege))
+                })
+                || !g.can_produce(pid, *cid, item)
+            {
+                continue;
+            }
+            let city_name = city.name.clone();
+            if g.apply(
+                pid,
+                &Action::Produce {
+                    city: *cid,
+                    item: item.clone(),
+                },
+            )
+            .is_ok()
+                && self.journal().wants(crate::reasoning::Level::Decision)
+            {
+                think!(self.journal(), Economy, Decision,
+                    "{} resumes {}", city_name, Self::plain_item(item);
+                    "an invested wall breaker for the active Domination assault was displaced by a later production writer; its banked progress is retained");
+            }
+        }
+    }
+
     /// The live Domination lane can delegate its city queues to the baseline
     /// governor, which never calls `production_value`. Claim one idle or
     /// unstarted queue before that handoff when a real wall assault has only

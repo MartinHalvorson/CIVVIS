@@ -153,6 +153,58 @@ fn an_unstarted_building_yields_to_the_second_gun_but_invested_work_does_not() {
 }
 
 #[test]
+fn invested_siege_queue_survives_a_later_non_siege_city_order() {
+    let (mut g, ai, plan, home, target) = siege_gap_case();
+    let catapult = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+    let warrior = Item::Unit {
+        unit: crate::name!("warrior"),
+    };
+    g.apply(
+        0,
+        &Action::Produce {
+            city: home,
+            item: catapult.clone(),
+        },
+    )
+    .unwrap();
+    g.cities.get_mut(&home).unwrap().production = 60.0;
+    let claim = ai.invested_wall_breaker_queues(&g, 0, &plan);
+    assert_eq!(claim, vec![(home, catapult.clone())]);
+
+    // The delegated city governor is allowed to write a different unit, but
+    // the siege commitment wins at the end of the decision's production pass.
+    g.apply(
+        0,
+        &Action::Produce {
+            city: home,
+            item: warrior.clone(),
+        },
+    )
+    .unwrap();
+    let mut defending = g.clone();
+    ai.restore_invested_wall_breaker_queues(
+        &mut defending,
+        0,
+        &plan,
+        &claim,
+        Some(&(home, warrior.clone())),
+    );
+    assert_eq!(defending.cities[&home].queue.first(), Some(&warrior));
+
+    ai.restore_invested_wall_breaker_queues(&mut g, 0, &plan, &claim, None);
+    assert_eq!(g.cities[&home].queue.first(), Some(&catapult));
+    assert_eq!(g.cities[&home].production, 60.0);
+
+    g.at_war.clear();
+    assert!(ai.invested_wall_breaker_queues(&g, 0, &plan).is_empty());
+    g.at_war.insert((0, 1));
+    g.cities.get_mut(&target).unwrap().wall_hp = 0;
+    assert!(ai.invested_wall_breaker_queues(&g, 0, &plan).is_empty());
+}
+
+#[test]
 fn peaceful_wall_free_and_disabled_domination_plans_keep_the_army_ceiling() {
     for case in 0..3 {
         let (mut g, ai, plan, home, target) = siege_gap_case();

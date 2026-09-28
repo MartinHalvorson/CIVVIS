@@ -353,6 +353,12 @@ impl AdvancedAi {
     /// `victory_focus` is Science is treated as a Science seat by all three,
     /// and the pass itself opens for it — `Recovery` still refuses outright.
     pub(super) fn space_race_lane(&self, g: &Game, pid: usize) -> bool {
+        // A named Domination run must finish by taking capitals. Its public
+        // Science focus can rise while preparing Bombers, but that is not
+        // permission to turn the production lane into a space race.
+        if self.victory_target == Some(VictoryTarget::Domination) {
+            return false;
+        }
         if self.victory_portfolio {
             return self.portfolio_specializing() == Some(true)
                 && self.portfolio_target() == Some(VictoryTarget::Science);

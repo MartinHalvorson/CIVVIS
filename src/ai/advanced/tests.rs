@@ -13226,6 +13226,75 @@ fn science_target_reserves_a_spaceport_then_queues_the_project_chain() {
     ));
 }
 
+#[test]
+fn domination_target_never_starts_a_space_race_even_with_a_ready_pad() {
+    let mut game = Game::new(2, 24, 16, 71_104, 320, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let city = game.player_city_ids(0)[0];
+    let site = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| *position != game.cities[&city].pos)
+        .unwrap();
+    {
+        let tile = game.map.tiles.get_mut(&site).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.resource = None;
+        tile.hills = false;
+    }
+    game.players[0].techs.insert(crate::name!("rocketry"));
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let pad = Item::District {
+        district: crate::name!("spaceport"),
+        pos: site,
+    };
+    assert!(game.can_produce(0, city, &pad));
+    assert!(!ai.space_race_lane(&game, 0));
+    assert_eq!(
+        ai.production_value(&game, 0, city, &pad, &plan, &ai.counts(&game, 0)),
+        -10_000.0
+    );
+    ai.space_race_production(&mut game, 0, &plan);
+    assert!(game.cities[&city].queue.is_empty());
+
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("spaceport"), site);
+    let launch = Item::Project {
+        project: crate::name!("launch_earth_satellite"),
+    };
+    assert!(game.can_produce(0, city, &launch));
+    assert_eq!(
+        ai.production_value(&game, 0, city, &launch, &plan, &ai.counts(&game, 0)),
+        -10_000.0
+    );
+    game.players[0]
+        .science_projects
+        .insert("exoplanet_expedition".to_string());
+    assert!(!ai.science_endgame_committed(&game, 0));
+    assert!(!ai.science_endgame_lane_committed(&game, 0));
+    ai.science_production(&mut game, 0);
+    assert!(game.cities[&city].queue.is_empty());
+}
+
 /// The live Emperor science seat queued nine Spaceports from t149 through
 /// t169, despite the drive's one-pad opening. The dedicated pass already
 /// knew the 1→2→3 pacing; the generic production sweep did not honor it and

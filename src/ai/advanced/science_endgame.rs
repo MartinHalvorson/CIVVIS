@@ -16,6 +16,9 @@ const LASERS: [&str; 2] = ["lagrange_laser_station", "terrestrial_laser_station"
 
 impl AdvancedAi {
     pub(super) fn science_endgame_committed(&self, g: &Game, pid: usize) -> bool {
+        if self.victory_target == Some(VictoryTarget::Domination) {
+            return false;
+        }
         self.victory_planning
             && g.victory_conditions.science
             && (self.raced_target() == Some(VictoryTarget::Science)
@@ -68,6 +71,9 @@ impl AdvancedAi {
     /// an unrelated military queue or research goal, so keep both halves of
     /// the endgame lane alive until the flight can be accelerated.
     pub(super) fn science_endgame_lane_committed(&self, g: &Game, pid: usize) -> bool {
+        if self.victory_target == Some(VictoryTarget::Domination) {
+            return false;
+        }
         let live_controller = self.victory_planning || self.victory_target.is_some();
         g.victory_conditions.science
             && (self.science_endgame_committed(g, pid)
