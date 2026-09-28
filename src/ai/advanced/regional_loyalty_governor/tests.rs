@@ -177,3 +177,55 @@ fn a_saved_title_is_released_when_pressure_recovers() {
     assert_eq!(g.governor_titles_available(0), 0);
     assert!(!g.players[0].governor_roster.contains_key("victor"));
 }
+
+#[test]
+fn existing_victor_can_support_his_own_city() {
+    let (mut g, ai, _, target, anchor) = board();
+    g.players[0]
+        .counters
+        .insert("district_governor_titles".into(), 6);
+    g.apply(
+        0,
+        &Action::ReassignGovernor {
+            governor: "magnus".into(),
+            city: anchor,
+        },
+    )
+    .unwrap();
+    g.apply(
+        0,
+        &Action::AppointGovernor {
+            governor: "victor".into(),
+            city: target,
+        },
+    )
+    .unwrap();
+    assert!(
+        ai.regional_loyalty_governor_action(&g, 0).is_some(),
+        "Native promotion readbacks support the engine's own-city bonus"
+    );
+}
+
+#[test]
+fn title_reservation_survives_the_complete_turn() {
+    use crate::ai::Ai;
+    let (mut g, mut ai, _, target, _) = board();
+    g.players[0]
+        .counters
+        .insert("district_governor_titles".into(), 5);
+    ai.take_turn(&mut g, 0);
+    assert_eq!(
+        g.governor_titles_available(0),
+        1,
+        "the ancillary fallback must not spend the title reserved by the strategic planner"
+    );
+    assert!(!g.players[0].governor_roster.contains_key("liang"));
+    g.turn += 1;
+    Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(target, 1.0);
+    ai.take_turn(&mut g, 0);
+    assert_eq!(
+        g.governor_titles_available(0),
+        0,
+        "normal spending resumes on the complete turn when the pressure recovers"
+    );
+}

@@ -7758,6 +7758,17 @@ impl BasicAi {
         self.research_with_government(g, pid, false, pool);
     }
 
+    /// Preserve a strategic governor-title reservation while still running
+    /// research, policies, religion, and the other ancillary systems.
+    pub(crate) fn research_without_government_or_governors_with_pool(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        pool: Option<&WorkPool>,
+    ) {
+        self.research_ancillary(g, pid, false, false, pool);
+    }
+
     /// What a pantheon would pay this empire per turn, on the land it already
     /// owns.
     ///
@@ -7881,6 +7892,17 @@ impl BasicAi {
         g: &mut Game,
         pid: usize,
         choose_government: bool,
+        pool: Option<&WorkPool>,
+    ) {
+        self.research_ancillary(g, pid, choose_government, true, pool);
+    }
+
+    fn research_ancillary(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        choose_government: bool,
+        choose_governors: bool,
         pool: Option<&WorkPool>,
     ) {
         if g.players[pid].research.is_none() {
@@ -8153,7 +8175,7 @@ impl BasicAi {
                 }
             }
         }
-        while g.governor_titles_available(pid) > 0 {
+        while choose_governors && g.governor_titles_available(pid) > 0 {
             // anchor the shakiest city
             let target = g
                 .player_city_ids(pid)

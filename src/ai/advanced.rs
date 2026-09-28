@@ -42458,8 +42458,22 @@ impl AdvancedAi {
         }
         // Keep the mature ancillary systems: governments, policies, beliefs,
         // religions, and envoys. Research is already selected.
-        self.base
-            .research_without_government_with_pool(g, pid, self.work_pool.as_deref());
+        let titles = g.governor_titles_available(pid);
+        let reserve_title = titles > 0
+            && self
+                .regional_loyalty_governor_action(g, pid)
+                .is_some_and(|(_, needed)| titles < needed);
+        if reserve_title {
+            self.base
+                .research_without_government_or_governors_with_pool(
+                    g,
+                    pid,
+                    self.work_pool.as_deref(),
+                );
+        } else {
+            self.base
+                .research_without_government_with_pool(g, pid, self.work_pool.as_deref());
+        }
         self.strategic_government(g, pid, plan.strategy);
         self.base.corporations(g, pid);
         self.advanced_products(g, pid, plan.strategy);

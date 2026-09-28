@@ -75,6 +75,9 @@ impl AdvancedAi {
             }
             endangered
                 .iter()
+                // Native promotion transitions (20260927T225002Z-cont4 t154,
+                // 20260927T203347Z-cont3 t236) show +4 at Victor's own post,
+                // supporting the engine's inclusive radius despite tooltip wording.
                 .filter(|cid| g.wdist(city.pos, g.cities[cid].pos) <= 9)
                 .map(|cid| {
                     let target = &g.cities[cid];

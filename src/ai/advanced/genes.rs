@@ -2388,15 +2388,15 @@ pub const GENES: &[Gene] = &[
     // and below. King ladder proxy, 64 paired games: foreign cities held
     // 8 -> 22, alive 49 -> 54, +0.90 pp; Emperor -1.06 pp, so not above King. See `AdvancedAi::phase_specialization_active`.
     Gene { tag: "domination-specializes-earlier", field: "domination_specializes_earlier", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_specializes_earlier, disable: AdvancedAi::disable_domination_specializes_earlier },
+    // Guayaquil lost loyalty despite Magnus; save separately earned titles
+    // for Victor regional support. Unmeasured strategy, default off.
+    Gene { tag: "regional-loyalty-governor", field: "regional_loyalty_governor", kind: Kind::OptIn, enable: AdvancedAi::enable_regional_loyalty_governor, disable: AdvancedAi::disable_regional_loyalty_governor },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
-    // Guayaquil lost loyalty despite Magnus; save separately earned titles
-    // for Victor regional support. Unmeasured strategy, default off.
-    Gene { tag: "regional-loyalty-governor", field: "regional_loyalty_governor", kind: Kind::OptIn, enable: AdvancedAi::enable_regional_loyalty_governor, disable: AdvancedAi::disable_regional_loyalty_governor },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];
