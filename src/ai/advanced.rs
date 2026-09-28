@@ -9156,6 +9156,15 @@ impl AdvancedAi {
         {
             return true;
         }
+        // An open foothold can heal or raise Walls inside the ordinary
+        // five-turn planning interval. Reassess as soon as a land taker can
+        // exploit it, rather than waiting for the next cadence tick.
+        if plan.target_city.is_some_and(|city| {
+            self.capture_opportunity_city(g, pid, city, plan.strategy)
+                .is_some()
+        }) {
+            return true;
+        }
         let unavailable_victory_plan = matches!(
             plan.strategy,
             GrandStrategy::Science
@@ -11880,6 +11889,61 @@ impl AdvancedAi {
         self.shared_city_target = true;
     }
 
+    fn capture_opportunity_city(
+        &self,
+        g: &Game,
+        pid: usize,
+        prior_id: u32,
+        strategy: GrandStrategy,
+    ) -> Option<u32> {
+        if !self.siege_commitment
+            || strategy != GrandStrategy::Conquest
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        {
+            return None;
+        }
+        let prior = g.cities.get(&prior_id)?;
+        if !g.is_at_war(pid, prior.owner)
+            || g.players[prior.owner].is_minor
+            || g.players[prior.owner].is_barbarian
+            || prior.hp < CITY_MAX_HP
+            || prior.wall_hp <= 0
+            || prior.wall_hp < g.city_max_wall_hp(prior)
+        {
+            return None;
+        }
+        let visible = g.player_vision_frame(pid);
+        g.cities
+            .values()
+            .filter(|city| {
+                city.owner == prior.owner
+                    && city.id != prior_id
+                    && city.hp <= CITY_MAX_HP - 20
+                    && city.wall_hp <= 0
+                    && g.sees(&visible, city.pos)
+                    && !self.capture_stood_down_holds(g, city.id)
+                    && !Self::should_defer_city_capture(g, pid, city.id)
+            })
+            .filter(|city| {
+                g.units.values().any(|unit| {
+                    let spec = &g.rules.units[unit.kind];
+                    unit.owner == pid
+                        && unit.hp >= 60
+                        && spec.class == "military"
+                        && !spec.has_ranged_attack()
+                        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                        && g.unit_strength(unit, false) >= 30.0
+                        && g.wdist(unit.pos, city.pos) <= 3
+                })
+            })
+            .min_by(|left, right| {
+                self.campaign_city_value(g, pid, left, strategy)
+                    .total_cmp(&self.campaign_city_value(g, pid, right, strategy))
+                    .then(left.id.cmp(&right.id))
+            })
+            .map(|city| city.id)
+    }
+
     fn assess(&self, g: &Game, pid: usize) -> StrategicPlan {
         // The outlook reads one immutable snapshot. Reuse city and empire
         // derivations across its rival and settlement comparisons.
@@ -12780,50 +12844,8 @@ impl AdvancedAi {
         // not breached anything and a healthy land taker can reach the open,
         // visibly damaged city. Once selected, the ordinary commitment keeps
         // that foothold as the objective.
-        let capture_opportunity_city = committed_target_city.and_then(|prior_id| {
-            if strategy != GrandStrategy::Conquest
-                || self.active_victory_target(g) != Some(VictoryTarget::Domination)
-            {
-                return None;
-            }
-            let prior = g.cities.get(&prior_id)?;
-            if prior.hp < CITY_MAX_HP
-                || prior.wall_hp <= 0
-                || prior.wall_hp < g.city_max_wall_hp(prior)
-            {
-                return None;
-            }
-            let visible = g.player_vision_frame(pid);
-            g.cities
-                .values()
-                .filter(|city| {
-                    city.owner == prior.owner
-                        && city.id != prior_id
-                        && city.hp <= CITY_MAX_HP - 20
-                        && city.wall_hp <= 0
-                        && g.sees(&visible, city.pos)
-                        && !self.capture_stood_down_holds(g, city.id)
-                        && !Self::should_defer_city_capture(g, pid, city.id)
-                })
-                .filter(|city| {
-                    g.units.values().any(|unit| {
-                        let spec = &g.rules.units[unit.kind];
-                        unit.owner == pid
-                            && unit.hp >= 60
-                            && spec.class == "military"
-                            && !spec.has_ranged_attack()
-                            && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
-                            && g.unit_strength(unit, false) >= 30.0
-                            && g.wdist(unit.pos, city.pos) <= 3
-                    })
-                })
-                .min_by(|left, right| {
-                    self.campaign_city_value(g, pid, left, strategy)
-                        .total_cmp(&self.campaign_city_value(g, pid, right, strategy))
-                        .then(left.id.cmp(&right.id))
-                })
-                .map(|city| city.id)
-        });
+        let capture_opportunity_city = committed_target_city
+            .and_then(|prior_id| self.capture_opportunity_city(g, pid, prior_id, strategy));
         // `capture-go-or-stand-down`: a city the ledger stood down is not
         // ranked again until the stand-down expires; the next-best city of the
         // same rival takes its place. A home emergency is never stood down.

@@ -9659,19 +9659,25 @@ fn domination_column_takes_a_damaged_open_foothold_before_a_fresh_walled_target(
 
     let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
     ai.enable_siege_commitment();
+    let threatened_city = ai.threatened_city(&game, 0);
     ai.plan = Some(StrategicPlan {
         strategy: GrandStrategy::Conquest,
         target_player: Some(1),
         target_city: Some(walled),
-        threatened_city: None,
+        threatened_city,
         desired_cities: 4,
         assessed_turn: game.turn.saturating_sub(1),
         rush: false,
     });
     ai.belief.observe(&game, 0);
+    assert!(!ai.plan_stale(&game, 0));
     assert_eq!(ai.assess(&game, 0).target_city, Some(walled));
 
     game.cities.get_mut(&open).unwrap().hp = 175;
+    assert!(
+        !ai.plan_stale(&game, 0),
+        "a foothold without a nearby land taker does not interrupt the plan"
+    );
     assert_eq!(
         ai.assess(&game, 0).target_city,
         Some(walled),
@@ -9688,6 +9694,10 @@ fn domination_column_takes_a_damaged_open_foothold_before_a_fresh_walled_target(
         .unwrap();
     game.spawn_test_unit("man_at_arms", 0, taker_pos);
     ai.belief.observe(&game, 0);
+    assert!(
+        ai.plan_stale(&game, 0),
+        "the open foothold interrupts the five-turn planning cadence"
+    );
     let opportunity = ai.assess(&game, 0);
     assert_eq!(opportunity.strategy, GrandStrategy::Conquest);
     assert_eq!(
