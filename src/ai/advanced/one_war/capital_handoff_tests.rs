@@ -231,6 +231,29 @@ fn a_single_congress_jump_does_not_pin_an_empty_domination_front() {
 }
 
 #[test]
+fn a_projected_congress_warning_does_not_pin_a_secured_capital_front() {
+    let (mut g, mut ai, _, _) = captured_front();
+    g.players[1].dvp = 12;
+    ai.enable_stock_denial_lead_time();
+    ai.enable_projected_stock_denial();
+    ai.deny_while_targeted = true;
+    ai.stock_pressure_history
+        .insert(1, vec![(g.turn - 3, 45), (g.turn, 60)]);
+    assert_eq!(ai.rival_pressure(&g, 1), (GrandStrategy::Diplomacy, 60));
+    assert!(ai.urgent_victory_threat(&g, 1));
+    assert_eq!(ai.domination_followup_target(&g, 0, Some(1)), Some(2));
+    assert_eq!(
+        ai.one_war_peace(&g, 0, 1),
+        Some(OneWarPeace::CapitalSecured)
+    );
+
+    g.players[1].dvp = 16;
+    assert_eq!(ai.rival_pressure(&g, 1), (GrandStrategy::Diplomacy, 80));
+    assert_eq!(ai.domination_followup_target(&g, 0, Some(1)), None);
+    assert!(ai.one_war_peace(&g, 0, 1).is_none());
+}
+
+#[test]
 fn a_displaced_capital_releases_the_old_war_before_the_next_declaration() {
     let (mut g, mut ai, plan, capital) = captured_front();
     g.cities.get_mut(&capital).unwrap().owner = 2;

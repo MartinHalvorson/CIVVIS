@@ -175,8 +175,8 @@ impl AdvancedAi {
     /// A congress vote can jump Diplomatic Victory pressure once, then stay
     /// flat for the whole congress interval. Below the ordinary denial bar,
     /// only the projected slope can call that jump urgent. It should still
-    /// prepare a counter, but cannot pin a Domination army to a rival that
-    /// no longer holds any required original capital.
+    /// prepare a counter, but cannot pin a Domination army after we safely
+    /// capture that rival's capital or a third party takes it.
     fn one_war_projected_diplomacy_below_bar(&self, g: &Game, rival: usize) -> bool {
         let pressure = self.rival_victory_pressure(g, rival);
         pressure.strategy == GrandStrategy::Diplomacy && pressure.progress < super::STOCK_DENIAL_BAR
@@ -215,10 +215,20 @@ impl AdvancedAi {
                 })
                 .map(|city| city.owner)
         });
+        let secured = g.cities.values().any(|city| {
+            city.owner == pid
+                && city.is_capital
+                && city.original_owner != pid
+                && completed_rival.is_none_or(|other| city.original_owner == other)
+                && !g.players[city.original_owner].is_minor
+                && !g.players[city.original_owner].is_barbarian
+                && city.loyalty >= 75.0
+                && g.city_loyalty_per_turn(city) >= 0.0
+        });
         if completed_rival.is_some_and(|other| {
             g.emergency_war_pair(pid, other)
                 || (self.urgent_victory_threat(g, other)
-                    && !(displaced_owner.is_some()
+                    && !((displaced_owner.is_some() || secured)
                         && self.one_war_projected_diplomacy_below_bar(g, other)))
                 || g.cities.values().any(|city| {
                     city.owner == other
@@ -235,16 +245,6 @@ impl AdvancedAi {
         if let Some(owner) = displaced_owner {
             return Some(owner);
         }
-        let secured = g.cities.values().any(|city| {
-            city.owner == pid
-                && city.is_capital
-                && city.original_owner != pid
-                && completed_rival.is_none_or(|other| city.original_owner == other)
-                && !g.players[city.original_owner].is_minor
-                && !g.players[city.original_owner].is_barbarian
-                && city.loyalty >= 75.0
-                && g.city_loyalty_per_turn(city) >= 0.0
-        });
         // A rival can consolidate another major's original capital before
         // we take one. In that case a former owner with only ordinary towns
         // is not a useful peacetime target either.
