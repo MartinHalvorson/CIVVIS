@@ -2315,15 +2315,13 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertEqual(row["reason"], "attempt frozen", "still frozen after the budget: say so")
         self.assertEqual([r["from_turn"] for r in row["resumes"]],
                          [102, 140, 151, 158, 159, 160])
-        # One, four, nine, sixteen, twenty-five and thirty-six back —
-        # RESUME_STEPS = (0, 3, 8, 15, 24, 35) against the list with the newest
-        # parked save removed. Every attempt reaches a board the last one did
-        # not, and the sixth, whose stride runs past the thirty saves on disk,
-        # clamps to the oldest (t131) rather than replaying the fifth's.
+        # Distinct freezes restart at one-back. The final t158, t159 and t160
+        # parks are adjacent, so they use progressively wider strides. The
+        # overall six-resume budget still ends the attempt after this row.
         self.assertEqual([r["save"] for r in row["resumes"]],
-                         ["AutoSave_0159.Civ6Save", "AutoSave_0156.Civ6Save",
-                          "AutoSave_0151.Civ6Save", "AutoSave_0144.Civ6Save",
-                          "AutoSave_0135.Civ6Save", "AutoSave_0131.Civ6Save"])
+                         ["AutoSave_0159.Civ6Save", "AutoSave_0158.Civ6Save",
+                          "AutoSave_0157.Civ6Save", "AutoSave_0156.Civ6Save",
+                          "AutoSave_0155.Civ6Save", "AutoSave_0151.Civ6Save"])
         self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont6"))
 
     def test_a_resume_that_never_reaches_a_turn_keeps_the_frozen_row(self):
@@ -3207,6 +3205,30 @@ class ResumesPastTheThirdKeepWalkingBack(unittest.TestCase):
         self.assertIsNone(self._pick(6))
         self.assertEqual(len(climb.RESUME_STEPS), 6,
                          "one distinct stride per resume in the default budget")
+
+    def test_new_freeze_turn_restarts_the_stride_without_resetting_the_budget(self):
+        """The t88 match reached t112; its fifth resume should test t111, not t86."""
+        prior = [{"from_turn": 88, "save": f"AutoSave_{n:04d}.Civ6Save"}
+                 for n in (87, 84, 79, 72)]
+        saves = [Path(f"AutoSave_{n:04d}.Civ6Save") for n in range(112, 79, -1)]
+        used = {row["save"] for row in prior}
+        stride = climb.resume_stride_index(prior, 112)
+        self.assertEqual(stride, 0)
+        self.assertEqual(
+            climb.resume_from_autosave(
+                {"last_turn": 112}, "frozen", len(prior), self._args(), 0.0,
+                recent=lambda newer_than=None: saves, used_saves=used,
+                stride_index=stride,
+            ),
+            Path("AutoSave_0111.Civ6Save"),
+        )
+        self.assertEqual(climb.resume_stride_index(prior + [{"from_turn": 112}], 112), 1)
+        self.assertEqual(climb.resume_stride_index(prior + [{"from_turn": 112}], 113), 1,
+                         "one-back from t113 would replay the t112 freeze")
+        self.assertIsNone(climb.resume_from_autosave(
+            {"last_turn": 112}, "frozen", 6, self._args(), 0.0,
+            recent=lambda newer_than=None: saves, stride_index=0,
+        ))
 
 
 class TheOperatorsLaneOutlivesAStaleEnvironment(unittest.TestCase):
