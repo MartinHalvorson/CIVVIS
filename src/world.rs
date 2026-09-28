@@ -442,6 +442,33 @@ impl TileGrid {
 mod tests {
     use super::*;
 
+    /// `disk` skips its sort when no cell wrapped; on a wrapping and a walled
+    /// map it still returns exactly the folded, on-map, sorted, de-duplicated
+    /// cells the unconditional sort returned.
+    #[test]
+    fn a_disk_is_the_sorted_folded_cells_with_or_without_a_wrap() {
+        for world in [WorldMap::new(9, 7), WorldMap::arena(9, 7)] {
+            for x in -2..11 {
+                for y in -2..9 {
+                    for radius in 0..8 {
+                        let mut reference: Vec<Pos> = hex::disk((x, y), radius)
+                            .into_iter()
+                            .map(|pos| world.fold(pos))
+                            .filter(|pos| world.tiles.index_of(*pos).is_some())
+                            .collect();
+                        reference.sort_unstable();
+                        reference.dedup();
+                        assert_eq!(
+                            world.disk((x, y), radius),
+                            reference,
+                            "({x}, {y}) r{radius}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn cliff_edges_require_one_land_side_and_one_water_side() {
         let mut world = WorldMap::new(5, 5);
@@ -848,13 +875,24 @@ impl WorldMap {
         if let Some(sphere) = self.sphere() {
             return sphere.disk(center, radius);
         }
+        // `hex::disk` yields its cells in ascending order without repeats, and
+        // dropping off-map cells keeps that order. Only a wrap fold can move
+        // a cell out of order or onto another, so only then is the sort and
+        // de-duplication needed.
+        let mut folded = false;
         let mut out: Vec<Pos> = hex::disk(center, radius)
             .into_iter()
-            .map(|pos| self.fold(pos))
+            .map(|pos| {
+                let canonical = self.fold(pos);
+                folded |= canonical != pos;
+                canonical
+            })
             .filter_map(|pos| self.tiles.index_of(pos).map(|_| pos))
             .collect();
-        out.sort_unstable();
-        out.dedup();
+        if folded {
+            out.sort_unstable();
+            out.dedup();
+        }
         out
     }
 
