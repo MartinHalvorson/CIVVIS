@@ -44182,6 +44182,83 @@ fn a_war_that_takes_nothing_and_cannot_be_paid_for_sues_for_peace() {
     );
 }
 
+#[test]
+fn a_ready_domination_air_surge_gets_a_bounded_chance_to_finish_its_war() {
+    let (mut game, _, target) = timed_war_fixture(7);
+    let target_pos = game.cities[&target].pos;
+    found_nearby_test_city(&mut game, 1, target_pos);
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    game.turn = 140;
+    game.players[0].gold = 500.0;
+    game.players[0].gold_per_turn = 50.0;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(target),
+        threatened_city: None,
+        desired_cities: 6,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.victory_target = Some(VictoryTarget::Domination);
+    ai.enable_peace_when_war_does_not_pay();
+    ai.major_war_since = Some(110);
+    ai.last_campaign_progress = 110;
+    ai.air_surge_plan = Some(air_surge::AirSurge {
+        target_player: 1,
+        objective_city: target,
+        objective_pos: target_pos,
+        body_unit: crate::name!("cuirassier"),
+        body_is_cavalry: true,
+        opened_at_war: true,
+        phase: air_surge::AirSurgePhase::Exploit,
+        appointed_turn: 120,
+        tech_turn: Some(118),
+        declared_turn: None,
+        last_reviewed_turn: 140,
+        recovery_assessments: 0,
+    });
+    ai.air_surge_status = air_surge::AirSurgeStatus {
+        bombers: 2,
+        bodies: 2,
+        wing_in_range: true,
+        ..Default::default()
+    };
+    let offers = |source: &AdvancedAi, board: &Game| {
+        let mut candidate = source.clone();
+        let mut board = board.clone();
+        candidate.advanced_diplomacy(&mut board, 0, &plan);
+        candidate.peace_offers.contains(&1)
+    };
+    assert!(ai.air_surge_presses_war(&game, 0, 1, &plan));
+    assert!(
+        !offers(&ai, &game),
+        "the ready wing keeps its target at war"
+    );
+
+    let mut unready = ai.clone();
+    unready.air_surge_status.bombers = 1;
+    assert!(offers(&unready, &game), "one Bomber is not a ready wing");
+
+    let mut expired = ai.clone();
+    expired.air_surge_plan.as_mut().unwrap().appointed_turn =
+        game.turn - game.standard_duration(air_surge::AIR_SURGE_FATIGUE_WINDOW);
+    assert!(
+        offers(&expired, &game),
+        "the appointment has a firm deadline"
+    );
+
+    let mut bankrupt = game.clone();
+    bankrupt.players[0].gold = 0.0;
+    bankrupt.players[0].gold_per_turn = -50.0;
+    assert!(
+        offers(&ai, &bankrupt),
+        "a bankrupt empire may end the siege"
+    );
+}
+
 /// ★★★★ THE LANE IS ASSIGNED, THE BALLOT IS SIZED BY THE WEATHER. The
 /// Congress vote count reads `plan.strategy`, the posture of the turn the
 /// session happens to sit on, not `victory_target`, the lane the seat is

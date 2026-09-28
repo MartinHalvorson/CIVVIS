@@ -129,6 +129,13 @@ pub(crate) const AIR_SURGE_REVIEW_CADENCE: u32 = 5;
 /// hundreds of stand-downs for one situation, and the empire would hold its
 /// research and its queues for a wing it can never build.
 pub(crate) const AIR_SURGE_ABORT_COOLDOWN: u32 = 15;
+/// A ready wing gets a bounded chance to finish the appointed Domination war
+/// before the generic no-progress peace clock can dismiss it. On the live King
+/// seat at t183, two Bombers and two cavalry were ready against Scythia, but
+/// the fatigue desk offered peace fourteen turns before Scythia won Culture.
+/// The window starts at appointment, so an ineffective wing cannot hold the
+/// empire in a permanent war.
+pub(crate) const AIR_SURGE_FATIGUE_WINDOW: u32 = 72;
 /// Consecutive reviews finding a threatened home city before the appointment
 /// stands down.
 pub(crate) const AIR_SURGE_RECOVERY_LIMIT: u8 = 2;
@@ -792,6 +799,38 @@ impl AdvancedAi {
         if self.journal().wants(crate::reasoning::Level::Strategy) {
             think!(self.journal(), Military, Strategy, "Standing down the air surge"; "{reason}");
         }
+    }
+
+    /// Preserve the active, affordable bomber attack through the ordinary
+    /// fatigue deadline. This is only the peace desk's exemption: the surge
+    /// still has to make progress and the window expires even if it does not.
+    pub(super) fn air_surge_presses_war(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+        strategy: &StrategicPlan,
+    ) -> bool {
+        let Some(surge) = self.air_surge_plan.as_ref() else {
+            return false;
+        };
+        self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && strategy.strategy == GrandStrategy::Conquest
+            && strategy.target_player == Some(other)
+            && strategy.threatened_city.is_none()
+            && strategy
+                .target_city
+                .and_then(|id| g.cities.get(&id))
+                .is_some_and(|city| city.owner == other && city.pos == surge.objective_pos)
+            && surge.target_player == other
+            && surge.phase == AirSurgePhase::Exploit
+            && (surge.opened_at_war || surge.declared_turn.is_some())
+            && g.is_at_war(pid, other)
+            && self.air_surge_status.wing_ready()
+            && self.air_surge_status.escort_ready()
+            && self.treasury_can_carry_a_war(g, pid)
+            && g.turn.saturating_sub(surge.appointed_turn)
+                < g.standard_duration(AIR_SURGE_FATIGUE_WINDOW)
     }
 
     /// Validate and advance the one appointed surge before any subsystem acts.

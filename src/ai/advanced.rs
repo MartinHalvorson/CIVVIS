@@ -19876,6 +19876,7 @@ impl AdvancedAi {
             // `advanced/one_war.rs`.
             let one_war_peace = self.one_war_peace(g, pid, *other);
             let one_war_presses = self.one_war_presses(g, pid, *other);
+            let air_surge_presses = self.air_surge_presses_war(g, pid, *other, plan);
             // `war-policy-via-board`: the `0.62` "outmatched" term becomes
             // "no Siege row against them is feasible AND the tide is
             // against us (or an urgent Defend row is unserved for three
@@ -19911,6 +19912,7 @@ impl AdvancedAi {
                     || (!appointed_objective
                         && fatigued
                         && !one_war_presses
+                        && !air_surge_presses
                         && g.player_city_ids(*other).len() > 1)
                     // See `peace_when_war_does_not_pay`: the same fatigue
                     // clause, without the appointed-objective exemption that
@@ -19918,6 +19920,7 @@ impl AdvancedAi {
                     || (self.peace_when_war_does_not_pay
                         && fatigued
                         && !one_war_presses
+                        && !air_surge_presses
                         && g.player_city_ids(*other).len() > 1
                         && (!self.treasury_can_carry_a_war(g, pid)
                             || g.turn.saturating_sub(self.last_campaign_progress)
