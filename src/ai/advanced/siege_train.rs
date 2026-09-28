@@ -231,6 +231,20 @@ impl CityView {
     }
 }
 
+/// The wall rule shared by the train's melee orders and its damage budget.
+pub(super) fn melee_wall_attack_allowed(g: &Game, pid: usize, uid: u32, cid: u32) -> bool {
+    let (Some(city), Some(unit)) = (CityView::of(g, cid), g.units.get(&uid)) else {
+        return false;
+    };
+    let (ram, tower) = g.siege_support_effects(
+        pid,
+        cid,
+        city.pos,
+        &g.rules.units[unit.kind].promotion_class,
+    );
+    city.wall_fraction() <= MELEE_WALL_FRACTION || ram || tower
+}
+
 /// Which arm of the train a unit is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Arm {
@@ -1233,13 +1247,7 @@ impl AdvancedAi {
         let here = g.units[&uid].pos;
         let distance = g.wdist(here, city.pos);
         if distance <= 1 {
-            let (ram, tower) = g.siege_support_effects(
-                pid,
-                city.id,
-                city.pos,
-                &g.rules.units[g.units[&uid].kind].promotion_class,
-            );
-            let allow_city = city.wall_fraction() <= MELEE_WALL_FRACTION || ram || tower;
+            let allow_city = melee_wall_attack_allowed(g, pid, uid, city.id);
             if let Some(acted) = self.siege_blow(g, pid, uid, city, plan, allow_city) {
                 return acted;
             }
