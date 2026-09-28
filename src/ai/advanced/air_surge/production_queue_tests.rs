@@ -228,6 +228,34 @@ fn two_upgraded_bombers_fill_the_launch_quota_without_ordering_a_third() {
 }
 
 #[test]
+fn mechanized_infantry_can_escort_a_modern_armor_surge() {
+    let (mut g, mut ai, mut strategy, first, second) = stealth_fixture();
+    let target = ai.air_surge_plan.as_ref().unwrap().objective_city;
+    let surge = ai.air_surge_plan.as_mut().unwrap();
+    surge.body_unit = name!("modern_armor");
+    surge.phase = AirSurgePhase::Exploit;
+
+    for cid in [first, second] {
+        g.spawn_test_unit("jet_bomber", 0, g.cities[&cid].pos);
+    }
+    g.spawn_test_unit("modern_armor", 0, (7, 12));
+    g.spawn_test_unit("mechanized_infantry", 0, (8, 12));
+    g.spawn_test_unit("tank", 0, (9, 12));
+    g.spawn_test_unit("at_crew", 0, (10, 12));
+    ai.air_surge_status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert!(ai.air_surge_status.wing_ready());
+    assert_eq!(
+        ai.air_surge_status.bodies, 3,
+        "late land capturers should count across upgrade branches, but weaker units should not"
+    );
+    assert!(ai.air_surge_status.escort_ready());
+
+    strategy.target_city = None;
+    ai.apply_air_surge_to_strategy(&mut strategy);
+    assert_eq!(strategy.target_city, Some(target));
+}
+
+#[test]
 fn active_package_trains_a_legal_successor_after_the_base_bomber_is_obsolete() {
     let (mut g, mut ai, _, first, _) = stealth_fixture();
     assert!(g.can_produce(

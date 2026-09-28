@@ -301,6 +301,23 @@ impl AdvancedAi {
         spec.domain.as_deref() == Some("air") && spec.promotion_class == "air_bomber"
     }
 
+    /// A different upgrade branch can still take a city after the wing
+    /// empties it. The King Gran Colombia seat held Mechanized Infantry and
+    /// Tanks beside four Jet Bombers, but a Modern Armor plan counted only
+    /// its one armor unit and kept its reachable Leeds sortie waiting.
+    /// Within 15% of the chosen unit's strength is a useful land escort;
+    /// much weaker units should not satisfy the launch requirement.
+    fn air_surge_body_ready_kind(g: &Game, pid: usize, kind: Name, chosen: Name) -> bool {
+        if Self::war_unit_is_at_least(g, pid, kind, chosen) {
+            return true;
+        }
+        let (spec, floor) = (&g.rules.units[kind], &g.rules.units[chosen]);
+        spec.class == "military"
+            && spec.is_melee_capable()
+            && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            && spec.strength + 1e-9 >= floor.strength * 0.85
+    }
+
     /// The strongest unlocked Bomber this empire would train, including its
     /// unique replacement and later generations. Before the research goal is
     /// known, retain its base unit for planning. A ruleset without that base
@@ -528,7 +545,7 @@ impl AdvancedAi {
                 };
                 if Self::air_surge_is_bomber(g, unit) {
                     status.bombers_committed += 1;
-                } else if Self::war_unit_is_at_least(g, pid, unit, plan.body_unit) {
+                } else if Self::air_surge_body_ready_kind(g, pid, unit, plan.body_unit) {
                     status.bodies_committed += 1;
                 }
             }
@@ -537,7 +554,7 @@ impl AdvancedAi {
             let kind = g.units[&uid].kind;
             if Self::air_surge_is_bomber(g, kind) {
                 status.bombers += 1;
-            } else if Self::war_unit_is_at_least(g, pid, kind, plan.body_unit) {
+            } else if Self::air_surge_body_ready_kind(g, pid, kind, plan.body_unit) {
                 status.bodies += 1;
             }
         }
@@ -694,7 +711,9 @@ impl AdvancedAi {
             let kind = g.units[&uid].kind;
             if Self::air_surge_is_bomber(g, kind) {
                 bombers += 1;
-            } else if body.is_some_and(|(unit, _)| Self::war_unit_is_at_least(g, pid, kind, unit)) {
+            } else if body
+                .is_some_and(|(unit, _)| Self::air_surge_body_ready_kind(g, pid, kind, unit))
+            {
                 bodies += 1;
             }
         }
@@ -1248,7 +1267,7 @@ impl AdvancedAi {
                 Item::Unit { unit } | Item::Formation { unit, .. } => {
                     if Self::air_surge_is_bomber(g, *unit) {
                         status.bombers_committed = status.bombers_committed.saturating_sub(1);
-                    } else if Self::war_unit_is_at_least(g, pid, *unit, plan.body_unit) {
+                    } else if Self::air_surge_body_ready_kind(g, pid, *unit, plan.body_unit) {
                         status.bodies_committed = status.bodies_committed.saturating_sub(1);
                     }
                 }
@@ -1360,7 +1379,7 @@ impl AdvancedAi {
                             - turns * 8.0,
                     )
                 } else if status.metal_ready
-                    && Self::war_unit_is_at_least(g, pid, *unit, plan.body_unit)
+                    && Self::air_surge_body_ready_kind(g, pid, *unit, plan.body_unit)
                 {
                     let missing = AIR_SURGE_BODIES.saturating_sub(status.bodies_committed);
                     (missing > 0).then_some(
@@ -1474,7 +1493,7 @@ impl AdvancedAi {
                     }
                     Item::Unit { unit }
                         if wants_body
-                            && Self::war_unit_is_at_least(g, pid, *unit, plan.body_unit) =>
+                            && Self::air_surge_body_ready_kind(g, pid, *unit, plan.body_unit) =>
                     {
                         if launch_wing_committed && launch_escort_missing {
                             1
