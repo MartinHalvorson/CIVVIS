@@ -18334,6 +18334,37 @@ fn bomber_planners_choose_high_value_air_pillage_over_low_value_strikes() {
             .advanced_air_action(&game, 0, bomber, &plan),
         Some(expected)
     );
+
+    let capture_post = game
+        .nbrs(enemy_center)
+        .into_iter()
+        .find(|position| *position != target && game.map.get(*position).is_some())
+        .unwrap();
+    game.spawn_test_unit("modern_armor", 0, capture_post);
+    game.cities.get_mut(&enemy_city).unwrap().hp = 80;
+    assert_eq!(
+        AdvancedAi::targeting(VictoryTarget::Domination)
+            .advanced_air_action(&game, 0, bomber, &plan),
+        Some(Action::AirStrike {
+            unit: bomber,
+            target: enemy_center,
+        }),
+        "a capture-ready original capital must not heal while bombers pillage"
+    );
+    let replan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_city: None,
+        ..plan
+    };
+    assert_eq!(
+        AdvancedAi::targeting(VictoryTarget::Domination)
+            .advanced_air_action(&game, 0, bomber, &replan),
+        Some(Action::AirStrike {
+            unit: bomber,
+            target: enemy_center,
+        }),
+        "a second-front replan must not discard a nearby capital capture"
+    );
 }
 
 #[test]

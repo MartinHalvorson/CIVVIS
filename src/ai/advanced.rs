@@ -38906,6 +38906,28 @@ impl AdvancedAi {
             if before.is_capital && progress > 0.0 && plan.strategy == GrandStrategy::Conquest {
                 value += 25.0;
             }
+            // The live Amsterdam assault bombed its original capital to a
+            // sliver, then pillaged airstrips for several turns while city
+            // healing erased the opening. When a capture body is already on
+            // the ring, keep reducing that capital instead of taking the
+            // one-time infrastructure payout.
+            if progress > 0.0
+                && before.is_capital
+                && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+                && (before.wall_hp <= 100 || before.hp <= 120)
+                && g.units.values().any(|unit| {
+                    let spec = &g.rules.units[unit.kind];
+                    unit.owner == pid
+                        && unit.hp >= 50
+                        && spec.class == "military"
+                        && spec.is_melee_capable()
+                        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                        && !g.is_embarked(unit)
+                        && g.wdist(unit.pos, before.pos) <= 3
+                })
+            {
+                value += 200.0;
+            }
         } else if let Some(city) = target_encampment {
             let before = &g.cities[&city];
             let after_city = &after.cities[&city];
