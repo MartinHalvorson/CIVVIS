@@ -12665,42 +12665,87 @@ impl AdvancedAi {
         // Holy Site. The direct infrastructure target remains first for
         // Science and Culture, and emergency defence and a rush outrank this
         // choice below.
-        let short_domination_city = if strategy == GrandStrategy::Conquest
-            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
-            && wartime_rivals.is_empty()
-        {
-            target_player
-                .filter(|target| !g.players[*target].is_minor)
-                .and_then(|target| {
-                    let short_capital = self
-                        .domination_capital_target_for(g, pid, Some(target))
-                        .map(|(_, city)| city)
-                        .filter(|city| {
-                            Self::city_within_first_capture_march(g, pid, g.cities[city].pos)
-                        });
-                    short_capital.or_else(|| {
-                        g.cities
-                            .values()
+        let short_domination_city =
+            if matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Expansion)
+                && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+                && wartime_rivals.is_empty()
+            {
+                target_player
+                    .filter(|target| !g.players[*target].is_minor)
+                    .and_then(|target| {
+                        let short_capital = self
+                            .domination_capital_target_for(g, pid, Some(target))
+                            .map(|(_, city)| city)
                             .filter(|city| {
-                                city.owner == target
-                                    && Self::city_within_first_capture_march(g, pid, city.pos)
-                            })
-                            .min_by(|left, right| {
-                                self.campaign_city_value(g, pid, left, GrandStrategy::Conquest)
-                                    .total_cmp(&self.campaign_city_value(
-                                        g,
-                                        pid,
-                                        right,
-                                        GrandStrategy::Conquest,
-                                    ))
-                                    .then(left.id.cmp(&right.id))
-                            })
-                            .map(|city| city.id)
+                                Self::city_within_first_capture_march(g, pid, g.cities[city].pos)
+                            });
+                        // A capital at the edge of the first march is not the
+                        // shortest first capture when it has walls and an open
+                        // border town lies between us and it. Taking that town
+                        // moves the siege base forward without abandoning the
+                        // capital as the campaign's follow-up objective.
+                        let open_foothold = short_capital.and_then(|capital| {
+                            let capital_pos = g.cities[&capital].pos;
+                            let capital_distance = g
+                                .player_city_ids(pid)
+                                .iter()
+                                .map(|ours| g.wdist(g.cities[ours].pos, capital_pos))
+                                .min()
+                                .unwrap_or(i32::MAX);
+                            if g.cities[&capital].wall_hp <= 0 {
+                                return None;
+                            }
+                            g.cities
+                                .values()
+                                .filter(|city| {
+                                    city.owner == target
+                                        && city.id != capital
+                                        && city.wall_hp <= 0
+                                        && g.wdist(city.pos, capital_pos)
+                                            <= city_campaign::CAMPAIGN_HOP
+                                })
+                                .filter(|city| {
+                                    g.player_city_ids(pid).iter().any(|ours| {
+                                        let distance = g.wdist(g.cities[ours].pos, city.pos);
+                                        distance <= DOMINATION_FIRST_CAPTURE_MARCH
+                                            && distance.saturating_add(2) <= capital_distance
+                                    })
+                                })
+                                .min_by(|left, right| {
+                                    self.campaign_city_value(g, pid, left, GrandStrategy::Conquest)
+                                        .total_cmp(&self.campaign_city_value(
+                                            g,
+                                            pid,
+                                            right,
+                                            GrandStrategy::Conquest,
+                                        ))
+                                        .then(left.id.cmp(&right.id))
+                                })
+                                .map(|city| city.id)
+                        });
+                        open_foothold.or(short_capital).or_else(|| {
+                            g.cities
+                                .values()
+                                .filter(|city| {
+                                    city.owner == target
+                                        && Self::city_within_first_capture_march(g, pid, city.pos)
+                                })
+                                .min_by(|left, right| {
+                                    self.campaign_city_value(g, pid, left, GrandStrategy::Conquest)
+                                        .total_cmp(&self.campaign_city_value(
+                                            g,
+                                            pid,
+                                            right,
+                                            GrandStrategy::Conquest,
+                                        ))
+                                        .then(left.id.cmp(&right.id))
+                                })
+                                .map(|city| city.id)
+                        })
                     })
-                })
-        } else {
-            None
-        };
+            } else {
+                None
+            };
         let suppression_target = actionable_denial
             .filter(|(rival, counter)| {
                 *counter == GrandStrategy::Conquest && target_player == Some(*rival)
