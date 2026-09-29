@@ -2465,6 +2465,10 @@ pub struct AdvancedAi {
     /// the deal; offering costs nothing and unblocks the lane the moment it
     /// lands. Frozen tournament controllers keep the recorded posture.
     religion_sues_peace: bool,
+    /// A war opened to condemn a home-front spreader. Its purpose can end
+    /// before an enemy city is found; remember it so the conquest army can
+    /// seek white peace once another concrete campaign becomes available.
+    religious_interception_war: Option<(usize, u32)>,
     /// Total unresolved delay for each Settler. Unlike `settler_stalls`, this
     /// survives a target change so a stranded civilian stops monopolizing the
     /// empire-wide in-flight allowance and attracts an escort.
@@ -8262,6 +8266,7 @@ impl AdvancedAi {
             turn_start_hostiles: Vec::new(),
             turn_start_hostiles_turn: None,
             religion_sues_peace: false,
+            religious_interception_war: None,
             settler_blocked_turns: BTreeMap::new(),
             settler_avoid: BTreeMap::new(),
             settler_threat_deferrals: BTreeMap::new(),
@@ -20148,6 +20153,9 @@ impl AdvancedAi {
             .collect();
         self.peace_offers.clear();
         self.peace_routed.clear();
+        self.religious_interception_war = self
+            .religious_interception_war
+            .filter(|(rival, _)| g.is_at_war(pid, *rival));
         for other in &rivals {
             let appointed_objective = self
                 .war_plan
@@ -20180,6 +20188,8 @@ impl AdvancedAi {
             // `advanced/war_policy.rs`.
             let policy_peace = self.war_policy_peace(g, pid, *other);
             let religious_interception = self.religious_interception_holds_war(g, pid, *other);
+            let interception_handoff =
+                self.religious_interception_handoff_peace(g, pid, *other, plan);
             let outmatched = if self.war_policy_via_board {
                 policy_peace.is_some()
             } else {
@@ -20224,6 +20234,7 @@ impl AdvancedAi {
                                 >= g.standard_duration(PEACE_STALL_TURNS)))
                     || envoy_reclaim.is_some()
                     || one_war_peace.is_some()
+                    || interception_handoff
                     || science_defensive_peace)
             {
                 self.peace_offers.insert(*other);
@@ -20267,6 +20278,8 @@ impl AdvancedAi {
                         "this is not the war the recovery plan is fighting".to_string()
                     } else if self.religion_sues_peace && plan.strategy == GrandStrategy::Religion {
                         "the religion plan cannot spread into a war".to_string()
+                    } else if interception_handoff {
+                        "the religious interception is over and another city is ready for a conquest campaign".to_string()
                     } else {
                         "the war has stalled".to_string()
                     };

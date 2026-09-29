@@ -17,6 +17,45 @@ fn visible_home_spreaders(g: &Game, pid: usize, rival: usize, faith: &str) -> Ve
 }
 
 impl AdvancedAi {
+    /// A defensive condemnation must not occupy the only major-war slot
+    /// after its victory threat is gone and a different visible city can be
+    /// campaigned against. The host still decides whether to accept white
+    /// peace; this only asks when the game's minimum war term has elapsed.
+    pub(super) fn religious_interception_handoff_peace(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        let Some((intercepted, opened)) = self.religious_interception_war else {
+            return false;
+        };
+        if intercepted != rival
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !g.is_at_war(pid, rival)
+            || g.turn.saturating_sub(opened) < g.standard_duration(10).max(1)
+            || g.peace_available_at(pid, rival).is_some()
+            || g.emergency_war_pair(pid, rival)
+            || self.urgent_victory_threat(g, rival)
+            || self.religious_interception_holds_war(g, pid, rival)
+            || plan.strategy != GrandStrategy::Conquest
+            || plan.threatened_city.is_some()
+            || plan.target_player == Some(rival)
+            || self.one_war_prizes_in_reach(g, pid)
+        {
+            return false;
+        }
+        plan.target_city
+            .and_then(|cid| g.cities.get(&cid))
+            .is_some_and(|city| {
+                Some(city.owner) == plan.target_player
+                    && city.owner != pid
+                    && !g.same_team(pid, city.owner)
+                    && g.sees(&g.player_vision_frame(pid), city.pos)
+            })
+    }
+
     /// A war opened to stop an approaching religious victory should remain
     /// open while that founder still has visible spreaders near our cities.
     /// Once the local threat or the rival's victory stake recedes, ordinary
@@ -123,6 +162,7 @@ impl AdvancedAi {
                     if g.apply(pid, &opening).is_err() {
                         return false;
                     }
+                    self.religious_interception_war = Some((rival, g.turn));
                     if let Some(action) = movement {
                         if g.apply(pid, &action).is_err() {
                             return true;
