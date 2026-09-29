@@ -698,6 +698,19 @@ impl Game {
     }
 
     pub(super) fn established_national_parks(&self, pid: usize) -> Vec<(u32, [Pos; 4])> {
+        if let Some(memo) = self.query_memo.national_parks.borrow().as_ref() {
+            if let Some(parks) = memo.get(&pid) {
+                return parks.clone();
+            }
+        }
+        let parks = self.established_national_parks_uncached(pid);
+        if let Some(memo) = self.query_memo.national_parks.borrow_mut().as_mut() {
+            memo.insert(pid, parks.clone());
+        }
+        parks
+    }
+
+    pub(super) fn established_national_parks_uncached(&self, pid: usize) -> Vec<(u32, [Pos; 4])> {
         let mut parks = Vec::new();
         let mut used = BTreeSet::new();
         // Every established park has four owned tiles carrying the
@@ -3442,6 +3455,8 @@ impl Game {
             *self.query_memo.gw_slots.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.gw_housing.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.regional.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.powered.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.national_parks.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.wonder_effects.borrow_mut() = Some(BTreeMap::new());
         }
         QueryMemo {
