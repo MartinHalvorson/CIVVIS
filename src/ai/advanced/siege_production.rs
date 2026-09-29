@@ -100,7 +100,10 @@ impl AdvancedAi {
     /// The delegated city governor does not call `production_value`, where the
     /// ordinary missing-siege reservation lives. Give a walled Domination
     /// assault one real bombardment unit before delegation fills every idle
-    /// queue. A fielded or queued land gun normally closes this reservation;
+    /// queue. An enemy that already knows Masonry can raise walls during the
+    /// first few war turns, so a mostly healthy open objective also earns its
+    /// first gun while the army marches. A fielded or queued land gun normally
+    /// closes this reservation;
     /// a failed positive damage budget can reserve up to three in total. If
     /// only a new, low-production city is idle, a much faster city may give up
     /// an uninvested routine queue instead: a 140-turn gun cannot reinforce a
@@ -119,10 +122,14 @@ impl AdvancedAi {
             .target_city
             .and_then(|cid| g.cities.get(&cid))
             .filter(|city| {
-                city.wall_hp > 0
-                    && city.owner != pid
+                city.owner != pid
                     && !g.players[city.owner].is_minor
                     && g.is_at_war(pid, city.owner)
+                    && (city.wall_hp > 0
+                        || (city.hp >= 160
+                            && g.players[city.owner]
+                                .techs
+                                .contains(&crate::name!("masonry"))))
             })
         else {
             return None;

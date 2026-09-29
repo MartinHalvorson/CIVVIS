@@ -261,3 +261,23 @@ fn domination_finishes_a_breached_city_before_peace_for_another_rival() {
     g.cities.get_mut(&city).unwrap().wall_hp = 1;
     assert_eq!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
 }
+
+/// On the live Cree front, peace was offered for a stale war counter while
+/// the capital had 41 HP, no walls, and a healthy infantry four tiles away.
+/// The same bounded capture window must hold against fatigue as well as an
+/// unrelated rival's victory clock.
+#[test]
+fn domination_finish_at_hand_outlasts_the_stalled_war_counter() {
+    let (mut g, mut ai) = two_fronts();
+    let city = g.player_city_ids(1)[0];
+    g.cities.get_mut(&city).unwrap().hp = ONE_WAR_FINISH_HP;
+    let finisher = g.spawn_test_unit("modern_armor", 0, (11, 12));
+    ai.one_war.as_mut().unwrap().tide_against_since = Some(g.turn - 2);
+    assert!(ai.one_war_presses(&g, 0, 1));
+
+    g.cities.get_mut(&city).unwrap().hp = ONE_WAR_FINISH_HP + 1;
+    assert!(!ai.one_war_presses(&g, 0, 1));
+    g.cities.get_mut(&city).unwrap().hp = ONE_WAR_FINISH_HP;
+    g.remove_unit(finisher);
+    assert!(!ai.one_war_presses(&g, 0, 1));
+}

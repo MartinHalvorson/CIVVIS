@@ -120,6 +120,50 @@ fn delegated_domination_reserves_one_real_wall_breaker() {
         .is_none());
 }
 
+/// Cree knew Masonry when the open-capital war began on turn 113 and raised
+/// walls five turns later. Waiting for the first wall before ordering a gun
+/// left the only assault body exposed while the gun marched to the front.
+#[test]
+fn delegated_domination_reserves_a_gun_before_a_known_masonry_enemy_raises_walls() {
+    let (mut g, ai, plan, home, target) = siege_gap_case();
+    g.cities.get_mut(&target).unwrap().wall_hp = 0;
+    g.cities.get_mut(&target).unwrap().hp = 194;
+    g.players[1].techs.insert(crate::name!("masonry"));
+    let gun = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+    assert_eq!(
+        ai.reserve_delegated_domination_siege(&mut g, 0, &plan),
+        Some((home, gun.clone()))
+    );
+    assert_eq!(g.cities[&home].queue.first(), Some(&gun));
+    assert!(ai
+        .reserve_delegated_domination_siege(&mut g, 0, &plan)
+        .is_none());
+
+    g.cities.get_mut(&home).unwrap().queue.clear();
+    g.cities.get_mut(&target).unwrap().hp = 100;
+    assert!(
+        ai.reserve_delegated_domination_siege(&mut g, 0, &plan)
+            .is_none(),
+        "an open city already near capture needs its melee body"
+    );
+    g.cities.get_mut(&target).unwrap().hp = 194;
+    g.players[1].techs.remove(&crate::name!("masonry"));
+    assert!(
+        ai.reserve_delegated_domination_siege(&mut g, 0, &plan)
+            .is_none(),
+        "an opponent unable to build walls does not need a gun"
+    );
+    g.players[1].techs.insert(crate::name!("masonry"));
+    g.at_war.clear();
+    assert!(
+        ai.reserve_delegated_domination_siege(&mut g, 0, &plan)
+            .is_none(),
+        "a prospective war does not interrupt production"
+    );
+}
+
 /// On `civvis-20260929T003923Z` turn 146, every productive city had just
 /// started a routine queue, so the delegated reservation picked a new
 /// one-production city and forecast 144 turns for a bombard. A fresh trader

@@ -87,7 +87,7 @@ pub(crate) const ONE_WAR_PILLAGE_REACH_TURNS: i32 = 2;
 pub(crate) const ONE_WAR_CITY_BROKEN_FRACTION: f64 = 0.5;
 /// A breached city this low can be taken before an army redeploys to a new
 /// rival. The capture body may be a few tiles behind the guns.
-pub(crate) const ONE_WAR_FINISH_HP: i32 = 40;
+pub(crate) const ONE_WAR_FINISH_HP: i32 = 60;
 pub(crate) const ONE_WAR_FINISH_REACH: i32 = 4;
 /// A second-front unit this close to a threatened city of ours keeps that
 /// enemy in the force planner's sights: the relief column's own radius.
@@ -657,8 +657,8 @@ impl AdvancedAi {
     }
 
     /// Whether the gene keeps pressing the war on `other` against the
-    /// fatigue clause: `other` is the campaign front, the tide is not
-    /// against us, and a prize is in reach.
+    /// fatigue clause. A breached city with a nearby capture body remains a
+    /// finishable prize even if the recent exchange has turned against us.
     pub(crate) fn one_war_presses(&self, g: &Game, pid: usize, other: usize) -> bool {
         let Some(front) = self.one_war.as_ref().filter(|_| self.one_war_at_a_time) else {
             return false;
@@ -668,8 +668,8 @@ impl AdvancedAi {
             && self
                 .domination_followup_target(g, pid, Some(other))
                 .is_none()
-            && front.tide_against_since.is_none()
-            && self.one_war_prizes_in_reach(g, pid)
+            && (self.one_war_capture_at_hand(g, pid, other)
+                || (front.tide_against_since.is_none() && self.one_war_prizes_in_reach(g, pid)))
     }
 
     /// Whether a declaration on `target` is held: a major war is already
