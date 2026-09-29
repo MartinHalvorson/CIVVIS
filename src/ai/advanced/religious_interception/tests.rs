@@ -59,6 +59,69 @@ fn urgent_religious_interception_does_not_require_a_known_enemy_city() {
 }
 
 #[test]
+fn completed_interception_offers_peace_for_a_visible_conquest_campaign() {
+    let (mut g, mut ai, mut plan, _, missionary) = fixture();
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!g.units.contains_key(&missionary));
+    assert_eq!(ai.religious_interception_war, Some((1, 83)));
+
+    // The one-war controller would otherwise keep this defensive front even
+    // though its city is far away and another rival has a visible objective.
+    let distant = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| {
+            g.wdist(*pos, (2, 8)) >= 20
+                && g.wdist(*pos, (18, 8)) >= 8
+                && g.wdist(*pos, (28, 8)) >= 4
+        })
+        .unwrap();
+    g.found_city_for(1, distant, None);
+    ai.enable_one_war_at_a_time();
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(1));
+
+    let objective = g.player_city_ids(2)[0];
+    g.spawn_test_unit("scout", 0, (16, 8));
+    plan.strategy = GrandStrategy::Conquest;
+    plan.target_player = Some(2);
+    plan.target_city = Some(objective);
+    assert!(!ai.religious_interception_handoff_peace(&g, 0, 1, &plan));
+
+    g.turn = g.peace_available_at(0, 1).unwrap();
+    assert!(
+        !ai.religious_interception_handoff_peace(&g, 0, 1, &plan),
+        "the founder remains an urgent religious threat"
+    );
+    Arc::make_mut(&mut g.observed_majority_religion).remove(&2);
+    assert!(ai.religious_interception_handoff_peace(&g, 0, 1, &plan));
+
+    let home = g.player_city_ids(0)[0];
+    g.host_observed = Arc::new(BTreeSet::from([
+        g.cities[&home].pos,
+        g.cities[&objective].pos,
+    ]));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(ai.peace_offers.contains(&1));
+    assert!(g.is_at_war(0, 1), "the host must confirm white peace");
+
+    g.apply(0, &Action::MakePeace { player: 1 }).unwrap();
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert_eq!(ai.religious_interception_war, None);
+}
+
+#[test]
+fn interception_peace_waits_without_an_alternative_city() {
+    let (mut g, mut ai, plan, _, _) = fixture();
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    g.turn = g.peace_available_at(0, 1).unwrap();
+    Arc::make_mut(&mut g.observed_majority_religion).remove(&2);
+    assert!(!ai.religious_interception_handoff_peace(&g, 0, 1, &plan));
+}
+
+#[test]
 fn religious_interception_preserves_nonurgent_and_executable_action_gates() {
     for control in 0..4 {
         let (mut g, mut ai, plan, defender, missionary) = fixture();
