@@ -333,7 +333,7 @@ fn domination_opens_the_unwalled_foothold_before_a_near_walled_capital() {
 /// stood 3-5 tiles from three other Japanese cities and 17 from Muscat.
 /// Commitment should preserve a real siege, not a march that never arrived.
 #[test]
-fn domination_retargets_untouched_distant_walls_to_the_armys_front() {
+fn domination_retargets_untouched_distant_city_to_the_armys_front() {
     let mut g = Game::new_full(2, 64, 40, 91_024, 650, 0, false);
     for unit in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(unit);
@@ -398,5 +398,39 @@ fn domination_retargets_untouched_distant_walls_to_the_armys_front() {
         ai.stale_domination_objective_city(&g, 0, prior, GrandStrategy::Conquest),
         None,
         "damage already done to the original wall keeps the siege"
+    );
+
+    // The live King front held an untouched, distant unwalled Trier from
+    // t123 to t138 while its army stood beside unwalled Munich. Munich built
+    // its first wall on t139 and finished 400 wall HP by t141; only then did
+    // the walled-objective rule release the stale Trier order.
+    for city in [prior, nearer] {
+        let target = g.cities.get_mut(&city).unwrap();
+        target.buildings.clear();
+        target.wall_hp = 0;
+    }
+    assert_eq!(g.city_max_wall_hp(&g.cities[&prior]), 0);
+    assert_eq!(g.city_max_wall_hp(&g.cities[&nearer]), 0);
+    Arc::make_mut(&mut g.observed_city_strength).insert(prior, 59.0);
+    Arc::make_mut(&mut g.observed_city_strength).insert(nearer, 74.0);
+    assert_eq!(
+        ai.stale_domination_objective_city(&g, 0, prior, GrandStrategy::Conquest),
+        Some(nearer),
+        "an open city beside the army is a better first capture than a weaker remote city"
+    );
+    assert_eq!(ai.assess(&g, 0).target_city, Some(nearer));
+
+    let screen = g.spawn_test_unit("tank", 0, (32, 20));
+    assert_eq!(
+        ai.stale_domination_objective_city(&g, 0, prior, GrandStrategy::Conquest),
+        None,
+        "a unit already on the old approach keeps the committed objective"
+    );
+    g.remove_unit(screen);
+    g.cities.get_mut(&prior).unwrap().hp -= 20;
+    assert_eq!(
+        ai.stale_domination_objective_city(&g, 0, prior, GrandStrategy::Conquest),
+        None,
+        "an open city already damaged keeps its siege"
     );
 }

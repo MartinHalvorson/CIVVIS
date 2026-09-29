@@ -11960,10 +11960,11 @@ impl AdvancedAi {
             .map(|city| city.id)
     }
 
-    /// Break a stale march to an untouched walled city only when a different
-    /// city of the same rival is already within the field army's short march.
+    /// Break a stale march to an untouched city only when a different city
+    /// of the same rival is already within the field army's short march.
     /// An army on the original siege ring, or damage to its defenses, keeps
-    /// the existing commitment.
+    /// the existing commitment. In particular, an unwalled distant objective
+    /// must not strand the army while a nearby open city builds its first wall.
     fn stale_domination_objective_city(
         &self,
         g: &Game,
@@ -11978,12 +11979,12 @@ impl AdvancedAi {
             return None;
         }
         let prior = g.cities.get(&prior_id)?;
+        let prior_wall_max = g.city_max_wall_hp(prior);
         if !g.is_at_war(pid, prior.owner)
             || g.players[prior.owner].is_minor
             || g.players[prior.owner].is_barbarian
             || prior.hp < CITY_MAX_HP
-            || prior.wall_hp <= 0
-            || prior.wall_hp < g.city_max_wall_hp(prior)
+            || (prior_wall_max > 0 && prior.wall_hp < prior_wall_max)
         {
             return None;
         }
@@ -12000,7 +12001,11 @@ impl AdvancedAi {
             .filter(|city| {
                 city.owner == prior.owner
                     && city.id != prior_id
-                    && city.wall_hp > 0
+                    && if prior_wall_max > 0 {
+                        city.wall_hp > 0
+                    } else {
+                        city.wall_hp <= 0
+                    }
                     && g.sees(&visible, city.pos)
                     && !self.capture_stood_down_holds(g, city.id)
                     && !Self::should_defer_city_capture(g, pid, city.id)
@@ -13031,8 +13036,8 @@ impl AdvancedAi {
         if let Some(nearer) = stale_walled_city {
             let city = &g.cities[&nearer];
             think!(self.journal(), Strategy, Strategy,
-                   "Campaign abandons distant untouched walls for {}", city.name;
-                   "a land force is within a short march of this cheaper walled objective, while none reached the old siege";
+                   "Campaign abandons a distant untouched city for {}", city.name;
+                   "a land force is within a short march of this cheaper objective, while none reached the old siege";
                    city.pos);
         }
 
