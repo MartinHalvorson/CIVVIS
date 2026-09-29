@@ -170,7 +170,7 @@ fn an_invested_siege_keeps_its_firing_posts_through_a_small_budget_dip() {
             g.cities.get_mut(&cid).unwrap().wall_hp = wall;
             let view = CityView::of(&g, cid).unwrap();
             let strength: f64 = force.iter().map(|uid| unit_power(&g, *uid)).sum();
-            if strength < ABORT_SHARE * siege_bill(&g, 0, &view) {
+            if strength < siege_bill(&g, 0, &view) {
                 continue;
             }
             if ai
@@ -183,6 +183,8 @@ fn an_invested_siege_keeps_its_firing_posts_through_a_small_budget_dip() {
         }
     }
     assert!(found, "the train must straddle the entry and exit margins");
+    let damaged_wall = g.cities[&cid].wall_hp;
+    let full_wall = CityView::of(&g, cid).unwrap().wall_max;
     let group = ForceGroup {
         id: guns[0],
         domain: ForceDomain::Land,
@@ -195,9 +197,15 @@ fn an_invested_siege_keeps_its_firing_posts_through_a_small_budget_dip() {
         local_strength_ratio: 2.0,
     };
     let plan = plan_against(&g, cid);
+    g.cities.get_mut(&cid).unwrap().wall_hp = full_wall;
+    assert!(!ai.conversion_siege_ready(&g, 0, cid, &force));
     ai.assess_siege(&g, 0, cid, &plan, &group);
     assert_eq!(ai.sieges[&cid].stage, SiegeStage::Stage);
-    ai.sieges.get_mut(&cid).unwrap().stage = SiegeStage::Invest;
+    g.turn += 1;
+    g.cities.get_mut(&cid).unwrap().wall_hp = damaged_wall;
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(ai.sieges[&cid].stage, SiegeStage::Invest);
+    g.turn += 1;
     ai.assess_siege(&g, 0, cid, &plan, &group);
     assert_eq!(ai.sieges[&cid].stage, SiegeStage::Invest);
 }

@@ -1020,6 +1020,15 @@ impl AdvancedAi {
         // finish within its estimated endurance still regroups.
         let damage_can_continue = !self.siege_positive_damage_budget
             || damage_budget.is_some_and(|(turns, endurance)| turns <= endurance);
+        // A damaged wall is a running assault, even if losses briefly forced
+        // the train back to Stage. Resume when it can finish within its full
+        // endurance; waiting for the untouched-wall entry margin again lets
+        // the defender's wall and the war-stall clock recover for free.
+        let damage_entry_ready = damage_ready
+            || (self.siege_positive_damage_budget
+                && city.wall_hp > 0
+                && city.wall_hp < city.wall_max
+                && damage_can_continue);
         let breach_taker = (city.wall_hp <= 0 && city.hp <= 100 && strength >= bill)
             .then(|| {
                 designate_taker(g, &city, &force)
@@ -1065,7 +1074,7 @@ impl AdvancedAi {
                     // the whole-force bill and positive-damage gate, but let
                     // a healthy, reachable capturer exploit that breach.
                     if ((arena && gathered) || staged >= bill || breach_taker.is_some())
-                        && damage_ready
+                        && damage_entry_ready
                     {
                         stage = SiegeStage::Invest;
                     }
