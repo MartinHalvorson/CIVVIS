@@ -34245,6 +34245,68 @@ fn a_rising_stock_pressure_reads_urgent_a_congress_earlier() {
     assert!(!AdvancedAi::legacy().projected_stock_denial);
 }
 
+/// A World Congress can award several DVP on one turn, then none for many
+/// turns. At nine of twenty points, extrapolating that one jump over the next
+/// fifteen turns interrupted the live Munich capital siege. An army already
+/// at a required capital keeps its plan until the observed diplomatic clock
+/// reaches the early stock bar; an empty front retains the projected warning.
+#[test]
+fn a_congress_dvp_jump_does_not_retask_an_active_domination_siege() {
+    let mut game = Game::new_full(2, 20, 14, 71_132, 300, 0, false);
+    let initial_units: Vec<_> = game.units.keys().copied().collect();
+    for id in initial_units {
+        game.remove_unit(id);
+    }
+    game.found_city_for(0, (2, 6), None);
+    let capital = game.found_city_for(1, (10, 6), None);
+    assert!(game.cities[&capital].is_capital);
+    game.cities.get_mut(&capital).unwrap().wall_hp = 100;
+    game.at_war.insert((0, 1));
+    let gun = game.spawn_test_unit("catapult", 0, (8, 6));
+    let jump = VictoryFocus {
+        strategy: GrandStrategy::Diplomacy,
+        progress: 51,
+    };
+    let history: Vec<_> = (134..=142)
+        .map(|turn| (turn, if turn == 142 { 51 } else { 26 }))
+        .collect();
+
+    let mut other_lane = AdvancedAi::new();
+    other_lane.enable_live_bridge();
+    other_lane.stock_pressure_history.insert(1, history.clone());
+    assert!(
+        other_lane.victory_pressure_is_urgent(&game, 1, jump),
+        "the existing general projection remains available"
+    );
+
+    let mut domination = AdvancedAi::targeting(VictoryTarget::Domination);
+    domination.enable_live_bridge();
+    domination.stock_pressure_history.insert(1, history);
+    assert!(domination.victory_pressure_is_urgent(&game, 1, jump));
+    assert_eq!(
+        domination.denial_response_for_pressure(&game, 0, 100, 1, jump),
+        None,
+        "a one-time DVP jump must not divert an active capital siege"
+    );
+    game.remove_unit(gun);
+    assert_eq!(
+        domination.denial_response_for_pressure(&game, 0, 100, 1, jump),
+        Some(GrandStrategy::Diplomacy),
+        "an empty front retains the projected warning"
+    );
+    let _gun = game.spawn_test_unit("catapult", 0, (8, 6));
+    let actual_alarm = VictoryFocus {
+        strategy: GrandStrategy::Diplomacy,
+        progress: 80,
+    };
+    assert!(domination.victory_pressure_is_urgent(&game, 1, actual_alarm));
+    assert_eq!(
+        domination.denial_response_for_pressure(&game, 0, 100, 1, actual_alarm),
+        Some(GrandStrategy::Diplomacy),
+        "the real sixteen-point warning still interrupts the siege"
+    );
+}
+
 /// Three mutually adjacent land tiles with nothing on them, and a unit with
 /// movement to spare, so a whole loop fits inside one turn.
 fn hex_triangle(game: &crate::game::Game) -> Option<[(i32, i32); 3]> {

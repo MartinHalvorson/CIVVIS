@@ -158,6 +158,25 @@ impl AdvancedAi {
             // keeps the campaign in its assigned military lane.
             return Some(GrandStrategy::Conquest);
         }
+        // Congress awards Diplomatic Victory Points in jumps. One jump must
+        // not be projected into an imminent win while a Domination army is
+        // already at a required capital's walls: that diverted production
+        // from the Munich siege at nine of twenty points in the live King
+        // game civvis-20260929T011038Z. Keep the projected warning for an
+        // empty front; the observed sixteen-point stock alarm still wins.
+        if pressure.strategy == GrandStrategy::Diplomacy
+            && pressure.progress < 78
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.cities.values().any(|city| {
+                city.owner != pid
+                    && city.is_capital
+                    && city.wall_hp > 0
+                    && g.is_at_war(pid, city.owner)
+                    && Self::domination_siege_present(g, pid, city.id)
+            })
+        {
+            return None;
+        }
         // Religious progress advances in whole-civilization jumps, and a
         // defender needs time to produce and route religious counters. Start
         // reacting with two holdouts left when the rival also leads our own
