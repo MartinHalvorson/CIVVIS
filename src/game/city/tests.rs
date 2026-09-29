@@ -138,3 +138,35 @@ fn provision_settlers_keep_the_ordinary_growth_appetite() {
     assert!(strategy.weights.food > 0.0);
     assert!(strategy.food_target > 2.0 * game.cities[&city].pop as f64);
 }
+
+/// `CitizenJobKey` replaced the formatted text the citizen plan broke ties on.
+/// Its derived order must be that text's order, or a tie resolves differently.
+#[test]
+fn citizen_job_keys_order_exactly_as_their_text_did() {
+    let values = [
+        -99_999, -1_000, -257, -100, -12, -10, -9, -3, -1, 0, 1, 2, 9, 10, 11, 99, 100, 256, 1_000,
+        99_999,
+    ];
+    let mut keys: Vec<(String, CitizenJobKey)> = Vec::new();
+    for x in values {
+        for y in values {
+            keys.push((format!("tile:{x:+06}:{y:+06}"), CitizenJobKey::tile((x, y))));
+        }
+    }
+    for (index, district) in ["campus", "commercial_hub", "holy_site", "theater_square"]
+        .into_iter()
+        .enumerate()
+    {
+        let text = format!("specialist:{district}:{index:03}");
+        keys.push((text.clone(), CitizenJobKey::Specialist(text)));
+    }
+    for (left_text, left_key) in &keys {
+        for (right_text, right_key) in &keys {
+            assert_eq!(
+                left_key.cmp(right_key),
+                left_text.cmp(right_text),
+                "{left_text} vs {right_text}"
+            );
+        }
+    }
+}
