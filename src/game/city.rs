@@ -717,14 +717,13 @@ impl Game {
         // `national_park` improvement. Derive the small set of possible tops
         // from those tiles instead of probing every tile on the map whenever
         // a city asks for its Amenities.
+        let national_park = crate::name!("national_park");
         let candidate_tops: BTreeSet<Pos> = self
             .cities
             .values()
             .filter(|city| city.owner == pid)
             .flat_map(|city| city.owned_tiles.iter().copied())
-            .filter(|position| {
-                self.map.tiles[position].improvement.as_deref() == Some("national_park")
-            })
+            .filter(|position| self.map.tiles[position].improvement == Some(national_park))
             .flat_map(|position| -> Vec<Pos> {
                 match self.map.sphere() {
                     // Any tile of a rhombus lies within two steps of its top.
@@ -3448,6 +3447,7 @@ impl Game {
             *self.query_memo.regional.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.powered.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.national_parks.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.regional_slots.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.wonder_effects.borrow_mut() = Some(BTreeMap::new());
         }
         QueryMemo {
