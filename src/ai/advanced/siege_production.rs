@@ -101,7 +101,10 @@ impl AdvancedAi {
     /// ordinary missing-siege reservation lives. Give a walled Domination
     /// assault one real bombardment unit before delegation fills every idle
     /// queue. A fielded or queued land gun normally closes this reservation;
-    /// a failed positive damage budget can reserve up to three in total.
+    /// a failed positive damage budget can reserve up to three in total. If
+    /// only a new, low-production city is idle, a much faster city may give up
+    /// an uninvested routine queue instead: a 140-turn gun cannot reinforce a
+    /// siege that needs relief now.
     pub(super) fn reserve_delegated_domination_siege(
         &self,
         g: &mut Game,
@@ -149,9 +152,32 @@ impl AdvancedAi {
 
         let best = {
             let _memo = g.query_memo();
-            let mut best: Option<(f64, u32, Name)> = None;
+            let mut best_idle: Option<(f64, u32, Name)> = None;
+            let mut best_fresh: Option<(f64, u32, Name)> = None;
             for cid in g.player_city_ids(pid) {
-                if !g.cities[&cid].queue.is_empty() || plan.threatened_city == Some(cid) {
+                if plan.threatened_city == Some(cid) {
+                    continue;
+                }
+                let city = &g.cities[&cid];
+                let fresh_routine = match city.queue.as_slice() {
+                    [] => false,
+                    [queued]
+                        if g.item_invested_production(cid, queued) <= f64::EPSILON
+                            && !(city.last_attacked > 0
+                                && g.turn.saturating_sub(city.last_attacked) <= 4) =>
+                    {
+                        match queued {
+                            Item::Unit { unit } => matches!(unit.as_str(), "builder" | "trader"),
+                            Item::Building { building } => !matches!(
+                                building.as_str(),
+                                "walls" | "medieval_walls" | "renaissance_walls"
+                            ),
+                            _ => false,
+                        }
+                    }
+                    _ => continue,
+                };
+                if !city.queue.is_empty() && !fresh_routine {
                     continue;
                 }
                 for item in g.producible_items(pid, cid) {
@@ -166,19 +192,34 @@ impl AdvancedAi {
                     }
                     let arrival = self.production_build_turns(g, pid, cid, &item)
                         + f64::from(g.wdist(g.cities[&cid].pos, objective)) / spec.moves.max(1.0);
+                    let best = if fresh_routine {
+                        &mut best_fresh
+                    } else {
+                        &mut best_idle
+                    };
                     if best.as_ref().is_none_or(|(old, old_city, old_unit)| {
                         arrival.total_cmp(old).is_lt()
                             || (arrival == *old && (cid, unit) < (*old_city, *old_unit))
                     }) {
-                        best = Some((arrival, cid, unit));
+                        *best = Some((arrival, cid, unit));
                     }
                 }
             }
-            best
+            match (best_idle, best_fresh) {
+                (Some(idle), Some(fresh))
+                    if fresh.0 <= 30.0 && idle.0 >= fresh.0 + 8.0 && idle.0 >= fresh.0 * 1.5 =>
+                {
+                    Some((fresh.0, fresh.1, fresh.2, Some(idle.0)))
+                }
+                (None, Some(fresh)) if fresh.0 <= 30.0 => Some((fresh.0, fresh.1, fresh.2, None)),
+                (Some(idle), _) => Some((idle.0, idle.1, idle.2, None)),
+                _ => None,
+            }
         };
-        let Some((arrival, city, unit)) = best else {
+        let Some((arrival, city, unit, slow_idle)) = best else {
             return None;
         };
+        let displaced = g.cities[&city].queue.first().cloned();
         let item = Item::Unit { unit };
         if g.apply(
             pid,
@@ -190,6 +231,16 @@ impl AdvancedAi {
         .is_err()
         {
             return None;
+        }
+        if let Some(old) = displaced {
+            let alternative = slow_idle.map_or_else(
+                || "no idle city could build the gun in time".to_string(),
+                |turns| format!("the fastest idle city needed about {turns:.0} turns"),
+            );
+            think!(self.journal(), Military, Detail,
+                "{} gives its fresh {} queue to the siege gun", g.cities[&city].name, Self::plain_item(&old);
+                "no production was invested in it; the gun arrives in about {arrival:.0} turns, while {alternative}";
+                objective);
         }
         think!(self.journal(), Military, Decision,
             "{} reserves a {} for the walled assault", g.cities[&city].name, unit;

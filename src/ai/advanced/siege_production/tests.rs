@@ -120,6 +120,93 @@ fn delegated_domination_reserves_one_real_wall_breaker() {
         .is_none());
 }
 
+/// On `civvis-20260929T003923Z` turn 146, every productive city had just
+/// started a routine queue, so the delegated reservation picked a new
+/// one-production city and forecast 144 turns for a bombard. A fresh trader
+/// or building costs no production to defer; an invested or military queue
+/// still owns its city.
+#[test]
+fn delegated_siege_uses_a_fast_fresh_queue_before_a_hundred_turn_idle_city() {
+    let (mut g, ai, plan, home, target) = siege_gap_case();
+    let home_pos = g.cities[&home].pos;
+    let target_pos = g.cities[&target].pos;
+    let remote_pos = g
+        .map
+        .tiles
+        .iter()
+        .filter(|(pos, tile)| {
+            g.wdist(**pos, home_pos) >= 6
+                && g.wdist(**pos, target_pos) >= 6
+                && g.rules.is_passable(tile)
+                && !g.rules.is_water(tile)
+        })
+        .map(|(pos, _)| *pos)
+        .next()
+        .expect("a remote land site");
+    let remote = g.found_city_for(0, remote_pos, None);
+    let routine = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    g.apply(
+        0,
+        &Action::Produce {
+            city: home,
+            item: routine.clone(),
+        },
+    )
+    .expect("the capital can start a builder");
+    assert_eq!(g.item_invested_production(home, &routine), 0.0);
+    for (cid, production) in [(home, 25.0), (remote, 1.0)] {
+        let before = g.city_yields(cid).production;
+        std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments)
+            .entry(cid)
+            .or_default()
+            .production += production - before;
+    }
+    let gun = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+    assert!(g.can_produce(0, home, &gun) && g.can_produce(0, remote, &gun));
+    let fast_arrival = ai.production_build_turns(&g, 0, home, &gun)
+        + f64::from(g.wdist(home_pos, target_pos)) / g.rules.units[&crate::name!("catapult")].moves;
+    let slow_arrival = ai.production_build_turns(&g, 0, remote, &gun)
+        + f64::from(g.wdist(remote_pos, target_pos))
+            / g.rules.units[&crate::name!("catapult")].moves;
+    assert!(fast_arrival <= 30.0 && slow_arrival >= fast_arrival * 1.5 + 8.0);
+
+    let mut invested = g.clone();
+    invested.cities.get_mut(&home).unwrap().production = 10.0;
+    assert_eq!(
+        ai.reserve_delegated_domination_siege(&mut invested, 0, &plan),
+        Some((remote, gun.clone())),
+        "invested work keeps the capital's queue"
+    );
+    let mut military = g.clone();
+    military.cities.get_mut(&home).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("archer"),
+    }];
+    assert_eq!(
+        ai.reserve_delegated_domination_siege(&mut military, 0, &plan),
+        Some((remote, gun.clone())),
+        "an active military queue is not displaced"
+    );
+    let mut walls = g.clone();
+    walls.cities.get_mut(&home).unwrap().queue = vec![Item::Building {
+        building: crate::name!("walls"),
+    }];
+    assert_eq!(
+        ai.reserve_delegated_domination_siege(&mut walls, 0, &plan),
+        Some((remote, gun.clone())),
+        "a city's wall order is not displaced"
+    );
+    assert_eq!(
+        ai.reserve_delegated_domination_siege(&mut g, 0, &plan),
+        Some((home, gun.clone())),
+        "the fresh routine queue yields to the timely siege gun"
+    );
+    assert_eq!(g.cities[&home].queue.first(), Some(&gun));
+}
+
 #[test]
 fn delegated_domination_reserves_another_gun_when_the_first_cannot_breach() {
     let (mut g, mut ai, plan, home, target) = siege_gap_case();
