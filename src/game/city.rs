@@ -1818,7 +1818,7 @@ impl Game {
 
         #[derive(Clone)]
         struct Job {
-            key: String,
+            key: CitizenJobKey,
             pos: Option<Pos>,
             specialist: Option<String>,
             yields: Yields,
@@ -1870,7 +1870,7 @@ impl Game {
                     BARREN_TILE_TIER
                 };
                 Some(Job {
-                    key: format!("tile:{:+06}:{:+06}", pos.0, pos.1),
+                    key: CitizenJobKey::tile(*pos),
                     pos: Some(*pos),
                     specialist: None,
                     yields: ys,
@@ -1881,7 +1881,7 @@ impl Game {
             .collect();
         for (index, (district, yields)) in self.city_specialist_jobs(city).into_iter().enumerate() {
             cands.push(Job {
-                key: format!("specialist:{district}:{index:03}"),
+                key: CitizenJobKey::Specialist(format!("specialist:{district}:{index:03}")),
                 pos: None,
                 specialist: Some(district),
                 yields,
@@ -1942,7 +1942,7 @@ impl Game {
                 break;
             }
             let need = strategy.food_target - food;
-            let mut best: Option<(f64, f64, String, String, usize, usize)> = None;
+            let mut best: Option<(f64, f64, &CitizenJobKey, &CitizenJobKey, usize, usize)> = None;
             for (out, a) in cands.iter().enumerate().filter(|(i, _)| selected[*i]) {
                 for (inside, b) in cands.iter().enumerate().filter(|(i, _)| !selected[*i]) {
                     let food_gain = b.yields.food - a.yields.food;
@@ -1952,14 +1952,7 @@ impl Game {
                     let value_gain = b.value - a.value;
                     let useful_food = food_gain.min(need);
                     let efficiency = value_gain / useful_food;
-                    let candidate = (
-                        efficiency,
-                        value_gain,
-                        a.key.clone(),
-                        b.key.clone(),
-                        out,
-                        inside,
-                    );
+                    let candidate = (efficiency, value_gain, &a.key, &b.key, out, inside);
                     if best
                         .as_ref()
                         .map(|old| {
@@ -1967,8 +1960,7 @@ impl Game {
                                 || ((candidate.0 - old.0).abs() < 1e-9
                                     && (candidate.1 > old.1 + 1e-9
                                         || ((candidate.1 - old.1).abs() < 1e-9
-                                            && (candidate.2.as_str(), candidate.3.as_str())
-                                                < (old.2.as_str(), old.3.as_str()))))
+                                            && (candidate.2, candidate.3) < (old.2, old.3))))
                         })
                         .unwrap_or(true)
                     {
@@ -1988,7 +1980,7 @@ impl Game {
 
         // One-swap local optimum under the nutrition constraint.
         for _ in 0..cands.len() {
-            let mut best: Option<(f64, String, String, usize, usize)> = None;
+            let mut best: Option<(f64, &CitizenJobKey, &CitizenJobKey, usize, usize)> = None;
             for (out, a) in cands.iter().enumerate().filter(|(i, _)| selected[*i]) {
                 for (inside, b) in cands.iter().enumerate().filter(|(i, _)| !selected[*i]) {
                     if b.fallback_tier > a.fallback_tier {
@@ -1999,14 +1991,13 @@ impl Game {
                     if value_gain <= 1e-9 || next_food + 1e-9 < strategy.food_target {
                         continue;
                     }
-                    let candidate = (value_gain, a.key.clone(), b.key.clone(), out, inside);
+                    let candidate = (value_gain, &a.key, &b.key, out, inside);
                     if best
                         .as_ref()
                         .map(|old| {
                             candidate.0 > old.0 + 1e-9
                                 || ((candidate.0 - old.0).abs() < 1e-9
-                                    && (candidate.1.as_str(), candidate.2.as_str())
-                                        < (old.1.as_str(), old.2.as_str()))
+                                    && (candidate.1, candidate.2) < (old.1, old.2))
                         })
                         .unwrap_or(true)
                     {
@@ -7896,6 +7887,26 @@ impl Game {
             .borrow_mut()
             .insert((pid, cid), items.clone());
         items
+    }
+}
+
+/// The tie-break between two equally valued citizen jobs. It was the text
+/// `tile:{x:+06}:{y:+06}` or `specialist:{district}:{index:03}`, formatted for
+/// every workable plot of every plan and cloned for every pair each swap pass
+/// compared. The derived order is that text's order: `specialist` sorts before
+/// `tile`, and past a coordinate's sign (`+` before `-`) the zero-padded digits
+/// rise with the magnitude, so a coordinate compares as `(negative, |value|)`.
+/// Specialists are few and keep their text.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum CitizenJobKey {
+    Specialist(String),
+    Tile((bool, u32), (bool, u32)),
+}
+
+impl CitizenJobKey {
+    fn tile(pos: Pos) -> Self {
+        let part = |value: i32| (value < 0, value.unsigned_abs());
+        CitizenJobKey::Tile(part(pos.0), part(pos.1))
     }
 }
 
