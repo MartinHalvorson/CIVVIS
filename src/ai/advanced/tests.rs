@@ -28441,6 +28441,130 @@ fn occupation_reserves_a_reachable_garrison_during_war() {
     assert_eq!(game.units[&warrior].pos, city_pos);
 }
 
+/// `occupation_garrison_target` ranks the candidates and routes only until one
+/// answers. Pin it to the direct reading it replaced -- route every unit, then
+/// take the nearest, weakest, lowest id -- over several occupied cities that
+/// compete for the same units.
+#[test]
+fn occupation_garrison_matches_routing_every_candidate() {
+    let mut game = Game::new_full(3, 26, 16, 108, 80, 1, false);
+    let anchor = game
+        .cities
+        .values()
+        .find(|city| city.owner != 0)
+        .map(|city| city.pos)
+        .unwrap();
+    while game.cities.values().filter(|city| city.owner != 0).count() < 3 {
+        let site = game
+            .wdisk(anchor, 8)
+            .into_iter()
+            .find(|pos| {
+                game.map.get(*pos).is_some_and(|tile| {
+                    tile.owner_city.is_none()
+                        && game.rules.is_passable(tile)
+                        && !game.rules.is_water(tile)
+                }) && game
+                    .cities
+                    .values()
+                    .all(|city| game.wdist(city.pos, *pos) >= 4)
+            })
+            .expect("fixture has room near the city-state");
+        game.found_city_for(1, site, None);
+    }
+    let cities: Vec<u32> = game
+        .cities
+        .values()
+        .filter(|city| city.owner != 0)
+        .map(|city| city.id)
+        .collect();
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    for (index, city) in cities.iter().enumerate() {
+        let occupied = game.cities.get_mut(city).unwrap();
+        occupied.owner = 0;
+        occupied.captured_from = None;
+        occupied.occupied_from = Some(1);
+        occupied.loyalty = 30.0 + 10.0 * index as f64;
+        let city_pos = occupied.pos;
+        for unit in game.units_at(city_pos) {
+            game.remove_unit(unit);
+        }
+        let posts: Vec<Pos> = game
+            .wdisk(city_pos, 3)
+            .into_iter()
+            .filter(|position| {
+                *position != city_pos
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.unit_ids_at(*position).is_empty()
+            })
+            .step_by(4)
+            .take(3)
+            .collect();
+        for (post, kind) in posts.into_iter().zip(["warrior", "spearman", "warrior"]) {
+            game.spawn_test_unit(kind, 0, post);
+        }
+    }
+    game.at_war.insert((0, 1));
+    let ai = AdvancedAi::new();
+    let routed_every_candidate = |g: &Game, uid: u32| -> Option<Pos> {
+        let mut demand: Vec<_> = g
+            .cities
+            .values()
+            .filter(|city| city.owner == 0 && city.occupied_from.is_some())
+            .filter(|city| {
+                !g.unit_ids_at(city.pos).iter().any(|unit| {
+                    g.units[unit].owner == 0
+                        && g.rules.units[g.units[unit].kind].class == "military"
+                })
+            })
+            .collect();
+        demand.sort_by(|left, right| {
+            ai.conversion_garrison_priority(g, left)
+                .total_cmp(&ai.conversion_garrison_priority(g, right))
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        let mut available: BTreeSet<u32> = g
+            .player_unit_ids(0)
+            .into_iter()
+            .filter(|unit| g.rules.units[g.units[unit].kind].class == "military")
+            .collect();
+        for city in demand {
+            let selected = available
+                .iter()
+                .filter(|unit| {
+                    g.units[unit].pos == city.pos || g.route_step(**unit, city.pos, 0).is_some()
+                })
+                .min_by_key(|unit| {
+                    (
+                        g.wdist(g.units[unit].pos, city.pos),
+                        g.unit_strength(&g.units[unit], true) as i32,
+                        **unit,
+                    )
+                })
+                .copied();
+            if let Some(selected) = selected {
+                available.remove(&selected);
+                if selected == uid {
+                    return Some(city.pos);
+                }
+            }
+        }
+        None
+    };
+    let units = game.player_unit_ids(0);
+    assert!(units.len() >= 4);
+    let mut assigned = 0;
+    for uid in units {
+        let target = ai.occupation_garrison_target(&game, 0, uid);
+        assert_eq!(target, routed_every_candidate(&game, uid), "unit {uid}");
+        assigned += usize::from(target.is_some());
+    }
+    assert!(assigned >= 2, "only {assigned} garrisons assigned");
+}
+
 #[test]
 fn a_spy_posted_to_a_razed_city_does_not_bring_the_server_down() {
     let mut game = Game::new_full(2, 24, 16, 109, 120, 0, false);
