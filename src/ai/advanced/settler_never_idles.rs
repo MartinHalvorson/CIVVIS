@@ -140,14 +140,23 @@ impl AdvancedAi {
             })
     }
 
-    /// The arrival verdict for a site the exhaustion search chose: the fog
-    /// guesses had their say when the walk began and may not refuse the
-    /// founding at its end; only the engine's own Loyalty calculation, at
-    /// the same [`STRANDED_SITE_MIN_HOLD_TURNS`] floor the choice used, may.
+    /// The arrival verdict for a site the exhaustion search chose: broad fog
+    /// guesses had their say when the walk began, but a newly revealed major
+    /// border with no visible city is concrete evidence the forecast cannot
+    /// price. Otherwise use the same [`STRANDED_SITE_MIN_HOLD_TURNS`] floor
+    /// the choice used.
     /// Without this a relaxed target was refused on arrival by the strict
     /// verdict, retired, chosen again by the next exhaustion search, walked
     /// to again — 1,062 idle turns of that loop in eight live-genome games.
-    pub(super) fn relaxed_arrival_verdict(g: &Game, pid: usize, site: Pos) -> Option<String> {
+    pub(super) fn relaxed_arrival_verdict(
+        &self,
+        g: &Game,
+        pid: usize,
+        site: Pos,
+    ) -> Option<String> {
+        if let Some(why) = self.exhaustion_site_unpriceable(g, site) {
+            return Some(why.to_string());
+        }
         Self::settle_site_forecast_revolt(g, pid, site)
             .filter(|(_, turns)| *turns < STRANDED_SITE_MIN_HOLD_TURNS)
             .map(|(per_turn, turns)| {
@@ -176,23 +185,14 @@ impl AdvancedAi {
             .filter(|(_, turns)| self.science_targeted(g) || *turns < STRANDED_SITE_MIN_HOLD_TURNS)
     }
 
-    /// Why the exhaustion search may not take `site` under
-    /// `exhaustion-loyalty-guard`. The preferred search refuses a site within
-    /// five tiles of a met major's border whose city it has not seen
-    /// (`beside_unresolved_major_border`), because the forecast sums the
-    /// cities on the board and that one is not on it. The exhaustion search
-    /// set that refusal aside as a fog guess; on the live board it is the one
-    /// guess that is right. Of the 25 exhaustion foundings in the King runs
-    /// of 2026-08-27..29, six revolted (24%, against 2 of 387 preferred
-    /// foundings), three of them at −22 Loyalty a turn from their first
-    /// reading — the settler handed a city to the rival that pressed it.
-    /// `None` with the relevant guard off, with `frontier-loyalty` off, or
-    /// when no border hides a city.
+    /// Why the exhaustion search may not take `site` under `frontier-loyalty`.
+    /// A met major's border with no visible city is host evidence of pressure
+    /// the mirrored forecast cannot price. Keep this narrow host-only floor
+    /// even when the broader, screen-negative `exhaustion-loyalty-guard` is off.
+    /// Native boards have no `unseen_major_borders`, so their search is unchanged.
     pub(super) fn exhaustion_site_unpriceable(&self, g: &Game, site: Pos) -> Option<&'static str> {
-        (self.frontier_loyalty
-            && (self.exhaustion_loyalty_guard || self.science_targeted(g))
-            && Self::beside_unresolved_major_border(g, site))
-        .then_some("a rival border within five tiles may hide the city that would press it")
+        (self.frontier_loyalty && Self::beside_unresolved_major_border(g, site))
+            .then_some("a rival border within five tiles may hide the city that would press it")
     }
 
     /// Whether `site` sits inside a rival major's Loyalty sphere: a visible
@@ -222,19 +222,13 @@ impl AdvancedAi {
         }
     }
 
-    /// Drop the sites `exhaustion_site_unpriceable` refuses, and the sites
-    /// inside a rival major's sphere, from a candidate list, saying so once.
-    /// Unassigned lanes drop nothing; the explicit Science contract also
-    /// enables this sieve when the optional exhaustion gene is off.
+    /// Drop sites beside an unresolved major border when frontier protection
+    /// is active. The broader rival-sphere sieve still needs the optional
+    /// exhaustion gene or an explicit Science contract.
     fn set_aside_unpriceable_sites(&self, g: &Game, pid: usize, candidates: &mut Vec<(Pos, f64)>) {
-        if !self.exhaustion_loyalty_guard && !self.science_targeted(g) {
-            return;
-        }
         let before = candidates.len();
         candidates.retain(|(pos, _)| self.exhaustion_site_unpriceable(g, *pos).is_none());
         let unpriceable = before - candidates.len();
-        candidates.retain(|(pos, _)| !Self::inside_rival_sphere(g, pid, *pos));
-        let in_sphere = before - unpriceable - candidates.len();
         if unpriceable > 0 {
             think!(self.journal(), Expansion, Detail,
                    "Stranded Settler sets aside {unpriceable} unpriceable site(s)";
@@ -242,6 +236,12 @@ impl AdvancedAi {
                     the forecast cannot price that Loyalty pressure, and the exhaustion \
                     search will not guess at a city it would hand to that rival");
         }
+        if !self.exhaustion_loyalty_guard && !self.science_targeted(g) {
+            return;
+        }
+        let before = candidates.len();
+        candidates.retain(|(pos, _)| !Self::inside_rival_sphere(g, pid, *pos));
+        let in_sphere = before - candidates.len();
         if in_sphere > 0 {
             think!(self.journal(), Expansion, Detail,
                    "Stranded Settler sets aside {in_sphere} site(s) inside a rival's sphere";
@@ -827,16 +827,14 @@ mod tests {
         assert!(!opted.exhaustion_loyalty_guard);
     }
 
-    /// The live failure of `civvis-20260829T030044Z` t70: every preferred
-    /// site was refused "within five tiles of a rival border whose city may
-    /// be hidden", the exhaustion search took (15, 14) anyway, and the city
-    /// read −22 Loyalty a turn from its first turn and revolted seven turns
-    /// later. Under the guard the same board yields no exhaustion target and
-    /// the Settler is named stranded rather than founding; off, the search
-    /// still takes a site.
+    /// `civvis-20260929T002742Z` founded Maracaibo on an exhaustion site
+    /// beside a hidden Kongo city after the preferred search rejected nearby
+    /// sites for that very border. It lost about 20 Loyalty a turn and flipped
+    /// eleven turns later. The live frontier guard must apply in both fallback
+    /// tiers and on arrival even when the broader exhaustion gene is off.
     #[test]
-    fn exhaustion_sets_aside_sites_beside_an_unresolved_rival_border() {
-        for guard in [false, true] {
+    fn frontier_guard_covers_exhaustion_and_relaxed_arrival() {
+        for (frontier, guard) in [(false, false), (true, false), (true, true)] {
             let mut g = Game::new_full(1, 20, 12, 91_306, 120, 0, false);
             let settler = g
                 .player_unit_ids(0)
@@ -849,23 +847,30 @@ mod tests {
             let mut ai = AdvancedAi::new();
             ai.enable_engine_repairs();
             ai.enable_settler_never_idles();
-            ai.enable_frontier_loyalty();
+            if frontier {
+                ai.enable_frontier_loyalty();
+            } else {
+                ai.disable_frontier_loyalty();
+            }
             if guard {
                 ai.enable_exhaustion_loyalty_guard();
             } else {
                 ai.disable_exhaustion_loyalty_guard();
             }
             ai.attach_journal(Journal::recording());
-            assert!(
-                ai.settler_exhaustion_target(&g, 0, settler).is_some(),
-                "fixture: the open board offers an exhaustion site"
-            );
+            let reachable = ai
+                .settler_exhaustion_target(&g, 0, settler)
+                .expect("fixture: the open board offers an exhaustion site");
             // A met major's border the mirror could not attribute to a seen
             // city, on every plot: the whole board is five tiles from one.
             g.unseen_major_borders.extend(explored.iter().copied());
             let picked = ai.settler_exhaustion_target(&g, 0, settler);
-            if guard {
+            if frontier {
                 assert_eq!(picked, None, "every site lies beside an unresolved border");
+                assert!(
+                    ai.relaxed_arrival_verdict(&g, 0, reachable).is_some(),
+                    "a border revealed during the walk must be checked on arrival"
+                );
                 assert!(
                     !ai.settler_stranded(&mut g, 0, settler),
                     "the stranded Settler does not found on unpriceable ground"
@@ -878,7 +883,7 @@ mod tests {
             } else {
                 assert!(
                     picked.is_some(),
-                    "off, the search is unchanged and still takes a site"
+                    "without the frontier guard, the search is unchanged"
                 );
             }
         }

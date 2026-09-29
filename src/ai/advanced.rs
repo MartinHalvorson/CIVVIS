@@ -5793,10 +5793,11 @@ pub struct AdvancedAi {
     /// Reserve a Granary only when its housing accelerates the next citizen
     /// within the construction and growth budget. Independently screened V2.
     first_granary_reserve_2: bool,
-    /// `exhaustion-loyalty-guard`: a stranded Settler's wider search may not
-    /// take a site the Loyalty forecast cannot price, and its nearest-legal
-    /// tier runs the same concrete-revolt forecast the ranked tier does. See
-    /// `advanced/settler_never_idles.rs`.
+    /// `exhaustion-loyalty-guard`: a stranded Settler's wider search also
+    /// rejects sites inside a visible rival's Loyalty sphere, and its
+    /// nearest-legal tier runs the same concrete-revolt forecast the ranked
+    /// tier does. The live unresolved-border floor is covered separately by
+    /// `frontier-loyalty`. See `advanced/settler_never_idles.rs`.
     exhaustion_loyalty_guard: bool,
     /// An Archer for every city, the frontier city first, while the world
     /// is Ancient and Classical, and Archery chased until a city can train
@@ -34920,7 +34921,7 @@ impl AdvancedAi {
             } else if relaxed && !science_targeted {
                 // See `relaxed_arrival_verdict`: a site the exhaustion search
                 // chose is judged at arrival by the rule that chose it.
-                Self::relaxed_arrival_verdict(g, pid, current)
+                self.relaxed_arrival_verdict(g, pid, current)
             } else if self.base.loyalty_rate_alarm || science_targeted {
                 self.settle_site_loyalty_verdict(g, pid, current)
             } else {
