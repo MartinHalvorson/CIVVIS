@@ -25663,28 +25663,41 @@ impl Game {
         if !self.track_fog_memory || pid != self.current || pid >= self.players.len() {
             return;
         }
-        let seen = self.tiles_of(visible);
+        // This runs behind every action the seat takes. A foreign unit that
+        // stood in sight at the last action and has not changed is already
+        // recorded exactly as a fresh clone would record it, so only the new
+        // and the changed are cloned; the rest are only named as in sight.
         let viewers = self.visibility_viewers(pid);
-        let units: BTreeMap<u32, Unit> = self
-            .units
-            .values()
-            .filter(|unit| unit.owner != pid)
-            .filter(|unit| {
-                let position = unit.air_patrol_pos.unwrap_or(unit.pos);
-                seen.contains(&position)
-                    && viewers
-                        .iter()
-                        .any(|viewer| self.unit_visible_to(unit.id, *viewer))
-            })
-            .map(|unit| (unit.id, unit.clone()))
-            .collect();
+        let recorded = &self.players[pid].turn_units;
+        let mut in_sight: BTreeSet<u32> = BTreeSet::new();
+        let mut changed: Vec<Unit> = Vec::new();
+        for unit in self.units.values().filter(|unit| unit.owner != pid) {
+            let position = unit.air_patrol_pos.unwrap_or(unit.pos);
+            if !(self.sees(visible, position)
+                && viewers
+                    .iter()
+                    .any(|viewer| self.unit_visible_to(unit.id, *viewer)))
+            {
+                continue;
+            }
+            in_sight.insert(unit.id);
+            if recorded.get(&unit.id) != Some(unit) {
+                changed.push(unit.clone());
+            }
+        }
+        let tiles = &self.map.tiles;
         let player = &mut self.players[pid];
         player.turn_units.retain(|id, unit| {
             let position = unit.air_patrol_pos.unwrap_or(unit.pos);
-            !seen.contains(&position) || units.contains_key(id)
+            !tiles
+                .index_of(position)
+                .is_some_and(|index| visible.contains(index))
+                || in_sight.contains(id)
         });
-        player.turn_units.extend(units);
-        player.turn_visible.extend(seen);
+        player
+            .turn_units
+            .extend(changed.into_iter().map(|unit| (unit.id, unit)));
+        player.turn_visible.extend(tiles.positions(visible));
     }
 
     /// Meet everyone standing in `pid`'s sight.
