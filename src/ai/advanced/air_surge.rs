@@ -798,6 +798,10 @@ impl AdvancedAi {
     /// This is the lifecycle authority: research, production, diplomacy and
     /// movement only read the resulting phase.
     pub(crate) fn maintain_air_surge(&mut self, g: &Game, pid: usize) {
+        // Read-only on the board. The affordability estimate sweeps every
+        // city's yields twice (science, then production); one scope lets the
+        // second sweep and the target choice reuse the first.
+        let _memo = g.query_memo();
         if !self.air_surge_enabled() {
             self.air_surge_plan = None;
             self.air_surge_status = AirSurgeStatus::default();
