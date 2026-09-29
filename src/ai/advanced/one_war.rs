@@ -85,6 +85,10 @@ pub(crate) const ONE_WAR_PILLAGE_REACH_TURNS: i32 = 2;
 /// while our soldiers stand at it is a city to take, even if the last
 /// observation saw no drop.
 pub(crate) const ONE_WAR_CITY_BROKEN_FRACTION: f64 = 0.5;
+/// A breached city this low can be taken before an army redeploys to a new
+/// rival. The capture body may be a few tiles behind the guns.
+pub(crate) const ONE_WAR_FINISH_HP: i32 = 40;
+pub(crate) const ONE_WAR_FINISH_REACH: i32 = 4;
 /// A second-front unit this close to a threatened city of ours keeps that
 /// enemy in the force planner's sights: the relief column's own radius.
 pub(crate) const ONE_WAR_RELIEF_REACH: i32 = 8;
@@ -578,6 +582,28 @@ impl AdvancedAi {
         false
     }
 
+    /// Do not end a Domination front with a breached city and a healthy
+    /// capture unit close enough to finish it. A distant or merely damaged
+    /// city must not delay an urgent counter-campaign.
+    fn one_war_capture_at_hand(&self, g: &Game, pid: usize, other: usize) -> bool {
+        g.player_city_ids(other).into_iter().any(|cid| {
+            let city = &g.cities[&cid];
+            city.wall_hp <= 0
+                && city.hp <= ONE_WAR_FINISH_HP
+                && g.player_unit_ids(pid).into_iter().any(|uid| {
+                    let unit = &g.units[&uid];
+                    let spec = &g.rules.units[unit.kind];
+                    spec.class == "military"
+                        && spec.domain.as_deref() != Some("air")
+                        && spec.domain.as_deref() != Some("sea")
+                        && spec.is_melee_capable()
+                        && !g.is_embarked(unit)
+                        && unit.hp >= 50
+                        && g.wdist(unit.pos, city.pos) <= ONE_WAR_FINISH_REACH
+                })
+        })
+    }
+
     /// Whether the gene wants peace with `other` this turn, and why.
     pub(crate) fn one_war_peace(&self, g: &Game, pid: usize, other: usize) -> Option<OneWarPeace> {
         let front = self.one_war.as_ref().filter(|_| self.one_war_at_a_time)?;
@@ -612,6 +638,7 @@ impl AdvancedAi {
                         && counter == GrandStrategy::Conquest
                         && self.domination_counter_target(g, rival)
                 })
+            && !self.one_war_capture_at_hand(g, pid, other)
         {
             return Some(OneWarPeace::VictoryThreat);
         }

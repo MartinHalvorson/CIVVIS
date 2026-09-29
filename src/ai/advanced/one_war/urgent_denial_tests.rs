@@ -233,3 +233,31 @@ fn domination_counter_peace_respects_explicit_targets_and_other_victory_lanes() 
     ai.retarget(VictoryTarget::Science);
     assert_eq!(ai.one_war_peace(&g, 0, 1), None);
 }
+
+#[test]
+fn domination_finishes_a_breached_city_before_peace_for_another_rival() {
+    let (mut g, ai) = two_fronts();
+    convert(&mut g, &[0, 1, 2]);
+    g.at_war.remove(&(0, 2));
+    let city = g.player_city_ids(1)[0];
+    g.cities.get_mut(&city).unwrap().hp = ONE_WAR_FINISH_HP;
+    let finisher = g.spawn_test_unit("modern_armor", 0, (13, 12));
+    assert_eq!(
+        ai.actionable_victory_denial(&g, 0),
+        Some((2, GrandStrategy::Conquest))
+    );
+    assert_eq!(ai.one_war_peace(&g, 0, 1), None);
+
+    g.remove_unit(finisher);
+    assert_eq!(
+        ai.one_war_peace(&g, 0, 1),
+        Some(OneWarPeace::VictoryThreat),
+        "a distant army must counter the urgent rival"
+    );
+    g.spawn_test_unit("modern_armor", 0, (13, 12));
+    g.cities.get_mut(&city).unwrap().hp = ONE_WAR_FINISH_HP + 1;
+    assert_eq!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
+    g.cities.get_mut(&city).unwrap().hp = ONE_WAR_FINISH_HP;
+    g.cities.get_mut(&city).unwrap().wall_hp = 1;
+    assert_eq!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
+}
