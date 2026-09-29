@@ -1013,6 +1013,13 @@ impl AdvancedAi {
         });
 
         let damage_ready = self.conversion_siege_ready(g, pid, cid, &force);
+        let damage_budget = self.conversion_siege_budget(g, pid, cid, &force);
+        // Entry needs a margin for the first reply. Once the train has
+        // invested, a modest dip below that entry margin must not pull its
+        // guns back out of firing range every other turn. A force that cannot
+        // finish within its estimated endurance still regroups.
+        let damage_can_continue = !self.siege_positive_damage_budget
+            || damage_budget.is_some_and(|(turns, endurance)| turns <= endurance);
         let breach_taker = (city.wall_hp <= 0 && city.hp <= 100 && strength >= bill)
             .then(|| {
                 designate_taker(g, &city, &force)
@@ -1045,7 +1052,8 @@ impl AdvancedAi {
             // no attack that can finish before the force is exhausted.
             if stage != SiegeStage::Stage
                 && !arena
-                && (strength < ABORT_SHARE * bill || (!damage_ready && breach_taker.is_none()))
+                && (strength < ABORT_SHARE * bill
+                    || (!damage_can_continue && breach_taker.is_none()))
             {
                 stage = SiegeStage::Stage;
             }
@@ -1137,8 +1145,7 @@ impl AdvancedAi {
                 .get(&cid)
                 .map(|c| c.name.clone())
                 .unwrap_or_default();
-            let damage_budget = self
-                .conversion_siege_budget(g, pid, cid, &force)
+            let damage_budget = damage_budget
                 .map(|(turns, endurance)| format!("{turns:.1} turns / {endurance:.1} endurance"))
                 .unwrap_or_else(|| "unknown".to_string());
             let taker_note = match taker {

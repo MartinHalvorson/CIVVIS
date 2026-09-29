@@ -138,3 +138,66 @@ fn a_wall_rebuild_sends_an_unproductive_melee_siege_back_to_staging() {
     ai.assess_siege(&g, 0, cid, &plan, &group);
     assert_eq!(ai.sieges[&cid].stage, SiegeStage::Stage);
 }
+
+#[test]
+fn an_invested_siege_keeps_its_firing_posts_through_a_small_budget_dip() {
+    let (mut g, cid) = walled_city();
+    g.map_script = crate::setup::MapScript::Pangaea;
+    g.turn = 30;
+    g.at_war.insert((0, 1));
+    let city = g.cities[&cid].pos;
+    let guns: Vec<_> = super::tests::at_distance(&g, cid, 2)
+        .into_iter()
+        .take(2)
+        .map(|pos| g.spawn_unit("catapult", 0, pos))
+        .collect();
+    assert_eq!(guns.len(), 2);
+    let taker_pos = ring_of(&g, cid)[0];
+    let taker = g.spawn_unit("swordsman", 0, taker_pos);
+    let force = [guns[0], guns[1], taker];
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_siege_positive_damage_budget();
+
+    // A barely spent volley may cross the strict 80% entry margin even though
+    // the same train can still finish before its estimated endurance expires.
+    let mut found = false;
+    'budget: for hp in (30..=100).step_by(5) {
+        for uid in force {
+            g.units.get_mut(&uid).unwrap().hp = hp;
+        }
+        for wall in (10..=100).step_by(5) {
+            g.cities.get_mut(&cid).unwrap().wall_hp = wall;
+            let view = CityView::of(&g, cid).unwrap();
+            let strength: f64 = force.iter().map(|uid| unit_power(&g, *uid)).sum();
+            if strength < ABORT_SHARE * siege_bill(&g, 0, &view) {
+                continue;
+            }
+            if ai
+                .conversion_siege_budget(&g, 0, cid, &force)
+                .is_some_and(|(turns, endurance)| turns > endurance * 0.8 && turns <= endurance)
+            {
+                found = true;
+                break 'budget;
+            }
+        }
+    }
+    assert!(found, "the train must straddle the entry and exit margins");
+    let group = ForceGroup {
+        id: guns[0],
+        domain: ForceDomain::Land,
+        units: force.to_vec(),
+        anchor: g.units[&guns[0]].pos,
+        objective: city,
+        focus_target: None,
+        posture: ForcePosture::Advance,
+        readiness: 1.0,
+        local_strength_ratio: 2.0,
+    };
+    let plan = plan_against(&g, cid);
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(ai.sieges[&cid].stage, SiegeStage::Stage);
+    ai.sieges.get_mut(&cid).unwrap().stage = SiegeStage::Invest;
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(ai.sieges[&cid].stage, SiegeStage::Invest);
+}
