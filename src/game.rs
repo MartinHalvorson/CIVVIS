@@ -1361,6 +1361,7 @@ type HousedPiecesByPlayer = BTreeMap<usize, Arc<GreatWorkPiecesByCity>>;
 type GreatWorkSlotsByPlayer = BTreeMap<usize, Vec<(u32, String)>>;
 type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
 type WonderEffectsByPlayer = BTreeMap<usize, BTreeMap<String, f64>>;
+type NationalParksByPlayer = BTreeMap<usize, Vec<(u32, [Pos; 4])>>;
 
 /// Memoized `unit_purchase_cost_for_formation` answers for one `QueryMemo`
 /// guard: keyed on (player, city, unit kind, formation, gold?) → price.
@@ -1472,6 +1473,13 @@ pub struct QueryCache {
     // yields and its Amenities are read through it, so a single valuation of
     // one city walks the whole empire's buildings twice.
     regional: std::cell::RefCell<Option<BTreeMap<u32, (Yields, f64)>>>,
+    // Two facts the luxury allocation asks of every city while it values
+    // the whole empire's Amenities. Each city's regional sources ask whether
+    // every source city is powered, and each city's own Amenities walk every
+    // owned tile of the empire looking for National Parks, so one allocation
+    // repeated both empire-wide answers once per city.
+    powered: std::cell::RefCell<Option<BTreeMap<u32, bool>>>,
+    national_parks: std::cell::RefCell<Option<NationalParksByPlayer>>,
     // Wonders are an empire-wide source, but city yields and rule gates ask
     // for one named effect at a time. Aggregate every effect for a player on
     // the first lookup in a memo scope so the same wonder set is not walked
@@ -1696,6 +1704,8 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.gw_slots.borrow_mut() = None;
             *self.game.query_memo.gw_housing.borrow_mut() = None;
             *self.game.query_memo.regional.borrow_mut() = None;
+            *self.game.query_memo.powered.borrow_mut() = None;
+            *self.game.query_memo.national_parks.borrow_mut() = None;
             *self.game.query_memo.wonder_effects.borrow_mut() = None;
         }
     }
@@ -20106,6 +20116,19 @@ impl Game {
     }
 
     pub fn city_is_powered(&self, city: &City) -> bool {
+        if let Some(memo) = self.query_memo.powered.borrow().as_ref() {
+            if let Some(powered) = memo.get(&city.id) {
+                return *powered;
+            }
+        }
+        let powered = self.city_is_powered_uncached(city);
+        if let Some(memo) = self.query_memo.powered.borrow_mut().as_mut() {
+            memo.insert(city.id, powered);
+        }
+        powered
+    }
+
+    fn city_is_powered_uncached(&self, city: &City) -> bool {
         let demand = self.city_power_demand(city);
         demand <= 0.0 || self.city_power_supply(city) + 1e-9 >= demand
     }
