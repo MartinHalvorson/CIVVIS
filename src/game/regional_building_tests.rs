@@ -178,6 +178,7 @@ fn regional_prefilter_preserves_scope_expiry_after_pillage_and_repair() {
             }
         }
         assert!(game.query_memo.regional.borrow().is_none());
+        assert!(game.query_memo.regional_slots.borrow().is_none());
     }
 }
 
