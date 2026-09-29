@@ -207,6 +207,78 @@ fn delegated_siege_uses_a_fast_fresh_queue_before_a_hundred_turn_idle_city() {
     assert_eq!(g.cities[&home].queue.first(), Some(&gun));
 }
 
+/// The first gun in the live Stavanger war was queued in six-production
+/// Guayaquil. New technology kept upgrading its unfinished queue while a
+/// productive capital cycled through short routine builds. A second gun that
+/// can reach the walls much sooner is useful even though one is queued.
+#[test]
+fn delegated_siege_adds_a_fast_second_gun_when_the_first_is_late() {
+    let (mut g, ai, plan, home, target) = siege_gap_case();
+    let home_pos = g.cities[&home].pos;
+    let target_pos = g.cities[&target].pos;
+    let slow_pos = g
+        .map
+        .tiles
+        .iter()
+        .filter(|(pos, tile)| {
+            g.wdist(**pos, home_pos) >= 6
+                && g.wdist(**pos, target_pos) >= 6
+                && g.rules.is_passable(tile)
+                && !g.rules.is_water(tile)
+        })
+        .map(|(pos, _)| *pos)
+        .next()
+        .expect("a remote land site");
+    let slow = g.found_city_for(0, slow_pos, None);
+    for (cid, production) in [(home, 50.0), (slow, 2.0)] {
+        let before = g.city_yields(cid).production;
+        std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments)
+            .entry(cid)
+            .or_default()
+            .production += production - before;
+    }
+    let gun = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    g.apply(
+        0,
+        &Action::Produce {
+            city: slow,
+            item: gun.clone(),
+        },
+    )
+    .unwrap();
+    g.apply(
+        0,
+        &Action::Produce {
+            city: home,
+            item: builder,
+        },
+    )
+    .unwrap();
+    let speed = g.rules.units[&crate::name!("catapult")].moves;
+    let fast_arrival = ai.production_build_turns(&g, 0, home, &gun)
+        + f64::from(g.wdist(home_pos, target_pos)) / speed;
+    let slow_arrival = ai.production_build_turns(&g, 0, slow, &gun)
+        + f64::from(g.wdist(slow_pos, target_pos)) / speed;
+    assert!(fast_arrival <= 20.0 && slow_arrival >= fast_arrival * 1.5 + 8.0);
+    assert_eq!(ai.counts(&g, 0).siege, 1);
+
+    assert_eq!(
+        ai.reserve_delegated_domination_siege(&mut g, 0, &plan),
+        Some((home, gun.clone()))
+    );
+    assert_eq!(g.cities[&slow].queue.first(), Some(&gun));
+    assert_eq!(g.cities[&home].queue.first(), Some(&gun));
+    assert_eq!(ai.counts(&g, 0).siege, 2);
+    assert!(ai
+        .reserve_delegated_domination_siege(&mut g, 0, &plan)
+        .is_none());
+}
+
 #[test]
 fn delegated_domination_reserves_another_gun_when_the_first_cannot_breach() {
     let (mut g, mut ai, plan, home, target) = siege_gap_case();

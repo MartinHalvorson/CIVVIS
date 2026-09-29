@@ -104,7 +104,8 @@ impl AdvancedAi {
     /// a failed positive damage budget can reserve up to three in total. If
     /// only a new, low-production city is idle, a much faster city may give up
     /// an uninvested routine queue instead: a 140-turn gun cannot reinforce a
-    /// siege that needs relief now.
+    /// siege that needs relief now. Likewise, a slow queued gun does not close
+    /// the reservation if a second city can deliver one much sooner.
     pub(super) fn reserve_delegated_domination_siege(
         &self,
         g: &mut Game,
@@ -144,9 +145,37 @@ impl AdvancedAi {
             && self
                 .conversion_siege_budget(g, pid, target.id, &nearby_force)
                 .is_some_and(|(finish, endurance)| finish > endurance * 0.8);
-        if (counts.land_siege_power > 0.0 && !breach_shortfall)
-            || self.live_war_economy_requires_recovery(g, pid, &counts)
-        {
+        if self.live_war_economy_requires_recovery(g, pid, &counts) {
+            return None;
+        }
+        let queued_arrival = if counts.land_siege_power > 0.0
+            && !breach_shortfall
+            && counts.siege == 1
+            && !g.player_unit_ids(pid).into_iter().any(|id| {
+                let spec = &g.rules.units[g.units[&id].kind];
+                spec.siege && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            }) {
+            g.player_city_ids(pid)
+                .into_iter()
+                .filter_map(|cid| {
+                    let item = g.cities[&cid].queue.first()?;
+                    let Item::Unit { unit } = item else {
+                        return None;
+                    };
+                    let spec = g.rules.units.get(unit)?;
+                    (spec.siege && !matches!(spec.domain.as_deref(), Some("sea" | "air"))).then(
+                        || {
+                            self.production_build_turns(g, pid, cid, item)
+                                + f64::from(g.wdist(g.cities[&cid].pos, objective))
+                                    / spec.moves.max(1.0)
+                        },
+                    )
+                })
+                .min_by(f64::total_cmp)
+        } else {
+            None
+        };
+        if counts.land_siege_power > 0.0 && !breach_shortfall && queued_arrival.is_none() {
             return None;
         }
 
@@ -219,6 +248,12 @@ impl AdvancedAi {
         let Some((arrival, city, unit, slow_idle)) = best else {
             return None;
         };
+        let faster_than_queued = queued_arrival.is_some_and(|queued| {
+            arrival <= 20.0 && queued >= arrival + 8.0 && queued >= arrival * 1.5
+        });
+        if counts.land_siege_power > 0.0 && !breach_shortfall && !faster_than_queued {
+            return None;
+        }
         let displaced = g.cities[&city].queue.first().cloned();
         let item = Item::Unit { unit };
         if g.apply(
@@ -245,7 +280,9 @@ impl AdvancedAi {
         think!(self.journal(), Military, Decision,
             "{} reserves a {} for the walled assault", g.cities[&city].name, unit;
             "{}; expected arrival at {} in about {arrival:.0} turns",
-            if breach_shortfall { "the staged force cannot breach before its health runs out" } else { "the delegated governor has no land siege weapon" },
+            if breach_shortfall { "the staged force cannot breach before its health runs out" }
+            else if faster_than_queued { "the first queued gun would reach the front too late" }
+            else { "the delegated governor has no land siege weapon" },
             target_name;
             objective);
         Some((city, item))
