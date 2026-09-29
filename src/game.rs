@@ -22268,6 +22268,27 @@ impl Game {
             .max(represented)
     }
 
+    /// Fielded ground strength. The host reports only one military total, so
+    /// a navy cannot be removed reliably from `observed_military_power`.
+    /// Use our complete unit roster when sizing a land campaign instead.
+    pub fn land_military_power(&self, pid: usize) -> f64 {
+        self.units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid
+                    && !matches!(
+                        self.rules.units[unit.kind].domain.as_deref(),
+                        Some("sea" | "air")
+                    )
+            })
+            .map(|unit| {
+                (self.rules.units[unit.kind].strength + self.unit_formation_bonus(unit))
+                    * unit.hp as f64
+                    / 100.0
+            })
+            .sum()
+    }
+
     fn unlocked(&self, pid: usize, tech: &Option<Name>, civic: &Option<Name>) -> bool {
         let p = &self.players[pid];
         if let Some(t) = tech {

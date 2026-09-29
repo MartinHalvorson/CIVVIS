@@ -27787,7 +27787,15 @@ impl AdvancedAi {
     /// size its army. The two terms combine by `max`, never by product, so
     /// the overall bound stays [`WARTIME_ARMY_CEILING`].
     fn enemy_weighted_army_target(&self, g: &Game, pid: usize, shipped: usize) -> usize {
-        let ours = g.military_power(pid).max(1.0);
+        // The target below sizes LAND bodies. In a Domination campaign a
+        // Caravel on another coast cannot make a nearby field army safe, even
+        // though the host includes it in total military power.
+        let ours = if self.active_victory_target(g) == Some(VictoryTarget::Domination) {
+            g.land_military_power(pid)
+        } else {
+            g.military_power(pid)
+        }
+        .max(1.0);
         let strongest_ratio = |at_war_only: bool, ceiling: f64| -> f64 {
             let strongest = g
                 .players
@@ -27807,6 +27815,8 @@ impl AdvancedAi {
                             g.has_met(pid, player.id) && !g.same_team(pid, player.id)
                         }
                 })
+                // Rival units can be hidden by fog. Keep their reported total
+                // as a conservative bound; only our roster can be split by domain.
                 .map(|player| g.military_power(player.id))
                 .fold(0.0_f64, f64::max);
             if strongest <= 0.0 {

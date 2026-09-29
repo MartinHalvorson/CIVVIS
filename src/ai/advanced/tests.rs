@@ -18130,6 +18130,58 @@ fn the_army_target_deters_the_strongest_met_major_in_peacetime() {
     assert_eq!(shipped.enemy_weighted_army_target(&game, 0, 12), 12);
 }
 
+#[test]
+fn ships_do_not_satisfy_a_domination_land_army_target() {
+    let (mut game, _capital, home) = empire_with_a_capital(71_108);
+    let muster = game
+        .map
+        .tiles
+        .iter()
+        .find(|(pos, tile)| {
+            game.wdist(**pos, home) >= 15
+                && game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+        })
+        .map(|(pos, _)| *pos)
+        .unwrap();
+    game.players[0].met.insert(1);
+    game.players[1].met.insert(0);
+    for step in 0..2 {
+        game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 1 + step));
+    }
+    for _ in 0..4 {
+        game.spawn_test_unit("warrior", 1, muster);
+    }
+    let mut domination = AdvancedAi::targeting(VictoryTarget::Domination);
+    domination.enable_peacetime_deterrence();
+    let ground_target = domination.enemy_weighted_army_target(&game, 0, 12);
+    assert!(ground_target > 12);
+    let land_power = game.land_military_power(0);
+
+    let water: Vec<_> = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(_, tile)| game.rules.is_water(tile))
+        .map(|(pos, _)| *pos)
+        .take(5)
+        .collect();
+    assert_eq!(water.len(), 5);
+    for pos in water {
+        game.spawn_test_unit("galley", 0, pos);
+    }
+    assert!(game.military_power(0) > game.military_power(1));
+    assert_eq!(game.land_military_power(0), land_power);
+    assert_eq!(
+        domination.enemy_weighted_army_target(&game, 0, 12),
+        ground_target
+    );
+
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.enable_peacetime_deterrence();
+    assert_eq!(science.enemy_weighted_army_target(&game, 0, 12), 12);
+}
+
 /// A pending promotion blocks further XP, including on a healthy ranged
 /// unit that might never need the promotion's healing.
 #[test]
