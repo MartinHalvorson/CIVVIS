@@ -17175,8 +17175,11 @@ impl AdvancedAi {
         // This shares the live-only crisis arm with the concrete repair chain:
         // normal and frozen controller decks return before reading city
         // Amenities at all.
-        if self.amenity_project_preemption_on()
-            && city_ids
+        // Luxury allocation is empire-wide: one memo scope per sweep, or each
+        // city's surplus allocates the whole empire again.
+        if self.amenity_project_preemption_on() && {
+            let _memo = g.query_memo();
+            city_ids
                 .iter()
                 .filter(|cid| {
                     let city = &g.cities[cid];
@@ -17184,7 +17187,7 @@ impl AdvancedAi {
                 })
                 .count()
                 >= 2
-        {
+        } {
             desired.retain(|card| !matches!(*card, "aesthetics" | "liberalism"));
             desired.insert(0, "liberalism");
         }
@@ -17207,10 +17210,12 @@ impl AdvancedAi {
                     && !city.pillaged_buildings.contains(building)
             })
         });
-        let robber_safe = robber_pays
-            && city_ids.iter().all(|city| {
+        let robber_safe = robber_pays && {
+            let _memo = g.query_memo();
+            city_ids.iter().all(|city| {
                 g.city_amenity_surplus(&g.cities[city]) >= if robber_active { 0 } else { 2 }
-            });
+            })
+        };
         let holy_site_cities = city_ids
             .iter()
             .filter(|city| g.city_has_district_family(&g.cities[city], crate::name!("holy_site")))
@@ -22057,6 +22062,8 @@ impl AdvancedAi {
         // Every option is scored against `context.g`; see
         // `air_surge_status_frame`.
         let _air_surge = self.open_air_surge_status_frame();
+        // `context.g` is read-only for the whole scoring pass.
+        let _memo = context.g.query_memo();
         options
             .iter()
             .map(|(action, city, item)| self.gold_purchase_score(context, action, *city, item))
@@ -26926,6 +26933,9 @@ impl AdvancedAi {
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
             // so `production_value` is only ever consulted on an idle city.
+            // Read-only until the governor below acts; one scope shares the
+            // city's derivations across the valuation.
+            let memo = g.query_memo();
             let committed: Option<(f64, Item)> =
                 g.cities[&cid].queue.first().cloned().map(|item| {
                     let value = if !self.victory_planning
@@ -26954,12 +26964,16 @@ impl AdvancedAi {
             // also overrides the Recovery and treasury-recovery exceptions:
             // at t136, Ephesus started an Entertainment Complex for 3 of 6
             // cities short and the same review replaced it with a Builder.
+            // The surplus is asked last: outside a memo scope it allocates
+            // the whole empire's luxuries, and almost no committed item is an
+            // amenity repair.
             let amenity_repair_committed = self.amenity_project_preemption_on()
-                && (g.city_amenity_surplus(&g.cities[&cid]) < 0 || widespread_amenity_pressure)
                 && committed.as_ref().is_some_and(|(value, item)| {
                     (!self.victory_planning || *value > -1_000.0)
                         && Self::amenity_repair_queue_item(g, item)
-                });
+                })
+                && (widespread_amenity_pressure || g.city_amenity_surplus(&g.cities[&cid]) < 0);
+            drop(memo);
             if amenity_repair_committed
                 && (widespread_amenity_pressure
                     || (!economic_recovery && plan.strategy != GrandStrategy::Recovery))

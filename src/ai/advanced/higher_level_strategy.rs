@@ -265,6 +265,9 @@ impl AdvancedAi {
         {
             return None;
         }
+        // Read-only from here: every seat's yields are swept below, and each
+        // city's derivation shares its owner's luxury allocation.
+        let _memo = g.query_memo();
         let cities = g.player_city_ids(pid);
         let counts = self.counts(g, pid);
         if self.live_war_economy_requires_recovery(g, pid, &counts) {
