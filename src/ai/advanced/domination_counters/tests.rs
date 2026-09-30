@@ -233,3 +233,73 @@ fn domination_culture_preparation_starts_early_without_bypassing_war_readiness()
         .foreign_tourists = Some(49);
     assert_eq!(ai.denial_target(&g, 0), None);
 }
+
+/// Religion board at the four-major early-warning reading: rival 1 founded
+/// Orthodoxy and rival 2 Hinduism. `majority` names the faith our cities
+/// follow, `rival_three` the faith rival 3's cities follow; `own_faith`
+/// decides whether we founded Buddhism.
+fn early_religion_board(majority: &str, rival_three: &str, own_faith: bool) -> (Game, u32) {
+    let (mut g, objective) = board(GrandStrategy::Religion);
+    g.players[0].religion = own_faith.then(|| "Buddhism".into());
+    g.players[2].religion = Some("Hinduism".into());
+    for city in g.cities.values_mut() {
+        let faith = match city.owner {
+            0 => majority,
+            1 => "Orthodoxy",
+            2 => "Hinduism",
+            _ => rival_three,
+        };
+        city.pressure.clear();
+        city.pressure.insert(faith.into(), 100.0);
+    }
+    (g, objective)
+}
+
+#[test]
+fn a_faithless_domination_seat_counters_the_faith_holding_its_majority_at_the_early_warning() {
+    let (g, objective) = early_religion_board("Orthodoxy", "Hinduism", false);
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert_eq!(ai.rival_pressure(&g, 1), (GrandStrategy::Religion, 50));
+    assert!(
+        !ai.domination_counter_pressure(
+            &g,
+            VictoryFocus {
+                strategy: GrandStrategy::Religion,
+                progress: 50
+            }
+        ),
+        "the lane-independent counter still waits for the match point"
+    );
+    // A target, not an emergency: the declaration keeps its readiness gates.
+    assert!(!ai.denial_is_urgent(&g, 1));
+    assert_eq!(ai.denial_target(&g, 0), Some((1, GrandStrategy::Conquest)));
+    assert_eq!(ai.victory_denial(&g, 0), Some((1, GrandStrategy::Conquest)));
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.strategy, GrandStrategy::Conquest, "{plan:?}");
+    assert_eq!(plan.target_player, Some(1));
+    assert_eq!(plan.target_city, Some(objective), "aimed at the Holy Site");
+}
+
+#[test]
+fn the_early_religious_counter_needs_our_majority_and_no_faith_of_our_own() {
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    // Orthodoxy reads the same 50 through rival 3, but the counter follows
+    // the faith that holds OUR majority: Hinduism, rival 2's.
+    let (g, _) = early_religion_board("Hinduism", "Orthodoxy", false);
+    assert_eq!(ai.rival_pressure(&g, 1).1, 50);
+    assert_eq!(ai.rival_pressure(&g, 2).1, 50);
+    assert_eq!(ai.denial_target(&g, 0), Some((2, GrandStrategy::Conquest)));
+    // Our cities hold a faith nobody founded: no rival counts us yet.
+    let (g, _) = early_religion_board("Judaism", "Orthodoxy", false);
+    assert_eq!(ai.rival_pressure(&g, 1).1, 50);
+    assert_eq!(ai.denial_target(&g, 0), None);
+    // A founder keeps its Inquisitors and its own reconversion.
+    let (g, _) = early_religion_board("Orthodoxy", "Hinduism", true);
+    assert!(g.civ_follows_religion(0, "Orthodoxy"));
+    assert_eq!(ai.denial_target(&g, 0), None);
+    // Another assigned lane keeps its focus below the match point.
+    let (g, _) = early_religion_board("Orthodoxy", "Hinduism", false);
+    for target in [VictoryTarget::Science, VictoryTarget::Culture] {
+        assert_eq!(AdvancedAi::targeting(target).denial_target(&g, 0), None);
+    }
+}

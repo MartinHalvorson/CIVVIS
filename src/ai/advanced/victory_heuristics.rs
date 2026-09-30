@@ -42,8 +42,54 @@ impl AdvancedAi {
         }
     }
 
-    pub(super) fn domination_counter_target(&self, g: &Game, rival: usize) -> bool {
-        self.domination_counter_pressure(g, self.rival_victory_pressure(g, rival))
+    /// A Domination seat with no faith of its own cannot win its own cities
+    /// back, so once a rival's religion holds our majority that rival already
+    /// counts us and needs only the other holdouts — civilizations our army
+    /// cannot keep unconverted. The match point then arrives on the rival's
+    /// schedule, not ours: on King `civvis-20260929T143005Z` Islam held our
+    /// majority from turn 80, the match-point counter first fired at turn
+    /// 140, and Arabia won at 149, before any army could reach a city. Start
+    /// the counter at the religion early-warning bar
+    /// (`denial_response_for_pressure`'s two-holdout reading) instead. This
+    /// selects the campaign target only: it is deliberately not urgency, so
+    /// the ordinary declaration, readiness and one-war gates still apply.
+    pub(super) fn domination_faithless_conversion_counter(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+        pressure: VictoryFocus,
+    ) -> bool {
+        if pressure.strategy != GrandStrategy::Religion
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !self.deny_leaders
+            || !Self::victory_strategy_enabled(g, GrandStrategy::Religion)
+            || g.players[pid].religion.is_some()
+        {
+            return false;
+        }
+        let Some(faith) = g.players[rival].religion.as_deref() else {
+            return false;
+        };
+        let living = g
+            .players
+            .iter()
+            .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
+            .count() as i32;
+        let match_point = 100 * (living - 1) / living.max(1);
+        let early_warning = (100 * (living - 2) / living.max(1))
+            .max(50)
+            .min(match_point);
+        living > 2 && pressure.progress >= early_warning && g.civ_follows_religion(pid, faith)
+    }
+
+    /// Whether `rival`'s victory clock is one the Domination army answers:
+    /// the lane-independent counter above, or a faith that already holds a
+    /// faithless seat's majority.
+    pub(super) fn domination_counter_target(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        let pressure = self.rival_victory_pressure(g, rival);
+        self.domination_counter_pressure(g, pressure)
+            || self.domination_faithless_conversion_counter(g, pid, rival, pressure)
     }
     /// The next irreducible Science milestone. An explicit or adaptive
     /// Science plan can still honour a declared rush or a war breakthrough,
@@ -153,7 +199,9 @@ impl AdvancedAi {
         pressure: VictoryFocus,
     ) -> Option<GrandStrategy> {
         let urgent = self.victory_pressure_is_urgent(g, rival, pressure);
-        if self.domination_counter_pressure(g, pressure) {
+        if self.domination_counter_pressure(g, pressure)
+            || self.domination_faithless_conversion_counter(g, pid, rival, pressure)
+        {
             // Faith purchases and home religious defense still run; this only
             // keeps the campaign in its assigned military lane.
             return Some(GrandStrategy::Conquest);
@@ -281,7 +329,8 @@ impl AdvancedAi {
         let targeted = self.active_victory_target(g).is_some();
         let own_progress = self.victory_focus(g, pid).progress;
         for (rival, pressure) in self.ranked_rival_victory_pressures(g, pid, culture_pressures) {
-            let domination_counter = self.domination_counter_pressure(g, pressure);
+            let domination_counter = self.domination_counter_pressure(g, pressure)
+                || self.domination_faithless_conversion_counter(g, pid, rival, pressure);
             if targeted
                 && !domination_counter
                 && (!self.deny_while_targeted
@@ -392,7 +441,10 @@ impl AdvancedAi {
         rival: usize,
         pressure: VictoryFocus,
     ) -> Option<u32> {
-        if pressure.progress < 78 && !self.domination_counter_pressure(g, pressure) {
+        if pressure.progress < 78
+            && !self.domination_counter_pressure(g, pressure)
+            && !self.domination_faithless_conversion_counter(g, pid, rival, pressure)
+        {
             return None;
         }
         let district = match pressure.strategy {

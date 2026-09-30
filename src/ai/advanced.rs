@@ -11659,14 +11659,17 @@ impl AdvancedAi {
         let targeted = self.active_victory_target(g).is_some();
         let culture_pressures = self.rival_culture_pressures(g);
         let denial = self.victory_denial_with_culture_pressures(g, pid, &culture_pressures)?;
-        if targeted && !self.deny_while_targeted && !self.domination_counter_target(g, denial.0) {
+        if targeted
+            && !self.deny_while_targeted
+            && !self.domination_counter_target(g, pid, denial.0)
+        {
             return None;
         }
         // An assigned lane keeps its focus against ordinary pressure; a rival
         // at match point ends the game for every lane alike.
         if targeted
             && !self.urgent_victory_threat(g, denial.0)
-            && !self.domination_counter_target(g, denial.0)
+            && !self.domination_counter_target(g, pid, denial.0)
         {
             return None;
         }
@@ -12428,7 +12431,7 @@ impl AdvancedAi {
                 "the rival's original capital completes Domination before its victory clock",
             )
         } else if let Some((_, counter)) = actionable_denial.filter(|(rival, _)| {
-            self.denial_outranks_expansion || self.domination_counter_target(g, *rival)
+            self.denial_outranks_expansion || self.domination_counter_target(g, pid, *rival)
         }) {
             // `denial-outranks-expansion`: the same answer the branch below
             // gives, reached before the lane can say "keep expanding". A
