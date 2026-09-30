@@ -1192,6 +1192,9 @@ impl AdvancedAi {
         if self.doomed_blow_veto_2 {
             doomed.retain(|uid| !strikers.contains(uid));
         }
+        // An active Domination siege owns its members' blows: its train has
+        // priced the assault as a whole. See `active_siege_member`.
+        doomed.retain(|uid| !self.active_siege_member(g, pid, *uid));
         self.census.battle_plan_doomed += doomed.len() as u32;
         if !doomed.is_empty() {
             think!(self.journal(), Military, Decision,
@@ -2096,6 +2099,14 @@ impl AdvancedAi {
             let here = field.danger(unit.pos, uid);
             let wounded =
                 heals && (unit.hp < ROTATE_HP || self.battle_planner_recovering.contains(&uid));
+            // A healthy member of an active Domination siege stays on its
+            // post: the field charges every enemy blow to every unit at once,
+            // and on King `civvis-20260930T221624Z` it rotated 89-hp archers
+            // off an unwalled Stockholm for 27 turns while the train read
+            // "damage ready". Only the wounded come out.
+            if !wounded && self.active_siege_member(g, pid, uid) {
+                continue;
+            }
             // Where nothing heals, a unit is pulled out only when it would
             // otherwise be removed: without a recovery to remember, a margin
             // would walk it out of reach one turn and back into it the next.

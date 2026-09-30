@@ -24228,6 +24228,52 @@ impl Game {
         viewer_height: i32,
         see_through_woods: bool,
     ) -> bool {
+        let target_height = self.sight_height_via(heights, to);
+        self.tile_has_line_to(
+            heights,
+            from,
+            to,
+            viewer_height,
+            target_height,
+            see_through_woods,
+        )
+    }
+
+    /// A ranged strike's corridor. The target stands at its terrain and
+    /// feature height only: a City Center's or Encampment's vantage raises
+    /// what a viewer standing there sees, not how tall the tile stands to a
+    /// shooter. Over the live King games of 2026-09-30 the host refused all
+    /// ten range-2 strikes on a Hills city across a Hills tile from flat
+    /// ground (`can_start=false`) that the district's +1 had read as clear,
+    /// and none of the 47 recorded range-2 city hits needs that +1.
+    fn tile_has_strike_line(
+        &self,
+        from: Pos,
+        to: Pos,
+        viewer_height: i32,
+        see_through_woods: bool,
+    ) -> bool {
+        let mut heights = HeightField::none();
+        let target_height = self.sight_height(to) - self.district_viewpoint_bonus(to);
+        self.tile_has_line_to(
+            &mut heights,
+            from,
+            to,
+            viewer_height,
+            target_height,
+            see_through_woods,
+        )
+    }
+
+    fn tile_has_line_to(
+        &self,
+        heights: &mut HeightField,
+        from: Pos,
+        to: Pos,
+        viewer_height: i32,
+        target_height: i32,
+        see_through_woods: bool,
+    ) -> bool {
         let sphere = self.map.sphere().is_some();
         let wraps = self.map.topology.wraps_east_west();
         // On a cylinder `unwrapped_toward` chooses the same minimum as
@@ -24238,7 +24284,6 @@ impl Game {
             return true;
         }
         if sphere {
-            let target_height = self.sight_height_via(heights, to);
             return self.arc_is_clear(
                 heights,
                 from,
@@ -24252,7 +24297,6 @@ impl Game {
         if distance == 0 || (wraps && distance == 1) {
             return true;
         }
-        let target_height = self.sight_height_via(heights, to);
         [(1e-6, 1e-6, -2e-6), (-1e-6, -1e-6, 2e-6)]
             .into_iter()
             .any(|nudge| {
@@ -24351,7 +24395,7 @@ impl Game {
             } else {
                 0
             };
-        self.tile_has_visibility_line(&mut HeightField::none(), from, to, attacker_height, false)
+        self.tile_has_strike_line(from, to, attacker_height, false)
     }
 
     /// Whether a unit standing on `from` would have line of sight to `to`.
@@ -24375,13 +24419,7 @@ impl Game {
         let unit = &self.units[&uid];
         if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(from, to) == 2 {
             let attacker_height = self.see_from_level(from);
-            return self.tile_has_visibility_line(
-                &mut HeightField::none(),
-                from,
-                to,
-                attacker_height,
-                true,
-            );
+            return self.tile_has_strike_line(from, to, attacker_height, true);
         }
         self.has_line_of_sight(from, to, true)
     }
