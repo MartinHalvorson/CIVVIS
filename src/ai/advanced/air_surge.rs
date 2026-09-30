@@ -117,6 +117,12 @@ pub(crate) const AIR_SURGE_ENDGAME_RESERVE: u32 = 30;
 /// before it gives the wing up. `radio` reveals the deposits one tech
 /// earlier, so a Builder has had that long to reach one.
 pub(crate) const AIR_SURGE_ALUMINUM_GRACE: u32 = 20;
+/// The share of the ground ranking's wall terms a Domination wing does not
+/// pay. See [`AdvancedAi::air_surge_objective_value`].
+pub(crate) const AIR_SURGE_WALL_DISCOUNT: f64 = 0.75;
+/// What an unconquered original capital is worth to a Domination wing on top
+/// of the ground ranking's own capital credit.
+pub(crate) const AIR_SURGE_CAPITAL_VALUE: f64 = 160.0;
 /// Technologies from the Bomber within which the surge's own war is held
 /// against a stalled-war peace offer. See
 /// [`AdvancedAi::air_surge_holds_front`].
@@ -250,6 +256,21 @@ pub(crate) struct AirSurgeCensus {
 }
 
 impl AdvancedAi {
+    /// One line of the surge's running census, for simulator probes outside
+    /// the crate: appointments, breakthroughs, declarations, captures and the
+    /// stand-down reasons with their counts.
+    pub fn air_surge_census_summary(&self) -> String {
+        let census = &self.air_surge_census;
+        format!(
+            "appointments {} breakthroughs {} declarations {} captures {} aborts {:?}",
+            census.appointments,
+            census.breakthroughs,
+            census.declarations,
+            census.objectives_captured,
+            census.aborts
+        )
+    }
+
     /// Whether an appointment is live. Read by the production reservation and
     /// by the strategy overlay; false whenever the gene is off.
     pub(crate) fn air_surge_active(&self) -> bool {
@@ -796,8 +817,8 @@ impl AdvancedAi {
                 .filter(|city| city.owner == target.id)
                 .collect();
             objectives.sort_by(|left, right| {
-                self.campaign_city_value(g, pid, left, GrandStrategy::Conquest)
-                    .total_cmp(&self.campaign_city_value(g, pid, right, GrandStrategy::Conquest))
+                self.air_surge_objective_value(g, pid, left)
+                    .total_cmp(&self.air_surge_objective_value(g, pid, right))
                     .then(left.id.cmp(&right.id))
             });
             for city in objectives {
@@ -810,7 +831,7 @@ impl AdvancedAi {
                 {
                     continue;
                 }
-                let score = self.campaign_city_value(g, pid, city, GrandStrategy::Conquest);
+                let score = self.air_surge_objective_value(g, pid, city);
                 let plan = AirSurge {
                     target_player: target.id,
                     objective_city: city.id,
@@ -843,6 +864,44 @@ impl AdvancedAi {
             }
         }
         best.map(|(_, _, _, plan)| plan)
+    }
+
+    /// The surge's objective ranking: the ground campaign's cost, less what
+    /// the wing saves on walls, less the Domination worth of an original
+    /// capital. Lower is better, as for `campaign_city_value`.
+    ///
+    /// ★★★ THE WING WAS AIMED BY THE INFANTRY'S PRICE LIST. The ground
+    /// ranking charges a walled city `55 + 0.4/HP` of breach delay and
+    /// `0.16/HP` of defence, so a 400-wall capital pays ~280 in wall terms
+    /// against a 180 capital credit, and the surge chose Porto, Konya, Edirne
+    /// and Sivas in live King 20260930T211803Z — four border towns, no
+    /// capital, a Tech loss at turn 248. A Bomber is `siege: true` and takes
+    /// walls at full rate from ten tiles away, and Domination is decided only
+    /// by original capitals.
+    pub(crate) fn air_surge_objective_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+    ) -> f64 {
+        let ground = self.campaign_city_value(g, pid, city, GrandStrategy::Conquest);
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        {
+            return ground;
+        }
+        let walls = self
+            .remembered_city(city.id)
+            .map_or(city.wall_hp, |sighting| sighting.wall_hp)
+            .max(0) as f64;
+        let wall_terms = if walls > 0.0 { 55.0 + walls * 0.56 } else { 0.0 };
+        // `is_capital` marks the founding capital for good, whoever holds it
+        // now, and every one of them must be held for the victory.
+        let capital = if city.is_capital && city.owner != pid {
+            AIR_SURGE_CAPITAL_VALUE
+        } else {
+            0.0
+        };
+        ground - wall_terms * AIR_SURGE_WALL_DISCOUNT - capital
     }
 
     fn record_air_surge_abort(&mut self, g: &Game, reason: &'static str) {
@@ -1165,6 +1224,31 @@ impl AdvancedAi {
         matched
     }
 
+    /// `air-surge-2`: a Domination seat inside the appointment horizon
+    /// researches toward the Bomber whether or not an appointment is live.
+    ///
+    /// ★★★ THE BEELINE DIED WITH EVERY STAND-DOWN. Research followed the
+    /// appointment, and the appointment is fragile: live King
+    /// 20260930T221624Z appointed at turn 110 (ten techs out) against Sweden,
+    /// Sweden's peace stood it down at 115, and the fifteen-turn cooldown
+    /// handed research back to the lane scorer with nothing steering it to
+    /// the Bomber. Who the wing will fight can change; that the Domination
+    /// seat wants the wing does not. The same gates as an appointment apply:
+    /// the horizon, the whole chain and package fitting before the endgame
+    /// reserve, and a safe home.
+    pub(crate) fn air_surge_lane_beeline(&self, g: &Game, pid: usize) -> bool {
+        self.air_surge_2
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && !g.players[pid]
+                .techs
+                .contains(&Name::new(AIR_SURGE_GOAL_TECH))
+            && g.player_city_ids(pid).len() >= 2
+            && Self::air_surge_bomber(g, pid).is_some()
+            && Self::air_surge_missing_techs(g, pid) <= AIR_SURGE_TECH_HORIZON
+            && self.threatened_city(g, pid).is_none()
+            && self.air_surge_affordable(g, pid)
+    }
+
     /// The forced research goal while the breakthrough is still missing.
     /// Consumed by `advanced_research`, which walks the cheapest legal step
     /// toward it.
@@ -1175,7 +1259,11 @@ impl AdvancedAi {
     /// A nearer standing-army upgrade can temporarily take priority; the air
     /// goal retires when the breakthrough technology lands.
     pub(crate) fn air_surge_research_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
-        if self.air_surge_plan.is_none() && !self.domination_air_readiness_active(g, pid) {
+        let lane_beeline = self.air_surge_lane_beeline(g, pid);
+        if self.air_surge_plan.is_none()
+            && !lane_beeline
+            && !self.domination_air_readiness_active(g, pid)
+        {
             // Native 20260922T054400Z reached Ballistics and Education but
             // chased later ground upgrades until a Culture loss at turn 191,
             // without Industrialization. Preparation cannot require that
@@ -1232,7 +1320,7 @@ impl AdvancedAi {
         // the wing is the modernization, so the ground ladder only interrupts
         // it to defend a home city.
         let domination_beeline = self.active_victory_target(g) == Some(VictoryTarget::Domination)
-            && self.air_surge_plan.is_some()
+            && (self.air_surge_plan.is_some() || lane_beeline)
             && self.threatened_city(g, pid).is_none();
         if self.air_surge_2
             && !domination_beeline

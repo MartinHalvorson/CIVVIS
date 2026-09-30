@@ -12,7 +12,7 @@
 //! Only seat zero's named policy is disabled/enabled. The other seats keep
 //! their adaptive deployed controllers. The focal seat also carries the
 //! repository's compiled live-force-on bundle, recorded in every pair.
-use civvis::ai::{gene, run_game_observed, AdvancedAi, Gene, VictoryTarget};
+use civvis::ai::{gene, run_game_observed, AdvancedAi, Ai, Gene, VictoryTarget};
 use civvis::game::{Action, Game, GameOptions, LeaderPool};
 use civvis::setup::MapScript;
 use serde::Serialize;
@@ -146,6 +146,8 @@ struct Outcome {
     foreign_cities_held_at_end: usize,
     applied_actions: usize,
     conquest: ConquestProgress,
+    /// The focal seat's air-surge census at the end of the game.
+    air_surge: String,
 }
 
 /// Observations occur at turn boundaries and once at the end. These times are
@@ -163,6 +165,12 @@ struct ConquestProgress {
     foreign_capitals_observed_held: BTreeSet<u32>,
     foreign_capitals_held_at_end: usize,
     own_original_capital_held_at_end: bool,
+    /// The air lane: when the focal seat first held Flight and Advanced
+    /// Flight, when its first Bomber stood, and the most it fielded at once.
+    flight_observed_turn: Option<u32>,
+    advanced_flight_observed_turn: Option<u32>,
+    first_bomber_observed_turn: Option<u32>,
+    peak_bombers: usize,
     #[serde(skip)]
     observed_actions: usize,
 }
@@ -202,6 +210,24 @@ impl ConquestProgress {
             }
         }
         self.observed_actions = g.log.len();
+        let techs = &g.players[0].techs;
+        if techs.iter().any(|tech| tech.as_str() == "flight") {
+            self.flight_observed_turn.get_or_insert(g.turn);
+        }
+        if techs.iter().any(|tech| tech.as_str() == "advanced_flight") {
+            self.advanced_flight_observed_turn.get_or_insert(g.turn);
+        }
+        let bombers = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == 0 && g.rules.units[unit.kind].promotion_class == "air_bomber"
+            })
+            .count();
+        if bombers > 0 {
+            self.first_bomber_observed_turn.get_or_insert(g.turn);
+        }
+        self.peak_bombers = self.peak_bombers.max(bombers);
         self.foreign_capitals_held_at_end = 0;
         self.own_original_capital_held_at_end = false;
         for city in g.cities.values().filter(|city| city.owner == 0) {
@@ -234,6 +260,14 @@ fn trial(seed: u64, difficulty: Option<&str>, policy: &Gene, enabled: bool) -> T
     let mut game = Game::new_with(options(seed, difficulty));
     let civs = game.players.iter().take(4).map(|p| p.civ.clone()).collect();
     let mut ais = fleet(&game, policy, enabled);
+    // `CIVVIS_PAIR_EXPLAIN=<dir>` records the focal seat's journal and writes
+    // it as `<dir>/<seed>-<on|off>.why.log`, the same lines `--explain` prints.
+    let explain_dir = std::env::var_os("CIVVIS_PAIR_EXPLAIN").map(PathBuf::from);
+    let journal = explain_dir.as_ref().map(|_| {
+        let journal = civvis::reasoning::Journal::recording();
+        ais[0].attach_journal(journal.handle());
+        journal
+    });
     let mut held = BTreeSet::new();
     let mut conquest = ConquestProgress::default();
     let mut observe = |g: &Game| {
@@ -246,6 +280,23 @@ fn trial(seed: u64, difficulty: Option<&str>, policy: &Gene, enabled: bool) -> T
     };
     run_game_observed(&mut game, &mut ais, &mut observe);
     observe(&game);
+    if let (Some(dir), Some(journal)) = (explain_dir, journal) {
+        let path = dir.join(format!("{seed}-{}.why.log", if enabled { "on" } else { "off" }));
+        let lines: String = journal
+            .since(0)
+            .thoughts
+            .iter()
+            .map(|thought| {
+                format!(
+                    "[why] t{} {:?}/{:?} {} | {}\n",
+                    thought.turn, thought.topic, thought.level, thought.headline, thought.detail
+                )
+            })
+            .collect();
+        if let Err(error) = std::fs::write(&path, lines) {
+            eprintln!("{}: {error}", path.display());
+        }
+    }
     let outcome = Outcome {
         winner: game.winner,
         victory: game.victory_type.clone(),
@@ -262,6 +313,7 @@ fn trial(seed: u64, difficulty: Option<&str>, policy: &Gene, enabled: bool) -> T
             .count(),
         applied_actions: game.log.len(),
         conquest,
+        air_surge: ais[0].air_surge_census_summary(),
     };
     Trial {
         outcome,
