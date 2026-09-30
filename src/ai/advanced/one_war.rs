@@ -636,7 +636,7 @@ impl AdvancedAi {
                 .is_some_and(|(rival, counter)| {
                     rival != other
                         && counter == GrandStrategy::Conquest
-                        && self.domination_counter_target(g, rival)
+                        && self.domination_counter_target(g, pid, rival)
                 })
             && !self.one_war_capture_at_hand(g, pid, other)
         {
