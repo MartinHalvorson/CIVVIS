@@ -270,6 +270,10 @@ fn trial(seed: u64, difficulty: Option<&str>, policy: &Gene, enabled: bool) -> T
     });
     let mut held = BTreeSet::new();
     let mut conquest = ConquestProgress::default();
+    // The journal is a ring of the last few thousand thoughts; drain it at
+    // every turn boundary so the file holds the whole game.
+    let mut lines = String::new();
+    let mut cursor = 0;
     let mut observe = |g: &Game| {
         conquest.observe(g);
         for city in g.cities.values() {
@@ -277,23 +281,22 @@ fn trial(seed: u64, difficulty: Option<&str>, policy: &Gene, enabled: bool) -> T
                 held.insert(city.id);
             }
         }
+        if let Some(journal) = &journal {
+            let delta = journal.since(cursor);
+            cursor = delta.cursor;
+            for thought in delta.thoughts {
+                lines.push_str(&format!(
+                    "[why] t{} {:?}/{:?} {} | {}\n",
+                    thought.turn, thought.topic, thought.level, thought.headline, thought.detail
+                ));
+            }
+        }
     };
     run_game_observed(&mut game, &mut ais, &mut observe);
     observe(&game);
-    if let (Some(dir), Some(journal)) = (explain_dir, journal) {
+    if let Some(dir) = explain_dir {
         let path = dir.join(format!("{seed}-{}.why.log", if enabled { "on" } else { "off" }));
-        let lines: String = journal
-            .since(0)
-            .thoughts
-            .iter()
-            .map(|thought| {
-                format!(
-                    "[why] t{} {:?}/{:?} {} | {}\n",
-                    thought.turn, thought.topic, thought.level, thought.headline, thought.detail
-                )
-            })
-            .collect();
-        if let Err(error) = std::fs::write(&path, lines) {
+        if let Err(error) = std::fs::write(&path, &lines) {
             eprintln!("{}: {error}", path.display());
         }
     }

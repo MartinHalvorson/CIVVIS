@@ -904,6 +904,21 @@ impl AdvancedAi {
         ground - wall_terms * AIR_SURGE_WALL_DISCOUNT - capital
     }
 
+    /// `air-surge-2`, Domination lane: a replacement objective for a surge
+    /// that has not declared yet, with the appointment's clocks carried over.
+    fn air_surge_reaim(&self, g: &Game, pid: usize, plan: &AirSurge) -> Option<AirSurge> {
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        {
+            return None;
+        }
+        let mut next = self.choose_air_surge(g, pid)?;
+        next.appointed_turn = plan.appointed_turn;
+        next.tech_turn = plan.tech_turn;
+        next.last_reviewed_turn = plan.last_reviewed_turn;
+        next.recovery_assessments = plan.recovery_assessments;
+        Some(next)
+    }
+
     fn record_air_surge_abort(&mut self, g: &Game, reason: &'static str) {
         *self.air_surge_census.aborts.entry(reason).or_default() += 1;
         self.air_surge_cooldown_until = g
@@ -941,7 +956,7 @@ impl AdvancedAi {
 
         let fronts = Self::air_surge_fronts(g, pid);
         if let Some(mut plan) = self.air_surge_plan.take() {
-            let target_alive = g
+            let mut target_alive = g
                 .players
                 .get(plan.target_player)
                 .is_some_and(|target| target.alive);
@@ -1019,6 +1034,51 @@ impl AdvancedAi {
                 && plan
                     .declared_turn
                     .is_some_and(|turn| g.turn.saturating_sub(turn) <= 1);
+            // ★★ A LOST OBJECTIVE IS NOT A LOST WING. Live King
+            // 20260930T225143Z lost Cumaná at turn 114, the one base within ten
+            // tiles of Groningen, and stood the whole surge down with its
+            // cooldown while Rotterdam, Amsterdam and Tilburg were all still
+            // under the wing's reach. Before the declaration, a Domination
+            // surge whose city left its reach or its owner re-aims at the best
+            // objective it can still reach, keeping its clocks and package.
+            // The same goes for a war the surge was fighting that peace has
+            // closed: the treaty makes that rival illegal for a while, not the
+            // wing useless, so a Domination surge re-arms against the best
+            // legal objective instead of paying the cooldown.
+            // A declared surge whose target is still legal most likely had
+            // its declaration refused; that keeps the ordinary stand-down.
+            let fought = plan.declared_turn.is_some() || plan.opened_at_war;
+            let peace_closed = fought
+                && !at_war
+                && !declaration_in_flight
+                && target_alive
+                && (plan.opened_at_war || !self.campaign_target_legal(g, pid, plan.target_player));
+            if (peace_closed || !fought)
+                && objective_owner != Some(pid)
+                && (peace_closed
+                    || !target_alive
+                    || objective_owner != Some(plan.target_player)
+                    || (!at_war && !self.campaign_target_legal(g, pid, plan.target_player))
+                    || !Self::air_surge_in_range(g, pid, plan.objective_pos))
+            {
+                if let Some(next) = self.air_surge_reaim(g, pid, &plan) {
+                    if let Some(city) = g.cities.get(&next.objective_city) {
+                        think!(self.journal(), Military, Strategy,
+                               "Re-aiming the air surge at {}", city.name;
+                               "{}; research, clocks and the package stay committed",
+                               if peace_closed {
+                                   "peace closed the war it was fighting"
+                               } else {
+                                   "its city left the wing's reach, its owner or the legal targets"
+                               });
+                    }
+                    // `choose_air_surge` only names a living major.
+                    target_alive = true;
+                    at_war = g.is_at_war(pid, next.target_player);
+                    objective_owner = Some(next.target_player);
+                    plan = next;
+                }
+            }
             let mut ended = false;
             if objective_owner != Some(plan.target_player) {
                 if (plan.declared_turn.is_some() || plan.opened_at_war)
@@ -1902,6 +1962,8 @@ mod urgent_denial_opening_tests;
 
 #[cfg(test)]
 mod field_slot_tests;
+
+mod raids;
 
 mod readiness;
 

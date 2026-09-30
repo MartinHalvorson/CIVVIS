@@ -6701,8 +6701,15 @@ fn verify_unit_order(
                 Verdict::Failed("no_improvement".to_string())
             }
         }
+        // The host pillages the plot the unit stands on when the order runs.
+        // A raider walks first (`air_surge/raids.rs`: MOVE_TO, then PILLAGE),
+        // so the plot it ends on is as much a witness as the one it started
+        // on; reading only the start plot failed every raid, and three
+        // failures withhold the unit's PILLAGE for ten turns.
         "PILLAGE" => {
-            let pillaged = was.is_some_and(|u| tiles.plot((u.x, u.y)).is_some_and(|plot| plot.p));
+            let pillaged_under =
+                |u: &civvis::mirror::StateUnit| tiles.plot((u.x, u.y)).is_some_and(|plot| plot.p);
+            let pillaged = was.is_some_and(pillaged_under) || now.is_some_and(pillaged_under);
             if pillaged {
                 Verdict::Verified
             } else {
@@ -12365,6 +12372,51 @@ mod tests {
         )
         .expect("the walk crosses");
         assert_eq!(walk.verb.as_deref(), Some("MOVE_TO"));
+    }
+
+    /// A raider walks and then pillages (`air_surge/raids.rs`), so the plot
+    /// it ends the turn on witnesses the PILLAGE as well as the one it
+    /// started on. A still-unpillaged pair of plots is a failure.
+    #[test]
+    fn a_pillage_is_verified_on_the_plot_the_unit_ends_on() {
+        let (_, before) = local_barbarian_defense_board();
+        let order = IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(101),
+            verb: Some("PILLAGE".to_string()),
+            pos: None,
+        };
+        let board = |pillaged: Option<(i32, i32)>| {
+            Snapshot::from_chunks(&[TilesChunk {
+                turn: 30,
+                width: 12,
+                height: 12,
+                chunk: 1,
+                plots: (0..12)
+                    .flat_map(|x| (0..12).map(move |y| (x, y)))
+                    .map(|(x, y)| {
+                        serde_json::from_value::<Plot>(serde_json::json!({
+                            "x": x, "y": y, "t": "TERRAIN_GRASS",
+                            "p": pillaged == Some((x, y)),
+                        }))
+                        .expect("a plot with serde defaults deserializes")
+                    })
+                    .collect(),
+            }])
+        };
+        let mut walked = before.clone();
+        let raider = walked.units.iter_mut().find(|unit| unit.id == 101).unwrap();
+        raider.x = 7;
+        raider.y = 5;
+        let verdict = |tiles: &Snapshot| {
+            verify_unit_order(&order, 30, &before, &walked, tiles, &[], LaterFrames::default())
+        };
+        assert!(matches!(verdict(&board(Some((7, 5)))), Verdict::Verified));
+        assert!(matches!(verdict(&board(Some((5, 5)))), Verdict::Verified));
+        assert!(matches!(
+            verdict(&board(None)),
+            Verdict::Failed(reason) if reason == "not_pillaged"
+        ));
     }
 
     /// A capture is verified by the unit standing where the civilian stood,
