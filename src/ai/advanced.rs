@@ -21673,6 +21673,8 @@ impl AdvancedAi {
         // Every option is scored against `context.g`; see
         // `air_surge_status_frame`.
         let _air_surge = self.open_air_surge_status_frame();
+        // `context.g` is read-only for the whole scoring pass.
+        let _memo = context.g.query_memo();
         options
             .iter()
             .map(|(action, city, item)| self.gold_purchase_score(context, action, *city, item))
@@ -26528,6 +26530,9 @@ impl AdvancedAi {
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
             // so `production_value` is only ever consulted on an idle city.
+            // Read-only until the governor below acts; one scope shares the
+            // city's derivations across the valuation.
+            let memo = g.query_memo();
             let committed: Option<(f64, Item)> =
                 g.cities[&cid].queue.first().cloned().map(|item| {
                     let value = if !self.victory_planning
@@ -26565,6 +26570,7 @@ impl AdvancedAi {
                         && Self::amenity_repair_queue_item(g, item)
                 })
                 && (widespread_amenity_pressure || g.city_amenity_surplus(&g.cities[&cid]) < 0);
+            drop(memo);
             if amenity_repair_committed
                 && (widespread_amenity_pressure
                     || (!economic_recovery && plan.strategy != GrandStrategy::Recovery))
