@@ -77,6 +77,139 @@ class Reservations(unittest.TestCase):
             scheduler.validate_state(state)
 
 
+class MachineSharing(unittest.TestCase):
+    """--cpu-share, --machine-cpu-ceiling and the progress line."""
+
+    def test_worker_share_is_a_percent_floor_that_never_exceeds_the_cap(self):
+        self.assertEqual(scheduler.workers_for_cores(18, 50), 9)
+        self.assertEqual(scheduler.workers_for_cores(18, 85), 15)
+        self.assertEqual(scheduler.workers_for_cores(1, 10), 1)
+        with self.assertRaisesRegex(scheduler.SchedulerError, "85% cap"):
+            scheduler.workers_for_cores(18, 90)
+
+    def test_jobs_and_cpu_share_are_alternatives(self):
+        import contextlib
+        import io
+        errors = io.StringIO()
+        with tempfile.TemporaryDirectory() as temporary, contextlib.redirect_stderr(errors):
+            root = Path(temporary)
+            (root / ".git").mkdir()
+            code = scheduler.main(["run", "--state-dir", str(root), "--repo", str(root),
+                                   "--jobs", "4", "--cpu-share", "50"])
+        self.assertEqual(code, 2)
+        self.assertIn("alternatives", errors.getvalue())
+
+    def test_host_busy_fraction_survives_a_wrapped_mach_counter(self):
+        before = (2**32 - 100, 50)
+        after = (200, 350)  # busy advanced 300 across the wrap, idle 300
+        self.assertAlmostEqual(scheduler.busy_fraction(before, after), 0.5)
+        self.assertIsNone(scheduler.busy_fraction((5, 5), (5, 5)))
+
+    def test_cpu_time_reads_the_macos_and_linux_ps_forms(self):
+        self.assertAlmostEqual(scheduler.parse_cpu_time("146:12.28"), 8772.28)
+        self.assertAlmostEqual(scheduler.parse_cpu_time("0:00.04"), 0.04)
+        self.assertEqual(scheduler.parse_cpu_time("01:02:03"), 3723)
+        self.assertEqual(scheduler.parse_cpu_time("2-00:00:01"), 172_801)
+
+    def test_overshoot_is_cut_at_once_and_headroom_retaken_by_halves(self):
+        # 18 cores, ceiling 90% = 16.2 cores. The games burn 9 running; the
+        # rest of the host burns 9, so only 7.2 remain for the games.
+        duty, demand = scheduler.governed_duty(
+            ceiling=0.9, cores=18, busy=1.0, group_cores=9.0, applied_duty=1.0,
+            demand_cores=None, previous_duty=1.0)
+        self.assertEqual(demand, 9.0)
+        self.assertAlmostEqual(duty, 0.8)
+        # The rest of the host drops to 5 cores: the full 9 fit again, but the
+        # duty climbs half the way per window rather than jumping back.
+        duty, demand = scheduler.governed_duty(
+            ceiling=0.9, cores=18, busy=(5 + 7.2) / 18, group_cores=7.2, applied_duty=0.8,
+            demand_cores=demand, previous_duty=duty)
+        self.assertAlmostEqual(duty, 0.9)
+        self.assertAlmostEqual(demand, 9.0)
+
+    def test_a_host_saturated_by_others_pauses_the_games_and_keeps_their_demand(self):
+        duty, demand = scheduler.governed_duty(
+            ceiling=0.9, cores=18, busy=1.0, group_cores=0.0, applied_duty=0.0,
+            demand_cores=9.0, previous_duty=0.3)
+        self.assertEqual(duty, 0.0)
+        self.assertEqual(demand, 9.0)
+        # Headroom returns: a paused group resumes even though it measured nothing.
+        duty, _ = scheduler.governed_duty(
+            ceiling=0.9, cores=18, busy=0.5, group_cores=0.0, applied_duty=0.0,
+            demand_cores=demand, previous_duty=duty)
+        self.assertAlmostEqual(duty, 0.4)  # half of the (16.2 - 9) / 9 target
+
+    def test_governor_pauses_an_overloaded_host_and_always_resumes_on_release(self):
+        import signal as signals
+        import threading
+        import time
+
+        class Host:
+            busy = 0
+
+            def ticks(self):
+                # Every sample reports a fully busy host.
+                Host.busy += 1000
+                return (Host.busy, 0)
+
+        sent: list[int] = []
+        paused = threading.Event()
+
+        def send(group, which):
+            self.assertEqual(group, 4242)
+            sent.append(which)
+            if which == signals.SIGSTOP:
+                paused.set()
+
+        cpu = iter(float(value) for value in range(0, 10_000, 9))
+        governor = scheduler.CpuGovernor(
+            90, cores=18, host=Host(), group_cpu=lambda _group: next(cpu), send=send)
+        with mock.patch.object(scheduler, "GOVERNOR_WINDOW_SECONDS", 0.05), \
+                mock.patch.object(scheduler, "GOVERNOR_PERIOD_SECONDS", 0.01):
+            governor.govern(4242)
+            self.assertTrue(paused.wait(2.0), "an over-ceiling host must pause the games")
+            deadline = time.monotonic() + 2.0
+            while not governor.snapshot() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            governor.release()
+        self.assertEqual(sent[0], signals.SIGCONT, "govern must first clear an inherited pause")
+        self.assertEqual(sent[-1], signals.SIGCONT, "release must leave the games running")
+        self.assertLess(governor.snapshot()["next_duty"], 1.0)
+
+    def test_governor_without_a_measurement_never_pauses(self):
+        import signal as signals
+
+        class NoHost:
+            def ticks(self):
+                return None
+
+        sent: list[int] = []
+        governor = scheduler.CpuGovernor(
+            90, cores=18, host=NoHost(), group_cpu=lambda _group: 1.0,
+            send=lambda _group, which: sent.append(which))
+        with mock.patch.object(scheduler, "GOVERNOR_WINDOW_SECONDS", 0.02):
+            governor.govern(7)
+            import time
+            time.sleep(0.1)
+            governor.release()
+        self.assertNotIn(signals.SIGSTOP, sent)
+
+    def test_progress_line_counts_this_batch_and_every_batch_before_it(self):
+        state = scheduler.new_state(1000, 5000)
+        state["history"].append({"complete_games": 5000, "complete_seats": 30000})
+        report = {"batch": state["current"]["id"], "phase": "running", "complete_games": 120,
+                  "complete_seats": 720, "goal_completed_games": 5000,
+                  "games_per_hour": 150.0, "eta_at": "2026-10-02T00:00:00Z"}
+        log = scheduler.ProgressLog(5)
+        line = log.line(state, report, {"host_busy_percent": 88.5, "games_cores": 8.1,
+                                        "applied_duty": 0.93}, now=0.0)
+        self.assertIn("games=120/5,000 seats=720/30,000", line)
+        self.assertIn("all_batches games=5,120 seats=30,720", line)
+        self.assertIn("host_cpu=88.5%", line)
+        self.assertIsNone(log.line(state, report, now=299.0))
+        self.assertIsNotNone(log.line(state, report, now=300.0))
+
+
 class SourcePreparation(unittest.TestCase):
     def test_pinned_gene_screen_build_enables_developer_tools(self):
         """The scheduler must build the feature-gated tournament binary."""
@@ -115,6 +248,21 @@ class SourcePreparation(unittest.TestCase):
                 [
                     "cargo", "build", "--release", "--locked", "--features",
                     "developer-tools", "--bin", "gene_screen",
+                ],
+                commands,
+            )
+
+            # A shared machine builds on the games' worker budget.
+            commands.clear()
+            with mock.patch.object(scheduler, "git_output", side_effect=git_output), \
+                    mock.patch.object(scheduler, "run_checked", side_effect=run_checked), \
+                    mock.patch.object(scheduler, "sha256", return_value="b" * 64):
+                scheduler.ensure_source(root, scheduler.new_state(100, 1), root / "repo",
+                                        build_jobs=9)
+            self.assertIn(
+                [
+                    "cargo", "build", "--release", "--locked", "--features",
+                    "developer-tools", "--bin", "gene_screen", "--jobs", "9",
                 ],
                 commands,
             )
