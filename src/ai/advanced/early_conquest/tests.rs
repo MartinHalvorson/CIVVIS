@@ -8,6 +8,7 @@ use super::super::test_support::opt_in_off_in_both_controllers;
 use super::*;
 use crate::game::Game;
 use crate::name;
+use std::sync::Arc;
 
 /// A flat board of `capitals.len()` empires with every starting unit
 /// cleared, nobody at war, on standard-speed turn 20 — inside the opening
@@ -1454,6 +1455,15 @@ fn the_capital_buys_a_second_scout_only_while_the_opening_has_no_target() {
         scouts: 1,
         ..EmpireCounts::default()
     };
+    for city in [capital, second] {
+        Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            city,
+            crate::rules::Yields {
+                production: 10.0,
+                ..Default::default()
+            },
+        );
+    }
 
     assert_eq!(
         ai.conquest_search_scout_value(&game, 0, capital, &one_eye, false),
@@ -1489,6 +1499,19 @@ fn the_capital_buys_a_second_scout_only_while_the_opening_has_no_target() {
         ai.conquest_search_scout_value(&game, 0, capital, &two_eyes, false),
         0.0,
         "two Scouts are the search"
+    );
+
+    Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+        second,
+        crate::rules::Yields {
+            production: 0.5,
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        ai.conquest_search_scout_value(&game, 0, second, &one_eye, false),
+        0.0,
+        "a city that would take longer than the window is not asked"
     );
 
     meet_and_explore(&mut game, 1);

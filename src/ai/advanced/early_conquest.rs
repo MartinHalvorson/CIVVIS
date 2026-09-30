@@ -249,6 +249,12 @@ pub(crate) const CONQUEST_SEARCH_SCOUTS: usize = 2;
 /// eye only for unmet city-states, and at a half share below a Builder.
 pub(crate) const CONQUEST_SEARCH_SCOUT_VALUE: f64 = 300.0;
 
+/// The slowest a city may train the search Scout and still be asked. An eye
+/// that arrives after the window it searches for is no eye: the first live
+/// game with the term (2026-09-30) put it in a 0.9-production second city,
+/// seventeen turns out, when the capital finished its Settler in four.
+pub(crate) const CONQUEST_SEARCH_SCOUT_MAX_TURNS: f64 = 6.0;
+
 /// The opening this controller has committed to.
 ///
 /// Everything the gene remembers between turns lives here, so the flag being
@@ -683,9 +689,11 @@ impl AdvancedAi {
     /// once an opening stands or has closed, after the commit deadline,
     /// while the city is threatened, once the empire holds
     /// [`CONQUEST_SEARCH_SCOUTS`] Scouts, and whenever a target is already in
-    /// reach — the search is for the opening, not for the map. Any city may
-    /// train it: the capital's opening is the scripted Settler book, which
-    /// never asks this ranking, so a capital-only term would never be heard.
+    /// reach — the search is for the opening, not for the map — and in any
+    /// city that would take longer than [`CONQUEST_SEARCH_SCOUT_MAX_TURNS`].
+    /// Any city may train it: the capital's opening is the scripted Settler
+    /// book, which never asks this ranking, so a capital-only term would
+    /// never be heard.
     /// `counts` is the census with queued bodies, so two cities cannot both
     /// start it.
     pub(super) fn conquest_search_scout_value(
@@ -705,6 +713,15 @@ impl AdvancedAi {
             || g.cities.get(&cid).is_none_or(|city| city.owner != pid)
             || self.conquest_target(g, pid).is_some()
         {
+            return 0.0;
+        }
+        let scout = Item::Unit {
+            unit: crate::name!("scout"),
+        };
+        let turns = g.host_production_turns(cid, &scout).unwrap_or_else(|| {
+            g.item_cost_for(pid, &scout) / g.city_yields(cid).production.max(0.5)
+        });
+        if turns > CONQUEST_SEARCH_SCOUT_MAX_TURNS {
             return 0.0;
         }
         CONQUEST_SEARCH_SCOUT_VALUE
