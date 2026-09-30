@@ -254,3 +254,64 @@ fn a_domination_wing_prefers_a_walled_capital_to_a_border_town() {
         other.campaign_city_value(&g, 0, &capital_city, GrandStrategy::Conquest)
     );
 }
+
+/// Live King 20260930T225143Z: losing the one base in range of Groningen
+/// stood the surge down with its cooldown while three other Dutch cities
+/// were still under the wing. Before the declaration it re-aims instead.
+#[test]
+fn an_objective_out_of_reach_re_aims_the_undeclared_surge() {
+    let (g, mut ai, capital) = fixture();
+    let far = g
+        .cities
+        .values()
+        .find(|city| city.owner == 1 && !city.is_capital)
+        .unwrap()
+        .clone();
+    assert!(!AdvancedAi::air_surge_in_range(&g, 0, far.pos));
+    {
+        let plan = ai.air_surge_plan.as_mut().unwrap();
+        plan.objective_city = far.id;
+        plan.objective_pos = far.pos;
+        plan.declared_turn = None;
+        plan.phase = AirSurgePhase::Arm;
+    }
+    ai.maintain_air_surge(&g, 0);
+    let plan = ai.air_surge_plan.as_ref().expect("the surge re-aims");
+    assert_eq!(plan.objective_city, capital);
+    assert_eq!(plan.appointed_turn, 150, "the clocks carry over");
+    assert_eq!(plan.tech_turn, Some(160));
+    assert!(ai.air_surge_census.aborts.is_empty());
+
+    // Version one keeps its stand-down.
+    let (g, mut legacy, _) = fixture();
+    legacy.disable_air_surge_2();
+    legacy.air_surge = true;
+    {
+        let plan = legacy.air_surge_plan.as_mut().unwrap();
+        plan.objective_city = far.id;
+        plan.objective_pos = far.pos;
+        plan.declared_turn = None;
+        plan.phase = AirSurgePhase::Arm;
+    }
+    legacy.maintain_air_surge(&g, 0);
+    assert!(legacy.air_surge_plan.is_none());
+}
+
+/// A counter-surge whose war ends in peace re-arms against a legal target
+/// instead of standing down: live 20260930T221624Z lost its surge to
+/// Sweden's peace five turns after appointing it.
+#[test]
+fn a_counter_surge_closed_by_peace_re_arms_as_an_elective_surge() {
+    let (g, mut ai, _) = fixture();
+    {
+        let plan = ai.air_surge_plan.as_mut().unwrap();
+        plan.opened_at_war = true;
+        plan.declared_turn = None;
+    }
+    assert!(!g.is_at_war(0, 1));
+    ai.maintain_air_surge(&g, 0);
+    let plan = ai.air_surge_plan.as_ref().expect("the surge re-arms");
+    assert!(!plan.opened_at_war && plan.declared_turn.is_none());
+    assert_eq!(plan.appointed_turn, 150);
+    assert!(ai.air_surge_census.aborts.is_empty());
+}
