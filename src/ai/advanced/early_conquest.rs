@@ -51,8 +51,9 @@
 //!    reservation, not a bid: while it is unfilled the capital's Settler arm
 //!    is deferred outright, the way `threatened_recovery_holds_settlers`
 //!    defers it. It never defers the FIRST Settler (an empire of one city
-//!    has nothing to conquer with) and it never fires while the capital is
-//!    `threatened` — the defence sentinel outranks the whole opening.
+//!    has nothing to conquer with). A `threatened` capital keeps the
+//!    reservation: its bodies are the capital's defence, and a raider beside
+//!    the walls is the worst moment to train a Settler instead.
 //! 3. **Assembly and declaration**
 //!    ([`AdvancedAi::conquest_declaration`]). The force gathers at a rally
 //!    tile [`CONQUEST_RALLY_MIN`]–[`CONQUEST_RALLY_MAX`] tiles from the
@@ -646,14 +647,17 @@ impl AdvancedAi {
 
     /// `early-conquest-opening`: what training `spec` in `cid` is worth on
     /// top of the military arm's own sum. Zero with the gene off, outside
-    /// the reservation window, in any city but the capital, while the city
-    /// is threatened, for anything but a reserved body, and once the force
-    /// is complete.
+    /// the reservation window, in any city but the capital, for anything but
+    /// a reserved body, and once the force is complete.
     ///
     /// `threatened` is the caller's own defence sentinel — a barbarian
     /// alarm, the plan's threatened city, or a city hit in the last four
-    /// turns. The opening never outranks it: a capital under attack builds
-    /// what defends it.
+    /// turns — and it no longer suspends the reservation. The reserved bodies
+    /// ARE what defends an Ancient capital. Suspending it handed the idle
+    /// capital to the Settler arm: live King 2026-09-30T221624Z named
+    /// Stockholm on turn 24, a barbarian Horse Archer stood beside Bogotá on
+    /// turns 25–27, the capital started a Settler on turn 27, and the force
+    /// never assembled before the window closed on turn 44.
     pub(super) fn conquest_reservation(
         &self,
         g: &Game,
@@ -663,7 +667,8 @@ impl AdvancedAi {
         counts: &EmpireCounts,
         threatened: bool,
     ) -> f64 {
-        if threatened || !self.conquest_reservation_open(g) {
+        let _ = threatened;
+        if !self.conquest_reservation_open(g) {
             return 0.0;
         }
         if Self::conquest_capital(g, pid) != Some(cid) {
@@ -733,8 +738,9 @@ impl AdvancedAi {
     /// This is what makes the reservation a reservation rather than a bid.
     /// It is deliberately as narrow as `threatened_recovery_holds_settlers`:
     /// the capital only, while a target stands, before the deadline, while
-    /// bodies are actually missing, never while the city is threatened, and
-    /// never while the empire holds fewer than
+    /// bodies are actually missing — threatened or not, since a threatened
+    /// capital is the last place to train a Settler — and never while the
+    /// empire holds fewer than
     /// [`CONQUEST_FIRST_SETTLER_CITIES`] cities — the first Settler is never
     /// deferred, because an empire of one city has nothing to conquer with.
     pub(super) fn conquest_defers_the_settler(
@@ -746,7 +752,8 @@ impl AdvancedAi {
         city_count: usize,
         threatened: bool,
     ) -> bool {
-        if threatened || !self.conquest_reservation_open(g) {
+        let _ = threatened;
+        if !self.conquest_reservation_open(g) {
             return false;
         }
         if Self::conquest_capital(g, pid) != Some(cid) {

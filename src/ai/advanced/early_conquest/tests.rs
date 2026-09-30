@@ -285,10 +285,9 @@ fn the_reservation_prices_the_missing_bodies_in_the_capital_and_nowhere_else() {
         0.0,
         "only the capital reserves"
     );
-    assert_eq!(
-        ai.conquest_reservation(&game, 0, capital, warrior, &counts, true),
-        0.0,
-        "the defence sentinel outranks the whole opening"
+    assert!(
+        ai.conquest_reservation(&game, 0, capital, warrior, &counts, true) > 0.0,
+        "a threatened capital keeps the reservation: its bodies are the defence"
     );
     assert_eq!(
         off.conquest_reservation(&game, 0, capital, warrior, &counts, false),
@@ -353,8 +352,8 @@ fn the_second_settler_waits_and_the_first_one_never_does() {
         "with a second city standing, the reservation holds the next Settler"
     );
     assert!(
-        !ai.conquest_defers_the_settler(&game, 0, capital, &counts, 2, true),
-        "a threatened capital builds what defends it"
+        ai.conquest_defers_the_settler(&game, 0, capital, &counts, 2, true),
+        "a threatened capital trains its defenders, not a Settler"
     );
     assert!(
         !off.conquest_defers_the_settler(&game, 0, capital, &counts, 2, false),
@@ -1372,18 +1371,26 @@ fn opening_reservation_preserves_expansion_defense_and_existing_commitments() {
     let mut off = ai.clone();
     off.disable_early_conquest_opening();
     assert!(!off.conquest_opening_production(&mut game, 0, &plan));
+    // A threatened capital whose queue the defence dispatch left empty trains
+    // a reserved body — the capital's own defender — and never a Settler.
+    let mut threatened = game.clone();
     plan.threatened_city = Some(capital);
     assert!(
-        !ai.conquest_opening_production(&mut game, 0, &plan),
-        "named defense takes priority"
+        ai.conquest_opening_production(&mut threatened, 0, &plan),
+        "a named threat keeps the reservation: its bodies defend the capital"
     );
+    let Some(Item::Unit { unit }) = threatened.cities[&capital].queue.first() else {
+        panic!("the threatened capital should train a reserved body");
+    };
+    let spec = &threatened.rules.units[unit];
+    assert!(AdvancedAi::conquest_ranged_body(spec) || AdvancedAi::conquest_melee_body(spec));
     plan.threatened_city = None;
-    game.cities.get_mut(&capital).unwrap().last_attacked = game.turn - 1;
+    let mut damaged = game.clone();
+    damaged.cities.get_mut(&capital).unwrap().last_attacked = damaged.turn - 1;
     assert!(
-        !ai.conquest_opening_production(&mut game, 0, &plan),
-        "recent damage takes priority"
+        ai.conquest_opening_production(&mut damaged, 0, &plan),
+        "recent damage keeps the reservation too"
     );
-    game.cities.get_mut(&capital).unwrap().last_attacked = 0;
     let builder = Item::Unit {
         unit: name!("builder"),
     };
