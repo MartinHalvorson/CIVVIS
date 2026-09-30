@@ -83,8 +83,8 @@ use super::city_campaign::NeighbourAppraisal;
 use super::siege_train::SiegeStage;
 use super::{
     AdvancedAi, BasicAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
-    UnitDoctrine, BASTION_PRESSURE, BELIEF_PRESSURE_HORIZON, BORDER_PARITY_CONTACT_RADIUS,
-    THREAT_RELIEF_RADIUS,
+    UnitDoctrine, VictoryTarget, BASTION_PRESSURE, BELIEF_PRESSURE_HORIZON,
+    BORDER_PARITY_CONTACT_RADIUS, THREAT_RELIEF_RADIUS,
 };
 use crate::game::{effective_strength, Game};
 use crate::think;
@@ -138,6 +138,12 @@ pub const SECTOR: i32 = 8;
 pub const SECTOR_EXPLORED_SHARE: f64 = 0.5;
 /// …and are rows only within this of one of our cities.
 pub const RECON_REACH: i32 = 24;
+/// A Domination war's surplus joins the top Siege row, less this many bodies
+/// that keep the Reserve nearest its tile.
+pub const CAMPAIGN_SURPLUS_HOME_KEEP: usize = 2;
+/// A unit under this strength is not a body for the campaign surplus — the
+/// same bar that keeps a scout out of a fight.
+pub const CAMPAIGN_SURPLUS_MIN_STRENGTH: f64 = 15.0;
 /// A scout within this of a sector's centre holds it.
 const RECON_HOLD_RADIUS: i32 = 6;
 /// At most this many Recon rows a turn.
@@ -1670,8 +1676,39 @@ impl AdvancedAi {
         } else {
             BTreeMap::new()
         };
-        // Leftovers: the Reserve, per domain — on an arena, the top force.
         let reserve_at = self.reserve_tile(g, pid, &rows);
+        // A Domination war's surplus marches with the campaign. A Siege row
+        // is met on paper by the campaign bill, and every body the bill does
+        // not name used to wait at the Reserve tile for a threat that never
+        // came: on King `civvis-20260930T211803Z` turn 205, ten land units
+        // held the Reserve at home while the Siege of Istanbul had six, one
+        // of them staged, against a 5x power lead. The Reserve keeps
+        // `CAMPAIGN_SURPLUS_HOME_KEEP` bodies, and nothing moves while a
+        // Deter row says a neighbour outguns us or a Defend or Relieve row is
+        // still short.
+        if !arena {
+            if let Some(index) =
+                self.campaign_surplus_force(g, pid, &rows, &mut forces, &facts, &mut next_id)
+            {
+                let mut surplus: Vec<u32> = pool
+                    .iter()
+                    .copied()
+                    .filter(|uid| {
+                        let unit = &facts[uid];
+                        unit.domain == ForceDomain::Land
+                            && !unit.recon
+                            && unit.strength >= CAMPAIGN_SURPLUS_MIN_STRENGTH
+                            && !assignment.contains_key(uid)
+                    })
+                    .collect();
+                surplus.sort_by_key(|uid| (g.wdist(facts[uid].pos, reserve_at), *uid));
+                for uid in surplus.into_iter().skip(CAMPAIGN_SURPLUS_HOME_KEEP) {
+                    assignment.insert(uid, index);
+                    forces[index].units.push(uid);
+                }
+            }
+        }
+        // Leftovers: the Reserve, per domain — on an arena, the top force.
         for domain in [ForceDomain::Land, ForceDomain::Sea] {
             let leftovers: Vec<u32> = pool
                 .iter()
@@ -1838,6 +1875,78 @@ impl AdvancedAi {
         board.forces = forces;
         board.next_force_id = next_id;
         board.requisitions = requisitions;
+    }
+
+    /// The land force of the top-ranked Siege row, raised if it has none,
+    /// when a Domination war's surplus should march with it: the seat is on
+    /// the Domination lane, its top Siege row aims at a major it is at war
+    /// with, no Deter row stands and every Defend and Relieve row is served.
+    fn campaign_surplus_force(
+        &self,
+        g: &Game,
+        pid: usize,
+        rows: &[Objective],
+        forces: &mut Vec<TaskForce>,
+        facts: &BTreeMap<u32, UnitFacts>,
+        next_id: &mut u32,
+    ) -> Option<usize> {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || rows.iter().any(|row| row.kind == ObjectiveKind::Deter)
+        {
+            return None;
+        }
+        let served = |row: &Objective| {
+            let mut have = ForceNeed::default();
+            for force in forces
+                .iter()
+                .filter(|force| force.objective_key == row.key && force.domain == ForceDomain::Land)
+            {
+                for uid in &force.units {
+                    if let Some(unit) = facts.get(uid) {
+                        have.add(unit);
+                    }
+                }
+            }
+            row.requirement.unmet(&have).is_zero()
+        };
+        if rows
+            .iter()
+            .filter(|row| {
+                matches!(row.kind, ObjectiveKind::Defend | ObjectiveKind::Relieve) && row.land
+            })
+            .any(|row| !served(row))
+        {
+            return None;
+        }
+        let row = rows
+            .iter()
+            .find(|row| row.kind == ObjectiveKind::Siege && row.land)?;
+        let ObjectiveKey::Siege(cid) = row.key else {
+            return None;
+        };
+        let owner = g.cities.get(&cid)?.owner;
+        let rival = g.players.get(owner)?;
+        if rival.is_minor || rival.is_barbarian || !g.is_at_war(pid, owner) {
+            return None;
+        }
+        if let Some(index) = forces
+            .iter()
+            .position(|force| force.objective_key == row.key && force.domain == ForceDomain::Land)
+        {
+            return Some(index);
+        }
+        forces.push(TaskForce {
+            id: *next_id,
+            objective_key: row.key,
+            domain: ForceDomain::Land,
+            units: Vec::new(),
+            rally: row.at,
+            doctrine_state: ForcePosture::Muster,
+            aimed_at: row.at,
+            formed: g.turn,
+        });
+        *next_id += 1;
+        Some(forces.len() - 1)
     }
 
     /// Where the Reserve stands: the Deter row's tile, else the frontier
@@ -2625,6 +2734,51 @@ mod tests {
             .requisitions()
             .iter()
             .any(|req| req.kind == ObjectiveKind::Destroy));
+    }
+
+    /// A Domination war's surplus marches with the campaign: the Siege row
+    /// is met on paper by its bill, but every other body used to wait at the
+    /// Reserve tile. Two stay home; the rest join the siege force. Another
+    /// lane, or a Domination seat at peace, keeps the old Reserve.
+    #[test]
+    fn a_domination_wars_surplus_joins_the_top_siege_and_keeps_two_home() {
+        let mut g = flat_board(91_640, &[at(6, 8), at(30, 8)], false);
+        let target = city_of(&g, 1, at(30, 8));
+        let ours: Vec<u32> = (0..8)
+            .map(|index| spawn(&mut g, "warrior", 0, at(8 + index % 4, 7 + index / 4)))
+            .collect();
+        let plan = conquest(&g, Some(target));
+        let run = |g: &Game, mut ai: AdvancedAi| {
+            ai.enable_objective_board();
+            ai.battlefront_observation = false;
+            ai.rebuild_force_groups(g, 0, &plan);
+            let siege = force_for(&ai, ObjectiveKey::Siege(target)).map_or(0, |f| f.units.len());
+            let reserve = force_for(&ai, ObjectiveKey::Reserve).map_or(0, |f| f.units.len());
+            (siege, reserve)
+        };
+
+        let mut at_war = g.clone();
+        war(&mut at_war, 0, 1);
+        let (bill_only, home) = run(&at_war, AdvancedAi::new());
+        assert!(
+            home > CAMPAIGN_SURPLUS_HOME_KEEP,
+            "the bill leaves a surplus: {home}"
+        );
+        assert_eq!(
+            bill_only + home,
+            ours.len(),
+            "every warrior is on the board"
+        );
+
+        let (siege, reserve) = run(&at_war, AdvancedAi::targeting(VictoryTarget::Domination));
+        assert_eq!(reserve, CAMPAIGN_SURPLUS_HOME_KEEP);
+        assert_eq!(siege, ours.len() - CAMPAIGN_SURPLUS_HOME_KEEP);
+
+        let peace = run(&g, AdvancedAi::targeting(VictoryTarget::Domination));
+        assert!(
+            peace.1 > CAMPAIGN_SURPLUS_HOME_KEEP,
+            "no campaign surplus without a war: {peace:?}"
+        );
     }
 
     /// A task force keeps its id across turns and across the death of its
