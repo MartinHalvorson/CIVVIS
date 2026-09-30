@@ -70,11 +70,20 @@ Pausing stops every game in flight together, so it adds wall-clock noise to
 the table's time-cost columns but cannot favour one genome over another. It
 does not change a game's result: games are seeded and have no wall-clock rule.
 
-Launch as a macOS `ProcessType` `Background` job (and a positive `Nice`) as
-well: the kernel then keeps the games off the fastest cores and yields to
-foreground work before the ceiling is ever reached. Example
-(2026-09-30, `mbp-m5-max-128`, 18 logical cores): `--cpu-share 50
---machine-cpu-ceiling 90` gives nine workers and holds the host under 90%.
+Launch the launchd job as `ProcessType` `Standard` with a positive `Nice`
+(15 on `mbp-m5-max-128`), **not** `Background`. Measured 2026-09-30 on that
+host (18 logical cores: 6 Super + 12 Performance): under `Background` every
+game worker ran at scheduler priority 4 on the lower cluster only, and nine
+workers got at most 2.5 cores while the host was 70% busy with five cores idle.
+The same nine workers at `Standard` + Nice 15 (priority 20) burn 9.4–9.7 cores
+whenever the governor lets them run; Nice keeps them behind other work, and the
+ceiling keeps the host's total down. A thread's QoS is fixed when it is
+created, so `taskpolicy -B -p <pid>` does not rescue a running segment:
+changing the class takes a new segment (stop the game group, restart the
+service; its unplayed seeds are retired, never replayed).
+
+Example (same host): `--cpu-share 50 --machine-cpu-ceiling 90` gives nine
+workers and holds the host under 90%.
 
 ## Do not
 
