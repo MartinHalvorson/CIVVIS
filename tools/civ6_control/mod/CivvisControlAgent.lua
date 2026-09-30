@@ -12397,6 +12397,29 @@ local function applyOrder(player, pid, row, turn)
 			present = try(function() return diplomacy:HasDelegationAt(subject); end, false);
 		end
 		if present then return false, "delegation_already_present"; end
+		-- A mission the host would not offer a human opens no leader scene.
+		if try(function()
+			return diplomacy:IsDiplomaticActionValid("DIPLOACTION_" .. verb, subject, true);
+		end) == false then
+			return false, "delegation_not_offered";
+		end
+		-- ★★★ A REFUSAL IS A LEADER SCENE THE CLEARERS DO NOT ALWAYS CLOSE.
+		-- An Unfriendly or Denouncing rival answers with AI_REFUSE_DEAL, and on
+		-- 2026-09-30 that answer froze the King seat twice at the same ask
+		-- (Byzantium, Unfriendly, RESIDENT_EMBASSY at t136 and again at t208):
+		-- the refusal sat pending to us, the end turn never cleared, and the
+		-- wedge watchdog reloaded a save each time. Ask only a rival whose view
+		-- of us is at least neutral; the rival's state is read as the
+		-- friendship arm below reads it.
+		local missionState = try(function()
+			local row = GameInfo.DiplomaticStates[
+				Players[subject]:GetDiplomaticAI():GetDiplomaticStateIndex(pid)];
+			return row ~= nil and row.StateType or nil;
+		end);
+		if missionState == "DIPLO_STATE_UNFRIENDLY" or missionState == "DIPLO_STATE_DENOUNCED"
+				or missionState == "DIPLO_STATE_WAR" then
+			return false, "delegation_unfriendly";
+		end
 		-- An unaffordable session is a leader scene opened for a guaranteed
 		-- no; the cost read is the shipped GetGoldCost helper's.
 		local cost = try(function()
