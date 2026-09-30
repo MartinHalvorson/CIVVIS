@@ -281,3 +281,46 @@ fn domination_finish_at_hand_outlasts_the_stalled_war_counter() {
     g.remove_unit(finisher);
     assert!(!ai.one_war_presses(&g, 0, 1));
 }
+
+#[test]
+fn domination_keeps_a_crushed_front_until_the_counter_is_urgent() {
+    let (mut g, ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    let culture = |g: &mut Game, visiting: usize| {
+        let stats = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats);
+        for pid in 0..4 {
+            stats.insert(
+                pid,
+                crate::game::ObservedPublicEmpireStats {
+                    domestic_tourists: Some(100),
+                    foreign_tourists: Some(if pid == 2 { visiting } else { 0 }),
+                    ..Default::default()
+                },
+            );
+        }
+    };
+    // A 60% culture reading: a Domination counter target, not yet urgent.
+    culture(&mut g, 60);
+    assert_eq!(
+        ai.actionable_victory_denial(&g, 0),
+        Some((2, GrandStrategy::Conquest))
+    );
+    assert!(!ai.urgent_victory_threat(&g, 2));
+    assert!(ai.one_war_front_crushed(&g, 0, 1));
+    assert_eq!(
+        ai.one_war_peace(&g, 0, 1),
+        None,
+        "a beaten front is not traded away for a slow clock"
+    );
+    // The same clock at match point frees the army.
+    culture(&mut g, 90);
+    assert!(ai.urgent_victory_threat(&g, 2));
+    assert_eq!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
+    // A front that can still fight back is traded as before.
+    culture(&mut g, 60);
+    for _ in 0..4 {
+        g.spawn_test_unit("modern_armor", 1, (15, 12));
+    }
+    assert!(!ai.one_war_front_crushed(&g, 0, 1));
+    assert_eq!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
+}

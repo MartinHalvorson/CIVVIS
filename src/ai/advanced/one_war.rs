@@ -89,6 +89,9 @@ pub(crate) const ONE_WAR_CITY_BROKEN_FRACTION: f64 = 0.5;
 /// rival. The capture body may be a few tiles behind the guns.
 pub(crate) const ONE_WAR_FINISH_HP: i32 = 60;
 pub(crate) const ONE_WAR_FINISH_REACH: i32 = 4;
+/// A front we outgun this many times over is not traded away for a
+/// counter-campaign against a rival whose clock is not yet urgent.
+pub(crate) const ONE_WAR_CRUSHED_RATIO: f64 = 4.0;
 /// A second-front unit this close to a threatened city of ours keeps that
 /// enemy in the force planner's sights: the relief column's own radius.
 pub(crate) const ONE_WAR_RELIEF_REACH: i32 = 8;
@@ -604,6 +607,17 @@ impl AdvancedAi {
         })
     }
 
+    /// A front we outgun [`ONE_WAR_CRUSHED_RATIO`] times over. Peace there
+    /// hands a beaten rival the turns to rebuild: on King
+    /// `civvis-20260929T020236Z` the seat offered Norway peace at 812
+    /// military against 36 to counter Mali's 61% culture reading; Norway
+    /// accepted at turn 188, rebuilt to 1,308 military and more than tripled
+    /// its visiting tourists, and won on culture at 206. Only an urgent
+    /// clock is worth freeing the army from such a front.
+    fn one_war_front_crushed(&self, g: &Game, pid: usize, other: usize) -> bool {
+        g.military_power(pid) >= ONE_WAR_CRUSHED_RATIO * g.military_power(other).max(1.0)
+    }
+
     /// Whether the gene wants peace with `other` this turn, and why.
     pub(crate) fn one_war_peace(&self, g: &Game, pid: usize, other: usize) -> Option<OneWarPeace> {
         let front = self.one_war.as_ref().filter(|_| self.one_war_at_a_time)?;
@@ -637,6 +651,8 @@ impl AdvancedAi {
                     rival != other
                         && counter == GrandStrategy::Conquest
                         && self.domination_counter_target(g, pid, rival)
+                        && (self.urgent_victory_threat(g, rival)
+                            || !self.one_war_front_crushed(g, pid, other))
                 })
             && !self.one_war_capture_at_hand(g, pid, other)
         {
