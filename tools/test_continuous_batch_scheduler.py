@@ -139,6 +139,23 @@ class MachineSharing(unittest.TestCase):
             demand_cores=demand, previous_duty=duty)
         self.assertAlmostEqual(duty, 0.4)  # half of the (16.2 - 9) / 9 target
 
+    def test_a_starved_measurement_never_shrinks_demand_below_the_workers(self):
+        # Nine workers at the lowest priority on a host others saturate: when
+        # resumed they were scheduled for 0.35 cores in a 0.2-duty window.
+        # Sizing the next duty from that 1.75-core "demand" would let them take
+        # all nine cores as soon as the other work paused.
+        duty, demand = scheduler.governed_duty(
+            ceiling=0.9, cores=18, busy=0.8, group_cores=0.35, applied_duty=0.2,
+            demand_cores=None, previous_duty=0.2, demand_floor=9.0)
+        self.assertEqual(demand, 9.0)
+        # 16.2 - (14.4 - 0.35) = 2.15 allowed cores for nine workers.
+        self.assertAlmostEqual(duty, 0.2 + 0.5 * (2.15 / 9.0 - 0.2))
+        # A group that measures above its worker count keeps its measurement.
+        _, demand = scheduler.governed_duty(
+            ceiling=0.9, cores=18, busy=0.5, group_cores=9.4, applied_duty=1.0,
+            demand_cores=demand, previous_duty=1.0, demand_floor=9.0)
+        self.assertAlmostEqual(demand, 9.4)
+
     def test_governor_pauses_an_overloaded_host_and_always_resumes_on_release(self):
         import signal as signals
         import threading

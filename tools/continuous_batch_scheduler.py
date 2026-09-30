@@ -297,7 +297,8 @@ def group_cpu_seconds(group: int) -> float | None:
 
 def governed_duty(*, ceiling: float, cores: int, busy: float, group_cores: float,
                   applied_duty: float, demand_cores: float | None,
-                  previous_duty: float) -> tuple[float, float | None]:
+                  previous_duty: float,
+                  demand_floor: float = 0.0) -> tuple[float, float | None]:
     """Next running fraction for the games, and the refreshed demand estimate.
 
     ``busy`` is the host's busy fraction over the window just ended,
@@ -305,9 +306,17 @@ def governed_duty(*, ceiling: float, cores: int, busy: float, group_cores: float
     ``applied_duty`` the fraction of the window it was running. The rest of
     the machine is ``busy * cores - group_cores``; the games may have what is
     left under the ceiling, as a share of what they burn when running.
+
+    ``demand_floor`` is what the games COULD burn — their worker count. The
+    measured demand alone collapses exactly when it matters: at low priority
+    on a host that other work saturates, a resumed worker is barely scheduled
+    (measured 0.46 cores for nine workers on 2026-09-30), so a duty sized from
+    it lets the games take every core the moment the other work pauses.
     """
     if applied_duty >= 0.1 and group_cores > 0:
         demand_cores = group_cores / applied_duty
+    if demand_floor > 0:
+        demand_cores = max(demand_floor, demand_cores or 0.0)
     rest = max(0.0, busy * cores - group_cores)
     allowed = ceiling * cores - rest
     if demand_cores is None or demand_cores <= 0:
@@ -335,12 +344,14 @@ class CpuGovernor:
     running.
     """
 
-    def __init__(self, ceiling_percent: float, *, cores: int, host: HostCpu | None = None,
-                 group_cpu=group_cpu_seconds, send=None) -> None:
+    def __init__(self, ceiling_percent: float, *, cores: int, workers: int = 0,
+                 host: HostCpu | None = None, group_cpu=group_cpu_seconds, send=None) -> None:
         if not 0 < ceiling_percent <= 100:
             raise SchedulerError("--machine-cpu-ceiling must be a percentage in (0, 100]")
         self.ceiling = ceiling_percent / 100.0
         self.cores = positive_int(cores, name="logical core count")
+        # Each game worker is one CPU-bound thread: the most the group can burn.
+        self.workers = workers
         self.host = host or HostCpu()
         self.group_cpu = group_cpu
         self.send = send or os.killpg
@@ -442,7 +453,8 @@ class CpuGovernor:
             applied = min(1.0, running / window)
             new_duty, demand = governed_duty(
                 ceiling=self.ceiling, cores=self.cores, busy=busy, group_cores=group_cores,
-                applied_duty=applied, demand_cores=self.demand, previous_duty=duty)
+                applied_duty=applied, demand_cores=self.demand, previous_duty=duty,
+                demand_floor=float(self.workers))
             with self.lock:
                 self.duty, self.demand = new_duty, demand
                 self.last = {
@@ -2221,7 +2233,7 @@ def main(argv: list[str] | None = None) -> int:
             raise SchedulerError("--jobs and --cpu-share are alternatives; pass one")
         jobs = (positive_int(args.jobs, name="--jobs") if args.jobs is not None
                 else workers_for_cores(logical_cores(), args.cpu_share or DEFAULT_WORKER_PERCENT))
-        governor = (CpuGovernor(args.machine_cpu_ceiling, cores=logical_cores())
+        governor = (CpuGovernor(args.machine_cpu_ceiling, cores=logical_cores(), workers=jobs)
                     if args.machine_cpu_ceiling is not None else None)
         progress = ProgressLog(args.progress_minutes)
         if args.poll_seconds <= 0:
