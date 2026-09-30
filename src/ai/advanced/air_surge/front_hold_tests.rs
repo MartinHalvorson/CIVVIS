@@ -224,3 +224,33 @@ fn the_armed_surge_target_s_peace_offer_is_refused() {
     assert!(!accepts(true), "the surge's own front keeps its war");
     assert!(accepts(false), "the control accepts a white peace");
 }
+
+/// Live King 20260930T211803Z aimed the wing at four walled border towns
+/// and never at a capital. A Domination wing prices walls as the thing it is
+/// built to remove and a founding capital as the victory itself.
+#[test]
+fn a_domination_wing_prefers_a_walled_capital_to_a_border_town() {
+    let (mut g, ai, capital) = fixture();
+    assert!(g.cities[&capital].is_capital);
+    let town = g
+        .cities
+        .values()
+        .find(|city| city.owner == 1 && !city.is_capital)
+        .unwrap()
+        .id;
+    for cid in [capital, town] {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.wall_hp = if cid == capital { 400 } else { 100 };
+    }
+    let (capital_city, town_city) = (g.cities[&capital].clone(), g.cities[&town].clone());
+    let air = |ai: &AdvancedAi, city| ai.air_surge_objective_value(&g, 0, city);
+    assert!(air(&ai, &capital_city) < air(&ai, &town_city));
+
+    // Outside the Domination lane it is the ground ranking, unchanged.
+    let mut other = ai.clone();
+    other.victory_target = Some(VictoryTarget::Culture);
+    assert_eq!(
+        air(&other, &capital_city),
+        other.campaign_city_value(&g, 0, &capital_city, GrandStrategy::Conquest)
+    );
+}

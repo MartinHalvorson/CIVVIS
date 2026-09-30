@@ -117,6 +117,12 @@ pub(crate) const AIR_SURGE_ENDGAME_RESERVE: u32 = 30;
 /// before it gives the wing up. `radio` reveals the deposits one tech
 /// earlier, so a Builder has had that long to reach one.
 pub(crate) const AIR_SURGE_ALUMINUM_GRACE: u32 = 20;
+/// The share of the ground ranking's wall terms a Domination wing does not
+/// pay. See [`AdvancedAi::air_surge_objective_value`].
+pub(crate) const AIR_SURGE_WALL_DISCOUNT: f64 = 0.75;
+/// What an unconquered original capital is worth to a Domination wing on top
+/// of the ground ranking's own capital credit.
+pub(crate) const AIR_SURGE_CAPITAL_VALUE: f64 = 160.0;
 /// Technologies from the Bomber within which the surge's own war is held
 /// against a stalled-war peace offer. See
 /// [`AdvancedAi::air_surge_holds_front`].
@@ -811,8 +817,8 @@ impl AdvancedAi {
                 .filter(|city| city.owner == target.id)
                 .collect();
             objectives.sort_by(|left, right| {
-                self.campaign_city_value(g, pid, left, GrandStrategy::Conquest)
-                    .total_cmp(&self.campaign_city_value(g, pid, right, GrandStrategy::Conquest))
+                self.air_surge_objective_value(g, pid, left)
+                    .total_cmp(&self.air_surge_objective_value(g, pid, right))
                     .then(left.id.cmp(&right.id))
             });
             for city in objectives {
@@ -825,7 +831,7 @@ impl AdvancedAi {
                 {
                     continue;
                 }
-                let score = self.campaign_city_value(g, pid, city, GrandStrategy::Conquest);
+                let score = self.air_surge_objective_value(g, pid, city);
                 let plan = AirSurge {
                     target_player: target.id,
                     objective_city: city.id,
@@ -858,6 +864,44 @@ impl AdvancedAi {
             }
         }
         best.map(|(_, _, _, plan)| plan)
+    }
+
+    /// The surge's objective ranking: the ground campaign's cost, less what
+    /// the wing saves on walls, less the Domination worth of an original
+    /// capital. Lower is better, as for `campaign_city_value`.
+    ///
+    /// ★★★ THE WING WAS AIMED BY THE INFANTRY'S PRICE LIST. The ground
+    /// ranking charges a walled city `55 + 0.4/HP` of breach delay and
+    /// `0.16/HP` of defence, so a 400-wall capital pays ~280 in wall terms
+    /// against a 180 capital credit, and the surge chose Porto, Konya, Edirne
+    /// and Sivas in live King 20260930T211803Z — four border towns, no
+    /// capital, a Tech loss at turn 248. A Bomber is `siege: true` and takes
+    /// walls at full rate from ten tiles away, and Domination is decided only
+    /// by original capitals.
+    pub(crate) fn air_surge_objective_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+    ) -> f64 {
+        let ground = self.campaign_city_value(g, pid, city, GrandStrategy::Conquest);
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        {
+            return ground;
+        }
+        let walls = self
+            .remembered_city(city.id)
+            .map_or(city.wall_hp, |sighting| sighting.wall_hp)
+            .max(0) as f64;
+        let wall_terms = if walls > 0.0 { 55.0 + walls * 0.56 } else { 0.0 };
+        // `is_capital` marks the founding capital for good, whoever holds it
+        // now, and every one of them must be held for the victory.
+        let capital = if city.is_capital && city.owner != pid {
+            AIR_SURGE_CAPITAL_VALUE
+        } else {
+            0.0
+        };
+        ground - wall_terms * AIR_SURGE_WALL_DISCOUNT - capital
     }
 
     fn record_air_surge_abort(&mut self, g: &Game, reason: &'static str) {
