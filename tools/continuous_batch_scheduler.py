@@ -17,7 +17,7 @@ be represented by a silently advancing tournament.
 
 The game command has no profile or game-rule flags.  It only sets the standard
 screen's game count, target count, fresh seed, output path, and worker cap
-(floor 85% of logical cores).  Each batch pins a detached clean ``origin/main``
+(floor 85% of logical cores, or ``--cpu-share`` percent of them).  Each batch pins a detached clean ``origin/main``
 source worktree and its release binary; the next batch refreshes that source
 only after the previous table publication has merged.
 
@@ -29,10 +29,19 @@ checkpoint successful checks against HEAD, base, diff, and report content;
 an unchanged retry resumes at the failed check.
 Use ``run --stop-after-publish`` for a bounded tournament that publishes its
 own result and exits after the merge, including after a service restart.
+
+A machine shared with other work sets ``--machine-cpu-ceiling``: the
+scheduler then measures the whole host's CPU and pauses its own game process
+group (SIGSTOP/SIGCONT in half-second slices) for as much of each two-second
+window as keeps the host under the ceiling.  It only ever signals the group it
+launched or re-adopted, and always resumes it on release, restart or SIGTERM.
+``--progress-minutes`` prints one progress line (this batch and all batches
+served by the state directory) to the service log at that cadence.
 """
 from __future__ import annotations
 
 import argparse
+import ctypes
 import datetime as dt
 import fcntl
 import hashlib
@@ -43,6 +52,7 @@ import secrets
 import signal
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -89,6 +99,18 @@ CUT_REQUEST_SCHEMA = "continuous_batch_cut_request/v1"
 CUT_REQUEST_NAME = "cut-request.json"
 CUT_REQUEST_POLL_SECONDS = 1.0
 DEADLINE_REQUESTED_VIA_CUT = "cut_request"
+# Sharing the machine. The governor re-plans once per window and applies its
+# duty inside short periods, so a sampler of any cadence sees the average.
+DEFAULT_WORKER_PERCENT = 85
+GOVERNOR_WINDOW_SECONDS = 2.0
+GOVERNOR_PERIOD_SECONDS = 0.5
+# A duty this close to either end is applied as fully running / fully paused.
+GOVERNOR_DUTY_SNAP = 0.02
+# Recovery is halved per window; a cut is applied at once. The ceiling is the
+# promise, so overshoot is corrected immediately and headroom is re-taken
+# gradually.
+GOVERNOR_RECOVERY = 0.5
+DEFAULT_PROGRESS_MINUTES = 5.0
 
 
 class SchedulerError(RuntimeError):
@@ -172,9 +194,311 @@ def logical_cores() -> int:
     return max(1, os.cpu_count() or 1)
 
 
-def workers_for_cores(cores: int) -> int:
-    """Use at most the operator-approved 85% cap, never zero workers."""
-    return max(1, positive_int(cores, name="logical core count") * 85 // 100)
+def workers_for_cores(cores: int, percent: int = DEFAULT_WORKER_PERCENT) -> int:
+    """Use at most ``percent`` of the cores (the operator-approved 85% cap), never zero workers."""
+    percent = positive_int(percent, name="worker percent")
+    if percent > DEFAULT_WORKER_PERCENT:
+        raise SchedulerError(f"worker percent may not exceed the {DEFAULT_WORKER_PERCENT}% cap")
+    return max(1, positive_int(cores, name="logical core count") * percent // 100)
+
+
+class HostCpu:
+    """Cumulative busy and total CPU ticks for the whole host.
+
+    macOS reads ``HOST_CPU_LOAD_INFO`` through ``host_statistics`` (the
+    counters ``top`` uses); Linux reads the first line of ``/proc/stat``.
+    ``ticks`` returns ``None`` where neither exists, and the governor then
+    leaves the games alone rather than guessing.
+    """
+
+    HOST_CPU_LOAD_INFO = 3
+    HOST_CPU_LOAD_INFO_COUNT = 4  # user, system, idle, nice
+
+    def __init__(self) -> None:
+        self._libc: Any = None
+        self._host = 0
+        if sys.platform == "darwin":
+            try:
+                libc = ctypes.CDLL("/usr/lib/libSystem.dylib")
+                libc.mach_host_self.restype = ctypes.c_uint
+                libc.host_statistics.argtypes = [
+                    ctypes.c_uint, ctypes.c_int, ctypes.POINTER(ctypes.c_uint),
+                    ctypes.POINTER(ctypes.c_uint)]
+                libc.host_statistics.restype = ctypes.c_int
+                # One send right for the life of the process; asking per
+                # sample would leak a port reference every two seconds.
+                self._host = libc.mach_host_self()
+                self._libc = libc
+            except (OSError, AttributeError):
+                self._libc = None
+
+    def ticks(self) -> tuple[int, ...] | None:
+        """Raw counters whose differences :func:`busy_fraction` turns into a load."""
+        if self._libc is not None:
+            info = (ctypes.c_uint * self.HOST_CPU_LOAD_INFO_COUNT)()
+            count = ctypes.c_uint(self.HOST_CPU_LOAD_INFO_COUNT)
+            if self._libc.host_statistics(
+                    self._host, self.HOST_CPU_LOAD_INFO, info, ctypes.byref(count)) != 0:
+                return None
+            user, system, idle, nice = (int(value) for value in info)
+            return (user + system + nice, idle)
+        try:
+            fields = Path("/proc/stat").read_text(encoding="ascii").splitlines()[0].split()
+        except (OSError, IndexError):
+            return None
+        if not fields or fields[0] != "cpu":
+            return None
+        values = [int(value) for value in fields[1:]]
+        idle = values[3] + (values[4] if len(values) > 4 else 0)  # idle + iowait
+        return (sum(values[:8]) - idle, idle)
+
+
+def busy_fraction(before: tuple[int, ...], after: tuple[int, ...]) -> float | None:
+    """Busy share of the host between two :class:`HostCpu` samples.
+
+    The Mach counters are 32-bit and wrap (about a month at 18 cores), so each
+    difference is taken modulo 2**32.
+    """
+    busy, idle = ((new - old) % 2**32 for old, new in zip(before, after))
+    total = busy + idle
+    return None if total <= 0 else busy / total
+
+
+def parse_cpu_time(text: str) -> float:
+    """Seconds from ``ps -o time``: macOS ``MMM:SS.cc``, Linux ``[DD-]HH:MM:SS``."""
+    days = 0
+    if "-" in text:
+        day_text, text = text.split("-", 1)
+        days = int(day_text)
+    seconds = 0.0
+    for part in text.split(":"):
+        seconds = seconds * 60 + float(part)
+    return days * 86_400 + seconds
+
+
+def group_cpu_seconds(group: int) -> float | None:
+    """Cumulative CPU seconds of every live process in one process group."""
+    result = subprocess.run(
+        ["ps", "-A", "-o", "pgid=,time="], text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL, check=False)
+    if result.returncode != 0:
+        return None
+    total, found = 0.0, False
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] == str(group):
+            try:
+                total += parse_cpu_time(parts[1])
+            except ValueError:
+                continue
+            found = True
+    return total if found else None
+
+
+def governed_duty(*, ceiling: float, cores: int, busy: float, group_cores: float,
+                  applied_duty: float, demand_cores: float | None,
+                  previous_duty: float,
+                  demand_floor: float = 0.0) -> tuple[float, float | None]:
+    """Next running fraction for the games, and the refreshed demand estimate.
+
+    ``busy`` is the host's busy fraction over the window just ended,
+    ``group_cores`` the cores our group actually used in it, and
+    ``applied_duty`` the fraction of the window it was running. The rest of
+    the machine is ``busy * cores - group_cores``; the games may have what is
+    left under the ceiling, as a share of what they burn when running.
+
+    ``demand_floor`` is what the games COULD burn — their worker count. The
+    measured demand alone collapses exactly when it matters: at low priority
+    on a host that other work saturates, a resumed worker is barely scheduled
+    (measured 0.46 cores for nine workers on 2026-09-30), so a duty sized from
+    it lets the games take every core the moment the other work pauses.
+    """
+    if applied_duty >= 0.1 and group_cores > 0:
+        demand_cores = group_cores / applied_duty
+    if demand_floor > 0:
+        demand_cores = max(demand_floor, demand_cores or 0.0)
+    rest = max(0.0, busy * cores - group_cores)
+    allowed = ceiling * cores - rest
+    if demand_cores is None or demand_cores <= 0:
+        target = 1.0 if allowed > 0 else 0.0
+    else:
+        target = allowed / demand_cores
+    target = min(1.0, max(0.0, target))
+    duty = target if target < previous_duty else previous_duty + GOVERNOR_RECOVERY * (
+        target - previous_duty)
+    if duty <= GOVERNOR_DUTY_SNAP:
+        duty = 0.0
+    elif duty >= 1.0 - GOVERNOR_DUTY_SNAP:
+        duty = 1.0
+    return duty, demand_cores
+
+
+class CpuGovernor:
+    """Hold the whole host under a CPU ceiling by pausing the owned game group.
+
+    A background thread re-plans every ``GOVERNOR_WINDOW_SECONDS`` with
+    :func:`governed_duty` and applies the duty as SIGCONT/SIGSTOP inside
+    ``GOVERNOR_PERIOD_SECONDS`` slices. Every game in flight pauses together,
+    so the pauses add wall-clock noise to the time-cost columns but cannot
+    favour one genome over another. ``release`` always leaves the group
+    running.
+    """
+
+    def __init__(self, ceiling_percent: float, *, cores: int, workers: int = 0,
+                 host: HostCpu | None = None, group_cpu=group_cpu_seconds, send=None) -> None:
+        if not 0 < ceiling_percent <= 100:
+            raise SchedulerError("--machine-cpu-ceiling must be a percentage in (0, 100]")
+        self.ceiling = ceiling_percent / 100.0
+        self.cores = positive_int(cores, name="logical core count")
+        # Each game worker is one CPU-bound thread: the most the group can burn.
+        self.workers = workers
+        self.host = host or HostCpu()
+        self.group_cpu = group_cpu
+        self.send = send or os.killpg
+        # Re-entrant: the SIGTERM handler releases from the main thread, which
+        # may be interrupted while it already holds the lock.
+        self.lock = threading.RLock()
+        self.group: int | None = None
+        self.thread: threading.Thread | None = None
+        self.stop = threading.Event()
+        self.duty = 1.0
+        self.demand: float | None = None
+        self.last: dict[str, Any] = {}
+
+    def govern(self, group: int) -> None:
+        """Start (or keep) governing ``group``; a different group replaces the old one."""
+        with self.lock:
+            if self.group == group and self.thread is not None and self.thread.is_alive():
+                return
+        self.release()
+        self._signal(group, signal.SIGCONT)  # never inherit a pause from a dead scheduler
+        with self.lock:
+            self.group = group
+            self.stop = threading.Event()
+            self.duty, self.demand = 1.0, None
+            self.thread = threading.Thread(
+                target=self._run, args=(group, self.stop), name="cpu-governor", daemon=True)
+            self.thread.start()
+
+    def release(self) -> None:
+        """Stop governing and leave the group running."""
+        with self.lock:
+            thread, group, stop = self.thread, self.group, self.stop
+            self.thread, self.group = None, None
+        stop.set()
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=5.0)
+        if group is not None:
+            self._signal(group, signal.SIGCONT)
+
+    def snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            return dict(self.last)
+
+    def _signal(self, group: int, which: int) -> bool:
+        try:
+            self.send(group, which)
+            return True
+        except (ProcessLookupError, PermissionError):
+            return False
+
+    def _run(self, group: int, stop: threading.Event) -> None:
+        try:
+            self._serve(group, stop)
+        finally:
+            self._signal(group, signal.SIGCONT)
+
+    def _serve(self, group: int, stop: threading.Event) -> None:
+        host_before: tuple[int, ...] | None = None
+        cpu_before: float | None = None
+        while not stop.is_set():
+            if host_before is None or cpu_before is None:
+                host_before, cpu_before = self.host.ticks(), self.group_cpu(group)
+            if host_before is None or cpu_before is None:
+                # No measurement means no pausing: the games run as launched.
+                if not self._signal(group, signal.SIGCONT):
+                    return
+                stop.wait(GOVERNOR_WINDOW_SECONDS)
+                continue
+            started = time.monotonic()
+            running = 0.0
+            duty = self.duty
+            while not stop.is_set():
+                elapsed = time.monotonic() - started
+                if elapsed >= GOVERNOR_WINDOW_SECONDS:
+                    break
+                period = min(GOVERNOR_PERIOD_SECONDS, GOVERNOR_WINDOW_SECONDS - elapsed)
+                run_for = period * duty
+                if run_for > 0:
+                    if not self._signal(group, signal.SIGCONT):
+                        return
+                    stop.wait(run_for)
+                    running += run_for
+                if period - run_for > 0 and not stop.is_set():
+                    if not self._signal(group, signal.SIGSTOP):
+                        return
+                    stop.wait(period - run_for)
+            if stop.is_set():
+                return
+            window = time.monotonic() - started
+            # The window's closing sample opens the next one: two probes per
+            # window would double the ``ps`` cost for no information.
+            host_after, cpu_after = self.host.ticks(), self.group_cpu(group)
+            busy = (busy_fraction(host_before, host_after)
+                    if host_after is not None else None)
+            host_before, cpu_before_window, cpu_before = host_after, cpu_before, cpu_after
+            if busy is None or cpu_after is None or window <= 0:
+                continue
+            group_cores = max(0.0, cpu_after - cpu_before_window) / window
+            applied = min(1.0, running / window)
+            new_duty, demand = governed_duty(
+                ceiling=self.ceiling, cores=self.cores, busy=busy, group_cores=group_cores,
+                applied_duty=applied, demand_cores=self.demand, previous_duty=duty,
+                demand_floor=float(self.workers))
+            with self.lock:
+                self.duty, self.demand = new_duty, demand
+                self.last = {
+                    "observed_at": utc_now(),
+                    "ceiling_percent": round(self.ceiling * 100, 1),
+                    "host_busy_percent": round(busy * 100, 1),
+                    "games_cores": round(group_cores, 2),
+                    "games_demand_cores": None if demand is None else round(demand, 2),
+                    "applied_duty": round(applied, 3),
+                    "next_duty": round(new_duty, 3),
+                }
+
+
+class ProgressLog:
+    """One human-readable progress line per interval for the service log."""
+
+    def __init__(self, minutes: float) -> None:
+        if minutes <= 0:
+            raise SchedulerError("--progress-minutes must be positive")
+        self.interval = minutes * 60.0
+        self.next_at = 0.0
+
+    def line(self, state: dict[str, Any], report: dict[str, Any],
+             governor: dict[str, Any] | None = None, *, now: float | None = None) -> str | None:
+        now = time.monotonic() if now is None else now
+        if now < self.next_at:
+            return None
+        self.next_at = now + self.interval
+        games, seats = int(report["complete_games"]), int(report["complete_seats"])
+        earlier_games = sum(int(item.get("complete_games") or 0) for item in state["history"])
+        earlier_seats = sum(int(item.get("complete_seats") or 0) for item in state["history"])
+        goal = int(report["goal_completed_games"])
+        parts = [
+            f"{utc_now()} progress batch={report['batch']} phase={report['phase']}",
+            f"games={games:,}/{goal:,} seats={seats:,}/{goal * STANDARD_PLAYERS:,}",
+            f"all_batches games={earlier_games + games:,} seats={earlier_seats + seats:,}",
+        ]
+        if report.get("games_per_hour") is not None:
+            parts.append(f"rate={report['games_per_hour']:,}/h eta={report['eta_at']}")
+        if governor:
+            parts.append(
+                f"host_cpu={governor['host_busy_percent']}% games_cores={governor['games_cores']} "
+                f"duty={governor['applied_duty']}")
+        return " ".join(parts)
 
 
 def sha256(path: Path) -> str:
@@ -493,7 +817,8 @@ def git_output(repo: Path, *args: str) -> str:
     return run_checked(["git", "-C", str(repo), *args], cwd=repo, description="git command").stdout.strip()
 
 
-def ensure_source(state_root: Path, state: dict[str, Any], repo: Path) -> dict[str, str]:
+def ensure_source(state_root: Path, state: dict[str, Any], repo: Path, *,
+                  build_jobs: int | None = None) -> dict[str, str]:
     """Pin one clean detached source and binary for the *current* batch only."""
     batch = state["current"]
     source = batch.get("source")
@@ -535,6 +860,8 @@ def ensure_source(state_root: Path, state: dict[str, Any], repo: Path) -> dict[s
             "developer-tools",
             "--bin",
             "gene_screen",
+            # The one build per batch shares the machine on the games' budget.
+            *(["--jobs", str(build_jobs)] if build_jobs is not None else []),
         ],
         cwd=source_dir,
         description="build pinned gene_screen",
@@ -566,6 +893,9 @@ def terminate_owned_process(process: subprocess.Popen[bytes]) -> int:
         return int(process.returncode)
     try:
         if os.name == "posix":
+            # A governed group may be paused; a stopped process cannot act on
+            # SIGTERM, so resume it first.
+            os.killpg(process.pid, signal.SIGCONT)
             os.killpg(process.pid, signal.SIGTERM)
         else:
             process.terminate()
@@ -610,6 +940,7 @@ def terminate_recorded_process(reservation: dict[str, Any]) -> str:
     if process_is_alive(pid):
         try:
             if os.name == "posix":
+                os.killpg(group, signal.SIGCONT)
                 os.killpg(group, signal.SIGTERM)
             else:
                 os.kill(pid, signal.SIGTERM)
@@ -631,7 +962,9 @@ def terminate_recorded_process(reservation: dict[str, Any]) -> str:
 
 def run_segment(state_root: Path, state_pathname: Path, state: dict[str, Any],
                 batch: dict[str, Any], reservation: dict[str, Any], *, jobs: int,
-                deadline_at: dt.datetime | None = None) -> SegmentResult:
+                deadline_at: dt.datetime | None = None,
+                governor: CpuGovernor | None = None,
+                progress: ProgressLog | None = None) -> SegmentResult:
     """Run one reservation, stopping at a durable absolute deadline when set."""
     source = batch.get("source")
     if not isinstance(source, dict):
@@ -673,6 +1006,8 @@ def run_segment(state_root: Path, state_pathname: Path, state: dict[str, Any],
         stopped_at_deadline = False
         stopped_at: str | None = None
         next_progress_at = time.monotonic()
+        if governor is not None:
+            governor.govern(process.pid)
         try:
             while True:
                 adopted = adopt_cut_request(state_root, state_pathname, state)
@@ -684,6 +1019,8 @@ def run_segment(state_root: Path, state_pathname: Path, state: dict[str, Any],
                     if seconds_left <= 0:
                         stopped_at_deadline = True
                         stopped_at = utc_now()
+                        if governor is not None:
+                            governor.release()
                         returncode = terminate_owned_process(process)
                         break
                     wait_seconds = min(seconds_left, CUT_REQUEST_POLL_SECONDS)
@@ -692,15 +1029,21 @@ def run_segment(state_root: Path, state_pathname: Path, state: dict[str, Any],
                     break
                 except subprocess.TimeoutExpired:
                     if time.monotonic() >= next_progress_at:
-                        checkpoint_progress(state_root, state_pathname, state)
+                        checkpoint_progress(state_root, state_pathname, state,
+                                            governor=governor, progress=progress)
                         next_progress_at = time.monotonic() + 10.0
                     continue
         except KeyboardInterrupt:
+            if governor is not None:
+                governor.release()
             reservation["returncode"] = terminate_owned_process(process)
             reservation["finished_at"] = utc_now()
             reservation["launch_state"] = "finished"
             atomic_json(state_pathname, state)
             raise
+        finally:
+            if governor is not None:
+                governor.release()
     reservation["returncode"] = returncode
     reservation["finished_at"] = utc_now()
     reservation["launch_state"] = "finished"
@@ -713,7 +1056,9 @@ def run_segment(state_root: Path, state_pathname: Path, state: dict[str, Any],
     )
 
 
-def checkpoint_progress(state_root: Path, state_pathname: Path, state: dict[str, Any]) -> None:
+def checkpoint_progress(state_root: Path, state_pathname: Path, state: dict[str, Any], *,
+                        governor: CpuGovernor | None = None,
+                        progress: ProgressLog | None = None) -> None:
     """Persist validated live counts without interrupting a writer mid-record."""
     try:
         report = status_report(state_root, state)
@@ -725,8 +1070,15 @@ def checkpoint_progress(state_root: Path, state_pathname: Path, state: dict[str,
             "observed_at": utc_now(), "error": str(error)})
         return
     report["updated_at"] = utc_now()
+    snapshot = governor.snapshot() if governor is not None else None
+    if snapshot:
+        report["governor"] = snapshot
     atomic_json(state_pathname, state)
     atomic_json(state_root / "status.json", report)
+    if progress is not None:
+        line = progress.line(state, report, snapshot)
+        if line is not None:
+            print(line, flush=True)
     atomic_json(state_root / "progress-error.json", {"observed_at": utc_now(), "error": None})
 
 
@@ -1559,7 +1911,8 @@ def rotate(state_pathname: Path, state: dict[str, Any]) -> None:
 
 
 def tick(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo: Path,
-         jobs: int, machine: str | None, agent: str | None, publish: bool) -> str:
+         jobs: int, machine: str | None, agent: str | None, publish: bool,
+         governor: CpuGovernor | None = None, progress: ProgressLog | None = None) -> str:
     """Advance one durable boundary: a segment, freeze, publication, or rotation."""
     batch = state["current"]
     if batch["phase"] == "running":
@@ -1590,7 +1943,13 @@ def tick(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo:
                     atomic_json(state_pathname, state)
                     seal_deadline_cutoff(state_root, state_pathname, state, stopped_at=stopped_at)
                     return "frozen_deadline"
+                if governor is not None:
+                    # A child launched by a previous daemon is still ours to govern.
+                    governor.govern(positive_int(
+                        live.get("process_group", pid), name="live reservation process group"))
                 return "active_segment"
+            if governor is not None:
+                governor.release()
             # The scheduler died after it had persisted the reservation but before
             # it could record the child exit.  The reserved seeds remain spent;
             # the next segment can only begin after them.
@@ -1612,14 +1971,14 @@ def tick(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo:
             freeze_analysis(state_root, state, state_pathname=state_pathname)
             atomic_json(state_pathname, state)
             return "frozen"
-        source = ensure_source(state_root, state, repo)
+        source = ensure_source(state_root, state, repo, build_jobs=jobs)
         del source
         atomic_json(state_pathname, state)
         reservation = reserve_segment(state, status)
         atomic_json(state_pathname, state)
         result = run_segment(
             state_root, state_pathname, state, batch, reservation, jobs=jobs,
-            deadline_at=deadline)
+            deadline_at=deadline, governor=governor, progress=progress)
         atomic_json(state_pathname, state)
         if result.stopped_at_deadline:
             seal_deadline_cutoff(
@@ -1700,14 +2059,34 @@ def status_report(state_root: Path, state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def read_governor_snapshot(state_root: Path) -> dict[str, Any] | None:
+    """The governor reading the running daemon last wrote into ``status.json``."""
+    try:
+        value = json.loads((state_root / "status.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    governor = value.get("governor") if isinstance(value, dict) else None
+    return governor if isinstance(governor, dict) else None
+
+
 def print_status(state_root: Path, state: dict[str, Any], *, as_json: bool = False) -> None:
     report = status_report(state_root, state)
+    governor = read_governor_snapshot(state_root) if report["scheduler_running"] else None
+    if governor:
+        report["governor"] = governor
+    report["all_batches_games"] = report["complete_games"] + sum(
+        int(item.get("complete_games") or 0) for item in state["history"])
+    report["all_batches_seats"] = report["complete_seats"] + sum(
+        int(item.get("complete_seats") or 0) for item in state["history"])
     if as_json:
         print(json.dumps(report, indent=2, sort_keys=True))
         return
     print("continuous completed-game scheduler")
     print(f"  batch: {report['batch']} ({report['phase']})")
     print(f"  complete: {report['complete_games']:,} games / {report['complete_seats']:,} seats")
+    if state["history"]:
+        print(f"  all batches: {report['all_batches_games']:,} games / "
+              f"{report['all_batches_seats']:,} seats")
     print(f"  boundary: {report['goal_completed_games']:,} validated completed games "
           f"({report['remaining_games']:,} remaining)")
     if report["games_per_hour"] is not None:
@@ -1717,6 +2096,11 @@ def print_status(state_root: Path, state: dict[str, Any], *, as_json: bool = Fal
     pr = f" (PR #{report['publication_pr']})" if report["publication_pr"] else ""
     print(f"  publication: {report['publication']}{pr}")
     print(f"  scheduler: {'running (lock held)' if report['scheduler_running'] else 'not running'}")
+    governor = read_governor_snapshot(state_root) if report["scheduler_running"] else None
+    if governor:
+        print(f"  cpu governor: host {governor.get('host_busy_percent')}% of ceiling "
+              f"{governor.get('ceiling_percent')}%; games {governor.get('games_cores')} cores "
+              f"at duty {governor.get('applied_duty')} ({governor.get('observed_at')})")
     if report["cut_request_pending"]:
         print("  cut request: pending, not yet adopted")
     if report["deadline_at"] is not None:
@@ -1778,6 +2162,13 @@ def main(argv: list[str] | None = None) -> int:
                               "required with a deadline"))
     parser.add_argument("--jobs", type=int,
                         help="game workers; default is floor(85%% of logical cores)")
+    parser.add_argument("--cpu-share", type=int, metavar="PERCENT",
+                        help="game workers as floor(PERCENT%% of logical cores), at most 85")
+    parser.add_argument("--machine-cpu-ceiling", type=float, metavar="PERCENT",
+                        help=("pause the owned games for part of each two-second window "
+                              "whenever the whole host is above PERCENT busy"))
+    parser.add_argument("--progress-minutes", type=float, default=DEFAULT_PROGRESS_MINUTES,
+                        help="cadence of the progress line in the service log (default: 5)")
     parser.add_argument("--publisher-agent", default="continuous-batch",
                         help="agent id for isolated table-publication tasks")
     parser.add_argument("--machine", help="fleet machine id; defaults to Git config")
@@ -1838,7 +2229,13 @@ def main(argv: list[str] | None = None) -> int:
                            if args.next_goal_games is not None else None)
         if (deadline_at is None) != (next_goal_games is None):
             raise SchedulerError("--deadline-at and --next-goal-games must be used together")
-        jobs = positive_int(args.jobs, name="--jobs") if args.jobs is not None else workers_for_cores(logical_cores())
+        if args.jobs is not None and args.cpu_share is not None:
+            raise SchedulerError("--jobs and --cpu-share are alternatives; pass one")
+        jobs = (positive_int(args.jobs, name="--jobs") if args.jobs is not None
+                else workers_for_cores(logical_cores(), args.cpu_share or DEFAULT_WORKER_PERCENT))
+        governor = (CpuGovernor(args.machine_cpu_ceiling, cores=logical_cores(), workers=jobs)
+                    if args.machine_cpu_ceiling is not None else None)
+        progress = ProgressLog(args.progress_minutes)
         if args.poll_seconds <= 0:
             raise SchedulerError("--poll-seconds must be positive")
         state_root = args.state_dir.expanduser().resolve()
@@ -1874,6 +2271,19 @@ def main(argv: list[str] | None = None) -> int:
                         "frozen batch (cut or complete one first)")
                 publish, once = True, True
             outcomes = OutcomeLog()
+            if governor is not None:
+                print(f"{utc_now()} cpu governor: ceiling {args.machine_cpu_ceiling}% of "
+                      f"{governor.cores} logical cores; {jobs} game workers", flush=True)
+
+                def resume_and_exit(_signum: int, _frame: Any) -> None:
+                    # launchd stops the daemon with SIGTERM; the games survive
+                    # it by design, and must never survive it paused.
+                    governor.release()
+                    # Non-zero, as the default SIGTERM death was, so launchd's
+                    # KeepAlive treats it the same way.
+                    raise SystemExit(128 + signal.SIGTERM)
+
+                signal.signal(signal.SIGTERM, resume_and_exit)
             while True:
                 if args.stop_after_publish and state["current"]["phase"] == "published":
                     checkpoint_progress(state_root, state_file, state)
@@ -1881,8 +2291,12 @@ def main(argv: list[str] | None = None) -> int:
                 outcome = tick(
                     state_root, state_file, state, repo=repo, jobs=jobs,
                     machine=machine, agent=args.publisher_agent, publish=publish,
+                    governor=governor, progress=progress,
                 )
-                checkpoint_progress(state_root, state_file, state)
+                if outcome != "active_segment" and governor is not None:
+                    governor.release()
+                checkpoint_progress(state_root, state_file, state,
+                                    governor=governor, progress=progress)
                 line = outcomes.note(outcome)
                 if line is not None:
                     print(line, flush=True)
