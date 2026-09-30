@@ -95,7 +95,17 @@ pub fn live_finishing_candidates(
                 target: target_pos,
             };
             modes.push((false, vec![order.clone()], order));
-        } else if spec.is_melee_capable() && distance > 1 {
+        } else if spec.is_melee_capable()
+            && distance > 1
+            // The approach below clones the whole game and searches a route
+            // per step. A unit whose movement cannot end beside the target
+            // this turn walks part of the way, stops, and yields no line; one
+            // flood of its movement says so before the clone is paid for.
+            && game
+                .reachable(unit)
+                .iter()
+                .any(|pos| game.wdist(*pos, target_pos) <= 1)
+        {
             // Civ VI resolves melee through MOVE_TO on the occupied tile, so
             // one host order can cover an approach and its blow. Prove the
             // corresponding line with CIVVIS's own pathfinder first; a route

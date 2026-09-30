@@ -698,20 +698,32 @@ impl Game {
     }
 
     pub(super) fn established_national_parks(&self, pid: usize) -> Vec<(u32, [Pos; 4])> {
+        if let Some(memo) = self.query_memo.national_parks.borrow().as_ref() {
+            if let Some(parks) = memo.get(&pid) {
+                return parks.clone();
+            }
+        }
+        let parks = self.established_national_parks_uncached(pid);
+        if let Some(memo) = self.query_memo.national_parks.borrow_mut().as_mut() {
+            memo.insert(pid, parks.clone());
+        }
+        parks
+    }
+
+    pub(super) fn established_national_parks_uncached(&self, pid: usize) -> Vec<(u32, [Pos; 4])> {
         let mut parks = Vec::new();
         let mut used = BTreeSet::new();
         // Every established park has four owned tiles carrying the
         // `national_park` improvement. Derive the small set of possible tops
         // from those tiles instead of probing every tile on the map whenever
         // a city asks for its Amenities.
+        let national_park = crate::name!("national_park");
         let candidate_tops: BTreeSet<Pos> = self
             .cities
             .values()
             .filter(|city| city.owner == pid)
             .flat_map(|city| city.owned_tiles.iter().copied())
-            .filter(|position| {
-                self.map.tiles[position].improvement.as_deref() == Some("national_park")
-            })
+            .filter(|position| self.map.tiles[position].improvement == Some(national_park))
             .flat_map(|position| -> Vec<Pos> {
                 match self.map.sphere() {
                     // Any tile of a rhombus lies within two steps of its top.
@@ -852,6 +864,19 @@ impl Game {
 
     pub fn district_yields(&self, dname: impl AsName, dpos: Pos) -> Yields {
         let dname = dname.as_name();
+        if let Some(memo) = self.query_memo.district_yields.borrow().as_ref() {
+            if let Some(yields) = memo.get(&(dname, dpos)) {
+                return *yields;
+            }
+        }
+        let yields = self.district_yields_uncached(dname, dpos);
+        if let Some(memo) = self.query_memo.district_yields.borrow_mut().as_mut() {
+            memo.insert((dname, dpos), yields);
+        }
+        yields
+    }
+
+    fn district_yields_uncached(&self, dname: Name, dpos: Pos) -> Yields {
         let spec = &self.rules.districts[dname];
         let mut ys = spec.yields;
         ys.add(self.district_adjacency(dname, dpos, None));
@@ -1792,7 +1817,7 @@ impl Game {
 
         #[derive(Clone)]
         struct Job {
-            key: String,
+            key: CitizenJobKey,
             pos: Option<Pos>,
             specialist: Option<String>,
             yields: Yields,
@@ -1844,7 +1869,7 @@ impl Game {
                     BARREN_TILE_TIER
                 };
                 Some(Job {
-                    key: format!("tile:{:+06}:{:+06}", pos.0, pos.1),
+                    key: CitizenJobKey::tile(*pos),
                     pos: Some(*pos),
                     specialist: None,
                     yields: ys,
@@ -1855,7 +1880,7 @@ impl Game {
             .collect();
         for (index, (district, yields)) in self.city_specialist_jobs(city).into_iter().enumerate() {
             cands.push(Job {
-                key: format!("specialist:{district}:{index:03}"),
+                key: CitizenJobKey::Specialist(format!("specialist:{district}:{index:03}")),
                 pos: None,
                 specialist: Some(district),
                 yields,
@@ -1916,7 +1941,7 @@ impl Game {
                 break;
             }
             let need = strategy.food_target - food;
-            let mut best: Option<(f64, f64, String, String, usize, usize)> = None;
+            let mut best: Option<(f64, f64, &CitizenJobKey, &CitizenJobKey, usize, usize)> = None;
             for (out, a) in cands.iter().enumerate().filter(|(i, _)| selected[*i]) {
                 for (inside, b) in cands.iter().enumerate().filter(|(i, _)| !selected[*i]) {
                     let food_gain = b.yields.food - a.yields.food;
@@ -1926,14 +1951,7 @@ impl Game {
                     let value_gain = b.value - a.value;
                     let useful_food = food_gain.min(need);
                     let efficiency = value_gain / useful_food;
-                    let candidate = (
-                        efficiency,
-                        value_gain,
-                        a.key.clone(),
-                        b.key.clone(),
-                        out,
-                        inside,
-                    );
+                    let candidate = (efficiency, value_gain, &a.key, &b.key, out, inside);
                     if best
                         .as_ref()
                         .map(|old| {
@@ -1941,8 +1959,7 @@ impl Game {
                                 || ((candidate.0 - old.0).abs() < 1e-9
                                     && (candidate.1 > old.1 + 1e-9
                                         || ((candidate.1 - old.1).abs() < 1e-9
-                                            && (candidate.2.as_str(), candidate.3.as_str())
-                                                < (old.2.as_str(), old.3.as_str()))))
+                                            && (candidate.2, candidate.3) < (old.2, old.3))))
                         })
                         .unwrap_or(true)
                     {
@@ -1962,7 +1979,7 @@ impl Game {
 
         // One-swap local optimum under the nutrition constraint.
         for _ in 0..cands.len() {
-            let mut best: Option<(f64, String, String, usize, usize)> = None;
+            let mut best: Option<(f64, &CitizenJobKey, &CitizenJobKey, usize, usize)> = None;
             for (out, a) in cands.iter().enumerate().filter(|(i, _)| selected[*i]) {
                 for (inside, b) in cands.iter().enumerate().filter(|(i, _)| !selected[*i]) {
                     if b.fallback_tier > a.fallback_tier {
@@ -1973,14 +1990,13 @@ impl Game {
                     if value_gain <= 1e-9 || next_food + 1e-9 < strategy.food_target {
                         continue;
                     }
-                    let candidate = (value_gain, a.key.clone(), b.key.clone(), out, inside);
+                    let candidate = (value_gain, &a.key, &b.key, out, inside);
                     if best
                         .as_ref()
                         .map(|old| {
                             candidate.0 > old.0 + 1e-9
                                 || ((candidate.0 - old.0).abs() < 1e-9
-                                    && (candidate.1.as_str(), candidate.2.as_str())
-                                        < (old.1.as_str(), old.2.as_str()))
+                                    && (candidate.1, candidate.2) < (old.1, old.2))
                         })
                         .unwrap_or(true)
                     {
@@ -3411,6 +3427,7 @@ impl Game {
             *self.query_memo.yields.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.appeal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.tile_yields.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.district_yields.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.air_patrols.borrow_mut() = None;
             *self.query_memo.passage_improvements.borrow_mut() = None;
@@ -3428,6 +3445,9 @@ impl Game {
             *self.query_memo.gw_slots.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.gw_housing.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.regional.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.powered.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.national_parks.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.regional_slots.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.wonder_effects.borrow_mut() = Some(BTreeMap::new());
         }
         QueryMemo {
@@ -7867,6 +7887,26 @@ impl Game {
             .borrow_mut()
             .insert((pid, cid), items.clone());
         items
+    }
+}
+
+/// The tie-break between two equally valued citizen jobs. It was the text
+/// `tile:{x:+06}:{y:+06}` or `specialist:{district}:{index:03}`, formatted for
+/// every workable plot of every plan and cloned for every pair each swap pass
+/// compared. The derived order is that text's order: `specialist` sorts before
+/// `tile`, and past a coordinate's sign (`+` before `-`) the zero-padded digits
+/// rise with the magnitude, so a coordinate compares as `(negative, |value|)`.
+/// Specialists are few and keep their text.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum CitizenJobKey {
+    Specialist(String),
+    Tile((bool, u32), (bool, u32)),
+}
+
+impl CitizenJobKey {
+    fn tile(pos: Pos) -> Self {
+        let part = |value: i32| (value < 0, value.unsigned_abs());
+        CitizenJobKey::Tile(part(pos.0), part(pos.1))
     }
 }
 

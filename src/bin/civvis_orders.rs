@@ -12030,6 +12030,43 @@ mod tests {
         );
     }
 
+    /// The same blow from beyond this turn's movement is no finishing line:
+    /// the approach would stop short, so nothing is sent and the private
+    /// board does not move the unit.
+    #[test]
+    fn a_melee_finish_beyond_this_turns_movement_is_not_proposed() {
+        let (snapshot, mut state) = local_barbarian_defense_board();
+        state.hostiles[0].hp = 1.0;
+        state.units.retain(|unit| unit.id == 102);
+        let chariot = state.units.iter_mut().find(|unit| unit.id == 102).unwrap();
+        chariot.kind = "UNIT_HEAVY_CHARIOT".to_string();
+        chariot.x = 5;
+        chariot.y = 9;
+        chariot.moves = 1.0;
+
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let chariot = mirror
+            .civ6_of
+            .iter()
+            .find_map(|(unit, civ6)| (*civ6 == 102).then_some(*unit))
+            .unwrap();
+        let target = civvis::hex::offset_to_axial(5, 4);
+        let start = mirror.game.units[&chariot].pos;
+        assert!(
+            !mirror
+                .game
+                .reachable(chariot)
+                .iter()
+                .any(|pos| mirror.game.wdist(*pos, target) <= 1),
+            "one movement point cannot end beside the target"
+        );
+        let mut planned = mirror.game.clone();
+
+        let volley = finish_live_war_units(&mut planned, 0, &mirror.civ6_of);
+        assert!(volley.actions.is_empty(), "{:?}", volley.actions);
+        assert_eq!(planned.units[&chariot].pos, start);
+    }
+
     /// A strike the host refused this turn (`range_attack_refused` /
     /// `war_refused`) reaches the mirrored board as `Game::blocked_strikes`,
     /// and a later frame of the same turn neither enumerates, proves nor

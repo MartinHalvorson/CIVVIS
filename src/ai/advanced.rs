@@ -9656,6 +9656,7 @@ impl AdvancedAi {
     }
 
     fn war_science_per_turn(g: &Game, pid: usize) -> f64 {
+        let _memo = g.query_memo();
         g.player_city_ids(pid)
             .into_iter()
             .map(|city| g.city_yields(city).science)
@@ -9664,6 +9665,7 @@ impl AdvancedAi {
     }
 
     fn war_production_per_turn(g: &Game, pid: usize) -> f64 {
+        let _memo = g.query_memo();
         g.player_city_ids(pid)
             .into_iter()
             .map(|city| g.city_yields(city).production)
@@ -36826,6 +36828,9 @@ impl AdvancedAi {
                 .total_cmp(&self.conversion_garrison_priority(g, right))
                 .then_with(|| left.id.cmp(&right.id))
         });
+        if cities.is_empty() {
+            return None;
+        }
         let mut available: BTreeSet<u32> = g
             .player_unit_ids(pid)
             .into_iter()
@@ -36836,23 +36841,24 @@ impl AdvancedAi {
                     && g.units[unit].linked_to.is_none()
             })
             .collect();
+        // The nearest, then weakest, reachable unit takes each city. Rank the
+        // candidates first and route only until one answers: a route search
+        // per unit per city was most of this function's cost, and the unit
+        // ranked first can almost always reach. Strength does not depend on
+        // the city, so it is read once per unit.
+        let strength: BTreeMap<u32, i32> = available
+            .iter()
+            .map(|unit| (*unit, g.unit_strength(&g.units[unit], true) as i32))
+            .collect();
         for city in cities {
-            let selected = available
+            let mut ranked: Vec<(i32, i32, u32)> = available
                 .iter()
-                .filter(|unit| {
-                    g.units[unit].pos == city.pos || g.route_step(**unit, city.pos, 0).is_some()
-                })
-                .min_by(|left, right| {
-                    let rank = |unit: u32| {
-                        (
-                            g.wdist(g.units[&unit].pos, city.pos),
-                            g.unit_strength(&g.units[&unit], true) as i32,
-                            unit,
-                        )
-                    };
-                    rank(**left).cmp(&rank(**right))
-                })
-                .copied();
+                .map(|unit| (g.wdist(g.units[unit].pos, city.pos), strength[unit], *unit))
+                .collect();
+            ranked.sort_unstable();
+            let selected = ranked.into_iter().map(|(_, _, unit)| unit).find(|unit| {
+                g.units[unit].pos == city.pos || g.route_step(*unit, city.pos, 0).is_some()
+            });
             if let Some(selected) = selected {
                 available.remove(&selected);
                 if selected == uid {

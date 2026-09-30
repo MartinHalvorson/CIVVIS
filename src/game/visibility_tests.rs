@@ -1658,3 +1658,27 @@ fn speculative_clones_share_valid_sight_work_and_keep_rules_state() {
         "the branch's observer-only work must not leak to its source"
     );
 }
+
+/// A seat's turn memory is refreshed behind every action. A contact still in
+/// sight that has changed since the last refresh is recorded again, and one
+/// that has not changed keeps the record it already has.
+#[test]
+fn a_contact_that_changes_in_sight_is_recorded_again() {
+    let (mut game, origin) = controlled_game(91_005);
+    game.set_fog_memory(true);
+    let near = along(&game, origin, 1);
+    let far = along(&game, origin, 2);
+    game.spawn_unit("warrior", 0, origin);
+    let steady = game.spawn_unit("warrior", 1, near);
+    let wounded = game.spawn_unit("warrior", 1, far);
+    game.refresh_player_visibility(0);
+    let recorded = |game: &Game, id: u32| game.players[0].turn_units.get(&id).cloned();
+    assert!(recorded(&game, steady).as_ref() == Some(&game.units[&steady]));
+    assert!(recorded(&game, wounded).as_ref() == Some(&game.units[&wounded]));
+
+    game.units.get_mut(&wounded).unwrap().hp = 37;
+    game.refresh_player_visibility(0);
+    assert_eq!(recorded(&game, wounded).map(|unit| unit.hp), Some(37));
+    assert!(recorded(&game, steady).as_ref() == Some(&game.units[&steady]));
+    assert_eq!(game.players[0].turn_units.len(), 2);
+}

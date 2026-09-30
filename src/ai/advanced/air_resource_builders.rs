@@ -14,7 +14,6 @@ impl AdvancedAi {
     ) -> Option<bool> {
         if !self.air_surge_enabled()
             || self.active_victory_target(g) != Some(VictoryTarget::Domination)
-            || self.threatened_city(g, pid).is_some()
         {
             return None;
         }
@@ -30,6 +29,12 @@ impl AdvancedAi {
         }
         let current = builder.pos;
         let resource = self.air_resource_shortfall(g, pid)?;
+        // Every Builder step reaches this gate, and the threat reading prices
+        // every city's pressure. Ask it last: with no shortfall to connect,
+        // which is nearly always, the answer cannot matter.
+        if self.threatened_city(g, pid).is_some() {
+            return None;
+        }
         let improvement = crate::name::Name::new(&g.rules.resources[resource].improvement);
         let visible = g.player_vision_frame(pid);
         let mut jobs = Vec::new();

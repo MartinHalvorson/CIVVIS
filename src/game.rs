@@ -1361,6 +1361,19 @@ type HousedPiecesByPlayer = BTreeMap<usize, Arc<GreatWorkPiecesByCity>>;
 type GreatWorkSlotsByPlayer = BTreeMap<usize, Vec<(u32, String)>>;
 type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
 type WonderEffectsByPlayer = BTreeMap<usize, BTreeMap<String, f64>>;
+type NationalParksByPlayer = BTreeMap<usize, Vec<(u32, [Pos; 4])>>;
+type RegionalSlotsByPlayer = BTreeMap<usize, Arc<Vec<RegionalSlot>>>;
+
+/// One active regional building of an empire and the ground it reaches, in
+/// the empire's city then building order. What it sends is still read per
+/// receiving city, from the ruleset and the source's Power.
+#[derive(Clone, Copy, Debug)]
+struct RegionalSlot {
+    source: u32,
+    building: Name,
+    origin: Pos,
+    range: i32,
+}
 
 /// Memoized `unit_purchase_cost_for_formation` answers for one `QueryMemo`
 /// guard: keyed on (player, city, unit kind, formation, gold?) → price.
@@ -1389,6 +1402,12 @@ pub struct QueryCache {
     /// query can change — so the answer is kept for the memo scope, exactly
     /// like `appeal`.
     tile_yields: std::cell::RefCell<Option<BTreeMap<Pos, Yields>>>,
+    /// `district_yields` per standing district. One city-yield derivation
+    /// asks each of its districts three times — the citizen strategy, the
+    /// citizen plan's fixed food, then the sum — and a district's yields
+    /// read only the board, so the answer is kept for the memo scope like
+    /// `tile_yields`.
+    district_yields: std::cell::RefCell<Option<BTreeMap<(Name, Pos), Yields>>>,
     traversal: std::cell::RefCell<Option<BTreeMap<u32, TraversalClass>>>,
     /// Every unit currently flying a patrol, as `(owner, tile)`.
     ///
@@ -1466,6 +1485,18 @@ pub struct QueryCache {
     // yields and its Amenities are read through it, so a single valuation of
     // one city walks the whole empire's buildings twice.
     regional: std::cell::RefCell<Option<BTreeMap<u32, (Yields, f64)>>>,
+    // Two facts the luxury allocation asks of every city while it values
+    // the whole empire's Amenities. Each city's regional sources ask whether
+    // every source city is powered, and each city's own Amenities walk every
+    // owned tile of the empire looking for National Parks, so one allocation
+    // repeated both empire-wide answers once per city.
+    powered: std::cell::RefCell<Option<BTreeMap<u32, bool>>>,
+    national_parks: std::cell::RefCell<Option<NationalParksByPlayer>>,
+    // Where each empire's regional buildings stand and how far they reach.
+    // Every city's regional effects walked every building of every city of
+    // its owner to find them, so one luxury allocation walked them once per
+    // city.
+    regional_slots: std::cell::RefCell<Option<RegionalSlotsByPlayer>>,
     // Wonders are an empire-wide source, but city yields and rule gates ask
     // for one named effect at a time. Aggregate every effect for a player on
     // the first lookup in a memo scope so the same wonder set is not walked
@@ -1672,6 +1703,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.yields.borrow_mut() = None;
             *self.game.query_memo.appeal.borrow_mut() = None;
             *self.game.query_memo.tile_yields.borrow_mut() = None;
+            *self.game.query_memo.district_yields.borrow_mut() = None;
             *self.game.query_memo.traversal.borrow_mut() = None;
             *self.game.query_memo.air_patrols.borrow_mut() = None;
             *self.game.query_memo.passage_improvements.borrow_mut() = None;
@@ -1689,6 +1721,9 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.gw_slots.borrow_mut() = None;
             *self.game.query_memo.gw_housing.borrow_mut() = None;
             *self.game.query_memo.regional.borrow_mut() = None;
+            *self.game.query_memo.powered.borrow_mut() = None;
+            *self.game.query_memo.national_parks.borrow_mut() = None;
+            *self.game.query_memo.regional_slots.borrow_mut() = None;
             *self.game.query_memo.wonder_effects.borrow_mut() = None;
         }
     }
@@ -20099,6 +20134,19 @@ impl Game {
     }
 
     pub fn city_is_powered(&self, city: &City) -> bool {
+        if let Some(memo) = self.query_memo.powered.borrow().as_ref() {
+            if let Some(powered) = memo.get(&city.id) {
+                return *powered;
+            }
+        }
+        let powered = self.city_is_powered_uncached(city);
+        if let Some(memo) = self.query_memo.powered.borrow_mut().as_mut() {
+            memo.insert(city.id, powered);
+        }
+        powered
+    }
+
+    fn city_is_powered_uncached(&self, city: &City) -> bool {
         let demand = self.city_power_demand(city);
         demand <= 0.0 || self.city_power_supply(city) + 1e-9 >= demand
     }
@@ -21316,6 +21364,71 @@ impl Game {
         value
     }
 
+    fn regional_slots(&self, pid: usize) -> Arc<Vec<RegionalSlot>> {
+        if let Some(memo) = self.query_memo.regional_slots.borrow().as_ref() {
+            if let Some(slots) = memo.get(&pid) {
+                return Arc::clone(slots);
+            }
+        }
+        let slots = Arc::new(self.regional_slots_uncached(pid));
+        if let Some(memo) = self.query_memo.regional_slots.borrow_mut().as_mut() {
+            memo.insert(pid, Arc::clone(&slots));
+        }
+        slots
+    }
+
+    /// Every active regional building `pid` owns, in city then building
+    /// order: that is the order the one additive term, integrated Industrial
+    /// Zone production, is summed in.
+    fn regional_slots_uncached(&self, pid: usize) -> Vec<RegionalSlot> {
+        // ⭐ HOISTED. Mexico City's suzerain bonus depends on the owner and a
+        // literal. `grants_city_state_unique_bonus` walks an alliance map and
+        // then every player, so asking it per building was once 7.2% of
+        // running samples on its own.
+        let mexico_city_regional_range = self.grants_city_state_unique_bonus(pid, "Mexico City");
+        let mut slots = Vec::new();
+        for source in self.cities.values().filter(|source| source.owner == pid) {
+            for building in &source.buildings {
+                if source.pillaged_buildings.contains(building) {
+                    continue;
+                }
+                let spec = &self.rules.buildings[building];
+                let range = spec.regional_range
+                    + if mexico_city_regional_range
+                        && spec.district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("industrial_zone"))
+                                || self.district_is_family(
+                                    district,
+                                    crate::name!("entertainment_complex"),
+                                )
+                                || self.district_is_family(district, crate::name!("water_park"))
+                        })
+                    {
+                        3
+                    } else {
+                        0
+                    };
+                // Most buildings have no regional effect. Include Mexico
+                // City's range bonus before rejecting them, then resolve
+                // activity and the origin only for buildings that can reach.
+                if range <= 0 || !self.building_district_is_active(source, building) {
+                    continue;
+                }
+                let origin = spec
+                    .district
+                    .and_then(|district| self.city_district_family_position(source, district))
+                    .unwrap_or(source.pos);
+                slots.push(RegionalSlot {
+                    source: source.id,
+                    building: *building,
+                    origin,
+                    range,
+                });
+            }
+        }
+        slots
+    }
+
     fn regional_building_effects_uncached(&self, city: &City) -> (Yields, f64) {
         // ⭐ BORROWED KEYS, NOT OWNED ONES. This map was keyed by `String` and
         // every active building allocated one to look its group up: either
@@ -21337,86 +21450,41 @@ impl Game {
         let mut groups: BTreeMap<&str, (Yields, f64)> = BTreeMap::new();
         let integrate_industry =
             self.governor_effect(city.owner, city.id, "regional_industry_all") > 0.0;
-        // ⭐ HOISTED, LIKE `integrate_industry` ABOVE IT. Mexico City's suzerain
-        // bonus depends on `city.owner` and a literal, so it is invariant over
-        // every city and every building below -- and because it stood FIRST in
-        // an `&&`, the cheap district-family test could never short-circuit it.
-        // `grants_city_state_unique_bonus` walks an alliance map and then every
-        // player, calling `congress_effect_active`, `cs_type` and `suzerain_of`
-        // per minor: with nine city-states and ten cities of ten buildings that
-        // is a hundred empire-wide scans per call, and the call is made per city
-        // per amenity derivation. Sampled over a six-game 250-turn screen it was
-        // 7.2% of running samples on its own, the largest single self-time entry
-        // under `regional_building_effects` (15.6% inclusive).
-        let mexico_city_regional_range =
-            self.grants_city_state_unique_bonus(city.owner, "Mexico City");
-        for source in self
-            .cities
-            .values()
-            .filter(|source| source.owner == city.owner)
-        {
-            for building in &source.buildings {
-                if source.pillaged_buildings.contains(building) {
-                    continue;
-                }
-                let spec = &self.rules.buildings[building];
-                let regional_range = spec.regional_range
-                    + if mexico_city_regional_range
-                        && spec.district.is_some_and(|district| {
-                            self.district_is_family(district, crate::name!("industrial_zone"))
-                                || self.district_is_family(
-                                    district,
-                                    crate::name!("entertainment_complex"),
-                                )
-                                || self.district_is_family(district, crate::name!("water_park"))
-                        })
-                    {
-                        3
-                    } else {
-                        0
-                    };
-                // Most buildings have no regional effect. Include Mexico
-                // City's range bonus before rejecting them, then resolve
-                // activity and the origin only for buildings that can reach.
-                if regional_range <= 0 || !self.building_district_is_active(source, building) {
-                    continue;
-                }
-                let origin = spec
-                    .district
-                    .and_then(|district| self.city_district_family_position(source, district))
-                    .unwrap_or(source.pos);
-                if self.wdist(origin, city.pos) > regional_range {
-                    continue;
-                }
-                let group: &str = if !spec.regional_group.is_empty() {
-                    spec.regional_group.as_str()
-                } else {
-                    spec.replaces
-                        .map_or_else(|| building.as_str(), |name| name.as_str())
-                };
-                let integrate_this_group = integrate_industry
-                    && spec.district.is_some_and(|district| {
-                        self.district_is_family(district, crate::name!("industrial_zone"))
-                    });
-                let entry = groups.entry(group).or_default();
-                let mut source_yields = spec.yields;
-                let mut source_amenity = spec.amenity;
-                if self.city_is_powered(source) {
-                    Self::add_powered_building_yields(spec, &mut source_yields);
-                    source_amenity += spec.effects.get("powered_amenity").copied().unwrap_or(0.0);
-                }
-                entry.0.food = entry.0.food.max(source_yields.food);
-                if integrate_this_group {
-                    entry.0.production += source_yields.production;
-                } else {
-                    entry.0.production = entry.0.production.max(source_yields.production);
-                }
-                entry.0.gold = entry.0.gold.max(source_yields.gold);
-                entry.0.science = entry.0.science.max(source_yields.science);
-                entry.0.culture = entry.0.culture.max(source_yields.culture);
-                entry.0.faith = entry.0.faith.max(source_yields.faith);
-                entry.1 = entry.1.max(source_amenity);
+        for slot in self.regional_slots(city.owner).iter() {
+            if self.wdist(slot.origin, city.pos) > slot.range {
+                continue;
             }
+            let source = &self.cities[&slot.source];
+            let building = &slot.building;
+            let spec = &self.rules.buildings[building];
+            let group: &str = if !spec.regional_group.is_empty() {
+                spec.regional_group.as_str()
+            } else {
+                spec.replaces
+                    .map_or_else(|| building.as_str(), |name| name.as_str())
+            };
+            let integrate_this_group = integrate_industry
+                && spec.district.is_some_and(|district| {
+                    self.district_is_family(district, crate::name!("industrial_zone"))
+                });
+            let entry = groups.entry(group).or_default();
+            let mut source_yields = spec.yields;
+            let mut source_amenity = spec.amenity;
+            if self.city_is_powered(source) {
+                Self::add_powered_building_yields(spec, &mut source_yields);
+                source_amenity += spec.effects.get("powered_amenity").copied().unwrap_or(0.0);
+            }
+            entry.0.food = entry.0.food.max(source_yields.food);
+            if integrate_this_group {
+                entry.0.production += source_yields.production;
+            } else {
+                entry.0.production = entry.0.production.max(source_yields.production);
+            }
+            entry.0.gold = entry.0.gold.max(source_yields.gold);
+            entry.0.science = entry.0.science.max(source_yields.science);
+            entry.0.culture = entry.0.culture.max(source_yields.culture);
+            entry.0.faith = entry.0.faith.max(source_yields.faith);
+            entry.1 = entry.1.max(source_amenity);
         }
         groups.values().fold(
             (Yields::default(), 0.0),
@@ -25654,28 +25722,41 @@ impl Game {
         if !self.track_fog_memory || pid != self.current || pid >= self.players.len() {
             return;
         }
-        let seen = self.tiles_of(visible);
+        // This runs behind every action the seat takes. A foreign unit that
+        // stood in sight at the last action and has not changed is already
+        // recorded exactly as a fresh clone would record it, so only the new
+        // and the changed are cloned; the rest are only named as in sight.
         let viewers = self.visibility_viewers(pid);
-        let units: BTreeMap<u32, Unit> = self
-            .units
-            .values()
-            .filter(|unit| unit.owner != pid)
-            .filter(|unit| {
-                let position = unit.air_patrol_pos.unwrap_or(unit.pos);
-                seen.contains(&position)
-                    && viewers
-                        .iter()
-                        .any(|viewer| self.unit_visible_to(unit.id, *viewer))
-            })
-            .map(|unit| (unit.id, unit.clone()))
-            .collect();
+        let recorded = &self.players[pid].turn_units;
+        let mut in_sight: BTreeSet<u32> = BTreeSet::new();
+        let mut changed: Vec<Unit> = Vec::new();
+        for unit in self.units.values().filter(|unit| unit.owner != pid) {
+            let position = unit.air_patrol_pos.unwrap_or(unit.pos);
+            if !(self.sees(visible, position)
+                && viewers
+                    .iter()
+                    .any(|viewer| self.unit_visible_to(unit.id, *viewer)))
+            {
+                continue;
+            }
+            in_sight.insert(unit.id);
+            if recorded.get(&unit.id) != Some(unit) {
+                changed.push(unit.clone());
+            }
+        }
+        let tiles = &self.map.tiles;
         let player = &mut self.players[pid];
         player.turn_units.retain(|id, unit| {
             let position = unit.air_patrol_pos.unwrap_or(unit.pos);
-            !seen.contains(&position) || units.contains_key(id)
+            !tiles
+                .index_of(position)
+                .is_some_and(|index| visible.contains(index))
+                || in_sight.contains(id)
         });
-        player.turn_units.extend(units);
-        player.turn_visible.extend(seen);
+        player
+            .turn_units
+            .extend(changed.into_iter().map(|unit| (unit.id, unit)));
+        player.turn_visible.extend(tiles.positions(visible));
     }
 
     /// Meet everyone standing in `pid`'s sight.

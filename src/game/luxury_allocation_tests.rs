@@ -91,14 +91,22 @@ fn give_luxuries(game: &mut Game) {
 fn assert_allocation(game: &Game) {
     let expected = ranked_allocations(game, 0);
     assert_eq!(game.luxury_amenity_allocations_uncached(0), expected);
+    let parks = game.established_national_parks_uncached(0);
     let memo = game.query_memo();
     for _ in 0..2 {
         for city in game.cities.values() {
             assert_eq!(game.city_luxury_amenities(city), expected[&city.id]);
+            assert_eq!(
+                game.city_is_powered(city),
+                game.city_is_powered_uncached(city)
+            );
         }
+        assert_eq!(game.established_national_parks(0), parks);
     }
     drop(memo);
     assert!(game.query_memo.lux_alloc.borrow().is_none());
+    assert!(game.query_memo.powered.borrow().is_none());
+    assert!(game.query_memo.national_parks.borrow().is_none());
 }
 
 #[test]
