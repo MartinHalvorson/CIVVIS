@@ -20169,10 +20169,13 @@ impl AdvancedAi {
             .religious_interception_war
             .filter(|(rival, _)| g.is_at_war(pid, *rival));
         for other in &rivals {
-            let appointed_objective = self
-                .war_plan
-                .as_ref()
-                .is_some_and(|war| war.phase == WarPhase::Exploit && war.target_player == *other);
+            // `air-surge-2`: the Domination wing's own front. See
+            // `AdvancedAi::air_surge_holds_front`.
+            let air_front = self.air_surge_holds_front(g, pid, *other);
+            let appointed_objective = air_front
+                || self.war_plan.as_ref().is_some_and(|war| {
+                    war.phase == WarPhase::Exploit && war.target_player == *other
+                });
             let siege_grace = self.domination_siege_has_grace(g, pid, *other);
             let fatigued = self.major_war_since.is_some_and(|started| {
                 g.turn.saturating_sub(started) >= 24
@@ -20240,6 +20243,7 @@ impl AdvancedAi {
                     || (self.peace_when_war_does_not_pay
                         && fatigued
                         && !one_war_presses
+                        && !air_front
                         && g.player_city_ids(*other).len() > 1
                         && (!self.treasury_can_carry_a_war(g, pid)
                             || g.turn.saturating_sub(self.last_campaign_progress)

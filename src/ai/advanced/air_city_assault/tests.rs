@@ -240,3 +240,75 @@ fn the_ordinary_unit_loop_does_not_spend_the_reserved_spotter_again() {
     assert!(ai.planned_air_city_assault().is_some());
     assert_eq!(g.units[&cavalry].pos, (16, 10));
 }
+
+/// Every ranged City Center strike floors health at one, so a bombed city
+/// is never at zero. Live King 20260930T211803Z: Edirne sat at
+/// `walls 0/400, city 1/200` for four turns with a Tank six tiles out.
+#[test]
+fn a_bombed_breach_at_one_health_is_finished_by_any_melee_body() {
+    let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+    g.remove_unit(cavalry);
+    let breached = g.found_city_for(1, (26, 10), None);
+    {
+        let city = g.cities.get_mut(&breached).unwrap();
+        city.hp = 1;
+        city.wall_hp = 0;
+    }
+    let infantry = g.spawn_test_unit("infantry", 0, (25, 10));
+    for uid in bombers {
+        g.units.get_mut(&uid).unwrap().moves_left = 0.0;
+    }
+    ai.observe_air_assault_frame(BTreeSet::from([(26, 10)]), 0);
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+    assert!(reserved.contains(&infantry));
+    assert_eq!(g.cities[&breached].owner, 0);
+    assert_eq!(ai.planned_air_city_assault().unwrap().cavalry, infantry);
+}
+
+/// A city's melee defence follows its owner's best unit, so the nearest
+/// body is not necessarily one that survives the blow.
+#[test]
+fn the_strongest_body_in_reach_finishes_the_breach() {
+    let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+    g.remove_unit(cavalry);
+    let breached = g.found_city_for(1, (26, 10), None);
+    {
+        let city = g.cities.get_mut(&breached).unwrap();
+        city.hp = 1;
+        city.wall_hp = 0;
+    }
+    std::sync::Arc::make_mut(&mut g.observed_city_strength).insert(breached, 90.0);
+    let weak = g.spawn_test_unit("horseman", 0, (25, 10));
+    g.units.get_mut(&weak).unwrap().hp = 35;
+    let tank = g.spawn_test_unit("tank", 0, (23, 10));
+    for uid in bombers {
+        g.units.get_mut(&uid).unwrap().moves_left = 0.0;
+    }
+    ai.observe_air_assault_frame(BTreeSet::from([(26, 10)]), 0);
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+    assert_eq!(g.cities[&breached].owner, 0);
+    assert!(reserved.contains(&tank));
+    assert!(!reserved.contains(&weak), "the unused body keeps its turn");
+    assert_eq!(g.units[&tank].pos, (26, 10));
+}
+
+#[test]
+fn a_breach_nobody_can_finish_draws_the_nearest_body_in() {
+    let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+    g.remove_unit(cavalry);
+    let breached = g.found_city_for(1, (30, 10), None);
+    {
+        let city = g.cities.get_mut(&breached).unwrap();
+        city.hp = 1;
+        city.wall_hp = 0;
+    }
+    let infantry = g.spawn_test_unit("infantry", 0, (25, 10));
+    for uid in bombers {
+        g.units.get_mut(&uid).unwrap().moves_left = 0.0;
+    }
+    ai.observe_air_assault_frame(BTreeSet::from([(30, 10)]), 0);
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+    assert_eq!(g.cities[&breached].owner, 1, "two moves cannot reach it this turn");
+    assert!(reserved.contains(&infantry));
+    assert!(g.wdist(g.units[&infantry].pos, (30, 10)) < 5, "it closes in");
+}
