@@ -101,11 +101,11 @@ fn early_conquest_opening_is_a_native_opt_in_off_in_both_controllers() {
 
 #[test]
 fn the_named_constants_are_the_ones_the_design_states() {
-    assert_eq!(CONQUEST_REACH_TILES, 12);
-    assert_eq!(CONQUEST_MAX_RIVAL_CITIES, 3);
+    assert_eq!(CONQUEST_REACH_TILES, 18);
+    assert_eq!(CONQUEST_MAX_RIVAL_CITIES, 4);
     assert_eq!(CONQUEST_COMMIT_DEADLINE, 60);
     assert_eq!(CONQUEST_MIN_PREPARATION_TURNS, 30);
-    assert_eq!(CONQUEST_RANGED, 3);
+    assert_eq!(CONQUEST_RANGED, 4);
     assert_eq!(CONQUEST_MELEE, 2);
     assert_eq!(CONQUEST_ABANDON_TURNS, 20);
     assert_eq!(CONQUEST_KILLS_PER_LOSS_FLOOR, 1.0);
@@ -115,9 +115,9 @@ fn the_named_constants_are_the_ones_the_design_states() {
 
 #[test]
 fn the_target_is_a_met_rivals_explored_city_in_reach_and_nothing_else() {
-    // Seat 1's capital is eight tiles away; seat 2's is sixteen, which is
-    // past CONQUEST_REACH_TILES even around the cylinder.
-    let mut game = board(&[at(6, 12), at(14, 12), at(30, 12)]);
+    // Seat 1's capital is eight tiles away; seat 2's is twenty either way
+    // around the forty-wide cylinder, past CONQUEST_REACH_TILES.
+    let mut game = board(&[at(6, 12), at(14, 12), at(26, 12)]);
     let ai = armed();
     let off = AdvancedAi::new();
 
@@ -152,7 +152,7 @@ fn the_target_is_a_met_rivals_explored_city_in_reach_and_nothing_else() {
 }
 
 #[test]
-fn an_unexplored_city_does_not_exist_and_a_fourth_city_takes_the_rival_off_the_board() {
+fn an_unexplored_city_does_not_exist_and_a_fifth_city_takes_the_rival_off_the_board() {
     let mut game = board(&[at(6, 12), at(14, 12)]);
     let ai = armed();
     game.players[0].met.insert(1);
@@ -169,8 +169,11 @@ fn an_unexplored_city_does_not_exist_and_a_fourth_city_takes_the_rival_off_the_b
     game.players[0].explored.insert(game.cities[&capital].pos);
     assert_eq!(ai.conquest_target(&game, 0), Some((1, capital)));
 
-    // Three known cities is still an opening; the fourth is a war.
-    for (index, pos) in [at(13, 9), at(16, 14), at(12, 15)].into_iter().enumerate() {
+    // Four known cities is still an opening; the fifth is a war.
+    for (index, pos) in [at(13, 9), at(16, 14), at(12, 15), at(17, 10)]
+        .into_iter()
+        .enumerate()
+    {
         let cid = game.found_city_for(1, pos, None);
         game.players[0].explored.insert(game.cities[&cid].pos);
         let known = AdvancedAi::conquest_known_cities(&game, 0, 1).len();
@@ -842,13 +845,17 @@ fn online_opening_keeps_a_full_column_near_the_rally_for_eight_more_turns() {
     );
 
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
-    bodies(&mut game, 0, "warrior", rally, 2, 3);
-    bodies(&mut game, 0, "warrior", rally, 4, 2);
+    bodies(&mut game, 0, "warrior", rally, 2, CONQUEST_RANGED);
+    bodies(&mut game, 0, "warrior", rally, 4, CONQUEST_MELEE);
     game.turn = 39;
     ai.maintain_conquest_opening(&mut game, 0);
     let opening = ai.conquest_opening.as_ref().unwrap();
-    assert_eq!(opening.force.len(), 5);
-    assert_eq!(AdvancedAi::conquest_assembled_share(&game, opening), 0.6);
+    assert_eq!(opening.force.len(), CONQUEST_RANGED + CONQUEST_MELEE);
+    let share = AdvancedAi::conquest_assembled_share(&game, opening);
+    assert!(
+        share >= CONQUEST_APPROACHING_SHARE && share < CONQUEST_ASSEMBLY_SHARE,
+        "the column is approaching, not assembled: {share}"
+    );
     assert_eq!(AdvancedAi::conquest_commit_due(&game, opening), 40);
 
     game.turn = 40;

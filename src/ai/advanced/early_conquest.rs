@@ -128,14 +128,23 @@ use std::collections::BTreeSet;
 /// How far from our capital a target city may stand, in the wrapped world
 /// distance every campaign reach in this controller is measured in
 /// (`CAMPAIGN_REACH`, `CAMPAIGN_V2_REACH`, `rival_is_in_campaign_reach`).
-/// Twelve is `CAMPAIGN_V2_REACH`: the distance at which a force can reach
-/// the city without pulling the field army across a frontier.
-pub(crate) const CONQUEST_REACH_TILES: i32 = 12;
+///
+/// Eighteen, not `CAMPAIGN_V2_REACH`'s twelve. On the live King seat's
+/// four-player Tiny Pangaea (60×38) the nearest rival capital was first seen
+/// 13–23 tiles from ours in the 2026-09-28/29 runs, so a twelve-tile reach
+/// named a target in 4 of 21 games and the strike force the capital had
+/// already trained stood at home. In the opening there is no field army to
+/// pull across a frontier, and a Gran Colombia archer walks eighteen tiles in
+/// six or seven turns.
+pub(crate) const CONQUEST_REACH_TILES: i32 = 18;
 
 /// The most cities a rival may be KNOWN to hold and still be an opening
-/// target. Beyond three the neighbour is no longer a small empire whose
+/// target. Beyond four the neighbour is no longer a small empire whose
 /// capital is a decisive prize; it is a war, and this gene is an opening.
-pub(crate) const CONQUEST_MAX_RIVAL_CITIES: usize = 3;
+/// Four, not three: a King rival on Online speed holds three or four cities
+/// by the turn its capital is first charted, so three closed the window on
+/// the very turn the target became visible.
+pub(crate) const CONQUEST_MAX_RIVAL_CITIES: usize = 4;
 
 /// The last standard turn on which a new opening can be named. Sixty is the
 /// end of the window in which the rung's handicap is still small and a city
@@ -151,9 +160,13 @@ pub(crate) const CONQUEST_COMMIT_DEADLINE: u32 = 60;
 /// that happens after the target is named.
 pub(crate) const CONQUEST_MIN_PREPARATION_TURNS: u32 = 30;
 
-/// Ranged bodies the capital reserves. Three shooters take a city's hit
-/// points down without ever standing in the counter-attack.
-pub(crate) const CONQUEST_RANGED: usize = 3;
+/// Ranged bodies the capital reserves. Four shooters take a city's hit
+/// points down without ever standing in the counter-attack. Three was
+/// measured short: on 2026-09-29 (King, Susa) three Archers put 61 damage
+/// into the unwalled capital in their one full volley, the city healed
+/// 15–20 a turn, and Ancient Walls went up two turns later, after which an
+/// Archer's shot did 1–5. A fourth shooter makes it a two-volley city.
+pub(crate) const CONQUEST_RANGED: usize = 4;
 
 /// Melee bodies the capital reserves. Two: one to take the centre and one to
 /// replace it, which is exactly `CAMPAIGN_SPARE_BODIES` over the minimum a
