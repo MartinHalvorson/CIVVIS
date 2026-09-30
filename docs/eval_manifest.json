@@ -114,9 +114,10 @@
   },
   "registry": {
     "BUILTIN_AIS": {
-      "declared_count": 8,
+      "declared_count": 9,
       "items": [
         "advanced",
+        "advanced_domination",
         "advanced_evolved",
         "advanced_v1",
         "basic",
