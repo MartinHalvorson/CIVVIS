@@ -2464,7 +2464,6 @@ pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
     "district-coverage-2",
     "district-planning",
     "domination-city-count",
-    "doomed-blow-veto-2",
     "early-contact-window",
     "early-project-restraint-2",
     "elective-war-in-reach",
