@@ -236,6 +236,19 @@ pub(crate) const CONQUEST_RESERVATION_PER_MISSING: f64 = 60.0;
 /// `early-archers` pays its own beeline.
 pub(crate) const CONQUEST_RESEARCH: f64 = 90.0;
 
+/// Recon bodies the empire keeps while the opening has nothing to aim at.
+/// One Scout is what the opening book buys; the second is this gene's.
+pub(crate) const CONQUEST_SEARCH_SCOUTS: usize = 2;
+
+/// What the second Scout is worth in the capital's ranking while no target
+/// is known. Above the Builder (260–295) and the opening Monument (240),
+/// below any Settler with a site (920 and up). The opening is inert until a
+/// rival city is charted in reach, and on the live King Tiny Pangaea the one
+/// opening Scout met no major until turn 43 (2026-09-30) or 46 (2026-09-29)
+/// while four Archers stood at home; `early-contact-window` values a second
+/// eye only for unmet city-states, and at a half share below a Builder.
+pub(crate) const CONQUEST_SEARCH_SCOUT_VALUE: f64 = 300.0;
+
 /// The opening this controller has committed to.
 ///
 /// Everything the gene remembers between turns lives here, so the flag being
@@ -663,6 +676,38 @@ impl AdvancedAi {
         }
         CONQUEST_RESERVATION_BASE
             + CONQUEST_RESERVATION_PER_MISSING * (ranged + melee).saturating_sub(1) as f64
+    }
+
+    /// `early-conquest-opening`: what a Scout trained in `cid` is worth while
+    /// the opening is still looking for its target. Zero with the gene off,
+    /// once an opening stands or has closed, after the commit deadline,
+    /// while the city is threatened, once the empire holds
+    /// [`CONQUEST_SEARCH_SCOUTS`] Scouts, and whenever a target is already in
+    /// reach — the search is for the opening, not for the map. Any city may
+    /// train it: the capital's opening is the scripted Settler book, which
+    /// never asks this ranking, so a capital-only term would never be heard.
+    /// `counts` is the census with queued bodies, so two cities cannot both
+    /// start it.
+    pub(super) fn conquest_search_scout_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        counts: &EmpireCounts,
+        threatened: bool,
+    ) -> f64 {
+        if !self.early_conquest_opening
+            || threatened
+            || self.conquest_closed
+            || self.conquest_opening.is_some()
+            || g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE)
+            || counts.scouts >= CONQUEST_SEARCH_SCOUTS
+            || g.cities.get(&cid).is_none_or(|city| city.owner != pid)
+            || self.conquest_target(g, pid).is_some()
+        {
+            return 0.0;
+        }
+        CONQUEST_SEARCH_SCOUT_VALUE
     }
 
     /// `early-conquest-opening`: whether the capital defers its Settler

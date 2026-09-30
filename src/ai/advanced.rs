@@ -29315,6 +29315,7 @@ impl AdvancedAi {
                     // five turns of open borders left is asking.
                     let early_contact = if unit == "scout" {
                         self.early_contact_value(g, pid, counts)
+                            + self.conquest_search_scout_value(g, pid, cid, counts, threatened)
                     } else {
                         0.0
                     };

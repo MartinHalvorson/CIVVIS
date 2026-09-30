@@ -1436,3 +1436,75 @@ fn opening_reservation_counts_queued_bodies_and_stops_at_its_deadline() {
         "an expired opening stops reserving production"
     );
 }
+
+// ------------------------------------------------------------ search scout
+
+#[test]
+fn the_capital_buys_a_second_scout_only_while_the_opening_has_no_target() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let second = game.found_city_for(0, at(6, 17), None);
+    let capital = game
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| game.cities[cid].is_capital)
+        .unwrap();
+    let ai = armed();
+    let off = AdvancedAi::new();
+    let one_eye = EmpireCounts {
+        scouts: 1,
+        ..EmpireCounts::default()
+    };
+
+    assert_eq!(
+        ai.conquest_search_scout_value(&game, 0, capital, &one_eye, false),
+        CONQUEST_SEARCH_SCOUT_VALUE,
+        "no rival is charted: the capital buys a second eye"
+    );
+    assert_eq!(
+        off.conquest_search_scout_value(&game, 0, capital, &one_eye, false),
+        0.0,
+        "off, nothing"
+    );
+    assert_eq!(
+        ai.conquest_search_scout_value(&game, 0, second, &one_eye, false),
+        CONQUEST_SEARCH_SCOUT_VALUE,
+        "any city may train the eye; the capital is busy with its Settler book"
+    );
+    let theirs = game.player_city_ids(1)[0];
+    assert_eq!(
+        ai.conquest_search_scout_value(&game, 0, theirs, &one_eye, false),
+        0.0,
+        "never for a city that is not ours"
+    );
+    assert_eq!(
+        ai.conquest_search_scout_value(&game, 0, capital, &one_eye, true),
+        0.0,
+        "the defence sentinel outranks the search"
+    );
+    let two_eyes = EmpireCounts {
+        scouts: CONQUEST_SEARCH_SCOUTS,
+        ..EmpireCounts::default()
+    };
+    assert_eq!(
+        ai.conquest_search_scout_value(&game, 0, capital, &two_eyes, false),
+        0.0,
+        "two Scouts are the search"
+    );
+
+    meet_and_explore(&mut game, 1);
+    assert!(ai.conquest_target(&game, 0).is_some());
+    assert_eq!(
+        ai.conquest_search_scout_value(&game, 0, capital, &one_eye, false),
+        0.0,
+        "a charted target in reach ends the search"
+    );
+
+    let mut late = board(&[at(6, 12), at(14, 12)]);
+    late.turn = late.standard_duration(CONQUEST_COMMIT_DEADLINE);
+    let late_capital = late.player_city_ids(0)[0];
+    assert_eq!(
+        ai.conquest_search_scout_value(&late, 0, late_capital, &one_eye, false),
+        0.0,
+        "past the commit deadline there is no opening to search for"
+    );
+}
