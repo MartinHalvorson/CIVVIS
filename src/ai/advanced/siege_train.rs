@@ -864,6 +864,32 @@ impl AdvancedAi {
         self.reserved_units.contains(&uid)
     }
 
+    /// Whether a Domination siege that has cleared its entry gate — Invest,
+    /// Reduce or Take — owns this land unit's turn. The train priced the
+    /// assault as a whole (the bill with its margin, the damage budget
+    /// inside the force's endurance); the battle planner's per-unit veto
+    /// charges every enemy blow to every one of our units at once and must
+    /// not undo that verdict one unit at a time.
+    pub(super) fn active_siege_member(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        self.siege_train
+            && self.active_victory_target(g) == Some(super::VictoryTarget::Domination)
+            && self.force_groups.iter().any(|group| {
+                group.domain == ForceDomain::Land
+                    && group.units.contains(&uid)
+                    && g.city_at(group.objective).is_some_and(|cid| {
+                        let owner = g.cities[&cid].owner;
+                        owner != pid
+                            && g.is_at_war(pid, owner)
+                            && self.sieges.get(&cid).is_some_and(|siege| {
+                                matches!(
+                                    siege.stage,
+                                    SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take
+                                )
+                            })
+                    })
+            })
+    }
+
     /// The doctrine's turn for one unit: `Some(acted)` when a siege or an
     /// anvil owns the unit's decision, `None` for the ladder. Returns before
     /// reading the board with both genes off.
