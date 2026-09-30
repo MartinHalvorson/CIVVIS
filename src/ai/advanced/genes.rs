@@ -2395,6 +2395,7 @@ pub const GENES: &[Gene] = &[
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
+    Gene { tag: "shared-danger", field: "shared_danger", kind: Kind::OptIn, enable: AdvancedAi::enable_shared_danger, disable: AdvancedAi::disable_shared_danger },
     // ---- append: t-z ------------------------------------------------
 ];
 

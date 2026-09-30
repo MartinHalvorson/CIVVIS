@@ -4555,6 +4555,16 @@ impl AdvancedAi {
     // ---- append: p-r ------------------------------------------------
 
     // ---- append: s-s ------------------------------------------------
+    /// Opt-in gene `shared-danger`; see [`Self::shared_danger`].
+    pub fn enable_shared_danger(&mut self) {
+        self.shared_danger = true;
+    }
+
+    /// The twin of `enable_shared_danger`.
+    pub fn disable_shared_danger(&mut self) {
+        self.shared_danger = false;
+    }
+
     // ---- append: t-z ------------------------------------------------
 }
 
