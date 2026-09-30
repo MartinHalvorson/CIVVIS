@@ -87,7 +87,6 @@ impl AdvancedAi {
             || !g.players[pid]
                 .techs
                 .contains(&Name::new(air_surge::AIR_SURGE_GOAL_TECH))
-            || self.threatened_city(g, pid).is_some()
         {
             return false;
         }
@@ -98,6 +97,9 @@ impl AdvancedAi {
                     .saturating_add(g.standard_duration(air_surge::AIR_SURGE_ENDGAME_RESERVE))
                     < g.max_turns)
             && Self::air_surge_bomber_goal(g, pid) >= air_surge::AIR_SURGE_LAUNCH_BOMBERS
+            // Last: it prices every city's pressure; every gate above is a
+            // read and settles the answer first on most turns.
+            && self.threatened_city(g, pid).is_none()
     }
 
     /// A discretionary land consumer may use spare fuel, but cannot turn a

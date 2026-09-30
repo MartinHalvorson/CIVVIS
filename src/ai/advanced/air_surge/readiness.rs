@@ -37,7 +37,6 @@ impl AdvancedAi {
                 .techs
                 .contains(&crate::name!("industrialization"))
             && g.player_city_ids(pid).len() >= 2
-            && self.threatened_city(g, pid).is_none()
             && g.turn
                 .saturating_add(g.standard_duration(AIR_SURGE_ENDGAME_RESERVE))
                 < g.max_turns
@@ -47,6 +46,9 @@ impl AdvancedAi {
                 .filter(|uid| g.rules.units[g.units[uid].kind].promotion_class == "air_bomber")
                 .count()
                 < AIR_SURGE_LAUNCH_BOMBERS
+            // Last: it prices every city's pressure, and every gate above is
+            // a read that usually settles the answer first.
+            && self.threatened_city(g, pid).is_none()
     }
 
     /// Count all bomber generations, including pending orders, so a Jet Bomber
