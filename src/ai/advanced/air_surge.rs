@@ -117,6 +117,10 @@ pub(crate) const AIR_SURGE_ENDGAME_RESERVE: u32 = 30;
 /// before it gives the wing up. `radio` reveals the deposits one tech
 /// earlier, so a Builder has had that long to reach one.
 pub(crate) const AIR_SURGE_ALUMINUM_GRACE: u32 = 20;
+/// Technologies from the Bomber within which the surge's own war is held
+/// against a stalled-war peace offer. See
+/// [`AdvancedAi::air_surge_holds_front`].
+pub(crate) const AIR_SURGE_FRONT_HOLD_TECHS: usize = 2;
 /// How often the appointment re-reads the home situation, in standard turns.
 pub(crate) const AIR_SURGE_REVIEW_CADENCE: u32 = 5;
 /// After a surge stands down, no new one is appointed for this many standard
@@ -280,6 +284,34 @@ impl AdvancedAi {
         // A counter appointed into a running war has nothing to open, so it
         // borrows no decision the assessment did not give it.
         (!surge.opened_at_war).then_some(surge.target_player)
+    }
+
+    /// `air-surge-2`: whether the surge's own front must not be offered a
+    /// stalled-war peace. A Domination surge at war with its target holds
+    /// that war once the wing is flying or at most
+    /// [`AIR_SURGE_FRONT_HOLD_TECHS`] technologies from the Bomber.
+    ///
+    /// ★★★ THE SEAT MADE PEACE WITH ITS OWN BOMBER TARGET, TWICE. Live King
+    /// 20260930T211803Z offered Portugal peace at turn 132 ("the war has
+    /// stalled", 744 power against 278) two techs from Advanced Flight, and
+    /// the Ottomans at turn 168 (1273 against 746) with two Bombers built and
+    /// two more in the queue. Both offers were accepted and each stood the
+    /// surge down. A war the wing is about to win is not stalled; peace only
+    /// buys the target a treaty, and the next declaration pays the Formal War
+    /// clock again.
+    pub(crate) fn air_surge_holds_front(&self, g: &Game, pid: usize, other: usize) -> bool {
+        if !self.air_surge_2
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !g.is_at_war(pid, other)
+        {
+            return false;
+        }
+        let Some(plan) = self.air_surge_plan.as_ref() else {
+            return false;
+        };
+        plan.target_player == other
+            && (self.air_surge_status.bombers > 0
+                || Self::air_surge_missing_techs(g, pid) <= AIR_SURGE_FRONT_HOLD_TECHS)
     }
 
     /// How many technologies still stand between the empire and the Bomber.
@@ -914,6 +946,20 @@ impl AdvancedAi {
                 }
             }
 
+            // ★★ A DECLARATION IS IN FLIGHT FOR ONE HOST FRAME. Live King
+            // 20260930T211803Z, turn 183: frame one declared on Edirne with four
+            // Bombers in range and flew four sorties; frame two's fresh board
+            // had not yet exported the war, and this lifecycle read "peace
+            // closed the war", stood the wing down and paid the fifteen-turn
+            // cooldown on the very turn it opened. The host showed the war on
+            // turn 184. Hold the plan in Exploit for the declaring turn and the
+            // next; after that the war really did not happen.
+            let declaration_in_flight = self.air_surge_2
+                && !at_war
+                && !plan.opened_at_war
+                && plan
+                    .declared_turn
+                    .is_some_and(|turn| g.turn.saturating_sub(turn) <= 1);
             let mut ended = false;
             if objective_owner != Some(plan.target_player) {
                 if (plan.declared_turn.is_some() || plan.opened_at_war)
@@ -949,7 +995,10 @@ impl AdvancedAi {
                     self.record_air_surge_abort(g, "target opened the war first");
                     ended = true;
                 }
-            } else if (plan.declared_turn.is_some() || plan.opened_at_war) && !at_war {
+            } else if (plan.declared_turn.is_some() || plan.opened_at_war)
+                && !at_war
+                && !declaration_in_flight
+            {
                 self.record_air_surge_abort(g, "peace closed the war");
                 ended = true;
             }
@@ -1007,7 +1056,7 @@ impl AdvancedAi {
                             "home Recovery persisted for two assessments",
                         );
                         ended = true;
-                    } else if at_war {
+                    } else if at_war || declaration_in_flight {
                         plan.phase = AirSurgePhase::Exploit;
                     } else if !tech_owned {
                         plan.phase = AirSurgePhase::Beeline;
@@ -1171,7 +1220,22 @@ impl AdvancedAi {
         // Nuclear Fission. The war ended before Advanced Flight was touched.
         // One immediate modernization is useful; chaining a second one turns
         // an appointed air package into an endless ground-tech queue.
+        //
+        // ★★★ A DOMINATION SEAT YIELDS ONLY TO A THREATENED HOME. Live King
+        // 20260930T211803Z appointed the surge at turn 78 (twelve techs out),
+        // then spent turns 92-111 on Engineering, Machinery, Construction,
+        // Military Engineering, Gunpowder, Metal Casting and Ballistics: seven
+        // "modernize the army at war" techs, none of them on the 24-tech
+        // Advanced Flight chain. The Portugal war they modernized for took
+        // no city and ended in our own stalled-war peace offer. The Bomber
+        // landed at turn 145, about twenty turns late. For a Domination seat
+        // the wing is the modernization, so the ground ladder only interrupts
+        // it to defend a home city.
+        let domination_beeline = self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.air_surge_plan.is_some()
+            && self.threatened_city(g, pid).is_none();
         if self.air_surge_2
+            && !domination_beeline
             && Self::air_surge_missing_techs(g, pid) > 1
             && !g.players[pid].techs.contains(&crate::name!("composites"))
             && self.wartime_modernization_tech(g, pid).is_some_and(|goal| {
@@ -1755,3 +1819,6 @@ mod readiness;
 
 #[cfg(test)]
 mod modernization_budget_tests;
+
+#[cfg(test)]
+mod front_hold_tests;

@@ -4,6 +4,25 @@ use crate::game::{Action, Game};
 use crate::Pos;
 use std::collections::BTreeSet;
 
+/// A city at or below this many hit points behind fallen walls is a breach
+/// any melee body can finish.
+///
+/// ★★★ A BOMBED CITY NEVER READS ZERO. `do_air_strike` (and every ranged
+/// city strike) floors City Center health at one, exactly as the host does,
+/// so the breach test used to read `hp <= 0` and could only match a city a
+/// melee blow had already emptied. Live King 20260930T211803Z: Edirne sat at
+/// `walls 0/400, city 1/200` from turn 188 to 191 with four Bombers overhead
+/// and nobody finished it. The capture simulation still decides whether the
+/// blow actually takes the city; this only lets the search look.
+const AIR_ASSAULT_BREACH_HP: i32 = 1;
+/// A breach may be finished by any healthy land melee body, not only the
+/// cavalry the volley maneuver keeps for its spotting move.
+const AIR_ASSAULT_BREACH_TAKER_HP: i32 = 30;
+/// How far a capture body will look for a breach it can finish this turn.
+const AIR_ASSAULT_TAKER_REACH: i32 = 6;
+/// How many takers, strongest first, the capture search simulates.
+const AIR_ASSAULT_CAPTURE_TRIES: usize = 6;
+
 /// The chosen maneuver on a disposable planning board. Native adapters must
 /// observe the spot and the volley before releasing the dependent phase.
 #[derive(Clone, Debug)]
@@ -69,7 +88,7 @@ impl AdvancedAi {
             .filter(|city| {
                 city.owner != pid
                     && g.is_at_war(pid, city.owner)
-                    && city.hp <= 0
+                    && city.hp <= AIR_ASSAULT_BREACH_HP
                     && city.wall_hp <= 0
                     && self.air_assault_target_visible(g, pid, city.pos)
             })
@@ -81,20 +100,51 @@ impl AdvancedAi {
         });
         for cid in breached {
             let target = g.cities[&cid].pos;
-            let Some(opening) = self.air_assault_opening(g, pid, target, false) else {
+            let takers = self.air_assault_takers(g, pid, target);
+            if takers.is_empty() {
+                crate::think!(self.journal(), Military, Detail,
+                    "Breach at {} waits for a body", g.cities[&cid].name;
+                    "{} health behind fallen walls; no healthy melee unit with moves stands within {} tiles",
+                    g.cities[&cid].hp, AIR_ASSAULT_TAKER_REACH);
+                continue;
+            }
+            let Some((taker, actions)) = self.air_assault_best_capture(g, pid, cid, &takers) else {
+                // Nobody can finish it this turn. The walls are down, so the
+                // city cannot strike the approach: close the nearest body in
+                // so the next board's capture is one step, and keep it out of
+                // the ordinary loop that would walk it back to an anchor.
+                let nearest = *takers
+                    .iter()
+                    .min_by_key(|uid| (g.wdist(g.units[*uid].pos, target), **uid))
+                    .expect("takers is not empty");
+                let mut board = g.speculative_clone();
+                let advanced = self
+                    .air_assault_advance(&mut board, pid, nearest, target)
+                    .filter(|action| g.apply(pid, action).is_ok());
+                crate::think!(self.journal(), Military, Detail,
+                    "Breach at {} cannot be finished this turn", g.cities[&cid].name;
+                    "{} bodies within {} tiles, none with a ring step whose blow takes the city; the nearest {}",
+                    takers.len(), AIR_ASSAULT_TAKER_REACH,
+                    if advanced.is_some() { "closes in" } else { "has no safe step closer" });
+                if advanced.is_some() {
+                    reserved.insert(nearest);
+                }
                 continue;
             };
-            let Some(actions) = self.air_assault_capture(&opening.board, pid, opening.cavalry, cid)
-            else {
-                continue;
-            };
+            let origin = g.units[&taker].pos;
             if actions.iter().all(|action| g.apply(pid, action).is_ok()) {
                 self.resolve_city_dispositions(g, pid, plan.strategy);
-                reserved.insert(opening.cavalry);
+                reserved.insert(taker);
+                crate::think!(self.journal(), Military, Decision,
+                    "Finishing the breach at {}", g.cities.get(&cid).map_or("the city", |city| city.name.as_str());
+                    "{} {} walks in from {} tiles; city captured {}",
+                    crate::reasoning::plain(g.units.get(&taker).map_or("unit", |unit| unit.kind.as_str())),
+                    taker, g.wdist(origin, target),
+                    g.cities.get(&cid).is_some_and(|city| city.owner == pid));
                 self.air_city_assault = Some(AirCityAssault {
                     target,
-                    cavalry: opening.cavalry,
-                    spot: opening.spot,
+                    cavalry: taker,
+                    spot: origin,
                     moved_to_spot: false,
                     aircraft: Vec::new(),
                 });
@@ -166,10 +216,41 @@ impl AdvancedAi {
         if ready && sorties.is_empty() {
             return reserved;
         }
-        let uid = opening.cavalry;
-        let capture = self.air_assault_capture(&opening.board, pid, uid, cid);
+        let mut uid = opening.cavalry;
+        let mut capture = self.air_assault_capture(&opening.board, pid, uid, cid);
+        if capture.is_none() {
+            // The spotter is only the nearest cavalry. After the volley, the
+            // strongest body in reach may still take what it cannot: a city's
+            // melee defence follows its owner's best unit, and a Cuirassier
+            // that dies on a one-health Edirne is not the only body there.
+            let others: Vec<u32> = self
+                .air_assault_takers(&opening.board, pid, target)
+                .into_iter()
+                .filter(|other| *other != uid)
+                .collect();
+            if let Some((other, actions)) =
+                self.air_assault_best_capture(&opening.board, pid, cid, &others)
+            {
+                uid = other;
+                capture = Some(actions);
+            }
+        }
+        let breached_after_sorties = opening
+            .board
+            .cities
+            .get(&cid)
+            .is_some_and(|city| city.owner != pid && city.wall_hp <= 0);
         if let Some(actions) = capture {
             opening.actions.extend(actions);
+        } else if let Some(action) = breached_after_sorties
+            .then(|| self.air_assault_advance(&mut opening.board, pid, uid, target))
+            .flatten()
+        {
+            // The walls are down, so the city cannot strike the approach, and
+            // a body that waits out of reach lets the city heal twenty a turn
+            // while the wing spends its sorties holding it at one. Close in
+            // so the next board's capture is a single step.
+            opening.actions.push(action);
         } else if opening.spot != opening.origin {
             // The opening already proved this return affordable before any
             // bomber was spent. Recheck against the board after the strikes.
@@ -182,6 +263,12 @@ impl AdvancedAi {
         } else if sorties.is_empty() {
             return reserved;
         }
+        // A body the maneuver gave no step keeps its turn for the siege and
+        // the battle planner. Reserving it idle is how a capture body sat six
+        // tiles from a one-health Edirne for four turns.
+        let cavalry_acted = opening.actions.iter().any(|action| {
+            matches!(action, Action::MoveTo { unit, .. } | Action::Attack { unit, .. } if *unit == uid)
+        });
         let report = AirCityAssault {
             target,
             cavalry: uid,
@@ -200,7 +287,9 @@ impl AdvancedAi {
         // it through the existing policy before the remaining units act;
         // otherwise every later attack is rejected by the pending prompt.
         self.resolve_city_dispositions(g, pid, plan.strategy);
-        reserved.insert(uid);
+        if cavalry_acted {
+            reserved.insert(uid);
+        }
         reserved.extend(report.aircraft.iter().copied());
         crate::think!(self.journal(), Military, Decision,
             "Cavalry coordinates a bomber city assault";
@@ -231,7 +320,7 @@ impl AdvancedAi {
                     && unit.moves_left > 0.0
                     && !unit.acted
                     && unit.linked_to.is_none()
-                    && g.wdist(unit.pos, target) <= 6
+                    && g.wdist(unit.pos, target) <= AIR_ASSAULT_TAKER_REACH
             })
             .collect();
         cavalry.sort_by_key(|uid| (g.wdist(g.units[uid].pos, target), *uid));
@@ -289,6 +378,54 @@ impl AdvancedAi {
         best
     }
 
+    /// Every land melee body that could finish a breach at `target` this
+    /// turn, strongest first: a city's melee defence follows its owner's best
+    /// unit, so the blow that survives it is the strongest one.
+    fn air_assault_takers(&self, g: &Game, pid: usize, target: Pos) -> Vec<u32> {
+        let mut takers: Vec<u32> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| {
+                let unit = &g.units[uid];
+                let spec = &g.rules.units[unit.kind];
+                spec.class == "military"
+                    && spec.is_melee_capable()
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && unit.hp >= AIR_ASSAULT_BREACH_TAKER_HP
+                    && unit.moves_left > 0.0
+                    && !unit.acted
+                    && unit.linked_to.is_none()
+                    && g.wdist(unit.pos, target) <= AIR_ASSAULT_TAKER_REACH
+            })
+            .collect();
+        takers.sort_by(|left, right| {
+            let blow = |uid: &u32| {
+                let unit = &g.units[uid];
+                g.unit_strength(unit, false) * f64::from(unit.hp.clamp(0, 100)) / 100.0
+            };
+            blow(right)
+                .total_cmp(&blow(left))
+                .then_with(|| g.wdist(g.units[left].pos, target).cmp(&g.wdist(g.units[right].pos, target)))
+                .then_with(|| left.cmp(right))
+        });
+        takers
+    }
+
+    /// The first taker, strongest first, whose ring step and blow take the
+    /// city on this board. Bounded: each try clones the board per ring tile.
+    fn air_assault_best_capture(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        takers: &[u32],
+    ) -> Option<(u32, Vec<Action>)> {
+        takers
+            .iter()
+            .take(AIR_ASSAULT_CAPTURE_TRIES)
+            .find_map(|uid| self.air_assault_capture(g, pid, *uid, cid).map(|actions| (*uid, actions)))
+    }
+
     fn air_assault_capture(&self, g: &Game, pid: usize, uid: u32, cid: u32) -> Option<Vec<Action>> {
         if Self::should_defer_city_capture(g, pid, cid) {
             return None;
@@ -320,6 +457,44 @@ impl AdvancedAi {
             }
             actions.push(finish);
             return Some(actions);
+        }
+        None
+    }
+
+    /// Step the capture body toward a breached city: the reachable tile
+    /// nearest the city, among those whose danger leaves it more than half its
+    /// health. Only tiles that close the distance qualify.
+    fn air_assault_advance(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+    ) -> Option<Action> {
+        let origin = g.units.get(&uid)?.pos;
+        let here = g.wdist(origin, target);
+        if here <= 1 {
+            return None;
+        }
+        let mut candidates: Vec<Pos> = g
+            .reachable(uid)
+            .into_iter()
+            .filter(|pos| {
+                let distance = g.wdist(*pos, target);
+                (1..here).contains(&distance) && g.city_at(*pos).is_none()
+            })
+            .collect();
+        candidates.sort_by_key(|pos| (g.wdist(*pos, target), g.wdist(origin, *pos), *pos));
+        for to in candidates.into_iter().take(24) {
+            let mut after = g.speculative_clone();
+            let Some(action) = walk(&mut after, pid, uid, to) else {
+                continue;
+            };
+            let hp = after.units[&uid].hp as f64;
+            if battle_planner::strike_danger(&after, pid, to, uid) < hp * 0.5 {
+                *g = after;
+                return Some(action);
+            }
         }
         None
     }

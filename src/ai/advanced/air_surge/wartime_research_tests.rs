@@ -66,9 +66,12 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan) {
     (g, ai, plan)
 }
 
+/// Outside the Domination lane, a nearer standing-army upgrade still
+/// interrupts a distant air beeline during a major war.
 #[test]
 fn cheaper_wartime_upgrade_interrupts_distant_air_research_and_then_releases_it() {
-    let (mut g, ai, plan) = fixture();
+    let (mut g, mut ai, plan) = fixture();
+    ai.victory_target = Some(VictoryTarget::Culture);
     assert_eq!(
         ai.wartime_modernization_tech(&g, 0),
         Some(crate::name!("ballistics"))
@@ -91,6 +94,29 @@ fn cheaper_wartime_upgrade_interrupts_distant_air_research_and_then_releases_it(
     g.players[0].research = None;
     ai.advanced_research(&mut g, 0, &plan);
     assert_eq!(g.players[0].research.as_deref(), Some("steam_power"));
+}
+
+/// A Domination wing is the army's modernization: the ground ladder
+/// interrupts the beeline only to defend a home city. Live King
+/// 20260930T211803Z spent turns 92-111 on seven off-chain ground techs and
+/// landed Advanced Flight at turn 145.
+#[test]
+fn a_domination_wing_keeps_its_beeline_through_a_cheaper_ground_upgrade() {
+    let (mut g, ai, plan) = fixture();
+    assert_eq!(
+        ai.wartime_modernization_tech(&g, 0),
+        Some(crate::name!("ballistics"))
+    );
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].research.as_deref(), Some("steam_power"));
+
+    // A threatened home city is the one interruption the wing allows.
+    for pos in [(11, 12), (12, 11), (11, 13)] {
+        g.spawn_test_unit("tank", 1, pos);
+    }
+    assert!(ai.threatened_city(&g, 0).is_some());
+    assert_eq!(ai.air_surge_research_goal(&g, 0), None);
 }
 
 #[test]
@@ -224,13 +250,20 @@ fn offshore_oil_without_plastics_does_not_make_tanks_a_near_term_upgrade() {
     assert!(g
         .valid_improvements(0, pos)
         .contains(&crate::name!("offshore_oil_rig")));
-    assert_eq!(ai.air_surge_research_goal(&g, 0), None);
+    // A connectable rig makes Tanks a near-term upgrade, but a Domination
+    // wing no longer yields its beeline to one.
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
+    let mut other_lane = ai.clone();
+    other_lane.victory_target = Some(VictoryTarget::Culture);
+    assert_eq!(other_lane.air_surge_research_goal(&g, 0), None);
 }
 
 #[test]
 fn available_or_connectable_oil_keeps_the_ground_upgrade_priority() {
     for case in ["stock", "income", "land", "repair", "unknown"] {
-        let (mut g, ai, _) = supplied_air_without_oil();
+        let (mut g, mut ai, _) = supplied_air_without_oil();
+        // Outside the Domination lane; a Domination wing keeps its beeline.
+        ai.victory_target = Some(VictoryTarget::Culture);
         match case {
             "stock" => {
                 g.players[0]
@@ -273,6 +306,12 @@ fn fuel_priority_requires_a_supplied_domination_wing_and_safe_home() {
         match case {
             "no_air_fuel" => {
                 g.players[0].strategic_resources.clear();
+                // Aluminum is only revealed by Radio, one tech before the
+                // Bomber, so an unsupplied wing is not yet a known one; the
+                // Domination beeline holds. The fuel priority itself still
+                // needs the wing to be supplied in any other lane.
+                assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
+                ai.victory_target = Some(VictoryTarget::Culture);
             }
             "other_lane" => {
                 ai.victory_target = Some(VictoryTarget::Science);
