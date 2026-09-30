@@ -303,3 +303,56 @@ fn the_early_religious_counter_needs_our_majority_and_no_faith_of_our_own() {
         assert_eq!(AdvancedAi::targeting(target).denial_target(&g, 0), None);
     }
 }
+
+/// Rival 1 has flown `launches` of the serial chain and holds the Spaceport
+/// at the board's objective; nobody has a faith or visiting tourists.
+fn science_board(launches: &[&str]) -> (Game, u32) {
+    let (mut g, objective) = board(GrandStrategy::Religion);
+    for player in g.players.iter_mut() {
+        player.religion = None;
+    }
+    for city in g.cities.values_mut() {
+        city.pressure.clear();
+        city.districts.remove(&crate::name!("holy_site"));
+    }
+    let site = g.cities[&objective].pos;
+    g.cities
+        .get_mut(&objective)
+        .unwrap()
+        .districts
+        .insert(crate::name!("spaceport"), site);
+    for launch in launches {
+        g.players[1].science_projects.insert((*launch).into());
+    }
+    (g, objective)
+}
+
+#[test]
+fn a_domination_seat_answers_a_rivals_moon_landing_at_its_spaceport() {
+    let (g, objective) = science_board(&["launch_earth_satellite", "launch_moon_landing"]);
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert_eq!(ai.rival_pressure(&g, 1), (GrandStrategy::Science, 45));
+    // A campaign target, not an emergency: readiness still gates the war.
+    assert!(!ai.denial_is_urgent(&g, 1));
+    assert_eq!(ai.denial_target(&g, 0), Some((1, GrandStrategy::Conquest)));
+    assert_eq!(ai.victory_denial(&g, 0), Some((1, GrandStrategy::Conquest)));
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.strategy, GrandStrategy::Conquest, "{plan:?}");
+    assert_eq!(plan.target_player, Some(1));
+    assert_eq!(plan.target_city, Some(objective), "aimed at the Spaceport");
+}
+
+#[test]
+fn the_science_counter_waits_for_the_moon_and_stays_in_the_domination_lane() {
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    let (g, _) = science_board(&["launch_earth_satellite"]);
+    assert_eq!(ai.rival_pressure(&g, 1), (GrandStrategy::Science, 25));
+    assert_eq!(ai.denial_target(&g, 0), None);
+    let (g, _) = science_board(&["launch_earth_satellite", "launch_moon_landing"]);
+    for target in [VictoryTarget::Culture, VictoryTarget::Religion] {
+        assert_eq!(AdvancedAi::targeting(target).denial_target(&g, 0), None);
+    }
+    let mut disabled = g.clone();
+    disabled.victory_conditions.science = false;
+    assert_eq!(ai.denial_target(&disabled, 0), None);
+}

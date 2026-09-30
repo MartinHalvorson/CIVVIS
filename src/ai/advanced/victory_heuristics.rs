@@ -8,6 +8,10 @@ use super::{AdvancedAi, GrandStrategy, VictoryFocus, VictoryTarget};
 use crate::game::Game;
 use std::collections::BTreeMap;
 
+/// The science reading at which a Domination army answers a rival's launch
+/// chain: the Moon Landing (`rival_victory_pressure`'s 45).
+const DOMINATION_SCIENCE_COUNTER: i32 = 45;
+
 const SCIENCE_VICTORY_TECH_CHAIN: [&str; 5] = [
     "rocketry",
     "satellites",
@@ -18,8 +22,9 @@ const SCIENCE_VICTORY_TECH_CHAIN: [&str; 5] = [
 
 impl AdvancedAi {
     /// A Domination army is already the counterforce. Do not require opt-in
-    /// lane switching to aim it at a Culture leader or a religious match point.
-    /// Culture leaves a preparation window; religion uses the existing strict
+    /// lane switching to aim it at a Culture leader, a Science racer past
+    /// its Moon Landing, or a religious match point. Culture and Science
+    /// leave a preparation window; religion uses the existing strict
     /// majority tally and its whole-civilization match-point threshold.
     pub(super) fn domination_counter_pressure(&self, g: &Game, pressure: VictoryFocus) -> bool {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination)
@@ -30,6 +35,13 @@ impl AdvancedAi {
         }
         match pressure.strategy {
             GrandStrategy::Culture => pressure.progress >= self.culture_threat_pressure(),
+            // The launch chain is serial and public: a rival that has landed
+            // on the Moon has two launches left and its Spaceport is the one
+            // bottleneck an army can take. Waiting for the expedition (78)
+            // left six turns on King `civvis-20260930T211803Z`, where
+            // Portugal finished the Moon at turn 215, flew at turn 242 and
+            // won at 248 while the Domination seat stayed at peace with it.
+            GrandStrategy::Science => pressure.progress >= DOMINATION_SCIENCE_COUNTER,
             GrandStrategy::Religion => {
                 let living = g
                     .players
@@ -328,7 +340,11 @@ impl AdvancedAi {
         let _memo = g.query_memo();
         let targeted = self.active_victory_target(g).is_some();
         let own_progress = self.victory_focus(g, pid).progress;
-        for (rival, pressure) in self.ranked_rival_victory_pressures(g, pid, culture_pressures) {
+        let ranked = self.ranked_rival_victory_pressures(g, pid, culture_pressures);
+        if let Some(counter) = self.domination_military_counter(g, pid, own_progress, &ranked) {
+            return Some(counter);
+        }
+        for (rival, pressure) in ranked {
             let domination_counter = self.domination_counter_pressure(g, pressure)
                 || self.domination_faithless_conversion_counter(g, pid, rival, pressure);
             if targeted
@@ -350,6 +366,58 @@ impl AdvancedAi {
             }
         }
         None
+    }
+
+    /// A Domination army answers with war, so it serves the most advanced
+    /// clock it can take a city against before any in-lane counter ranked
+    /// above it: a Congress or culture race cannot stop a launch chain. A
+    /// rival's launch ladder is read on its own, because its strongest lane
+    /// can hide it. On King `civvis-20260930T211803Z` the Maori and Ottoman
+    /// Diplomatic Victory points (80 and 75) held the plan on "diplomacy"
+    /// from turn 222 while Portugal, past its Mars launch, flew at 242 and won
+    /// at 248 without a war.
+    fn domination_military_counter(
+        &self,
+        g: &Game,
+        pid: usize,
+        own_progress: i32,
+        ranked: &[(usize, VictoryFocus)],
+    ) -> Option<(usize, GrandStrategy)> {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return None;
+        }
+        let mut clocks: Vec<(usize, VictoryFocus)> = Vec::new();
+        for (rival, pressure) in ranked.iter().copied() {
+            if self.domination_counter_pressure(g, pressure)
+                || self.domination_faithless_conversion_counter(g, pid, rival, pressure)
+            {
+                clocks.push((rival, pressure));
+            }
+            let launches = VictoryFocus {
+                strategy: GrandStrategy::Science,
+                progress: Self::science_launch_progress(g, rival),
+            };
+            if pressure.strategy != GrandStrategy::Science
+                && self.domination_counter_pressure(g, launches)
+            {
+                clocks.push((rival, launches));
+            }
+        }
+        clocks.sort_by(|left, right| {
+            right
+                .1
+                .progress
+                .cmp(&left.1.progress)
+                .then_with(|| left.0.cmp(&right.0))
+        });
+        clocks.into_iter().find_map(|(rival, pressure)| {
+            let counter =
+                self.denial_response_for_pressure(g, pid, own_progress, rival, pressure)?;
+            (counter == GrandStrategy::Conquest
+                && self.conquest_denial_actionable(g, pid, rival, counter)
+                && self.culture_denial_actionable(g, pid, rival, counter))
+            .then_some((rival, counter))
+        })
     }
 
     /// A Domination contract is fulfilled by foreign *original* capitals.

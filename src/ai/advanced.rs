@@ -11406,6 +11406,33 @@ impl AdvancedAi {
         best
     }
 
+    /// A rival's Science reading off the public launch ladder alone: 25, 45
+    /// and 65 for the completed launches, 78 and up while the expedition
+    /// flies. Shared by the victory pressure and the Domination counter.
+    pub(super) fn science_launch_progress(g: &Game, pid: usize) -> i32 {
+        let player = &g.players[pid];
+        if player.science_projects.contains("exoplanet_expedition") {
+            // The final expedition is an irreversible endgame commitment.  A
+            // defender needs time to raise, route, and deploy a counterforce,
+            // so its launch itself must cross the generic denial threshold;
+            // waiting for the first six light-years discarded that reaction
+            // window while the rival was already on the victory clock. Read
+            // the host's public distance and game-speed target when mirrored:
+            // the simulator field stays at zero there, and Online needs only
+            // 25 points rather than the simulator's 50.
+            78 + (22.0 * g.science_victory_points(pid) / g.science_victory_points_needed(pid))
+                .clamp(0.0, 22.0) as i32
+        } else if player.science_projects.contains("launch_mars_colony") {
+            65
+        } else if player.science_projects.contains("launch_moon_landing") {
+            45
+        } else if player.science_projects.contains("launch_earth_satellite") {
+            25
+        } else {
+            0
+        }
+    }
+
     /// Public victory-screen information distilled into a single urgency
     /// signal. Strong opponents must be judged by how close they are to ending
     /// the game, not only by how cheap their nearest city looks to capture.
@@ -11432,35 +11459,16 @@ impl AdvancedAi {
             .filter(|candidate| g.players[*candidate].alive)
             .collect();
 
-        let science = if player.science_projects.contains("exoplanet_expedition") {
-            // The final expedition is an irreversible endgame commitment.  A
-            // defender needs time to raise, route, and deploy a counterforce,
-            // so its launch itself must cross the generic denial threshold;
-            // waiting for the first six light-years discarded that reaction
-            // window while the rival was already on the victory clock. Read
-            // the host's public distance and game-speed target when mirrored:
-            // the simulator field stays at zero there, and Online needs only
-            // 25 points rather than the simulator's 50.
-            78 + (22.0 * g.science_victory_points(pid) / g.science_victory_points_needed(pid))
-                .clamp(0.0, 22.0) as i32
-        } else if player.science_projects.contains("launch_mars_colony") {
-            65
-        } else if player.science_projects.contains("launch_moon_landing") {
-            45
-        } else if player.science_projects.contains("launch_earth_satellite") {
-            25
-        } else {
-            0
-        }
-        // `science_chain_alarm`: the prerequisite chain a rival has already
-        // climbed, which the launch ladder above scores as nothing. The
-        // unearned 25 base of `rocketry_readiness` is dropped so a rival
-        // racing nothing still reads nothing.
-        .max(if self.science_chain_alarm {
-            (self.rocketry_readiness(g, pid) - 25).max(0)
-        } else {
-            0
-        });
+        let science = Self::science_launch_progress(g, pid)
+            // `science_chain_alarm`: the prerequisite chain a rival has already
+            // climbed, which the launch ladder above scores as nothing. The
+            // unearned 25 base of `rocketry_readiness` is dropped so a rival
+            // racing nothing still reads nothing.
+            .max(if self.science_chain_alarm {
+                (self.rocketry_readiness(g, pid) - 25).max(0)
+            } else {
+                0
+            });
 
         let culture = culture_pressure.unwrap_or_else(|| {
             let culture_target = living_majors
@@ -12845,6 +12853,18 @@ impl AdvancedAi {
                 );
                 self.victory_suppression_city(g, pid, rival, pressure)
                     .map(|city| (city, pressure.strategy))
+                    .or_else(|| {
+                        // A launch chain another lane outreads still has a
+                        // Spaceport to take.
+                        let launches = VictoryFocus {
+                            strategy: GrandStrategy::Science,
+                            progress: Self::science_launch_progress(g, rival),
+                        };
+                        (pressure.strategy != GrandStrategy::Science)
+                            .then(|| self.victory_suppression_city(g, pid, rival, launches))
+                            .flatten()
+                            .map(|city| (city, GrandStrategy::Science))
+                    })
             });
         let suppression_target_city = suppression_target.map(|(city, _)| city);
         let ranked_target_city = emergency_objective
