@@ -38,6 +38,52 @@ impl AdvancedAi {
         hostile / Self::city_friendly_strength(g, pid, cid).max(1.0)
     }
 
+    /// Every hostile military unit `pid` can see, with the strength
+    /// [`Self::city_pressure_with_visibility`] counts for it, in unit order.
+    /// Nothing here depends on the city being pressed, so a sweep over every
+    /// city reads the world's units once instead of once per city.
+    pub(super) fn visible_hostile_strengths(
+        g: &Game,
+        pid: usize,
+        visible: &crate::world::TileBits,
+    ) -> Vec<(crate::Pos, f64)> {
+        g.units
+            .values()
+            .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
+            .filter(|unit| g.sees(visible, unit.pos) && g.unit_visible_to(unit.id, pid))
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
+            .map(|unit| {
+                (
+                    unit.pos,
+                    crate::game::effective_strength(g.unit_strength(unit, false), unit.hp),
+                )
+            })
+            .collect()
+    }
+
+    /// [`Self::city_pressure_with_visibility`] from a precomputed
+    /// [`Self::visible_hostile_strengths`]: the same units, filtered and
+    /// summed in the same order, so the same bits.
+    pub(super) fn city_pressure_from_hostiles(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        hostiles: &[(crate::Pos, f64)],
+    ) -> f64 {
+        let Some(city) = g.cities.get(&cid) else {
+            return 0.0;
+        };
+        let hostile: f64 = hostiles
+            .iter()
+            .filter(|(pos, _)| g.wdist(city.pos, *pos) <= 6)
+            .map(|(_, strength)| *strength)
+            .sum();
+        if hostile <= 0.0 {
+            return 0.0;
+        }
+        hostile / Self::city_friendly_strength(g, pid, cid).max(1.0)
+    }
+
     /// Strength a major we are at PEACE with has parked within reach of `cid`,
     /// weighted for the fact that it has not declared.
     ///
@@ -209,6 +255,21 @@ impl AdvancedAi {
             + self.frontier_massing_pressure(g, pid, cid, visible)
     }
 
+    /// [`Self::city_pressure_with_belief`] for a sweep that has already read
+    /// the visible hostiles once.
+    pub(super) fn city_pressure_with_belief_from_hostiles(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        visible: &crate::world::TileBits,
+        hostiles: &[(crate::Pos, f64)],
+    ) -> f64 {
+        Self::city_pressure_from_hostiles(g, pid, cid, hostiles)
+            + self.remembered_city_pressure(g, pid, cid)
+            + self.frontier_massing_pressure(g, pid, cid, visible)
+    }
+
     #[cfg(test)]
     pub(super) fn city_pressure(g: &Game, pid: usize, cid: u32) -> f64 {
         let visible = g.player_vision_frame(pid);
@@ -228,9 +289,12 @@ impl AdvancedAi {
     pub(super) fn city_pressures(&self, g: &Game, pid: usize, cities: &[u32]) -> Vec<f64> {
         let visible = g.player_vision_frame(pid);
         let Some(pool) = self.work_pool.as_ref() else {
+            let hostiles = Self::visible_hostile_strengths(g, pid, &visible);
             return cities
                 .iter()
-                .map(|city| self.city_pressure_with_belief(g, pid, *city, &visible))
+                .map(|city| {
+                    self.city_pressure_with_belief_from_hostiles(g, pid, *city, &visible, &hostiles)
+                })
                 .collect();
         };
         let relevant = g
