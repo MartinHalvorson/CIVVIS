@@ -350,7 +350,21 @@ fn a_domination_seat_keeps_the_beeline_while_no_surge_is_appointed() {
     ai.advanced_research(&mut g, 0, &plan);
     assert_eq!(g.players[0].research.as_deref(), Some("steam_power"));
 
-    for case in ["legacy", "lane", "horizon", "home"] {
+    // A threatened home keeps the lane beeline but hands the slot to the
+    // nearer ground upgrade through the modernization yield.
+    {
+        let (mut g, ai, _) = unappointed();
+        for pos in [(11, 12), (12, 11), (11, 13)] {
+            g.spawn_test_unit("tank", 1, pos);
+        }
+        g.at_war.insert((0, 1));
+        assert!(ai.threatened_city(&g, 0).is_some());
+        assert!(ai.air_surge_lane_beeline(&g, 0));
+        assert!(ai.wartime_modernization_tech(&g, 0).is_some());
+        assert_eq!(ai.air_surge_research_goal(&g, 0), None);
+    }
+
+    for case in ["legacy", "lane", "horizon"] {
         let (mut g, mut ai, _) = unappointed();
         match case {
             "legacy" => {
@@ -367,13 +381,6 @@ fn a_domination_seat_keeps_the_beeline_while_no_surge_is_appointed() {
                     g.players[0].techs.remove(&tech);
                 }
                 assert!(AdvancedAi::air_surge_missing_techs(&g, 0) > AIR_SURGE_TECH_HORIZON);
-            }
-            "home" => {
-                for pos in [(11, 12), (12, 11), (11, 13)] {
-                    g.spawn_test_unit("tank", 1, pos);
-                }
-                g.at_war.insert((0, 1));
-                assert!(ai.threatened_city(&g, 0).is_some());
             }
             _ => unreachable!(),
         }
