@@ -10503,11 +10503,13 @@ impl AdvancedAi {
 
     fn threatened_city(&self, g: &Game, pid: usize) -> Option<u32> {
         let visible = g.player_vision_frame(pid);
+        let hostiles = Self::visible_hostile_strengths(g, pid, &visible);
         g.player_city_ids(pid)
             .into_iter()
             .filter_map(|cid| {
                 let city = &g.cities[&cid];
-                let danger = self.city_pressure_with_belief(g, pid, cid, &visible);
+                let danger =
+                    self.city_pressure_with_belief_from_hostiles(g, pid, cid, &visible, &hostiles);
                 if danger <= 0.0 {
                     return None;
                 }
