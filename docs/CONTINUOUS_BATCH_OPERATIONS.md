@@ -51,6 +51,31 @@ Copy the newest `com.civvis.gene-screen.standard-*.plist` in
 `status`), then `launchctl bootstrap gui/$(id -u) <plist>`. Otherwise reuse the
 running state directory: rotation is what it is for.
 
+## Sharing the machine
+
+A host that also runs a live Civilization VI seat, builds or interactive work
+should not give the tournament 85% of its cores. Three `run` options bound it:
+
+| Option | Effect |
+| --- | --- |
+| `--cpu-share PERCENT` | Game workers = floor(PERCENT% of logical cores), never above the 85% cap; an alternative to `--jobs`. The pinned release build uses the same worker count as its `cargo --jobs`. |
+| `--machine-cpu-ceiling PERCENT` | A governor thread measures the WHOLE host's CPU (`host_statistics` on macOS, `/proc/stat` on Linux) every two seconds and pauses the owned game process group with SIGSTOP/SIGCONT, in half-second slices, for as much of the next window as keeps the host at or under PERCENT. Overshoot is cut in the next window; headroom is retaken half the way per window. It governs a re-adopted segment after a daemon restart too, resumes the group on release, on segment exit and on SIGTERM, and never pauses when it cannot measure. |
+| `--progress-minutes N` | One `progress` line every N minutes (default 5) in the service log: this batch's games and seats against the boundary, the totals over every batch the state directory has served, the rate and ETA, and the governor's last reading. |
+
+`status` prints the governor's last reading (`cpu governor: host …% of ceiling
+…%`) while the daemon runs, and `status --json` carries it as `governor` beside
+`all_batches_games` / `all_batches_seats`.
+
+Pausing stops every game in flight together, so it adds wall-clock noise to
+the table's time-cost columns but cannot favour one genome over another. It
+does not change a game's result: games are seeded and have no wall-clock rule.
+
+Launch as a macOS `ProcessType` `Background` job (and a positive `Nice`) as
+well: the kernel then keeps the games off the fastest cores and yields to
+foreground work before the ceiling is ever reached. Example
+(2026-09-30, `mbp-m5-max-128`, 18 logical cores): `--cpu-share 50
+--machine-cpu-ceiling 90` gives nine workers and holds the host under 90%.
+
 ## Do not
 
 - Do not SIGINT or kill the daemon to stop a batch. Use `cut`; the kill path
