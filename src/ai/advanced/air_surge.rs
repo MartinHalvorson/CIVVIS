@@ -1963,6 +1963,8 @@ mod urgent_denial_opening_tests;
 #[cfg(test)]
 mod field_slot_tests;
 
+mod raids;
+
 mod readiness;
 
 #[cfg(test)]

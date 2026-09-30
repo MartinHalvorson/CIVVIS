@@ -41928,7 +41928,12 @@ impl AdvancedAi {
             // first. Empty with the gene off. See `advanced/fire_plan.rs`.
             self.plan_fire(g, pid);
         }
-        let air_assault_units = self.plan_air_city_assault(g, pid, plan);
+        let mut air_assault_units = self.plan_air_city_assault(g, pid, plan);
+        // `air-surge-2` raiders: spare surge cavalry pillage behind the wing.
+        // Nothing is read outside a Domination surge at war. See
+        // `advanced/air_surge/raids.rs`.
+        let raiders = self.plan_air_surge_raids(g, pid, &air_assault_units);
+        air_assault_units.extend(raiders);
         // `pass-picket`: this turn's recon orders, drawn once from the
         // start-of-turn board so units planned in parallel agree on them.
         // Nothing is read with the gene off. See
