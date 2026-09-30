@@ -15527,12 +15527,21 @@ impl BasicAi {
             // best horizons until one has a route through territory the unit
             // may actually enter. `route_step` keeps a Scout on its side of a
             // known closed border without inspecting hidden actors.
+            //
+            // The committed sweep's rank includes the charted-terrain rival
+            // prior, and so does this one. Ranked on raw reveal alone, the
+            // sweep's twenty-ring horizon sends the Scout to whichever map
+            // corner shows the most fog — ocean fog counts the same as land —
+            // and on the live King Tiny Pangaea (2026-09-30) it spent turns
+            // 16–35 in the empty north-west corner while Portugal's Porto
+            // stood twelve tiles east of the capital, first seen on turn 52.
             candidates.sort_by_cached_key(|target| {
                 std::cmp::Reverse((
                     island_home.as_ref().map_or(0, |home_landmass| {
                         self.island_landfall_value(g, pid, uid, *target, home_landmass)
                     }),
-                    Self::frontier_reveal_value(g, pid, uid, *target),
+                    Self::frontier_reveal_value(g, pid, uid, *target) as i32 * 4
+                        + Self::rival_frontier_prior(g, pid, uid, *target, home),
                     home.map_or(0, |home| g.wdist(home, *target)),
                     std::cmp::Reverse(g.wdist(origin, *target)),
                     std::cmp::Reverse(*target),
