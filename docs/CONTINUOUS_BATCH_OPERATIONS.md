@@ -82,6 +82,18 @@ created, so `taskpolicy -B -p <pid>` does not rescue a running segment:
 changing the class takes a new segment (stop the game group, restart the
 service; its unplayed seeds are retired, never replayed).
 
+**Beside a live Civilization VI seat, choose `Background` anyway.** The live
+game is the one workload on the host that fails rather than slows under load
+(it froze in "PLEASE WAIT" three times at load 23–30 on 2026-09-30, and its
+screenshot/OCR path is already documented to fail silently under load), so the
+live lane asked for the lowest class and got it: `ProcessType` `Background` +
+`Nice` 19 in the plist. Here the trade goes the other way: a slower tournament
+beats a lost live game. The opposite direction does work in place:
+`taskpolicy -b -p <pid>` moves a RUNNING game process to darwin background
+(its workers went from priority 20 to 4 at once), and `renice -n 19 -g <pgid>`
+lowers it too (on macOS `-n` is an increment, capped at 20). Do not pause the
+tournament with `kill -STOP`: the governor resumes its group every half second.
+
 Example (same host): `--cpu-share 50 --machine-cpu-ceiling 90` gives nine
 workers and holds the host under 90%.
 
