@@ -1538,3 +1538,39 @@ fn the_capital_buys_a_second_scout_only_while_the_opening_has_no_target() {
         "past the commit deadline there is no opening to search for"
     );
 }
+
+// -------------------------------------------------------------- adopted war
+
+#[test]
+fn a_war_the_target_opens_is_adopted_and_pins_the_campaign() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = opened(&mut game);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    let force = bodies(&mut game, 0, "warrior", rally, 3, 3);
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.as_ref().unwrap().declared.is_none());
+
+    // They declare first, before the force has assembled.
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    game.turn += 1;
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.as_ref().expect("the opening survives the war");
+    assert_eq!(opening.declared, Some(game.turn), "the war is adopted this turn");
+    assert!(
+        force.iter().all(|uid| opening.force.contains(uid)),
+        "the bodies already raised are the war's force"
+    );
+    let campaign = ai.campaign.as_ref().expect("the campaign is pinned");
+    assert_eq!(campaign.target, 1);
+    assert_eq!(campaign.cities, vec![opening.city]);
+
+    // And the commit deadline can no longer release it as an unassembled
+    // opening.
+    game.turn = game.standard_duration(CONQUEST_COMMIT_DEADLINE) + 40;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(
+        ai.conquest_opening.is_some(),
+        "a declared war is not released by the assembly deadline"
+    );
+}

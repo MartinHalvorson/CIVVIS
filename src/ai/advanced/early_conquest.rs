@@ -1102,6 +1102,34 @@ impl AdvancedAi {
         });
     }
 
+    /// The target declared on us while the force was still gathering. Live
+    /// King 2026-09-30T225143Z named Amsterdam on turn 31; the Netherlands
+    /// declared on turn 38 with three of our Archers three or four tiles from
+    /// the city; the opening kept waiting for an assembly the fighting had
+    /// overtaken and released on turn 51 as if no war had ever opened, with
+    /// the campaign never pinned to its city. Take the roster once more, mark
+    /// the war declared from this turn, and pin the campaign exactly as our
+    /// own declaration would.
+    fn conquest_adopt_war(&mut self, g: &Game, pid: usize) {
+        self.conquest_refresh_force(g, pid);
+        let kills = g.players[pid].counters.get("kills").copied().unwrap_or(0);
+        let Some(opening) = self.conquest_opening.as_mut() else {
+            return;
+        };
+        opening.declared = Some(g.turn);
+        opening.kills_at_war = kills;
+        let (target, city, bodies) = (opening.target, opening.city, opening.force.len());
+        think!(self.journal(), Military, Strategy,
+               "The conquest adopts the war {} opened", g.players[target].civ;
+               "they declared before the strike force did; the campaign is pinned to {} \
+                with the {} bod{} already raised",
+               g.cities.get(&city).map(|city| city.name.clone())
+                   .unwrap_or_else(|| String::from("the objective")),
+               bodies,
+               if bodies == 1 { "y" } else { "ies" });
+        self.conquest_pin_the_campaign(g);
+    }
+
     /// Count the bodies of ours that left the board since the last turn
     /// boundary, and refresh the roster. Only the strike force is counted:
     /// this rate is the campaign's, not the empire's. A body that is no
@@ -1171,6 +1199,20 @@ impl AdvancedAi {
                     base.saturating_add(g.standard_duration(CONQUEST_APPROACHING_GRACE_TURNS)),
                 );
             }
+        }
+        // A war the target opened on us before we declared is still this
+        // opening's war: adopt it rather than keep waiting for an assembly
+        // that the fighting has overtaken.
+        let adopt = self.conquest_opening.as_ref().is_some_and(|opening| {
+            opening.declared.is_none()
+                && g.is_at_war(pid, opening.target)
+                && g.players.get(opening.target).is_some_and(|player| player.alive)
+                && g.cities
+                    .get(&opening.city)
+                    .is_some_and(|city| city.owner == opening.target)
+        });
+        if adopt {
+            self.conquest_adopt_war(g, pid);
         }
         if let Some(opening) = self.conquest_opening.as_ref() {
             let target_alive = g
