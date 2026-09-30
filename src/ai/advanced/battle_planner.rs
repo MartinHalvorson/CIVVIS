@@ -440,6 +440,10 @@ pub(super) struct DangerField {
     /// `strike-reach`: hostiles whose strike reach held a tile the movement
     /// flood did not. Zero with the gene off.
     pub(super) widened: u32,
+    /// `shared-danger`: each hostile's share, one over the number of our
+    /// land units inside its reach. Empty with the gene off, and then every
+    /// reading below is the full field.
+    shares: BTreeMap<u32, f64>,
 }
 
 impl DangerField {
@@ -485,7 +489,67 @@ impl DangerField {
             reaches,
             cache: BTreeMap::new(),
             widened,
+            shares: BTreeMap::new(),
         }
+    }
+
+    /// `shared-danger`: a hostile strikes once a turn, so its blow lands on
+    /// one of the units inside its reach, not on each of them. The full field
+    /// charges every blow to every unit at once; around unwalled Stockholm
+    /// (live King `civvis-20260930T221624Z`) a crossbowman, a catapult and a
+    /// defender made every firing tile read 95-127, and a nine-unit siege
+    /// rotated and held for 27 turns against three strikes a turn. Each
+    /// hostile's share is one over the land units of ours standing in its
+    /// reach now; `shared_reading` never falls under the strongest single
+    /// blow, because any one hostile can still spend all of its strike on
+    /// the unit asked about.
+    pub(super) fn share(&mut self, g: &Game) {
+        let ours: Vec<Pos> = g
+            .units
+            .values()
+            .filter(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                unit.owner == self.pid
+                    && spec.class == "military"
+                    && spec.domain.as_deref() != Some("air")
+                    && !g.is_embarked(unit)
+            })
+            .map(|unit| unit.pos)
+            .collect();
+        self.shares = self
+            .reaches
+            .iter()
+            .map(|(id, reach)| {
+                let exposed = ours
+                    .iter()
+                    .filter(|pos| reach.binary_search(pos).is_ok())
+                    .count()
+                    .max(1);
+                (*id, 1.0 / exposed as f64)
+            })
+            .collect();
+    }
+
+    fn shared_reading(&self, blows: impl Iterator<Item = (Option<u32>, f64)>) -> f64 {
+        let (mut shared, mut strongest) = (0.0_f64, 0.0_f64);
+        for (source, blow) in blows {
+            strongest = strongest.max(blow);
+            let share = source
+                .and_then(|id| self.shares.get(&id).copied())
+                .unwrap_or(1.0);
+            shared += blow * share;
+        }
+        shared.max(strongest)
+    }
+
+    /// The rotation's reading at one tile: the full field, or the shared
+    /// one with `shared-danger` on.
+    pub(super) fn rotation_danger(&mut self, tile: Pos, uid: u32) -> f64 {
+        if self.shares.is_empty() {
+            return self.danger(tile, uid);
+        }
+        let blows = self.contributions(tile, uid);
+        self.shared_reading(blows.iter().copied())
     }
 
     /// Every blow that would land on `uid` standing unfortified on `tile`
@@ -605,11 +669,15 @@ impl DangerField {
     }
 
     fn upper_danger_without(&mut self, tile: Pos, uid: u32, hp: i32, dead: &BTreeSet<u32>) -> f64 {
-        self.contributions_at_hp(tile, uid, hp)
+        let blows = self.contributions_at_hp(tile, uid, hp);
+        let alive = blows
             .iter()
             .filter(|(source, _)| source.is_none_or(|id| !dead.contains(&id)))
-            .map(|(_, blow)| upper_roll_damage(*blow))
-            .sum()
+            .map(|(source, blow)| (*source, upper_roll_damage(*blow)));
+        if self.shares.is_empty() {
+            return alive.map(|(_, blow)| blow).sum();
+        }
+        self.shared_reading(alive)
     }
 
     /// Stand `uid` on `to` by an actual `MoveTo` on the probe, read the board
@@ -1165,6 +1233,9 @@ impl AdvancedAi {
                 .is_some_and(|unit| unit.owner == pid && unit.hp < RETURN_HP)
         });
         let mut field = DangerField::with_reach(g, pid, self.strike_reach);
+        if self.shared_danger {
+            field.share(g);
+        }
         self.census.strike_reach_widened += field.widened;
         if field.widened > 0 {
             think!(self.journal(), Military, Detail,
@@ -1188,6 +1259,9 @@ impl AdvancedAi {
         }
         if struck {
             field = DangerField::with_reach(g, pid, self.strike_reach);
+            if self.shared_danger {
+                field.share(g);
+            }
         }
         if self.doomed_blow_veto_2 {
             doomed.retain(|uid| !strikers.contains(uid));
@@ -2096,7 +2170,7 @@ impl AdvancedAi {
                 }
                 continue;
             }
-            let here = field.danger(unit.pos, uid);
+            let here = field.rotation_danger(unit.pos, uid);
             let wounded =
                 heals && (unit.hp < ROTATE_HP || self.battle_planner_recovering.contains(&uid));
             // A healthy member of an active Domination siege stays on its
@@ -3950,6 +4024,60 @@ mod tests {
             .iter()
             .all(|archer| !g.attack_reach(*archer).contains(&far)));
         assert_eq!(danger(&g, 0, far, ours), 0.0);
+    }
+
+    /// `shared-danger`: two archers strike once each, so with two of our
+    /// units inside both reaches each unit reads one archer's worth, never
+    /// less than the strongest single shot. The gene ships off.
+    #[test]
+    fn shared_danger_splits_each_blow_among_the_units_in_its_reach() {
+        let mut g = open_field();
+        let ours = g.spawn_unit("warrior", 0, at(10, 6));
+        let left = g.spawn_unit("archer", 1, at(8, 6));
+        let right = g.spawn_unit("archer", 1, at(12, 6));
+        let tile = at(10, 6);
+        let full = danger(&g, 0, tile, ours);
+        let mut field = DangerField::new(&g, 0);
+        field.share(&g);
+        let alone = field.rotation_danger(tile, ours);
+        assert!(
+            (alone - full).abs() < 1e-9,
+            "one unit in reach takes both: {alone} v {full}"
+        );
+
+        let friend = *g
+            .wdisk(tile, 2)
+            .iter()
+            .find(|pos| {
+                **pos != tile
+                    && [left, right].iter().all(|archer| {
+                        g.attack_reach(*archer).contains(pos) && g.units[archer].pos != **pos
+                    })
+            })
+            .expect("a second tile inside both reaches");
+        g.spawn_unit("warrior", 0, friend);
+        let full = danger(&g, 0, tile, ours);
+        let mut field = DangerField::new(&g, 0);
+        field.share(&g);
+        let shared = field.rotation_danger(tile, ours);
+        let strongest = [left, right]
+            .into_iter()
+            .map(|archer| {
+                let (att, def) = g
+                    .ranged_strike_strengths(archer, ours, tile)
+                    .expect("a pair");
+                expected_damage(att, def)
+            })
+            .fold(0.0_f64, f64::max);
+        assert!(
+            (shared - (full / 2.0).max(strongest)).abs() < 1e-9,
+            "{shared} v {full}"
+        );
+        assert!(shared < full);
+        assert!(!AdvancedAi::new().shared_danger, "an opt-in ships off");
+        super::super::test_support::opt_in_off_in_both_controllers("shared-danger", |ai| {
+            ai.shared_danger
+        });
     }
 
     /// `strike-reach` is an opt-in that ships off and is registered.

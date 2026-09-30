@@ -6629,6 +6629,11 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `shared-danger`: the battle planner's rotation and doomed-blow checks
+    /// read each hostile's blow shared among our units inside its reach (never
+    /// under the strongest single blow), not every blow on every unit at once.
+    /// See `DangerField::share`. Opt-in gene `shared-danger`.
+    shared_danger: bool,
     /// `settler-detour-stays-near`: a threat detour may only hand the Settler
     /// a fallback within `SETTLER_DETOUR_NEAR_SLACK` hexes past the deferred
     /// site's own distance (never under `SETTLER_DETOUR_NEAR_FLOOR`, never
@@ -8634,6 +8639,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            shared_danger: false,
             settler_detour_stays_near: false,
             siege_positive_damage_budget: false,
             science_threat_denial: false,
