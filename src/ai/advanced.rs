@@ -19987,13 +19987,16 @@ impl AdvancedAi {
                 .map(|deal| {
                     let worth = self.incoming_deal_value(g, pid, deal, plan);
                     let pins_objective = deal.peace
-                        && self.war_plan.as_ref().is_some_and(|war| {
+                        && (self.war_plan.as_ref().is_some_and(|war| {
                             war.phase == WarPhase::Exploit
                                 && war.target_player == deal.from
                                 && g.cities
                                     .get(&war.objective_city)
                                     .is_some_and(|city| city.owner == deal.from)
-                        });
+                        })
+                            // `air-surge-2`: the wing's own front, as for our
+                            // own offers. See `air_surge_holds_front`.
+                            || self.air_surge_holds_front(g, pid, deal.from));
                     (
                         worth >= 0.0 && !pins_objective,
                         deal.peace,

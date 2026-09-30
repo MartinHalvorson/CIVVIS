@@ -174,3 +174,53 @@ fn a_stalled_war_against_the_armed_surge_target_is_not_offered_peace() {
     assert!(offers(false), "the control: this war is stalled and unpaid");
     assert!(!offers(true), "the surge's own front keeps its war");
 }
+
+/// The same front refuses the target's own peace offer: an accepted treaty
+/// stands the wing down and blocks a new appointment for thirty turns.
+#[test]
+fn the_armed_surge_target_s_peace_offer_is_refused() {
+    let accepts = |hold: bool| {
+        let (mut g, mut ai, target) = fixture();
+        at_war(&mut g);
+        if !hold {
+            ai.air_surge_plan = None;
+        }
+        ai.air_surge_status = ai
+            .air_surge_plan
+            .as_ref()
+            .map(|plan| ai.air_surge_status(&g, 0, plan))
+            .unwrap_or_default();
+        g.pending_deals.push(crate::game::DiplomaticDeal {
+            id: 7001,
+            from: 1,
+            to: 0,
+            give_gold: 0.0,
+            request_gold: 0.0,
+            open_borders: false,
+            friendship: false,
+            peace: true,
+            alliance: None,
+            defensive_pact: false,
+            joint_war_target: None,
+            promise: None,
+            demand: false,
+            expires: g.turn + 5,
+        });
+        // A turn whose plan is elsewhere: the ordinary valuation takes a
+        // white peace from a rival it is not campaigning against.
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: g.turn,
+            rush: false,
+        };
+        let _ = target;
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        !g.is_at_war(0, 1)
+    };
+    assert!(!accepts(true), "the surge's own front keeps its war");
+    assert!(accepts(false), "the control accepts a white peace");
+}

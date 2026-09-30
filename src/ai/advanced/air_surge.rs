@@ -250,6 +250,21 @@ pub(crate) struct AirSurgeCensus {
 }
 
 impl AdvancedAi {
+    /// One line of the surge's running census, for simulator probes outside
+    /// the crate: appointments, breakthroughs, declarations, captures and the
+    /// stand-down reasons with their counts.
+    pub fn air_surge_census_summary(&self) -> String {
+        let census = &self.air_surge_census;
+        format!(
+            "appointments {} breakthroughs {} declarations {} captures {} aborts {:?}",
+            census.appointments,
+            census.breakthroughs,
+            census.declarations,
+            census.objectives_captured,
+            census.aborts
+        )
+    }
+
     /// Whether an appointment is live. Read by the production reservation and
     /// by the strategy overlay; false whenever the gene is off.
     pub(crate) fn air_surge_active(&self) -> bool {
@@ -1165,6 +1180,31 @@ impl AdvancedAi {
         matched
     }
 
+    /// `air-surge-2`: a Domination seat inside the appointment horizon
+    /// researches toward the Bomber whether or not an appointment is live.
+    ///
+    /// ★★★ THE BEELINE DIED WITH EVERY STAND-DOWN. Research followed the
+    /// appointment, and the appointment is fragile: live King
+    /// 20260930T221624Z appointed at turn 110 (ten techs out) against Sweden,
+    /// Sweden's peace stood it down at 115, and the fifteen-turn cooldown
+    /// handed research back to the lane scorer with nothing steering it to
+    /// the Bomber. Who the wing will fight can change; that the Domination
+    /// seat wants the wing does not. The same gates as an appointment apply:
+    /// the horizon, the whole chain and package fitting before the endgame
+    /// reserve, and a safe home.
+    pub(crate) fn air_surge_lane_beeline(&self, g: &Game, pid: usize) -> bool {
+        self.air_surge_2
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && !g.players[pid]
+                .techs
+                .contains(&Name::new(AIR_SURGE_GOAL_TECH))
+            && g.player_city_ids(pid).len() >= 2
+            && Self::air_surge_bomber(g, pid).is_some()
+            && Self::air_surge_missing_techs(g, pid) <= AIR_SURGE_TECH_HORIZON
+            && self.threatened_city(g, pid).is_none()
+            && self.air_surge_affordable(g, pid)
+    }
+
     /// The forced research goal while the breakthrough is still missing.
     /// Consumed by `advanced_research`, which walks the cheapest legal step
     /// toward it.
@@ -1175,7 +1215,11 @@ impl AdvancedAi {
     /// A nearer standing-army upgrade can temporarily take priority; the air
     /// goal retires when the breakthrough technology lands.
     pub(crate) fn air_surge_research_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
-        if self.air_surge_plan.is_none() && !self.domination_air_readiness_active(g, pid) {
+        let lane_beeline = self.air_surge_lane_beeline(g, pid);
+        if self.air_surge_plan.is_none()
+            && !lane_beeline
+            && !self.domination_air_readiness_active(g, pid)
+        {
             // Native 20260922T054400Z reached Ballistics and Education but
             // chased later ground upgrades until a Culture loss at turn 191,
             // without Industrialization. Preparation cannot require that
@@ -1232,7 +1276,7 @@ impl AdvancedAi {
         // the wing is the modernization, so the ground ladder only interrupts
         // it to defend a home city.
         let domination_beeline = self.active_victory_target(g) == Some(VictoryTarget::Domination)
-            && self.air_surge_plan.is_some()
+            && (self.air_surge_plan.is_some() || lane_beeline)
             && self.threatened_city(g, pid).is_none();
         if self.air_surge_2
             && !domination_beeline

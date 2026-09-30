@@ -327,3 +327,56 @@ fn fuel_priority_requires_a_supplied_domination_wing_and_safe_home() {
         assert_eq!(ai.air_surge_research_goal(&g, 0), None, "{case}");
     }
 }
+
+/// Live King 20260930T221624Z: Sweden's peace stood the surge down five turns
+/// after its appointment and the cooldown left research unsteered. A
+/// Domination seat inside the horizon keeps its beeline without a plan.
+#[test]
+fn a_domination_seat_keeps_the_beeline_while_no_surge_is_appointed() {
+    let unappointed = || {
+        let (mut g, mut ai, plan) = fixture();
+        ai.air_surge_plan = None;
+        g.at_war.clear();
+        g.found_city_for(0, (12, 18), None);
+        // Two bare cities research a few beakers a turn; a long clock keeps
+        // the affordability gate out of what these cases compare.
+        g.max_turns = 20_000;
+        assert!(ai.air_surge_affordable(&g, 0));
+        (g, ai, plan)
+    };
+    let (mut g, ai, plan) = unappointed();
+    assert!(ai.air_surge_lane_beeline(&g, 0));
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].research.as_deref(), Some("steam_power"));
+
+    for case in ["legacy", "lane", "horizon", "home"] {
+        let (mut g, mut ai, _) = unappointed();
+        match case {
+            "legacy" => {
+                ai.disable_air_surge_2();
+                ai.air_surge = true;
+            }
+            "lane" => ai.victory_target = Some(VictoryTarget::Culture),
+            "horizon" => {
+                let held: Vec<Name> = g.rules.tech_ancestors[AIR_SURGE_GOAL_TECH]
+                    .iter()
+                    .map(|tech| Name::new(tech))
+                    .collect();
+                for tech in held {
+                    g.players[0].techs.remove(&tech);
+                }
+                assert!(AdvancedAi::air_surge_missing_techs(&g, 0) > AIR_SURGE_TECH_HORIZON);
+            }
+            "home" => {
+                for pos in [(11, 12), (12, 11), (11, 13)] {
+                    g.spawn_test_unit("tank", 1, pos);
+                }
+                g.at_war.insert((0, 1));
+                assert!(ai.threatened_city(&g, 0).is_some());
+            }
+            _ => unreachable!(),
+        }
+        assert!(!ai.air_surge_lane_beeline(&g, 0), "{case}");
+    }
+}
