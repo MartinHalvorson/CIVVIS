@@ -2798,8 +2798,9 @@ pub struct BasicAi {
     pub(crate) explore_dead_targets: bool,
     /// Per unit: the exploration goal it was last sent at, where it stood, and
     /// how many consecutive turns it has stood there aiming at that goal,
-    /// and the last game turn observed. Replanning does not advance the clock.
-    explore_last: RefCell<HashMap<u32, (Pos, Pos, u32, u32)>>,
+    /// the last game turn observed, and the tile it stood on the turn
+    /// before. Replanning does not advance the clock.
+    explore_last: RefCell<HashMap<u32, (Pos, Pos, u32, u32, Option<Pos>)>>,
     /// Per unit: exploration goals proved unreachable, with the turn each
     /// expires. See `explore_dead_targets`.
     explore_dead: RefCell<HashMap<u32, HashMap<Pos, u32>>>,
@@ -15813,17 +15814,37 @@ impl BasicAi {
                     let mut last = self.explore_last.borrow_mut();
                     match last.get_mut(&uid) {
                         // Same goal from the same tile as last turn: one more
-                        // turn of proof the order went nowhere.
-                        Some(entry) if entry.0 == target && entry.1 == upos => {
+                        // turn of proof the order went nowhere. Back on the
+                        // tile it stood on the turn before is the same proof:
+                        // live King 2026-09-30T225143Z bounced its Scout
+                        // between two tiles every turn from t13 to t28, and a
+                        // second Scout between two others from t20 to t28,
+                        // each move resetting a same-tile count, until the
+                        // six-turn livelock window caught it.
+                        Some(entry)
+                            if entry.0 == target
+                                && (entry.1 == upos || entry.4 == Some(upos)) =>
+                        {
                             if g.turn > entry.3 {
                                 entry.2 += 1;
                                 entry.3 = g.turn;
+                                if entry.1 != upos {
+                                    entry.4 = Some(entry.1);
+                                    entry.1 = upos;
+                                }
                             }
                             entry.2
                         }
-                        // A new goal, or the unit did move: start counting.
+                        // The same goal from new ground: start counting, and
+                        // remember where the unit came from.
+                        Some(entry) if entry.0 == target && g.turn > entry.3 => {
+                            *entry = (target, upos, 0, g.turn, Some(entry.1));
+                            0
+                        }
+                        // A new goal, or a replan inside the same turn.
+                        Some(entry) if entry.0 == target => entry.2,
                         _ => {
-                            last.insert(uid, (target, upos, 0, g.turn));
+                            last.insert(uid, (target, upos, 0, g.turn, None));
                             0
                         }
                     }
@@ -21512,6 +21533,66 @@ mod tests {
             let _ = plain.explore_step(&mut game, 0, scout);
         }
         assert!(plain.explore_dead.borrow().is_empty());
+    }
+
+    /// A Scout the host bounces between two tiles toward the same goal is as
+    /// stuck as one it never moves: live King 2026-09-30T225143Z paced its
+    /// Scout between two tiles for fifteen turns.
+    #[test]
+    fn a_scout_the_host_bounces_between_two_tiles_gives_up_its_exploration_target() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("DEADGOAL", 91_779),
+            250,
+            0,
+            false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let scout = game.spawn_unit("scout", 0, home);
+        game.turn = 10;
+
+        let mut ai = BasicAi::new();
+        ai.enable_explore_commit();
+        ai.enable_explore_dead_targets();
+        let goal = ai
+            .exploration_goal(&game, 0, scout, false)
+            .expect("a fresh map has unexplored ground to aim at");
+        let away = game
+            .nbrs(home)
+            .into_iter()
+            .filter(|pos| game.map.tiles.contains_key(pos) && game.unit_can_traverse(scout, *pos))
+            .max_by_key(|pos| game.wdist(*pos, goal))
+            .expect("a passable neighbour");
+        // The host moves the unit, but only ever back and forth.
+        let mut retired_on = None;
+        for (step, tile) in [home, away, home, away, home, away].into_iter().enumerate() {
+            game.relocate(scout, tile);
+            game.units.get_mut(&scout).unwrap().moves_left = 0.0;
+            game.turn = 10 + step as u32;
+            let _ = ai.explore_step(&mut game, 0, scout);
+            if ai
+                .explore_dead
+                .borrow()
+                .get(&scout)
+                .is_some_and(|dead| dead.contains_key(&goal))
+            {
+                retired_on = Some(step);
+                break;
+            }
+        }
+        assert_eq!(
+            retired_on,
+            Some(1 + EXPLORE_STUCK_TURNS as usize),
+            "two returns to the previous tile retire the goal"
+        );
     }
 
     /// ★★★★ See `explore_commit`: a goal is held across turns until it is
