@@ -50095,3 +50095,49 @@ fn domination_specializes_earlier_moves_only_the_domination_clock() {
         .iter()
         .any(|gene| gene.tag == "domination-specializes-earlier" && gene.opt_in()));
 }
+
+/// `threatened_city` and `city_pressures` read the visible hostiles once per
+/// sweep. The per-city pressure computed from that list must be the pressure
+/// the per-city scan computes, bit for bit, with a mix of hostiles near, far,
+/// hidden and at peace, and with the frontier-massing term on and off.
+#[test]
+fn city_pressure_from_one_hostile_read_matches_the_per_city_scan() {
+    let mut game = Game::new(3, 30, 20, 7_801, 250, 3);
+    game.current = 0;
+    game.found_city_for(0, (10, 10), None);
+    game.found_city_for(0, (17, 10), None);
+    let cities = game.player_city_ids(0);
+    assert_eq!(cities.len(), 2);
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    for (dx, dy) in [(1, 0), (2, 1), (4, 0), (6, 2), (9, 0), (12, 3)] {
+        game.spawn_unit("warrior", 1, (10 + dx, 10 + dy));
+    }
+    game.spawn_unit("spearman", 1, (11, 12));
+    game.spawn_unit("warrior", 2, (16, 11));
+    game.spawn_unit("warrior", 0, (10, 11));
+    let visible = game.player_vision_now(0);
+    let hostiles = AdvancedAi::visible_hostile_strengths(&game, 0, &visible);
+    assert!(hostiles.len() >= 2, "fixture: hostiles in sight");
+    let mut ai = AdvancedAi::new();
+    let mut pressed = 0;
+    for massing in [false, true] {
+        if massing {
+            ai.enable_frontier_massing_alarm();
+        }
+        for &city in &cities {
+            let scanned = AdvancedAi::city_pressure_with_visibility(&game, 0, city, &visible);
+            let from_list = AdvancedAi::city_pressure_from_hostiles(&game, 0, city, &hostiles);
+            assert_eq!(scanned.to_bits(), from_list.to_bits(), "city {city}");
+            assert_eq!(
+                ai.city_pressure_with_belief(&game, 0, city, &visible)
+                    .to_bits(),
+                ai.city_pressure_with_belief_from_hostiles(&game, 0, city, &visible, &hostiles)
+                    .to_bits(),
+                "city {city}, massing {massing}"
+            );
+            pressed += usize::from(scanned > 0.0);
+        }
+    }
+    assert!(pressed >= 2, "fixture: at least one city under pressure");
+}
