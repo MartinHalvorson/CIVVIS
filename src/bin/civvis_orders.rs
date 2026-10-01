@@ -880,6 +880,61 @@ impl HostCityStrikes {
     }
 }
 
+/// The aircraft the decider has already sent on a sortie this turn, replayed
+/// onto every board built for the turn.
+///
+/// ★★★ THE REPLAN FRAME ORDERED THE SAME BOMBER AGAIN. An air attack resolves
+/// after the frame that ordered it is exported, so the next frame's export can
+/// still read the aircraft as unspent, and the board plans a second sortie the
+/// host then refuses (`range_attack_refused`, `can_start=false`). Live King
+/// 20260930T211803Z and 225143Z: 171 of 267 refused strikes were aircraft, 86
+/// of them a bomber that had already flown that turn, and each repeat earns
+/// the order a refusal strike toward `HostOrderRefusals`' ten-turn hold on
+/// that exact bomber and target. A sortie the host refused this turn (it is in
+/// `Game::blocked_strikes`) did not spend the aircraft and is left alone.
+#[derive(Default)]
+struct HostAirStrikes {
+    turn: Option<u32>,
+    sorties: std::collections::BTreeSet<(i64, (i32, i32))>,
+}
+
+impl HostAirStrikes {
+    /// Remember the sorties that left for the host on this frame.
+    fn observe(&mut self, turn: u32, orders: &[IssuedOrder]) {
+        if self.turn != Some(turn) {
+            self.turn = Some(turn);
+            self.sorties.clear();
+        }
+        for order in orders {
+            if order.kind == "unit" && order.verb.as_deref() == Some("AIR_ATTACK") {
+                if let (Some(subject), Some(pos)) = (order.subject, order.pos) {
+                    self.sorties.insert((subject, pos));
+                }
+            }
+        }
+    }
+
+    /// Spend, on a board built for `turn`, the aircraft that already flew.
+    fn apply(&self, mirror: &mut civvis::mirror::LiveMirror, turn: u32) {
+        if self.turn != Some(turn) {
+            return;
+        }
+        for &(host, (x, y)) in &self.sorties {
+            let Some(&uid) = mirror.uid_of.get(&host) else {
+                continue;
+            };
+            let target = civvis::hex::offset_to_axial(x, y);
+            if mirror.game.blocked_strikes.contains(&(uid, target)) {
+                continue;
+            }
+            if let Some(unit) = mirror.game.units.get_mut(&uid) {
+                unit.attacks_left = 0;
+                unit.moves_left = 0.0;
+            }
+        }
+    }
+}
+
 /// Plots the host will not walk a unit onto, learned from moves that went
 /// nowhere.
 ///
@@ -8809,6 +8864,7 @@ fn main() {
     // A city's strike is once per host turn and the export never says it was
     // spent; the decider's own earlier frames do. See `HostCityStrikes`.
     let mut host_city_strikes = HostCityStrikes::default();
+    let mut host_air_strikes = HostAirStrikes::default();
     let mut explain_cursor: u64 = 0;
     // What left for the host on each frame, until the next turn's frame answers
     // for it. See "order postconditions" above.
@@ -8941,6 +8997,7 @@ fn main() {
                     board.carry_treasury_baseline(carried_treasury);
                     host_city_attack_cooldowns.apply(&mut board);
                     host_city_strikes.apply(&mut board, state.turn);
+                    host_air_strikes.apply(&mut board, state.turn);
                     host_move_refusals.apply(&mut board);
                     let reply = decide(
                         &mut board,
@@ -8970,6 +9027,7 @@ fn main() {
                             );
                             host_city_attack_cooldowns.apply(&mut fresh);
                             host_city_strikes.apply(&mut fresh, state.turn);
+                            host_air_strikes.apply(&mut fresh, state.turn);
                             host_move_refusals.apply(&mut fresh);
                             let reply = decide(
                                 &mut fresh,
@@ -8991,6 +9049,7 @@ fn main() {
                             existing.sync(&snapshot, &state, frontier);
                             host_city_attack_cooldowns.apply(existing);
                             host_city_strikes.apply(existing, state.turn);
+                            host_air_strikes.apply(existing, state.turn);
                             host_move_refusals.apply(existing);
                             // `--fresh-ai` isolates the two halves of persistence: keep the
                             // mirror, throw away the agent. If orders come back, the empty
@@ -9039,6 +9098,7 @@ fn main() {
                 };
                 let orders = IssuedOrder::from_reply(&reply);
                 host_city_strikes.observe(state.turn, &orders);
+                host_air_strikes.observe(state.turn, &orders);
                 pending_orders.push(PendingOrders {
                     turn: state.turn,
                     frame: state.frame,
@@ -10225,6 +10285,53 @@ mod tests {
             envoys, 4,
             "the confirmed peace frame spends the full suzerainty pool: {confirmed}"
         );
+    }
+
+    /// Live King 20260930T211803Z: 86 refused air strikes were a bomber that
+    /// had already flown that turn, re-ordered on a replan frame whose export
+    /// still read it unspent. A sortie the host refused does not spend it.
+    #[test]
+    fn an_aircraft_that_flew_on_an_earlier_frame_is_spent_for_the_turn() {
+        let (snapshot, mut state) = production_board();
+        state.turn = 40;
+        state.units.push(civvis::mirror::StateUnit {
+            id: 4242,
+            kind: "UNIT_BOMBER".to_string(),
+            x: state.cities[0].x,
+            y: state.cities[0].y,
+            hp: 100.0,
+            moves: 10.0,
+            ..civvis::mirror::StateUnit::default()
+        });
+        let sortie = |x, y| IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(4242),
+            verb: Some("AIR_ATTACK".to_string()),
+            pos: Some((x, y)),
+        };
+        let spent = |mirror: &civvis::mirror::LiveMirror| {
+            let uid = mirror.uid_of[&4242];
+            let unit = &mirror.game.units[&uid];
+            unit.attacks_left == 0 && unit.moves_left <= 0.0
+        };
+        let mut strikes = HostAirStrikes::default();
+        strikes.observe(40, &[sortie(6, 6)]);
+        let mut replan = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        assert!(!spent(&replan), "precondition: the export reads it fresh");
+        strikes.apply(&mut replan, 40);
+        assert!(spent(&replan), "the frame-0 sortie spent it");
+
+        // The host refused that sortie: the bomber may still fly elsewhere.
+        state.refused_strikes.insert((4242, 6, 6));
+        let mut refused = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        strikes.apply(&mut refused, 40);
+        assert!(!spent(&refused), "a refused sortie spends nothing");
+
+        // The next turn starts fresh.
+        state.refused_strikes.clear();
+        let mut next = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        strikes.apply(&mut next, 41);
+        assert!(!spent(&next));
     }
 
     /// Run civvis-20260826T184456Z: every one of the 31 refused city strikes
