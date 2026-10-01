@@ -509,3 +509,36 @@ fn the_wing_turns_on_the_rival_whose_victory_must_be_denied() {
     assert_eq!(plan.objective_pos, (20, 12));
     assert_eq!(plan.appointed_turn, 150);
 }
+
+/// Live King 20261001T030914Z mined two Aluminum a turn, banked 25 and flew
+/// a two-Bomber wing one sortie at a time. A bank pays for each Bomber past
+/// the income: its training and its upkeep through the grace window.
+#[test]
+fn a_banked_stockpile_buys_bombers_past_the_income() {
+    let (mut g, _, _) = fixture();
+    std::sync::Arc::make_mut(&mut g.observed_strategic_income_adjustments)
+        .entry(0)
+        .or_default()
+        .insert(crate::name!("aluminum"), 2.0);
+    let bomber = AdvancedAi::air_surge_bomber(&g, 0).unwrap();
+    let spec = g.rules.units[bomber].clone();
+    let grace = g.standard_duration(AIR_SURGE_ALUMINUM_GRACE) as f64;
+    let per_extra = spec.resource_cost + spec.resource_maintenance * grace;
+    let goal = |g: &mut Game, banked: f64| {
+        g.players[0]
+            .strategic_resources
+            .insert(crate::name!("aluminum"), banked);
+        AdvancedAi::air_surge_bomber_goal(g, 0)
+    };
+    // The fixture's two standing Bombers already draw two a turn; count only
+    // what is left for the wing goal.
+    let income = g.strategic_resource_rate(0, "aluminum");
+    let sustainable = ((income / spec.resource_maintenance).floor() as usize).min(AIR_SURGE_BOMBERS);
+    assert!(sustainable >= AIR_SURGE_LAUNCH_BOMBERS, "precondition: {income}");
+    assert_eq!(goal(&mut g, 0.0), sustainable);
+    assert_eq!(
+        goal(&mut g, per_extra * 2.0),
+        (sustainable + 2).min(AIR_SURGE_BOMBERS)
+    );
+    assert_eq!(goal(&mut g, 10_000.0), AIR_SURGE_BOMBERS, "the ceiling holds");
+}

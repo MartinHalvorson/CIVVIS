@@ -596,7 +596,21 @@ impl AdvancedAi {
         let sustainable = (income.max(0.0) / spec.resource_maintenance).floor() as usize;
         let sustainable = sustainable.min(AIR_SURGE_BOMBERS);
         if sustainable >= AIR_SURGE_LAUNCH_BOMBERS {
-            return sustainable;
+            // ★★ A BANKED STOCKPILE IS A STRIKE WINDOW. Live King
+            // 20261001T030914Z mined two Aluminum a turn, banked 25 and flew a
+            // two-Bomber wing one sortie at a time at Gondar. Each Bomber past
+            // what the income sustains is paid for out of the bank: its
+            // training cost and its upkeep for the whole Aluminum grace
+            // window, so the extra wing outlasts the campaign it is built for.
+            let grace = g.standard_duration(AIR_SURGE_ALUMINUM_GRACE) as f64;
+            let per_extra = spec.resource_cost + spec.resource_maintenance * grace;
+            let spare = g.strategic_stockpile(pid, resource) - resource_cost;
+            let extra = if per_extra > f64::EPSILON && spare > 0.0 {
+                (spare / per_extra).floor() as usize
+            } else {
+                0
+            };
+            return (sustainable + extra).min(AIR_SURGE_BOMBERS);
         }
 
         // The deposit may be pillaged, traded away, or still be on a Builder's
