@@ -66,6 +66,21 @@ fn visible_city_receives_bombs_before_any_speculative_follow_up() {
     assert_eq!(orders[3].kind, "observe");
 }
 
+/// The volley includes the wing's sorties at the defenders on a breached
+/// city's approach, not only those at the city itself.
+#[test]
+fn approach_sorties_ride_with_the_volley() {
+    let (mut orders, plan, snapshot, mapped) = fixture(true);
+    orders.insert(3, order(21, "AIR_ATTACK", (12, 9)));
+    defer_followups(&mut orders, Some(&plan), &snapshot, &mapped);
+    assert!(orders
+        .iter()
+        .any(|order| order.verb.as_deref() == Some("AIR_ATTACK") && order.pos == Some((12, 9))));
+    assert!(orders
+        .iter()
+        .all(|order| order.subject != Some(50)), "other units still wait");
+}
+
 #[test]
 fn the_post_volley_frame_releases_capture_or_retreat() {
     let (mut orders, mut plan, snapshot, mapped) = fixture(true);
