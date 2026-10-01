@@ -432,3 +432,38 @@ fn defensive_infrastructure_precedes_faith_savings_but_purchase_waits() {
         }
     }
 }
+
+/// Live King 20261001T022028Z: Catholicism held every other major and took
+/// two of thirteen cities before the half-converted alarm fired at turn 138;
+/// the Religious victory came at 147. With the faith at its match point, the
+/// first convert is the alarm for an air-surge-2 Domination seat.
+#[test]
+fn a_faith_at_match_point_is_the_threat_from_its_first_convert() {
+    let (mut g, mut ai, _, _) = fixture_with_players(3);
+    // Orthodoxy's founder is the only other major; one of our four cities
+    // follows it.
+    for cid in g.player_city_ids(0).into_iter().skip(1) {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.pressure.clear();
+        city.atheist_pressure = 1000.0;
+    }
+    g.players[1].alive = false;
+    assert_eq!(
+        g.player_city_ids(0)
+            .iter()
+            .filter(|cid| g.city_religion(&g.cities[cid]) == Some("Orthodoxy"))
+            .count(),
+        1
+    );
+    assert!(ai.adopted_faith_threat(&g, 0).is_none(), "the half rule alone waits");
+    ai.enable_air_surge_2();
+    // With only the founder left beside us, its faith holds every other
+    // major by definition; add a third major that follows it instead.
+    g.players[1].alive = true;
+    let invader = g.player_city_ids(1)[0];
+    let city = g.cities.get_mut(&invader).unwrap();
+    city.pressure.clear();
+    city.pressure.insert("Orthodoxy".into(), 1000.0);
+    assert!(g.civ_follows_religion(1, "Orthodoxy"));
+    assert_eq!(ai.adopted_faith_threat(&g, 0).as_deref(), Some("Orthodoxy"));
+}
