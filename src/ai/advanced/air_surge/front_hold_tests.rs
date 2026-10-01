@@ -417,3 +417,95 @@ fn an_unready_wing_joins_the_land_campaigns_city() {
     assert_eq!(plan.objective_pos, town.pos);
     assert_eq!(plan.appointed_turn, 150, "the clocks carry over");
 }
+
+/// Live King 20261001T022028Z and 024402Z lost Religious victories at turns
+/// 147 and 168 with the wing five turns out and aimed elsewhere. When the
+/// denial layer names a rival, the surge turns on it before declaring, and a
+/// surge aimed elsewhere never pulls the land campaign off the denial war.
+#[test]
+fn the_wing_turns_on_the_rival_whose_victory_must_be_denied() {
+    let mut g = Game::new_full(3, 40, 24, 37_201, 400, 0, false);
+    for uid in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(uid);
+    }
+    g.barb_camps.clear();
+    g.barb_naval_camps.clear();
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.resource = None;
+        tile.hills = false;
+    }
+    g.found_city_for(0, (12, 12), None);
+    g.found_city_for(0, (12, 18), None);
+    let leader = g.found_city_for(1, (20, 12), None);
+    let other = g.found_city_for(2, (20, 18), None);
+    for rival in 1..3 {
+        g.record_contact(0, rival);
+    }
+    g.players[0].techs.extend(
+        g.rules.tech_ancestors[AIR_SURGE_GOAL_TECH]
+            .iter()
+            .map(|tech| Name::new(tech)),
+    );
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("aluminum"), 400.0);
+    for pos in [(13, 12), (13, 13)] {
+        g.spawn_test_unit("cuirassier", 0, pos);
+    }
+    g.turn = 170;
+    g.current = 0;
+    // Player 1 is about to win on Culture: its tourists against our
+    // domestic ones, as the urgent-denial opening tests stage it.
+    let observed = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats);
+    observed.entry(0).or_default().domestic_tourists = Some(100);
+    observed.entry(1).or_default().foreign_tourists = Some(85);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_deny_while_targeted();
+    ai.enable_denial_outranks_expansion();
+    ai.enable_counter_in_lane();
+    ai.enable_air_surge_2();
+    assert_eq!(ai.air_surge_denial_rival(&g, 0), Some(1), "{:?}", ai.denial_target(&g, 0));
+    ai.air_surge_plan = Some(AirSurge {
+        target_player: 2,
+        objective_city: other,
+        objective_pos: (20, 18),
+        body_unit: crate::name!("cuirassier"),
+        body_is_cavalry: true,
+        opened_at_war: false,
+        phase: AirSurgePhase::Arm,
+        appointed_turn: 150,
+        tech_turn: None,
+        declared_turn: None,
+        last_reviewed_turn: 170,
+        recovery_assessments: 0,
+    });
+    // Aimed elsewhere, the surge does not take the land campaign.
+    ai.air_surge_status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert!(ai.air_surge_status.denial_elsewhere);
+    let mut campaign = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(leader),
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    ai.air_surge_plan.as_mut().unwrap().phase = AirSurgePhase::Strike;
+    ai.apply_air_surge_to_strategy(&mut campaign);
+    assert_eq!(campaign.target_player, Some(1));
+    assert_eq!(campaign.target_city, Some(leader));
+
+    // Before its declaration it re-aims at the denial rival.
+    ai.air_surge_plan.as_mut().unwrap().phase = AirSurgePhase::Arm;
+    ai.maintain_air_surge(&g, 0);
+    let plan = ai
+        .air_surge_plan
+        .as_ref()
+        .unwrap_or_else(|| panic!("the surge holds: {:?}", ai.air_surge_census.aborts));
+    assert_eq!(plan.target_player, 1);
+    assert_eq!(plan.objective_pos, (20, 12));
+    assert_eq!(plan.appointed_turn, 150);
+}

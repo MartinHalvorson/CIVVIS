@@ -15566,13 +15566,22 @@ impl AdvancedAi {
             // prerequisites and higher-priority military goals keep their rules.
             if let Some(goal) = self.air_surge_research_goal(g, pid) {
                 if forced_goal == Some(goal) {
-                    if let Some(milestone) = g
-                        .available_techs(pid)
-                        .into_iter()
-                        .find(|tech| tech.as_str() == goal)
-                    {
-                        if !available.contains(&milestone) {
-                            available.push(milestone);
+                    // `air-surge-2`, Domination lane: every legal step on the
+                    // chain, not only the milestone. With one Medieval tech
+                    // unresearched the window ends at the Industrial era, so
+                    // Flight and Radio (Modern) never become candidates: live
+                    // King 20261001T022028Z researched Economics and Castles
+                    // at turns 119-123 between Steam Power and Flight, and
+                    // 225143Z researched Economics three techs from the
+                    // Bomber at turn 140.
+                    let whole_chain = self.air_surge_2
+                        && self.active_victory_target(g) == Some(VictoryTarget::Domination);
+                    for tech in g.available_techs(pid) {
+                        if (tech.as_str() == goal
+                            || (whole_chain && self.tech_leads_to(g, &tech, goal)))
+                            && !available.contains(&tech)
+                        {
+                            available.push(tech);
                         }
                     }
                 }
