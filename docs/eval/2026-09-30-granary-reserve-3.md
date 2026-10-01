@@ -43,11 +43,19 @@ gene on at p = 0.25, from a dirty build tree on top of 1fd8b1ca8.
 | 2 | 930620000–930620047 | 48 | 75/213 | −6.3 pp (z −1.42) | +1.43 pp (z +1.88) |
 | pooled | | 96 | 146/430 | −3.1 pp (z −0.89) | **+1.71 pp (z +3.05)** |
 
-Both batches placed the step right after the Monument, behind the Builder
+| 3 (ahead of Builders) | 930630000–930630047 | 48 | 66/222 | −2.0 pp (z −0.38) | +1.03 pp (z +1.01) |
+
+Batches 1 and 2 placed the step right after the Monument, behind the Builder
 step. A replay of 003717Z turns 60–120 with that placement queued no
 Granary: under the war floor every idle city took a Builder, a ship or a
 unit first. The step now sits ahead of the Builder step, and the same replay
-queues 32 Granaries. The placement change has not been screened yet.
+queues 32 Granaries. Batch 3 screens the current placement.
+
+All three batches move score share up and leave the win rate unresolved
+(144 seats on in total; the win interval spans about ±5 pp per batch). The
+gene is armed on the live seat as a labeled arm (`deploy/live-force-on.txt`),
+because the live failure it repairs is measured directly. Its live check is
+housing-bound city-turns and population at turn 100.
 
 Compute cost was +3.1 ± 2.3% wall time per turn. The fires artifact is
 `docs/gene_screens/fires/first-granary-reserve-3.json`.
