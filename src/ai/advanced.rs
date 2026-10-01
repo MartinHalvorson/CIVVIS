@@ -42032,6 +42032,10 @@ impl AdvancedAi {
         // `advanced/air_surge/raids.rs`.
         let raiders = self.plan_air_surge_raids(g, pid, plan, &air_assault_units);
         air_assault_units.extend(raiders);
+        // A faithless Domination seat condemns the spreaders converting it.
+        // See `advanced/air_surge/heretic_hunt.rs`.
+        let hunters = self.plan_heretic_hunt(g, pid, &air_assault_units);
+        air_assault_units.extend(hunters);
         // `pass-picket`: this turn's recon orders, drawn once from the
         // start-of-turn board so units planned in parallel agree on them.
         // Nothing is read with the gene off. See

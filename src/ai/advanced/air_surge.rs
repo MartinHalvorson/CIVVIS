@@ -2438,6 +2438,8 @@ mod field_slot_tests;
 
 mod raids;
 
+mod heretic_hunt;
+
 mod readiness;
 
 #[cfg(test)]
