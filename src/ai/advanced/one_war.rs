@@ -630,22 +630,30 @@ impl AdvancedAi {
     /// against 66, with Cairo its last city.
     fn one_war_still_winning(&self, g: &Game, pid: usize, other: usize) -> bool {
         g.military_power(pid) >= ONE_WAR_WINNING_RATIO * g.military_power(other).max(1.0)
-            || self.sieges.iter().any(|(cid, siege)| {
-                matches!(
-                    siege.stage,
-                    super::siege_train::SiegeStage::Reduce | super::siege_train::SiegeStage::Take
-                ) && g.cities.get(cid).is_some_and(|city| city.owner == other)
-            })
+            || self.siege_reducing_a_city_of(g, other)
+    }
+
+    /// Whether our siege train is reducing or taking one of `other`'s cities.
+    fn siege_reducing_a_city_of(&self, g: &Game, other: usize) -> bool {
+        self.sieges.iter().any(|(cid, siege)| {
+            matches!(
+                siege.stage,
+                super::siege_train::SiegeStage::Reduce | super::siege_train::SiegeStage::Take
+            ) && g.cities.get(cid).is_some_and(|city| city.owner == other)
+        })
     }
 
     /// A Domination seat crushing a rival [`ONE_WAR_CRUSHED_RATIO`] times
-    /// over is not fatigued by a stalled front: peace hands the rival the
-    /// turns to rebuild, and the next war restarts staging from nothing.
-    /// Live King civvis-20261001T030914Z offered Ethiopia "the war has
-    /// stalled" peace at turn 92 at 518 power against 66.
+    /// over, or reducing one of its cities, is not fatigued by a stalled
+    /// front: peace hands the rival the turns to rebuild, and the next war
+    /// restarts staging from nothing. Live King civvis-20261001T030914Z
+    /// offered Ethiopia "the war has stalled" peace at turn 92 at 518 power
+    /// against 66. civvis-20261001T050754Z offered Sweden the same at 519
+    /// against 225 with Uppsala breached and near 10% health for eight turns.
     pub(crate) fn domination_front_crushed(&self, g: &Game, pid: usize, other: usize) -> bool {
         self.active_victory_target(g) == Some(VictoryTarget::Domination)
-            && self.one_war_front_crushed(g, pid, other)
+            && (self.one_war_front_crushed(g, pid, other)
+                || self.siege_reducing_a_city_of(g, other))
     }
 
     /// Whether the gene wants peace with `other` this turn, and why.

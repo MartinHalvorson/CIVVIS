@@ -355,4 +355,21 @@ fn a_crushed_front_is_not_offered_stalled_peace() {
     assert!(ai.domination_front_crushed(&g, 0, 1));
     ai.advanced_diplomacy(&mut g, 0, &plan);
     assert!(!ai.peace_offers.contains(&1));
+
+    // Short of crushed, a siege reducing one of its cities keeps the war too.
+    let (mut g, mut ai, plan, city, _) = fixture();
+    ai.sieges.insert(
+        city,
+        crate::ai::advanced::siege_train::Siege {
+            stage: crate::ai::advanced::siege_train::SiegeStage::Reduce,
+            taker: None,
+            entered: g.turn,
+            assessed: g.turn,
+            posts: Default::default(),
+            short_since: None,
+        },
+    );
+    assert!(ai.domination_front_crushed(&g, 0, 1));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1));
 }
