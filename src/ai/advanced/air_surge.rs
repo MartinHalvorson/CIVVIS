@@ -129,6 +129,10 @@ pub(crate) const AIR_SURGE_CAPITAL_VALUE: f64 = 160.0;
 /// A capital earns [`AIR_SURGE_CAPITAL_VALUE`] only within this many tiles of
 /// one of our cities.
 pub(crate) const AIR_SURGE_CAPITAL_REACH: i32 = 12;
+/// What a city holding the wing's metal is worth to a surge starved of it:
+/// more than any capital, because without the metal there is no wing at all.
+/// See [`AdvancedAi::air_surge_metal_starved`].
+pub(crate) const AIR_SURGE_METAL_CITY_VALUE: f64 = 1_000.0;
 /// Technologies from the Bomber within which the surge's own war is held
 /// against a stalled-war peace offer. See
 /// [`AdvancedAi::air_surge_holds_front`].
@@ -242,6 +246,9 @@ pub(crate) struct AirSurgeStatus {
     /// Aluminum can support the two-Bomber launch wing, either sustainably
     /// or from a banked shortfall reserve.
     pub(crate) metal_ready: bool,
+    /// The surge is a metal grab with its ground capture package ready. See
+    /// `AdvancedAi::air_surge_metal_starved`.
+    pub(crate) metal_grab_ready: bool,
 }
 
 impl AirSurgeStatus {
@@ -600,6 +607,77 @@ impl AdvancedAi {
         Self::air_surge_bomber_goal(g, pid) >= AIR_SURGE_LAUNCH_BOMBERS
     }
 
+    /// The Bomber's metal, once a technology has revealed it to us.
+    fn air_surge_metal(g: &Game, pid: usize) -> Option<Name> {
+        let bomber = Self::air_surge_bomber(g, pid)?;
+        g.rules.units[bomber]
+            .requires_resource
+            .filter(|metal| g.resource_visible_to(pid, metal.as_str()))
+    }
+
+    /// Whether a city's territory holds a deposit of `metal` we have seen.
+    fn air_surge_city_holds_metal(g: &Game, pid: usize, city: &crate::game::City, metal: Name) -> bool {
+        city.owned_tiles.iter().any(|pos| {
+            g.players[pid].explored.contains(pos)
+                && g.map.get(*pos).is_some_and(|tile| tile.resource == Some(metal))
+        })
+    }
+
+    /// `air-surge-2`, Domination lane: the wing has no Aluminum, no deposit
+    /// lies in our own land to mine, and the metal is revealed.
+    ///
+    /// ★★★ THE METAL WAS ALL ACROSS THE BORDER. Live King 20261001T010043Z
+    /// reached Advanced Flight with every one of the map's five Aluminum
+    /// deposits inside a rival's borders, one three tiles from a city we had
+    /// already taken, and stood the wing down "no Aluminum for the wing" at
+    /// turns 170 and 194 without a Bomber ever built. A Domination seat
+    /// starved of the metal takes the city that holds it: the surge aims at
+    /// it and may open that war with its ground capture bodies alone.
+    pub(crate) fn air_surge_metal_starved(&self, g: &Game, pid: usize) -> bool {
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return false;
+        }
+        let Some(metal) = Self::air_surge_metal(g, pid) else {
+            return false;
+        };
+        !Self::air_surge_metal_ready(g, pid)
+            && !g
+                .cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .any(|city| Self::air_surge_city_holds_metal(g, pid, city, metal))
+            && !g
+                .units
+                .values()
+                .any(|unit| unit.owner == pid && Self::air_surge_is_bomber(g, unit.kind))
+    }
+
+    /// Whether this plan is a metal grab: the wing is starved and its
+    /// objective holds the metal.
+    fn air_surge_metal_grab(&self, g: &Game, pid: usize, plan: &AirSurge) -> bool {
+        self.air_surge_metal_starved(g, pid)
+            && Self::air_surge_metal(g, pid).is_some_and(|metal| {
+                g.city_at(plan.objective_pos)
+                    .and_then(|cid| g.cities.get(&cid))
+                    .is_some_and(|city| {
+                        city.owner == plan.target_player
+                            && Self::air_surge_city_holds_metal(g, pid, city, metal)
+                    })
+            })
+    }
+
+    /// A metal grab opens with the ground capture package alone.
+    fn air_surge_metal_grab_ready(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &AirSurge,
+        status: &AirSurgeStatus,
+    ) -> bool {
+        let _ = (g, pid, plan);
+        status.metal_grab_ready
+    }
+
     /// The package as the board holds it. Queues count, so the first city that
     /// commits a Bomber removes that vacancy for the next city rather than
     /// every city starting the same wish list.
@@ -610,6 +688,7 @@ impl AdvancedAi {
             metal_ready: Self::air_surge_metal_ready(g, pid),
             ..AirSurgeStatus::default()
         };
+        let metal_grab = self.air_surge_metal_grab(g, pid, plan);
         for cid in g.player_city_ids(pid) {
             let city = &g.cities[&cid];
             let built = field.is_some_and(|family| g.city_has_district_family(city, family));
@@ -646,6 +725,7 @@ impl AdvancedAi {
         }
         status.bombers_committed += status.bombers;
         status.bodies_committed += status.bodies;
+        status.metal_grab_ready = metal_grab && status.bodies >= AIR_SURGE_BODIES;
         status
     }
 
@@ -943,7 +1023,15 @@ impl AdvancedAi {
         } else {
             0.0
         };
-        ground - wall_terms * AIR_SURGE_WALL_DISCOUNT - capital
+        let metal = if self.air_surge_metal_starved(g, pid)
+            && Self::air_surge_metal(g, pid)
+                .is_some_and(|metal| Self::air_surge_city_holds_metal(g, pid, city, metal))
+        {
+            AIR_SURGE_METAL_CITY_VALUE
+        } else {
+            0.0
+        };
+        ground - wall_terms * AIR_SURGE_WALL_DISCOUNT - capital - metal
     }
 
     /// `air-surge-2`, Domination lane: a replacement objective for a surge
@@ -1095,15 +1183,24 @@ impl AdvancedAi {
                 && !declaration_in_flight
                 && target_alive
                 && (plan.opened_at_war || !self.campaign_target_legal(g, pid, plan.target_player));
+            // A starved wing whose objective holds no metal looks for one
+            // that does (see `air_surge_metal_starved`).
+            let metal_reaim = !fought
+                && self.air_surge_metal_starved(g, pid)
+                && !self.air_surge_metal_grab(g, pid, &plan);
             if (peace_closed || !fought)
                 && objective_owner != Some(pid)
                 && (peace_closed
+                    || metal_reaim
                     || !target_alive
                     || objective_owner != Some(plan.target_player)
                     || (!at_war && !self.campaign_target_legal(g, pid, plan.target_player))
                     || !Self::air_surge_in_range(g, pid, plan.objective_pos))
             {
-                if let Some(next) = self.air_surge_reaim(g, pid, &plan) {
+                if let Some(next) = self
+                    .air_surge_reaim(g, pid, &plan)
+                    .filter(|next| next.objective_pos != plan.objective_pos || peace_closed)
+                {
                     if let Some(city) = g.cities.get(&next.objective_city) {
                         think!(self.journal(), Military, Strategy,
                                "Re-aiming the air surge at {}", city.name;
@@ -1198,6 +1295,7 @@ impl AdvancedAi {
                     .is_some_and(|turn| g.turn.saturating_sub(turn) >= grace)
                     && status.bombers == 0
                     && !status.metal_ready
+                    && !self.air_surge_metal_grab(g, pid, &plan)
                 {
                     self.record_air_surge_abort(g, "no Aluminum for the wing");
                     ended = true;
@@ -1221,7 +1319,9 @@ impl AdvancedAi {
                         plan.phase = AirSurgePhase::Exploit;
                     } else if !tech_owned {
                         plan.phase = AirSurgePhase::Beeline;
-                    } else if !(status.wing_ready() && status.escort_ready()) || !fronts.is_empty()
+                    } else if !((status.wing_ready() && status.escort_ready())
+                        || self.air_surge_metal_grab_ready(g, pid, &plan, &status))
+                        || !fronts.is_empty()
                     {
                         // If no reachable counter was available (or several
                         // wars are running), retain the package but do not let
@@ -1463,7 +1563,8 @@ impl AdvancedAi {
         };
         if !matches!(surge.phase, AirSurgePhase::Strike | AirSurgePhase::Exploit)
             || (surge.phase == AirSurgePhase::Exploit
-                && !(self.air_surge_status.wing_ready() && self.air_surge_status.escort_ready()))
+                && !((self.air_surge_status.wing_ready() && self.air_surge_status.escort_ready())
+                    || self.air_surge_status.metal_grab_ready))
         {
             return;
         }
@@ -1473,6 +1574,59 @@ impl AdvancedAi {
             plan.target_city = Some(surge.objective_city);
             plan.rush = false;
         }
+    }
+
+    /// `air-surge-2`, Domination lane: until the wing is ready to fly, it
+    /// adopts the land campaign's objective when that city lies under its
+    /// reach, so wing and army converge on one city.
+    ///
+    /// ★★ TWO OBJECTIVES, ONE ARMY. Live King 20261001T010043Z appointed the
+    /// surge against Warsaw at turn 96 while the land campaign marched on
+    /// Kraków, and a ready wing's objective overrides the campaign's: the army
+    /// would have turned around on the day its air support arrived. A wing
+    /// already flying keeps its objective (it is the campaign's then); a
+    /// starved one keeps its metal; a counter-surge adopts only a city of the
+    /// rival it is already fighting.
+    pub(crate) fn air_surge_adopt_campaign(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return;
+        }
+        let Some(surge) = self.air_surge_plan.as_ref() else {
+            return;
+        };
+        if self.air_surge_status.wing_ready()
+            || self.air_surge_metal_starved(g, pid)
+            || plan.strategy == GrandStrategy::Recovery
+        {
+            return;
+        }
+        let Some(city) = plan.target_city.and_then(|cid| g.cities.get(&cid)) else {
+            return;
+        };
+        let fought = surge.declared_turn.is_some() || surge.opened_at_war;
+        if city.pos == surge.objective_pos
+            || city.owner == pid
+            || g.players.get(city.owner).is_none_or(|owner| {
+                !owner.alive || owner.is_minor || owner.is_barbarian
+            })
+            || (fought && city.owner != surge.target_player)
+            || (!g.is_at_war(pid, city.owner) && !self.campaign_target_legal(g, pid, city.owner))
+            || !Self::air_surge_in_range(g, pid, city.pos)
+            || self.war_staging_route(g, pid, city.owner, city.pos).is_none()
+        {
+            return;
+        }
+        let mut next = surge.clone();
+        next.target_player = city.owner;
+        next.objective_city = city.id;
+        next.objective_pos = city.pos;
+        next.opened_at_war = g.is_at_war(pid, city.owner);
+        if self.journal().wants(crate::reasoning::Level::Strategy) {
+            think!(self.journal(), Military, Strategy,
+                   "The air surge joins the campaign on {}", city.name;
+                   "the land army is already aimed there; one objective for wing and army");
+        }
+        self.air_surge_plan = Some(next);
     }
 
     /// Candidate-only scoring for the existing package tests. The live
@@ -1645,7 +1799,7 @@ impl AdvancedAi {
                         AIR_SURGE_BOMBER_VALUE + AIR_SURGE_SCARCITY_STEP * missing as f64
                             - turns * 8.0,
                     )
-                } else if status.metal_ready
+                } else if (status.metal_ready || self.air_surge_metal_grab(g, pid, plan))
                     && Self::air_surge_body_ready_kind(g, pid, *unit, plan.body_unit)
                 {
                     let missing = AIR_SURGE_BODIES.saturating_sub(status.bodies_committed);
@@ -1842,7 +1996,10 @@ impl AdvancedAi {
         let wants_field = status.aerodromes_committed == 0;
         let bomber_goal = Self::air_surge_bomber_goal(g, pid);
         let wants_bomber = status.bombers_committed < bomber_goal;
-        let wants_body = status.metal_ready && status.bodies_committed < AIR_SURGE_BODIES;
+        // A metal grab is taken by the ground package alone, so it trains
+        // its bodies before any metal arrives.
+        let wants_body = (status.metal_ready || self.air_surge_metal_grab(g, pid, &plan))
+            && status.bodies_committed < AIR_SURGE_BODIES;
         let launch_wing_committed = status.bombers_committed >= AIR_SURGE_LAUNCH_BOMBERS;
         let launch_escort_missing = status.bodies_committed < AIR_SURGE_LAUNCH_BODIES;
         if !wants_field && !wants_bomber && !wants_body {
@@ -2111,7 +2268,9 @@ impl AdvancedAi {
         // Phase is recomputed at turn start; a deal or a loss earlier this
         // turn can have changed the board, so the gate is repeated here.
         let status = self.air_surge_status(g, pid, &plan);
-        if !(status.wing_ready() && status.escort_ready()) || self.threatened_city(g, pid).is_some()
+        let metal_grab = self.air_surge_metal_grab_ready(g, pid, &plan, &status);
+        if !((status.wing_ready() && status.escort_ready()) || metal_grab)
+            || self.threatened_city(g, pid).is_some()
         {
             return true;
         }
@@ -2133,9 +2292,10 @@ impl AdvancedAi {
         if let Some(city) = g.cities.get(&plan.objective_city) {
             think!(self.journal(), Military, Strategy,
                    "The air surge opens on {}", city.name;
-                   "{} bombers in range and {} {}s ready, {} turns after the appointment",
+                   "{} bombers in range and {} {}s ready, {} turns after the appointment{}",
                    status.bombers, status.bodies, plain(plan.body_unit.as_str()),
-                   g.turn.saturating_sub(plan.appointed_turn));
+                   g.turn.saturating_sub(plan.appointed_turn),
+                   if metal_grab { "; the ground package takes the wing's Aluminum" } else { "" });
         }
         true
     }

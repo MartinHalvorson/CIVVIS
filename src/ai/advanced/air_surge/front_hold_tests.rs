@@ -315,3 +315,105 @@ fn a_counter_surge_closed_by_peace_re_arms_as_an_elective_surge() {
     assert_eq!(plan.appointed_turn, 150);
     assert!(ai.air_surge_census.aborts.is_empty());
 }
+
+/// Live King 20261001T010043Z: every Aluminum deposit lay in a rival's
+/// borders and the wing stood down twice without a Bomber. A starved
+/// Domination wing aims at the city that holds the metal and may open that
+/// war with its ground capture package alone.
+#[test]
+fn a_wing_starved_of_aluminum_goes_to_take_the_city_that_holds_it() {
+    let (mut g, mut ai, capital) = fixture();
+    // No metal of our own and no Bombers; the metal is revealed.
+    g.players[0].strategic_resources.clear();
+    for uid in g.player_unit_ids(0) {
+        if AdvancedAi::air_surge_is_bomber(&g, g.units[&uid].kind) {
+            g.remove_unit(uid);
+        }
+    }
+    g.players[0].explored.extend(g.map.tiles.keys().copied());
+    let town = g
+        .cities
+        .values()
+        .find(|city| city.owner == 1 && !city.is_capital)
+        .unwrap()
+        .clone();
+    // The rival town holds a deposit next to its centre.
+    let deposit = *town
+        .owned_tiles
+        .iter()
+        .find(|pos| **pos != town.pos)
+        .unwrap();
+    g.map.tiles.get_mut(&deposit).unwrap().resource = Some(crate::name!("aluminum"));
+    assert!(ai.air_surge_metal_starved(&g, 0));
+    // The town is out of a Bomber's reach from home in this fixture; bring
+    // a base within ten tiles of it.
+    g.found_city_for(0, (town.pos.0 - 6, town.pos.1), None);
+    {
+        let plan = ai.air_surge_plan.as_mut().unwrap();
+        plan.objective_city = capital;
+        plan.objective_pos = g.cities[&capital].pos;
+        plan.declared_turn = None;
+        plan.phase = AirSurgePhase::Arm;
+    }
+    ai.maintain_air_surge(&g, 0);
+    let plan = ai.air_surge_plan.as_ref().expect("the surge holds");
+    assert_eq!(plan.objective_pos, town.pos, "it re-aims at the metal");
+    assert!(ai.air_surge_census.aborts.is_empty());
+
+    // With four capture bodies the grab opens without a single Bomber.
+    for pos in [(13, 13), (12, 13)] {
+        g.spawn_test_unit("cuirassier", 0, pos);
+    }
+    ai.maintain_air_surge(&g, 0);
+    assert!(ai.air_surge_status.metal_grab_ready);
+    assert_eq!(ai.air_surge_plan.as_ref().unwrap().phase, AirSurgePhase::Strike);
+
+    // A deposit in our own land is mined, not conquered.
+    let own = g.cities.values().find(|city| city.owner == 0).unwrap().clone();
+    let home = *own.owned_tiles.iter().find(|pos| **pos != own.pos).unwrap();
+    g.map.tiles.get_mut(&home).unwrap().resource = Some(crate::name!("aluminum"));
+    assert!(!ai.air_surge_metal_starved(&g, 0));
+}
+
+/// Live King 20261001T010043Z: the surge aimed at Warsaw while the land
+/// campaign marched on Kraków. Until the wing flies it joins the campaign's
+/// city when that city is under its reach; a ready wing keeps its own.
+#[test]
+fn an_unready_wing_joins_the_land_campaigns_city() {
+    let (mut g, mut ai, capital) = fixture();
+    let town = g
+        .cities
+        .values()
+        .find(|city| city.owner == 1 && !city.is_capital)
+        .unwrap()
+        .clone();
+    g.found_city_for(0, (town.pos.0 - 6, town.pos.1), None);
+    {
+        let plan = ai.air_surge_plan.as_mut().unwrap();
+        plan.objective_city = capital;
+        plan.objective_pos = g.cities[&capital].pos;
+        plan.declared_turn = None;
+        plan.phase = AirSurgePhase::Arm;
+    }
+    let campaign = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(town.id),
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    // A ready wing keeps its own objective.
+    ai.air_surge_status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert!(ai.air_surge_status.wing_ready());
+    ai.air_surge_adopt_campaign(&g, 0, &campaign);
+    assert_eq!(ai.air_surge_plan.as_ref().unwrap().objective_city, capital);
+
+    // While it is still being built, it joins the campaign.
+    ai.air_surge_status = AirSurgeStatus::default();
+    ai.air_surge_adopt_campaign(&g, 0, &campaign);
+    let plan = ai.air_surge_plan.as_ref().unwrap();
+    assert_eq!(plan.objective_pos, town.pos);
+    assert_eq!(plan.appointed_turn, 150, "the clocks carry over");
+}

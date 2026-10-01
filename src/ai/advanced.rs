@@ -42913,6 +42913,9 @@ impl AdvancedAi {
             self.plan = Some(current);
         }
         let plan = self.plan.clone().unwrap();
+        // `air-surge-2`: the wing adopts the land campaign's city while it is
+        // still being built. See `AdvancedAi::air_surge_adopt_campaign`.
+        self.air_surge_adopt_campaign(g, pid, &plan);
         self.record_portfolio_trace(g, pid, &plan);
         // The activation chooser is also reached by the ordinary city pass
         // later this turn.  Stamp its narrow Science-expansion policy once so

@@ -105,15 +105,41 @@ impl AdvancedAi {
             else {
                 continue;
             };
-            if !actions.iter().all(|action| g.apply(pid, action).is_ok()) {
+            // ★★ THE HOST PILLAGES WHERE THE UNIT STANDS WHEN THE ORDER RUNS.
+            // Live King 20261001T000033Z and 010043Z: 35 of 42 PILLAGE orders
+            // failed `not_pillaged`, nearly every one queued behind the walk
+            // that was to bring the raider onto its tile, and game six's
+            // raiders re-raided the same Neighborhood four turns running. A
+            // raid that has to walk only walks on this frame; the raider is
+            // still reserved, and the next frame (or turn) finds it on the
+            // tile and pillages from there.
+            let walking = actions
+                .iter()
+                .any(|action| matches!(action, Action::MoveTo { .. }));
+            let issued: Vec<Action> = if walking {
+                actions
+                    .into_iter()
+                    .filter(|action| matches!(action, Action::MoveTo { .. }))
+                    .collect()
+            } else {
+                actions
+            };
+            if !issued.iter().all(|action| g.apply(pid, action).is_ok()) {
                 continue;
             }
             raiders.insert(uid);
-            Self::raid_count(g, pid);
-            think!(self.journal(), Military, Decision,
-                   "{} raids behind the wing", plain(g.units[&uid].kind.as_str());
-                   "pillages {} for {value:.0}; the capture keeps its {} nearest bodies",
-                   Self::raid_label(g, target), AIR_SURGE_LAUNCH_BODIES; target);
+            if walking {
+                think!(self.journal(), Military, Decision,
+                       "{} rides out to raid behind the wing", plain(g.units[&uid].kind.as_str());
+                       "{} is worth {value:.0} to pillage from the next frame; the capture keeps its {} nearest bodies",
+                       Self::raid_label(g, target), AIR_SURGE_LAUNCH_BODIES; target);
+            } else {
+                Self::raid_count(g, pid);
+                think!(self.journal(), Military, Decision,
+                       "{} raids behind the wing", plain(g.units[&uid].kind.as_str());
+                       "pillages {} for {value:.0}; the capture keeps its {} nearest bodies",
+                       Self::raid_label(g, target), AIR_SURGE_LAUNCH_BODIES; target);
+            }
         }
         raiders
     }
