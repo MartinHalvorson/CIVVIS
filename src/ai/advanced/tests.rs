@@ -50684,3 +50684,74 @@ fn city_pressure_from_one_hostile_read_matches_the_per_city_scan() {
     }
     assert!(pressed >= 2, "fixture: at least one city under pressure");
 }
+
+/// A Domination seat at war lends the delegated governor the strategic army
+/// target. The governor's own floor is one body per city, which an empire of
+/// four cities holding five soldiers reads as met — the live King seat held
+/// 9-11 units for 7 cities through a two-front war on that reading.
+#[test]
+fn a_domination_war_lends_the_delegated_governor_its_army_target() {
+    let (mut game, capital, _) = empire_with_a_capital(79_131);
+    clear_barbarian_fixture(&mut game);
+    for _ in 0..3 {
+        found_test_city(&mut game, 0);
+    }
+    let cities = game.player_city_ids(0);
+    assert_eq!(cities.len(), 4, "fixture: four cities");
+    let home = game.cities[&capital].pos;
+    for _ in 0..5 {
+        game.spawn_test_unit("warrior", 0, home);
+    }
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let military_queued = |game: &Game| {
+        game.player_city_ids(0).iter().any(|cid| {
+            matches!(
+                game.cities[cid].queue.first(),
+                Some(Item::Unit { unit }) if game.rules.units[unit].class == "military"
+            )
+        })
+    };
+    let clear = |game: &mut Game| {
+        for cid in game.player_city_ids(0) {
+            game.cities.get_mut(&cid).unwrap().queue.clear();
+        }
+    };
+    let configure = |ai: &mut AdvancedAi| {
+        ai.base.book_pos = 4;
+        ai.base.w.mil_per_city = 1.0;
+        ai.disable_recon_replacement();
+        ai.disable_naval_recon();
+    };
+
+    let mut domination = AdvancedAi::targeting(VictoryTarget::Domination);
+    configure(&mut domination);
+    assert_eq!(
+        domination.domination_war_military_per_city(&game, 0, &plan),
+        Some(2.0),
+        "two bodies per city at parity"
+    );
+    clear(&mut game);
+    domination.delegated_cities(&mut game, 0, &plan);
+    assert!(military_queued(&game), "five soldiers for four cities is short of eight");
+    assert_eq!(domination.base.w.mil_per_city, 1.0, "the loan ends with the call");
+
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    configure(&mut science);
+    assert_eq!(science.domination_war_military_per_city(&game, 0, &plan), None);
+
+    // At peace and off campaign the governor keeps its own floor.
+    game.at_war.clear();
+    let peace = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        ..plan.clone()
+    };
+    assert_eq!(domination.domination_war_military_per_city(&game, 0, &peace), None);
+}

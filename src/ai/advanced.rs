@@ -13260,9 +13260,14 @@ impl AdvancedAi {
     fn delegated_cities(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         let restore_space_race = self.base.exclude_space_race;
         self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
+        let restore_military = self.base.w.mil_per_city;
+        if let Some(per_city) = self.domination_war_military_per_city(g, pid, plan) {
+            self.base.w.mil_per_city = restore_military.max(per_city);
+        }
         if !self.plan_city_target && !self.rapid_city_expansion_2 {
             self.base.cities(g, pid);
             self.base.exclude_space_race = restore_space_race;
+            self.base.w.mil_per_city = restore_military;
             return;
         }
         let restore_target = self.base.w.city_target;
@@ -13293,6 +13298,46 @@ impl AdvancedAi {
         self.base.w.city_target = restore_target;
         self.base.w.settler_stop_turn = restore_stop;
         self.base.w.builder_per_city = restore_builders;
+        self.base.w.mil_per_city = restore_military;
+    }
+
+    /// The delegated governor's standing army is `mil_per_city * cities` (1.0
+    /// on the genome); `advanced_production` wants two land bodies per city
+    /// under Conquest or Recovery, raised by `enemy_weighted_army_target` when
+    /// a rival outweighs us. The delegated governor never saw that target: on
+    /// King `civvis-20261001T000033Z` it held 9-11 units for 7 cities against
+    /// "a target of 1.0 each" through turns 125-150 — at war with the Cree
+    /// and Nubia, Nubia at 598-684 military to our ~550, the plan in Recovery
+    /// — and spent 3% of its production on units while 57% went to
+    /// buildings. A Domination seat at war or on campaign lends the governor
+    /// the strategic target per city for the call.
+    fn domination_war_military_per_city(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<f64> {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return None;
+        }
+        let at_war = g.players.iter().any(|other| {
+            other.id != pid
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && g.is_at_war(pid, other.id)
+        });
+        if !at_war
+            && !matches!(
+                plan.strategy,
+                GrandStrategy::Conquest | GrandStrategy::Recovery
+            )
+        {
+            return None;
+        }
+        let cities = g.player_city_ids(pid).len().max(1);
+        let desired = self.enemy_weighted_army_target(g, pid, 2 * cities);
+        Some(desired as f64 / cities as f64)
     }
 
     /// Lower is a more attractive rival: nearby, weak empires with valuable
