@@ -4,8 +4,9 @@
 governors. A city whose population is within one of its housing, with no
 Granary, starts one. Version three also follows the Granary with an Aqueduct
 while the city stays bound. In `BasicAi::pick_item` (the delegated governor)
-both come right after the Monument, ahead of the Harbor, the specialty
-districts and the cheapest-first building list. In `advanced_production` it
+both come ahead of another Builder, the Monument, the Harbor, the specialty
+districts and the cheapest-first building list. They come after the
+military floor and the Settler step. In `advanced_production` it
 uses version one's reservation unchanged.
 
 ## Why the delegated governor
@@ -39,6 +40,25 @@ gene on at p = 0.25, from a dirty build tree on top of 1fd8b1ca8.
 | batch | seeds | games | seats on/off | win Δ | share Δ |
 |---|---|---:|---:|---:|---:|
 | 1 | 930610000–930610047 | 48 | 71/217 | +0.3 pp (z +0.06) | **+2.01 pp (z +2.40)** |
+| 2 | 930620000–930620047 | 48 | 75/213 | −6.3 pp (z −1.42) | +1.43 pp (z +1.88) |
+| pooled | | 96 | 146/430 | −3.1 pp (z −0.89) | **+1.71 pp (z +3.05)** |
+
+Both batches placed the step right after the Monument, behind the Builder
+step. A replay of 003717Z turns 60–120 with that placement queued no
+Granary: under the war floor every idle city took a Builder, a ship or a
+unit first. The step now sits ahead of the Builder step, and the same replay
+queues 32 Granaries. The placement change has not been screened yet.
 
 Compute cost was +3.1 ± 2.3% wall time per turn. The fires artifact is
 `docs/gene_screens/fires/first-granary-reserve-3.json`.
+
+## The lent war floor
+
+That replay also showed the Domination war's lent army target (3.0 a city,
+`delegated_cities`) sending every idle city into military. A 4-production Cali
+started a Crossbowman due in 23 turns, and a 3-production Popayán a
+Man-at-Arms due in 27. `BasicAi::lent_military_floor_base` now keeps the
+genome's own floor for every city. Above it, only a city that trains the unit
+within 16 standard turns builds toward the lent margin. In the same replay,
+military produce orders went from about 120 to 82 of 138, with Builders and
+Traders in their place.

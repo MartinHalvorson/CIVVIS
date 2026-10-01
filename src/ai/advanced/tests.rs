@@ -50740,12 +50740,22 @@ fn a_domination_war_lends_the_delegated_governor_its_army_target() {
     );
     clear(&mut game);
     domination.delegated_cities(&mut game, 0, &plan);
-    assert!(military_queued(&game), "five soldiers for four cities is short of eight");
-    assert_eq!(domination.base.w.mil_per_city, 1.0, "the loan ends with the call");
+    assert!(
+        military_queued(&game),
+        "five soldiers for four cities is short of eight"
+    );
+    assert_eq!(
+        domination.base.w.mil_per_city, 1.0,
+        "the loan ends with the call"
+    );
+    assert_eq!(domination.base.lent_military_floor_base, None);
 
     let mut science = AdvancedAi::targeting(VictoryTarget::Science);
     configure(&mut science);
-    assert_eq!(science.domination_war_military_per_city(&game, 0, &plan), None);
+    assert_eq!(
+        science.domination_war_military_per_city(&game, 0, &plan),
+        None
+    );
 
     // At peace and off campaign the governor keeps its own floor.
     game.at_war.clear();
@@ -50753,5 +50763,66 @@ fn a_domination_war_lends_the_delegated_governor_its_army_target() {
         strategy: GrandStrategy::Expansion,
         ..plan.clone()
     };
-    assert_eq!(domination.domination_war_military_per_city(&game, 0, &peace), None);
+    assert_eq!(
+        domination.domination_war_military_per_city(&game, 0, &peace),
+        None
+    );
+}
+
+/// See `BasicAi::lent_military_floor_base`: above the genome's own floor, a
+/// lent war target is raised only by cities that finish the unit quickly.
+#[test]
+fn a_slow_city_leaves_the_lent_army_margin_to_fast_cities() {
+    let (mut game, capital, _) = empire_with_a_capital(79_137);
+    clear_barbarian_fixture(&mut game);
+    let home = game.cities[&capital].pos;
+    game.spawn_test_unit("scout", 0, home);
+    game.spawn_test_unit("warrior", 0, home);
+    game.turn = 60;
+    game.players[0].techs.insert(crate::name!("pottery"));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.base.book_pos = 4;
+    ai.base.w.mil_per_city = 3.0;
+    ai.base.lent_military_floor_base = Some(1.0);
+    ai.disable_recon_replacement();
+    ai.disable_naval_recon();
+    let set_production = |game: &mut Game, production: f64| {
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).remove(&capital);
+        let current = game.city_yields(capital);
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            capital,
+            crate::rules::Yields {
+                production: production - current.production,
+                ..crate::rules::Yields::default()
+            },
+        );
+    };
+    let military = |game: &Game, ai: &AdvancedAi, held: usize| {
+        ai.base
+            .pick_item(game, 0, capital, 1, 1, 9, 9, 9, held, held, 0)
+            .is_some_and(|item| {
+                matches!(item, Item::Unit { unit } if game.rules.units[&unit].class == "military")
+            })
+    };
+    set_production(&mut game, 1.0);
+    assert!(
+        military(&game, &ai, 0),
+        "below the genome's floor every city builds"
+    );
+    assert!(
+        !military(&game, &ai, 2),
+        "a 1-production city leaves the lent margin: {:?}",
+        ai.base.pick_item(&game, 0, capital, 1, 1, 9, 9, 9, 2, 2, 0)
+    );
+    set_production(&mut game, 200.0);
+    assert!(
+        military(&game, &ai, 2),
+        "a fast city raises the lent margin"
+    );
+    ai.base.lent_military_floor_base = None;
+    set_production(&mut game, 1.0);
+    assert!(
+        military(&game, &ai, 2),
+        "without a loan the floor is the genome's own"
+    );
 }

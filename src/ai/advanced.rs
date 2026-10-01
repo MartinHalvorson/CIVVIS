@@ -13269,11 +13269,13 @@ impl AdvancedAi {
         let restore_military = self.base.w.mil_per_city;
         if let Some(per_city) = self.domination_war_military_per_city(g, pid, plan) {
             self.base.w.mil_per_city = restore_military.max(per_city);
+            self.base.lent_military_floor_base = Some(restore_military);
         }
         if !self.plan_city_target && !self.rapid_city_expansion_2 {
             self.base.cities(g, pid);
             self.base.exclude_space_race = restore_space_race;
             self.base.w.mil_per_city = restore_military;
+            self.base.lent_military_floor_base = None;
             return;
         }
         let restore_target = self.base.w.city_target;
@@ -13305,6 +13307,7 @@ impl AdvancedAi {
         self.base.w.settler_stop_turn = restore_stop;
         self.base.w.builder_per_city = restore_builders;
         self.base.w.mil_per_city = restore_military;
+        self.base.lent_military_floor_base = None;
     }
 
     /// The delegated governor's standing army is `mil_per_city * cities` (1.0

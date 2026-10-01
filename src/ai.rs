@@ -46,6 +46,10 @@ const LIVELOCK_FOOTPRINT: usize = 3;
 /// redirects a stuck unit without ever ordering it to its death.
 pub(crate) const LIVELOCK_ESCAPE_VALUE: f64 = 8.0;
 
+/// See `BasicAi::lent_military_floor_base`: the most standard turns a city may
+/// spend training toward a lent war target above the genome's own floor.
+const LENT_FLOOR_MAX_BUILD_TURNS: u32 = 16;
+
 /// After this many fruitless turns the tabu has had every chance to work and
 /// has not: whatever the unit is trying to reach, it cannot. Standing it down
 /// is strictly better than another lap — it fortifies, heals, and stops
@@ -2392,7 +2396,7 @@ pub struct BasicAi {
     /// Set from `AdvancedAi` by the opt-in gene `science-building-first`.
     pub(crate) science_building_first: bool,
     /// A city grown to its housing builds its Granary, then its Aqueduct,
-    /// right after its Monument and ahead of every district and later
+    /// ahead of another Builder, the Monument, every district and every later
     /// building. Housing caps growth: a city at its housing grows at a quarter
     /// speed, one short at half. On King civvis-20261001T003717Z, 89% of the
     /// city-turns from turn 40 to 150 were housing-bound (55% at the cap) and
@@ -2405,6 +2409,18 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `first-granary-reserve-3`.
     pub(crate) housing_reserve: bool,
+    /// The genome's own `mil_per_city` while `AdvancedAi::delegated_cities`
+    /// has lent this governor a Domination war's higher army target, `None`
+    /// otherwise. Below the genome's own floor every city still builds the
+    /// army. Above it, only a city that finishes its unit within
+    /// `LENT_FLOOR_MAX_BUILD_TURNS` standard turns builds toward the lent
+    /// margin. In a replay of King civvis-20261001T003717Z under the lent
+    /// target of 3.0 a city, every idle city went military. A 4-production
+    /// Cali started a Crossbowman due in 23 turns, a 3-production Popayan a
+    /// Man-at-Arms due in 27, while 89% of the empire's city-turns were
+    /// housing-bound. Those cities grow instead, and the fast cities raise
+    /// the army.
+    pub(crate) lent_military_floor_base: Option<f64>,
     /// A named domination seat must not let the delegated baseline governor
     /// build a Spaceport or launch project. The King Gran Colombia game won
     /// by Science at turn 229 while its public plan remained Conquest.
@@ -5101,6 +5117,7 @@ impl BasicAi {
             enter_prophet_race: false,
             science_building_first: false,
             housing_reserve: false,
+            lent_military_floor_base: None,
             exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
@@ -5563,6 +5580,7 @@ impl BasicAi {
             enter_prophet_race: false,
             science_building_first: false,
             housing_reserve: false,
+            lent_military_floor_base: None,
             exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
@@ -9155,8 +9173,7 @@ impl BasicAi {
     /// revalidation in `cities` asks before keeping one. `settlers` counts
     /// the walkers and every queued Settler.
     fn settler_pipeline_width(&self, g: &Game, n_cities: usize, settlers: usize) -> usize {
-        let seats_short =
-            (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
+        let seats_short = (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
         // `rapid-city-expansion-2` answers only while the empire trails
         // the opening pace; `None` falls through to the ordinary gates
         // below, exactly as `AdvancedAi::settler_in_flight_allowed` does.
@@ -9381,7 +9398,8 @@ impl BasicAi {
             // each replacement asking `pick_item` with the walker counted as
             // the one Settler in flight.
             let width = self.settler_pipeline_width(g, n_cities, settlers);
-            let mut committed_settlers = active_settlers.saturating_sub(self.stranded_settlers(g, pid));
+            let mut committed_settlers =
+                active_settlers.saturating_sub(self.stranded_settlers(g, pid));
             for cid in &city_ids {
                 if !matches!(
                     g.cities[cid].queue.first(),
@@ -12137,6 +12155,15 @@ impl BasicAi {
             } else {
                 None
             };
+            // See `lent_military_floor_base`: a slow city leaves the lent
+            // margin above the genome's own floor to the fast cities.
+            let force_pick = force_pick.filter(|unit| {
+                self.lent_military_floor_base.is_none_or(|base| {
+                    (military as f64) < base * n_cities as f64
+                        || Self::unit_build_turns(g, pid, cid, unit)
+                            <= g.standard_duration(LENT_FLOOR_MAX_BUILD_TURNS) as f64
+                })
+            });
             let picked = recon_pick.or(naval_recon_pick).or(force_pick);
             if let Some(m) = picked {
                 // ⚠ THE BRANCH THAT WINS MUST SAY SO.
@@ -12355,6 +12382,13 @@ impl BasicAi {
                        self.w.city_target, g.turn, self.w.settler_stop_turn);
             }
         }
+        // `first-granary-reserve-3`: a housing-bound city grows before it
+        // trains another Builder or opens a specialty district.
+        if self.housing_reserve && !self.minor && !self.barb {
+            if let Some(item) = Self::housing_reserve_item(g, pid, cid) {
+                return Some(item);
+            }
+        }
         if (builders as f64) < self.w.builder_per_city * n_cities as f64
             && Self::has_builder_work(g, pid)
         {
@@ -12383,12 +12417,6 @@ impl BasicAi {
         }
         if let Some(monument) = Self::civ_building(g, pid, cid, "monument") {
             return Some(monument);
-        }
-        // `first-granary-reserve-3`: growth before the specialty districts.
-        if self.housing_reserve && !self.minor && !self.barb {
-            if let Some(item) = Self::housing_reserve_item(g, pid, cid) {
-                return Some(item);
-            }
         }
 
         // Coastal infrastructure is part of the water strategy, not an
@@ -14112,6 +14140,15 @@ impl BasicAi {
     /// civilization or its secret society builds instead. `None` means the
     /// city already has one or cannot have it, so the caller moves on rather
     /// than proposing something the engine will refuse.
+    /// Turns this city needs to train `unit` from scratch at its current
+    /// production.
+    fn unit_build_turns(g: &Game, pid: usize, cid: u32, unit: &str) -> f64 {
+        let item = Item::Unit {
+            unit: Name::new(unit),
+        };
+        g.item_cost_for_city(pid, cid, &item) / g.city_yields(cid).production.max(0.1)
+    }
+
     /// See `housing_reserve`: the Granary, then the Aqueduct, for a city whose
     /// population is within one of its housing. Neither while the city has
     /// room to grow, and the Aqueduct only once the Granary stands or cannot
@@ -21530,13 +21567,22 @@ mod tests {
         };
         let queue_settler = |game: &mut Game| {
             game.cities.get_mut(&capital).unwrap().queue.clear();
-            game.apply(0, &Action::Produce { city: capital, item: settler.clone() })
-                .unwrap();
+            game.apply(
+                0,
+                &Action::Produce {
+                    city: capital,
+                    item: settler.clone(),
+                },
+            )
+            .unwrap();
         };
         let mut ai = BasicAi::new();
         ai.w.city_target = 8.0;
         ai.enable_land_grab();
-        assert!(ai.has_practical_settle_site(&game, 0), "the fixture has land");
+        assert!(
+            ai.has_practical_settle_site(&game, 0),
+            "the fixture has land"
+        );
         queue_settler(&mut game);
         ai.cities(&mut game, 0);
         assert_eq!(
