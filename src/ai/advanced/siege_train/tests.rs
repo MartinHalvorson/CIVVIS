@@ -159,3 +159,57 @@ fn siege_assigns_a_reachable_post_instead_of_a_closer_sealed_pocket() {
     }
     assert_eq!(g.units[&uid].pos, reachable);
 }
+
+/// `shared-danger`: a gun approaching its firing post reads each defender's
+/// blow split among the train in its reach, so a crowd of defenders no longer
+/// charges every blow to every gun at once.
+#[test]
+fn a_shared_reading_lets_a_gun_into_the_firing_ring() {
+    let (mut g, cid) = walled_city();
+    let city = g.cities[&cid].pos;
+    for pos in g.wdisk(city, 5) {
+        if pos == city {
+            continue;
+        }
+        let tile = g.map.tiles.get_mut(&pos).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    let start = (city.0 - 3, city.1);
+    let transit = (city.0 - 2, city.1);
+    for pos in [
+        (city.0 + 1, city.1 - 1),
+        (city.0 + 1, city.1),
+        (city.0, city.1 + 1),
+    ] {
+        g.spawn_unit("crossbowman", 1, pos);
+    }
+    for pos in [
+        (city.0 - 2, city.1 + 1),
+        (city.0 - 1, city.1 + 2),
+        (city.0 + 2, city.1 - 2),
+    ] {
+        g.spawn_unit("pikeman", 0, pos);
+    }
+    let gun = g.spawn_unit("catapult", 0, start);
+    let mut ai = AdvancedAi::new();
+    ai.enable_shared_danger();
+    // A hit-point level the full reading stops and the shared one admits.
+    let hp = (30..=100)
+        .rev()
+        .find(|hp| {
+            g.units.get_mut(&gun).unwrap().hp = *hp;
+            let full = super::super::battle_planner::strike_danger(&g, 0, transit, gun);
+            let shared = ai.approach_danger(&g, 0, transit, gun);
+            f64::from(*hp) <= full + 20.0 && f64::from(*hp) > shared + 20.0
+        })
+        .expect("fixture: sharing admits a gun the full reading stops");
+    g.units.get_mut(&gun).unwrap().hp = hp;
+
+    let mut probe = g.speculative_clone();
+    let mut plain = AdvancedAi::new();
+    assert_eq!(plain.approach(&mut probe, 0, gun, transit, city), None);
+    assert_eq!(ai.approach(&mut g, 0, gun, transit, city), Some(true));
+    assert_eq!(g.units[&gun].pos, transit);
+}

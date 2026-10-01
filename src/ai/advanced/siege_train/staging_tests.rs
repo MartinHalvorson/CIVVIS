@@ -128,6 +128,7 @@ fn a_wall_rebuild_sends_an_unproductive_melee_siege_back_to_staging() {
             entered: 25,
             assessed: 29,
             posts: BTreeMap::new(),
+            short_since: None,
         },
     );
     let mut off = ai.clone();
@@ -208,4 +209,86 @@ fn an_invested_siege_keeps_its_firing_posts_through_a_small_budget_dip() {
     g.turn += 1;
     ai.assess_siege(&g, 0, cid, &plan, &group);
     assert_eq!(ai.sieges[&cid].stage, SiegeStage::Invest);
+}
+
+/// One assessment short of the abort share does not drop an invested train
+/// back to Stage; two consecutive ones do. A defender walking into the
+/// bill's radius for one turn no longer restarts the Invest clock.
+#[test]
+fn a_one_turn_bill_spike_does_not_drop_an_invested_siege() {
+    let (mut g, cid) = walled_city();
+    g.map_script = crate::setup::MapScript::Pangaea;
+    g.turn = 30;
+    g.at_war.insert((0, 1));
+    let city = g.cities[&cid].pos;
+    let guns: Vec<_> = super::tests::at_distance(&g, cid, 2)
+        .into_iter()
+        .take(2)
+        .map(|pos| g.spawn_unit("catapult", 0, pos))
+        .collect();
+    let taker = g.spawn_unit("swordsman", 0, ring_of(&g, cid)[0]);
+    let force = vec![guns[0], guns[1], taker];
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    let group = ForceGroup {
+        id: guns[0],
+        domain: ForceDomain::Land,
+        units: force.clone(),
+        anchor: g.units[&guns[0]].pos,
+        objective: city,
+        focus_target: None,
+        posture: ForcePosture::Advance,
+        readiness: 1.0,
+        local_strength_ratio: 2.0,
+    };
+    let plan = plan_against(&g, cid);
+    ai.sieges.insert(
+        cid,
+        Siege {
+            stage: SiegeStage::Invest,
+            taker: None,
+            entered: 28,
+            assessed: 29,
+            posts: BTreeMap::new(),
+            short_since: None,
+        },
+    );
+    // A relief column inside the bill's radius.
+    let relief: Vec<u32> = super::tests::at_distance(&g, cid, 4)
+        .into_iter()
+        .take(4)
+        .map(|pos| g.spawn_unit("swordsman", 1, pos))
+        .collect();
+    let view = CityView::of(&g, cid).unwrap();
+    let strength: f64 = force.iter().map(|uid| unit_power(&g, *uid)).sum();
+    assert!(
+        strength < ABORT_SHARE * siege_bill(&g, 0, &view),
+        "fixture: the relief puts the train under the abort share"
+    );
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(
+        ai.sieges[&cid].stage,
+        SiegeStage::Invest,
+        "one short turn holds"
+    );
+    assert_eq!(ai.sieges[&cid].short_since, Some(30));
+
+    // The relief walks off: the clock clears and the train stays invested.
+    for uid in &relief {
+        g.remove_unit(*uid);
+    }
+    g.turn = 31;
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_ne!(ai.sieges[&cid].stage, SiegeStage::Stage);
+    assert_eq!(ai.sieges[&cid].short_since, None);
+
+    // A relief that stays two assessments drops the train to Stage.
+    for pos in super::tests::at_distance(&g, cid, 4).into_iter().take(4) {
+        g.spawn_unit("swordsman", 1, pos);
+    }
+    for turn in [32, 33] {
+        g.turn = turn;
+        ai.assess_siege(&g, 0, cid, &plan, &group);
+    }
+    assert_eq!(ai.sieges[&cid].stage, SiegeStage::Stage);
 }

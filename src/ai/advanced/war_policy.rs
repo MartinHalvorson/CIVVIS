@@ -798,6 +798,7 @@ mod tests {
                 entered: g.turn,
                 assessed: g.turn,
                 posts: BTreeMap::new(),
+                short_since: None,
             },
         );
         assert!(

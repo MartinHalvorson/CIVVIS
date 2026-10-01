@@ -57,3 +57,35 @@ fn a_gun_with_a_clear_shot_keeps_its_firing_position() {
     assert!(g.unit_has_line_of_sight_from(gun, here, city.pos));
     assert_eq!(siege_posts(&g, 0, &city, &[gun], None)[&gun], here);
 }
+
+/// A city whose every range-2 line is blocked still gets its guns: an
+/// adjacent tile always has the shot.
+#[test]
+fn a_gun_with_no_range_two_line_takes_an_adjacent_post() {
+    let (mut g, cid) = walled_city();
+    let target = g.cities[&cid].pos;
+    for pos in g.wdisk(target, 3) {
+        if pos == target {
+            continue;
+        }
+        let adjacent = g.wdist(pos, target) == 1;
+        let tile = g.map.tiles.get_mut(&pos).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.hills = false;
+        tile.feature = adjacent.then(|| crate::name!("forest"));
+    }
+    let gun = g.spawn_unit("catapult", 0, at_distance(&g, cid, 3)[0]);
+    assert!(
+        at_distance(&g, cid, 2)
+            .into_iter()
+            .all(|pos| !g.unit_has_line_of_sight_from(gun, pos, target)),
+        "fixture: the forest ring blocks every range-2 line"
+    );
+    let city = CityView::of(&g, cid).unwrap();
+    let post = siege_posts(&g, 0, &city, &[gun], None)
+        .get(&gun)
+        .copied()
+        .expect("the gun gets a firing post");
+    assert_eq!(g.wdist(post, target), 1);
+    assert!(g.unit_has_line_of_sight_from(gun, post, target));
+}

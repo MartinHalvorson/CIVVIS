@@ -112,6 +112,14 @@ pub(super) const DEFENDER_RADIUS: i32 = 6;
 pub(super) const WALL_STRENGTH_PER_100_HP: f64 = 10.0;
 /// Under this share of the bill the train falls back to the staging ring.
 pub(super) const ABORT_SHARE: f64 = 0.8;
+/// Consecutive short assessments before an invested train falls back. The
+/// bill counts every visible defender within [`DEFENDER_RADIUS`], so one unit
+/// walking into or out of sight swings it. Live King civvis-20261001T024402Z,
+/// unwalled Xanadu: bills of 51, 128, 181, 161, 54, 158 between turns 41 and
+/// 61 against a force of 74-144. Each one-turn dip dropped the train to Stage
+/// and restarted [`INVEST_PATIENCE`], so it never reduced, and the city was
+/// never damaged in 25 turns.
+pub(super) const ABORT_PATIENCE: u32 = 2;
 /// Melee holds the ring rather than swinging at a wall above this fraction
 /// of its pool, unless a ram or tower stands beside the city.
 pub(super) const MELEE_WALL_FRACTION: f64 = 0.2;
@@ -182,6 +190,10 @@ pub(super) struct Siege {
     /// for guns and shooters — drawn once at assessment so a unit's goal does
     /// not re-rank under it as it walks and two units never chase one tile.
     pub(super) posts: BTreeMap<u32, Pos>,
+    /// The first turn of the current run of assessments that found the
+    /// force short of the abort share; `None` when the last assessment was
+    /// not short. See [`ABORT_PATIENCE`].
+    pub(super) short_since: Option<u32>,
 }
 
 /// The few facts about a city the doctrine reads, copied out so a step can
@@ -799,23 +811,29 @@ fn siege_posts(
             fire_taken.insert(here);
             continue;
         }
-        let best = g
-            .wring(city.pos, range)
-            .into_iter()
-            .filter(|pos| {
-                *pos != here
-                    && !fire_taken.contains(pos)
-                    && !ring_taken.contains(pos)
-                    && open_land(*pos)
-                    && g.unit_can_traverse(uid, *pos)
-                    && g.unit_has_line_of_sight_from(uid, *pos, city.pos)
-                    && g.unit_ids_at(*pos).is_empty()
-            })
-            .min_by_key(|pos| {
-                let behind = ring_taken.iter().any(|held| g.wdist(*held, *pos) == 1);
-                let exposure = hostiles.iter().filter(|h| g.wdist(**h, *pos) <= 2).count();
-                (!behind, exposure, g.wdist(here, *pos), *pos)
-            });
+        // The farthest band with a shot. Live King civvis-20261001T022028Z:
+        // Cairo stood on Hills behind Wonder, Holy Site and Jungle tiles, no
+        // range-2 tile had a line to it, and the guns stood three and four
+        // tiles out for 22 turns of Invest while the walls went 164 -> 200.
+        // An adjacent tile always has the line.
+        let best = (1..=range).rev().find_map(|distance| {
+            g.wring(city.pos, distance)
+                .into_iter()
+                .filter(|pos| {
+                    *pos != here
+                        && !fire_taken.contains(pos)
+                        && !ring_taken.contains(pos)
+                        && open_land(*pos)
+                        && g.unit_can_traverse(uid, *pos)
+                        && g.unit_has_line_of_sight_from(uid, *pos, city.pos)
+                        && g.unit_ids_at(*pos).is_empty()
+                })
+                .min_by_key(|pos| {
+                    let behind = ring_taken.iter().any(|held| g.wdist(*held, *pos) == 1);
+                    let exposure = hostiles.iter().filter(|h| g.wdist(**h, *pos) <= 2).count();
+                    (!behind, exposure, g.wdist(here, *pos), *pos)
+                })
+        });
         if let Some(pos) = best {
             posts.insert(uid, pos);
             fire_taken.insert(pos);
@@ -1073,6 +1091,7 @@ impl AdvancedAi {
             entered: turn,
             assessed: turn,
             posts: BTreeMap::new(),
+            short_since: None,
         });
         record.assessed = turn;
         let previous = record.stage;
@@ -1085,11 +1104,16 @@ impl AdvancedAi {
             // budget even while the nominal force still covers the bill.
             // Regroup for breach support instead of remaining in Reduce with
             // no attack that can finish before the force is exhausted.
-            if stage != SiegeStage::Stage
-                && !arena
-                && (strength < ABORT_SHARE * bill
-                    || (!damage_can_continue && breach_taker.is_none()))
-            {
+            let invested = stage != SiegeStage::Stage && !arena;
+            if invested && strength < ABORT_SHARE * bill {
+                let since = *record.short_since.get_or_insert(turn);
+                if turn.saturating_sub(since) + 1 >= ABORT_PATIENCE {
+                    stage = SiegeStage::Stage;
+                }
+            } else {
+                record.short_since = None;
+            }
+            if invested && !damage_can_continue && breach_taker.is_none() {
                 stage = SiegeStage::Stage;
             }
             match stage {
@@ -1584,8 +1608,7 @@ impl AdvancedAi {
             // than one city or Encampment. Do not march a body into a stand
             // where the forward model expects the next volley to finish it.
             if g.wdist(next, city_pos) <= CITY_STRIKE_RANGE
-                && f64::from(unit.hp)
-                    <= super::battle_planner::strike_danger(g, pid, next, uid) + 20.0
+                && f64::from(unit.hp) <= self.approach_danger(g, pid, next, uid) + 20.0
             {
                 break;
             }
@@ -1595,6 +1618,22 @@ impl AdvancedAi {
             moved = true;
         }
         moved.then_some(true)
+    }
+
+    /// The reply a unit expects on a post inside the city's firing ring.
+    /// With `shared-danger` on, each hostile's blow is split among our land
+    /// units in its reach, never below the strongest single blow, as the
+    /// battle planner's rotation reads it. The full sum charged every
+    /// defender to every gun. Live King civvis-20261001T022028Z: around
+    /// walled Cairo, the guns of an 18-unit train stood three and four tiles
+    /// out for the 22 turns of Invest, and the city was struck three times.
+    fn approach_danger(&self, g: &Game, pid: usize, tile: Pos, uid: u32) -> f64 {
+        if !self.shared_danger {
+            return super::battle_planner::strike_danger(g, pid, tile, uid);
+        }
+        let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
+        field.share(g);
+        field.rotation_danger(tile, uid)
     }
 
     /// Walk to the first goal reachable this turn, else one step toward the

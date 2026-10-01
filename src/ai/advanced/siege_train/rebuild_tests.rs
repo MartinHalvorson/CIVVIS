@@ -25,6 +25,7 @@ fn memory(taker: u32, shooter: u32) -> Siege {
         entered: 49,
         assessed: 53,
         posts: [(taker, (13, 12)), (shooter, (12, 12))].into(),
+        short_since: None,
     }
 }
 

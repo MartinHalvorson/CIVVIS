@@ -417,9 +417,16 @@ pub(crate) fn strike_reach_of(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos
 }
 
 /// Each source's expected blow on one of our units at one tile: `None` is a
-/// city or Encampment strike; a unit source is named so a plan that kills it
-/// can leave its blow out.
+/// movement hazard; a unit source is named so a plan that kills it can leave
+/// its blow out; a City Center or Encampment strike is named by its city id
+/// tagged with [`STRUCTURE_SOURCE`], so `shared-danger` can split it too.
 type Blows = Arc<Vec<(Option<u32>, f64)>>;
+
+/// The tag on a structure's blow source: a city id with this bit set is its
+/// City Center's strike, and with [`ENCAMPMENT_SOURCE`] set as well, its
+/// Encampment's.
+const STRUCTURE_SOURCE: u32 = 1 << 31;
+const ENCAMPMENT_SOURCE: u32 = 1 << 30;
 
 /// The danger field for one frame of the board: what every visible hostile
 /// could do to one of our units on a tile next turn.
@@ -528,6 +535,37 @@ impl DangerField {
                 (*id, 1.0 / exposed as f64)
             })
             .collect();
+        // A City Center or an Encampment strikes once a turn too, at one
+        // unit within two tiles of it.
+        let exposed_within_two = |at: Pos| {
+            ours.iter()
+                .filter(|pos| g.wdist(**pos, at) <= 2)
+                .count()
+                .max(1) as f64
+        };
+        for city in g.cities.values() {
+            if city.owner == self.pid || !g.is_at_war(self.pid, city.owner) {
+                continue;
+            }
+            debug_assert!(
+                city.id < ENCAMPMENT_SOURCE,
+                "city ids stay below the tag bits"
+            );
+            self.shares.insert(
+                STRUCTURE_SOURCE | city.id,
+                1.0 / exposed_within_two(city.pos),
+            );
+            if let Some(at) = g
+                .wdisk(city.pos, 3)
+                .into_iter()
+                .find(|pos| g.encampment_at(*pos) == Some(city.id))
+            {
+                self.shares.insert(
+                    STRUCTURE_SOURCE | ENCAMPMENT_SOURCE | city.id,
+                    1.0 / exposed_within_two(at),
+                );
+            }
+        }
     }
 
     fn shared_reading(&self, blows: impl Iterator<Item = (Option<u32>, f64)>) -> f64 {
@@ -622,7 +660,7 @@ impl DangerField {
                         && cities.insert(cid)
                     {
                         out.push((
-                            None,
+                            Some(STRUCTURE_SOURCE | cid),
                             expected_damage(self.probe.city_ranged_strength(cid), defence),
                         ));
                     }
@@ -635,7 +673,7 @@ impl DangerField {
                         && encampments.insert(cid)
                     {
                         out.push((
-                            None,
+                            Some(STRUCTURE_SOURCE | ENCAMPMENT_SOURCE | cid),
                             expected_damage(self.probe.city_ranged_strength(cid), defence),
                         ));
                     }
