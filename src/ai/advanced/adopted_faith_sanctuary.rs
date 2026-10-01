@@ -27,9 +27,6 @@ impl AdvancedAi {
                 .iter()
                 .filter(|cid| g.city_religion(&g.cities[cid]) == Some(faith))
                 .count();
-            if converted * 2 < cities.len() {
-                continue;
-            }
             let dominated = g
                 .players
                 .iter()
@@ -42,6 +39,23 @@ impl AdvancedAi {
                         && g.civ_follows_religion(p.id, faith)
                 })
                 .count();
+            // `air-surge-2`, Domination lane: a faith that already holds every
+            // other major needs only our empire, so its first convert here is
+            // the alarm, not the half. Live King 20261001T022028Z: Catholicism
+            // held Arabia (and Brazil founded it) at turn 120, took two of our
+            // thirteen cities by 130 and seven by 140, and this alarm, waiting
+            // for the half, started the counterfaith at 138; Brazil won at 147.
+            let others = g
+                .players
+                .iter()
+                .filter(|p| {
+                    p.alive && !p.is_minor && !p.is_barbarian && p.id != pid && p.id != founder.id
+                })
+                .count();
+            let match_point = self.air_surge_2 && others > 0 && dominated == others;
+            if converted * 2 < cities.len() && !(match_point && converted > 0) {
+                continue;
+            }
             let better = best.as_ref().is_none_or(|(other, home, name)| {
                 dominated > *other
                     || (dominated == *other
