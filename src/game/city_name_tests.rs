@@ -366,3 +366,42 @@ fn every_civilization_has_a_deep_unique_city_name_pool() {
         );
     }
 }
+
+/// A refusal that names its improvement condemns that improvement, not the
+/// ground: see `blocked_improvements`. Live King 20261001T042554Z lost its
+/// only Aluminum Mine to one refused Alcázar on the same Farm.
+#[test]
+fn a_host_refused_improvement_leaves_the_rest_of_the_tile_open() {
+    let mut game = Game::new(2, 24, 16, 1, 200, 0);
+    let centre = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| {
+            let tile = &game.map.tiles[pos];
+            !game.rules.is_water(tile)
+                && game.rules.is_passable(tile)
+                && !game.tile_is_natural_wonder(tile)
+        })
+        .expect("a standard map has open land");
+    game.place_city(0, centre, None);
+    let (pos, offered) = crate::hex::ring(centre, 1)
+        .into_iter()
+        .chain(crate::hex::ring(centre, 2))
+        .map(|pos| (pos, game.valid_improvements(0, pos)))
+        .find(|(_, offered)| !offered.is_empty())
+        .expect("the ground around a capital should contain an improvable tile");
+    let refused = offered[0];
+    std::sync::Arc::make_mut(&mut game.blocked_improvements)
+        .entry(pos)
+        .or_default()
+        .insert(refused);
+    let after = game.valid_improvements(0, pos);
+    assert!(!after.contains(&refused), "the refused improvement is gone");
+    assert_eq!(
+        after.len(),
+        offered.len() - 1,
+        "every other improvement stays on offer"
+    );
+}

@@ -6593,6 +6593,21 @@ pub struct Game {
     /// with seven builders alive against an army of one.
     #[serde(default)]
     pub blocked_improvement_sites: Arc<BTreeSet<Pos>>,
+    /// Improvements a HOST ruleset refused on one tile, by name. A refusal that
+    /// names its improvement condemns that improvement there, not the ground:
+    /// only a refusal without a name lands in
+    /// [`Game::blocked_improvement_sites`].
+    ///
+    /// ★★★ ONE REFUSED ALCÁZAR HID THE EMPIRE'S ONLY ALUMINUM. Live King
+    /// 20261001T042554Z: a Builder asked for an Alcázar on the Farm at
+    /// (31,29) on turn 112 and the host refused it. The tile was blocked for
+    /// every improvement for the rest of the game, so when Radio revealed
+    /// Aluminum under that Farm and Advanced Flight landed on turn 160, the
+    /// Mine was never valid: eight Builders stood idle, the Bomber wing was
+    /// stood down "no Aluminum" on turn 174, and the Mine went in on turn
+    /// 203 only because a restarted bridge had lost the old refusal.
+    #[serde(default)]
+    pub blocked_improvements: Arc<BTreeMap<Pos, BTreeSet<Name>>>,
     /// ★★★★ GROUND A GREAT PERSON STANDS ON, keyed to its owner. Empty in an
     /// ordinary game; the live mirror fills it because CIVVIS does not model
     /// Great People as units and drops them from the board (see
@@ -7548,6 +7563,7 @@ impl From<GameSer> for Game {
             unseen_major_borders: BTreeSet::new(),
             sealed_border_owners: BTreeMap::new(),
             blocked_improvement_sites: Arc::new(BTreeSet::new()),
+            blocked_improvements: Arc::new(BTreeMap::new()),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: Arc::new(BTreeMap::new()),
             host_band_promotions: Arc::new(BTreeMap::new()),
@@ -8267,6 +8283,7 @@ impl Game {
             unseen_major_borders: BTreeSet::new(),
             sealed_border_owners: BTreeMap::new(),
             blocked_improvement_sites: Arc::new(BTreeSet::new()),
+            blocked_improvements: Arc::new(BTreeMap::new()),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: Arc::new(BTreeMap::new()),
             host_band_promotions: Arc::new(BTreeMap::new()),
