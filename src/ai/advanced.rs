@@ -5175,6 +5175,10 @@ pub struct AdvancedAi {
     /// guarded permission is rechecked while the ordinary escort walks it.
     air_resource_colony_target: Option<(u32, Pos)>,
     // ---- append: c-d ------------------------------------------------
+    /// `campus-before-harbor`: see `BasicAi::campus_before_harbor`. The
+    /// delegated city governor asks a city for its first Campus before its
+    /// Harbor. Opt-in.
+    campus_before_harbor: bool,
     /// `domination-specializes-earlier`: an assigned Domination lane's
     /// development half ends at [`DOMINATION_SPECIALIZATION_PERCENT`] of the
     /// clock (turn 100 of 250) instead of halfway, so it turns to Conquest
@@ -8465,6 +8469,7 @@ impl AdvancedAi {
 
             air_resource_colony_target: None,
             // ---- append: c-d ----------------------------------------
+            campus_before_harbor: false,
             domination_specializes_earlier: false,
             domination_ignores_city_states: false,
             culture_lane_forecast_2: false,

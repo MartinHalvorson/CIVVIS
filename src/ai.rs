@@ -2409,6 +2409,17 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `first-granary-reserve-3`.
     pub(crate) housing_reserve: bool,
+    /// A city's first Campus ahead of its Harbor in this governor. The
+    /// coastal block below asked every coastal city for a Harbor before any
+    /// specialty district, and the four-player Tiny Pangaea is mostly coast:
+    /// live King Gran Colombia started ZERO Campuses between turns 20 and 65
+    /// in two of three games (first Campus turn 86 after seven Harbors in
+    /// 2026-10-01T030914Z), and science fell from parity at turn 40 to a third
+    /// of the best rival's by turn 65 in every game but the one that opened a
+    /// Campus at turn 43.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `campus-before-harbor`.
+    pub(crate) campus_before_harbor: bool,
     /// The genome's own `mil_per_city` while `AdvancedAi::delegated_cities`
     /// has lent this governor a Domination war's higher army target, `None`
     /// otherwise. Below the genome's own floor every city still builds the
@@ -5117,6 +5128,7 @@ impl BasicAi {
             enter_prophet_race: false,
             science_building_first: false,
             housing_reserve: false,
+            campus_before_harbor: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
@@ -5580,6 +5592,7 @@ impl BasicAi {
             enter_prophet_race: false,
             science_building_first: false,
             housing_reserve: false,
+            campus_before_harbor: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
@@ -12419,6 +12432,12 @@ impl BasicAi {
             return Some(monument);
         }
 
+        // `campus-before-harbor`: the city's first Campus before its Harbor.
+        if self.campus_before_harbor && !self.minor && !self.barb {
+            if let Some(item) = Self::first_campus_item(g, pid, cid) {
+                return Some(item);
+            }
+        }
         // Coastal infrastructure is part of the water strategy, not an
         // accidental fallback after every land district. A harbor also gives
         // later naval production somewhere sensible to concentrate.
@@ -14147,6 +14166,56 @@ impl BasicAi {
             unit: Name::new(unit),
         };
         g.item_cost_for_city(pid, cid, &item) / g.city_yields(cid).production.max(0.1)
+    }
+
+    /// The slowest a city may build its first Campus and still be asked under
+    /// `campus-before-harbor`: a one-production outpost waits for the ordinary
+    /// list rather than parking forty turns on a district.
+    const FIRST_CAMPUS_MAX_TURNS: f64 = 15.0;
+
+    /// See `campus_before_harbor`: this city's first Campus at its best site,
+    /// when the empire can build one here, the city holds none and none is
+    /// already queued in it, and the city would finish it within
+    /// [`Self::FIRST_CAMPUS_MAX_TURNS`]. `None` otherwise.
+    pub(crate) fn first_campus_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let city = g.cities.get(&cid)?;
+        if g.city_has_district_family(city, crate::name!("campus")) {
+            return None;
+        }
+        let dname = Self::civ_district(g, pid, "campus");
+        let spec = g.rules.districts.get(&dname)?;
+        let unlocked = spec
+            .tech
+            .as_ref()
+            .is_none_or(|tech| g.players[pid].techs.contains(tech))
+            && spec
+                .civic
+                .as_ref()
+                .is_none_or(|civic| g.players[pid].civics.contains(civic));
+        if !unlocked {
+            return None;
+        }
+        let best = g
+            .district_sites(cid, Name::new(dname.as_str()))
+            .into_iter()
+            .max_by(|a, b| {
+                g.district_yields(dname, *a)
+                    .total()
+                    .partial_cmp(&g.district_yields(dname, *b).total())
+                    .unwrap()
+                    .then(a.cmp(b))
+            })?;
+        let item = Item::District {
+            district: dname,
+            pos: best,
+        };
+        if !g.can_produce(pid, cid, &item) {
+            return None;
+        }
+        let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+            g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
+        });
+        (turns <= Self::FIRST_CAMPUS_MAX_TURNS).then_some(item)
     }
 
     /// See `housing_reserve`: the Granary, then the Aqueduct, for a city whose
@@ -21844,6 +21913,63 @@ mod tests {
             let _ = plain.explore_step(&mut game, 0, scout);
         }
         assert!(plain.explore_dead.borrow().is_empty());
+    }
+
+    /// See `campus_before_harbor`: the first Campus is offered once Writing
+    /// is in, never a second one, and never in a city that would take longer
+    /// than `FIRST_CAMPUS_MAX_TURNS`.
+    #[test]
+    fn the_first_campus_is_offered_once_writing_is_in() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("FIRSTCAMPUS", 91_801),
+            250,
+            0,
+            false,
+        );
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = game.player_city_ids(0)[0];
+        game.cities.get_mut(&cid).unwrap().pop = 3;
+        assert_eq!(
+            BasicAi::first_campus_item(&game, 0, cid),
+            None,
+            "no Campus before Writing"
+        );
+        game.players[0].techs.insert(crate::name!("writing"));
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            cid,
+            crate::rules::Yields {
+                production: 10.0,
+                ..Default::default()
+            },
+        );
+        let Some(Item::District { district, .. }) = BasicAi::first_campus_item(&game, 0, cid)
+        else {
+            panic!("with Writing a producing city is offered its Campus");
+        };
+        assert_eq!(game.district_family(district), "campus");
+
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            cid,
+            crate::rules::Yields {
+                // The adjustment is added to the modelled yield; this drives
+                // it to the 0.5 floor the gate divides by.
+                production: -100.0,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            BasicAi::first_campus_item(&game, 0, cid),
+            None,
+            "a city that would take longer than the cap is not asked"
+        );
     }
 
     /// A Scout the host bounces between two tiles toward the same goal is as

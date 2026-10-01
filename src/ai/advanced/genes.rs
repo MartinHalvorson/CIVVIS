@@ -2390,6 +2390,10 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "domination-specializes-earlier", field: "domination_specializes_earlier", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_specializes_earlier, disable: AdvancedAi::disable_domination_specializes_earlier },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
+    // The delegated city governor asked every coastal city for a Harbor before
+    // any specialty district; live King Tiny Pangaea started no Campus between
+    // turns 20 and 65 in two of three games. See `BasicAi::campus_before_harbor`.
+    Gene { tag: "campus-before-harbor", field: "campus_before_harbor", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_harbor, disable: AdvancedAi::disable_campus_before_harbor },
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------

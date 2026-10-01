@@ -4550,6 +4550,18 @@ impl AdvancedAi {
 
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
+    /// See `BasicAi::campus_before_harbor`: a city's first Campus before its
+    /// Harbor in the delegated city governor.
+    pub fn enable_campus_before_harbor(&mut self) {
+        self.campus_before_harbor = true;
+        self.base.campus_before_harbor = true;
+    }
+
+    /// The twin of `enable_campus_before_harbor`.
+    pub fn disable_campus_before_harbor(&mut self) {
+        self.campus_before_harbor = false;
+        self.base.campus_before_harbor = false;
+    }
     // ---- append: e-f ------------------------------------------------
     /// See `AdvancedAi::first_granary_reserve_3`: a housing-bound city's
     /// Granary, then its Aqueduct, in both production governors.
