@@ -762,7 +762,7 @@ impl AdvancedAi {
         self.actionable_victory_denial(g, pid)
             .filter(|(rival, counter)| {
                 *counter == GrandStrategy::Conquest
-                    && (self.domination_counter_target(g, *rival)
+                    && (self.domination_counter_target(g, pid, *rival)
                         || self.urgent_victory_threat(g, *rival))
             })
             .map(|(rival, _)| rival)
