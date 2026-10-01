@@ -111,6 +111,8 @@ GOVERNOR_DUTY_SNAP = 0.02
 # gradually.
 GOVERNOR_RECOVERY = 0.5
 DEFAULT_PROGRESS_MINUTES = 5.0
+# How often the governor re-reads the power source (one ``pmset`` per read).
+POWER_POLL_SECONDS = 10.0
 
 
 class SchedulerError(RuntimeError):
@@ -295,6 +297,33 @@ def group_cpu_seconds(group: int) -> float | None:
     return total if found else None
 
 
+def power_draining_battery() -> bool | None:
+    """True while the host's battery is paying for the games, None when unknown.
+
+    That is: drawing from the battery, or plugged in but still discharging (an
+    adapter that cannot keep up with the load). Read from ``pmset -g ps`` on
+    macOS; elsewhere the answer is unknown and never pauses anything.
+    """
+    try:
+        result = subprocess.run(["pmset", "-g", "ps"], text=True, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, check=False, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return battery_is_draining(result.stdout)
+
+
+def battery_is_draining(pmset_ps: str) -> bool | None:
+    """Parse ``pmset -g ps``; see :func:`power_draining_battery`."""
+    source = re.search(r"Now drawing from '([^']+)'", pmset_ps)
+    if source is None:
+        return None
+    if source.group(1) == "Battery Power":
+        return True
+    return bool(re.search(r";\s*discharging;", pmset_ps))
+
+
 def governed_duty(*, ceiling: float, cores: int, busy: float, group_cores: float,
                   applied_duty: float, demand_cores: float | None,
                   previous_duty: float,
@@ -345,13 +374,22 @@ class CpuGovernor:
     """
 
     def __init__(self, ceiling_percent: float, *, cores: int, workers: int = 0,
-                 host: HostCpu | None = None, group_cpu=group_cpu_seconds, send=None) -> None:
+                 host: HostCpu | None = None, group_cpu=group_cpu_seconds, send=None,
+                 pause_on_battery: bool = False, battery=power_draining_battery) -> None:
         if not 0 < ceiling_percent <= 100:
             raise SchedulerError("--machine-cpu-ceiling must be a percentage in (0, 100]")
         self.ceiling = ceiling_percent / 100.0
         self.cores = positive_int(cores, name="logical core count")
         # Each game worker is one CPU-bound thread: the most the group can burn.
         self.workers = workers
+        # A background tournament must not spend a laptop's battery: on
+        # 2026-09-30 mbp-m5-max-128 drained 82% -> 1% in an hour on battery
+        # under the host's whole load and hibernated for two hours, taking a
+        # live Civilization VI game down with it.
+        self.pause_on_battery = pause_on_battery
+        self.battery = battery
+        self.on_battery = False
+        self.power_read_at = -POWER_POLL_SECONDS
         self.host = host or HostCpu()
         self.group_cpu = group_cpu
         self.send = send or os.killpg
@@ -423,6 +461,18 @@ class CpuGovernor:
             started = time.monotonic()
             running = 0.0
             duty = self.duty
+            if self.pause_on_battery:
+                if started - self.power_read_at >= POWER_POLL_SECONDS:
+                    self.power_read_at = started
+                    draining = bool(self.battery())
+                    if draining != self.on_battery:
+                        print(f"{utc_now()} cpu governor: "
+                              + ("host is spending its battery; games paused" if draining
+                                 else "host is on mains power again; games resume"),
+                              flush=True)
+                    self.on_battery = draining
+                if self.on_battery:
+                    duty = 0.0
             while not stop.is_set():
                 elapsed = time.monotonic() - started
                 if elapsed >= GOVERNOR_WINDOW_SECONDS:
@@ -455,6 +505,8 @@ class CpuGovernor:
                 ceiling=self.ceiling, cores=self.cores, busy=busy, group_cores=group_cores,
                 applied_duty=applied, demand_cores=self.demand, previous_duty=duty,
                 demand_floor=float(self.workers))
+            if self.on_battery:
+                new_duty = 0.0
             with self.lock:
                 self.duty, self.demand = new_duty, demand
                 self.last = {
@@ -465,6 +517,7 @@ class CpuGovernor:
                     "games_demand_cores": None if demand is None else round(demand, 2),
                     "applied_duty": round(applied, 3),
                     "next_duty": round(new_duty, 3),
+                    "on_battery": self.on_battery,
                 }
 
 
@@ -498,6 +551,8 @@ class ProgressLog:
             parts.append(
                 f"host_cpu={governor['host_busy_percent']}% games_cores={governor['games_cores']} "
                 f"duty={governor['applied_duty']}")
+            if governor.get("on_battery"):
+                parts.append("PAUSED_ON_BATTERY")
         return " ".join(parts)
 
 
@@ -2167,6 +2222,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--machine-cpu-ceiling", type=float, metavar="PERCENT",
                         help=("pause the owned games for part of each two-second window "
                               "whenever the whole host is above PERCENT busy"))
+    parser.add_argument("--pause-on-battery", action="store_true",
+                        help=("pause the owned games while the host runs on battery or "
+                              "discharges on an adapter that cannot keep up (macOS pmset); "
+                              "implies the governor, at a 100%% ceiling unless one is set"))
     parser.add_argument("--progress-minutes", type=float, default=DEFAULT_PROGRESS_MINUTES,
                         help="cadence of the progress line in the service log (default: 5)")
     parser.add_argument("--publisher-agent", default="continuous-batch",
@@ -2233,8 +2292,10 @@ def main(argv: list[str] | None = None) -> int:
             raise SchedulerError("--jobs and --cpu-share are alternatives; pass one")
         jobs = (positive_int(args.jobs, name="--jobs") if args.jobs is not None
                 else workers_for_cores(logical_cores(), args.cpu_share or DEFAULT_WORKER_PERCENT))
-        governor = (CpuGovernor(args.machine_cpu_ceiling, cores=logical_cores(), workers=jobs)
-                    if args.machine_cpu_ceiling is not None else None)
+        governor = (CpuGovernor(
+            args.machine_cpu_ceiling if args.machine_cpu_ceiling is not None else 100.0,
+            cores=logical_cores(), workers=jobs, pause_on_battery=args.pause_on_battery)
+            if args.machine_cpu_ceiling is not None or args.pause_on_battery else None)
         progress = ProgressLog(args.progress_minutes)
         if args.poll_seconds <= 0:
             raise SchedulerError("--poll-seconds must be positive")
@@ -2272,8 +2333,9 @@ def main(argv: list[str] | None = None) -> int:
                 publish, once = True, True
             outcomes = OutcomeLog()
             if governor is not None:
-                print(f"{utc_now()} cpu governor: ceiling {args.machine_cpu_ceiling}% of "
-                      f"{governor.cores} logical cores; {jobs} game workers", flush=True)
+                print(f"{utc_now()} cpu governor: ceiling {governor.ceiling * 100:g}% of "
+                      f"{governor.cores} logical cores; {jobs} game workers"
+                      + ("; paused on battery" if governor.pause_on_battery else ""), flush=True)
 
                 def resume_and_exit(_signum: int, _frame: Any) -> None:
                     # launchd stops the daemon with SIGTERM; the games survive

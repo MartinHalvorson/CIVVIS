@@ -193,6 +193,64 @@ class MachineSharing(unittest.TestCase):
         self.assertEqual(sent[-1], signals.SIGCONT, "release must leave the games running")
         self.assertLess(governor.snapshot()["next_duty"], 1.0)
 
+    def test_pmset_power_readings(self):
+        on_battery = ("Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t82%; "
+                      "discharging; 1:02 remaining present: true\n")
+        charging = ("Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t4%; "
+                    "charging; 2:14 remaining present: true\n")
+        losing = ("Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t40%; "
+                  "discharging; (no estimate) present: true\n")
+        desktop = "Now drawing from 'AC Power'\n"
+        self.assertTrue(scheduler.battery_is_draining(on_battery))
+        self.assertFalse(scheduler.battery_is_draining(charging))
+        self.assertTrue(scheduler.battery_is_draining(losing), "an adapter that cannot keep up")
+        self.assertFalse(scheduler.battery_is_draining(desktop))
+        self.assertIsNone(scheduler.battery_is_draining("garbage"))
+
+    def test_governor_pauses_the_games_on_battery_whatever_the_cpu(self):
+        import signal as signals
+        import threading
+        import time
+
+        class IdleHost:
+            busy = 0
+            idle = 0
+
+            def ticks(self):
+                # A nearly idle host: the ceiling alone would run the games.
+                IdleHost.busy += 1
+                IdleHost.idle += 99
+                return (IdleHost.busy, IdleHost.idle)
+
+        sent: list[int] = []
+        snapshot_ready = threading.Event()
+        governor = scheduler.CpuGovernor(
+            90, cores=18, workers=9, host=IdleHost(), group_cpu=lambda _group: 0.0,
+            send=lambda _group, which: sent.append(which), pause_on_battery=True,
+            battery=lambda: True)
+        with mock.patch.object(scheduler, "GOVERNOR_WINDOW_SECONDS", 0.05), \
+                mock.patch.object(scheduler, "GOVERNOR_PERIOD_SECONDS", 0.01), \
+                mock.patch("builtins.print"):
+            governor.govern(11)
+            deadline = time.monotonic() + 2.0
+            while not governor.snapshot() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            snapshot = governor.snapshot()
+            governor.release()
+        self.assertTrue(snapshot["on_battery"])
+        self.assertEqual(snapshot["next_duty"], 0.0)
+        self.assertEqual(snapshot["applied_duty"], 0.0)
+        # After the opening SIGCONT that clears an inherited pause, nothing but
+        # stops until release resumes the group (the thread and release() both
+        # send that final SIGCONT).
+        self.assertEqual(sent[0], signals.SIGCONT)
+        middle = sent[1:]
+        while middle and middle[-1] == signals.SIGCONT:
+            middle.pop()
+        self.assertTrue(middle)
+        self.assertEqual(set(middle), {signals.SIGSTOP})
+        self.assertEqual(sent[-1], signals.SIGCONT)
+
     def test_governor_without_a_measurement_never_pauses(self):
         import signal as signals
 
