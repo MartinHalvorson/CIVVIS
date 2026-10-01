@@ -387,3 +387,27 @@ fn a_domination_seat_keeps_the_beeline_while_no_surge_is_appointed() {
         assert!(!ai.air_surge_lane_beeline(&g, 0), "{case}");
     }
 }
+
+/// Live King 20261001T022028Z: with Castles (Medieval) unresearched the era
+/// window ended at the Industrial era, so Flight never became a candidate
+/// and research went to Economics and Castles between Steam Power and
+/// Flight. A Domination wing admits every legal step on its chain.
+#[test]
+fn the_era_window_does_not_strand_the_domination_beeline() {
+    let (mut g, ai, plan) = fixture();
+    g.at_war.clear();
+    g.players[0].techs.insert(crate::name!("steam_power"));
+    g.players[0].techs.remove(&crate::name!("castles"));
+    assert!(!crate::ai::BasicAi::era_window_techs(&g, 0).contains(&crate::name!("flight")));
+    assert!(g.available_techs(0).contains(&crate::name!("flight")));
+    let mut domination = g.clone();
+    ai.advanced_research(&mut domination, 0, &plan);
+    assert_eq!(domination.players[0].research.as_deref(), Some("flight"));
+
+    // Outside the Domination lane only the exact milestone is admitted.
+    let mut other = ai.clone();
+    other.victory_target = Some(VictoryTarget::Culture);
+    let mut culture = g.clone();
+    other.advanced_research(&mut culture, 0, &plan);
+    assert_ne!(culture.players[0].research.as_deref(), Some("flight"));
+}
