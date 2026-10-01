@@ -61,6 +61,23 @@ const LIVELOCK_STAND_DOWN_TURNS: u32 = 4;
 /// `BasicAi::explore_dead_targets`.
 const EXPLORE_STUCK_TURNS: u32 = 2;
 
+/// Turns an explorer may pursue one goal without coming any closer to it
+/// before the goal is retired with a wider ring (`EXPLORE_NO_PROGRESS_RING`).
+/// Live King 2026-10-01T000033Z: the Scout held goal (27, 14) from turn 13,
+/// seven tiles off, and circled four tiles beside it for thirty turns -- a
+/// cycle neither the same-tile count nor a two-tile bounce check can see --
+/// while the Cree capital lay unseen to the east until turn 62.
+const EXPLORE_NO_PROGRESS_TURNS: u32 = 3;
+
+/// The ring retired around a goal the explorer could not close on. A goal
+/// behind an obstacle has neighbours behind the same obstacle; one ring
+/// hands the next pick a goal two tiles away and the same circuit.
+const EXPLORE_NO_PROGRESS_RING: i32 = 2;
+
+/// `explore_last`'s record: (goal, tile, same-tile turns, last turn, closest
+/// distance to the goal, turns without coming closer).
+type ExploreProgress = (Pos, Pos, u32, u32, i32, u32);
+
 /// Consecutive turns the same issued step must be seen untaken before
 /// `live-move-refusal-break` bars it. One refused turn is a report, not a
 /// verdict — the trade-route block set's rule — and the second identical ask
@@ -2796,11 +2813,12 @@ pub struct BasicAi {
     /// Civilization VI bridge); a native engine moves what it accepts, so
     /// native constructors and the frozen anchor keep the plain goal.
     pub(crate) explore_dead_targets: bool,
-    /// Per unit: the exploration goal it was last sent at, where it stood, and
-    /// how many consecutive turns it has stood there aiming at that goal,
-    /// the last game turn observed, and the tile it stood on the turn
-    /// before. Replanning does not advance the clock.
-    explore_last: RefCell<HashMap<u32, (Pos, Pos, u32, u32, Option<Pos>)>>,
+    /// Per unit: the exploration goal it was last sent at, where it stood, how
+    /// many consecutive turns it has stood there aiming at that goal, the last
+    /// game turn observed, the closest it has come to that goal, and how many
+    /// turns running it has failed to come closer. Replanning does not advance
+    /// the clock.
+    explore_last: RefCell<HashMap<u32, ExploreProgress>>,
     /// Per unit: exploration goals proved unreachable, with the turn each
     /// expires. See `explore_dead_targets`.
     explore_dead: RefCell<HashMap<u32, HashMap<Pos, u32>>>,
@@ -15823,51 +15841,59 @@ impl BasicAi {
             // not walk it to: retire it and its ring (an impassable edge is
             // rarely one plot wide) and aim elsewhere. See `explore_dead_targets`.
             if let Some(target) = goal {
-                let stuck = {
+                let (stuck, stale) = {
                     let mut last = self.explore_last.borrow_mut();
+                    let distance = g.wdist(upos, target);
                     match last.get_mut(&uid) {
-                        // Same goal from the same tile as last turn: one more
-                        // turn of proof the order went nowhere. Back on the
-                        // tile it stood on the turn before is the same proof:
-                        // live King 2026-09-30T225143Z bounced its Scout
-                        // between two tiles every turn from t13 to t28, and a
-                        // second Scout between two others from t20 to t28,
-                        // each move resetting a same-tile count, until the
-                        // six-turn livelock window caught it.
-                        Some(entry)
-                            if entry.0 == target && (entry.1 == upos || entry.4 == Some(upos)) =>
-                        {
+                        // The same goal on a later turn. Standing on the same
+                        // tile is one more turn of proof the order went
+                        // nowhere; not coming any closer is the same proof for
+                        // a unit the host moves in circles. Live King
+                        // 2026-09-30T225143Z bounced its Scout between two
+                        // tiles from t13 to t28, and 2026-10-01T000033Z circled
+                        // four tiles from t13 to t44, each move resetting a
+                        // same-tile count.
+                        Some(entry) if entry.0 == target => {
                             if g.turn > entry.3 {
-                                entry.2 += 1;
-                                entry.3 = g.turn;
-                                if entry.1 != upos {
-                                    entry.4 = Some(entry.1);
+                                if entry.1 == upos {
+                                    entry.2 += 1;
+                                } else {
+                                    entry.2 = 0;
                                     entry.1 = upos;
                                 }
+                                if distance < entry.4 {
+                                    entry.4 = distance;
+                                    entry.5 = 0;
+                                } else {
+                                    entry.5 += 1;
+                                }
+                                entry.3 = g.turn;
                             }
-                            entry.2
+                            (entry.2, entry.5)
                         }
-                        // The same goal from new ground: start counting, and
-                        // remember where the unit came from.
-                        Some(entry) if entry.0 == target && g.turn > entry.3 => {
-                            *entry = (target, upos, 0, g.turn, Some(entry.1));
-                            0
-                        }
-                        // A new goal, or a replan inside the same turn.
-                        Some(entry) if entry.0 == target => entry.2,
+                        // A new goal: start counting.
                         _ => {
-                            last.insert(uid, (target, upos, 0, g.turn, None));
-                            0
+                            last.insert(uid, (target, upos, 0, g.turn, distance, 0));
+                            (0, 0)
                         }
                     }
                 };
-                if stuck >= EXPLORE_STUCK_TURNS {
+                if stuck >= EXPLORE_STUCK_TURNS || stale >= EXPLORE_NO_PROGRESS_TURNS {
+                    let stuck = stuck.max(stale);
                     self.retire_exploration_target(g, uid, target);
+                    if stale >= EXPLORE_NO_PROGRESS_TURNS {
+                        let expiry = g.turn + EXPLORE_DEAD_TARGET_TURNS;
+                        let mut dead = self.explore_dead.borrow_mut();
+                        let unit_dead = dead.entry(uid).or_default();
+                        for pos in g.wdisk(target, EXPLORE_NO_PROGRESS_RING) {
+                            unit_dead.insert(pos, expiry);
+                        }
+                    }
                     think!(self.journal, Military, Detail,
                            "{} {uid} gives up on {target:?}", g.units[&uid].kind;
-                           "ordered there {stuck} turns running from {upos:?} and never moved; \
-                            the host will not walk it there, so that ground is retired for \
-                            {EXPLORE_DEAD_TARGET_TURNS} turns";
+                           "ordered there {stuck} turns running from {upos:?} without coming \
+                            closer; the host will not walk it there, so that ground is retired \
+                            for {EXPLORE_DEAD_TARGET_TURNS} turns";
                            upos);
                     goal = self.exploration_goal(g, pid, uid, dry_only);
                 }
@@ -21657,8 +21683,16 @@ mod tests {
         }
         assert_eq!(
             retired_on,
-            Some(1 + EXPLORE_STUCK_TURNS as usize),
-            "two returns to the previous tile retire the goal"
+            Some(EXPLORE_NO_PROGRESS_TURNS as usize),
+            "turns without coming closer retire the goal"
+        );
+        let dead = ai.explore_dead.borrow();
+        let retired = dead.get(&scout).expect("the goal is written off");
+        assert!(
+            game.wdisk(goal, EXPLORE_NO_PROGRESS_RING)
+                .iter()
+                .all(|pos| retired.contains_key(pos)),
+            "with the wider ring, so the next goal is not behind the same obstacle"
         );
     }
 
