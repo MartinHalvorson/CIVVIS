@@ -262,7 +262,7 @@ fn a_bombed_breach_at_one_health_is_finished_by_any_melee_body() {
     let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
     assert!(reserved.contains(&infantry));
     assert_eq!(g.cities[&breached].owner, 0);
-    assert_eq!(ai.planned_air_city_assault().unwrap().cavalry, infantry);
+    assert_eq!(ai.planned_air_city_assault().unwrap().cavalry, Some(infantry));
 }
 
 /// A city's melee defence follows its owner's best unit, so the nearest
@@ -311,4 +311,51 @@ fn a_breach_nobody_can_finish_draws_the_nearest_body_in() {
     assert_eq!(g.cities[&breached].owner, 1, "two moves cannot reach it this turn");
     assert!(reserved.contains(&infantry));
     assert!(g.wdist(g.units[&infantry].pos, (30, 10)) < 5, "it closes in");
+}
+
+/// Live King 20260930T211803Z turn 184, frame 0: no cavalry in reach, so the
+/// maneuver flew nothing and the unit loop spent the wing on field units. A
+/// visible city's walls fall to the wing alone.
+#[test]
+fn the_wing_bombs_a_visible_city_with_no_cavalry_in_reach() {
+    let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+    g.remove_unit(cavalry);
+    // A picket that sees the city but is no cavalry the maneuver could use.
+    let picket = g.spawn_test_unit("infantry", 0, (18, 10));
+    assert!(g.player_can_see(0, (20, 10)));
+    ai.air_surge = false;
+    ai.enable_air_surge_2();
+    let cid = plan.target_city.unwrap();
+    g.cities.get_mut(&cid).unwrap().wall_hp = 400;
+    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, 400);
+    ai.observe_air_assault_frame(BTreeSet::from([(20, 10)]), 2);
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+    for uid in &bombers {
+        assert!(
+            reserved.contains(uid),
+            "the wing is spent on the city: reserved {reserved:?}, report {:?}, bombers {:?}",
+            ai.planned_air_city_assault(),
+            bombers.iter().map(|b| (g.units[b].pos, g.units[b].moves_left, g.units[b].acted, g.units[b].hp)).collect::<Vec<_>>()
+        );
+    }
+    assert!(g.cities[&cid].wall_hp < 400);
+    let report = ai.planned_air_city_assault().unwrap();
+    assert_eq!(report.cavalry, None, "walls still stand; nobody walks in");
+    assert_eq!(report.aircraft.len(), bombers.len());
+    assert!(!reserved.contains(&picket));
+
+    // Version one keeps its cavalry-led maneuver only.
+    let (mut g, mut ai, plan, cavalry, _) = fixture();
+    g.remove_unit(cavalry);
+    g.spawn_test_unit("infantry", 0, (18, 10));
+    ai.observe_air_assault_frame(BTreeSet::from([(20, 10)]), 2);
+    assert!(ai.plan_air_city_assault(&mut g, 0, &plan).is_empty());
+
+    // An unseen city still waits for a spotter.
+    let (mut g, mut ai, plan, cavalry, _) = fixture();
+    g.remove_unit(cavalry);
+    ai.air_surge = false;
+    ai.enable_air_surge_2();
+    ai.observe_air_assault_frame(BTreeSet::new(), 2);
+    assert!(ai.plan_air_city_assault(&mut g, 0, &plan).is_empty());
 }

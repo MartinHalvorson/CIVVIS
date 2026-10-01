@@ -14,7 +14,7 @@ fn fixture(visible: bool) -> (Vec<Order>, AirCityAssault, Snapshot, BTreeMap<u32
     let target = (11, 8);
     let plan = AirCityAssault {
         target: civvis::hex::offset_to_axial(target.0, target.1),
-        cavalry: 7,
+        cavalry: Some(7),
         spot: civvis::hex::offset_to_axial(9, 8),
         moved_to_spot: true,
         aircraft: vec![20, 21],

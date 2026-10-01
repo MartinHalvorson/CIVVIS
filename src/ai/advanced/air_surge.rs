@@ -1294,8 +1294,15 @@ impl AdvancedAi {
     /// handed research back to the lane scorer with nothing steering it to
     /// the Bomber. Who the wing will fight can change; that the Domination
     /// seat wants the wing does not. The same gates as an appointment apply:
-    /// the horizon, the whole chain and package fitting before the endgame
-    /// reserve, and a safe home.
+    /// the horizon and the whole chain and package fitting before the
+    /// endgame reserve.
+    ///
+    /// ⚠ A threatened home does not switch this off. It already hands the
+    /// slot to a nearer ground upgrade through the wartime-modernization
+    /// yield below; switching the beeline off as well sent live 225143Z's
+    /// research to the lane scorer instead ("Researching economics | worth 17
+    /// to the conquest plan" at turn 140, three techs from the Bomber, with
+    /// neither the wing nor the army modernizing).
     pub(crate) fn air_surge_lane_beeline(&self, g: &Game, pid: usize) -> bool {
         self.air_surge_2
             && self.active_victory_target(g) == Some(VictoryTarget::Domination)
@@ -1305,7 +1312,6 @@ impl AdvancedAi {
             && g.player_city_ids(pid).len() >= 2
             && Self::air_surge_bomber(g, pid).is_some()
             && Self::air_surge_missing_techs(g, pid) <= AIR_SURGE_TECH_HORIZON
-            && self.threatened_city(g, pid).is_none()
             && self.air_surge_affordable(g, pid)
     }
 
