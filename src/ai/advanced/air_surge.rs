@@ -126,6 +126,9 @@ pub(crate) const AIR_SURGE_WALL_DISCOUNT: f64 = 0.75;
 /// What an unconquered original capital is worth to a Domination wing on top
 /// of the ground ranking's own capital credit.
 pub(crate) const AIR_SURGE_CAPITAL_VALUE: f64 = 160.0;
+/// A capital earns [`AIR_SURGE_CAPITAL_VALUE`] only within this many tiles of
+/// one of our cities.
+pub(crate) const AIR_SURGE_CAPITAL_REACH: i32 = 12;
 /// Technologies from the Bomber within which the surge's own war is held
 /// against a stalled-war peace offer. See
 /// [`AdvancedAi::air_surge_holds_front`].
@@ -926,7 +929,16 @@ impl AdvancedAi {
         let wall_terms = if walls > 0.0 { 55.0 + walls * 0.56 } else { 0.0 };
         // `is_capital` marks the founding capital for good, whoever holds it
         // now, and every one of them must be held for the victory.
-        let capital = if city.is_capital && city.owner != pid {
+        // Only a capital within reach of the empire's core: once the wing is
+        // ready this objective becomes the land campaign's target, and a
+        // capital twenty tiles out is a march the capture bodies cannot make
+        // inside the window the wing keeps it emptied (live 20261001T010043Z
+        // marched on Poland's farthest city and never staged).
+        let near_core = g
+            .player_city_ids(pid)
+            .into_iter()
+            .any(|cid| g.wdist(g.cities[&cid].pos, city.pos) <= AIR_SURGE_CAPITAL_REACH);
+        let capital = if city.is_capital && city.owner != pid && near_core {
             AIR_SURGE_CAPITAL_VALUE
         } else {
             0.0
