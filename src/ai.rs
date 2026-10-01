@@ -9122,6 +9122,47 @@ impl BasicAi {
         self.settler_idle.retain(|uid, _| seen.contains(uid));
     }
 
+    /// How many Settlers the empire may have walking or queued at once — the
+    /// one width `pick_item` asks before starting a Settler and the queue
+    /// revalidation in `cities` asks before keeping one. `settlers` counts
+    /// the walkers and every queued Settler.
+    fn settler_pipeline_width(&self, g: &Game, n_cities: usize, settlers: usize) -> usize {
+        let seats_short =
+            (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
+        // `rapid-city-expansion-2` answers only while the empire trails
+        // the opening pace; `None` falls through to the ordinary gates
+        // below, exactly as `AdvancedAi::settler_in_flight_allowed` does.
+        // An `unwrap_or(1)` here held the delegated governor to one walker
+        // for the rest of the game once the band closed: on King
+        // `civvis-20260930T225143Z` the capital's queued Settlers were
+        // refused "a settler is already in flight" at 4 cities of 10
+        // wanted (t65, t70) while the strategic governor's land-grab width
+        // allowed three.
+        let rapid = if self.rapid_city_expansion_2 && seats_short > 0 {
+            advanced::rapid_city_expansion::pipeline_width(
+                g,
+                n_cities + seats_short,
+                n_cities,
+                settlers,
+            )
+        } else {
+            None
+        };
+        let pipeline = if let Some(width) = rapid {
+            width
+        } else if self.land_grab && seats_short > 0 {
+            (crate::ai::LAND_GRAB_PIPELINE_BASE + n_cities / 3).min(seats_short)
+        } else if self.parallel_settlers
+            && n_cities >= 2
+            && ((n_cities + settlers + 1) as f64) < self.w.city_target
+        {
+            2
+        } else {
+            1
+        };
+        pipeline
+    }
+
     /// How many of this player's Settlers have stopped making progress.
     ///
     /// ⚠ THIS EXISTS BECAUSE ONE STUCK SETTLER USED TO END AN EMPIRE'S
@@ -9303,7 +9344,16 @@ impl BasicAi {
         // a civilian that can never found a city.
         let practical_settle_site = self.has_practical_settle_site(g, pid);
         if settlers > active_settlers || (settlers > 0 && !practical_settle_site) {
-            let mut committed_settlers = active_settlers;
+            // A queued Settler is kept while the pipeline `pick_item` would
+            // open for it still has room. Keeping only the first one when no
+            // walker existed replaced every second Settler the pipeline had
+            // just authorised: on the live King seat the capital alternated
+            // Settler and Monument orders every turn (civvis-20261001T000033Z
+            // t27-t30; eight such swaps by t51 in every game of 2026-09-30),
+            // each replacement asking `pick_item` with the walker counted as
+            // the one Settler in flight.
+            let width = self.settler_pipeline_width(g, n_cities, settlers);
+            let mut committed_settlers = active_settlers.saturating_sub(self.stranded_settlers(g, pid));
             for cid in &city_ids {
                 if !matches!(
                     g.cities[cid].queue.first(),
@@ -9311,8 +9361,8 @@ impl BasicAi {
                 ) {
                     continue;
                 }
-                if committed_settlers == 0 && practical_settle_site {
-                    committed_settlers = 1;
+                if committed_settlers < width.max(1) && practical_settle_site {
+                    committed_settlers += 1;
                     continue;
                 }
                 let replacement = self.pick_item(
@@ -12208,39 +12258,7 @@ impl BasicAi {
             // cities, never more than the seats still short. See `land_grab`
             // and `AdvancedAi::settler_in_flight_allowed`, which opens the
             // same width for the strategic governor.
-            let seats_short =
-                (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
-            // `rapid-city-expansion-2` answers only while the empire trails
-            // the opening pace; `None` falls through to the ordinary gates
-            // below, exactly as `AdvancedAi::settler_in_flight_allowed` does.
-            // An `unwrap_or(1)` here held the delegated governor to one walker
-            // for the rest of the game once the band closed: on King
-            // `civvis-20260930T225143Z` the capital's queued Settlers were
-            // refused "a settler is already in flight" at 4 cities of 10
-            // wanted (t65, t70) while the strategic governor's land-grab width
-            // allowed three.
-            let rapid = if self.rapid_city_expansion_2 && seats_short > 0 {
-                advanced::rapid_city_expansion::pipeline_width(
-                    g,
-                    n_cities + seats_short,
-                    n_cities,
-                    settlers,
-                )
-            } else {
-                None
-            };
-            let pipeline = if let Some(width) = rapid {
-                width
-            } else if self.land_grab && seats_short > 0 {
-                (crate::ai::LAND_GRAB_PIPELINE_BASE + n_cities / 3).min(seats_short)
-            } else if self.parallel_settlers
-                && n_cities >= 2
-                && ((n_cities + settlers + 1) as f64) < self.w.city_target
-            {
-                2
-            } else {
-                1
-            };
+            let pipeline = self.settler_pipeline_width(g, n_cities, settlers);
             // ★★★★ A PARKED SETTLER HOLDS THE PIPELINE, IT DOES NOT OPEN IT.
             // `stranded-settler-discount` above subtracts a Settler idle
             // twelve turns so its replacement may start — and the replacement
@@ -21379,6 +21397,64 @@ mod tests {
             !is_settler(ask(&game, &treated, 3, 0)),
             "and stops when a settler can no longer repay"
         );
+    }
+
+    /// The queue revalidation keeps a queued Settler while the pipeline
+    /// `pick_item` would open for it has room. It used to keep one Settler in
+    /// all, walker or queued, so a capital building the second Settler the
+    /// land grab had just authorised swapped it for a Monument, then took it
+    /// back the next turn, every turn (live King `civvis-20261001T000033Z`
+    /// t27-t30).
+    #[test]
+    fn a_queued_second_settler_survives_the_revalidation_inside_the_pipeline() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("LANDGRAB", 91_779),
+            250,
+            0,
+            false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        game.cities.get_mut(&capital).unwrap().pop = 4;
+        let home = game.cities[&capital].pos;
+        game.spawn_unit("scout", 0, home);
+        game.spawn_unit("warrior", 0, home);
+        game.spawn_unit("settler", 0, home);
+        game.turn = 30;
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let queue_settler = |game: &mut Game| {
+            game.cities.get_mut(&capital).unwrap().queue.clear();
+            game.apply(0, &Action::Produce { city: capital, item: settler.clone() })
+                .unwrap();
+        };
+        let mut ai = BasicAi::new();
+        ai.w.city_target = 8.0;
+        ai.enable_land_grab();
+        assert!(ai.has_practical_settle_site(&game, 0), "the fixture has land");
+        queue_settler(&mut game);
+        ai.cities(&mut game, 0);
+        assert_eq!(
+            game.cities[&capital].queue.first(),
+            Some(&settler),
+            "one walker and one queued Settler fit the land grab's two"
+        );
+
+        // Without a widened pipeline the old one-Settler rule still holds.
+        let mut single = BasicAi::new();
+        single.w.city_target = 8.0;
+        queue_settler(&mut game);
+        single.cities(&mut game, 0);
+        assert_ne!(game.cities[&capital].queue.first(), Some(&settler));
     }
 
     /// `rapid-city-expansion-2` widens the pipeline only while the empire
