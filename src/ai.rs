@@ -12192,14 +12192,27 @@ impl BasicAi {
             // same width for the strategic governor.
             let seats_short =
                 (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
-            let pipeline = if self.rapid_city_expansion_2 && seats_short > 0 {
+            // `rapid-city-expansion-2` answers only while the empire trails
+            // the opening pace; `None` falls through to the ordinary gates
+            // below, exactly as `AdvancedAi::settler_in_flight_allowed` does.
+            // An `unwrap_or(1)` here held the delegated governor to one walker
+            // for the rest of the game once the band closed: on King
+            // `civvis-20260930T225143Z` the capital's queued Settlers were
+            // refused "a settler is already in flight" at 4 cities of 10
+            // wanted (t65, t70) while the strategic governor's land-grab width
+            // allowed three.
+            let rapid = if self.rapid_city_expansion_2 && seats_short > 0 {
                 advanced::rapid_city_expansion::pipeline_width(
                     g,
                     n_cities + seats_short,
                     n_cities,
                     settlers,
                 )
-                .unwrap_or(1)
+            } else {
+                None
+            };
+            let pipeline = if let Some(width) = rapid {
+                width
             } else if self.land_grab && seats_short > 0 {
                 (crate::ai::LAND_GRAB_PIPELINE_BASE + n_cities / 3).min(seats_short)
             } else if self.parallel_settlers
@@ -15822,8 +15835,7 @@ impl BasicAi {
                         // each move resetting a same-tile count, until the
                         // six-turn livelock window caught it.
                         Some(entry)
-                            if entry.0 == target
-                                && (entry.1 == upos || entry.4 == Some(upos)) =>
+                            if entry.0 == target && (entry.1 == upos || entry.4 == Some(upos)) =>
                         {
                             if g.turn > entry.3 {
                                 entry.2 += 1;
@@ -21340,6 +21352,61 @@ mod tests {
         assert!(
             !is_settler(ask(&game, &treated, 3, 0)),
             "and stops when a settler can no longer repay"
+        );
+    }
+
+    /// `rapid-city-expansion-2` widens the pipeline only while the empire
+    /// trails the opening pace. Once its band closes it must hand the
+    /// question back to the land grab, not pin the delegated governor to one
+    /// walker for the rest of the game.
+    #[test]
+    fn a_closed_rapid_expansion_band_falls_through_to_the_land_grab_width() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("LANDGRAB", 91_779),
+            250,
+            0,
+            false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        game.cities.get_mut(&capital).unwrap().pop = 5;
+        let home = game.cities[&capital].pos;
+        game.spawn_unit("scout", 0, home);
+        game.spawn_unit("warrior", 0, home);
+        game.turn = 150;
+        let ask = |game: &Game, ai: &BasicAi, cities: usize, settlers: usize| {
+            ai.pick_item(game, 0, capital, cities, settlers, 6, 2, 1, 20, 10, 10)
+        };
+        let is_settler =
+            |item: Option<Item>| matches!(item, Some(Item::Unit { unit }) if unit == "settler");
+        let mut treated = BasicAi::new();
+        treated.w.city_target = 10.0;
+        treated.enable_land_grab();
+        assert!(
+            is_settler(ask(&game, &treated, 4, 1)),
+            "land grab alone: four cities, one walker, a second may start"
+        );
+        treated.enable_rapid_city_expansion_2();
+        assert_eq!(
+            advanced::rapid_city_expansion::pipeline_width(&game, 10, 4, 1),
+            None,
+            "the opening band has closed"
+        );
+        assert!(
+            is_settler(ask(&game, &treated, 4, 1)),
+            "a closed band falls through to the land grab's width"
+        );
+        assert!(
+            !is_settler(ask(&game, &treated, 4, 3)),
+            "and the land grab's own width still binds"
         );
     }
 
