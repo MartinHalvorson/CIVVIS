@@ -359,3 +359,41 @@ fn the_wing_bombs_a_visible_city_with_no_cavalry_in_reach() {
     ai.observe_air_assault_frame(BTreeSet::new(), 2);
     assert!(ai.plan_air_city_assault(&mut g, 0, &plan).is_empty());
 }
+
+/// Live King 20260930T211803Z, Edirne at one health turns 188-191: the
+/// approach was held by the Ottoman army, not merely far. The wing strikes
+/// the defenders on the ring before the capture is tried again.
+#[test]
+fn the_wing_clears_a_guarded_breach_before_the_capture() {
+    let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+    g.remove_unit(cavalry);
+    ai.air_surge = false;
+    ai.enable_air_surge_2();
+    let cid = plan.target_city.unwrap();
+    {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.hp = 1;
+        city.wall_hp = 0;
+    }
+    let ring: Vec<Pos> = g.nbrs((20, 10)).into_iter().collect();
+    let defenders: Vec<u32> = ring
+        .iter()
+        .map(|pos| g.spawn_test_unit("infantry", 1, *pos))
+        .collect();
+    g.spawn_test_unit("tank", 0, (16, 10));
+    assert!(g.player_can_see(0, (20, 10)) || {
+        g.spawn_test_unit("infantry", 0, (18, 9));
+        true
+    });
+    ai.observe_air_assault_frame(BTreeSet::from([(20, 10)]), 2);
+    let before: i32 = defenders.iter().map(|uid| g.units[uid].hp).sum();
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+    for uid in &bombers {
+        assert!(reserved.contains(uid), "the wing flew at the approach");
+    }
+    let after: i32 = defenders
+        .iter()
+        .map(|uid| g.units.get(uid).map_or(0, |unit| unit.hp))
+        .sum();
+    assert!(after < before, "the defenders on the ring took the volley");
+}

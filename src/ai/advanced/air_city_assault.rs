@@ -113,10 +113,47 @@ impl AdvancedAi {
                 continue;
             }
             let Some((taker, actions)) = self.air_assault_best_capture(g, pid, cid, &takers) else {
+                // ★★ THE BREACH WAS GUARDED, NOT FAR. Live King
+                // 20260930T211803Z, Edirne at one health turns 188-191: the
+                // approach tiles stood in 200-459 danger from the Ottoman
+                // army around the city, and the wing spent its sorties
+                // holding a one-health city at one. Strike the defenders on
+                // the approach instead, then look for the capture again.
+                if let Some((sorties, struck, _)) =
+                    self.air_assault_clear_approach(g, pid, plan, cid, target)
+                {
+                    reserved.extend(sorties.iter().copied());
+                    let takers = self.air_assault_takers(g, pid, target);
+                    if let Some((taker, capture)) =
+                        self.air_assault_best_capture(g, pid, cid, &takers)
+                    {
+                        let origin = g.units[&taker].pos;
+                        if capture.iter().all(|action| g.apply(pid, action).is_ok()) {
+                            self.resolve_city_dispositions(g, pid, plan.strategy);
+                            reserved.insert(taker);
+                            crate::think!(self.journal(), Military, Decision,
+                                "Bombers clear the approach to {}", g.cities.get(&cid).map_or("the city", |city| city.name.as_str());
+                                "{} sorties on {} defenders; {} walks in from {} tiles; city captured {}",
+                                sorties.len(), struck,
+                                crate::reasoning::plain(g.units.get(&taker).map_or("unit", |unit| unit.kind.as_str())),
+                                g.wdist(origin, target),
+                                g.cities.get(&cid).is_some_and(|city| city.owner == pid));
+                            return reserved;
+                        }
+                    }
+                    crate::think!(self.journal(), Military, Decision,
+                        "Bombers clear the approach to {}", g.cities[&cid].name;
+                        "{} sorties on {} defenders around a breach nobody can finish yet",
+                        sorties.len(), struck);
+                }
                 // Nobody can finish it this turn. The walls are down, so the
                 // city cannot strike the approach: close the nearest body in
                 // so the next board's capture is one step, and keep it out of
                 // the ordinary loop that would walk it back to an anchor.
+                let takers = self.air_assault_takers(g, pid, target);
+                if takers.is_empty() {
+                    continue;
+                }
                 let nearest = *takers
                     .iter()
                     .min_by_key(|uid| (g.wdist(g.units[*uid].pos, target), **uid))
@@ -255,6 +292,24 @@ impl AdvancedAi {
             .cities
             .get(&cid)
             .is_some_and(|city| city.owner != pid && city.wall_hp <= 0);
+        // The volley leaves the city at one health, and Bombers that did not
+        // fly at it (a one-health city is worth no further sortie) strike the
+        // defenders on its approach before the capture is tried again.
+        if capture.is_none() && breached_after_sorties {
+            if let Some((cleared, _, actions)) =
+                self.air_assault_clear_approach(&mut opening.board, pid, plan, cid, target)
+            {
+                opening.actions.extend(actions);
+                sorties.extend(cleared);
+                let takers = self.air_assault_takers(&opening.board, pid, target);
+                if let Some((other, actions)) =
+                    self.air_assault_best_capture(&opening.board, pid, cid, &takers)
+                {
+                    uid = other;
+                    capture = Some(actions);
+                }
+            }
+        }
         if let Some(actions) = capture {
             opening.actions.extend(actions);
         } else if let Some(action) = breached_after_sorties
@@ -313,6 +368,109 @@ impl AdvancedAi {
             g.cities.get(&cid).is_some_and(|city| city.owner == pid));
         self.air_city_assault = Some(report);
         reserved
+    }
+
+    /// `air-surge-2`: the wing strikes the enemy units standing within two
+    /// tiles of a breached city, one sortie per aircraft. Returns the
+    /// aircraft that flew, the defenders struck and the strike actions, all
+    /// already applied to `g`.
+    ///
+    /// A Bomber's exchange with a healthy defender usually prices below zero
+    /// on its own; a volley that opens the capture this turn is worth that
+    /// cost. So the wing first tries every defender it can reach regardless
+    /// of the exchange and keeps that volley only if a capture follows it;
+    /// otherwise only blows worth their own exchange fly.
+    fn air_assault_clear_approach(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        cid: u32,
+        target: Pos,
+    ) -> Option<(Vec<u32>, usize, Vec<Action>)> {
+        if !self.air_surge_2 {
+            return None;
+        }
+        let mut costly = g.speculative_clone();
+        if let Some(volley) = self.air_assault_approach_volley(&mut costly, pid, plan, cid, target, true)
+        {
+            let takers = self.air_assault_takers(&costly, pid, target);
+            if self.air_assault_best_capture(&costly, pid, cid, &takers).is_some() {
+                for action in &volley.2 {
+                    if g.apply(pid, action).is_err() {
+                        break;
+                    }
+                }
+                return Some(volley);
+            }
+        }
+        self.air_assault_approach_volley(g, pid, plan, cid, target, false)
+    }
+
+    fn air_assault_approach_volley(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        cid: u32,
+        target: Pos,
+        regardless_of_exchange: bool,
+    ) -> Option<(Vec<u32>, usize, Vec<Action>)> {
+        let owner = g.cities.get(&cid)?.owner;
+        let aircraft: Vec<u32> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| {
+                let unit = &g.units[uid];
+                let spec = &g.rules.units[unit.kind];
+                spec.domain.as_deref() == Some("air")
+                    && spec.siege
+                    && unit.hp >= 50
+                    && unit.moves_left > 0.0
+                    && !unit.acted
+            })
+            .collect();
+        if aircraft.is_empty() {
+            return None;
+        }
+        let mut sorties = Vec::new();
+        let mut struck = BTreeSet::new();
+        let mut actions = Vec::new();
+        for uid in aircraft.into_iter().take(AIR_ASSAULT_MAX_SORTIES) {
+            // Re-read the ring each sortie: an earlier blow may have killed
+            // its defender.
+            let defenders: BTreeSet<Pos> = g
+                .units
+                .values()
+                .filter(|unit| {
+                    unit.owner != pid
+                        && (unit.owner == owner || g.is_at_war(pid, unit.owner))
+                        && g.rules.units[unit.kind].class == "military"
+                        && g.wdist(unit.pos, target) <= 2
+                        && unit.pos != target
+                })
+                .map(|unit| unit.pos)
+                .collect();
+            let best = defenders
+                .iter()
+                .filter(|pos| {
+                    g.wdist(g.units[&uid].pos, **pos) <= g.unit_attack_range(uid)
+                        && !g.strike_blocked(uid, **pos)
+                })
+                .map(|pos| (self.air_strike_value(g, pid, uid, *pos, plan), *pos))
+                .filter(|(value, _)| value.is_finite() && (regardless_of_exchange || *value > 0.0))
+                .max_by(|left, right| left.0.total_cmp(&right.0).then(right.1.cmp(&left.1)));
+            let Some((_, pos)) = best else {
+                continue;
+            };
+            let action = Action::AirStrike { unit: uid, target: pos };
+            if g.apply(pid, &action).is_ok() {
+                sorties.push(uid);
+                struck.insert(pos);
+                actions.push(action);
+            }
+        }
+        (!sorties.is_empty()).then_some((sorties, struck.len(), actions))
     }
 
     /// The wing's sorties at a visible city with no spotting cavalry, then the

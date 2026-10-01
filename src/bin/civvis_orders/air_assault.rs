@@ -80,10 +80,14 @@ pub(super) fn defer_followups(
         .iter()
         .filter_map(|uid| mapped.get(uid).copied())
         .collect();
+    // Every sortie of the maneuver's own aircraft is the volley, including
+    // the ones it flies at the defenders on a breached city's approach
+    // (`air_city_assault::air_assault_clear_approach`); only orders that are
+    // not this wing's wait for the observed board.
     let is_sortie = |order: &Order| {
         order.kind == "unit"
             && order.verb.as_deref() == Some("AIR_ATTACK")
-            && order.pos == Some(target)
+            && order.pos.is_some()
             && order.subject.is_some_and(|id| aircraft.contains(&id))
     };
     let Some(boundary) = orders.iter().position(is_sortie) else {
