@@ -242,3 +242,65 @@ fn an_unexpected_nonurgent_war_keeps_the_domination_air_investment() {
     assert_eq!(ai.air_surge_cooldown_until, 0);
     assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
 }
+
+/// Live King 20261001T000033Z, no Horses or Iron: the "strongest cavalry" was
+/// a Heavy Chariot at turn 190 and the capital siege never captured. An
+/// outclassed cavalry line hands the capture to the strongest melee body.
+#[test]
+fn an_outclassed_cavalry_line_hands_the_capture_to_the_strongest_melee_body() {
+    let mut g = Game::new_full(2, 30, 20, 936211, 500, 0, false);
+    g.found_city_for(0, (8, 8), None);
+    for tech in ["bronze_working", "the_wheel", "wheel", "military_science", "rifling", "gunpowder", "military_tactics", "ballistics"] {
+        if g.rules.techs.contains_key(&Name::new(tech)) {
+            g.players[0].techs.insert(Name::new(tech));
+            for ancestor in g.rules.tech_ancestors.get(tech).cloned().unwrap_or_default() {
+                g.players[0].techs.insert(Name::new(&ancestor));
+            }
+        }
+    }
+    // No Horses and no Iron: the host offers the resource-free chariot and
+    // Line Infantry, as its own production menu would.
+    let city = g.player_city_ids(0)[0];
+    let menu = |units: &[&str]| {
+        let mut offered = std::collections::BTreeMap::new();
+        offered.insert(
+            city,
+            units
+                .iter()
+                .map(|unit| {
+                    (
+                        Game::production_block_key(&Item::Unit { unit: Name::new(unit) }),
+                        crate::game::HostMenuEntry::default(),
+                    )
+                })
+                .collect(),
+        );
+        offered
+    };
+    g.replace_host_menus(
+        menu(&["heavy_chariot", "line_infantry"]),
+        Default::default(),
+        Default::default(),
+    );
+    // Niter for the Line Infantry; still no Horses or Iron for cavalry.
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("niter"), 40.0);
+    let (body, is_cavalry) = AdvancedAi::air_surge_body(&g, 0).expect("a body");
+    assert_eq!(body, "line_infantry");
+    assert!(!is_cavalry);
+
+    // Comparable cavalry keeps the job: a Cuirassier beside Line Infantry.
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 40.0);
+    g.replace_host_menus(
+        menu(&["cuirassier", "line_infantry"]),
+        Default::default(),
+        Default::default(),
+    );
+    assert_eq!(
+        AdvancedAi::air_surge_body(&g, 0),
+        Some((Name::new("cuirassier"), true))
+    );
+}

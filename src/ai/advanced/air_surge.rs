@@ -106,6 +106,9 @@ pub(crate) const AIR_SURGE_LAUNCH_BOMBERS: usize = 2;
 /// Cavalry bodies that walk in and take the cities the wing empties. Four are
 /// the sustained campaign package, so a captured continent can be held.
 pub(crate) const AIR_SURGE_BODIES: usize = 4;
+/// The cavalry capture body is preferred while it has at least this share
+/// of the strongest buildable land melee body's strength.
+pub(crate) const AIR_SURGE_CAVALRY_FLOOR: f64 = 0.8;
 /// Two fast capture bodies are enough to begin the campaign. The remaining
 /// bodies continue to build behind the opening captures.
 pub(crate) const AIR_SURGE_LAUNCH_BODIES: usize = 2;
@@ -448,9 +451,30 @@ impl AdvancedAi {
                         .then_with(|| right.cmp(left))
                 })
         };
-        strongest(true)
-            .map(|unit| (unit, true))
-            .or_else(|| strongest(false).map(|unit| (unit, false)))
+        // ★★ A CAVALRY BODY THE CITY KILLS IS NO BODY. Live King
+        // 20261001T000033Z had neither Horses nor Iron, so "the strongest
+        // cavalry it can build" was a Heavy Chariot (28) at turn 190, and the
+        // wing's capital siege ran forty turns without a capture: a city's
+        // melee defence follows its owner's best unit. Cavalry stays the
+        // preference while it is within reach of the strongest melee body;
+        // a badly outclassed line hands the job to that body instead.
+        let cavalry = strongest(true);
+        let melee = strongest(false);
+        match (cavalry, melee) {
+            (Some(cav), Some(best))
+                if g.rules.units[cav].strength
+                    < g.rules.units[best].strength * AIR_SURGE_CAVALRY_FLOOR =>
+            {
+                let is_cavalry = matches!(
+                    g.rules.units[best].promotion_class.as_str(),
+                    "light_cavalry" | "heavy_cavalry"
+                );
+                Some((best, is_cavalry))
+            }
+            (Some(cav), _) => Some((cav, true)),
+            (None, Some(best)) => Some((best, false)),
+            (None, None) => None,
+        }
     }
 
     /// Every city of ours that can base an aircraft: the City Center carries
