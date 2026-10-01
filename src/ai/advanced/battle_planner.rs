@@ -2219,6 +2219,17 @@ impl AdvancedAi {
             if !wounded && self.active_siege_member(g, pid, uid) {
                 continue;
             }
+            // A healthy explorer is not a garrison either. The same summed
+            // field read 88-138 danger around full-health Skirmishers on King
+            // `civvis-20261001T050754Z` and "rotated them out to heal" at 100
+            // hp every turn from t90 to t130, so the two explorers paced the
+            // home cities while Germany, the culture winner, went uncharted
+            // until t147. Its own route (`explorer_turn`) steers around
+            // known threats; only the wounded come out. A vetoed attacker
+            // keeps the doomed path below, which has its own recon escape.
+            if !wounded && !doomed.contains(&uid) && self.distance_scout_available(g, pid, uid) {
+                continue;
+            }
             // Where nothing heals, a unit is pulled out only when it would
             // otherwise be removed: without a recovery to remember, a margin
             // would walk it out of reach one turn and back into it the next.
