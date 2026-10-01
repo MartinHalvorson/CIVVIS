@@ -21,6 +21,7 @@
 //! never ordered.
 
 use super::*;
+use crate::ai::advanced::{GrandStrategy, StrategicPlan};
 use std::collections::BTreeSet;
 
 /// A raider stays at least this healthy.
@@ -44,6 +45,8 @@ const RAID_IMPROVEMENT_DENIAL: f64 = 8.0;
 const RAID_DISTANCE_COST: f64 = 4.0;
 /// Reachable tiles a raider simulates, nearest the objective first.
 const RAID_TILES: usize = 16;
+/// A land siege's ring: bodies this close to its city stay on it.
+const RAID_RING: i32 = 2;
 
 impl AdvancedAi {
     /// Plan and apply this turn's raids. Returns the raiders, which the
@@ -52,21 +55,42 @@ impl AdvancedAi {
         &mut self,
         g: &mut Game,
         pid: usize,
+        strategic: &StrategicPlan,
         reserved: &BTreeSet<u32>,
     ) -> BTreeSet<u32> {
         let mut raiders = BTreeSet::new();
-        let Some(plan) = self.air_surge_plan.clone() else {
-            return raiders;
-        };
         if !self.air_surge_2
             || self.active_victory_target(g) != Some(VictoryTarget::Domination)
-            || plan.phase != AirSurgePhase::Exploit
-            || !g.is_at_war(pid, plan.target_player)
             || self.threatened_city(g, pid).is_some()
         {
             return raiders;
         }
-        let objective = plan.objective_pos;
+        // The surge's own objective while it fights; otherwise the land
+        // campaign's, when a Domination war is on. Game seven of the live
+        // King series sat at war with Norway from turn 45 at two and a half
+        // times its power on 25 science a turn: a Campus pillaged pays
+        // Science, a Commercial Hub or a mine pays Gold, and the cavalry that
+        // can walk onto the tile were otherwise waiting on the siege.
+        let surge_objective = self
+            .air_surge_plan
+            .as_ref()
+            .filter(|plan| {
+                plan.phase == AirSurgePhase::Exploit && g.is_at_war(pid, plan.target_player)
+            })
+            .map(|plan| plan.objective_pos);
+        let campaign_objective = || {
+            let city = strategic.target_city.and_then(|cid| g.cities.get(&cid))?;
+            (strategic.strategy == GrandStrategy::Conquest
+                && city.owner != pid
+                && g.is_at_war(pid, city.owner)
+                && g.players.get(city.owner).is_some_and(|owner| !owner.is_minor))
+            .then_some(city.pos)
+        };
+        let Some(objective) = surge_objective.or_else(campaign_objective) else {
+            return raiders;
+        };
+        // A land siege keeps the bodies already standing on its ring.
+        let staged = surge_objective.is_none();
         let mut bodies: Vec<u32> = g
             .player_unit_ids(pid)
             .into_iter()
@@ -92,6 +116,7 @@ impl AdvancedAi {
                 let unit = &g.units[uid];
                 let spec = &g.rules.units[unit.kind];
                 !takers.contains(uid)
+                    && !(staged && g.wdist(unit.pos, objective) <= RAID_RING)
                     && spec.cavalry
                     && unit.hp >= RAID_MIN_HP
                     && unit.moves_left > 0.0

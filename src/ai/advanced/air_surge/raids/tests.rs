@@ -40,6 +40,19 @@ fn fixture() -> (Game, AdvancedAi, u32) {
     (g, ai, target)
 }
 
+/// A plan that names no campaign, so only the surge can raise a raid.
+fn peace_plan() -> StrategicPlan {
+    StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: 170,
+        rush: false,
+    }
+}
+
 /// A mine in the target's territory, three tiles from a spare cavalry.
 fn mine_near(g: &mut Game, target: u32) -> Pos {
     let pos = (19, 12);
@@ -67,7 +80,7 @@ fn spare_cavalry_pillages_behind_the_wing_and_the_takers_stay() {
     let gold = g.players[0].gold;
     // The host pillages where the unit stands when the order runs, so a
     // raid that walks only walks on this frame.
-    let raiders = ai.plan_air_surge_raids(&mut g, 0, &BTreeSet::new());
+    let raiders = ai.plan_air_surge_raids(&mut g, 0, &peace_plan(), &BTreeSet::new());
     assert_eq!(raiders, BTreeSet::from([raider]));
     assert_eq!(g.units[&raider].pos, mine);
     assert!(!g.map.tiles[&mine].pillaged, "no pillage queued behind the walk");
@@ -78,7 +91,7 @@ fn spare_cavalry_pillages_behind_the_wing_and_the_takers_stay() {
     let unit = g.units.get_mut(&raider).unwrap();
     unit.acted = false;
     unit.moves_left = 2.0;
-    let raiders = ai.plan_air_surge_raids(&mut g, 0, &BTreeSet::new());
+    let raiders = ai.plan_air_surge_raids(&mut g, 0, &peace_plan(), &BTreeSet::new());
     assert_eq!(raiders, BTreeSet::from([raider]));
     assert!(g.map.tiles[&mine].pillaged);
     assert!(g.players[0].gold > gold, "a mine's plunder is Gold");
@@ -109,7 +122,47 @@ fn no_raid_outside_a_domination_surge_at_war_or_into_danger() {
             }
             _ => unreachable!(),
         }
-        let raiders = ai.plan_air_surge_raids(&mut g, 0, &BTreeSet::new());
+        let raiders = ai.plan_air_surge_raids(&mut g, 0, &peace_plan(), &BTreeSet::new());
         assert!(!raiders.contains(&raider), "{case}");
+    }
+}
+
+/// Without a surge, a Domination war's land campaign still raises raids:
+/// live game seven sat at war at 2.5x power on 25 science a turn.
+#[test]
+fn a_domination_land_war_sends_spare_cavalry_raiding() {
+    for case in ["campaign", "expansion", "peace"] {
+        let (mut g, mut ai, target) = fixture();
+        ai.air_surge_plan = None;
+        let mine = mine_near(&mut g, target);
+        for pos in [(20, 12), (20, 13)] {
+            g.spawn_test_unit("cavalry", 0, pos);
+        }
+        // Staged on the siege ring: stays.
+        let staged = g.spawn_test_unit("cavalry", 0, (21, 11));
+        let raider = g.spawn_test_unit("cavalry", 0, (16, 12));
+        let mut plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(target),
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: 170,
+            rush: false,
+        };
+        match case {
+            "campaign" => {}
+            "expansion" => plan.strategy = GrandStrategy::Expansion,
+            "peace" => g.at_war.clear(),
+            _ => unreachable!(),
+        }
+        let raiders = ai.plan_air_surge_raids(&mut g, 0, &plan, &BTreeSet::new());
+        assert!(!raiders.contains(&staged), "{case}");
+        if case == "campaign" {
+            assert_eq!(raiders, BTreeSet::from([raider]), "{case}");
+            assert_eq!(g.units[&raider].pos, mine);
+        } else {
+            assert!(raiders.is_empty(), "{case}");
+        }
     }
 }
