@@ -1628,3 +1628,20 @@ fn a_declaration_is_not_read_as_peace_on_the_turn_it_is_made() {
     ai.maintain_conquest_opening(&mut game, 0);
     assert!(ai.conquest_opening.is_none(), "a war that never opened ends the opening");
 }
+
+#[test]
+fn the_reserve_gathers_at_the_rally_while_the_opening_assembles() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = opened(&mut game);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    assert_eq!(ai.conquest_staging_rally(&game), Some(rally));
+
+    let off = AdvancedAi::new();
+    assert_eq!(off.conquest_staging_rally(&game), None, "off, no rally");
+
+    // Once the war is open the campaign's own rows take over.
+    if let Some(opening) = ai.conquest_opening.as_mut() {
+        opening.declared = Some(game.turn);
+    }
+    assert_eq!(ai.conquest_staging_rally(&game), None);
+}

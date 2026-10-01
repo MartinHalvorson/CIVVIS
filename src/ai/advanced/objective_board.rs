@@ -1955,6 +1955,15 @@ impl AdvancedAi {
         if let Some(row) = rows.iter().find(|row| row.kind == ObjectiveKind::Deter) {
             return row.at;
         }
+        // See `early-conquest-opening`: the strike force has no row of its own
+        // before the war, so it falls into the leftovers and held the Reserve
+        // at home -- live King 2026-10-01T022028Z had all six reserved bodies
+        // trained by turn 28 and released the opening on turn 40 "before the
+        // force ever assembled" with every one of them inside the home ring.
+        // While the opening gathers, the Reserve gathers at its rally.
+        if let Some(rally) = self.conquest_staging_rally(g) {
+            return rally;
+        }
         let ours = g.player_city_ids(pid);
         let strongest = g
             .players

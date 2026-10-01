@@ -732,6 +732,17 @@ impl AdvancedAi {
         CONQUEST_SEARCH_SCOUT_VALUE
     }
 
+    /// `early-conquest-opening`: where the objective board's Reserve gathers
+    /// while an opening is still assembling — its rally — or `None` with the
+    /// gene off, with no opening, once the war is open, or past the commit
+    /// deadline. A Deter row still outranks it (the caller asks first).
+    pub(super) fn conquest_staging_rally(&self, g: &Game) -> Option<Pos> {
+        if !self.conquest_reservation_open(g) {
+            return None;
+        }
+        self.conquest_opening.as_ref().map(|opening| opening.rally)
+    }
+
     /// `early-conquest-opening`: whether the capital defers its Settler
     /// while the reservation is unfilled.
     ///
