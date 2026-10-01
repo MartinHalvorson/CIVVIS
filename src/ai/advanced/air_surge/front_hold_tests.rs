@@ -146,6 +146,11 @@ fn a_stalled_war_against_the_armed_surge_target_is_not_offered_peace() {
     let offers = |hold: bool| {
         let (mut g, mut ai, target) = fixture();
         at_war(&mut g);
+        // Short of crushed (`domination_front_crushed`): the live fronts
+        // were 2.7x and 1.7x.
+        for pos in [(36, 20), (36, 21)] {
+            g.spawn_test_unit("cuirassier", 1, pos);
+        }
         g.players[0].gold = 0.0;
         g.players[0].gold_per_turn = -11.0;
         ai.enable_peace_when_war_does_not_pay();

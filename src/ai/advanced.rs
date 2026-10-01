@@ -18007,6 +18007,7 @@ impl AdvancedAi {
         }
         let fatigued = fatigued
             && !self.one_war_presses(g, pid, partner)
+            && !self.domination_front_crushed(g, pid, partner)
             && !self.domination_siege_is_progressing(g, pid, partner, plan)
             && !self.domination_siege_train_mobilizing(g, pid, partner, plan);
         let one_war_peace = self.one_war_peace(g, pid, partner).is_some();
@@ -20284,6 +20285,7 @@ impl AdvancedAi {
                     && g.turn.saturating_sub(self.last_campaign_progress) >= 12
             }) && !self.domination_siege_is_progressing(g, pid, *other, plan)
                 && !self.domination_siege_train_mobilizing(g, pid, *other, plan)
+                && !self.domination_front_crushed(g, pid, *other)
                 && !siege_grace;
             let peace_pending = g.pending_deals.iter().any(|deal| {
                 deal.peace

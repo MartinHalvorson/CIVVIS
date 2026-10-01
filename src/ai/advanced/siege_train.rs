@@ -118,7 +118,10 @@ pub(super) const ABORT_SHARE: f64 = 0.8;
 /// unwalled Xanadu: bills of 51, 128, 181, 161, 54, 158 between turns 41 and
 /// 61 against a force of 74-144. Each one-turn dip dropped the train to Stage
 /// and restarted [`INVEST_PATIENCE`], so it never reduced, and the city was
-/// never damaged in 25 turns.
+/// never damaged in 25 turns. The damage budget is as noisy: around walled
+/// Tushpa (civvis-20261001T042554Z, turns 195-198) the force's endurance read
+/// 264, 10, 312 and 12 on consecutive turns, and every low reading dropped
+/// the train out of Invest.
 pub(super) const ABORT_PATIENCE: u32 = 2;
 /// Melee holds the ring rather than swinging at a wall above this fraction
 /// of its pool, unless a ram or tower stands beside the city.
@@ -191,8 +194,8 @@ pub(super) struct Siege {
     /// not re-rank under it as it walks and two units never chase one tile.
     pub(super) posts: BTreeMap<u32, Pos>,
     /// The first turn of the current run of assessments that found the
-    /// force short of the abort share; `None` when the last assessment was
-    /// not short. See [`ABORT_PATIENCE`].
+    /// force short of the abort share or out of damage budget; `None` when
+    /// the last assessment was not short. See [`ABORT_PATIENCE`].
     pub(super) short_since: Option<u32>,
 }
 
@@ -1105,16 +1108,16 @@ impl AdvancedAi {
             // Regroup for breach support instead of remaining in Reduce with
             // no attack that can finish before the force is exhausted.
             let invested = stage != SiegeStage::Stage && !arena;
-            if invested && strength < ABORT_SHARE * bill {
+            if invested
+                && (strength < ABORT_SHARE * bill
+                    || (!damage_can_continue && breach_taker.is_none()))
+            {
                 let since = *record.short_since.get_or_insert(turn);
                 if turn.saturating_sub(since) + 1 >= ABORT_PATIENCE {
                     stage = SiegeStage::Stage;
                 }
             } else {
                 record.short_since = None;
-            }
-            if invested && !damage_can_continue && breach_taker.is_none() {
-                stage = SiegeStage::Stage;
             }
             match stage {
                 SiegeStage::Stage => {
