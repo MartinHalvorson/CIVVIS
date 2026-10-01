@@ -28,6 +28,9 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
     let unit = g.spawn_test_unit("modern_armor", 0, (19, 10));
     g.spawn_test_unit("modern_armor", 0, (18, 11));
     g.spawn_test_unit("warrior", 1, (29, 11));
+    // A reserve far from both cities keeps the front short of crushed
+    // (`domination_front_crushed`), so a stalled war can still tire.
+    g.spawn_test_unit("modern_armor", 1, (36, 20));
     let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
     ai.major_war_since = Some(80);
     ai.last_campaign_progress = 80;
@@ -332,4 +335,24 @@ fn upgraded_defenses_do_not_expand_or_replenish_the_four_milestone_budget() {
     assert_eq!(ai.domination_siege_milestones[&key].greatest_quarter, 4);
     ai.advanced_diplomacy(&mut g, 0, &plan);
     assert!(ai.peace_offers.contains(&1));
+}
+
+/// See `domination_front_crushed`: a stalled war against a rival we outgun
+/// four times over keeps going. The fixture's far reserve holds the front
+/// short of that; without it the same stall offers no peace.
+#[test]
+fn a_crushed_front_is_not_offered_stalled_peace() {
+    let (mut g, mut ai, plan, _, _) = fixture();
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(ai.peace_offers.contains(&1), "the control: a stalled war");
+
+    let (mut g, mut ai, plan, _, _) = fixture();
+    for uid in g.player_unit_ids(1) {
+        if g.units[&uid].kind == "modern_armor" {
+            g.remove_unit(uid);
+        }
+    }
+    assert!(ai.domination_front_crushed(&g, 0, 1));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1));
 }

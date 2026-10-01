@@ -136,6 +136,10 @@ fn a_wall_rebuild_sends_an_unproductive_melee_siege_back_to_staging() {
     off.assess_siege(&g, 0, cid, &plan, &group);
     assert_eq!(off.sieges[&cid].stage, SiegeStage::Reduce);
 
+    // One short assessment holds (`ABORT_PATIENCE`); the second falls back.
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(ai.sieges[&cid].stage, SiegeStage::Reduce);
+    g.turn = 31;
     ai.assess_siege(&g, 0, cid, &plan, &group);
     assert_eq!(ai.sieges[&cid].stage, SiegeStage::Stage);
 }

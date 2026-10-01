@@ -638,6 +638,16 @@ impl AdvancedAi {
             })
     }
 
+    /// A Domination seat crushing a rival [`ONE_WAR_CRUSHED_RATIO`] times
+    /// over is not fatigued by a stalled front: peace hands the rival the
+    /// turns to rebuild, and the next war restarts staging from nothing.
+    /// Live King civvis-20261001T030914Z offered Ethiopia "the war has
+    /// stalled" peace at turn 92 at 518 power against 66.
+    pub(crate) fn domination_front_crushed(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.one_war_front_crushed(g, pid, other)
+    }
+
     /// Whether the gene wants peace with `other` this turn, and why.
     pub(crate) fn one_war_peace(&self, g: &Game, pid: usize, other: usize) -> Option<OneWarPeace> {
         let front = self.one_war.as_ref().filter(|_| self.one_war_at_a_time)?;

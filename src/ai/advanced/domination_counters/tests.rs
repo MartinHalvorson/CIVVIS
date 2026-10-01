@@ -323,6 +323,41 @@ fn the_early_religious_counter_reads_the_faith_even_when_another_lane_leads() {
     );
 }
 
+/// See `faith_counter_spreaders_at_home`: once the countered faith's
+/// spreaders work our land the opening is a Surprise War, not a
+/// denouncement and five turns of Formal War preparation.
+#[test]
+fn a_countered_faiths_spreaders_at_home_open_a_surprise_war() {
+    let (mut g, _) = early_religion_board("Orthodoxy", "Hinduism", false);
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert!(
+        !ai.denial_is_urgent(&g, 1),
+        "fixture: the bar, not the match point"
+    );
+    let opening = |g: &Game| ai.preferred_war_opening(g, 0, 1);
+    assert!(
+        matches!(
+            opening(&g),
+            Some(crate::game::Action::Denounce { player: 1 })
+        ),
+        "no spreader at home: denounce first ({:?})",
+        opening(&g)
+    );
+    let home = g.cities[&g.player_city_ids(0)[0]].pos;
+    let near = super::tests::open_land_near(&g, home, 2);
+    let missionary = g.spawn_test_unit("missionary", 1, near);
+    g.units.get_mut(&missionary).unwrap().religion = Some("Orthodoxy".into());
+    assert!(ai.faith_counter_spreaders_at_home(&g, 0, 1));
+    assert!(
+        matches!(
+            opening(&g),
+            Some(crate::game::Action::DeclareWar { player: 1 })
+        ),
+        "{:?}",
+        opening(&g)
+    );
+}
+
 /// Rival 1 has flown `launches` of the serial chain and holds the Spaceport
 /// at the board's objective; nobody has a faith or visiting tourists.
 fn science_board(launches: &[&str]) -> (Game, u32) {

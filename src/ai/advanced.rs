@@ -18007,6 +18007,7 @@ impl AdvancedAi {
         }
         let fatigued = fatigued
             && !self.one_war_presses(g, pid, partner)
+            && !self.domination_front_crushed(g, pid, partner)
             && !self.domination_siege_is_progressing(g, pid, partner, plan)
             && !self.domination_siege_train_mobilizing(g, pid, partner, plan);
         let one_war_peace = self.one_war_peace(g, pid, partner).is_some();
@@ -18335,6 +18336,13 @@ impl AdvancedAi {
                         .unwrap_or(0.0)
                         < 75.0
                     && self.rival_victory_pressure(g, other.id).progress < 82
+                    // A rival whose clock the Domination army answers is no
+                    // ally: the friendship bundled here makes the denial war
+                    // illegal for its term. Live King
+                    // civvis-20261001T022028Z asked Brazil for a Research
+                    // Alliance at turns 125 and 135 while its Catholicism held
+                    // two of four majors, and Brazil won at 147.
+                    && !self.domination_counter_target(g, pid, other.id)
                     // `science-threat-denial`: a research agreement hands a
                     // science threat the yield it is winning with, and any
                     // alliance makes the denial war illegal for its whole
@@ -19005,6 +19013,30 @@ impl AdvancedAi {
     /// than opening with a Surprise War. The sole exception is a rival already
     /// on the brink of victory, where five setup turns can lose the game.
     /// City-states cannot be denounced and therefore remain direct targets.
+    /// A rival whose faith the Domination army counters, with its spreaders
+    /// already working our land, is answered by a Surprise War: only war
+    /// lets our soldiers condemn them, and a Formal War waits five turns
+    /// after the denouncement. Live King civvis-20261001T022028Z had ten
+    /// Brazilian Apostles and three Missionaries around our cities from turn
+    /// 130 while we were at peace with Brazil until turn 144, and Brazil won
+    /// on religion at 147.
+    fn faith_counter_spreaders_at_home(&self, g: &Game, pid: usize, target: usize) -> bool {
+        g.players[target].religion.is_some()
+            && self.domination_counter_target(g, pid, target)
+            && g.units.values().any(|unit| {
+                unit.owner == target
+                    && g.rules.units[unit.kind].class == "religious"
+                    && (g.map.get(unit.pos).is_some_and(|tile| {
+                        tile.owner_city
+                            .and_then(|cid| g.cities.get(&cid))
+                            .is_some_and(|city| city.owner == pid)
+                    }) || g
+                        .player_city_ids(pid)
+                        .iter()
+                        .any(|cid| g.wdist(g.cities[cid].pos, unit.pos) <= 3))
+            })
+    }
+
     fn preferred_war_opening(&self, g: &Game, pid: usize, target: usize) -> Option<Action> {
         if !self.conversion_upgrade_launch_ready(g, pid) {
             return None;
@@ -19049,7 +19081,8 @@ impl AdvancedAi {
         // irreversible victory clocks. They already interrupt strategic
         // planning before 90%, so waiting five turns for a Formal War here
         // would make the counter-campaign start after the game can end.
-        let urgent = self.urgent_victory_threat(g, target);
+        let urgent = self.urgent_victory_threat(g, target)
+            || self.faith_counter_spreaders_at_home(g, pid, target);
         let denounced = g.players[pid]
             .denounced_until
             .get(&target)
@@ -20284,6 +20317,7 @@ impl AdvancedAi {
                     && g.turn.saturating_sub(self.last_campaign_progress) >= 12
             }) && !self.domination_siege_is_progressing(g, pid, *other, plan)
                 && !self.domination_siege_train_mobilizing(g, pid, *other, plan)
+                && !self.domination_front_crushed(g, pid, *other)
                 && !siege_grace;
             let peace_pending = g.pending_deals.iter().any(|deal| {
                 deal.peace
