@@ -1645,3 +1645,24 @@ fn the_reserve_gathers_at_the_rally_while_the_opening_assembles() {
     }
     assert_eq!(ai.conquest_staging_rally(&game), None);
 }
+
+#[test]
+fn the_reservation_does_not_outbid_the_first_settler() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let ai = opened(&mut game);
+    let capital = AdvancedAi::conquest_capital(&game, 0).unwrap();
+    let warrior = game.rules.units[&name!("warrior")].clone();
+    let warrior = &warrior;
+    let counts = EmpireCounts::default();
+    assert_eq!(game.player_city_ids(0).len(), 1);
+    assert_eq!(
+        ai.conquest_reservation(&game, 0, capital, warrior, &counts, false),
+        0.0,
+        "an empire of one city builds its first Settler first"
+    );
+    game.found_city_for(0, at(6, 17), None);
+    assert!(
+        ai.conquest_reservation(&game, 0, capital, warrior, &counts, false) > 0.0,
+        "from the second city the reservation asks"
+    );
+}

@@ -674,6 +674,14 @@ impl AdvancedAi {
         if Self::conquest_capital(g, pid) != Some(cid) {
             return 0.0;
         }
+        // The first Settler is never deferred, and a bonus that outranks it is
+        // a deferral by another name: live King 2026-10-01T024402Z named
+        // Xanadu on turn 16 with one city, and the capital's half-built
+        // Settler was displaced by a reserved Archer (t17) and Warrior (t20)
+        // and restored by the Settler arm each time -- one city at turn 25.
+        if g.player_city_ids(pid).len() < CONQUEST_FIRST_SETTLER_CITIES {
+            return 0.0;
+        }
         let (ranged, melee) = Self::conquest_reservation_shortfall(counts);
         let wanted = if Self::conquest_ranged_body(spec) {
             ranged
