@@ -74,6 +74,18 @@ const EXPLORE_NO_PROGRESS_TURNS: u32 = 3;
 /// hands the next pick a goal two tiles away and the same circuit.
 const EXPLORE_NO_PROGRESS_RING: i32 = 2;
 
+/// A retired exploration goal marks a bearing the host would not walk the
+/// explorer along; a fresh candidate within sixty degrees of it, seen from
+/// the explorer, is charged this much in the ranking (reveal is worth four a
+/// tile, so sixty is fifteen unseen tiles). The 2026-10-01T000033Z Scout gave
+/// up (27, 14) and then chose (20, 14), (20, 12) and (23, 14), all north
+/// across the same lake: a distance shadow around the first goal cannot
+/// reach goals seven tiles along the same far shore, a bearing can.
+const EXPLORE_FAILED_BEARING_PENALTY: i32 = 60;
+/// Only retired tiles at least this far from the explorer mark a bearing; a
+/// retired ring beside the unit says nothing about direction.
+const EXPLORE_FAILED_BEARING_MIN_DISTANCE: i32 = 3;
+
 /// `explore_last`'s record: (goal, tile, same-tile turns, last turn, closest
 /// distance to the goal, turns without coming closer).
 type ExploreProgress = (Pos, Pos, u32, u32, i32, u32);
@@ -15496,6 +15508,42 @@ impl BasicAi {
             }
         }
         let reserved = self.reserved_explore_goals(g, pid, uid);
+        // See `EXPLORE_FAILED_BEARING_PENALTY`. Cylinder and arena only: a
+        // globe's storage coordinates carry no bearing.
+        let unit_vector = |to: Pos| -> Option<(f64, f64)> {
+            let mut delta = (to.0 - origin.0, to.1 - origin.1);
+            if g.map.topology.wraps_east_west() {
+                for shift in [-g.map.width, g.map.width] {
+                    let wrapped = (delta.0 + shift, delta.1);
+                    if crate::hex::distance((0, 0), wrapped) < crate::hex::distance((0, 0), delta) {
+                        delta = wrapped;
+                    }
+                }
+            }
+            let (x, y) = (delta.0 as f64 + delta.1 as f64 / 2.0, delta.1 as f64 * 0.866);
+            let length = (x * x + y * y).sqrt();
+            (length > 0.0).then(|| (x / length, y / length))
+        };
+        let failed_bearings: Vec<(f64, f64)> = if g.map.sphere().is_none() {
+            dead.iter()
+                .filter(|pos| g.wdist(origin, **pos) >= EXPLORE_FAILED_BEARING_MIN_DISTANCE)
+                .filter_map(|pos| unit_vector(*pos))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let failed_bearing = |target: Pos| -> i32 {
+            match unit_vector(target) {
+                Some(heading)
+                    if failed_bearings
+                        .iter()
+                        .any(|failed| failed.0 * heading.0 + failed.1 * heading.1 >= 0.5) =>
+                {
+                    EXPLORE_FAILED_BEARING_PENALTY
+                }
+                _ => 0,
+            }
+        };
         // The ordinary committed sweep stops eight rings beyond the first
         // fog, which is right once the table is known. A live Civ VI host can
         // accept a fog order yet leave the unit unmoved, and carries the target
@@ -15591,7 +15639,8 @@ impl BasicAi {
                         self.island_landfall_value(g, pid, uid, *target, home_landmass)
                     }),
                     Self::frontier_reveal_value(g, pid, uid, *target) as i32 * 4
-                        + Self::rival_frontier_prior(g, pid, uid, *target, home),
+                        + Self::rival_frontier_prior(g, pid, uid, *target, home)
+                        - failed_bearing(*target),
                     home.map_or(0, |home| g.wdist(home, *target)),
                     std::cmp::Reverse(g.wdist(origin, *target)),
                     std::cmp::Reverse(*target),
@@ -15636,7 +15685,8 @@ impl BasicAi {
             candidates.into_iter().max_by_key(|target| {
                 (
                     Self::frontier_reveal_value(g, pid, uid, *target) as i32 * 4
-                        + Self::rival_frontier_prior(g, pid, uid, *target, home),
+                        + Self::rival_frontier_prior(g, pid, uid, *target, home)
+                        - failed_bearing(*target),
                     home.map_or(0, |home| g.wdist(home, *target)),
                     std::cmp::Reverse(g.wdist(origin, *target)),
                     std::cmp::Reverse(*target),
