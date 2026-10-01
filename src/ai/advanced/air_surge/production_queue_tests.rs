@@ -437,3 +437,72 @@ fn capture_body_quota_preserves_its_last_queue_but_releases_excess() {
         None
     );
 }
+
+/// Live King 20261001T000033Z: the first Aerodrome went to the first idle
+/// city at 34 turns, and the first Bomber to a 26-turn city while another
+/// built one in 7. A Domination wing's airfield goes to the fastest city that
+/// can take it, switching that city's queue, and a much slower city is not
+/// paid to take it instead.
+#[test]
+fn the_domination_airfield_goes_to_the_fastest_city_even_when_it_is_busy() {
+    let (mut g, mut ai, _plan, first, second) = fixture();
+    ai.victory_target = Some(crate::ai::advanced::VictoryTarget::Domination);
+    // A mining town and a hamlet.
+    let first_pos = g.cities[&first].pos;
+    // Mined hills beyond the first ring; the first ring stays flat so the
+    // Aerodrome (flat land only) has room.
+    for pos in g.wdisk(first_pos, 3) {
+        if g.wdist(pos, first_pos) < 2 {
+            continue;
+        }
+        if let Some(tile) = g.map.tiles.get_mut(&pos) {
+            tile.terrain = name!("plains");
+            tile.hills = true;
+            tile.improvement = Some(name!("mine"));
+        }
+    }
+    g.cities.get_mut(&second).unwrap().pop = 1;
+    g.cities.get_mut(&first).unwrap().queue = vec![Item::Unit { unit: name!("builder") }];
+    g.cities.get_mut(&second).unwrap().queue.clear();
+    let field = |g: &Game, cid: u32| {
+        g.producible_items(0, cid).into_iter().find(|item| {
+            matches!(item, Item::District { district, .. } if g.district_family(*district) == name!("aerodrome"))
+        })
+    };
+    let slow = field(&g, second).expect("the hamlet could place one");
+    let fast = field(&g, first).expect("the mining town could place one");
+    let rate = |g: &Game, cid: u32, item: &Item| {
+        g.item_remaining_cost_for_city(0, cid, item)
+            / (g.city_yields(cid).production * g.item_prod_mult(0, cid, Some(item))).max(0.1)
+    };
+    assert!(
+        rate(&g, second, &slow) > rate(&g, first, &fast) * AIR_SURGE_SLOW_FACTOR + AIR_SURGE_SLOW_SLACK,
+        "precondition: {} turns against {}",
+        rate(&g, second, &slow),
+        rate(&g, first, &fast)
+    );
+    let turns = rate(&g, second, &slow);
+    assert_eq!(
+        ai.air_surge_city_production_value(&g, 0, second, &slow, turns),
+        None,
+        "the hamlet is not paid to raise the field"
+    );
+
+    assert!(ai.air_surge_production(&mut g, 0));
+    assert!(matches!(
+        g.cities[&first].queue.first(),
+        Some(Item::District { district, .. }) if g.district_family(*district) == name!("aerodrome")
+    ));
+    assert!(g.cities[&second].queue.is_empty());
+
+    // Outside the Domination lane the first idle city still takes it.
+    let (mut g, mut ai, _plan, first, second) = fixture();
+    ai.victory_target = None;
+    g.cities.get_mut(&first).unwrap().queue = vec![Item::Unit { unit: name!("builder") }];
+    g.cities.get_mut(&second).unwrap().queue.clear();
+    assert!(ai.air_surge_production(&mut g, 0));
+    assert!(matches!(
+        g.cities[&second].queue.first(),
+        Some(Item::District { district, .. }) if g.district_family(*district) == name!("aerodrome")
+    ));
+}

@@ -106,6 +106,9 @@ pub(crate) const AIR_SURGE_LAUNCH_BOMBERS: usize = 2;
 /// Cavalry bodies that walk in and take the cities the wing empties. Four are
 /// the sustained campaign package, so a captured continent can be held.
 pub(crate) const AIR_SURGE_BODIES: usize = 4;
+/// The cavalry capture body is preferred while it has at least this share
+/// of the strongest buildable land melee body's strength.
+pub(crate) const AIR_SURGE_CAVALRY_FLOOR: f64 = 0.8;
 /// Two fast capture bodies are enough to begin the campaign. The remaining
 /// bodies continue to build behind the opening captures.
 pub(crate) const AIR_SURGE_LAUNCH_BODIES: usize = 2;
@@ -149,6 +152,12 @@ pub(crate) const AIR_SURGE_RECOVERY_LIMIT: u8 = 2;
 pub(crate) const AIR_SURGE_AERODROME_VALUE: f64 = 8_400.0;
 pub(crate) const AIR_SURGE_BOMBER_VALUE: f64 = 8_200.0;
 pub(crate) const AIR_SURGE_BODY_VALUE: f64 = 7_900.0;
+/// A city this many times slower than the empire's fastest at an airfield or
+/// a Bomber (plus [`AIR_SURGE_SLOW_SLACK`] turns) does not take that item:
+/// the fastest city is switched to it instead. See
+/// [`AdvancedAi::air_surge_fast_claim`].
+pub(crate) const AIR_SURGE_SLOW_FACTOR: f64 = 1.6;
+pub(crate) const AIR_SURGE_SLOW_SLACK: f64 = 3.0;
 /// Each still-missing member of the package is worth this much more than the
 /// last, so a city that can finish one now outbids a city that would start a
 /// second copy of what is already coming.
@@ -442,9 +451,30 @@ impl AdvancedAi {
                         .then_with(|| right.cmp(left))
                 })
         };
-        strongest(true)
-            .map(|unit| (unit, true))
-            .or_else(|| strongest(false).map(|unit| (unit, false)))
+        // ★★ A CAVALRY BODY THE CITY KILLS IS NO BODY. Live King
+        // 20261001T000033Z had neither Horses nor Iron, so "the strongest
+        // cavalry it can build" was a Heavy Chariot (28) at turn 190, and the
+        // wing's capital siege ran forty turns without a capture: a city's
+        // melee defence follows its owner's best unit. Cavalry stays the
+        // preference while it is within reach of the strongest melee body;
+        // a badly outclassed line hands the job to that body instead.
+        let cavalry = strongest(true);
+        let melee = strongest(false);
+        match (cavalry, melee) {
+            (Some(cav), Some(best))
+                if g.rules.units[cav].strength
+                    < g.rules.units[best].strength * AIR_SURGE_CAVALRY_FLOOR =>
+            {
+                let is_cavalry = matches!(
+                    g.rules.units[best].promotion_class.as_str(),
+                    "light_cavalry" | "heavy_cavalry"
+                );
+                Some((best, is_cavalry))
+            }
+            (Some(cav), _) => Some((cav, true)),
+            (None, Some(best)) => Some((best, false)),
+            (None, None) => None,
+        }
     }
 
     /// Every city of ours that can base an aircraft: the City Center carries
@@ -1461,6 +1491,9 @@ impl AdvancedAi {
         let Some(plan) = self.air_surge_plan.as_ref() else {
             return self.domination_air_readiness_value(g, pid, cid, item, turns);
         };
+        if self.air_surge_city_too_slow(g, pid, cid, item) {
+            return None;
+        }
         let mut status = self.air_surge_status_framed(g, pid, plan);
         if status.aerodromes_committed == 0 && self.air_surge_reserves_field_slot(g, pid, cid, item)
         {
@@ -1616,6 +1649,166 @@ impl AdvancedAi {
         }
     }
 
+    /// Turns this city needs for `item`, at its current production.
+    fn air_surge_item_turns(g: &Game, pid: usize, cid: u32, item: &Item) -> f64 {
+        g.item_remaining_cost_for_city(pid, cid, item)
+            / (g.city_yields(cid).production * g.item_prod_mult(pid, cid, Some(item))).max(0.1)
+    }
+
+    /// The airfield or Bomber this package item is, if it is one.
+    fn air_surge_slow_sensitive(g: &Game, pid: usize, item: &Item) -> bool {
+        match item {
+            Item::District { district, .. } => Self::air_surge_field(g, pid)
+                .is_some_and(|field| g.district_family(*district) == field),
+            Item::Unit { unit } | Item::Formation { unit, .. } => {
+                Self::air_surge_is_bomber(g, *unit)
+            }
+            _ => false,
+        }
+    }
+
+    /// The fastest any of our cities could deliver an item of `item`'s kind,
+    /// at its current production rate. `None` when no city can.
+    fn air_surge_fastest_rate(g: &Game, pid: usize, item: &Item) -> Option<f64> {
+        let mut rates: Vec<(f64, u32)> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| {
+                (
+                    g.city_yields(cid).production * g.item_prod_mult(pid, cid, Some(item)),
+                    cid,
+                )
+            })
+            .collect();
+        rates.sort_by(|left, right| right.0.total_cmp(&left.0).then(left.1.cmp(&right.1)));
+        rates
+            .into_iter()
+            .find(|(_, cid)| match item {
+                // The fastest city with room to place the district: a city
+                // that cannot raise the field must not make the rest "slow".
+                Item::District { district, .. } => {
+                    let family = g.district_family(*district);
+                    g.producible_items(pid, *cid).iter().any(|candidate| {
+                        matches!(candidate, Item::District { district, .. }
+                                 if g.district_family(*district) == family)
+                    })
+                }
+                _ => g.can_produce(pid, *cid, item),
+            })
+            .map(|(rate, _)| rate)
+    }
+
+    /// `air-surge-2`, Domination lane: whether this city is much slower at an
+    /// airfield or a Bomber than the empire's fastest city.
+    ///
+    /// ★★★ THE FIRST IDLE QUEUE TOOK THE AIRFIELD. Live King 20261001T000033Z
+    /// started the surge's first Aerodrome in Nueva Barcelona at 34 turns,
+    /// then added Maracaibo (13) and Caracas (5) as "faster alternatives", and
+    /// trained its first Bomber in Maracaibo at 26 turns while Caracas built
+    /// one in 7. The package claimed whichever city was free, and the
+    /// governor prices a 34-turn airfield at 8,128, far above anything else
+    /// that city could build. A slow city now leaves these two items to the
+    /// fast one; [`Self::air_surge_fast_claim`] switches that city to them.
+    fn air_surge_city_too_slow(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> bool {
+        if !self.air_surge_2
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !Self::air_surge_slow_sensitive(g, pid, item)
+        {
+            return false;
+        }
+        let Some(fastest) = Self::air_surge_fastest_rate(g, pid, item) else {
+            return false;
+        };
+        let rate = g.city_yields(cid).production * g.item_prod_mult(pid, cid, Some(item));
+        let cost = g.item_remaining_cost_for_city(pid, cid, item);
+        let here = cost / rate.max(0.1);
+        let there = g.item_cost_for_city(pid, cid, item) / fastest.max(0.1);
+        here > there * AIR_SURGE_SLOW_FACTOR + AIR_SURGE_SLOW_SLACK
+    }
+
+    /// `air-surge-2`, Domination lane: put the airfield (or, with one built,
+    /// the next Bomber) in the fastest city that can take it, switching that
+    /// city's queue when no idle city is competitive. Civilization VI banks
+    /// the displaced item's progress, so the switch costs only time on it.
+    fn air_surge_fast_claim(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        plan: &AirSurge,
+        wants_field: bool,
+        threatened: Option<u32>,
+    ) -> bool {
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return false;
+        }
+        let mut best: Option<(f64, u32, Item)> = None;
+        for cid in g.player_city_ids(pid) {
+            if threatened == Some(cid) {
+                continue;
+            }
+            let city = &g.cities[&cid];
+            // A city already building part of the package keeps it.
+            if city
+                .queue
+                .first()
+                .is_some_and(|item| Self::air_surge_slow_sensitive(g, pid, item))
+            {
+                continue;
+            }
+            for item in g.producible_items(pid, cid) {
+                let wanted = match &item {
+                    Item::District { .. } => wants_field,
+                    Item::Unit { .. } => !wants_field,
+                    _ => false,
+                };
+                if !wanted
+                    || !Self::air_surge_slow_sensitive(g, pid, &item)
+                    || !self.air_resource_item_preserves_wing(g, pid, cid, &item)
+                    || self.air_surge_city_too_slow(g, pid, cid, &item)
+                {
+                    continue;
+                }
+                let turns = Self::air_surge_item_turns(g, pid, cid, &item);
+                if best
+                    .as_ref()
+                    .is_none_or(|(old, old_city, _)| turns < *old || (turns == *old && cid < *old_city))
+                {
+                    best = Some((turns, cid, item));
+                }
+            }
+        }
+        let Some((turns, city, item)) = best else {
+            return false;
+        };
+        // The fastest city that can actually take the item claims it, idle or
+        // busy: the slow-city filter reads the empire's fastest rate, which
+        // may belong to a city with no room for the district.
+        if turns > g.max_turns.saturating_sub(g.turn) as f64 {
+            return false;
+        }
+        let displaced = g.cities[&city].queue.first().cloned();
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city,
+                item: item.clone(),
+            },
+        )
+        .is_err()
+        {
+            return false;
+        }
+        if self.journal().wants(crate::reasoning::Level::Decision) {
+            think!(self.journal(), Military, Decision,
+                   "{} switches to {} for the air surge", g.cities[&city].name, Self::plain_item(&item);
+                   "{turns:.0} turns in the empire's fastest city for it, displacing {}; the {} phase",
+                   displaced.as_ref().map_or_else(|| "nothing".to_string(), Self::plain_item),
+                   plan.phase.as_str());
+        }
+        self.air_surge_status = self.air_surge_status(g, pid, plan);
+        true
+    }
+
     /// Claim one idle city queue for the next missing member of the package.
     ///
     /// The adaptive controller hands empty cities to `BasicAi::cities`, which
@@ -1642,6 +1835,11 @@ impl AdvancedAi {
         let launch_escort_missing = status.bodies_committed < AIR_SURGE_LAUNCH_BODIES;
         if !wants_field && !wants_bomber && !wants_body {
             return false;
+        }
+        if (wants_field || wants_bomber)
+            && self.air_surge_fast_claim(g, pid, &plan, wants_field, threatened)
+        {
+            return true;
         }
         let launch_missing = AIR_SURGE_LAUNCH_BOMBERS.saturating_sub(status.bombers_committed);
         let wing_turns = |city| {
@@ -1687,7 +1885,9 @@ impl AdvancedAi {
             }
             let production = g.city_yields(cid).production.max(0.1);
             for item in g.producible_items(pid, cid) {
-                if !self.air_resource_item_preserves_wing(g, pid, cid, &item) {
+                if !self.air_resource_item_preserves_wing(g, pid, cid, &item)
+                    || self.air_surge_city_too_slow(g, pid, cid, &item)
+                {
                     continue;
                 }
                 let rank = match &item {
