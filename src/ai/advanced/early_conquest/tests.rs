@@ -848,7 +848,7 @@ fn online_opening_keeps_a_full_column_near_the_rally_for_eight_more_turns() {
 
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
     bodies(&mut game, 0, "warrior", rally, 2, CONQUEST_RANGED);
-    bodies(&mut game, 0, "warrior", rally, 4, CONQUEST_MELEE);
+    bodies(&mut game, 0, "warrior", rally, CONQUEST_ASSEMBLY_RADIUS + 2, CONQUEST_MELEE);
     game.turn = 39;
     ai.maintain_conquest_opening(&mut game, 0);
     let opening = ai.conquest_opening.as_ref().unwrap();

@@ -190,16 +190,25 @@ pub(crate) const CONQUEST_RALLY_MAX: i32 = 3;
 /// The share of the force that must stand within
 /// [`CONQUEST_ASSEMBLY_RADIUS`] of the rally before the war opens.
 pub(crate) const CONQUEST_ASSEMBLY_SHARE: f64 = 0.8;
-/// How close to the rally a body counts as assembled.
-pub(crate) const CONQUEST_ASSEMBLY_RADIUS: i32 = 2;
+/// How close to the rally a body counts as assembled. Five, not two: the
+/// board holds the reserve at the rally as a loose formation, not on its
+/// ring. Live King 2026-10-01T080758Z had seven bodies for a six-body force
+/// from turn 38 — Archers and Warriors at 2, 2, 4, 5, 5 and 6 tiles from a
+/// rally three tiles from Pella — and released the opening on turn 40 with
+/// two "assembled"; the 2026-09-28 game expired the same way with bodies at
+/// 2, 2, 2, 4 and 5. A body five out of a rally three from the target is two
+/// turns from its first shot.
+pub(crate) const CONQUEST_ASSEMBLY_RADIUS: i32 = 5;
 
 /// A full force that is still marching gets one bounded extension when at
-/// least three of five bodies are already on the rally's assembly ring and
-/// the other two are within five tiles. In the King Online game on 2026-09-28,
+/// least three of five bodies are already within the assembly radius and
+/// the rest are within [`CONQUEST_APPROACHING_RADIUS`]. In the King Online game on 2026-09-28,
 /// the opening expired on turn 40 with three bodies within two tiles and the
 /// other two four and five tiles away; expiration diverted the whole column.
 pub(crate) const CONQUEST_APPROACHING_SHARE: f64 = 0.6;
-pub(crate) const CONQUEST_APPROACHING_RADIUS: i32 = 5;
+/// Eight once the assembly radius is five: the grace is for a column one
+/// march behind the formation, not for one already counted in it.
+pub(crate) const CONQUEST_APPROACHING_RADIUS: i32 = 8;
 pub(crate) const CONQUEST_APPROACHING_GRACE_TURNS: u32 = 12;
 
 /// Standard turns after the force first assembled that the opening waits for
