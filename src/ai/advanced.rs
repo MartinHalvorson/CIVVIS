@@ -40137,6 +40137,27 @@ impl AdvancedAi {
         self.advanced_military_step_with_decline(g, pid, uid, plan, decline_settlers)
     }
 
+    /// `early-conquest-opening`: the opening's eyes do not brawl. A Scout
+    /// trading blows with a barbarian Scout is an even fight it wins nothing
+    /// from: on live King civvis-20261001T050754Z the first Scout swung five
+    /// times from turn 13, died on turn 23 at 19 health, and the
+    /// replacements spent their turns healing, so Stockholm, eleven tiles
+    /// north, went unseen until turn 75 and the opening, which needs a target
+    /// before turn 40, never named one. A recon unit still takes a melee kill
+    /// it survives, and its ranged shots are untouched.
+    fn recon_declines_the_swing(
+        &self,
+        spec: &crate::rules::UnitSpec,
+        action: &Action,
+        eliminates_enemy_unit: bool,
+        attacker_survives: bool,
+    ) -> bool {
+        self.early_conquest_opening
+            && spec.promotion_class == "recon"
+            && matches!(action, Action::Attack { .. })
+            && !(eliminates_enemy_unit && attacker_survives)
+    }
+
     fn advanced_military_step_with_decline(
         &mut self,
         g: &mut Game,
@@ -40752,6 +40773,14 @@ impl AdvancedAi {
                 {
                     continue;
                 }
+            }
+            if self.recon_declines_the_swing(
+                spec,
+                &action,
+                eliminates_enemy_unit,
+                attacker_survives,
+            ) {
+                continue;
             }
             let threshold = self.base.attack_threshold(g, uid, pos);
             let ranged = matches!(&action, Action::Ranged { .. });

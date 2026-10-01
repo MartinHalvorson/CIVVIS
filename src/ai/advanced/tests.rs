@@ -18827,6 +18827,34 @@ fn advanced_tactical_picker_skips_embarked_ranged_attacks() {
     );
 }
 
+/// See `AdvancedAi::recon_declines_the_swing`: an opening Scout does not
+/// trade blows, but it still takes a kill it survives.
+#[test]
+fn an_exploring_scout_does_not_brawl_but_takes_a_kill() {
+    let game = Game::new_full(2, 24, 16, 71_023, 120, 0, false);
+    let scout = &game.rules.units[crate::name!("scout")];
+    let warrior = &game.rules.units[crate::name!("warrior")];
+    let swing = Action::Attack {
+        unit: 1,
+        target: (3, 3),
+    };
+    let shot = Action::Ranged {
+        unit: 1,
+        target: (3, 3),
+    };
+    let mut ai = AdvancedAi::new();
+    assert!(
+        !ai.recon_declines_the_swing(scout, &swing, false, true),
+        "stock: the Scout may swing"
+    );
+    ai.enable_early_conquest_opening();
+    assert!(ai.recon_declines_the_swing(scout, &swing, false, true), "an even fight is declined");
+    assert!(ai.recon_declines_the_swing(scout, &swing, true, false), "so is a kill it dies taking");
+    assert!(!ai.recon_declines_the_swing(scout, &swing, true, true), "a kill it survives is taken");
+    assert!(!ai.recon_declines_the_swing(scout, &shot, false, true), "a recon shot is untouched");
+    assert!(!ai.recon_declines_the_swing(warrior, &swing, false, true), "a Warrior still swings");
+}
+
 #[test]
 fn advanced_tactical_picker_skips_ranged_units_without_attacks() {
     let mut game = Game::new_full(2, 24, 16, 71_022, 120, 0, false);
