@@ -951,7 +951,14 @@ impl AdvancedAi {
             .filter_map(|uid| g.units.get(uid))
             .filter(|unit| g.wdist(unit.pos, opening.rally) <= CONQUEST_ASSEMBLY_RADIUS)
             .count();
-        up as f64 / opening.force.len() as f64
+        // The share of the RESERVED force, not of whatever bodies exist yet.
+        // Live King 2026-10-01T010043Z named Pella on turn 16 with two bodies
+        // trained; both stood at the rally, 2 of 2 read as assembled, the
+        // patience window opened that turn and released the opening on turn 30
+        // -- this game's one attempt -- before the reserved four shooters were
+        // ever built.
+        let reserved = (CONQUEST_RANGED + CONQUEST_MELEE).max(opening.force.len());
+        up as f64 / reserved as f64
     }
 
     /// Whether the force can take the city.

@@ -1574,3 +1574,29 @@ fn a_war_the_target_opens_is_adopted_and_pins_the_campaign() {
         "a declared war is not released by the assembly deadline"
     );
 }
+
+#[test]
+fn a_partial_force_at_the_rally_is_not_an_assembled_one() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = opened(&mut game);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    // Two bodies trained and both on the rally: the reserved six are not.
+    bodies(&mut game, 0, "warrior", rally, 1, 2);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.as_ref().unwrap();
+    assert_eq!(opening.force.len(), 2);
+    assert!(
+        AdvancedAi::conquest_assembled_share(&game, opening) < CONQUEST_ASSEMBLY_SHARE,
+        "two of six reserved bodies is not an assembled strike force"
+    );
+    assert!(
+        opening.assembled.is_none(),
+        "the patience window must not open on a partial force"
+    );
+
+    // The rest arrive: now it is.
+    bodies(&mut game, 0, "warrior", rally, 2, CONQUEST_RANGED + CONQUEST_MELEE - 2);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.as_ref().unwrap();
+    assert!(opening.assembled.is_some());
+}
