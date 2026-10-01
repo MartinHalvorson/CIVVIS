@@ -133,6 +133,9 @@ pub(crate) const AIR_SURGE_CAPITAL_REACH: i32 = 12;
 /// more than any capital, because without the metal there is no wing at all.
 /// See [`AdvancedAi::air_surge_metal_starved`].
 pub(crate) const AIR_SURGE_METAL_CITY_VALUE: f64 = 1_000.0;
+/// What a city of the rival whose victory must be denied is worth to the
+/// surge. See [`AdvancedAi::air_surge_denial_rival`].
+pub(crate) const AIR_SURGE_DENIAL_VALUE: f64 = 600.0;
 /// Technologies from the Bomber within which the surge's own war is held
 /// against a stalled-war peace offer. See
 /// [`AdvancedAi::air_surge_holds_front`].
@@ -249,6 +252,9 @@ pub(crate) struct AirSurgeStatus {
     /// The surge is a metal grab with its ground capture package ready. See
     /// `AdvancedAi::air_surge_metal_starved`.
     pub(crate) metal_grab_ready: bool,
+    /// A rival's victory has to be denied, and this surge is not aimed at
+    /// that rival: it must not pull the land campaign off the denial war.
+    pub(crate) denial_elsewhere: bool,
 }
 
 impl AirSurgeStatus {
@@ -262,6 +268,14 @@ impl AirSurgeStatus {
     pub(crate) fn escort_ready(&self) -> bool {
         self.bodies >= AIR_SURGE_LAUNCH_BODIES
     }
+}
+
+/// What one objective search shares across its comparisons. See
+/// [`AdvancedAi::air_surge_objective_value`].
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct AirSurgeObjectiveContext {
+    denial: Option<usize>,
+    starved_metal: Option<Name>,
 }
 
 /// Running account of what the surge did, for the journal and the screens.
@@ -725,8 +739,33 @@ impl AdvancedAi {
         }
         status.bombers_committed += status.bombers;
         status.bodies_committed += status.bodies;
-        status.metal_grab_ready = metal_grab && status.bodies >= AIR_SURGE_BODIES;
+        let denial = self.air_surge_denial_rival(g, pid);
+        status.denial_elsewhere = denial.is_some_and(|rival| rival != plan.target_player);
+        status.metal_grab_ready =
+            metal_grab && status.bodies >= AIR_SURGE_BODIES && !status.denial_elsewhere;
         status
+    }
+
+    /// `air-surge-2`, Domination lane: the rival whose victory the denial
+    /// layer has turned the army against, read from the same actionable
+    /// signal the one-war front switches on.
+    ///
+    /// ★★★ RELIGION WON WHILE THE WING WAS FIVE TURNS OUT. Live King
+    /// 20261001T022028Z lost a Religious victory to Brazil at turn 147 with
+    /// three times the military and Advanced Flight landing, its surge aimed
+    /// at Egypt and Brazil; game 5 lost the same way at turn 152. When a
+    /// rival's clock is the threat, the wing is aimed where the denial war is.
+    pub(crate) fn air_surge_denial_rival(&self, g: &Game, pid: usize) -> Option<usize> {
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return None;
+        }
+        self.actionable_victory_denial(g, pid)
+            .filter(|(rival, counter)| {
+                *counter == GrandStrategy::Conquest
+                    && (self.domination_counter_target(g, *rival)
+                        || self.urgent_victory_threat(g, *rival))
+            })
+            .map(|(rival, _)| rival)
     }
 
     /// `air_surge_status` through the scoring batch's frame: the batch's
@@ -914,7 +953,12 @@ impl AdvancedAi {
         let (body_unit, body_is_cavalry) = self.air_surge_body_preserving_wing(g, pid)?;
         // A running war fixes the target: the counter arms against the
         // civilization already fighting us, never against a third party.
-        let front = Self::air_surge_fronts(g, pid).first().copied();
+        let fronts = Self::air_surge_fronts(g, pid);
+        let context = self.air_surge_objective_context(g, pid);
+        let front = context
+            .denial
+            .filter(|rival| fronts.contains(rival))
+            .or_else(|| fronts.first().copied());
         let mut best: Option<(f64, usize, u32, AirSurge)> = None;
         for target in g.players.iter().filter(|player| {
             player.id != pid
@@ -929,12 +973,12 @@ impl AdvancedAi {
                 .values()
                 .filter(|city| city.owner == target.id)
                 .collect();
-            objectives.sort_by(|left, right| {
-                self.air_surge_objective_value(g, pid, left)
-                    .total_cmp(&self.air_surge_objective_value(g, pid, right))
-                    .then(left.id.cmp(&right.id))
-            });
-            for city in objectives {
+            let mut objectives: Vec<(f64, &crate::game::City)> = objectives
+                .into_iter()
+                .map(|city| (self.air_surge_objective_value_in(g, pid, city, &context), city))
+                .collect();
+            objectives.sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.id.cmp(&right.1.id)));
+            for (score, city) in objectives {
                 // The wing has to be able to hit it from home, and the escort
                 // has to be able to walk to it. Either alone is half a surge.
                 if !Self::air_surge_in_range(g, pid, city.pos)
@@ -944,7 +988,6 @@ impl AdvancedAi {
                 {
                     continue;
                 }
-                let score = self.air_surge_objective_value(g, pid, city);
                 let plan = AirSurge {
                     target_player: target.id,
                     objective_city: city.id,
@@ -997,6 +1040,29 @@ impl AdvancedAi {
         pid: usize,
         city: &crate::game::City,
     ) -> f64 {
+        let context = self.air_surge_objective_context(g, pid);
+        self.air_surge_objective_value_in(g, pid, city, &context)
+    }
+
+    /// What every objective comparison in one search shares, read once: the
+    /// denial rival and the starved wing's metal.
+    fn air_surge_objective_context(&self, g: &Game, pid: usize) -> AirSurgeObjectiveContext {
+        AirSurgeObjectiveContext {
+            denial: self.air_surge_denial_rival(g, pid),
+            starved_metal: self
+                .air_surge_metal_starved(g, pid)
+                .then(|| Self::air_surge_metal(g, pid))
+                .flatten(),
+        }
+    }
+
+    fn air_surge_objective_value_in(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+        context: &AirSurgeObjectiveContext,
+    ) -> f64 {
         let ground = self.campaign_city_value(g, pid, city, GrandStrategy::Conquest);
         if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination)
         {
@@ -1007,8 +1073,6 @@ impl AdvancedAi {
             .map_or(city.wall_hp, |sighting| sighting.wall_hp)
             .max(0) as f64;
         let wall_terms = if walls > 0.0 { 55.0 + walls * 0.56 } else { 0.0 };
-        // `is_capital` marks the founding capital for good, whoever holds it
-        // now, and every one of them must be held for the victory.
         // Only a capital within reach of the empire's core: once the wing is
         // ready this objective becomes the land campaign's target, and a
         // capital twenty tiles out is a march the capture bodies cannot make
@@ -1018,20 +1082,27 @@ impl AdvancedAi {
             .player_city_ids(pid)
             .into_iter()
             .any(|cid| g.wdist(g.cities[&cid].pos, city.pos) <= AIR_SURGE_CAPITAL_REACH);
+        // `is_capital` marks the founding capital for good, whoever holds it
+        // now, and every one of them must be held for the victory.
         let capital = if city.is_capital && city.owner != pid && near_core {
             AIR_SURGE_CAPITAL_VALUE
         } else {
             0.0
         };
-        let metal = if self.air_surge_metal_starved(g, pid)
-            && Self::air_surge_metal(g, pid)
-                .is_some_and(|metal| Self::air_surge_city_holds_metal(g, pid, city, metal))
+        let metal = if context
+            .starved_metal
+            .is_some_and(|metal| Self::air_surge_city_holds_metal(g, pid, city, metal))
         {
             AIR_SURGE_METAL_CITY_VALUE
         } else {
             0.0
         };
-        ground - wall_terms * AIR_SURGE_WALL_DISCOUNT - capital - metal
+        let denial = if context.denial == Some(city.owner) {
+            AIR_SURGE_DENIAL_VALUE
+        } else {
+            0.0
+        };
+        ground - wall_terms * AIR_SURGE_WALL_DISCOUNT - capital - metal - denial
     }
 
     /// `air-surge-2`, Domination lane: a replacement objective for a surge
@@ -1188,9 +1259,18 @@ impl AdvancedAi {
             let metal_reaim = !fought
                 && self.air_surge_metal_starved(g, pid)
                 && !self.air_surge_metal_grab(g, pid, &plan);
-            if (peace_closed || !fought)
+            // The denial war's rival, when the surge is aimed elsewhere and
+            // may still turn: before its declaration, or at war with that
+            // rival already.
+            let denial_reaim = self
+                .air_surge_denial_rival(g, pid)
+                .is_some_and(|rival| {
+                    rival != plan.target_player && (!fought || g.is_at_war(pid, rival))
+                });
+            if (peace_closed || !fought || denial_reaim)
                 && objective_owner != Some(pid)
                 && (peace_closed
+                    || denial_reaim
                     || metal_reaim
                     || !target_alive
                     || objective_owner != Some(plan.target_player)
@@ -1562,6 +1642,7 @@ impl AdvancedAi {
             return;
         };
         if !matches!(surge.phase, AirSurgePhase::Strike | AirSurgePhase::Exploit)
+            || self.air_surge_status.denial_elsewhere
             || (surge.phase == AirSurgePhase::Exploit
                 && !((self.air_surge_status.wing_ready() && self.air_surge_status.escort_ready())
                     || self.air_surge_status.metal_grab_ready))
