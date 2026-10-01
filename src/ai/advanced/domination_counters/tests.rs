@@ -281,7 +281,7 @@ fn a_faithless_domination_seat_counters_the_faith_holding_its_majority_at_the_ea
 }
 
 #[test]
-fn the_early_religious_counter_needs_our_majority_and_no_faith_of_our_own() {
+fn the_early_religious_counter_prefers_our_majority_and_needs_no_faith_of_our_own() {
     let ai = AdvancedAi::targeting(VictoryTarget::Domination);
     // Orthodoxy reads the same 50 through rival 3, but the counter follows
     // the faith that holds OUR majority: Hinduism, rival 2's.
@@ -289,10 +289,11 @@ fn the_early_religious_counter_needs_our_majority_and_no_faith_of_our_own() {
     assert_eq!(ai.rival_pressure(&g, 1).1, 50);
     assert_eq!(ai.rival_pressure(&g, 2).1, 50);
     assert_eq!(ai.denial_target(&g, 0), Some((2, GrandStrategy::Conquest)));
-    // Our cities hold a faith nobody founded: no rival counts us yet.
+    // Our cities hold a faith no living rival founded: nothing of ours
+    // resists Orthodoxy at the bar, so it is countered too.
     let (g, _) = early_religion_board("Judaism", "Orthodoxy", false);
     assert_eq!(ai.rival_pressure(&g, 1).1, 50);
-    assert_eq!(ai.denial_target(&g, 0), None);
+    assert_eq!(ai.denial_target(&g, 0), Some((1, GrandStrategy::Conquest)));
     // A founder keeps its Inquisitors and its own reconversion.
     let (g, _) = early_religion_board("Orthodoxy", "Hinduism", true);
     assert!(g.civ_follows_religion(0, "Orthodoxy"));
@@ -302,6 +303,24 @@ fn the_early_religious_counter_needs_our_majority_and_no_faith_of_our_own() {
     for target in [VictoryTarget::Science, VictoryTarget::Culture] {
         assert_eq!(AdvancedAi::targeting(target).denial_target(&g, 0), None);
     }
+}
+
+/// The faith at the bar is countered even while the rival's best lane reads
+/// something else.
+#[test]
+fn the_early_religious_counter_reads_the_faith_even_when_another_lane_leads() {
+    let (g, _) = early_religion_board("Orthodoxy", "Hinduism", false);
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    let culture_leads = VictoryFocus {
+        strategy: GrandStrategy::Culture,
+        progress: 60,
+    };
+    assert!(ai.domination_faithless_conversion_counter(&g, 0, 1, culture_leads));
+    let (g, _) = early_religion_board("Orthodoxy", "Hinduism", true);
+    assert!(
+        !ai.domination_faithless_conversion_counter(&g, 0, 1, culture_leads),
+        "a founder keeps its own reconversion"
+    );
 }
 
 /// Rival 1 has flown `launches` of the serial chain and holds the Spaceport

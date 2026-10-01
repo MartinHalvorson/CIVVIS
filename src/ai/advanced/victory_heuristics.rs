@@ -62,9 +62,11 @@ impl AdvancedAi {
     /// majority from turn 80, the match-point counter first fired at turn
     /// 140, and Arabia won at 149, before any army could reach a city. Start
     /// the counter at the religion early-warning bar
-    /// (`denial_response_for_pressure`'s two-holdout reading) instead. This
-    /// selects the campaign target only: it is deliberately not urgency, so
-    /// the ordinary declaration, readiness and one-war gates still apply.
+    /// (`denial_response_for_pressure`'s two-holdout reading) instead. A
+    /// majority that follows no living rival's founded faith defends nothing
+    /// either, so then every faith at the bar is countered. This selects the
+    /// campaign target only: it is deliberately not urgency, so the ordinary
+    /// declaration, readiness and one-war gates still apply.
     pub(super) fn domination_faithless_conversion_counter(
         &self,
         g: &Game,
@@ -72,14 +74,24 @@ impl AdvancedAi {
         rival: usize,
         pressure: VictoryFocus,
     ) -> bool {
-        if pressure.strategy != GrandStrategy::Religion
-            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
             || !self.deny_leaders
             || !Self::victory_strategy_enabled(g, GrandStrategy::Religion)
             || g.players[pid].religion.is_some()
         {
             return false;
         }
+        // The rival's religion clock, whether or not it is the rival's best
+        // lane. A faith at the bar is a threat to a faithless seat even while
+        // the tech floor or tourism reads higher. In King
+        // civvis-20261001T022028Z Brazil's Catholicism held two of four
+        // majors from its first contact, but Brazil's best lane read Culture,
+        // so the religion counter never looked.
+        let progress = if pressure.strategy == GrandStrategy::Religion {
+            pressure.progress
+        } else {
+            self.lane_progress_table(g, rival)[2]
+        };
         let Some(faith) = g.players[rival].religion.as_deref() else {
             return false;
         };
@@ -92,7 +104,26 @@ impl AdvancedAi {
         let early_warning = (100 * (living - 2) / living.max(1))
             .max(50)
             .min(match_point);
-        living > 2 && pressure.progress >= early_warning && g.civ_follows_religion(pid, faith)
+        if living <= 2 || progress < early_warning {
+            return false;
+        }
+        // Our majority's own faith, if a living rival founded it, is the one
+        // that already counts us. Otherwise nothing of ours resists any
+        // faith at the bar: on King civvis-20261001T022028Z our cities held
+        // Islam, whose founder Arabia had itself turned Catholic by turn 75.
+        // Catholicism sat at the bar from turn 75, the counter waited for our
+        // majority until turn 144, and Brazil won at 147.
+        let held_by_a_rival_faith = g.players.iter().any(|other| {
+            other.id != pid
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && other
+                    .religion
+                    .as_deref()
+                    .is_some_and(|founded| g.civ_follows_religion(pid, founded))
+        });
+        g.civ_follows_religion(pid, faith) || !held_by_a_rival_faith
     }
 
     /// Whether `rival`'s victory clock is one the Domination army answers:

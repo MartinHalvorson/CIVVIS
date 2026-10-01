@@ -151,7 +151,27 @@ fn fading_urgency_keeps_the_new_front_but_a_rout_still_allows_peace() {
     assert_eq!(ai.one_war.as_ref().unwrap().since, since);
     convert(&mut g, &[0, 1, 2]);
     ai.one_war.as_mut().unwrap().window = VecDeque::from([(g.turn, ONE_WAR_ROUT_NET)]);
+    // A front we still outgun twice over is being won, whatever the window.
+    assert_eq!(ai.one_war_peace(&g, 0, 2), None);
+    for _ in 0..3 {
+        g.spawn_test_unit("modern_armor", 2, (25, 12));
+    }
+    assert!(g.military_power(0) < ONE_WAR_WINNING_RATIO * g.military_power(2));
     assert_eq!(ai.one_war_peace(&g, 0, 2), Some(OneWarPeace::Rout));
+    // A siege reducing one of its cities is being won too.
+    let city = g.player_city_ids(2)[0];
+    ai.sieges.insert(
+        city,
+        crate::ai::advanced::siege_train::Siege {
+            stage: crate::ai::advanced::siege_train::SiegeStage::Reduce,
+            taker: None,
+            entered: g.turn,
+            assessed: g.turn,
+            posts: Default::default(),
+            short_since: None,
+        },
+    );
+    assert_eq!(ai.one_war_peace(&g, 0, 2), None);
 }
 
 #[test]

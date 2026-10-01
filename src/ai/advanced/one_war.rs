@@ -92,6 +92,9 @@ pub(crate) const ONE_WAR_FINISH_REACH: i32 = 4;
 /// A front we outgun this many times over is not traded away for a
 /// counter-campaign against a rival whose clock is not yet urgent.
 pub(crate) const ONE_WAR_CRUSHED_RATIO: f64 = 4.0;
+/// A front we outgun this many times over is still being won: a bad window
+/// of losses there is the price of a siege, not a rout or a turned tide.
+pub(crate) const ONE_WAR_WINNING_RATIO: f64 = 2.0;
 /// A second-front unit this close to a threatened city of ours keeps that
 /// enemy in the force planner's sights: the relief column's own radius.
 pub(crate) const ONE_WAR_RELIEF_REACH: i32 = 8;
@@ -618,6 +621,23 @@ impl AdvancedAi {
         g.military_power(pid) >= ONE_WAR_CRUSHED_RATIO * g.military_power(other).max(1.0)
     }
 
+    /// A front we outgun [`ONE_WAR_WINNING_RATIO`] times over, or one of
+    /// whose cities our siege train is reducing or taking, is being won
+    /// whatever the recent exchange says. Live King civvis-20261001T033711Z:
+    /// the first Reduce of the session, on unwalled Samarobriva, ended the
+    /// same turn with "the last window was a rout" at 477 power against 169.
+    /// civvis-20261001T022028Z offered Arabia the same peace at 1,461
+    /// against 66, with Cairo its last city.
+    fn one_war_still_winning(&self, g: &Game, pid: usize, other: usize) -> bool {
+        g.military_power(pid) >= ONE_WAR_WINNING_RATIO * g.military_power(other).max(1.0)
+            || self.sieges.iter().any(|(cid, siege)| {
+                matches!(
+                    siege.stage,
+                    super::siege_train::SiegeStage::Reduce | super::siege_train::SiegeStage::Take
+                ) && g.cities.get(cid).is_some_and(|city| city.owner == other)
+            })
+    }
+
     /// Whether the gene wants peace with `other` this turn, and why.
     pub(crate) fn one_war_peace(&self, g: &Game, pid: usize, other: usize) -> Option<OneWarPeace> {
         let front = self.one_war.as_ref().filter(|_| self.one_war_at_a_time)?;
@@ -657,6 +677,9 @@ impl AdvancedAi {
             && !self.one_war_capture_at_hand(g, pid, other)
         {
             return Some(OneWarPeace::VictoryThreat);
+        }
+        if self.one_war_still_winning(g, pid, other) {
+            return None;
         }
         if front.window_net() <= ONE_WAR_ROUT_NET {
             return Some(OneWarPeace::Rout);
