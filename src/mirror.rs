@@ -3778,9 +3778,18 @@ pub struct StateSnapshot {
     /// events. Merged in by [`state_from_events`] for the same reason as `seat`.
     #[serde(default)]
     pub refused_sites: std::collections::BTreeSet<crate::Pos>,
-    /// Tiles Civilization VI refused to improve, AXIAL, from `improve_refused`.
+    /// Tiles Civilization VI refused to improve, AXIAL, from `improve_refused`
+    /// events that do not name the improvement.
     #[serde(default)]
     pub refused_improves: std::collections::BTreeSet<crate::Pos>,
+    /// Improvements Civilization VI refused, by AXIAL tile, from
+    /// `improve_refused` events that name one (`want`). See
+    /// `Game::blocked_improvements`.
+    #[serde(default)]
+    pub refused_improvement_names: std::collections::BTreeMap<
+        crate::Pos,
+        std::collections::BTreeSet<crate::name::Name>,
+    >,
     /// Promotions the host refused, per Civilization VI unit id.
     /// See `Game::blocked_promotions` for why this exists.
     ///
@@ -6339,7 +6348,8 @@ pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<St
             state.observed_dedication_activity = dedication_history::through(&raw, state.turn);
         }
         state.refused_sites = refused_sites_of_kind_through(path, "found_refused", turn);
-        state.refused_improves = refused_sites_of_kind_through(path, "improve_refused", turn);
+        (state.refused_improves, state.refused_improvement_names) =
+            refused_improvements_through(path, turn);
         state.refused_trade_routes = refused_trade_routes_through(path, turn);
         state.refused_policy_names = refused_policies_through(path, turn);
         state.refused_pantheons = refused_pantheons_through(path, turn);
@@ -6962,7 +6972,50 @@ fn refused_sites_of_kind_through(
     kind: &str,
     turn: Option<u32>,
 ) -> std::collections::BTreeSet<crate::Pos> {
-    let mut refused: std::collections::BTreeSet<crate::Pos> = Default::default();
+    refusals_of_kind_through(path, kind, turn)
+        .into_iter()
+        .map(|(pos, _)| pos)
+        .collect()
+}
+
+/// `improve_refused`, split: a refusal naming its improvement (`want`)
+/// blocks that improvement on the tile; one without a name blocks the tile.
+/// See `Game::blocked_improvements`.
+fn refused_improvements_through(
+    path: &std::path::Path,
+    turn: Option<u32>,
+) -> (
+    std::collections::BTreeSet<crate::Pos>,
+    std::collections::BTreeMap<crate::Pos, std::collections::BTreeSet<crate::name::Name>>,
+) {
+    let mut tiles = std::collections::BTreeSet::new();
+    let mut named: std::collections::BTreeMap<
+        crate::Pos,
+        std::collections::BTreeSet<crate::name::Name>,
+    > = Default::default();
+    for (pos, want) in refusals_of_kind_through(path, "improve_refused", turn) {
+        match want {
+            Some(want) => {
+                named
+                    .entry(pos)
+                    .or_default()
+                    .insert(crate::name::Name::new(&civvis_improvement_name(&want)));
+            }
+            None => {
+                tiles.insert(pos);
+            }
+        }
+    }
+    (tiles, named)
+}
+
+/// Every refusal of `kind` through `turn`, AXIAL, with the `want` it names.
+fn refusals_of_kind_through(
+    path: &std::path::Path,
+    kind: &str,
+    turn: Option<u32>,
+) -> Vec<(crate::Pos, Option<String>)> {
+    let mut refused = Vec::new();
     let Ok(raw) = std::fs::read_to_string(path) else {
         return refused;
     };
@@ -7036,7 +7089,12 @@ fn refused_sites_of_kind_through(
         ) else {
             continue;
         };
-        refused.insert(crate::hex::offset_to_axial(x as i32, y as i32));
+        let want = event
+            .get("want")
+            .and_then(|v| v.as_str())
+            .filter(|want| !want.is_empty())
+            .map(str::to_string);
+        refused.push((crate::hex::offset_to_axial(x as i32, y as i32), want));
     }
     refused
 }
@@ -11515,6 +11573,7 @@ fn step_refused_site_blocks(ctx: &mut HostStepCtx<'_>) {
     // them. See `refused_sites_of_kind_through`.
     ctx.game.blocked_city_sites = Arc::new(ctx.state.refused_sites.clone());
     ctx.game.blocked_improvement_sites = Arc::new(ctx.state.refused_improves.clone());
+    ctx.game.blocked_improvements = Arc::new(ctx.state.refused_improvement_names.clone());
     ctx.game.blocked_trade_routes = Arc::new(ctx.state.refused_trade_routes.clone());
     let policies = blocked_policies_from(&ctx.state.refused_policy_names, &ctx.game.rules);
     ctx.game.blocked_policies = Arc::new(policies);
@@ -13912,6 +13971,10 @@ impl LiveMirror {
             .extend(state.refused_sites.iter().copied());
         Arc::make_mut(&mut self.game.blocked_improvement_sites)
             .extend(state.refused_improves.iter().copied());
+        let blocked = Arc::make_mut(&mut self.game.blocked_improvements);
+        for (pos, names) in &state.refused_improvement_names {
+            blocked.entry(*pos).or_default().extend(names.iter().copied());
+        }
         Arc::make_mut(&mut self.game.blocked_trade_routes)
             .extend(state.refused_trade_routes.iter().copied());
         // Union for the same reason as the two above: a card the host retired stays
