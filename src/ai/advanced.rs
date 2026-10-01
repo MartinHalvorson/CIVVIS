@@ -5992,6 +5992,11 @@ pub struct AdvancedAi {
     /// Settler's home anchor stable after another Settler founds a city while
     /// it is still walking. Unit-keyed and remapped with the live bridge.
     early_settler_homes: BTreeMap<u32, Pos>,
+    /// `first-granary-reserve-3`: version one's rule (population within one
+    /// of housing, no Granary) reaches the delegated city governor too, and an
+    /// Aqueduct follows the Granary while the city is still housing-bound. See
+    /// `BasicAi::housing_reserve`.
+    first_granary_reserve_3: bool,
     // ---- append: g-k ------------------------------------------------
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     great_work_completion_value: bool,
@@ -8565,6 +8570,7 @@ impl AdvancedAi {
             first_luxury_first: false,
             first_luxury_frame: RefCell::new(first_luxury::AmenityDeficitFrame::default()),
             early_settler_homes: BTreeMap::new(),
+            first_granary_reserve_3: false,
 
             // ---- append: g-k ----------------------------------------
             great_work_completion_value: false,
@@ -27347,7 +27353,11 @@ impl AdvancedAi {
             // city built Walls, Castles, wonders and units instead. The same
             // shape as `first_builder_reserve`: one compounding asset ahead of
             // the argmax, once per city.
-            if committed.is_none() && (self.first_granary_reserve || self.first_granary_reserve_2) {
+            if committed.is_none()
+                && (self.first_granary_reserve
+                    || self.first_granary_reserve_2
+                    || self.first_granary_reserve_3)
+            {
                 let granary = crate::name!("granary");
                 let housing_bound = if self.first_granary_reserve_2 {
                     self.granary_growth_pays(g, pid, cid, plan)

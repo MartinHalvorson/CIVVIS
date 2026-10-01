@@ -208,7 +208,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `domination-siege-research` | off (unmeasured) | Unlock the first land siege capability for a walled Conquest objective. | 1 \| 1 |
 | `domination-specializes-earlier` | off (unmeasured) | `domination-specializes-earlier`: an assigned Domination lane leaves its development half at 40% of the clock. | 1 \| 1 |
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |
-| `first-granary-reserve-2` | off (unmeasured) | Reserve a Granary only when its housing accelerates the next citizen within the construction and growth budget. | 1 \| 2 |
+| `first-granary-reserve-2` | off (unmeasured) | Reserve a Granary only when its housing accelerates the next citizen within the construction and growth budget. | 1 \| 3 |
+| `first-granary-reserve-3` | off (unmeasured) | `first-granary-reserve-3`: version one's rule (population within one of housing, no Granary) reaches the delegated city governor too, and an Aqueduct follows the Granary while the city is still housing-bound. | 1 \| 3 |
 | `government-ladder-3` | off (unmeasured) | Choose a government by its remaining civic cost per extra policy slot, reserving time to use the upgrade. | 2 \| 3 |
 | `great-work-completion-value` | off (unmeasured) | Enable `great-work-completion-value` for measurement. | 1 \| 1 |
 | `hostile-memory-3` | off (unmeasured) | Version three also revises stale sightings when their forecast area is fully visible, using only the unit facts recorded at observation. | 1 \| 3 |

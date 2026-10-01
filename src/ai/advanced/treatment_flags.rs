@@ -3494,6 +3494,8 @@ impl AdvancedAi {
     pub fn enable_first_granary_reserve(&mut self) {
         self.first_granary_reserve = true;
         self.first_granary_reserve_2 = false;
+        self.first_granary_reserve_3 = false;
+        self.base.housing_reserve = false;
     }
 
     /// The twin of `enable_first_granary_reserve`.
@@ -3504,6 +3506,8 @@ impl AdvancedAi {
     pub fn enable_first_granary_reserve_2(&mut self) {
         self.first_granary_reserve = false;
         self.first_granary_reserve_2 = true;
+        self.first_granary_reserve_3 = false;
+        self.base.housing_reserve = false;
     }
 
     pub fn disable_first_granary_reserve_2(&mut self) {
@@ -4547,6 +4551,20 @@ impl AdvancedAi {
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
+    /// See `AdvancedAi::first_granary_reserve_3`: a housing-bound city's
+    /// Granary, then its Aqueduct, in both production governors.
+    pub fn enable_first_granary_reserve_3(&mut self) {
+        self.first_granary_reserve = false;
+        self.first_granary_reserve_2 = false;
+        self.first_granary_reserve_3 = true;
+        self.base.housing_reserve = true;
+    }
+
+    /// The twin of `enable_first_granary_reserve_3`.
+    pub fn disable_first_granary_reserve_3(&mut self) {
+        self.first_granary_reserve_3 = false;
+        self.base.housing_reserve = false;
+    }
 
     // ---- append: g-k ------------------------------------------------
 

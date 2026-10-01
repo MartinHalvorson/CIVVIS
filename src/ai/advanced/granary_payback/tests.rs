@@ -165,3 +165,73 @@ fn granary_payback_changes_the_reservation_before_an_owed_library() {
         })
     );
 }
+
+/// `first-granary-reserve-3`: the delegated governor builds a housing-bound
+/// city's Granary right after its Monument, ahead of the districts it would
+/// otherwise rank first, then its Aqueduct while the city stays bound.
+#[test]
+fn version_three_hands_the_delegated_governor_a_granary_then_an_aqueduct() {
+    let (mut g, cid, _plan) = board();
+    g.players[0].techs.insert(crate::name!("writing"));
+    g.players[0].techs.insert(crate::name!("engineering"));
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .push(crate::name!("monument"));
+    let home = g.cities[&cid].pos;
+    g.spawn_unit("scout", 0, home);
+    set_housing(&mut g, cid, 4.0);
+    let mut ai = AdvancedAi::new();
+    ai.enable_first_granary_reserve_2();
+    ai.enable_first_granary_reserve_3();
+    assert!(ai.first_granary_reserve_3 && ai.base.housing_reserve);
+    assert!(!ai.first_granary_reserve && !ai.first_granary_reserve_2);
+    let granary = Item::Building {
+        building: crate::name!("granary"),
+    };
+    let pick = |ai: &AdvancedAi, g: &Game| ai.base.pick_item(g, 0, cid, 9, 0, 9, 9, 9, 9, 9, 9);
+    assert_eq!(
+        crate::ai::BasicAi::housing_reserve_item(&g, 0, cid),
+        Some(granary.clone())
+    );
+    assert_eq!(
+        pick(&ai, &g),
+        Some(granary.clone()),
+        "the Granary leads the districts"
+    );
+
+    set_housing(&mut g, cid, 6.0);
+    assert_eq!(
+        crate::ai::BasicAi::housing_reserve_item(&g, 0, cid),
+        None,
+        "room to grow"
+    );
+    assert_ne!(pick(&ai, &g), Some(granary.clone()));
+
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .push(crate::name!("granary"));
+    set_housing(&mut g, cid, 5.0);
+    let aqueduct = crate::ai::BasicAi::civ_district(&g, 0, "aqueduct");
+    let sites = g.district_sites(cid, aqueduct);
+    match crate::ai::BasicAi::housing_reserve_item(&g, 0, cid) {
+        Some(Item::District { district, pos }) => {
+            assert_eq!(district, aqueduct);
+            assert!(sites.contains(&pos));
+        }
+        None => assert!(sites.is_empty(), "an Aqueduct site was passed over"),
+        other => panic!("unexpected housing item {other:?}"),
+    }
+
+    ai.disable_first_granary_reserve_3();
+    assert!(!ai.base.housing_reserve);
+    ai.enable_first_granary_reserve_3();
+    ai.enable_first_granary_reserve();
+    assert!(!ai.first_granary_reserve_3 && !ai.base.housing_reserve);
+    super::super::test_support::opt_in_off_in_both_controllers("first-granary-reserve-3", |ai| {
+        ai.first_granary_reserve_3
+    });
+}

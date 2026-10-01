@@ -1,11 +1,11 @@
 {
  "what": "The deployed genome's per-gene compute cost, from the screens docs/gene_ledger.json draws on. compute_cost_pct is the percent change in wall seconds per completed turn per enabled major seat (docs/GENE_SCREEN.md). Regenerate with `python3 tools/genome_cost.py write`; `check` fails when this file and the ledger disagree, so the bill cannot move without the diff showing which gene moved it.",
  "not_a_total": "summed_cost_pct adds marginal costs each measured with the rest of the genome enabled. They do not compose \u2014 two genes that walk the same list cost less together than apart \u2014 so this is an indicator that TRACKS the bill, not the bill. Compare it with itself over time; never quote it as what the genome costs.",
- "deployed_genes": 139,
- "priced": 139,
- "resolved_beyond_one_se": 56,
- "summed_cost_pct": 15.214,
- "summed_positive_cost_pct": 27.497,
+ "deployed_genes": 138,
+ "priced": 138,
+ "resolved_beyond_one_se": 55,
+ "summed_cost_pct": 14.718,
+ "summed_positive_cost_pct": 27.001,
  "genes": [
   {
    "tag": "culture-lane-forecast",
@@ -192,15 +192,6 @@
    "compute_cost_pct": 0.498,
    "compute_cost_se_pct": 0.369,
    "win_diff_pp": 0.183943,
-   "resolved": true,
-   "source": "2026-09-10-standard-continuous-16536-total-seats-20260909T162118Z-b978.json",
-   "cost_per_point": null
-  },
-  {
-   "tag": "doomed-blow-veto-2",
-   "compute_cost_pct": 0.496,
-   "compute_cost_se_pct": 0.369,
-   "win_diff_pp": -0.074963,
    "resolved": true,
    "source": "2026-09-10-standard-continuous-16536-total-seats-20260909T162118Z-b978.json",
    "cost_per_point": null

@@ -75,7 +75,6 @@
       "district-coverage-2",
       "district-planning",
       "domination-city-count",
-      "doomed-blow-veto-2",
       "early-contact-window",
       "early-project-restraint-2",
       "elective-war-in-reach",
@@ -188,7 +187,6 @@
       "culture-lane-forecast",
       "deals-for-our-gain",
       "defend-where-you-stand",
-      "doomed-blow-veto-2",
       "eureka-chasing-production",
       "founder-temple",
       "gold-income-floor",
@@ -2310,11 +2308,9 @@
         }
       },
       "doomed-blow-veto": {
-        "rule_on": [
-          "doomed-blow-veto-2"
-        ],
+        "rule_on": [],
         "head": null,
-        "ships": "doomed-blow-veto-2",
+        "ships": null,
         "versions": {
           "doomed-blow-veto": null,
           "doomed-blow-veto-2": null
@@ -2381,7 +2377,8 @@
         "ships": null,
         "versions": {
           "first-granary-reserve": null,
-          "first-granary-reserve-2": null
+          "first-granary-reserve-2": null,
+          "first-granary-reserve-3": null
         }
       },
       "government-ladder": {
@@ -3015,7 +3012,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 56,
-    "default_on": 139
+    "default_on": 138
   },
   "genes": [
     {

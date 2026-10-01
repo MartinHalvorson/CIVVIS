@@ -2391,6 +2391,20 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `science-building-first`.
     pub(crate) science_building_first: bool,
+    /// A city grown to its housing builds its Granary, then its Aqueduct,
+    /// right after its Monument and ahead of every district and later
+    /// building. Housing caps growth: a city at its housing grows at a quarter
+    /// speed, one short at half. On King civvis-20261001T003717Z, 89% of the
+    /// city-turns from turn 40 to 150 were housing-bound (55% at the cap) and
+    /// 88% were bound without a Granary. Pottery came at turn 12, yet not one
+    /// of nine cities had a Granary at turn 127, and none had an Aqueduct.
+    /// Seven of nine cities sat at 2 to 7 population while the rivals' cores
+    /// reached 13, and science trailed 46 against 93 to 143. This governor
+    /// reaches a Granary only after every district a city still lacks, which
+    /// a growing city never runs out of.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `first-granary-reserve-3`.
+    pub(crate) housing_reserve: bool,
     /// A named domination seat must not let the delegated baseline governor
     /// build a Spaceport or launch project. The King Gran Colombia game won
     /// by Science at turn 229 while its public plan remained Conquest.
@@ -5086,6 +5100,7 @@ impl BasicAi {
             skip_prophet_race: false,
             enter_prophet_race: false,
             science_building_first: false,
+            housing_reserve: false,
             exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
@@ -5547,6 +5562,7 @@ impl BasicAi {
             skip_prophet_race: false,
             enter_prophet_race: false,
             science_building_first: false,
+            housing_reserve: false,
             exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
@@ -12368,6 +12384,12 @@ impl BasicAi {
         if let Some(monument) = Self::civ_building(g, pid, cid, "monument") {
             return Some(monument);
         }
+        // `first-granary-reserve-3`: growth before the specialty districts.
+        if self.housing_reserve && !self.minor && !self.barb {
+            if let Some(item) = Self::housing_reserve_item(g, pid, cid) {
+                return Some(item);
+            }
+        }
 
         // Coastal infrastructure is part of the water strategy, not an
         // accidental fallback after every land district. A harbor also gives
@@ -14090,6 +14112,30 @@ impl BasicAi {
     /// civilization or its secret society builds instead. `None` means the
     /// city already has one or cannot have it, so the caller moves on rather
     /// than proposing something the engine will refuse.
+    /// See `housing_reserve`: the Granary, then the Aqueduct, for a city whose
+    /// population is within one of its housing. Neither while the city has
+    /// room to grow, and the Aqueduct only once the Granary stands or cannot
+    /// be built here.
+    pub(crate) fn housing_reserve_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let city = &g.cities[&cid];
+        if (city.pop as f64) + 1.0 < g.city_housing(city) {
+            return None;
+        }
+        if let Some(granary) = Self::civ_building(g, pid, cid, "granary") {
+            return Some(granary);
+        }
+        if g.city_has_district_family(city, crate::name!("aqueduct")) {
+            return None;
+        }
+        let aqueduct = Self::civ_district(g, pid, "aqueduct");
+        let pos = g.district_sites(cid, aqueduct).into_iter().min()?;
+        let item = Item::District {
+            district: aqueduct,
+            pos,
+        };
+        g.can_produce(pid, cid, &item).then_some(item)
+    }
+
     fn civ_building(g: &Game, pid: usize, cid: u32, family: &str) -> Option<Item> {
         let base = Item::Building {
             building: Name::new(family),
