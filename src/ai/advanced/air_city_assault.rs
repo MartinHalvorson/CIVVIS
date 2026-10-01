@@ -22,13 +22,17 @@ const AIR_ASSAULT_BREACH_TAKER_HP: i32 = 30;
 const AIR_ASSAULT_TAKER_REACH: i32 = 6;
 /// How many takers, strongest first, the capture search simulates.
 const AIR_ASSAULT_CAPTURE_TRIES: usize = 6;
+/// Aircraft one volley may commit to the city.
+const AIR_ASSAULT_MAX_SORTIES: usize = 8;
 
 /// The chosen maneuver on a disposable planning board. Native adapters must
 /// observe the spot and the volley before releasing the dependent phase.
 #[derive(Clone, Debug)]
 pub struct AirCityAssault {
     pub target: Pos,
-    pub cavalry: u32,
+    /// The capture or spotting body, if the maneuver had one. A volley the
+    /// wing flies at a visible city with no body in reach has none.
+    pub cavalry: Option<u32>,
     pub spot: Pos,
     pub moved_to_spot: bool,
     pub aircraft: Vec<u32>,
@@ -143,7 +147,7 @@ impl AdvancedAi {
                     g.cities.get(&cid).is_some_and(|city| city.owner == pid));
                 self.air_city_assault = Some(AirCityAssault {
                     target,
-                    cavalry: taker,
+                    cavalry: Some(taker),
                     spot: origin,
                     moved_to_spot: false,
                     aircraft: Vec::new(),
@@ -169,7 +173,7 @@ impl AdvancedAi {
                     && unit.hp >= 50
                     && g.wdist(unit.pos, target) <= g.unit_attack_range(*uid)
             })
-            .take(4)
+            .take(AIR_ASSAULT_MAX_SORTIES)
             .collect();
         if aircraft.is_empty() {
             return reserved;
@@ -196,6 +200,17 @@ impl AdvancedAi {
             return reserved;
         }
         let Some(mut opening) = self.air_assault_opening(g, pid, target, ready) else {
+            // ★★★ NO CAVALRY, NO VOLLEY — AND THE WING WENT ELSEWHERE. Live King
+            // 20260930T211803Z turn 184, frame 0: Edirne the objective, four
+            // Bombers in range at full health worth 92 a sortie, and no healthy
+            // cavalry within six tiles yet, so this returned before a single
+            // sortie and the unit loop spent all four on field units. Frame 1's
+            // volley was then refused by the host as second strikes. Cavalry
+            // is needed to see a hidden city and to take a breached one; the
+            // walls of a city the empire can see fall to the wing alone.
+            if ready && visible && self.air_surge_2 {
+                return self.air_assault_volley(g, pid, plan, cid, target, &aircraft, reserved);
+            }
             return reserved;
         };
         let mut sorties = Vec::new();
@@ -271,7 +286,7 @@ impl AdvancedAi {
         });
         let report = AirCityAssault {
             target,
-            cavalry: uid,
+            cavalry: Some(uid),
             spot: opening.spot,
             moved_to_spot: opening.spot != opening.origin,
             aircraft: sorties,
@@ -297,6 +312,71 @@ impl AdvancedAi {
             uid, report.moved_to_spot, report.aircraft.len(),
             g.cities.get(&cid).is_some_and(|city| city.owner == pid));
         self.air_city_assault = Some(report);
+        reserved
+    }
+
+    /// The wing's sorties at a visible city with no spotting cavalry, then the
+    /// strongest body in reach if the volley leaves a breach it can finish.
+    #[allow(clippy::too_many_arguments)]
+    fn air_assault_volley(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        cid: u32,
+        target: Pos,
+        aircraft: &[u32],
+        mut reserved: BTreeSet<u32>,
+    ) -> BTreeSet<u32> {
+        let mut board = g.speculative_clone();
+        let mut actions = Vec::new();
+        let mut sorties = Vec::new();
+        for uid in aircraft {
+            if board.strike_blocked(*uid, target) {
+                continue;
+            }
+            let value = self.air_strike_value(&board, pid, *uid, target, plan);
+            if value <= 0.0 || !value.is_finite() {
+                continue;
+            }
+            let action = Action::AirStrike { unit: *uid, target };
+            if board.apply(pid, &action).is_ok() {
+                actions.push(action);
+                sorties.push(*uid);
+            }
+        }
+        if sorties.is_empty() {
+            return reserved;
+        }
+        let takers = self.air_assault_takers(&board, pid, target);
+        let taker = self
+            .air_assault_best_capture(&board, pid, cid, &takers)
+            .map(|(taker, capture)| {
+                actions.extend(capture);
+                taker
+            });
+        for action in &actions {
+            if g.apply(pid, action).is_err() {
+                break;
+            }
+        }
+        self.resolve_city_dispositions(g, pid, plan.strategy);
+        reserved.extend(sorties.iter().copied());
+        reserved.extend(taker);
+        crate::think!(self.journal(), Military, Decision,
+            "Bombers strike {} ahead of the capture body", g.cities.get(&cid).map_or("the city", |city| city.name.as_str());
+            "{} sorties with no cavalry in reach; walls {}, city {}; captured {}",
+            sorties.len(),
+            g.cities.get(&cid).map_or(0, |city| city.wall_hp),
+            g.cities.get(&cid).map_or(0, |city| city.hp),
+            g.cities.get(&cid).is_some_and(|city| city.owner == pid));
+        self.air_city_assault = Some(AirCityAssault {
+            target,
+            cavalry: taker,
+            spot: target,
+            moved_to_spot: false,
+            aircraft: sorties,
+        });
         reserved
     }
 
