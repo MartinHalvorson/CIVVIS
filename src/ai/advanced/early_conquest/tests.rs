@@ -602,6 +602,8 @@ fn an_opening_whose_war_has_ended_releases() {
         "at war, the opening owns the plan"
     );
 
+    // A turn later the war is over.
+    game.turn += 1;
     game.at_war.remove(&(0, 1));
     game.at_war.remove(&(1, 0));
     assert!(!game.is_at_war(0, 1));
@@ -1599,4 +1601,30 @@ fn a_partial_force_at_the_rally_is_not_an_assembled_one() {
     ai.maintain_conquest_opening(&mut game, 0);
     let opening = ai.conquest_opening.as_ref().unwrap();
     assert!(opening.assembled.is_some());
+}
+
+#[test]
+fn a_declaration_is_not_read_as_peace_on_the_turn_it_is_made() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = opened(&mut game);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    bodies(&mut game, 0, "warrior", rally, 1, CONQUEST_RANGED + CONQUEST_MELEE);
+    ai.maintain_conquest_opening(&mut game, 0);
+    if let Some(opening) = ai.conquest_opening.as_mut() {
+        assert!(!opening.force.is_empty());
+        opening.declared = Some(game.turn);
+    }
+    // The host has not applied the war yet: this frame still reads peace.
+    assert!(!game.is_at_war(0, 1));
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(
+        ai.conquest_opening.is_some(),
+        "the declaring turn's own frames cannot end the war"
+    );
+
+    // A turn later, still no war: the declaration failed, and the opening
+    // releases as before.
+    game.turn += 1;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_none(), "a war that never opened ends the opening");
 }

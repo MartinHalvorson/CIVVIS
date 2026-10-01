@@ -1238,12 +1238,20 @@ impl AdvancedAi {
                 self.conquest_after_a_capture(g, pid);
                 return;
             }
-            if opening.declared.is_some() {
+            if let Some(declared) = opening.declared {
                 // The war is open. It ends by any road — a peace accepted, a
                 // truce imposed — and the opening ends with it; and a force
                 // that is wholly gone has nothing left to pin the campaign
                 // with, so it asks for terms and stands down.
-                if !g.is_at_war(pid, opening.target) {
+                //
+                // Not on the turn it was declared: the host applies the
+                // declaration after the order is read back, so the next frame
+                // of the SAME turn still exports peace. Live King
+                // 2026-10-01T014323Z declared on Norway on turn 45 with 83% of
+                // the force at Oslo's rally, read that frame's peace as "the
+                // war has ended", and closed the game's one opening -- while
+                // the host showed the war from turn 46.
+                if g.turn > declared && !g.is_at_war(pid, opening.target) {
                     self.conquest_release(g, "the war has ended");
                     return;
                 }
