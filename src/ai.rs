@@ -2420,6 +2420,15 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `campus-before-harbor`.
     pub(crate) campus_before_harbor: bool,
+    /// The capital's first Campus before its next Settler, once the empire
+    /// holds three cities. The capital is the settler pump of the land grab:
+    /// on live King Gran Colombia it trained eight Settlers between turns 6
+    /// and 57 (2026-10-01T053931Z) and sat at population 2-3 with no Campus
+    /// until turn 66 (none by turn 75 in T050754Z), while science trailed
+    /// 15 against 56 at turn 60.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `campus-before-harbor-2`.
+    pub(crate) capital_campus_first: bool,
     /// The genome's own `mil_per_city` while `AdvancedAi::delegated_cities`
     /// has lent this governor a Domination war's higher army target, `None`
     /// otherwise. Below the genome's own floor every city still builds the
@@ -5129,6 +5138,7 @@ impl BasicAi {
             science_building_first: false,
             housing_reserve: false,
             campus_before_harbor: false,
+            capital_campus_first: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
@@ -5593,6 +5603,7 @@ impl BasicAi {
             science_building_first: false,
             housing_reserve: false,
             campus_before_harbor: false,
+            capital_campus_first: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
@@ -12301,6 +12312,18 @@ impl BasicAi {
                 });
             }
         }
+        // `campus-before-harbor-2`: the capital's first Campus before its
+        // next Settler once the land grab has three cities to build them.
+        if self.capital_campus_first
+            && !self.minor
+            && !self.barb
+            && n_cities >= Self::CAPITAL_CAMPUS_MIN_CITIES
+            && g.cities[&cid].is_capital
+        {
+            if let Some(item) = Self::first_campus_item(g, pid, cid) {
+                return Some(item);
+            }
+        }
         // ⚠ Five conditions in one `&&` chain, and an empire that ends the game
         // with one city cannot say which of them refused. Named individually so
         // "the site search found nothing" is distinguishable from "the window
@@ -14172,6 +14195,11 @@ impl BasicAi {
     /// `campus-before-harbor`: a one-production outpost waits for the ordinary
     /// list rather than parking forty turns on a district.
     const FIRST_CAMPUS_MAX_TURNS: f64 = 15.0;
+
+    /// Cities the empire holds before `capital_campus_first` puts the
+    /// capital's Campus ahead of its next Settler: the pump has founded two
+    /// others, so the land grab keeps a second and third source of walkers.
+    const CAPITAL_CAMPUS_MIN_CITIES: usize = 3;
 
     /// See `campus_before_harbor`: this city's first Campus at its best site,
     /// when the empire can build one here, the city holds none and none is
@@ -21970,6 +21998,52 @@ mod tests {
             None,
             "a city that would take longer than the cap is not asked"
         );
+    }
+
+    /// See `capital_campus_first`: a three-city capital with Writing starts
+    /// its Campus where the stock governor starts something else, and a
+    /// two-city capital keeps the stock choice.
+    #[test]
+    fn the_capital_opens_its_campus_before_the_next_settler() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("CAPITALCAMPUS", 91_802),
+            250,
+            0,
+            false,
+        );
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = game.player_city_ids(0)[0];
+        assert!(game.cities[&cid].is_capital);
+        game.cities.get_mut(&cid).unwrap().pop = 3;
+        game.players[0].techs.insert(crate::name!("writing"));
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            cid,
+            crate::rules::Yields {
+                production: 10.0,
+                ..Default::default()
+            },
+        );
+        let pick = |first: bool, n_cities: usize| {
+            let mut ai = BasicAi::new();
+            ai.capital_campus_first = first;
+            ai.pick_item(&game, 0, cid, n_cities, 0, 3, 1, 0, 6, 3, 3)
+        };
+        let is_campus = |item: &Option<Item>| {
+            matches!(item, Some(Item::District { district, .. })
+                if game.district_family(*district) == "campus")
+        };
+        let stock = pick(false, 3);
+        assert!(!is_campus(&stock), "the fixture's stock pick is not the Campus: {stock:?}");
+        assert!(is_campus(&pick(true, 3)), "a three-city capital opens its Campus");
+        assert_eq!(pick(true, 2), pick(false, 2), "two cities keep the stock choice");
     }
 
     /// A Scout the host bounces between two tiles toward the same goal is as

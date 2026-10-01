@@ -2394,6 +2394,10 @@ pub const GENES: &[Gene] = &[
     // any specialty district; live King Tiny Pangaea started no Campus between
     // turns 20 and 65 in two of three games. See `BasicAi::campus_before_harbor`.
     Gene { tag: "campus-before-harbor", field: "campus_before_harbor", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_harbor, disable: AdvancedAi::disable_campus_before_harbor },
+    // V2 also puts the capital's first Campus ahead of its next Settler once
+    // the empire holds three cities: the capital trained eight Settlers by
+    // turn 57 and opened no Campus until turn 66. See `BasicAi::capital_campus_first`.
+    Gene { tag: "campus-before-harbor-2", field: "campus_before_harbor_2", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_harbor_2, disable: AdvancedAi::disable_campus_before_harbor_2 },
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------

@@ -2168,6 +2168,15 @@
           "campus-adjacency-threshold-2": null
         }
       },
+      "campus-before-harbor": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "campus-before-harbor": null,
+          "campus-before-harbor-2": null
+        }
+      },
       "capture-go-or-stand-down": {
         "rule_on": [
           "capture-go-or-stand-down-2"

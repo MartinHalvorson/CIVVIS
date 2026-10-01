@@ -192,7 +192,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `builder-charge-window` | off (unmeasured) | Slot Serfdom while a queued Builder is close to completion. | 1 \| 1 |
 | `builder-workforce-recovery-3` | off (unmeasured) | Count local repair jobs as well as new improvements when replacing a lost Builder, retaining v2's three-job threshold. | 2 \| 3 |
 | `builders-work-through-raiders` | off (unmeasured) | `builders-work-through-raiders`: the live capture lessons' reach holds keep Settlers only. | 1 \| 1 |
-| `campus-before-harbor` | off (unmeasured) | `campus-before-harbor`: see `BasicAi::campus_before_harbor`. | 1 \| 1 |
+| `campus-before-harbor` | off (unmeasured) | `campus-before-harbor`: see `BasicAi::campus_before_harbor`. | — \| 2 |
+| `campus-before-harbor-2` | off (unmeasured) | `campus-before-harbor-2`: version one, and the capital's first Campus before its next Settler. | — \| 2 |
 | `capital-campaign-router` | off (unmeasured) | Enable `capital-campaign-router` for measurement. | 1 \| 1 |
 | `capture-hold-chain` | off (unmeasured) | Enable `capture-hold-chain` for measurement. | 1 \| 1 |
 | `connect-the-luxury-2` | off (unmeasured) | Research a first-copy luxury only when it can relieve an Amenity deficit after a legal, affordable unlock. | 1 \| 2 |

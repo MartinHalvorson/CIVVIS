@@ -4554,13 +4554,31 @@ impl AdvancedAi {
     /// Harbor in the delegated city governor.
     pub fn enable_campus_before_harbor(&mut self) {
         self.campus_before_harbor = true;
+        self.campus_before_harbor_2 = false;
         self.base.campus_before_harbor = true;
+        self.base.capital_campus_first = false;
     }
 
     /// The twin of `enable_campus_before_harbor`.
     pub fn disable_campus_before_harbor(&mut self) {
         self.campus_before_harbor = false;
-        self.base.campus_before_harbor = false;
+        self.base.campus_before_harbor = self.campus_before_harbor_2;
+    }
+
+    /// See `BasicAi::capital_campus_first`: version one, and the capital's
+    /// first Campus before its next Settler.
+    pub fn enable_campus_before_harbor_2(&mut self) {
+        self.campus_before_harbor = false;
+        self.campus_before_harbor_2 = true;
+        self.base.campus_before_harbor = true;
+        self.base.capital_campus_first = true;
+    }
+
+    /// The twin of `enable_campus_before_harbor_2`.
+    pub fn disable_campus_before_harbor_2(&mut self) {
+        self.campus_before_harbor_2 = false;
+        self.base.campus_before_harbor = self.campus_before_harbor;
+        self.base.capital_campus_first = false;
     }
     // ---- append: e-f ------------------------------------------------
     /// See `AdvancedAi::first_granary_reserve_3`: a housing-bound city's
