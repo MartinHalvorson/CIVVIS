@@ -20392,9 +20392,14 @@ impl AdvancedAi {
                 && !peace_pending
                 && !religious_interception
                 && (outmatched
+                    // The wing's front rides out a Recovery reading. An
+                    // unfought surge stands itself down after two in a row
+                    // (`AIR_SURGE_RECOVERY_LIMIT`); a fought one keeps its
+                    // war unless the outmatched clause above fires.
                     || (plan.strategy == GrandStrategy::Recovery
                         && plan.target_player != Some(*other)
-                        && !siege_grace)
+                        && !siege_grace
+                        && !air_front)
                     || (self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                         && !appointed_objective)
@@ -20414,7 +20419,15 @@ impl AdvancedAi {
                             || g.turn.saturating_sub(self.last_campaign_progress)
                                 >= g.standard_duration(PEACE_STALL_TURNS)))
                     || envoy_reclaim.is_some()
-                    || one_war_peace.is_some()
+                    // ★★ THE WING'S FRONT WAS A "SECOND FRONT". Live King
+                    // 20261001T080758Z reached Advanced Flight at turn 156
+                    // and started Bombers against Pella; the land campaign
+                    // was aimed at the Zulu, so `one_war_at_a_time` offered
+                    // Macedon peace every turn from 163 as its power fell
+                    // from 106 to 18 against our thousand, Macedon took it at
+                    // 167, and the surge stood down. The wing's own front is
+                    // not a second front.
+                    || (one_war_peace.is_some() && !air_front)
                     || interception_handoff
                     || science_defensive_peace)
             {

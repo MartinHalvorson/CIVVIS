@@ -3,7 +3,11 @@
 use super::*;
 
 fn fixture() -> (Game, AdvancedAi, u32) {
-    let mut g = Game::new_full(2, 40, 24, 936077, 650, 0, false);
+    fixture_with(2)
+}
+
+fn fixture_with(players: usize) -> (Game, AdvancedAi, u32) {
+    let mut g = Game::new_full(players, 40, 24, 936077, 650, 0, false);
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);
     }
@@ -546,4 +550,91 @@ fn a_banked_stockpile_buys_bombers_past_the_income() {
         (sustainable + 2).min(AIR_SURGE_BOMBERS)
     );
     assert_eq!(goal(&mut g, 10_000.0), AIR_SURGE_BOMBERS, "the ceiling holds");
+}
+
+/// Live King 20261001T080758Z: Bombers against Pella from turn 156 while the
+/// land campaign was aimed at the Zulu. `one_war_at_a_time` offered Macedon
+/// peace every turn from 163 as its power fell from 106 to 18, Macedon took
+/// it at 167, and the surge stood down. The wing's own front is not a second
+/// front.
+#[test]
+fn one_war_does_not_offer_the_wing_s_front_peace() {
+    let offers = |hold: bool| {
+        let (mut g, mut ai, target) = fixture_with(3);
+        g.found_city_for(2, (32, 6), None);
+        g.record_contact(0, 2);
+        at_war(&mut g);
+        g.at_war.insert((0, 2));
+        g.at_war.insert((2, 0));
+        ai.one_war_at_a_time = true;
+        ai.one_war = Some(crate::ai::advanced::one_war::OneWarFront {
+            target: 2,
+            since: g.turn - 10,
+            ledger: (0, 0, 0, 0),
+            window: Default::default(),
+            tide_against_since: None,
+            city_health: Default::default(),
+            sieges_advancing: 0,
+        });
+        if !hold {
+            ai.air_surge_plan = None;
+        }
+        ai.air_surge_status = ai
+            .air_surge_plan
+            .as_ref()
+            .map(|plan| ai.air_surge_status(&g, 0, plan))
+            .unwrap_or_default();
+        assert_eq!(
+            ai.one_war_peace(&g, 0, 1),
+            Some(crate::ai::advanced::one_war::OneWarPeace::SecondFront)
+        );
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(2),
+            target_city: g.player_city_ids(2).first().copied(),
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: g.turn,
+            rush: false,
+        };
+        let _ = target;
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        ai.peace_offers.contains(&1)
+    };
+    assert!(offers(false), "the control: a second front is offered peace");
+    assert!(!offers(true), "the wing's front keeps its war");
+}
+
+/// The same game, turn 157: Macedon opened the war on a frame that read
+/// Recovery for a threatened Cuenca, and the Recovery clause offered the
+/// wing's target peace at 842 power against 167. Only the outmatched clause
+/// may offer the wing's front peace.
+#[test]
+fn a_recovery_reading_does_not_offer_the_wing_s_front_peace() {
+    let offers = |hold: bool| {
+        let (mut g, mut ai, _) = fixture();
+        at_war(&mut g);
+        if !hold {
+            ai.air_surge_plan = None;
+        }
+        ai.air_surge_status = ai
+            .air_surge_plan
+            .as_ref()
+            .map(|plan| ai.air_surge_status(&g, 0, plan))
+            .unwrap_or_default();
+        let home = g.player_city_ids(0)[0];
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            target_player: None,
+            target_city: None,
+            threatened_city: Some(home),
+            desired_cities: 4,
+            assessed_turn: g.turn,
+            rush: false,
+        };
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        ai.peace_offers.contains(&1)
+    };
+    assert!(offers(false), "the control: Recovery offers a non-target peace");
+    assert!(!offers(true), "the wing's front keeps its war");
 }

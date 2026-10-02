@@ -160,7 +160,7 @@ impl AdvancedAi {
                     .expect("takers is not empty");
                 let mut board = g.speculative_clone();
                 let advanced = self
-                    .air_assault_advance(&mut board, pid, nearest, target)
+                    .air_assault_advance(&mut board, pid, nearest, target, true)
                     .filter(|action| g.apply(pid, action).is_ok());
                 crate::think!(self.journal(), Military, Detail,
                     "Breach at {} cannot be finished this turn", g.cities[&cid].name;
@@ -313,7 +313,7 @@ impl AdvancedAi {
         if let Some(actions) = capture {
             opening.actions.extend(actions);
         } else if let Some(action) = breached_after_sorties
-            .then(|| self.air_assault_advance(&mut opening.board, pid, uid, target))
+            .then(|| self.air_assault_advance(&mut opening.board, pid, uid, target, false))
             .flatten()
         {
             // The walls are down, so the city cannot strike the approach, and
@@ -699,15 +699,26 @@ impl AdvancedAi {
         None
     }
 
-    /// Step the capture body toward a breached city: the reachable tile
-    /// nearest the city, among those whose danger leaves it more than half its
-    /// health. Only tiles that close the distance qualify.
+    /// One step closer to `target` that the body survives. Toward a breach
+    /// (`breach`, with `air-surge-2`), the step only has to leave the body a
+    /// taker for the next board's capture; otherwise it keeps half its health.
+    ///
+    /// ★★ HALF HEALTH AGAINST EVERY BLOW AT ONCE. The full field charged
+    /// every hostile's blow to the one approaching body and asked it to keep
+    /// half its health, while a hostile strikes once a turn and a city behind
+    /// fallen walls cannot strike at all. With `air-surge-2` each blow is
+    /// shared among our land units in its reach (never under the strongest
+    /// single blow). Live King 20261001T050754Z: Uppsala sat breached from
+    /// turn 103 to 113 reading "the nearest has no safe step closer"; there
+    /// the approach was also closed by our own spent Trebuchets on every
+    /// distance-two tile, which no danger reading can open.
     fn air_assault_advance(
         &self,
         g: &mut Game,
         pid: usize,
         uid: u32,
         target: Pos,
+        breach: bool,
     ) -> Option<Action> {
         let origin = g.units.get(&uid)?.pos;
         let here = g.wdist(origin, target);
@@ -729,12 +740,30 @@ impl AdvancedAi {
                 continue;
             };
             let hp = after.units[&uid].hp as f64;
-            if battle_planner::strike_danger(&after, pid, to, uid) < hp * 0.5 {
+            let danger = self.air_assault_danger(&after, pid, to, uid);
+            let safe = if breach && self.air_surge_2 {
+                hp - danger >= f64::from(AIR_ASSAULT_BREACH_TAKER_HP)
+            } else {
+                danger < hp * 0.5
+            };
+            if safe {
                 *g = after;
                 return Some(action);
             }
         }
         None
+    }
+
+    /// The blows `uid` takes on `tile` next turn: shared among our exposed
+    /// land units with `air-surge-2` or `shared-danger`, the full field
+    /// otherwise.
+    fn air_assault_danger(&self, g: &Game, pid: usize, tile: Pos, uid: u32) -> f64 {
+        if !self.air_surge_2 && !self.shared_danger {
+            return battle_planner::strike_danger(g, pid, tile, uid);
+        }
+        let mut field = battle_planner::DangerField::with_reach(g, pid, true);
+        field.share(g);
+        field.rotation_danger(tile, uid)
     }
 
     fn air_assault_withdraw(&self, g: &mut Game, pid: usize, uid: u32) -> Option<Action> {
