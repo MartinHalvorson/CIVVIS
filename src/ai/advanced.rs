@@ -19787,8 +19787,15 @@ impl AdvancedAi {
                 })
                 .collect()
         };
-        let next = g
-            .route_step_to_any(uid, &goals)
+        // Over dry land when a reasonable land road exists; see
+        // `siege_train::march_step`.
+        let next = siege_train::dry_march_step(g, uid, objective, 5)
+            .filter(|position| {
+                g.map
+                    .get(*position)
+                    .is_some_and(|tile| !g.rules.is_water(tile))
+            })
+            .or_else(|| g.route_step_to_any(uid, &goals))
             .filter(|position| *position != here && g.can_move(uid, *position))?;
         // A step the battle planner's rotation would pull straight back out
         // is a wasted turn twice over. Live King civvis-20261001T010043Z: a

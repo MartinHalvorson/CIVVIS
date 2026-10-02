@@ -324,3 +324,58 @@ fn a_postless_gun_closes_to_the_staging_ring() {
     let waiting = g.spawn_unit("catapult", 0, near);
     assert_eq!(ai.close_to_staging(&mut g, 0, waiting, &city), None);
 }
+
+/// See `march_step`: a land unit that can embark marches around a bay over
+/// dry land instead of crossing it, while the road is not too long.
+#[test]
+fn a_march_takes_the_land_road_around_a_bay() {
+    let (mut g, cid) = walled_city();
+    let target = g.cities[&cid].pos;
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    // A bay three columns wide between the start and the city, open to land
+    // only south of it.
+    let (cx, cy) = target;
+    for pos in g.map.tiles.keys().copied().collect::<Vec<_>>() {
+        let (q, r) = pos;
+        let dq = q - cx;
+        if (-6..=-4).contains(&dq) && (cy - 8..=cy + 3).contains(&r) {
+            g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("coast");
+        }
+    }
+    g.players[0].techs.insert(crate::name!("shipbuilding"));
+    let start = (cx - 8, cy);
+    let warrior = g.spawn_unit("warrior", 0, start);
+    let ordinary = g
+        .route_step(warrior, target, STAGING_FAR)
+        .expect("an ordinary route");
+    let ordinary_len = g.route_distance(warrior, target, STAGING_FAR).unwrap();
+    let mut probe = g.speculative_clone();
+    let mut crosses = false;
+    for _ in 0..ordinary_len {
+        let Some(step) = probe.route_step(warrior, target, STAGING_FAR) else {
+            break;
+        };
+        crosses |= probe
+            .map
+            .get(step)
+            .is_some_and(|tile| probe.rules.is_water(tile));
+        probe.relocate(warrior, step);
+    }
+    assert!(
+        crosses,
+        "fixture: the ordinary route crosses the bay ({ordinary:?})"
+    );
+    let (dry, steps) = g
+        .route_step_dry(warrior, target, STAGING_FAR, 64)
+        .expect("a road around the bay");
+    assert!(g.map.get(dry).is_some_and(|tile| !g.rules.is_water(tile)));
+    assert!(steps > g.wdist(start, target) as usize - STAGING_FAR as usize);
+    assert_eq!(march_step(&g, warrior, target, STAGING_FAR), Some(dry));
+    assert_eq!(dry_march_step(&g, warrior, target, STAGING_FAR), Some(dry));
+    // A road longer than the slack allows yields to the ordinary route.
+    assert_eq!(g.route_step_dry(warrior, target, STAGING_FAR, 2), None);
+}

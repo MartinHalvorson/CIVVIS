@@ -690,6 +690,49 @@ fn anvil_orders_for(
 /// The same exclusions must govern post assignment and the march to it.
 /// Otherwise spread-first assignment can reserve a pocket whose only entry
 /// crosses another ring tile, and the mover can never fulfill that order.
+/// How much longer, in steps, a dry-land march may be than the ordinary
+/// route before a land unit takes the ordinary (embarking) one instead.
+const DRY_MARCH_SLACK: usize = 8;
+
+/// The next step of a land unit's march toward `to`: over dry land while a
+/// dry route exists no more than twice the ordinary route's length (and
+/// [`DRY_MARCH_SLACK`] over it), else the ordinary step. The ordinary router
+/// prices every step at 1, so a unit that can embark crosses any shorter bay.
+/// Live King civvis-20261002T054346Z: the Siege of Tlacopan, across a bay,
+/// staged nobody within five tiles for 45 turns with a force of 7-19. Five to
+/// twenty-six of our units floated in the bay at a time, 165 of their moves
+/// failed with the host's "cannot_start", and units on the shore stood down as
+/// "going nowhere", while a 23-step road ran around the bay over land.
+pub(super) fn march_step(g: &Game, uid: u32, to: Pos, range: i32) -> Option<Pos> {
+    dry_march_step(g, uid, to, range).or_else(|| g.route_step(uid, to, range))
+}
+
+/// The dry-land half of [`march_step`]: `None` for a unit at sea or not on
+/// land, when no acceptable dry route exists, or when the ordinary route is
+/// no longer than the dry one (it already keeps to land).
+pub(super) fn dry_march_step(g: &Game, uid: u32, to: Pos, range: i32) -> Option<Pos> {
+    let unit = g.units.get(&uid)?;
+    let spec = &g.rules.units[unit.kind];
+    if g.is_embarked(unit)
+        || spec
+            .domain
+            .as_deref()
+            .is_some_and(|domain| domain != "land")
+    {
+        return None;
+    }
+    let ordinary_len = g.route_distance(uid, to, range).unwrap_or(usize::MAX / 4);
+    let limit = ordinary_len
+        .saturating_mul(2)
+        .max(ordinary_len.saturating_add(DRY_MARCH_SLACK))
+        .min(64);
+    // A dry road no longer than the ordinary route means the ordinary route
+    // keeps to land already: keep its step and its tie-breaking.
+    g.route_step_dry(uid, to, range, limit)
+        .filter(|(_, steps)| *steps > ordinary_len)
+        .map(|(step, _)| step)
+}
+
 fn siege_route_step(g: &Game, pid: usize, uid: u32, goal: Pos, city: Pos) -> Option<Pos> {
     let unit = g.units.get(&uid)?;
     let mut avoid: BTreeSet<Pos> = g
@@ -1362,8 +1405,7 @@ impl AdvancedAi {
             return self.base.fortify_or_stop(g, pid, uid);
         }
         if distance > STAGING_FAR {
-            if let Some(next) = g
-                .route_step(uid, city.pos, STAGING_FAR)
+            if let Some(next) = march_step(g, uid, city.pos, STAGING_FAR)
                 .filter(|pos| g.can_move(uid, *pos) && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE)
             {
                 if let Some(field) = gun_danger.as_mut() {
@@ -1435,9 +1477,8 @@ impl AdvancedAi {
             return acted;
         }
         if distance > CITY_STRIKE_RANGE {
-            if let Some(next) = g
-                .route_step(uid, city.pos, CITY_STRIKE_RANGE)
-                .filter(|pos| g.can_move(uid, *pos))
+            if let Some(next) =
+                march_step(g, uid, city.pos, CITY_STRIKE_RANGE).filter(|pos| g.can_move(uid, *pos))
             {
                 return self.base.tactical_apply_move(g, pid, uid, next);
             }
@@ -1491,9 +1532,7 @@ impl AdvancedAi {
         if g.wdist(g.units[&uid].pos, city.pos) <= STAGING_FAR {
             return None;
         }
-        let next = g
-            .route_step(uid, city.pos, STAGING_FAR)
-            .filter(|pos| g.can_move(uid, *pos))?;
+        let next = march_step(g, uid, city.pos, STAGING_FAR).filter(|pos| g.can_move(uid, *pos))?;
         Some(self.base.tactical_apply_move(g, pid, uid, next))
     }
 
