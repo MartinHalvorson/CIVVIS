@@ -242,7 +242,7 @@ pub(super) const ROTATE_HP: i32 = 50;
 /// A rotated unit rejoins the kill plan at this.
 pub(super) const RETURN_HP: i32 = 80;
 /// Danger above `hp - this` rotates a unit whatever its hit points.
-const ROTATE_DANGER_MARGIN: i32 = 20;
+pub(super) const ROTATE_DANGER_MARGIN: i32 = 20;
 /// A target left at or under this, with a finisher to spare, is a plan that
 /// chipped: the penalty says finish it or leave it whole.
 const UNFINISHED_HP: f64 = 30.0;

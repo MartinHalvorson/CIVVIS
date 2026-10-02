@@ -19790,6 +19790,31 @@ impl AdvancedAi {
         let next = g
             .route_step_to_any(uid, &goals)
             .filter(|position| *position != here && g.can_move(uid, *position))?;
+        // A step the battle planner's rotation would pull straight back out
+        // is a wasted turn twice over. Live King civvis-20261001T010043Z: a
+        // heavy chariot walked (20,17) -> (22,20) toward Warsaw at turn 99,
+        // was ordered back to (20,17) at 100 and to (17,17) at 101, and the
+        // Krakow siege staged nothing for nineteen turns. Hold at the edge
+        // instead; the next arrivals share the reach and lower the reading.
+        if self.battle_planner_2 || self.battle_planner_3 {
+            let hp = g.units[&uid].hp;
+            let mut field = battle_planner::DangerField::with_reach(g, pid, true);
+            if self.shared_danger {
+                field.share(g);
+            }
+            if field.rotation_danger(next, uid)
+                > f64::from(hp - battle_planner::ROTATE_DANGER_MARGIN)
+            {
+                if self.journal().wants(crate::reasoning::Level::Detail) {
+                    think!(self.journal(), Military, Detail,
+                           "Reinforcement {} holds at the edge of the front", plain(&kind);
+                           "the next step toward {:?} would read as exposed and be rotated back out",
+                           objective;
+                           objective);
+                }
+                return Some(self.base.fortify_or_stop(g, pid, uid));
+            }
+        }
         if self.journal().wants(crate::reasoning::Level::Detail) {
             think!(self.journal(), Military, Detail,
                    "Reinforcing the campaign with {}", plain(&kind);

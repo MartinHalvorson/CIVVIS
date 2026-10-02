@@ -79,3 +79,26 @@ fn an_ungrouped_arrival_also_passes_to_the_tactical_controller() {
         None
     );
 }
+
+/// A reinforcement does not step where the battle planner's rotation would
+/// read it as exposed and pull it straight back out; it holds at the edge.
+#[test]
+fn a_reinforcement_holds_short_of_a_step_the_rotation_would_undo() {
+    let march = |hostile: bool| {
+        let (mut g, mut ai, plan, uid, group) = fixture(8);
+        ai.enable_battle_planner_2();
+        ai.enable_shared_danger();
+        // The live chariot that was walked forward and pulled back stood at 84.
+        g.units.get_mut(&uid).unwrap().hp = 85;
+        if hostile {
+            for pos in [(16, 12), (15, 10), (15, 14), (16, 11)] {
+                g.spawn_test_unit("crossbowman", 1, pos);
+            }
+        }
+        let before = g.units[&uid].pos;
+        let acted = ai.wartime_reinforcement_step(&mut g, 0, uid, &plan, Some(&group), &[1]);
+        (acted.is_some(), g.units[&uid].pos != before)
+    };
+    assert_eq!(march(false), (true, true), "the control marches");
+    assert_eq!(march(true), (true, false), "it holds at the edge");
+}
