@@ -450,3 +450,31 @@ fn a_breach_body_closes_in_under_shared_blows() {
     assert!(!before.0, "the full field charged every blow to the body");
     assert!(after.0 && after.1 < 5, "the body closes in: {after:?}");
 }
+
+/// Domination pair seed 37140004: the wing never saw Hastings. The land
+/// siege mustered beyond sight for eighteen turns and, with no cavalry in
+/// reach, not one sortie flew. Any healthy soldier steps into sight and
+/// stays, and the wing flies at the city it now sees.
+#[test]
+fn a_soldier_spots_an_unseen_city_for_the_wing() {
+    let run = |v2: bool| {
+        let (mut g, mut ai, plan, cavalry, _) = fixture();
+        g.remove_unit(cavalry);
+        let infantry = g.spawn_test_unit("infantry", 0, (16, 10));
+        let target = (20, 10);
+        assert!(!g.player_can_see(0, target), "the city starts unseen");
+        if v2 {
+            ai.enable_air_surge_2();
+        }
+        let walls = g.cities[&g.city_at(target).unwrap()].wall_hp;
+        let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+        let city = &g.cities[&g.city_at(target).unwrap()];
+        (
+            reserved.contains(&infantry),
+            g.player_can_see(0, target),
+            city.wall_hp < walls || city.hp < 200,
+        )
+    };
+    assert_eq!(run(false), (false, false, false), "no cavalry, no volley");
+    assert_eq!(run(true), (true, true, true), "spotted and bombed");
+}
