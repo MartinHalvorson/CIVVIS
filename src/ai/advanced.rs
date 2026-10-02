@@ -43506,7 +43506,17 @@ impl AdvancedAi {
         // rather than leaving its floors and treasury reserve live until the
         // ordinary five-turn strategic cadence.
         self.maintain_war_plan(g, pid);
-        self.maintain_air_surge(g, pid);
+        // ★★ THE PLANNING BOARD TOOK A CITY THE HOST DID NOT. Domination pair
+        // seed 37140004, turn 162: the wing's opening sorties and a cavalry
+        // blow captured and razed Gisborne on this seat's own board, this
+        // re-read found the objective gone and moved the wing to Hastings,
+        // and the real Gisborne stood at 76 of 200 behind fallen walls the
+        // next turn with nobody coming. `air-surge-2` reads the wing's
+        // lifecycle only from observed boards: the next frame's (or turn's)
+        // `maintain_air_surge` sees a capture that really happened.
+        if !self.air_surge_2 {
+            self.maintain_air_surge(g, pid);
+        }
         // A settler can found a city during the unit pass. Refresh the map so
         // the durable directive state covers that new city as well as the
         // cities that received production guidance earlier in the turn.

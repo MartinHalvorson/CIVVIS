@@ -638,3 +638,39 @@ fn a_recovery_reading_does_not_offer_the_wing_s_front_peace() {
     assert!(offers(false), "the control: Recovery offers a non-target peace");
     assert!(!offers(true), "the wing's front keeps its war");
 }
+
+/// Live play declares on one host frame and reads a fresh board on the next,
+/// which may not have exported the war yet. With another war already on, the
+/// front-handoff branch read "not at war" and would hand the wing to that
+/// other front the turn it opened.
+#[test]
+fn an_in_flight_declaration_keeps_its_objective_beside_another_war() {
+    let (mut g, mut ai, target) = fixture_with(3);
+    // The other front, within the wing's reach.
+    g.found_city_for(2, (17, 22), None);
+    g.record_contact(0, 2);
+    g.at_war.insert((0, 2));
+    g.at_war.insert((2, 0));
+    // Aim at the farther of the target's two cities, so any re-choice moves.
+    let other = g
+        .player_city_ids(1)
+        .into_iter()
+        .find(|cid| *cid != target)
+        .unwrap();
+    {
+        let plan = ai.air_surge_plan.as_mut().unwrap();
+        plan.objective_city = other;
+        plan.objective_pos = g.cities[&other].pos;
+        plan.declared_turn = Some(g.turn);
+    }
+    assert!(!g.is_at_war(0, 1), "the board has not exported the new war");
+    assert_eq!(
+        ai.choose_air_surge(&g, 0).map(|plan| plan.target_player),
+        Some(2),
+        "a fresh choice would follow the other front"
+    );
+    ai.maintain_air_surge(&g, 0);
+    let plan = ai.air_surge_plan.as_ref().expect("the wing stays appointed");
+    assert_eq!(plan.target_player, 1);
+    assert_eq!(plan.objective_pos, g.cities[&other].pos, "the objective holds");
+}
