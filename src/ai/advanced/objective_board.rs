@@ -1710,10 +1710,25 @@ impl AdvancedAi {
         }
         // Leftovers: the Reserve, per domain — on an arena, the top force.
         for domain in [ForceDomain::Land, ForceDomain::Sea] {
+            // ⚠ Last turn's Reserve members were seeded into `assignment`
+            // with the Reserve's own index, and the Reserve is rewritten from
+            // the leftovers below. Counting them as assigned dropped them
+            // from every force: live King civvis-20261001T080758Z's Reserve
+            // alternated [36, 37, 39, 41, 42] and [38, 40] every turn
+            // (turns 32-36), and the dropped units drifted with no orders
+            // while the opening's force never gathered.
+            let reserve_index = forces.iter().position(|force| {
+                force.objective_key == ObjectiveKey::Reserve && force.domain == domain
+            });
             let leftovers: Vec<u32> = pool
                 .iter()
                 .copied()
-                .filter(|uid| facts[uid].domain == domain && !assignment.contains_key(uid))
+                .filter(|uid| {
+                    facts[uid].domain == domain
+                        && assignment
+                            .get(uid)
+                            .is_none_or(|index| Some(*index) == reserve_index)
+                })
                 .collect();
             if let Some(&leader) = top_force.get(&(domain == ForceDomain::Sea)) {
                 for uid in &leftovers {
@@ -2830,6 +2845,26 @@ mod tests {
             .find(|group| group.id == before.id)
             .expect("the group carries the force's id");
         assert_eq!(group.units, after.units);
+    }
+
+    /// Last turn's Reserve stays in the Reserve. Its members are seeded as
+    /// assigned to the Reserve, and the Reserve is rewritten from the
+    /// leftovers, which used to drop them from every force on alternate turns.
+    #[test]
+    fn the_reserve_keeps_its_members_from_turn_to_turn() {
+        let mut g = flat_board(7, &[at(6, 8), at(30, 8)], false);
+        let ours: Vec<u32> = [at(5, 8), at(5, 9), at(4, 8)]
+            .iter()
+            .map(|pos| spawn(&mut g, "warrior", 0, *pos))
+            .collect();
+        let mut ai = on();
+        let plan = conquest(&g, None);
+        for _ in 0..3 {
+            ai.rebuild_force_groups(&g, 0, &plan);
+            let reserve = force_for(&ai, ObjectiveKey::Reserve).expect("a reserve");
+            assert_eq!(reserve.units, ours, "turn {}", g.turn);
+            g.turn += 1;
+        }
     }
 
     /// A Siege row asks the campaign's own bill times the margin, with a
