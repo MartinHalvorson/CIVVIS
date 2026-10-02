@@ -20418,17 +20418,19 @@ impl AdvancedAi {
                         && (!self.treasury_can_carry_a_war(g, pid)
                             || g.turn.saturating_sub(self.last_campaign_progress)
                                 >= g.standard_duration(PEACE_STALL_TURNS)))
-                    || envoy_reclaim.is_some()
+                    // Neither banked envoys nor a finished religious
+                    // interception is worth the wing's front either.
+                    || (envoy_reclaim.is_some() && !air_front)
                     // ★★ THE WING'S FRONT WAS A "SECOND FRONT". Live King
                     // 20261001T080758Z reached Advanced Flight at turn 156
                     // and started Bombers against Pella; the land campaign
                     // was aimed at the Zulu, so `one_war_at_a_time` offered
-                    // Macedon peace every turn from 163 as its power fell
-                    // from 106 to 18 against our thousand, Macedon took it at
+                    // Macedon peace every turn from 157 as its power fell
+                    // from 167 to 18 against our thousand, Macedon took it at
                     // 167, and the surge stood down. The wing's own front is
                     // not a second front.
                     || (one_war_peace.is_some() && !air_front)
-                    || interception_handoff
+                    || (interception_handoff && !air_front)
                     || science_defensive_peace)
             {
                 self.peace_offers.insert(*other);

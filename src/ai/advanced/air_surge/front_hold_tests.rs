@@ -554,7 +554,7 @@ fn a_banked_stockpile_buys_bombers_past_the_income() {
 
 /// Live King 20261001T080758Z: Bombers against Pella from turn 156 while the
 /// land campaign was aimed at the Zulu. `one_war_at_a_time` offered Macedon
-/// peace every turn from 163 as its power fell from 106 to 18, Macedon took
+/// peace every turn from 157 as its power fell from 167 to 18, Macedon took
 /// it at 167, and the surge stood down. The wing's own front is not a second
 /// front.
 #[test]
