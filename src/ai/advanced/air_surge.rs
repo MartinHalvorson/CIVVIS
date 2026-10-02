@@ -1048,6 +1048,7 @@ impl AdvancedAi {
     /// capital, a Tech loss at turn 248. A Bomber is `siege: true` and takes
     /// walls at full rate from ten tiles away, and Domination is decided only
     /// by original capitals.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn air_surge_objective_value(
         &self,
         g: &Game,
@@ -2070,6 +2071,16 @@ impl AdvancedAi {
         true
     }
 
+    /// Turns until the Bomber's technology lands at the empire's present
+    /// science; zero once it is known.
+    pub(crate) fn air_surge_research_eta(g: &Game, pid: usize) -> f64 {
+        let goal = Name::new(AIR_SURGE_GOAL_TECH);
+        if g.players[pid].techs.contains(&goal) {
+            return 0.0;
+        }
+        Self::war_remaining_research_cost(g, pid, goal) / Self::war_science_per_turn(g, pid)
+    }
+
     /// Claim one idle city queue for the next missing member of the package.
     ///
     /// The adaptive controller hands empty cities to `BasicAi::cities`, which
@@ -2141,6 +2152,46 @@ impl AdvancedAi {
                         .min_by(f64::total_cmp)
                 })
                 .flatten();
+        // ★★ ONE AIRFIELD TRAINED THE WHOLE LAUNCH WING. Live King
+        // 20261001T080758Z: Advanced Flight at turn 156, the only Aerodrome in
+        // Bogota, Bombers out at 163 and 168 while Kaiapoi and Cartagena, each
+        // within a fifth of Bogota's production, trained nothing for the wing.
+        // `air-surge-2`: a second airfield raised during the beeline trains
+        // half the launch wing beside the first. Before the Bomber is known,
+        // neither base can start one until the research lands, so the second
+        // field only has to stand by then.
+        let parallel_deadline = (self.air_surge_2
+            && status.aerodromes_committed == 1
+            && status.metal_ready
+            && launch_missing >= 2)
+            .then(|| {
+                let eta = Self::air_surge_research_eta(g, pid);
+                let per_bomber = |city| Some(wing_turns(city)? / launch_missing as f64);
+                g.player_city_ids(pid)
+                    .into_iter()
+                    .filter(|cid| {
+                        field.is_some_and(|family| {
+                            g.city_has_district_family(&g.cities[cid], family)
+                                || g.cities[cid].queue.iter().any(|item| {
+                                    matches!(item, Item::District { district, .. }
+                                    if g.district_family(*district) == family)
+                                })
+                        })
+                    })
+                    .filter_map(|cid| {
+                        let waiting = g.cities[&cid].queue.first().map_or(0.0, |item| {
+                            g.item_remaining_cost_for_city(pid, cid, item)
+                                / (g.city_yields(cid).production
+                                    * g.item_prod_mult(pid, cid, Some(item)))
+                                .max(0.1)
+                        });
+                        Some(waiting.max(eta) + wing_turns(cid)?)
+                    })
+                    .min_by(f64::total_cmp)
+                    .map(|deadline| (deadline, eta, per_bomber))
+            })
+            .flatten();
+        let parallel_share = launch_missing.div_ceil(2) as f64;
         let remaining = g.max_turns.saturating_sub(g.turn) as f64;
         let mut best: Option<(u8, f64, u32, String, Item)> = None;
         for cid in g.player_city_ids(pid) {
@@ -2166,7 +2217,21 @@ impl AdvancedAi {
                                     wing_turns(cid).is_some_and(|wing| {
                                         field_turns + wing + f64::EPSILON < deadline
                                     })
-                                })) =>
+                                })
+                                || parallel_deadline.as_ref().is_some_and(
+                                    |(deadline, eta, per_bomber)| {
+                                        let field_turns = g
+                                            .item_remaining_cost_for_city(pid, cid, &item)
+                                            / (production
+                                                * g.item_prod_mult(pid, cid, Some(&item)))
+                                            .max(0.1);
+                                        per_bomber(cid).is_some_and(|bomber| {
+                                            field_turns.max(*eta) + parallel_share * bomber
+                                                + f64::EPSILON
+                                                < *deadline
+                                        })
+                                    },
+                                )) =>
                     {
                         0
                     }

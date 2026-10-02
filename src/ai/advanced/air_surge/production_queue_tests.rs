@@ -506,3 +506,48 @@ fn the_domination_airfield_goes_to_the_fastest_city_even_when_it_is_busy() {
         Some(Item::District { district, .. }) if g.district_family(*district) == name!("aerodrome")
     ));
 }
+
+/// Live King 20261001T080758Z: Advanced Flight at turn 156 and one Aerodrome,
+/// so Bogota trained the two launch Bombers one after the other (163, 168)
+/// while cities within a fifth of its production trained nothing for the
+/// wing. With `air-surge-2` a second airfield rises during the beeline and
+/// trains half the launch wing beside the first.
+#[test]
+fn a_second_airfield_rises_during_the_beeline_for_half_the_launch_wing() {
+    let run = |v2: bool| {
+        let (mut g, mut ai, _, first, second) = fixture();
+        // Two working cities of like production: mined hills on the first
+        // ring, but for one flat tile left for an airfield.
+        for cid in [first, second] {
+            let centre = g.cities[&cid].pos;
+            let mut ring = g.wdisk(centre, 1);
+            ring.retain(|pos| *pos != centre);
+            ring.sort();
+            for pos in ring.into_iter().skip(1) {
+                let tile = g.map.tiles.get_mut(&pos).unwrap();
+                tile.hills = true;
+                tile.improvement = Some(name!("mine"));
+            }
+        }
+        g.players[0].techs.remove(&Name::new(AIR_SURGE_GOAL_TECH));
+        crate::game::install_test_district(&mut g, first, "aerodrome");
+        if !v2 {
+            ai.disable_air_surge_2();
+            ai.air_surge = true;
+        }
+        ai.air_surge_plan.as_mut().unwrap().phase = AirSurgePhase::Beeline;
+        ai.air_surge_plan.as_mut().unwrap().tech_turn = None;
+        ai.air_surge_status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+        assert_eq!(ai.air_surge_status.aerodromes_committed, 1);
+        assert!(ai.air_surge_status.metal_ready);
+        assert!(AdvancedAi::air_surge_research_eta(&g, 0) > 0.0);
+        ai.air_surge_production(&mut g, 0);
+        g.cities[&second].queue.first().cloned()
+    };
+    let field =
+        |item: &Option<Item>| matches!(item, Some(Item::District { district, .. }) if district == "aerodrome");
+    let v1 = run(false);
+    assert!(!field(&v1), "one airfield is the whole v1 requirement: {v1:?}");
+    let v2 = run(true);
+    assert!(field(&v2), "the second airfield: {v2:?}");
+}
