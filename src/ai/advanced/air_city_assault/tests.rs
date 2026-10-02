@@ -397,3 +397,56 @@ fn the_wing_clears_a_guarded_breach_before_the_capture() {
         .sum();
     assert!(after < before, "the defenders on the ring took the volley");
 }
+
+/// Live King 20261001T050754Z: Uppsala stood behind fallen walls from turn
+/// 103 to 113 while every Swedish blow was charged to our one approaching
+/// body against half its health. Toward a breach the step only has to leave
+/// the body a taker, and with `air-surge-2` each hostile's single blow is
+/// shared among our units in its reach.
+#[test]
+fn a_breach_body_closes_in_under_shared_blows() {
+    let run = |v2: bool| {
+        let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+        g.remove_unit(cavalry);
+        let breached = g.found_city_for(1, (30, 10), None);
+        {
+            let city = g.cities.get_mut(&breached).unwrap();
+            city.hp = 1;
+            city.wall_hp = 0;
+        }
+        let body = g.spawn_test_unit("infantry", 0, (25, 10));
+        // A spent partner on the far side of the ring sees the defenders
+        // and shares their blows.
+        let partner = g.spawn_test_unit("infantry", 0, (27, 11));
+        g.units.get_mut(&partner).unwrap().moves_left = 0.0;
+        let hostiles: Vec<u32> = [(28, 9), (28, 10), (28, 11)]
+            .into_iter()
+            .map(|at| g.spawn_test_unit("infantry", 1, at))
+            .collect();
+        assert!(hostiles.iter().all(|uid| g.unit_visible_to(*uid, 0)));
+        for uid in bombers {
+            g.units.get_mut(&uid).unwrap().moves_left = 0.0;
+        }
+        if v2 {
+            ai.enable_air_surge_2();
+        }
+        ai.observe_air_assault_frame(BTreeSet::from([(30, 10)]), 0);
+        // Every step closer stands in two full blows: 60 of the body's 100
+        // on the full field, over the old half-health bar.
+        for to in g.reachable(body) {
+            let mut after = g.speculative_clone();
+            if g.wdist(to, (30, 10)) < 5
+                && after.apply(0, &Action::MoveTo { unit: body, to }).is_ok()
+                && after.units[&body].pos == to
+            {
+                assert!(battle_planner::strike_danger(&after, 0, to, body) >= 50.0, "{to:?}");
+            }
+        }
+        let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+        (reserved.contains(&body), g.wdist(g.units[&body].pos, (30, 10)))
+    };
+    let before = run(false);
+    let after = run(true);
+    assert!(!before.0, "the full field charged every blow to the body");
+    assert!(after.0 && after.1 < 5, "the body closes in: {after:?}");
+}

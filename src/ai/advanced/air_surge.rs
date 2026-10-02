@@ -982,7 +982,7 @@ impl AdvancedAi {
                 && front.is_none_or(|enemy| player.id == enemy)
                 && self.campaign_target_legal(g, pid, player.id)
         }) {
-            let mut objectives: Vec<_> = g
+            let objectives: Vec<_> = g
                 .cities
                 .values()
                 .filter(|city| city.owner == target.id)
