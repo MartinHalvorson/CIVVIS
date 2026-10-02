@@ -89,3 +89,78 @@ fn a_gun_with_no_range_two_line_takes_an_adjacent_post() {
     assert_eq!(g.wdist(post, target), 1);
     assert!(g.unit_has_line_of_sight_from(gun, post, target));
 }
+
+/// See `taker_corridor`: guns on every land tile two out from a breached
+/// coastal city seal its taker's approach; one of those tiles is kept clear.
+#[test]
+fn a_breached_city_keeps_a_corridor_clear_for_its_taker() {
+    let (mut g, cid) = walled_city();
+    let target = g.cities[&cid].pos;
+    g.cities.get_mut(&cid).unwrap().wall_hp = 0;
+    let ring = g
+        .nbrs(target)
+        .into_iter()
+        .find(|pos| g.map.get(*pos).is_some())
+        .unwrap();
+    let approach: Vec<Pos> = g
+        .nbrs(ring)
+        .into_iter()
+        .filter(|pos| g.wdist(*pos, target) == 2)
+        .take(2)
+        .collect();
+    assert_eq!(approach.len(), 2, "fixture: two approach tiles");
+    let start = g
+        .nbrs(approach[0])
+        .into_iter()
+        .find(|pos| g.wdist(*pos, target) == 3 && g.nbrs(approach[1]).contains(pos))
+        .or_else(|| {
+            g.nbrs(approach[0])
+                .into_iter()
+                .find(|pos| g.wdist(*pos, target) == 3)
+        })
+        .expect("fixture: a start three out");
+    let land: Vec<Pos> = [target, ring, start]
+        .into_iter()
+        .chain(approach.iter().copied())
+        .collect();
+    for pos in g.wdisk(target, 4) {
+        let outer = g.wdist(pos, target) == 4;
+        let tile = g.map.tiles.get_mut(&pos).unwrap();
+        tile.feature = None;
+        tile.hills = false;
+        tile.terrain = if land.contains(&pos) || outer {
+            crate::name!("grassland")
+        } else {
+            crate::name!("coast")
+        };
+    }
+    let guns: Vec<u32> = approach
+        .iter()
+        .map(|pos| g.spawn_unit("catapult", 0, *pos))
+        .collect();
+    let taker = g.spawn_unit("swordsman", 0, start);
+    let city = CityView::of(&g, cid).unwrap();
+    let mut force = guns.clone();
+    force.push(taker);
+    let open_land = |pos: Pos| {
+        g.map
+            .get(pos)
+            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+    };
+    let corridor = taker_corridor(&g, &city, Some(taker), &BTreeSet::new(), &open_land)
+        .expect("a corridor two out");
+    assert!(approach.contains(&corridor));
+    let posts = siege_posts(&g, 0, &city, &force, Some(taker));
+    assert!(
+        guns.iter().all(|gun| posts.get(gun) != Some(&corridor)),
+        "no gun keeps the corridor: {posts:?}"
+    );
+
+    // With the walls standing, the guns keep their firing tiles.
+    g.cities.get_mut(&cid).unwrap().wall_hp = 100;
+    let walled = CityView::of(&g, cid).unwrap();
+    assert_eq!(
+        taker_corridor(&g, &walled, Some(taker), &BTreeSet::new(), &open_land),
+        None
+    );
+}

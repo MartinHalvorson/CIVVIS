@@ -717,6 +717,45 @@ fn siege_route_step(g: &Game, pid: usize, uid: u32, goal: Pos, city: Pos) -> Opt
 /// one, then the nearest. Guns, then shooters, keep a tile they can already
 /// shoot the city from, else take a tile at their range behind a ring post
 /// and away from hostiles. A unit with no tile left has no post.
+/// The tile two out that a breached city's taker walks through to its ring,
+/// kept clear of firing posts. A coastal city can have only two or three land
+/// ring tiles, and guns standing on every land tile two out seal the approach.
+/// They have already fired when the breach is ready, so they cannot swap
+/// back. Live King civvis-20261001T050754Z: three Trebuchets held the three
+/// tiles two out from Uppsala, whose ring was three land tiles beside four of
+/// coast. The city sat breached near 20 HP for eight turns, and no taker
+/// could reach a ring tile (diagnosed by -c9). `None` while the walls stand,
+/// once the taker is on the ring, or when no such tile exists.
+fn taker_corridor(
+    g: &Game,
+    city: &CityView,
+    taker: Option<u32>,
+    ring_taken: &BTreeSet<Pos>,
+    open_land: &impl Fn(Pos) -> bool,
+) -> Option<Pos> {
+    if city.wall_hp > 0 {
+        return None;
+    }
+    let taker = taker?;
+    let here = g.units.get(&taker)?.pos;
+    if g.wdist(here, city.pos) <= 1 {
+        return None;
+    }
+    g.wring(city.pos, 2)
+        .into_iter()
+        .filter(|pos| {
+            open_land(*pos)
+                && g.unit_can_traverse(taker, *pos)
+                && g.nbrs(*pos).into_iter().any(|ring| {
+                    g.wdist(ring, city.pos) == 1
+                        && open_land(ring)
+                        && g.unit_can_traverse(taker, ring)
+                        && (!ring_taken.contains(&ring) || g.unit_ids_at(ring).is_empty())
+                })
+        })
+        .min_by_key(|pos| (g.wdist(here, *pos), *pos))
+}
+
 fn siege_posts(
     g: &Game,
     pid: usize,
@@ -802,11 +841,13 @@ fn siege_posts(
             *uid,
         )
     });
+    let corridor = taker_corridor(g, city, taker, &ring_taken, &open_land);
     let mut fire_taken: BTreeSet<Pos> = BTreeSet::new();
     for uid in guns {
         let here = g.units[&uid].pos;
         let range = g.unit_attack_range(uid).max(1);
         if g.wdist(here, city.pos) <= range
+            && Some(here) != corridor
             && !fire_taken.contains(&here)
             && g.ranged_order_is_legal(pid, uid, city.pos, frame.as_ref(), &viewers)
         {
@@ -824,6 +865,7 @@ fn siege_posts(
                 .into_iter()
                 .filter(|pos| {
                     *pos != here
+                        && Some(*pos) != corridor
                         && !fire_taken.contains(pos)
                         && !ring_taken.contains(pos)
                         && open_land(*pos)
