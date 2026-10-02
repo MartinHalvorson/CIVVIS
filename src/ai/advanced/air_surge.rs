@@ -1208,12 +1208,34 @@ impl AdvancedAi {
                 && self.active_victory_target(g) == Some(VictoryTarget::Domination)
                 && self.urgent_victory_threat(g, plan.target_player)
                 && self.threatened_city(g, pid).is_none();
+            // ★★ A DECLARATION IS IN FLIGHT FOR ONE HOST FRAME. Live King
+            // 20260930T211803Z, turn 183: frame one declared on Edirne with four
+            // Bombers in range and flew four sorties; frame two's fresh board
+            // had not yet exported the war, and this lifecycle read "peace
+            // closed the war", stood the wing down and paid the fifteen-turn
+            // cooldown on the very turn it opened. The host showed the war on
+            // turn 184. Hold the plan in Exploit for the declaring turn and the
+            // next; after that the war really did not happen.
+            let declaration_in_flight = self.air_surge_2
+                && !at_war
+                && !plan.opened_at_war
+                && plan
+                    .declared_turn
+                    .is_some_and(|turn| g.turn.saturating_sub(turn) <= 1);
             // The investment belongs to the active front, even when a new
             // war supersedes an elective target or its city changes hands.
             // Use a known reachable replacement without an abort cooldown or
             // restarting the research and Aluminum clocks.
+            //
+            // ★★ NOT WHILE ITS OWN DECLARATION IS IN FLIGHT. Domination pair
+            // seed 37140004: the wing opened on Gisborne at turn 162 while
+            // already at war with a second rival; the next frame's board had
+            // not exported the new war, so this read "not at war" and moved
+            // the wing to Hastings. Gisborne was left at 76 of 200 behind
+            // fallen walls and nothing was taken.
             if target_alive
                 && fronts.len() == 1
+                && !declaration_in_flight
                 && (!at_war || objective_owner != Some(plan.target_player) || urgent_counter)
             {
                 if let Some(mut counter) = self.choose_air_surge(g, pid) {
@@ -1236,20 +1258,6 @@ impl AdvancedAi {
                 }
             }
 
-            // ★★ A DECLARATION IS IN FLIGHT FOR ONE HOST FRAME. Live King
-            // 20260930T211803Z, turn 183: frame one declared on Edirne with four
-            // Bombers in range and flew four sorties; frame two's fresh board
-            // had not yet exported the war, and this lifecycle read "peace
-            // closed the war", stood the wing down and paid the fifteen-turn
-            // cooldown on the very turn it opened. The host showed the war on
-            // turn 184. Hold the plan in Exploit for the declaring turn and the
-            // next; after that the war really did not happen.
-            let declaration_in_flight = self.air_surge_2
-                && !at_war
-                && !plan.opened_at_war
-                && plan
-                    .declared_turn
-                    .is_some_and(|turn| g.turn.saturating_sub(turn) <= 1);
             // ★★ A LOST OBJECTIVE IS NOT A LOST WING. Live King
             // 20260930T225143Z lost Cumaná at turn 114, the one base within ten
             // tiles of Groningen, and stood the whole surge down with its
@@ -2290,8 +2298,8 @@ impl AdvancedAi {
                    build_turns,
                    self.air_surge_status.bombers, Self::air_surge_bomber_goal(g, pid),
                    AIR_SURGE_LAUNCH_BOMBERS,
-                   self.air_surge_status.bodies, AIR_SURGE_BODIES, AIR_SURGE_LAUNCH_BODIES,
-                   plain(plan.body_unit.as_str()),
+                   self.air_surge_status.bodies, AIR_SURGE_BODIES,
+                   plain(plan.body_unit.as_str()), AIR_SURGE_LAUNCH_BODIES,
                    plan.phase.as_str());
         }
         self.air_surge_status = self.air_surge_status(g, pid, &plan);
