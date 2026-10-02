@@ -1666,3 +1666,84 @@ fn the_reservation_does_not_outbid_the_first_settler() {
         "from the second city the reservation asks"
     );
 }
+
+// ------------------------------------------------------------ wall breaker
+
+/// A walled target puts a Battering Ram in the capital's reservation, asks
+/// for Masonry first, lets the support pricing build the Ram before the war,
+/// and stops once one is standing.
+#[test]
+fn a_walled_target_reserves_a_ram_in_the_capital() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let second = game.found_city_for(0, at(6, 17), None);
+    let mut ai = opened(&mut game);
+    let capital = AdvancedAi::conquest_capital(&game, 0).expect("a capital");
+    assert_ne!(capital, second);
+    assert_eq!(ai.conquest_breach_target(&game), None, "an unwalled city asks for no Ram");
+    assert_eq!(ai.conquest_breaker_value(&game, 0, capital, "battering_ram"), 0.0);
+
+    let target = ai.conquest_opening.as_ref().unwrap().city;
+    {
+        let city = game.cities.get_mut(&target).unwrap();
+        city.buildings.push(name!("walls"));
+        city.wall_hp = 100;
+    }
+    assert_eq!(ai.conquest_breach_target(&game), Some(target));
+    assert!(
+        ai.conquest_research_value(&game, 0, "masonry") >= CONQUEST_RESEARCH,
+        "the Ram's tech is chased"
+    );
+    assert_eq!(
+        ai.conquest_breaker_value(&game, 0, capital, "battering_ram"),
+        0.0,
+        "nothing is reserved before the Ram can be trained"
+    );
+
+    game.players[0].techs.insert(name!("masonry"));
+    let home = game.cities[&capital].pos;
+    let walkers = bodies(&mut game, 0, "warrior", home, 1, 2);
+    assert!(!walkers.is_empty());
+    assert!(ai.conquest_breaker_value(&game, 0, capital, "battering_ram") > 0.0);
+    assert_eq!(ai.conquest_breaker_value(&game, 0, second, "battering_ram"), 0.0);
+    assert_eq!(ai.conquest_breaker_value(&game, 0, capital, "archer"), 0.0);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(target),
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = ai.counts(&game, 0);
+    assert!(
+        ai.support_unit_value(&game, 0, capital, "battering_ram", &plan, &counts) > 0.0,
+        "the opening's walled target is a Ram target before the war"
+    );
+
+    game.spawn_test_unit("battering_ram", 0, home);
+    assert_eq!(
+        ai.conquest_breaker_value(&game, 0, capital, "battering_ram"),
+        0.0,
+        "one Ram is enough"
+    );
+    ai.maintain_conquest_opening(&mut game, 0);
+}
+
+/// A rally the board later learns is a Mountain moves to ground a body can
+/// stand on.
+#[test]
+fn a_rally_on_a_mountain_moves_to_standable_ground() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    game.found_city_for(0, at(6, 17), None);
+    let mut ai = opened(&mut game);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    game.map.tiles.get_mut(&rally).unwrap().terrain = name!("mountain");
+    assert!(!AdvancedAi::conquest_rally_standable(&game, rally));
+    ai.maintain_conquest_opening(&mut game, 0);
+    let moved = ai.conquest_opening.as_ref().expect("the opening stands").rally;
+    assert_ne!(moved, rally);
+    assert!(AdvancedAi::conquest_rally_standable(&game, moved));
+    let city = game.cities[&ai.conquest_opening.as_ref().unwrap().city].pos;
+    assert!((CONQUEST_RALLY_MIN..=CONQUEST_RALLY_MAX).contains(&game.wdist(moved, city)));
+}

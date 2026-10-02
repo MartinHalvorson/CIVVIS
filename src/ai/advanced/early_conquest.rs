@@ -246,6 +246,14 @@ pub(crate) const CONQUEST_RESERVATION_PER_MISSING: f64 = 60.0;
 /// `early-archers` pays its own beeline.
 pub(crate) const CONQUEST_RESEARCH: f64 = 90.0;
 
+/// Battering Rams the capital adds to the reserved force when the target
+/// city has walls. Four shooters and two melee bodies cannot open even an
+/// Ancient Wall: live King 2026-10-01T080758Z named Pella on turn 18, Pella
+/// finished its Ancient Walls on turn 23, and every later siege of it
+/// ended with the walls still standing (300/300 at turn 117). A Ram beside
+/// the city lets the melee bodies strike the wall at full strength.
+pub(crate) const CONQUEST_WALL_BREAKERS: usize = 1;
+
 /// Recon bodies the empire keeps while the opening has nothing to aim at.
 /// One Scout is what the opening book buys; the second is this gene's.
 pub(crate) const CONQUEST_SEARCH_SCOUTS: usize = 2;
@@ -615,6 +623,77 @@ impl AdvancedAi {
             })
     }
 
+    /// The opening's target while the reservation is open and the city
+    /// stands behind walls, so a Battering Ram is worth building before the
+    /// war it is for. `None` with the gene off, outside the window, and for
+    /// an unwalled or vanished city.
+    pub(super) fn conquest_breach_target(&self, g: &Game) -> Option<u32> {
+        if !self.conquest_reservation_open(g) {
+            return None;
+        }
+        let city = self.conquest_opening.as_ref()?.city;
+        g.cities
+            .get(&city)
+            .is_some_and(|target| g.city_max_wall_hp(target) > 0)
+            .then_some(city)
+    }
+
+    /// Wall breakers the empire holds or has queued anywhere.
+    fn conquest_breakers_held(g: &Game, pid: usize) -> usize {
+        let breaker = |kind: &str| matches!(kind, "battering_ram" | "siege_tower");
+        let standing = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid && breaker(unit.kind.as_str()))
+            .count();
+        let queued = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| {
+                g.cities[cid].queue.iter().any(
+                    |item| matches!(item, Item::Unit { unit } if breaker(unit.as_str())),
+                )
+            })
+            .count();
+        standing + queued
+    }
+
+    /// Breakers still missing for a walled target that the capital can
+    /// actually train. Zero outside [`Self::conquest_breach_target`].
+    fn conquest_breakers_missing(&self, g: &Game, pid: usize, cid: u32) -> usize {
+        if self.conquest_breach_target(g).is_none() {
+            return 0;
+        }
+        let ram = Item::Unit {
+            unit: crate::name!("battering_ram"),
+        };
+        if !g.can_produce(pid, cid, &ram) {
+            return 0;
+        }
+        CONQUEST_WALL_BREAKERS.saturating_sub(Self::conquest_breakers_held(g, pid))
+    }
+
+    /// `early-conquest-opening`: what a Battering Ram trained in `cid` is
+    /// worth while the opening's target stands behind walls and the force
+    /// holds none. Only the capital, only after the first Settler's city
+    /// exists, and only for the Ram itself.
+    pub(super) fn conquest_breaker_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+    ) -> f64 {
+        if unit != "battering_ram"
+            || Self::conquest_capital(g, pid) != Some(cid)
+            || g.player_city_ids(pid).len() < CONQUEST_FIRST_SETTLER_CITIES
+            || self.conquest_breakers_missing(g, pid, cid) == 0
+        {
+            return 0.0;
+        }
+        CONQUEST_RESERVATION_BASE
+    }
+
     /// A body the strike force's ranged half counts: a land, non-siege
     /// military unit that shoots. A Slinger counts here where it does not
     /// count for `early-archers` — a range-one shot is a poor city defence
@@ -791,7 +870,7 @@ impl AdvancedAi {
             return false;
         }
         let (ranged, melee) = Self::conquest_reservation_shortfall(counts);
-        ranged + melee > 0
+        ranged + melee + self.conquest_breakers_missing(g, pid, cid) > 0
     }
 
     /// Give the scripted opening the same capital reservation as the utility
@@ -835,6 +914,7 @@ impl AdvancedAi {
             let Item::Unit { unit } = &item else { continue };
             if self.conquest_reservation(g, pid, cid, &g.rules.units[unit], &counts, threatened)
                 <= 0.0
+                && self.conquest_breaker_value(g, pid, cid, unit.as_str()) <= 0.0
             {
                 continue;
             }
@@ -883,13 +963,23 @@ impl AdvancedAi {
     /// leading to the strike force's shooter. Zero with the gene off,
     /// outside the reservation window, and once the node is held.
     pub(crate) fn conquest_research_value(&self, g: &Game, pid: usize, tech: &str) -> f64 {
+        // A walled target asks for the Ram's tech as well.
+        let masonry = crate::name!("masonry");
+        let breach = if self.conquest_breach_target(g).is_some()
+            && !g.players[pid].techs.contains(&masonry)
+            && self.tech_leads_to(g, tech, &masonry)
+        {
+            CONQUEST_RESEARCH
+        } else {
+            0.0
+        };
         let Some(node) = self.conquest_research_node(g, pid) else {
-            return 0.0;
+            return breach;
         };
         if !self.tech_leads_to(g, tech, &node) {
-            return 0.0;
+            return breach;
         }
-        CONQUEST_RESEARCH
+        CONQUEST_RESEARCH + breach
     }
 
     // ------------------------------------------------------------------
@@ -900,16 +990,26 @@ impl AdvancedAi {
     /// [`CONQUEST_RALLY_MAX`] from the target, nearest our capital — "on our
     /// side" is exactly that, and it needs no separate geometry. `None` when
     /// the ring around the city is all water or impassable.
-    pub(crate) fn conquest_rally_tile(g: &Game, home: Pos, city: Pos) -> Option<Pos> {
+    ///
+    /// A tile the seat has charted beats one it has not: an unexplored tile
+    /// reads as the map's default ground, and live King 2026-10-01T080758Z
+    /// put Pella's rally on what the host knew as a Mountain — the reserve
+    /// circled it for five turns ("walking in circles", "going nowhere")
+    /// and the opening expired with seven bodies around it.
+    pub(crate) fn conquest_rally_tile(g: &Game, pid: usize, home: Pos, city: Pos) -> Option<Pos> {
+        let explored = &g.players[pid].explored;
         g.wdisk(city, CONQUEST_RALLY_MAX)
             .into_iter()
             .filter(|pos| (CONQUEST_RALLY_MIN..=CONQUEST_RALLY_MAX).contains(&g.wdist(*pos, city)))
-            .filter(|pos| {
-                g.map
-                    .get(*pos)
-                    .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
-            })
-            .min_by_key(|pos| (g.wdist(*pos, home), *pos))
+            .filter(|pos| Self::conquest_rally_standable(g, *pos))
+            .min_by_key(|pos| (!explored.contains(pos), g.wdist(*pos, home), *pos))
+    }
+
+    /// Whether a body can stand on `pos`: dry and passable on the board.
+    fn conquest_rally_standable(g: &Game, pos: Pos) -> bool {
+        g.map
+            .get(pos)
+            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
     }
 
     /// The strike force: our field army, nearest the rally first, capped at
@@ -1203,6 +1303,36 @@ impl AdvancedAi {
                "{why}");
     }
 
+    /// Move an undeclared opening's rally off ground the board has since
+    /// learned no body can stand on. The tile was chosen when it may still
+    /// have been fog; a Mountain under the anchor holds the whole reserve in
+    /// a circle around it.
+    fn conquest_revalidate_rally(&mut self, g: &Game, pid: usize) {
+        let Some(opening) = self.conquest_opening.as_ref() else {
+            return;
+        };
+        if opening.declared.is_some() || Self::conquest_rally_standable(g, opening.rally) {
+            return;
+        }
+        let (Some(capital), Some(city)) = (Self::conquest_capital(g, pid), g.cities.get(&opening.city))
+        else {
+            return;
+        };
+        let home = g.cities[&capital].pos;
+        let Some(rally) = Self::conquest_rally_tile(g, pid, home, city.pos) else {
+            return;
+        };
+        let old = opening.rally;
+        let name = city.name.clone();
+        if let Some(opening) = self.conquest_opening.as_mut() {
+            opening.rally = rally;
+        }
+        think!(self.journal(), Military, Decision,
+               "The conquest moves its rally for {}", name;
+               "{:?} cannot hold a body; the force gathers at {:?} instead", old, rally;
+               rally);
+    }
+
     /// ⭐ Start of turn: keep the opening honest.
     ///
     /// Runs before `maintain_city_campaign` so the pinned plan is in place
@@ -1223,6 +1353,7 @@ impl AdvancedAi {
                 }
             }
         }
+        self.conquest_revalidate_rally(g, pid);
         if let Some(opening) = self.conquest_opening.as_mut() {
             let base = Self::conquest_commit_base(g, opening);
             if opening.grace_until.is_none()
@@ -1338,7 +1469,7 @@ impl AdvancedAi {
             return;
         };
         let home = g.cities[&capital].pos;
-        let Some(rally) = Self::conquest_rally_tile(g, home, g.cities[&city].pos) else {
+        let Some(rally) = Self::conquest_rally_tile(g, pid, home, g.cities[&city].pos) else {
             return;
         };
         let known = Self::conquest_known_cities(g, pid, target).len();

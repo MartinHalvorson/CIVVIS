@@ -25297,7 +25297,13 @@ impl AdvancedAi {
                     .values()
                     .filter(|city| plan.target_city != Some(city.id)),
             )
-            .filter(|city| city.wall_hp > 0 && g.is_at_war(pid, city.owner))
+            // `early-conquest-opening`: the opening's walled target is one
+            // before the war it is being prepared for.
+            .filter(|city| {
+                city.wall_hp > 0
+                    && (g.is_at_war(pid, city.owner)
+                        || self.conquest_breach_target(g) == Some(city.id))
+            })
             .collect();
         let useful_breach = |kind: &str| {
             target_cities
@@ -25411,6 +25417,7 @@ impl AdvancedAi {
                 } else {
                     0.0
                 }
+                + self.conquest_breaker_value(g, pid, cid, unit)
         } else {
             -10_000.0
         }
