@@ -1468,7 +1468,33 @@ impl AdvancedAi {
         if let Some(acted) = self.post_step(g, pid, uid, city) {
             return acted;
         }
+        if let Some(acted) = self.close_to_staging(g, pid, uid, city) {
+            return acted;
+        }
         self.base.fortify_or_stop(g, pid, uid)
+    }
+
+    /// A gun or shooter with no firing post this turn, still beyond the
+    /// staging ring, walks up to it rather than fortifying where it stands.
+    /// The firing band holds only so many tiles; the rest of a twenty-unit
+    /// train used to hold at home for the whole siege. Live King
+    /// civvis-20261001T080758Z: the Siege of Pella's force of 16-20 read
+    /// 25-50% ready from turn 94 to 110 with one to three units within four
+    /// tiles. Units already on the ring wait there for a post to free.
+    fn close_to_staging(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        city: &CityView,
+    ) -> Option<bool> {
+        if g.wdist(g.units[&uid].pos, city.pos) <= STAGING_FAR {
+            return None;
+        }
+        let next = g
+            .route_step(uid, city.pos, STAGING_FAR)
+            .filter(|pos| g.can_move(uid, *pos))?;
+        Some(self.base.tactical_apply_move(g, pid, uid, next))
     }
 
     /// Invest and Reduce, shooters: a killable reliever, then units while
@@ -1502,6 +1528,9 @@ impl AdvancedAi {
             }
         }
         if let Some(acted) = self.post_step(g, pid, uid, city) {
+            return acted;
+        }
+        if let Some(acted) = self.close_to_staging(g, pid, uid, city) {
             return acted;
         }
         self.base.fortify_or_stop(g, pid, uid)

@@ -296,3 +296,31 @@ fn a_one_turn_bill_spike_does_not_drop_an_invested_siege() {
     }
     assert_eq!(ai.sieges[&cid].stage, SiegeStage::Stage);
 }
+
+/// See `close_to_staging`: a gun with no firing post walks up to the staging
+/// ring instead of fortifying at home; one already on the ring waits there.
+#[test]
+fn a_postless_gun_closes_to_the_staging_ring() {
+    let (mut g, cid) = walled_city();
+    let target = g.cities[&cid].pos;
+    for pos in g.wdisk(target, 10) {
+        if pos == target {
+            continue;
+        }
+        let tile = g.map.tiles.get_mut(&pos).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    let far = super::tests::at_distance(&g, cid, 9)[0];
+    let gun = g.spawn_unit("catapult", 0, far);
+    let city = CityView::of(&g, cid).unwrap();
+    let mut ai = AdvancedAi::new();
+    assert_eq!(ai.close_to_staging(&mut g, 0, gun, &city), Some(true));
+    let after = g.wdist(g.units[&gun].pos, target);
+    assert!(after < 9 && after >= STAGING_FAR, "walked up to {after}");
+
+    let near = super::tests::at_distance(&g, cid, STAGING_FAR - 1)[0];
+    let waiting = g.spawn_unit("catapult", 0, near);
+    assert_eq!(ai.close_to_staging(&mut g, 0, waiting, &city), None);
+}
