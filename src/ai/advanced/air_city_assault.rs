@@ -343,7 +343,10 @@ impl AdvancedAi {
             target,
             cavalry: Some(uid),
             spot: opening.spot,
-            moved_to_spot: opening.spot != opening.origin,
+            moved_to_spot: opening.spot != opening.origin
+                || opening.actions.iter().any(|action| {
+                    matches!(action, Action::MoveTo { unit, to } if *unit == opening.cavalry && *to == opening.spot)
+                }),
             aircraft: sorties,
         };
         // All steps were checked together on one branch; replay only those
@@ -613,7 +616,69 @@ impl AdvancedAi {
                 }
             }
         }
+        if best.is_none() && !visible && ready && self.air_surge_2 {
+            best = self.air_assault_standing_spotter(g, pid, target);
+        }
         best
+    }
+
+    /// `air-surge-2`: with no cavalry to look and come back, any healthy land
+    /// soldier near an unseen objective steps to the nearest tile that sees it
+    /// and stays there, if the blows it takes there leave it half its health.
+    ///
+    /// ★★ THE WING NEVER SAW HASTINGS. Domination pair seed 37140004: the
+    /// wing was re-aimed at Hastings on turn 164 with three Bombers in range,
+    /// the land siege mustered three to four tiles out, beyond sight, for
+    /// eighteen turns, and with no cavalry in reach not one sortie flew before
+    /// peace closed the war. A volley needs the city in sight, not a horse.
+    fn air_assault_standing_spotter(&self, g: &Game, pid: usize, target: Pos) -> Option<Opening> {
+        let mut soldiers: Vec<u32> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| {
+                let unit = &g.units[uid];
+                let spec = &g.rules.units[unit.kind];
+                spec.class == "military"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && unit.hp >= 60
+                    && unit.moves_left > 0.0
+                    && !unit.acted
+                    && unit.linked_to.is_none()
+                    && !g.is_embarked(unit)
+                    && g.wdist(unit.pos, target) <= AIR_ASSAULT_TAKER_REACH
+            })
+            .collect();
+        soldiers.sort_by_key(|uid| (g.wdist(g.units[uid].pos, target), *uid));
+        for uid in soldiers.into_iter().take(4) {
+            let origin = g.units[&uid].pos;
+            // Nearest the city first: those are the tiles that see it.
+            let mut spots = g.reachable(uid);
+            spots.sort_by_key(|pos| (g.wdist(*pos, target), g.wdist(origin, *pos), *pos));
+            for spot in spots.into_iter().take(16) {
+                let mut board = g.speculative_clone();
+                let Some(action) = walk(&mut board, pid, uid, spot) else {
+                    continue;
+                };
+                if !board.player_can_see(pid, target)
+                    || self.air_assault_danger(&board, pid, spot, uid)
+                        >= f64::from(board.units[&uid].hp) * 0.5
+                {
+                    continue;
+                }
+                let spent = g.units[&uid].moves_left - board.units[&uid].moves_left;
+                // It stays where it looked: the opening's origin is its spot,
+                // so no return walk is owed.
+                return Some(Opening {
+                    cavalry: uid,
+                    origin: spot,
+                    spot,
+                    actions: vec![action],
+                    board,
+                    spent,
+                });
+            }
+        }
+        None
     }
 
     /// Every land melee body that could finish a breach at `target` this
