@@ -5056,14 +5056,22 @@ impl Game {
         })
     }
 
-    /// Air Pillage follows the normal ownership, war, garrison, and remaining
-    /// layer rules, but barbarian camps are captured by entering their tile
-    /// rather than bombed for the camp-clear reward.
+    /// Strategic bombing additionally requires an unoccupied land target:
+    /// shipped Civilopedia_Concepts_Text.xml:1041 says "if no land unit
+    /// currently occupies the target location". Unlike ground pillage's
+    /// district garrison check, this includes civilians/support, all owners,
+    /// and improvements too. Barbarian camps still require entering the tile.
     pub(super) fn air_pillageable_at(&self, pid: usize, pos: Pos) -> bool {
         self.map
             .get(pos)
             .is_some_and(|tile| tile.improvement.as_deref() != Some("barbarian_camp"))
             && self.pillageable_at(pid, pos)
+            && !self.unit_ids_at(pos).iter().any(|id| {
+                matches!(
+                    self.rules.units[self.units[id].kind].domain.as_deref(),
+                    None | Some("land")
+                )
+            })
     }
 
     pub(super) fn scaled_pillage_amount(&self, pid: usize, yield_type: &str, base: f64) -> f64 {
