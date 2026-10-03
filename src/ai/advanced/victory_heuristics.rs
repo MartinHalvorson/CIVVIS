@@ -390,6 +390,10 @@ mod domination_score_counter_tests;
 mod domination_counter_tests;
 
 #[cfg(test)]
+#[path = "native_science_clock_tests.rs"]
+mod native_science_clock_tests;
+
+#[cfg(test)]
 mod tests {
     use super::super::StrategicPlan;
     use super::*;

@@ -11215,7 +11215,8 @@ impl AdvancedAi {
             25 + (30 * player.techs.len() / g.rules.techs.len().max(1)).min(30) as i32;
         let project_progress = player.science_projects.len().min(4) as i32 * 18;
         let travel_progress = if player.science_projects.contains("exoplanet_expedition") {
-            (player.exoplanet_distance * 100.0 / 50.0).clamp(0.0, 100.0) as i32
+            (g.science_victory_points(pid) * 100.0 / g.science_victory_points_needed(pid))
+                .clamp(0.0, 100.0) as i32
         } else {
             0
         };
@@ -11415,8 +11416,11 @@ impl AdvancedAi {
             // defender needs time to raise, route, and deploy a counterforce,
             // so its launch itself must cross the generic denial threshold;
             // waiting for the first six light-years discarded that reaction
-            // window while the rival was already on the victory clock.
-            78 + (22.0 * player.exoplanet_distance / 50.0).clamp(0.0, 22.0) as i32
+            // window while the rival was already on the victory clock. A live
+            // mirror's distance and speed-dependent target are observed facts;
+            // the simulator-only player field does not advance with the host.
+            78 + (22.0 * g.science_victory_points(pid) / g.science_victory_points_needed(pid))
+                .clamp(0.0, 22.0) as i32
         } else if player.science_projects.contains("launch_mars_colony") {
             65
         } else if player.science_projects.contains("launch_moon_landing") {
