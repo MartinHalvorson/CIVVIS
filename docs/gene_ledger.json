@@ -2325,6 +2325,15 @@
           "district-planning-3": null
         }
       },
+      "domination-siege-research": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "domination-siege-research": null,
+          "domination-siege-research-2": null
+        }
+      },
       "doomed-blow-veto": {
         "rule_on": [],
         "head": null,

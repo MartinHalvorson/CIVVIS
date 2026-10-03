@@ -108,3 +108,36 @@ fn siege_research_requires_a_walled_enemy_conquest_objective_and_is_reversible()
         "the last observed walls persist until a fresh sighting replaces them"
     );
 }
+
+/// See `SIEGE_UPGRADE_WALL_HP`: with Trebuchets unlocked and a Medieval-tier
+/// target, version two researches the stronger design the empire can feed;
+/// version one leaves the fielded capability alone.
+#[test]
+fn version_two_upgrades_the_siege_train_against_medieval_walls() {
+    let (mut g, mut ai, plan) = board();
+    let ancestors = g.rules.tech_ancestors["military_engineering"].clone();
+    g.players[0]
+        .techs
+        .extend(ancestors.iter().map(|tech| Name::new(tech)));
+    g.players[0].techs.insert(name!("military_engineering"));
+    let target = plan.target_city.unwrap();
+    g.cities.get_mut(&target).unwrap().wall_hp = 300;
+    assert_eq!(ai.domination_siege_research_goal(&g, 0, &plan), None, "v1 stops at a design");
+    ai.enable_domination_siege_research_2();
+    assert_eq!(
+        ai.domination_siege_research_goal(&g, 0, &plan),
+        None,
+        "no Niter stocked or owned: a Bombard could not be fielded"
+    );
+    g.players[0]
+        .strategic_resources
+        .insert(name!("niter"), 20.0);
+    assert_eq!(
+        ai.domination_siege_research_goal(&g, 0, &plan),
+        Some(name!("metal_casting"))
+    );
+    g.cities.get_mut(&target).unwrap().wall_hp = 200;
+    if g.city_max_wall_hp(&g.cities[&target]) < 300 {
+        assert_eq!(ai.domination_siege_research_goal(&g, 0, &plan), None, "below the tier");
+    }
+}

@@ -2438,6 +2438,11 @@ pub const GENES: &[Gene] = &[
     // turns while the army fought the science leader. See
     // `denial_nearest_finish::DENIAL_FINISH_HORIZON`.
     Gene { tag: "denial-nearest-finish", field: "denial_nearest_finish", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_nearest_finish, disable: AdvancedAi::disable_denial_nearest_finish },
+    // V2 also researches the next stronger buildable land siege design once
+    // the target's walls reach the Medieval tier: live King 072557Z stayed on
+    // Trebuchets against 400-HP Cree walls from t123 to t142. See
+    // `SIEGE_UPGRADE_WALL_HP`.
+    Gene { tag: "domination-siege-research-2", field: "domination_siege_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_siege_research_2, disable: AdvancedAi::disable_domination_siege_research_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
