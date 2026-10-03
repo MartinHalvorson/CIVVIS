@@ -5205,6 +5205,11 @@ pub struct AdvancedAi {
     /// no Builder standing or queued. See `BasicAi::builder_before_the_army_2`.
     builder_before_the_army_2: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `denial-needs-a-road`: a Conquest counter to a rival's victory clock
+    /// is actionable only when a land path that respects closed borders
+    /// reaches one of its cities. See `AdvancedAi::rival_reachable_by_land`.
+    /// Off by default.
+    denial_needs_a_road: bool,
     /// `denial-nearest-finish`: a Domination army also answers a culture
     /// race projected along its geometric curve to finish within
     /// `DENIAL_FINISH_HORIZON` turns, ranked by how soon. See
@@ -5310,6 +5315,10 @@ pub struct AdvancedAi {
     /// been released, and this game has had its one attempt. `false`
     /// whenever the gene is off.
     conquest_closed: bool,
+    /// `early-conquest-opening`: the first turn this controller observed. A
+    /// controller started after turn one is a resumed game whose opening
+    /// was lost with the old process. See `conquest_naming_deadline`.
+    conquest_first_turn: Option<u32>,
     /// The denial war `science_threat_denial` opened and has not yet closed.
     denial_war: Option<science_threat_denial::DenialWar>,
     /// Arm the culture defence at 30 percent of the victory bar instead of
@@ -6719,6 +6728,14 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-holds-a-breach`: an invested siege whose walls are a quarter
+    /// down falls back to Stage only under `HELD_BREACH_ABORT_SHARE` of the
+    /// bill. See `siege_train::HELD_BREACH_WALL_SHARE`. Off by default.
+    siege_holds_a_breach: bool,
+    /// `siege-ranged-floor`: a Siege row asks for
+    /// `objective_board::SIEGE_RANGED_FLOOR` ranged bodies whatever its bill,
+    /// so the city's own hit points and heal are paid for. Off by default.
+    siege_ranged_floor: bool,
     /// `siege-rally-holds`: a siege task force keeps its staging rally across
     /// turns unless a fresh pick is clearly better. See
     /// `AdvancedAi::held_siege_rally`. Off by default.
@@ -7488,6 +7505,7 @@ mod air_resource_settlement;
 mod air_surge;
 pub use air_city_assault::AirCityAssault;
 mod denial_nearest_finish;
+mod denial_needs_a_road;
 mod siege_resource_purchase;
 mod strategic_deposit_prey;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
@@ -8582,6 +8600,7 @@ impl AdvancedAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             // ---- append: c-d ----------------------------------------
+            denial_needs_a_road: false,
             denial_nearest_finish: false,
             campus_before_harbor: false,
             campus_before_harbor_2: false,
@@ -8606,6 +8625,7 @@ impl AdvancedAi {
             chop_for_expansion: false,
             conquest_opening: None,
             conquest_closed: false,
+            conquest_first_turn: None,
             denial_war: None,
             culture_threat_early: false,
             culture_building_catchup: false,
@@ -8775,6 +8795,8 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_holds_a_breach: false,
+            siege_ranged_floor: false,
             siege_rally_holds: false,
             siege_train_scales_with_walls: false,
             strategic_deposit_prey: false,
@@ -11853,7 +11875,11 @@ impl AdvancedAi {
     ) -> bool {
         counter != GrandStrategy::Conquest
             || !self.battlefront_observation
-            || (self.campaign_target_legal(g, pid, rival) && !g.player_city_ids(rival).is_empty())
+            || (self.campaign_target_legal(g, pid, rival)
+                && !g.player_city_ids(rival).is_empty()
+                // `denial-needs-a-road`: an army that cannot march there
+                // counters nothing. See `advanced/denial_needs_a_road.rs`.
+                && (!self.denial_needs_a_road || self.rival_reachable_by_land(g, pid, rival)))
     }
 
     /// A Culture denial needs OUR culture to be the bar the leader must clear.
@@ -29294,6 +29320,15 @@ impl AdvancedAi {
     }
 
     fn production_build_turns(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> f64 {
+        // Firaxis ProductionPanel.lua:2138 reads this exact city's item quote.
+        // It already includes native modifiers and banked production; do not
+        // rescale it or reconstruct it from an approximate production rate.
+        if let Some(turns) = g
+            .host_production_turns(cid, item)
+            .filter(|turns| turns.is_finite() && *turns >= 0.0)
+        {
+            return turns;
+        }
         let production = g.city_yields(cid).production.max(1.0);
         let rate = if self.victory_planning {
             (production * g.item_prod_mult(pid, cid, Some(item))).max(1.0)
@@ -43950,3 +43985,6 @@ mod observed_movement_memory_tests;
 
 #[cfg(test)]
 mod reinforcement_arrival_tests;
+
+#[cfg(test)]
+mod native_production_eta_tests;

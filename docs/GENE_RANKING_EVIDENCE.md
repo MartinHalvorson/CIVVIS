@@ -209,6 +209,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-lane-forecast-2` | off (unmeasured) | Version 2 of the Culture clock forecast: project secular and religious Tourism through each rival's current international modifiers. | 1 \| 2 |
 | `culture-tourism-payback` | off (unmeasured) | Enable `culture-tourism-payback` for measurement. | 1 \| 1 |
 | `denial-nearest-finish` | off (unmeasured) | Opt-in gene `denial-nearest-finish`; see `Self::denial_nearest_finish`. | 1 \| 1 |
+| `denial-needs-a-road` | off (unmeasured) | Opt-in gene `denial-needs-a-road`; see `Self::denial_needs_a_road`. | 1 \| 1 |
 | `denial-outranks-expansion` | off (unmeasured) | A rival close to winning is answered before the lane's expansion rule. | 1 \| 1 |
 | `district-buildings-first` | off (unmeasured) | A standing district's first building before the delegated city governor opens another district. | — \| 2 |
 | `district-buildings-first-2` | off (unmeasured) | Version one, and the capital's Library ahead of its next Settler once it holds a Campus. | — \| 2 |
@@ -237,8 +238,10 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `settler-before-the-navy` | off (unmeasured) | The delegated city governor's navy step yields to a due Settler. | 1 \| 1 |
 | `settler-detour-stays-near` | off (unmeasured) | `settler-detour-stays-near`: a threat detour's fallback must lie about as close as the site it leaves. | 1 \| 1 |
 | `shared-danger` | off (unmeasured) | Opt-in gene `shared-danger`; see `Self::shared_danger`. | 1 \| 1 |
+| `siege-holds-a-breach` | off (unmeasured) | Opt-in gene `siege-holds-a-breach`; see `Self::siege_holds_a_breach`. | 1 \| 1 |
 | `siege-positive-damage-budget` | off (unmeasured) | Enable `siege-positive-damage-budget` for measurement. | 1 \| 1 |
 | `siege-rally-holds` | off (unmeasured) | Opt-in gene `siege-rally-holds`; see `Self::siege_rally_holds`. | 1 \| 1 |
+| `siege-ranged-floor` | off (unmeasured) | Opt-in gene `siege-ranged-floor`; see `Self::siege_ranged_floor`. | 1 \| 1 |
 | `siege-train-scales-with-walls` | off (unmeasured) | Opt-in gene `siege-train-scales-with-walls`; see `Self::siege_train_scales_with_walls`. | 1 \| 1 |
 | `strategic-deposit-prey` | off (unmeasured) | Opt-in gene `strategic-deposit-prey`; see `Self::strategic_deposit_prey`. | 1 \| 1 |
 | `threatened-city-reserve-2` | off (unmeasured) | V2 reserves the engine's local quote for an available defender in the threatened city. | 1 \| 2 |

@@ -28,6 +28,24 @@ pub(super) const DENIAL_FINISH_HORIZON: f64 = 30.0;
 /// urgent threat: the one-war gate opens a second front against it.
 pub(super) const DENIAL_URGENT_FINISH: f64 = 20.0;
 
+/// A late culture leader whose Tourism runs this many times the next
+/// civilization's compounds faster than its visitor curve shows: Flight,
+/// Computers and the Heritage Organizations multiply it, and the visitors
+/// then double every seven or eight turns. Live King civvis-20261003T090618Z
+/// (game 29): Canada at turn 146 had 146 Tourism against 66, and 18 visitors
+/// against a bar of 81, a 60-turn projection; it won at 169. Live King
+/// civvis-20261003T103619Z (game 32): the Maori at turn 150 had 118 against
+/// about 65, and 16 visitors against 71; they won at 178 (diagnosed by -60).
+pub(super) const CULTURE_SURGE_TOURISM_RATIO: f64 = 1.5;
+/// The share of the bar a surging leader's visitors must already hold.
+pub(super) const CULTURE_SURGE_BAR_SHARE: f64 = 0.2;
+/// Standard turns before which no surge is read: early Tourism leads are
+/// small numbers.
+pub(super) const CULTURE_SURGE_TURN: u32 = 200;
+/// The reading a surging leader's clock takes when its curve projects no
+/// nearer finish: past the urgent bar of the Domination counter.
+pub(super) const CULTURE_SURGE_PROGRESS: i32 = 85;
+
 /// Standard turns of foreign-tourist and bar readings the projection reads.
 pub(super) const CULTURE_CURVE_WINDOW: u32 = 20;
 
@@ -111,13 +129,51 @@ impl AdvancedAi {
         {
             return None;
         }
-        let turns = self.projected_culture_finish(g, rival)?;
-        (turns <= DENIAL_FINISH_HORIZON).then(|| VictoryFocus {
+        let projected = self
+            .projected_culture_finish(g, rival)
+            .filter(|turns| *turns <= DENIAL_FINISH_HORIZON)
+            .map(|turns| {
+                (100.0 - turns * 100.0 / (4.0 * DENIAL_FINISH_HORIZON))
+                    .round()
+                    .clamp(0.0, 100.0) as i32
+            });
+        let surge = self
+            .culture_surge(g, rival)
+            .then_some(CULTURE_SURGE_PROGRESS);
+        projected.max(surge).map(|progress| VictoryFocus {
             strategy: GrandStrategy::Culture,
-            progress: (100.0 - turns * 100.0 / (4.0 * DENIAL_FINISH_HORIZON))
-                .round()
-                .clamp(0.0, 100.0) as i32,
+            progress,
         })
+    }
+
+    /// Whether `rival` leads the culture race on Tourism by
+    /// [`CULTURE_SURGE_TOURISM_RATIO`] over every other living major, with
+    /// its visitors already [`CULTURE_SURGE_BAR_SHARE`] of the bar it must
+    /// pass, after [`CULTURE_SURGE_TURN`].
+    pub(super) fn culture_surge(&self, g: &Game, rival: usize) -> bool {
+        if g.turn < g.standard_duration(CULTURE_SURGE_TURN) {
+            return false;
+        }
+        let living: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        let next = living
+            .iter()
+            .filter(|other| **other != rival)
+            .map(|other| g.tourism_per_turn(*other))
+            .fold(0.0_f64, f64::max);
+        let bar = living
+            .iter()
+            .filter(|other| **other != rival)
+            .map(|other| g.domestic_tourists(*other))
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        g.tourism_per_turn(rival) >= CULTURE_SURGE_TOURISM_RATIO * next.max(1.0)
+            && g.foreign_tourists(rival) as f64 >= CULTURE_SURGE_BAR_SHARE * bar as f64
     }
 
     /// Whether `rival`'s culture race is projected to finish within
@@ -125,9 +181,10 @@ impl AdvancedAi {
     pub(super) fn culture_finish_is_urgent(&self, g: &Game, rival: usize) -> bool {
         self.deny_leaders
             && self.nearest_finish_culture_clock(g, rival).is_some()
-            && self
+            && (self
                 .projected_culture_finish(g, rival)
                 .is_some_and(|turns| turns <= DENIAL_URGENT_FINISH)
+                || self.culture_surge(g, rival))
     }
 }
 
@@ -215,5 +272,45 @@ mod tests {
         assert!(ai.culture_finish_is_urgent(&g, 1));
         assert!(ai.urgent_victory_threat(&g, 1), "a near finish is urgent");
         assert_eq!(ai.rival_culture_pressures(&g)[&1], 50);
+    }
+
+    /// Game 29's Canada at turn 146: 146 Tourism against 66 and 54, 18
+    /// visitors against a bar of 81. The visitor curve projects no near
+    /// finish, but the surge makes it an urgent clock.
+    #[test]
+    fn a_late_tourism_surge_is_an_urgent_clock() {
+        let surge_case = |turn: u32, tourism: f64| {
+            let mut g = Game::new_full(3, 24, 16, 9303, 300, 0, false);
+            g.turn = turn;
+            tourists(&mut g, [0, 18, 0], [26, 142, 81]);
+            let observed = std::sync::Arc::make_mut(&mut g.observed_tourism_per_turn);
+            observed.insert(0, 54.0);
+            observed.insert(1, tourism);
+            observed.insert(2, 66.0);
+            let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+            ai.enable_denial_nearest_finish();
+            ai.deny_leaders = true;
+            (g, ai)
+        };
+        let late = |g: &Game| g.standard_duration(super::CULTURE_SURGE_TURN);
+        let (mut g, ai) = surge_case(0, 146.0);
+        g.turn = late(&g);
+        assert_eq!(ai.projected_culture_finish(&g, 1), None, "no curve yet");
+        assert!(ai.culture_surge(&g, 1));
+        let clock = ai
+            .nearest_finish_culture_clock(&g, 1)
+            .expect("a surge clock");
+        assert!(ai.domination_counter_pressure(&g, clock));
+        assert!(ai.culture_finish_is_urgent(&g, 1));
+        assert!(ai.urgent_victory_threat(&g, 1));
+
+        // Too early, or a lead under the ratio, is no surge.
+        let (mut g, ai) = surge_case(0, 146.0);
+        g.turn = late(&g) - 1;
+        assert!(!ai.culture_surge(&g, 1));
+        let (mut g, ai) = surge_case(0, 90.0);
+        g.turn = late(&g);
+        assert!(!ai.culture_surge(&g, 1));
+        assert!(ai.nearest_finish_culture_clock(&g, 1).is_none());
     }
 }

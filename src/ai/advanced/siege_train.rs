@@ -112,6 +112,15 @@ pub(super) const DEFENDER_RADIUS: i32 = 6;
 pub(super) const WALL_STRENGTH_PER_100_HP: f64 = 10.0;
 /// Under this share of the bill the train falls back to the staging ring.
 pub(super) const ABORT_SHARE: f64 = 0.8;
+/// `siege-holds-a-breach`: once the walls stand at or under this share of
+/// their full strength, the train falls back only under
+/// [`HELD_BREACH_ABORT_SHARE`] of the bill. Live King
+/// civvis-20261003T103619Z (game 32) had Tskhumi's 400 walls down to 276 at
+/// turn 162 with four engines at range; the train dropped to Stage, the
+/// engines walked back five to nine tiles, and the walls stood at 400 again
+/// by 170 (diagnosed by -60).
+pub(super) const HELD_BREACH_WALL_SHARE: f64 = 0.75;
+pub(super) const HELD_BREACH_ABORT_SHARE: f64 = 0.5;
 /// The health a spotter needs before it steps into sight of an unseen city.
 const SPOTTER_MIN_HP: i32 = 60;
 /// Consecutive short assessments before an invested train falls back. The
@@ -919,9 +928,13 @@ fn siege_posts(
                         && g.unit_ids_at(*pos).is_empty()
                 })
                 .min_by_key(|pos| {
+                    // The gun's own side of the city first: a post across the
+                    // city is a walk around its strike ring (Natal, game 30:
+                    // guns on the west were posted east).
+                    let far_side = g.wdist(here, *pos) > g.wdist(here, city.pos);
                     let behind = ring_taken.iter().any(|held| g.wdist(*held, *pos) == 1);
                     let exposure = hostiles.iter().filter(|h| g.wdist(**h, *pos) <= 2).count();
-                    (!behind, exposure, g.wdist(here, *pos), *pos)
+                    (far_side, !behind, exposure, g.wdist(here, *pos), *pos)
                 })
         });
         if let Some(pos) = best {
@@ -1207,9 +1220,19 @@ impl AdvancedAi {
             // Regroup for breach support instead of remaining in Reduce with
             // no attack that can finish before the force is exhausted.
             let invested = stage != SiegeStage::Stage && !arena;
+            // `siege-holds-a-breach`: a wall already a quarter down is a
+            // running assault; only a deep shortfall abandons it.
+            let held_breach = self.siege_holds_a_breach
+                && city.wall_max > 0
+                && f64::from(city.wall_hp) <= HELD_BREACH_WALL_SHARE * f64::from(city.wall_max);
+            let abort_share = if held_breach {
+                HELD_BREACH_ABORT_SHARE
+            } else {
+                ABORT_SHARE
+            };
             if invested
-                && (strength < ABORT_SHARE * bill
-                    || (!damage_can_continue && breach_taker.is_none()))
+                && (strength < abort_share * bill
+                    || (!damage_can_continue && breach_taker.is_none() && !held_breach))
             {
                 let since = *record.short_since.get_or_insert(turn);
                 if turn.saturating_sub(since) + 1 >= ABORT_PATIENCE {
@@ -1823,6 +1846,24 @@ impl AdvancedAi {
             let Some(next) =
                 siege_route_step(g, pid, uid, goal, city_pos).filter(|next| g.can_move(uid, *next))
             else {
+                // The step-by-step route treats our own soldiers as walls, so
+                // a crowded staging band boxes a gun in behind its own army.
+                // Walk through them to the free post in one move, which may
+                // pass friendly units. Live King civvis-20261003T093332Z: two
+                // of three Bombards before Natal held posts for turns 160-170
+                // and stood five to seven tiles out, never firing, while the
+                // walls went 400 -> 68 under one Bombard's fire.
+                let hp = f64::from(unit.hp);
+                if let Some(dest) = (!moved)
+                    .then(|| g.pass_through_destination(uid, goal, 0))
+                    .flatten()
+                    .filter(|dest| {
+                        g.wdist(*dest, city_pos) > CITY_STRIKE_RANGE
+                            || hp > self.approach_danger(g, pid, *dest, uid) + 20.0
+                    })
+                {
+                    moved = self.base.path_walk_to(g, pid, uid, dest);
+                }
                 break;
             };
             // A post inside the city's firing ring can be covered by more

@@ -4805,6 +4805,36 @@ impl AdvancedAi {
         self.base.campus_before_the_army = false;
     }
 
+    /// Opt-in gene `siege-holds-a-breach`; see [`Self::siege_holds_a_breach`].
+    pub fn enable_siege_holds_a_breach(&mut self) {
+        self.siege_holds_a_breach = true;
+    }
+
+    /// The twin of `enable_siege_holds_a_breach`.
+    pub fn disable_siege_holds_a_breach(&mut self) {
+        self.siege_holds_a_breach = false;
+    }
+
+    /// Opt-in gene `siege-ranged-floor`; see [`Self::siege_ranged_floor`].
+    pub fn enable_siege_ranged_floor(&mut self) {
+        self.siege_ranged_floor = true;
+    }
+
+    /// The twin of `enable_siege_ranged_floor`.
+    pub fn disable_siege_ranged_floor(&mut self) {
+        self.siege_ranged_floor = false;
+    }
+
+    /// Opt-in gene `denial-needs-a-road`; see [`Self::denial_needs_a_road`].
+    pub fn enable_denial_needs_a_road(&mut self) {
+        self.denial_needs_a_road = true;
+    }
+
+    /// The twin of `enable_denial_needs_a_road`.
+    pub fn disable_denial_needs_a_road(&mut self) {
+        self.denial_needs_a_road = false;
+    }
+
     /// See `BasicAi::campus_before_the_army_2`: version 1's Campus and Library
     /// behind the Monument and the capital Settler, ahead of the military
     /// floor only. Exclusive with version 1.

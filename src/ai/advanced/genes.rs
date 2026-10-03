@@ -2463,6 +2463,18 @@ pub const GENES: &[Gene] = &[
     // Live King 103619Z: 5 of 6 cities without a Campus from t70 to t120;
     // see `BasicAi::campus_before_the_army`.
     Gene { tag: "campus-before-the-army", field: "campus_before_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_the_army, disable: AdvancedAi::disable_campus_before_the_army },
+    // Live King 103619Z had Tskhumi's walls 400 -> 276 and dropped to Stage;
+    // they stood at 400 again eight turns later. See
+    // `siege_train::HELD_BREACH_WALL_SHARE`.
+    Gene { tag: "siege-holds-a-breach", field: "siege_holds_a_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_holds_a_breach, disable: AdvancedAi::disable_siege_holds_a_breach },
+    // Live King 115745Z sieged unwalled Pest with one Archer shot a turn
+    // while ten bodies held in reserve; the city walled at turn 78. See
+    // `objective_board::SIEGE_RANGED_FLOOR`.
+    Gene { tag: "siege-ranged-floor", field: "siege_ranged_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_ranged_floor, disable: AdvancedAi::disable_siege_ranged_floor },
+    // Live King 100536Z aimed its culture denial at India for 45 turns with
+    // Phoenicia's closed borders between; no unit reached Delhi. See
+    // `advanced/denial_needs_a_road.rs`.
+    Gene { tag: "denial-needs-a-road", field: "denial_needs_a_road", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_needs_a_road, disable: AdvancedAi::disable_denial_needs_a_road },
     Gene { tag: "campus-before-the-army-2", field: "campus_before_the_army_2", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_the_army_2, disable: AdvancedAi::disable_campus_before_the_army_2 },
     // Live King 113755Z: Galleys and Quadriremes ahead of the walkers at
     // three cities; see `BasicAi::settler_before_the_navy`.

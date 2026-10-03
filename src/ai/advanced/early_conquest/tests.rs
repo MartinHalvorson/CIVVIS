@@ -1810,3 +1810,32 @@ fn a_war_the_target_opens_before_assembly_releases_the_opening() {
     ai.maintain_conquest_opening(&mut game, 0);
     assert!(ai.conquest_opening.is_none(), "a partial force does not adopt the war");
 }
+
+/// A controller that first sees the game just past the naming deadline is a
+/// resumed one: it names the opening the old process lost. One that played
+/// from the start does not get the extension.
+#[test]
+fn a_resumed_controller_names_the_opening_just_past_the_deadline() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    meet_and_explore(&mut game, 1);
+    game.turn = game.standard_duration(CONQUEST_COMMIT_DEADLINE) + 1;
+    let mut resumed = armed();
+    resumed.maintain_conquest_opening(&mut game, 0);
+    assert!(resumed.conquest_opening.is_some(), "the resumed controller names it");
+
+    let mut native = armed();
+    let late = game.turn;
+    game.turn = 1;
+    native.maintain_conquest_opening(&mut game, 0);
+    native.conquest_opening = None;
+    game.turn = late;
+    native.maintain_conquest_opening(&mut game, 0);
+    assert!(native.conquest_opening.is_none(), "a controller from turn one keeps the deadline");
+
+    let mut stale = armed();
+    game.turn = game.standard_duration(CONQUEST_COMMIT_DEADLINE)
+        + game.standard_duration(CONQUEST_RESUME_GRACE_TURNS)
+        + 2;
+    stale.maintain_conquest_opening(&mut game, 0);
+    assert!(stale.conquest_opening.is_none(), "a resume long past the window names nothing");
+}

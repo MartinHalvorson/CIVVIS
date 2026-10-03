@@ -153,6 +153,15 @@ pub(crate) const CONQUEST_MAX_RIVAL_CITIES: usize = 4;
 /// this window may finish its minimum preparation after turn sixty.
 pub(crate) const CONQUEST_COMMIT_DEADLINE: u32 = 60;
 
+/// Standard turns a resumed controller may still name an opening past
+/// [`CONQUEST_COMMIT_DEADLINE`]. The decider's memory does not survive a
+/// freeze reload. Live King 2026-10-03T110427Z named Tenochtitlan at turn
+/// 39 (deadline 40 at this speed), froze at turn 42, and the process that
+/// resumed the turn-41 autosave started past the deadline with no opening.
+/// The reserved bodies drifted, and the war came at turn 78 under the
+/// ordinary desk, when Archers previewed 3-5 damage against the city.
+pub(crate) const CONQUEST_RESUME_GRACE_TURNS: u32 = 5;
+
 /// A target first seen near the end of that window still needs time to
 /// assemble the five reserved bodies. On Online speed the standard deadline
 /// is turn 40: the King Gran Colombia seat named Trà Kiệu on turn 36, then
@@ -1367,6 +1376,9 @@ impl AdvancedAi {
             self.conquest_closed = false;
             return;
         }
+        if self.conquest_first_turn.is_none() {
+            self.conquest_first_turn = Some(g.turn);
+        }
         self.conquest_count_losses(g);
         if g.player_city_ids(pid).len() >= CONQUEST_FIRST_SETTLER_CITIES {
             if let Some(opening) = self.conquest_opening.as_mut() {
@@ -1498,8 +1510,21 @@ impl AdvancedAi {
     /// Name a target and open. Nothing happens once the commit deadline has
     /// passed, or once an assembled opening has been released: an opening
     /// is an opening, and this game has had its attempt.
+    /// The last turn an opening can be named. A controller that first saw
+    /// the game after turn one, inside the grace of the deadline, resumed a
+    /// game whose opening died with the old process, and may name it again
+    /// for [`CONQUEST_RESUME_GRACE_TURNS`] after its first turn.
+    fn conquest_naming_deadline(&self, g: &Game) -> u32 {
+        let deadline = g.standard_duration(CONQUEST_COMMIT_DEADLINE);
+        let grace = g.standard_duration(CONQUEST_RESUME_GRACE_TURNS).max(1);
+        match self.conquest_first_turn {
+            Some(first) if first > 1 && first <= deadline + grace => deadline.max(first + grace),
+            _ => deadline,
+        }
+    }
+
     fn conquest_open(&mut self, g: &mut Game, pid: usize) {
-        if self.conquest_closed || g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE) {
+        if self.conquest_closed || g.turn >= self.conquest_naming_deadline(g) {
             return;
         }
         let Some((target, city)) = self.conquest_target(g, pid) else {
