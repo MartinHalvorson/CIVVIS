@@ -2447,6 +2447,23 @@ impl AdvancedAi {
         {
             return false;
         }
+        // A wing still being researched is many turns away, too far to hold a
+        // ground war for. Live King civvis-20261003T100536Z appointed the surge
+        // at turn 120 with Advanced Flight eight techs out, while the campaign
+        // on Carthage had been aimed since turn 111 at 1.7-1.9 times
+        // Phoenicia's power. Every Beeline turn spent the war-opening decision
+        // on nothing, and a dozen bodies stood "going nowhere" for 13-38
+        // turns. The ordinary declaration still checks the staged army, the
+        // campaign bill, the treasury and the peace deadline. The wing keeps
+        // its research and production and joins the war through
+        // `air_surge_join_declared_war`. The hold resumes in Arm, when the
+        // bombers are being built.
+        if plan.phase == AirSurgePhase::Beeline
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.threatened_city(g, pid).is_none()
+        {
+            return false;
+        }
         if plan.phase != AirSurgePhase::Strike {
             // Denounce while the wing is being built, so the Formal War clock
             // and the buildout run together. The casus belli itself is never
