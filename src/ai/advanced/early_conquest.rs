@@ -1391,7 +1391,25 @@ impl AdvancedAi {
                     .is_some_and(|city| city.owner == opening.target)
         });
         if adopt {
-            self.conquest_adopt_war(g, pid);
+            // Only an assembled force adopts the war. Live King
+            // 2026-10-03T090618Z: Khmer declared on turn 26 with the force
+            // still Slingers scattered short of the rally; the opening pinned
+            // the campaign to Angkor Thom, the bodies walked into the city's
+            // and the army's fire, and by turn 51 "the whole strike force is
+            // gone". An unassembled force is released to the ordinary war,
+            // which defends first and sieges on its own bill.
+            let assembled = self.conquest_opening.as_ref().is_some_and(|opening| {
+                Self::conquest_assembled_share(g, opening) >= CONQUEST_ASSEMBLY_SHARE
+            });
+            if assembled {
+                self.conquest_adopt_war(g, pid);
+            } else {
+                self.conquest_release(
+                    g,
+                    "the target declared before the strike force assembled; the ordinary war takes it",
+                );
+                return;
+            }
         }
         if let Some(opening) = self.conquest_opening.as_ref() {
             let target_alive = g

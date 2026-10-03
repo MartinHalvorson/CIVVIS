@@ -1548,11 +1548,11 @@ fn a_war_the_target_opens_is_adopted_and_pins_the_campaign() {
     let mut game = board(&[at(6, 12), at(14, 12)]);
     let mut ai = opened(&mut game);
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
-    let force = bodies(&mut game, 0, "warrior", rally, 3, 3);
+    let force = bodies(&mut game, 0, "warrior", rally, 3, CONQUEST_RANGED + CONQUEST_MELEE);
     ai.maintain_conquest_opening(&mut game, 0);
     assert!(ai.conquest_opening.as_ref().unwrap().declared.is_none());
 
-    // They declare first, before the force has assembled.
+    // They declare first, with the force standing at the rally.
     game.at_war.insert((0, 1));
     game.at_war.insert((1, 0));
     game.turn += 1;
@@ -1792,4 +1792,21 @@ fn one_straggler_does_not_cost_the_column_its_extension() {
     };
     assert!(grace(1).is_some(), "one straggler keeps the extension");
     assert!(grace(2).is_none(), "two do not");
+}
+
+/// A war the target opens before the force has assembled releases the
+/// opening to the ordinary war instead of pinning a partial force on the city.
+#[test]
+fn a_war_the_target_opens_before_assembly_releases_the_opening() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = opened(&mut game);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    bodies(&mut game, 0, "warrior", rally, 3, 2);
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_some());
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    game.turn += 1;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_none(), "a partial force does not adopt the war");
 }
