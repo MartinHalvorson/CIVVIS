@@ -53,7 +53,12 @@ fail first on the unchanged implementation; the fallback test already passes.
 The native-sync regression keeps the simulator distance at zero while the
 observed points change from 7/25 to 23/25, then disappear.
 
-Validation and frozen artifact hashes are recorded below after completion.
+After repair, all five pass. Full `cargo test --profile ci --locked -j 4`:
+4,459 passed, zero failed, 53 existing ignores. Seven CI-wiring tests pass;
+changed-Rust quality and formatting pass. No engine rule changes, so an engine
+soak is not applicable. This change does not rerun or claim a green broad
+Python tooling suite; the previously documented roadmap-history failure is
+outside this Rust repair.
 
 ## Recorded-state census, not a counterfactual game
 
@@ -73,6 +78,43 @@ Source: `civvis-20261003T040354Z/events.jsonl`, SHA-256
 `43a04f9a0a033f0dba0422cf465417a9382bf52d02029c89c055d1270269713e`.
 The source run, active native game, its orders database, play pin, and policy
 bundle are never modified.
+
+Kongo's exact AI Science term and the full-board actionable counter:
+
+| Turn/frame | Native points/target | Before Science term | After Science term | Counter before → after |
+| --- | --- | --- | --- | --- |
+| 195/2 | 0/25, Mars only | 65 | 65 | None → None |
+| 198/3 | 0/25, expedition launched | 78 | 78 | Science → Science |
+| 200/2 | 2/25 | 78 | 79 | Science → Science |
+| 205/2 | 7/25 | 78 | 84 | Science → Science |
+| 210/2 | 12/25 | 78 | 88 | Conquest → Science |
+| 216/3 | 23/25 | 78 | 98 | Conquest → Science |
+
+At 210/2 and 216/3 the strongest full-board pressure changes from Culture
+78/85 to Science 88/98. The native measurements, simulator distance of zero,
+and urgency labels are unchanged across all twelve rival samples. Six
+snapshot decisions are retained, including both changed counter decisions.
+
+Frozen libraries: baseline canonical claim `40a99c3c4d61ac004e48455df43dafe3fbb98785`
+(production code unchanged from `69ef4ea2f`); candidate implementation
+`c6d069b19` (later documentation-only updates do not change Rust).
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `libcivvis_baseline.rlib` | `e6c359a246fee8c96f8e11a5d36149803cc9109370f9400aa7c4b368e0e06f50` |
+| `libcivvis_candidate.rlib` | `cbf69c833c4af51b1b789f4986349eced7faa428d44427943a6b125374324488` |
+| `baseline-clock-census` | `3547765bab872deffc995bfc666122863c1e7dfaf7df529d4cdd48c24f3fbaed` |
+| `candidate-clock-census` | `83dd7d819191630cbc306cfa988d28dcdfe652b797aedbdbda9462724789ea7b` |
+| `force-on.txt` | `a79c0e54e708a92ccf8cd8b286da851fea43b643dff58cdedb8905ce74dfec3b` |
+
+Build-provenance check caught a stale root `target/ci/libcivvis.rlib` after
+`cargo test` replaced the actual dependency archive without refreshing that
+root hardlink. The initial mislabeled candidate matched the baseline hash
+and census. It is retained as `libcivvis_stale_root.rlib` and
+`stale-root-clock-census*`, explicitly excluded from the comparison above.
+The valid candidate links the completed build's actual
+`target/ci/deps/libcivvis-b90f6ce0986a0c6d.rlib`, whose distinct hash is read
+back before running its census. No stale-artifact null is presented as a result.
 
 ## Important policy limitation
 
