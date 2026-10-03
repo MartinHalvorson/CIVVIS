@@ -1665,7 +1665,12 @@ impl AdvancedAi {
     /// war enters Exploit immediately, even with no bombers, so readiness must
     /// gate that phase too. Otherwise it abandons a live ground siege for an
     /// air objective the wing cannot yet attack.
-    pub(crate) fn apply_air_surge_to_strategy(&self, plan: &mut StrategicPlan) {
+    pub(crate) fn apply_air_surge_to_strategy(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &mut StrategicPlan,
+    ) {
         let Some(surge) = &self.air_surge_plan else {
             return;
         };
@@ -1677,12 +1682,43 @@ impl AdvancedAi {
         {
             return;
         }
+        // The plan already aims at the city that stops the rival's victory:
+        // the surge does not trade it for a softer one. Live King
+        // 2026-10-03T135713Z had Gwangju, Korea's Spaceport, as the land
+        // objective at turn 217; the surge appointed against Sangju at 218
+        // overwrote it at 219, the army sat on Sangju to the end, and Korea
+        // flew all four launches between turns 220 and 230.
+        if let Some(current) = plan.target_city.filter(|city| *city != surge.objective_city) {
+            if let Some(owner) = g.cities.get(&current).map(|city| city.owner) {
+                if owner != pid && self.air_surge_suppression_city(g, pid, owner) == Some(current) {
+                    return;
+                }
+            }
+        }
         if plan.strategy != GrandStrategy::Recovery {
             plan.strategy = GrandStrategy::Conquest;
             plan.target_player = Some(surge.target_player);
             plan.target_city = Some(surge.objective_city);
             plan.rush = false;
         }
+    }
+
+    /// The city whose capture stops `rival`'s victory (its Spaceport, holy
+    /// city or Theatre Square), read as `assess` reads it: the rival's own
+    /// lane first, then its launch chain.
+    fn air_surge_suppression_city(&self, g: &Game, pid: usize, rival: usize) -> Option<u32> {
+        let pressure = self.rival_victory_pressure(g, rival);
+        self.victory_suppression_city(g, pid, rival, pressure).or_else(|| {
+            (pressure.strategy != GrandStrategy::Science)
+                .then(|| {
+                    let launches = super::VictoryFocus {
+                        strategy: GrandStrategy::Science,
+                        progress: Self::science_launch_progress(g, rival),
+                    };
+                    self.victory_suppression_city(g, pid, rival, launches)
+                })
+                .flatten()
+        })
     }
 
     /// `air-surge-2`, Domination lane: until the wing is ready to fly, it

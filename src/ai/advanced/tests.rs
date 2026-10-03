@@ -37034,7 +37034,7 @@ fn the_surge_takes_the_strategy_only_once_it_is_ready_to_launch() {
         assessed_turn: game.turn,
         rush: false,
     };
-    ai.apply_air_surge_to_strategy(&mut plan);
+    ai.apply_air_surge_to_strategy(&game, 0, &mut plan);
     assert_eq!(
         plan.strategy,
         GrandStrategy::Science,
@@ -37042,7 +37042,7 @@ fn the_surge_takes_the_strategy_only_once_it_is_ready_to_launch() {
     );
 
     ai.air_surge_plan.as_mut().expect("live surge").phase = air_surge::AirSurgePhase::Strike;
-    ai.apply_air_surge_to_strategy(&mut plan);
+    ai.apply_air_surge_to_strategy(&game, 0, &mut plan);
     assert_eq!(plan.strategy, GrandStrategy::Conquest);
     assert_eq!(plan.target_player, Some(surge.target_player));
     assert_eq!(plan.target_city, Some(surge.objective_city));
@@ -37053,7 +37053,7 @@ fn the_surge_takes_the_strategy_only_once_it_is_ready_to_launch() {
         ..plan.clone()
     };
     recovering.target_player = None;
-    ai.apply_air_surge_to_strategy(&mut recovering);
+    ai.apply_air_surge_to_strategy(&game, 0, &mut recovering);
     assert_eq!(recovering.strategy, GrandStrategy::Recovery);
     assert_eq!(recovering.target_player, None);
 }

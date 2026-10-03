@@ -43400,11 +43400,11 @@ impl AdvancedAi {
         if rush_routes_frozen || self.plan_stale(g, pid) {
             let mut next = self.assess(g, pid);
             self.apply_war_plan_to_strategy(&mut next);
-            self.apply_air_surge_to_strategy(&mut next);
+            self.apply_air_surge_to_strategy(g, pid, &mut next);
             self.plan = Some(next);
         } else if let Some(mut current) = self.plan.take() {
             self.apply_war_plan_to_strategy(&mut current);
-            self.apply_air_surge_to_strategy(&mut current);
+            self.apply_air_surge_to_strategy(g, pid, &mut current);
             self.plan = Some(current);
         }
         let plan = self.plan.clone().unwrap();

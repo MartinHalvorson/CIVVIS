@@ -251,7 +251,7 @@ fn mechanized_infantry_can_escort_a_modern_armor_surge() {
     assert!(ai.air_surge_status.escort_ready());
 
     strategy.target_city = None;
-    ai.apply_air_surge_to_strategy(&mut strategy);
+    ai.apply_air_surge_to_strategy(&g, 0, &mut strategy);
     assert_eq!(strategy.target_city, Some(target));
 }
 

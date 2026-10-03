@@ -111,7 +111,7 @@ fn an_unreachable_counter_does_not_let_the_peacetime_wing_override_the_war() {
         assessed_turn: g.turn,
         rush: false,
     };
-    ai.apply_air_surge_to_strategy(&mut strategy);
+    ai.apply_air_surge_to_strategy(&g, 0, &mut strategy);
     assert_eq!(strategy.target_player, Some(3));
 }
 
@@ -152,7 +152,7 @@ fn an_unready_wartime_wing_leaves_a_ground_siege_on_its_city() {
         rush: false,
     };
     let mut before = ground_plan.clone();
-    ai.apply_air_surge_to_strategy(&mut before);
+    ai.apply_air_surge_to_strategy(&g, 0, &mut before);
     assert_eq!(before.target_city, Some(ground_target));
 
     ready_wing(&mut g);
@@ -160,7 +160,7 @@ fn an_unready_wartime_wing_leaves_a_ground_siege_on_its_city() {
     assert!(ai.air_surge_status.wing_ready());
     assert!(ai.air_surge_status.escort_ready());
     let mut after = ground_plan;
-    ai.apply_air_surge_to_strategy(&mut after);
+    ai.apply_air_surge_to_strategy(&g, 0, &mut after);
     assert_eq!(after.target_city, Some(air_target));
 }
 
@@ -193,13 +193,13 @@ fn a_target_declaration_keeps_the_domination_wing_without_interrupting_a_ground_
         rush: false,
     };
     let mut before = ground_plan.clone();
-    ai.apply_air_surge_to_strategy(&mut before);
+    ai.apply_air_surge_to_strategy(&g, 0, &mut before);
     assert_eq!(before.target_city, Some(ground_target));
 
     ready_wing(&mut g);
     ai.maintain_air_surge(&g, 0);
     let mut after = ground_plan;
-    ai.apply_air_surge_to_strategy(&mut after);
+    ai.apply_air_surge_to_strategy(&g, 0, &mut after);
     assert_eq!(after.target_city, Some(air_target));
 }
 

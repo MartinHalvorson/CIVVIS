@@ -398,3 +398,57 @@ fn a_beeline_wing_does_not_hold_the_ground_war() {
     ai.air_surge_plan = Some(AirSurge { phase: AirSurgePhase::Arm, ..surge });
     assert!(ai.air_surge_opening(&mut g, 0, 1), "an arming wing keeps the hold");
 }
+
+/// The surge does not trade the plan's victory-suppression city for its own
+/// objective: a rival on the expedition keeps the army on its Spaceport.
+#[test]
+fn the_surge_keeps_the_plan_on_the_rivals_spaceport() {
+    let mut g = Game::new_full(2, 40, 24, 936011, 500, 0, false);
+    g.found_city_for(0, (6, 12), None);
+    let surge_city = g.found_city_for(1, (20, 12), None);
+    let pad = g.found_city_for(1, (24, 16), None);
+    let pad_pos = g.cities[&pad].pos;
+    g.cities.get_mut(&pad).unwrap().districts.insert(Name::new("spaceport"), pad_pos);
+    g.players[0].met.insert(1);
+    g.record_contact(0, 1);
+    g.at_war.insert((0, 1));
+    g.at_war.insert((1, 0));
+    g.turn = 200;
+    let mut ai = AdvancedAi::new();
+    ai.enable_air_surge_2();
+    ai.victory_target = Some(VictoryTarget::Domination);
+    ai.air_surge_plan = Some(AirSurge {
+        target_player: 1,
+        objective_city: surge_city,
+        objective_pos: g.cities[&surge_city].pos,
+        body_unit: Name::new("helicopter"),
+        body_is_cavalry: true,
+        opened_at_war: true,
+        phase: AirSurgePhase::Strike,
+        appointed_turn: 198,
+        tech_turn: Some(190),
+        declared_turn: Some(198),
+        last_reviewed_turn: 200,
+        recovery_assessments: 0,
+    });
+    let plan = |city: u32| StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(city),
+        threatened_city: None,
+        desired_cities: 6,
+        assessed_turn: 200,
+        rush: false,
+    };
+
+    // No launch yet: the pad is an ordinary city and the surge takes the plan.
+    let mut before = plan(pad);
+    ai.apply_air_surge_to_strategy(&g, 0, &mut before);
+    assert_eq!(before.target_city, Some(surge_city));
+
+    // On the expedition, the pad is the city that stops the victory.
+    g.players[1].science_projects.insert("exoplanet_expedition".to_string());
+    let mut after = plan(pad);
+    ai.apply_air_surge_to_strategy(&g, 0, &mut after);
+    assert_eq!(after.target_city, Some(pad), "the army stays on the Spaceport");
+}

@@ -557,7 +557,7 @@ fn the_wing_turns_on_the_rival_whose_victory_must_be_denied() {
         rush: false,
     };
     ai.air_surge_plan.as_mut().unwrap().phase = AirSurgePhase::Strike;
-    ai.apply_air_surge_to_strategy(&mut campaign);
+    ai.apply_air_surge_to_strategy(&g, 0, &mut campaign);
     assert_eq!(campaign.target_player, Some(1));
     assert_eq!(campaign.target_city, Some(leader));
 
