@@ -148,3 +148,30 @@ lane and was handed to session -9c. We made a stall-peace with Kongo at t136,
 at 2.7× its power. Our army never fought Kongo again while Kongo launched
 every space project from t178 to t198. At t186 the seat also proposed a
 Research Alliance to Kongo.
+
+## The policy deck's churn (`policy-deck-hysteresis`)
+
+Game 21's request and readback log (`policy_deck_request` and
+`policy_deck_readback` events) shows the host applying every deck it is sent.
+The churn is therefore the seat's own, and it has two forms.
+
+1. **Levée en Masse in and out.** From turn 160 to 216 the deck alternated
+   between Levée en Masse and Lightning Warfare, Total War, Strategic Air Force
+   or Propaganda, every turn or two. `strategic_policies` keeps a maintenance
+   relief card only on a maintenance emergency. That emergency holds while
+   income is positive only if the deck already `retained` the card. But the
+   base governor's `revise_policy_deck` runs first in the turn, and on its
+   review turns it can unslot the card. At t206 the relief therefore read as
+   gone, at 33 Gold and +2.9 a turn, and the wants list dropped it. The next
+   frame's bill was 272 against 206, and the treasury hit zero. The journal's
+   "Slotted X over Scripture / Colonial Taxes / Finest Hour" lines name cards
+   the base pass had just slotted. None of them was in the host's deck.
+2. **Aesthetics and Liberalism alternating** every turn from 110 to 132. The
+   Liberalism repair rule fires while two developed cities show an Amenity
+   deficit. Liberalism fixes that deficit, so the rule stops firing, Aesthetics
+   comes back, and the deficit returns.
+
+`policy-deck-hysteresis` makes `AdvancedAi` remember the deck the turn began
+with (the host's deck on the live board) and counts a relief card held there
+as retained. Once Liberalism is slotted, a two-district city at 0 Amenities
+still calls for it, since Liberalism is exactly +1 in those cities.
