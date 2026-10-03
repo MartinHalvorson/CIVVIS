@@ -11285,7 +11285,8 @@ impl AdvancedAi {
             25 + (30 * player.techs.len() / g.rules.techs.len().max(1)).min(30) as i32;
         let project_progress = player.science_projects.len().min(4) as i32 * 18;
         let travel_progress = if player.science_projects.contains("exoplanet_expedition") {
-            (player.exoplanet_distance * 100.0 / 50.0).clamp(0.0, 100.0) as i32
+            (g.science_victory_points(pid) * 100.0 / g.science_victory_points_needed(pid))
+                .clamp(0.0, 100.0) as i32
         } else {
             0
         };
