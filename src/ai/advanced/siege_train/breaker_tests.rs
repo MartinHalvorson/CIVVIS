@@ -161,6 +161,10 @@ fn melee_do_not_hold_the_ring_of_walls_nothing_can_open() {
 
     ai.assess_siege(&g, 0, cid, &plan, &group);
     assert_eq!(ai.sieges[&cid].stage, SiegeStage::Reduce, "one short turn holds");
+    // The hold is recorded, and the healing gun is a breaker on its way.
+    assert_eq!(ai.siege_breaker_waits.get(&city.pos), Some(&(30, 30)));
+    assert!(ai.waiting_for_a_breaker(&g, 0, cid));
+    assert!(!off.waiting_for_a_breaker(&g, 0, cid), "gene off");
     g.turn = 31;
     ai.assess_siege(&g, 0, cid, &plan, &group);
     assert_eq!(ai.sieges[&cid].stage, SiegeStage::Stage);
