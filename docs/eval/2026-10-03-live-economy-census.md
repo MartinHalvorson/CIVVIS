@@ -300,3 +300,32 @@ Gold upkeep, while the Hub and Harbor cost none and earn adjacency Gold. The
 defensible narrow rule is that a recovery district which cannot finish within
 `FIRST_CAMPUS_MAX_TURNS` (15) is not recovery. It should fall through to
 `upkeep_free_recovery_item` and leave the slot for later. Not yet built.
+
+## Lead: idle trade capacity
+
+The strong game 26 (072557Z) filled every trade slot: capacity 7 at t140,
+with 6 routes running. The weak games left slots empty for long stretches:
+
+- game 30: capacity 1 and no route from t60 to t100;
+- game 34: capacity 1-2 and no Trader until t120;
+- game 31: capacity 4-5 with 1-2 routes at t120-t140.
+
+`BasicAi::should_add_trader` only needs a free slot and an open destination,
+but its step comes after the floor, the Settler, the housing reserve and the
+Builder. So this is the same ordering starvation as the Builders and
+Campuses. Not yet acted on: the `campus-before-the-army-2`,
+`builder-before-the-army-2` and `settler-before-the-navy` set goes live from
+game 37, and should be read first.
+
+## Result: version 2 of the build-order genes
+
+`campus-before-the-army` version 1 starved expansion. Game 34 (113755Z) held
+3 cities from t42 to t100 against a target of 10, and its first Settler came
+at t88. The paired probe agreed: +1.44 techs at t100, but 4.8 fewer citizens
+(z −3.19). `BasicAi::settler_gates` / `settler_due` now give every step that
+must yield to a walker the Settler step's own gates. Version 2 against
+version 1 (16 pairs): t100 population +4.06 (z +4.16), cities +0.88
+(z +2.91), civics +0.94 (z +3.76). Chained on the same seeds, version 2
+against no Campus gene comes to about +5 Science and +0.9 techs at t100, with
+population, cities, civics and culture flat. `builder-before-the-army-2`
+(drought only) against version 1: games last 8.1 turns longer (z +2.27).
