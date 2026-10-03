@@ -998,6 +998,18 @@ impl AdvancedAi {
             })
     }
 
+    /// Whether this unit is a member of an active Domination siege (see
+    /// `active_siege_member`) whose city stands without walls: its shot
+    /// is the city's health, and the battle planner leaves it to the train.
+    pub(super) fn unwalled_siege_member(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        self.active_siege_member(g, pid, uid)
+            && self.force_groups.iter().any(|group| {
+                group.units.contains(&uid)
+                    && g.city_at(group.objective)
+                        .is_some_and(|cid| g.cities[&cid].wall_hp <= 0)
+            })
+    }
+
     /// The doctrine's turn for one unit: `Some(acted)` when a siege or an
     /// anvil owns the unit's decision, `None` for the ladder. Returns before
     /// reading the board with both genes off.
@@ -1354,7 +1366,13 @@ impl AdvancedAi {
     /// Siege of Hastings sat in Invest for eighteen turns, its units 3-4 tiles
     /// out at the anchor, on a wall reading of 22/400 frozen from the last
     /// sighting (diagnosed by -c9).
-    fn siege_spotter(&self, g: &Game, pid: usize, group: &ForceGroup, city: &CityView) -> Option<u32> {
+    fn siege_spotter(
+        &self,
+        g: &Game,
+        pid: usize,
+        group: &ForceGroup,
+        city: &CityView,
+    ) -> Option<u32> {
         if g.sees(&g.player_vision_frame(pid), city.pos) {
             return None;
         }
@@ -1379,7 +1397,13 @@ impl AdvancedAi {
 
     /// Walk the spotter to the tile it can reach this turn that sees the
     /// city, where its expected reply leaves it more than half its health.
-    fn spotter_step(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> Option<bool> {
+    fn spotter_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        city: &CityView,
+    ) -> Option<bool> {
         let unit = g.units.get(&uid)?.clone();
         let sight = g.unit_sight(uid).max(1);
         let mut candidates: Vec<Pos> = g
@@ -1392,7 +1416,13 @@ impl AdvancedAi {
                     && g.line_of_sight_from(*pos, city.pos)
             })
             .collect();
-        candidates.sort_by_key(|pos| (g.wdist(unit.pos, *pos), Reverse(g.wdist(*pos, city.pos)), *pos));
+        candidates.sort_by_key(|pos| {
+            (
+                g.wdist(unit.pos, *pos),
+                Reverse(g.wdist(*pos, city.pos)),
+                *pos,
+            )
+        });
         let half = f64::from(unit.hp) * 0.5;
         let dest = candidates
             .into_iter()
@@ -1616,10 +1646,10 @@ impl AdvancedAi {
         let range = g.unit_attack_range(uid).max(1);
         let distance = g.wdist(unit.pos, city.pos);
         if distance <= range && unit.moves_left > 0.0 {
-            if let Some(acted) = self.reliever_kill_shot(g, pid, uid, city) {
-                return acted;
-            }
             if city.wall_hp > 0 {
+                if let Some(acted) = self.reliever_kill_shot(g, pid, uid, city) {
+                    return acted;
+                }
                 if let Some(acted) = self.best_unit_shot(g, pid, uid) {
                     return acted;
                 }
@@ -1627,7 +1657,16 @@ impl AdvancedAi {
                     return acted;
                 }
             } else {
+                // A city without walls is the shot: every reliever killed
+                // instead let it heal. Live King civvis-20261003T035351Z,
+                // unwalled Washington, turns 40-58 in Reduce with four to
+                // nine units near: our archers shot units about sixty times
+                // and the city five, and it stood at 200/200 until it built
+                // walls at turn 59.
                 if let Some(acted) = self.city_shot(g, pid, uid, city) {
+                    return acted;
+                }
+                if let Some(acted) = self.reliever_kill_shot(g, pid, uid, city) {
                     return acted;
                 }
                 if let Some(acted) = self.best_unit_shot(g, pid, uid) {

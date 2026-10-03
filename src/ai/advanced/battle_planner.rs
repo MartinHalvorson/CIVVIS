@@ -1558,6 +1558,13 @@ impl AdvancedAi {
                 armed.insert(uid);
                 continue;
             }
+            // So is a shooter of a siege reducing an unwalled city: its shot
+            // is the city's health, not the next reliever. See
+            // `siege_train::unwalled_siege_member`.
+            if spec.has_ranged_attack() && self.unwalled_siege_member(g, pid, uid) {
+                armed.insert(uid);
+                continue;
+            }
             let shooter_index = shooters.len();
             let value = unit_value(
                 spec.cost,
