@@ -108,7 +108,7 @@ fn anonymous_receipt_is_qualified_by_attacker_turn_and_ownership() {
     mismatches.push(changed);
     for evidence in mismatches {
         assert_eq!(
-            verdict(&order(), &[evidence.clone()]),
+            verdict(&order(), std::slice::from_ref(&evidence)),
             Verdict::Failed("target_unharmed".into()),
             "{evidence}"
         );
