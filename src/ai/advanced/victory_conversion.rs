@@ -993,6 +993,10 @@ impl AdvancedAi {
         let mut city_dps = 0.0;
         let mut endurance = 0.0_f64;
         let mut taker = false;
+        // `siege-budget-counts-what-fires`: the strongest melee blow, struck
+        // once the city is low (see `finishing_blow` below).
+        let mut finishing_blow = 0.0_f64;
+        let counts_what_fires = self.siege_budget_counts_what_fires;
         for uid in force {
             let Some(unit) = g
                 .units
@@ -1006,13 +1010,34 @@ impl AdvancedAi {
                 continue;
             }
             let ranged = spec.ranged_strength > 0.0 || spec.bombard_strength > 0.0;
-            let attack = if ranged {
+            let mut attack = if ranged {
                 g.unit_ranged_attack_strength(unit)
             } else {
                 g.unit_strength(unit, true)
             };
+            // `siege-budget-counts-what-fires`: a land ranged unit strikes a
+            // city at 17 less, as `do_ranged` resolves it (Civilization VI's
+            // ranged-against-districts penalty). Live King
+            // civvis-20261003T110427Z-cont1 (game 33): Archers at 25 against
+            // Tenochtitlan's 45 previewed 5 damage a shot, the budget read
+            // the siege ready in 2.8 turns, and the city healed back to 200
+            // every turn until it built Walls.
+            if counts_what_fires
+                && ranged
+                && spec.ranged_strength > 0.0
+                && spec.domain.as_deref() != Some("sea")
+            {
+                attack += g.promotion_effect(unit, "ranged_vs_district") - 17.0;
+            }
             let damage = expected_damage(attack, g.city_strength(cid));
-            city_dps += damage;
+            if counts_what_fires && !ranged {
+                // The train holds melee on the ring until a blow pays
+                // (`siege_blow`): against a healthy city that is the last
+                // one, not one every turn.
+                finishing_blow = finishing_blow.max(damage);
+            } else {
+                city_dps += damage;
+            }
             // A melee body the train holds at a strong wall cannot supply
             // the wall damage that would make the siege ready to invest.
             let wall_multiplier = if spec.siege {
@@ -1036,11 +1061,27 @@ impl AdvancedAi {
         } else {
             20.0
         };
-        if !taker || city_dps <= heal || (wall_hp > 0 && wall_dps <= 0.0) {
+        // `siege-budget-counts-what-fires`: the finishing blow takes the last
+        // of the city's health in one stroke; the rest must come from fire.
+        let city_left = (f64::from(city_hp.max(0)) - finishing_blow).max(0.0);
+        let fire_short = if counts_what_fires {
+            city_left > 0.0 && city_dps <= heal
+        } else {
+            city_dps <= heal
+        };
+        if !taker || fire_short || (wall_hp > 0 && wall_dps <= 0.0) {
             return Some((f64::INFINITY, endurance));
         }
-        let turns =
-            wall_hp.max(0) as f64 / wall_dps.max(1.0) + city_hp.max(0) as f64 / (city_dps - heal);
+        let city_turns = if counts_what_fires {
+            if city_left > 0.0 {
+                city_left / (city_dps - heal)
+            } else {
+                0.0
+            }
+        } else {
+            city_hp.max(0) as f64 / (city_dps - heal)
+        };
+        let turns = wall_hp.max(0) as f64 / wall_dps.max(1.0) + city_turns;
         Some((turns + 1.0, endurance))
     }
 

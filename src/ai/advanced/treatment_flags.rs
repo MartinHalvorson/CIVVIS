@@ -4863,6 +4863,17 @@ impl AdvancedAi {
         self.base.settler_before_the_navy = false;
     }
 
+    /// Opt-in gene `siege-budget-counts-what-fires`; see
+    /// [`Self::siege_budget_counts_what_fires`].
+    pub fn enable_siege_budget_counts_what_fires(&mut self) {
+        self.siege_budget_counts_what_fires = true;
+    }
+
+    /// The twin of `enable_siege_budget_counts_what_fires`.
+    pub fn disable_siege_budget_counts_what_fires(&mut self) {
+        self.siege_budget_counts_what_fires = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
