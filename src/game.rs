@@ -36310,3 +36310,6 @@ mod host_war_permission_tests;
 
 #[cfg(test)]
 mod siege_support_eligibility_tests;
+
+#[cfg(test)]
+mod air_pillage_eligibility_tests;
