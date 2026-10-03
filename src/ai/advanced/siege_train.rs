@@ -165,6 +165,16 @@ const OBJECTIVE_REACH: i32 = 8;
 pub(super) const SHOOTER_BREACH_TURNS: f64 = 6.0;
 /// `siege-needs-a-breaker`: how far a ram or tower walks to join a siege.
 const BREACH_SUPPORT_REACH: i32 = 15;
+/// `siege-needs-a-breaker`: a gun this close to a walled city, or a city of
+/// ours this close building one, is a breaker on its way. The reach
+/// `domination_siege_train_mobilizing` already reads a walled target's
+/// train by.
+const BREAKER_COMING_REACH: i32 = 24;
+/// `siege-needs-a-breaker`: standard turns a capture may wait on a breaker
+/// before the ledger's stand-down clocks run again. Live King
+/// civvis-20261003T145118Z (game 41)'s guns took about sixteen Online turns
+/// to reach a walled siege; thirty standard turns is twenty Online ones.
+pub(super) const BREAKER_WAIT_TURNS: u32 = 30;
 
 /// A ranked choice of tile: the best key seen so far, and where it was.
 type Pick<K> = Option<(K, Pos)>;
@@ -1225,6 +1235,51 @@ impl AdvancedAi {
                 && !self.battle_planner_recovering.contains(&uid))
     }
 
+    /// `siege-needs-a-breaker`: whether the capture of `cid` is waiting on a
+    /// breaker that is coming — its train held outside the city's reach for
+    /// want of one (`BreachReading`) this turn or the last, for at most
+    /// [`BREAKER_WAIT_TURNS`] standard turns, while a siege gun or a ram or
+    /// tower that opens these walls stands within [`BREAKER_COMING_REACH`],
+    /// or a city of ours that close is building a gun. The commitment ledger
+    /// does not count such a turn against the capture
+    /// (`capture-go-or-stand-down`): the train stands three to five tiles
+    /// out, so it read as "nobody went" or "not winning" and the city was
+    /// stood down while its guns were on the road.
+    pub(super) fn waiting_for_a_breaker(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        if !self.siege_needs_a_breaker {
+            return false;
+        }
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        let Some(&(since, last)) = self.siege_breaker_waits.get(&city.pos) else {
+            return false;
+        };
+        if g.turn.saturating_sub(last) > 1
+            || g.turn.saturating_sub(since) > g.standard_duration(BREAKER_WAIT_TURNS)
+        {
+            return false;
+        }
+        let gun = |kind: crate::name::Name| {
+            let spec = &g.rules.units[kind];
+            spec.class == "military"
+                && spec.siege
+                && spec.has_ranged_attack()
+                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+        };
+        g.units.values().any(|unit| {
+            unit.owner == pid
+                && g.wdist(unit.pos, city.pos) <= BREAKER_COMING_REACH
+                && (gun(unit.kind) || breach_support_works(g, unit.id, cid))
+        }) || g.cities.values().any(|own| {
+            own.owner == pid
+                && g.wdist(own.pos, city.pos) <= BREAKER_COMING_REACH
+                && own.queue.first().is_some_and(|item| {
+                    matches!(item, crate::game::Item::Unit { unit } if gun(*unit))
+                })
+        })
+    }
+
     /// `siege-needs-a-breaker`: what the train holds within the staging ring
     /// that can bring the walls down. See [`BreachReading`].
     fn breach_reading(&self, g: &Game, pid: usize, city: &CityView, force: &[u32]) -> BreachReading {
@@ -1498,6 +1553,17 @@ impl AdvancedAi {
             .siege_needs_a_breaker
             .then(|| self.breach_reading(g, pid, &city, &force));
         let no_breaker = !arena && breach.is_some_and(|reading| !reading.at_hand(&city));
+        if self.siege_needs_a_breaker {
+            if no_breaker {
+                let wait = self
+                    .siege_breaker_waits
+                    .entry(city.pos)
+                    .or_insert((turn, turn));
+                wait.1 = turn;
+            } else {
+                self.siege_breaker_waits.remove(&city.pos);
+            }
+        }
         let record = self.sieges.entry(cid).or_insert(Siege {
             stage: SiegeStage::Stage,
             taker: None,

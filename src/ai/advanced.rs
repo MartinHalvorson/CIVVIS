@@ -6847,6 +6847,11 @@ pub struct AdvancedAi {
     siege_train: bool,
     /// `siege-train`: every siege in progress, keyed by the objective city.
     sieges: BTreeMap<u32, siege_train::Siege>,
+    /// `siege-needs-a-breaker`: walled sieges held outside the city's reach
+    /// for want of a breaker, keyed by the city's position (stable through a
+    /// live rebuild's id churn): the first and the latest turn of the run.
+    /// See `AdvancedAi::waiting_for_a_breaker`.
+    siege_breaker_waits: BTreeMap<Pos, (u32, u32)>,
     /// `settler-site-gate`: a city starts a Settler only while an acceptable,
     /// unclaimed site worth founding exists for it. Opt-in gene; see
     /// `advanced/settler_site_gate.rs`.
@@ -8833,6 +8838,7 @@ impl AdvancedAi {
             safest_stand: false,
             siege_train: false,
             sieges: BTreeMap::new(),
+            siege_breaker_waits: BTreeMap::new(),
             settler_site_gate: false,
             settler_target_floor: false,
             science_expansion_phase: false,
