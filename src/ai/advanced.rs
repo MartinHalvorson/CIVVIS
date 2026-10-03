@@ -5201,6 +5201,9 @@ pub struct AdvancedAi {
     /// Monument, the Settler and the military floor. Opt-in gene
     /// `builder-before-the-army`; see `BasicAi::builder_before_the_army`.
     builder_before_the_army: bool,
+    /// `builder-before-the-army-2`: the same step, only while the empire has
+    /// no Builder standing or queued. See `BasicAi::builder_before_the_army_2`.
+    builder_before_the_army_2: bool,
     // ---- append: c-d ------------------------------------------------
     /// `denial-nearest-finish`: a Domination army also answers a culture
     /// race projected along its geometric curve to finish within
@@ -5636,6 +5639,10 @@ pub struct AdvancedAi {
     /// `advanced/chokepoints.rs`.
     chokepoint_gates: chokepoints::GatePlan,
 
+    /// A city's first Campus ahead of the military floor and the capital
+    /// Settler in the delegated city governor. Opt-in gene
+    /// `campus-before-the-army`; see `BasicAi::campus_before_the_army`.
+    campus_before_the_army: bool,
     // ---- append: e-f ------------------------------------------------
     /// A district is worth the land-grab building it will host.
     ///
@@ -8566,6 +8573,7 @@ impl AdvancedAi {
 
             air_resource_colony_target: None,
             builder_before_the_army: false,
+            builder_before_the_army_2: false,
             // ---- append: c-d ----------------------------------------
             denial_nearest_finish: false,
             campus_before_harbor: false,
@@ -8647,6 +8655,7 @@ impl AdvancedAi {
             campaign_pillage: false,
             campaign_retry_after: 0,
 
+            campus_before_the_army: false,
             // ---- append: e-f ----------------------------------------
             expansion_hall_district: false,
             early_conquest_opening: false,

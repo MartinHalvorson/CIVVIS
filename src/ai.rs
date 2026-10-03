@@ -2458,6 +2458,32 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `builder-before-the-army`.
     pub(crate) builder_before_the_army: bool,
+    /// `builder_before_the_army` with a quota of one: the step answers only
+    /// while the empire has no Builder standing or queued, the live drought,
+    /// and leaves an empire that has one to the stock order. Version 1's
+    /// quota moved Builders ahead of the Settler and the first districts in
+    /// the simulator too, where the drought does not happen: 16 domination
+    /// pairs (seeds 37150000) gave 0.62 fewer districts at t60 (z -2.82), 0.69
+    /// fewer cities (z -1.96) and 2.75 fewer citizens (z -1.79) at t100, and
+    /// games 11.6 turns shorter (z -2.13).
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `builder-before-the-army-2`.
+    pub(crate) builder_before_the_army_2: bool,
+    /// A city's first Campus, then its Library (`first_campus_item`,
+    /// `campus_library_item`: each buildable here within
+    /// `FIRST_CAMPUS_MAX_TURNS`), ahead of the Monument, the capital Settler
+    /// and the military floor, once the empire holds three cities and while
+    /// fewer than one city in two is already building either. Stock
+    /// reaches its Campus after the floor, and `campus-before-harbor` only
+    /// ahead of the Harbor: live King 2026-10-03T103619Z, with Builders
+    /// restored, still had 5 of its 6 cities without a Campus from t70 to
+    /// t120. Districts took 0% of production in t61-90 and 8% in t91-120,
+    /// against 31-35% for soldiers under a floor of 12-16, while our power
+    /// stood at 252-370 against the strongest rival's 161-182. Science at
+    /// t100 was 21.6 against the top rival's 69.7.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `campus-before-the-army`.
+    pub(crate) campus_before_the_army: bool,
     /// A standing district's first building before the city opens another
     /// district. This governor tried every district the city still lacked
     /// before any building, so a district stood without the building that
@@ -5208,6 +5234,8 @@ impl BasicAi {
             capital_campus_first: false,
             monument_first: false,
             builder_before_the_army: false,
+            builder_before_the_army_2: false,
+            campus_before_the_army: false,
             district_buildings_first: false,
             capital_library_first: false,
             culture_defense_theater: false,
@@ -5678,6 +5706,8 @@ impl BasicAi {
             capital_campus_first: false,
             monument_first: false,
             builder_before_the_army: false,
+            builder_before_the_army_2: false,
+            campus_before_the_army: false,
             district_buildings_first: false,
             capital_library_first: false,
             culture_defense_theater: false,
@@ -12149,11 +12179,20 @@ impl BasicAi {
         // military floor and the Settler step, which otherwise kept a city
         // from ever reaching it. The capital sends the land grab's first two
         // Settlers out first, and an early rush still assembles its stack.
-        if self.builder_before_the_army && !self.minor && !self.barb && !emergency_defense {
+        if (self.builder_before_the_army || self.builder_before_the_army_2)
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+        {
             if let Some(builder) =
                 self.builder_before_the_army_item(g, pid, cid, n_cities, builders)
             {
                 return Some(builder);
+            }
+        }
+        if self.campus_before_the_army && !self.minor && !self.barb && !emergency_defense {
+            if let Some(item) = Self::campus_before_the_army_item(g, pid, cid, n_cities) {
+                return Some(item);
             }
         }
         if self.monument_first
@@ -14372,6 +14411,39 @@ impl BasicAi {
         (turns <= Self::FIRST_CAMPUS_MAX_TURNS).then_some(item)
     }
 
+    /// See `campus_before_the_army`: this city's first Campus, else the
+    /// Library of the Campus it holds, from three cities on and while fewer
+    /// than one city in two has a Campus or a Library first in its queue, so
+    /// the floor keeps the other half.
+    pub(crate) fn campus_before_the_army_item(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+    ) -> Option<Item> {
+        if n_cities < Self::CAPITAL_CAMPUS_MIN_CITIES {
+            return None;
+        }
+        let in_flight = g
+            .player_city_ids(pid)
+            .iter()
+            .filter(|city| match g.cities[city].queue.first() {
+                Some(Item::District { district, .. }) => g.district_family(*district) == "campus",
+                Some(Item::Building { building }) => g.rules.buildings.get(building).is_some_and(|spec| {
+                    spec.requires.is_empty()
+                        && spec
+                            .district
+                            .is_some_and(|district| g.district_family(district) == "campus")
+                }),
+                _ => false,
+            })
+            .count();
+        if in_flight >= n_cities.div_ceil(2) {
+            return None;
+        }
+        Self::first_campus_item(g, pid, cid).or_else(|| Self::campus_library_item(g, pid, cid))
+    }
+
     /// See `capital_library_first`: the Library of a Campus this city holds,
     /// when the city would finish it within `FIRST_CAMPUS_MAX_TURNS`.
     pub(crate) fn campus_library_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
@@ -14447,9 +14519,13 @@ impl BasicAi {
         if n_cities < 2 {
             return None;
         }
-        let quota = ((self.w.builder_per_city * n_cities as f64).ceil() as usize)
-            .min(n_cities.div_ceil(2))
-            .max(1);
+        let quota = if self.builder_before_the_army_2 {
+            1
+        } else {
+            ((self.w.builder_per_city * n_cities as f64).ceil() as usize)
+                .min(n_cities.div_ceil(2))
+                .max(1)
+        };
         if builders >= quota || !Self::has_builder_work(g, pid) {
             return None;
         }
@@ -22380,6 +22456,47 @@ mod tests {
         (game, cid)
     }
 
+    /// See `campus_before_the_army`: a city without a Campus opens one where
+    /// the stock governor fills the military floor, from three cities on.
+    #[test]
+    fn a_campus_comes_before_the_army() {
+        let (mut game, cid) = founded_capital_fixture("CAMPUSFIRST", 91_841);
+        game.cities.get_mut(&cid).unwrap().pop = 4;
+        for position in game.nbrs(game.cities[&cid].pos) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+        }
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("writing"));
+        assert!(BasicAi::first_campus_item(&game, 0, cid).is_some(), "the fixture can open a Campus");
+        let pick = |game: &Game, on: bool, n_cities: usize| {
+            let mut ai = BasicAi::new();
+            ai.campus_before_the_army = on;
+            ai.pick_item(game, 0, cid, n_cities, 0, 3, 1, 0, 0, 0, 0)
+        };
+        let is_campus = |item: &Option<Item>| {
+            matches!(item, Some(Item::District { district, .. }) if *district == "campus")
+        };
+        let stock = pick(&game, false, 3);
+        assert!(!is_campus(&stock), "the fixture's stock pick is not the Campus: {stock:?}");
+        assert!(is_campus(&pick(&game, true, 3)), "{:?}", pick(&game, true, 3));
+        assert_eq!(pick(&game, true, 2), pick(&game, false, 2), "two cities keep the stock choice");
+        // With the Campus standing, the Library comes next.
+        let site = match BasicAi::first_campus_item(&game, 0, cid) {
+            Some(Item::District { pos, .. }) => pos,
+            other => panic!("{other:?}"),
+        };
+        game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
+        game.cities.get_mut(&cid).unwrap().districts.insert(crate::name!("campus"), site);
+        let library = pick(&game, true, 3);
+        assert!(
+            matches!(&library, Some(Item::Building { building }) if *building == "library"),
+            "{library:?}"
+        );
+    }
+
     /// See `builder_before_the_army`: an empire with no Builder trains one
     /// where the stock governor fills the military floor, and keeps the
     /// stock choice once its quota is met or while it holds one city.
@@ -22405,6 +22522,13 @@ mod tests {
         assert!(is_builder(&pick(true, 3, 0)), "{:?}", pick(true, 3, 0));
         assert_eq!(pick(true, 3, 2), pick(false, 3, 2), "the quota of two is met");
         assert_eq!(pick(true, 1, 0), pick(false, 1, 0), "one city keeps the stock choice");
+        let second = |builders: usize| {
+            let mut ai = BasicAi::new();
+            ai.builder_before_the_army_2 = true;
+            ai.pick_item(&game, 0, cid, 3, 0, builders, 1, 0, 0, 0, 0)
+        };
+        assert!(is_builder(&second(0)), "version 2 answers the drought");
+        assert_eq!(second(1), pick(false, 3, 1), "version 2 leaves one Builder to stock");
     }
 
     /// See `monument_first`: a city without a Monument builds it where the
