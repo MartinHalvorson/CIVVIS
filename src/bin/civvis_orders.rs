@@ -1576,12 +1576,60 @@ fn coalesce_unit_paths(orders: Vec<Order>, sequenced: bool) -> (Vec<Order>, usiz
     coalesce_unit_paths_except(orders, sequenced, &Default::default())
 }
 
-/// A wounded military unit near an enemy must follow the planner's safe
+/// A wounded military unit near a known enemy must follow the planner's safe
 /// steps. Sending only the destination lets Firaxis choose a different path,
 /// including a shorter route through the threat the planner walked around.
 /// The host queue executes each step after the preceding move arrives; older
 /// hosts get only the first step and replan from the next observed position.
+/// Known hostile cities and intact Encampments matter even when no enemy army
+/// is in sight. Their positions already belong to the observed board; preserving
+/// a route around them requires no inference about a fogged city's strength.
 fn wounded_local_routes(state: &civvis::mirror::StateSnapshot) -> std::collections::BTreeSet<i64> {
+    let military = state
+        .hostiles
+        .iter()
+        .chain(
+            state
+                .rivals
+                .iter()
+                .filter(|rival| rival.at_war)
+                .flat_map(|rival| rival.units.iter()),
+        )
+        .chain(
+            state
+                .minors
+                .iter()
+                .filter(|minor| minor.at_war)
+                .flat_map(|minor| minor.units.iter()),
+        )
+        .filter(|enemy| enemy.combat > 0.0 || enemy.ranged > 0.0)
+        .map(|enemy| (enemy.x, enemy.y));
+    let cities = state
+        .rivals
+        .iter()
+        .filter(|rival| rival.at_war)
+        .flat_map(|rival| rival.cities.iter())
+        .chain(
+            state
+                .minors
+                .iter()
+                .filter(|minor| minor.at_war)
+                .flat_map(|minor| minor.cities.iter()),
+        );
+    let threats: Vec<_> = military
+        .chain(cities.flat_map(|city| {
+            std::iter::once((city.x, city.y)).chain(
+                city.districts
+                    .iter()
+                    .filter(|district| {
+                        district.kind == "DISTRICT_ENCAMPMENT"
+                            && district.complete
+                            && !district.pillaged
+                    })
+                    .map(|district| (district.x, district.y)),
+            )
+        }))
+        .collect();
     state
         .units
         .iter()
@@ -1589,24 +1637,17 @@ fn wounded_local_routes(state: &civvis::mirror::StateSnapshot) -> std::collectio
             unit.hp > 0.0
                 && unit.hp < 100.0
                 && (unit.combat > 0.0 || unit.ranged > 0.0)
-                && state
-                    .hostiles
+                && threats
                     .iter()
-                    .chain(
-                        state
-                            .rivals
-                            .iter()
-                            .filter(|rival| rival.at_war)
-                            .flat_map(|rival| rival.units.iter()),
-                    )
-                    .any(|enemy| {
-                        (enemy.combat > 0.0 || enemy.ranged > 0.0)
-                            && offset_distance((unit.x, unit.y), (enemy.x, enemy.y)) <= 3
-                    })
+                    .any(|&pos| offset_distance((unit.x, unit.y), pos) <= 3)
         })
         .map(|unit| unit.id)
         .collect()
 }
+
+#[cfg(test)]
+#[path = "civvis_orders/city_route_tests.rs"]
+mod city_route_tests;
 
 fn coalesce_unit_paths_except(
     orders: Vec<Order>,
