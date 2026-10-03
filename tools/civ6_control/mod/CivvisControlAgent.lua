@@ -12285,6 +12285,36 @@ local function applyOrder(player, pid, row, turn)
 			});
 			return false, "cannot_declare";
 		end
+		-- ⚠ ONE DIPLOMACY SESSION PER RIVAL. A MAKE_DEAL session this lane
+		-- opened in an earlier frame (`CivvisTrade.ask` with `DealSessions` on),
+		-- or the rival's own, still holds the pair; the engine answers a second
+		-- request with "Requested Session but already had one open" while the
+		-- call below returns cleanly, so the war was marked declared and never
+		-- asked again that turn (live 2026-10-03 game 24, t112: a sale and a
+		-- declaration to Phoenicia). The shipped screens look the session up
+		-- first (Civ6Common.lua:695 `DiplomacyManager.FindOpenSessionID`) and
+		-- close their own (DiplomacyDealView.lua:680-682
+		-- `DiplomacyManager.CloseSession`). Close ours, leave a rival's to the
+		-- closers, and defer unmarked so the next frame asks again.
+		if major then
+			local openSession = try(function()
+				return DiplomacyManager.FindOpenSessionID(pid, subject);
+			end, nil);
+			if openSession ~= nil then
+				local ours = CivvisTrade.sessions[subject] ~= nil;
+				if ours then
+					CivvisTrade.close(pid, subject, "yield_to_war");
+					if try(function()
+						return DiplomacyManager.FindOpenSessionID(pid, subject);
+					end, nil) ~= nil then
+						pcall(function() DiplomacyManager.CloseSession(openSession); end);
+					end
+				end
+				emit("war_deferred", { turn = turn, target = subject, ours = ours,
+					statement = statement });
+				return false, "session_open";
+			end
+		end
 		local params = {};
 		params[PlayerOperations.PARAM_PLAYER_ONE] = pid;
 		params[PlayerOperations.PARAM_PLAYER_TWO] = subject;

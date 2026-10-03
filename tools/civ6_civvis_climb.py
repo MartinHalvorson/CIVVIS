@@ -2198,6 +2198,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
         + (["--restart-below-leader-ratio", str(args.restart_below_leader_ratio)]
            if getattr(args, "restart_below_leader_ratio", None) is not None else [])
         + (["--no-peace-deterrence"] if args.no_peace_deterrence else [])
+        + DEAL_SESSION_FLAGS.get(getattr(args, "deal_sessions", None) or "off", [])
         + (["--no-counter-resolutions"] if args.no_counter_resolutions else [])
         + [flag for treatment in args.with_
            for flag in ("--civvis-with", treatment)]
@@ -2433,6 +2434,57 @@ VICTORY_LANE_FILE = Path(
     os.environ.get("CIVVIS_VICTORY_LANE_FILE", "")
     or Path.home() / ".civvis-victory-lane"
 )
+
+
+#: The host policy file the verified-head launcher reads. The climb reads one
+#: key from it itself, `CIVVIS_DEAL_SESSIONS`, because the live supervisor
+#: that builds this command line runs from a tree the per-game refresh does
+#: not update, while this file is re-read at every game.
+VERIFICATION_POLICY_FILE = Path(
+    os.environ.get("CIVVIS_VERIFICATION_POLICY", "")
+    or Path.home() / ".civvis-verification-policy"
+)
+
+#: `civ6_play.py`'s deal-session flags by mode. `off` forwards nothing, so
+#: the default command line is unchanged.
+DEAL_SESSION_FLAGS = {"all": ["--deal-sessions"], "peace": ["--peace-deal-sessions"], "off": []}
+
+
+def deal_sessions_mode(requested: str | None, environ=None, path: Path | None = None,
+                       warn=None) -> str:
+    """How a game sends its deals: `all`, `peace` or `off`.
+
+    An explicit `--deal-sessions` / `--peace-deal-sessions` /
+    `--no-deal-sessions` wins; then `CIVVIS_DEAL_SESSIONS` in the environment;
+    then the same key in the verification policy file; else `off`. Direct
+    `SendWorkingDeal` offers are never evaluated by the rival (78 of 78 offers
+    in live King games 2026-10-03 failed `no_deal_response`), and only an
+    interactive `MAKE_DEAL` session gets an answer (`CivvisTrade.ask`). The
+    session mode is opt-in because an unanswered session can stall the game
+    until the bounded close ladder clears it.
+    """
+    if requested is not None:
+        return requested
+    environ = os.environ if environ is None else environ
+    path = VERIFICATION_POLICY_FILE if path is None else path
+    warn = warn or (lambda message: print(message, file=sys.stderr))
+    value = (environ.get("CIVVIS_DEAL_SESSIONS") or "").strip()
+    if not value:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        for line in text.splitlines():
+            line = line.split("#", 1)[0].strip()
+            if line.startswith("CIVVIS_DEAL_SESSIONS="):
+                value = line.split("=", 1)[1].strip().strip("\"'")
+    if not value:
+        return "off"
+    if value not in DEAL_SESSION_FLAGS:
+        warn(f"CIVVIS_DEAL_SESSIONS={value!r} is not one of "
+             f"{'|'.join(DEAL_SESSION_FLAGS)}; sending deals directly")
+        return "off"
+    return value
 
 
 def operator_victory_lane(requested: str, path: Path | None = None,
@@ -2793,6 +2845,14 @@ def main() -> int:
                     help="REFUSED for live games; see the guard in civ6_play.main. "
                          "Kept so a batch that asks for it fails instead of quietly "
                          "measuring something else")
+    ap.add_argument("--deal-sessions", dest="deal_sessions", action="store_const",
+                    const="all", default=None,
+                    help="forwarded to civ6_play.py: send every deal inside a "
+                         "MAKE_DEAL session (default: CIVVIS_DEAL_SESSIONS, else off)")
+    ap.add_argument("--peace-deal-sessions", dest="deal_sessions", action="store_const",
+                    const="peace", help="forwarded to civ6_play.py: sessions for peace only")
+    ap.add_argument("--no-deal-sessions", dest="deal_sessions", action="store_const",
+                    const="off", help="send every deal directly, whatever the policy says")
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
     ap.add_argument("--combat-frames", type=int, default=0,
@@ -2827,6 +2887,8 @@ def main() -> int:
     # Re-read per game, so the lane can be changed without restarting a
     # supervisor that has held its environment for days. See VICTORY_LANE_FILE.
     args.victory = operator_victory_lane(args.victory)
+    # Re-read per game as well: the deal channel is a policy-file key.
+    args.deal_sessions = deal_sessions_mode(args.deal_sessions)
     # The same per-batch policy seam controls the actual game score clock. A
     # long Science/Domination game must not be cut off at the normal 250-turn
     # comparison horizon because its Terminal-owned supervisor predates the

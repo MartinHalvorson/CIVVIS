@@ -2558,6 +2558,37 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         values.update(changes)
         return SimpleNamespace(**values)
 
+    def test_deal_sessions_reach_the_play_command_only_when_asked(self):
+        """`off` keeps today's command line; `all` and `peace` forward the
+        matching civ6_play flag."""
+        def cmd(mode):
+            return climb.play_command(self._play_args(deal_sessions=mode), "t",
+                                      Path("orders.sqlite"), Path("civvis_orders"))
+        base = climb.play_command(self._play_args(), "t",
+                                  Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertEqual(cmd("off"), base)
+        self.assertEqual(cmd(None), base)
+        self.assertIn("--deal-sessions", cmd("all"))
+        self.assertIn("--peace-deal-sessions", cmd("peace"))
+        self.assertNotIn("--deal-sessions", base)
+
+    def test_deal_sessions_mode_reads_flag_then_env_then_policy_file(self):
+        import tempfile
+        warnings = []
+        with tempfile.TemporaryDirectory() as tmp:
+            policy = Path(tmp) / "policy"
+            missing = Path(tmp) / "absent"
+            self.assertEqual(climb.deal_sessions_mode(None, {}, missing), "off")
+            policy.write_text("# comment\nCIVVIS_DEAL_SESSIONS=peace  # trial\n")
+            self.assertEqual(climb.deal_sessions_mode(None, {}, policy), "peace")
+            self.assertEqual(
+                climb.deal_sessions_mode(None, {"CIVVIS_DEAL_SESSIONS": "all"}, policy), "all")
+            self.assertEqual(climb.deal_sessions_mode("off", {"CIVVIS_DEAL_SESSIONS": "all"},
+                                                      policy), "off")
+            policy.write_text("CIVVIS_DEAL_SESSIONS=sometimes\n")
+            self.assertEqual(climb.deal_sessions_mode(None, {}, policy, warnings.append), "off")
+        self.assertEqual(len(warnings), 1)
+
     def test_the_leader_score_line_reaches_the_play_command_only_when_set(self):
         """Legacy launchers retain their argv shape; live play ignores it and
         defaults to the full-game policy when the option is absent."""
