@@ -45,6 +45,14 @@ fn two_fronts() -> (Game, AdvancedAi) {
     (g, ai)
 }
 
+/// Give the front an army near ours in strength, so it is not capital prey
+/// (`domination_capital_prey`) and the VictoryThreat peace still applies.
+fn arm_the_front(g: &mut Game) {
+    for y in [20, 21, 22] {
+        g.spawn_test_unit("modern_armor", 1, (16, y));
+    }
+}
+
 fn convert(g: &mut Game, owners: &[usize]) {
     g.players[2].religion = Some("islam".to_string());
     for city in g.cities.values_mut() {
@@ -207,6 +215,7 @@ fn domination_founders_redirect_the_army_against_a_religious_match_point() {
 fn domination_seeks_peace_to_free_the_army_but_keeps_the_front_until_acceptance() {
     for culture in [false, true] {
         let (mut g, mut ai) = two_fronts();
+        arm_the_front(&mut g);
         if culture {
             let stats = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats);
             for pid in 0..4 {
@@ -257,6 +266,7 @@ fn domination_counter_peace_respects_explicit_targets_and_other_victory_lanes() 
 #[test]
 fn domination_finishes_a_breached_city_before_peace_for_another_rival() {
     let (mut g, ai) = two_fronts();
+    arm_the_front(&mut g);
     convert(&mut g, &[0, 1, 2]);
     g.at_war.remove(&(0, 2));
     let city = g.player_city_ids(1)[0];
@@ -332,10 +342,14 @@ fn domination_keeps_a_crushed_front_until_the_counter_is_urgent() {
         None,
         "a beaten front is not traded away for a slow clock"
     );
-    // The same clock at match point frees the army.
+    // The same clock at match point is answered beside the crushed front,
+    // which holds its capital at our mercy: it is kept, not traded
+    // (`domination_capital_prey`), and the urgent rival opens a second front.
     culture(&mut g, 90);
     assert!(ai.urgent_victory_threat(&g, 2));
-    assert_eq!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
+    assert!(ai.domination_capital_prey(&g, 0, 1));
+    assert_eq!(ai.one_war_peace(&g, 0, 1), None);
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2));
     // A front that can still fight back is traded as before.
     culture(&mut g, 60);
     for _ in 0..4 {
@@ -350,7 +364,18 @@ fn domination_keeps_a_crushed_front_until_the_counter_is_urgent() {
 /// stays held by the one-war gate.
 #[test]
 fn an_urgent_rival_at_peace_opens_a_second_front() {
+    // A capital-prey front is kept, so the urgent rival opens beside it at
+    // once and the front is never offered the peace.
     let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 1, 2]);
+    ai.one_war_observe(&g, 0);
+    assert!(ai.domination_capital_prey(&g, 0, 1));
+    assert_eq!(ai.one_war_peace(&g, 0, 1), None);
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2));
+
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
     g.at_war.remove(&(0, 2));
     convert(&mut g, &[0, 1, 2]);
     ai.one_war_observe(&g, 0);

@@ -694,12 +694,22 @@ impl AdvancedAi {
     /// the same turn. Kongo held Kabasa, the last original capital the seat
     /// would need, and won on Science at turn 216 while the army finished
     /// Rome's towns.
+    ///
+    /// A living rival whose original capital we have not seen still holds
+    /// it unless a known city says otherwise: game 29 (civvis-20261003T090618Z)
+    /// proposed Canada a Research Alliance at turn 157 at 1,130 power against
+    /// 431, with Ottawa in the fog, and lost to Canada's Culture at 169.
     pub(crate) fn domination_capital_prey(&self, g: &Game, pid: usize, other: usize) -> bool {
         self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.players
+                .get(other)
+                .is_some_and(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            && !g.player_city_ids(other).is_empty()
             && g.military_power(pid) >= ONE_WAR_WINNING_RATIO * g.military_power(other).max(1.0)
-            && g.cities
+            && !g
+                .cities
                 .values()
-                .any(|city| city.is_capital && city.original_owner == other && city.owner == other)
+                .any(|city| city.is_capital && city.original_owner == other && city.owner != other)
     }
 
     /// Whether the gene wants peace with `other` this turn, and why.
@@ -725,10 +735,19 @@ impl AdvancedAi {
         // Keep the current front until peace is actually accepted. A public
         // victory clock is a reason to offer peace, never proof that the old
         // enemy has stopped attacking or permission to erase its threat field.
+        // A front that is itself a threat, or a capital Domination needs at
+        // our mercy, is not traded for another rival's clock: game 29 offered
+        // Canada this peace every turn from 146 at 866-1,125 power against
+        // 218-362, to answer Georgia's faith; Canada accepted at 157 and won
+        // on Culture at 169. An urgent rival opens the second front beside
+        // it instead (`one_war_second_front`).
         if self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && self.forced_target_player.is_none()
             && !g.emergency_war_pair(pid, other)
             && !self.urgent_victory_threat(g, other)
+            && !self.domination_capital_prey(g, pid, other)
+            && !self.domination_counter_target(g, pid, other)
+            && self.nearest_finish_culture_clock(g, other).is_none()
             && self
                 .actionable_victory_denial(g, pid)
                 .is_some_and(|(rival, counter)| {
@@ -800,7 +819,11 @@ impl AdvancedAi {
             g.turn.saturating_sub(since)
                 >= g.standard_duration(ONE_WAR_SECOND_FRONT_PATIENCE).max(1)
         });
-        if !refused {
+        // A capital-prey front is never offered the peace that would free
+        // the army (`one_war_peace`), so there is no refusal to wait for: an
+        // urgent rival opens beside it at once.
+        let prey_front = self.domination_capital_prey(g, pid, front);
+        if !refused && !prey_front {
             return None;
         }
         let outguns = |rival: usize| {
@@ -820,7 +843,7 @@ impl AdvancedAi {
             .filter(|rival| usable(*rival))
             .or_else(|| {
                 self.domination_followup_target(g, pid, Some(front))
-                    .filter(|rival| usable(*rival))
+                    .filter(|rival| refused && usable(*rival))
             })
     }
 

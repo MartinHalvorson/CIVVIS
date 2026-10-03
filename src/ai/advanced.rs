@@ -18518,6 +18518,9 @@ impl AdvancedAi {
                     // we outgun twice over (`domination_capital_prey`).
                     && !self.domination_counter_target(g, pid, other.id)
                     && !self.domination_capital_prey(g, pid, other.id)
+                    // `denial-nearest-finish`: nor a rival whose culture race
+                    // is projected to finish within the horizon.
+                    && self.nearest_finish_culture_clock(g, other.id).is_none()
                     // `science-threat-denial`: a research agreement hands a
                     // science threat the yield it is winning with, and any
                     // alliance makes the denial war illegal for its whole
