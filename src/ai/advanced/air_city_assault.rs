@@ -20,6 +20,12 @@ const AIR_ASSAULT_BREACH_HP: i32 = 1;
 const AIR_ASSAULT_BREACH_TAKER_HP: i32 = 30;
 /// How far a capture body will look for a breach it can finish this turn.
 const AIR_ASSAULT_TAKER_REACH: i32 = 6;
+/// How near a healthy land melee body must stand for a volley with no
+/// cavalry to be worth flying: about two turns' march. Live King
+/// 2026-10-03T131343Z bombed Sheffield to one health at turn 179 ("1
+/// sorties with no cavalry in reach; walls 0, city 1; captured false")
+/// with nobody coming, and the city healed; Coba took the same at turn 193.
+const AIR_ASSAULT_FOLLOWUP_REACH: i32 = 8;
 /// How many takers, strongest first, the capture search simulates.
 const AIR_ASSAULT_CAPTURE_TRIES: usize = 6;
 /// Aircraft one volley may commit to the city.
@@ -245,7 +251,8 @@ impl AdvancedAi {
             // volley was then refused by the host as second strikes. Cavalry
             // is needed to see a hidden city and to take a breached one; the
             // walls of a city the empire can see fall to the wing alone.
-            if ready && visible && self.air_surge_2 {
+            if ready && visible && self.air_surge_2 && Self::air_assault_followup_near(g, pid, target)
+            {
                 return self.air_assault_volley(g, pid, plan, cid, target, &aircraft, reserved);
             }
             return reserved;
@@ -684,6 +691,20 @@ impl AdvancedAi {
     /// Every land melee body that could finish a breach at `target` this
     /// turn, strongest first: a city's melee defence follows its owner's best
     /// unit, so the blow that survives it is the strongest one.
+    /// A healthy land melee body within [`AIR_ASSAULT_FOLLOWUP_REACH`] of the
+    /// city: someone can walk in on the breach before it heals.
+    fn air_assault_followup_near(g: &Game, pid: usize, target: Pos) -> bool {
+        g.player_unit_ids(pid).into_iter().any(|uid| {
+            let unit = &g.units[&uid];
+            let spec = &g.rules.units[unit.kind];
+            spec.class == "military"
+                && spec.is_melee_capable()
+                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                && unit.hp >= AIR_ASSAULT_BREACH_TAKER_HP
+                && g.wdist(unit.pos, target) <= AIR_ASSAULT_FOLLOWUP_REACH
+        })
+    }
+
     fn air_assault_takers(&self, g: &Game, pid: usize, target: Pos) -> Vec<u32> {
         let mut takers: Vec<u32> = g
             .player_unit_ids(pid)

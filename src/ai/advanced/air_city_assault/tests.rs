@@ -360,6 +360,29 @@ fn the_wing_bombs_a_visible_city_with_no_cavalry_in_reach() {
     assert!(ai.plan_air_city_assault(&mut g, 0, &plan).is_empty());
 }
 
+/// Live King 2026-10-03T131343Z bombed Sheffield to one health with no taker
+/// within a march, and it healed. With no land melee body within two turns
+/// of the city, the cavalry-free volley is not flown.
+#[test]
+fn the_wing_holds_its_volley_when_nobody_can_walk_in() {
+    let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+    g.remove_unit(cavalry);
+    ai.air_surge = false;
+    ai.enable_air_surge_2();
+    let cid = plan.target_city.unwrap();
+    g.cities.get_mut(&cid).unwrap().wall_hp = 400;
+    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, 400);
+    // A melee body far from the city: it cannot follow the breach in.
+    let far = g.spawn_test_unit("infantry", 0, (6, 10));
+    assert!(g.wdist(g.units[&far].pos, (20, 10)) > AIR_ASSAULT_FOLLOWUP_REACH);
+    ai.observe_air_assault_frame(BTreeSet::from([(20, 10)]), 2);
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+    for uid in &bombers {
+        assert!(!reserved.contains(uid), "the wing stays free for other work");
+    }
+    assert_eq!(g.cities[&cid].wall_hp, 400, "no sortie on the city");
+}
+
 /// Live King 20260930T211803Z, Edirne at one health turns 188-191: the
 /// approach was held by the Ottoman army, not merely far. The wing strikes
 /// the defenders on the ring before the capture is tried again.
