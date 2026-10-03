@@ -6667,6 +6667,11 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `strategic-deposit-prey`: a Domination conquest values a rival city
+    /// whose own tiles hold a revealed strategic deposit that a unit we have
+    /// the tech for requires and that the empire draws no income of. See
+    /// `AdvancedAi::strategic_deposit_prey_value`. Off by default.
+    strategic_deposit_prey: bool,
     /// `shared-danger`: the battle planner's rotation and doomed-blow checks
     /// read each hostile's blow shared among our units inside its reach (never
     /// under the strongest single blow), not every blow on every unit at once.
@@ -7419,6 +7424,7 @@ mod air_resource_settlement;
 mod air_surge;
 pub use air_city_assault::AirCityAssault;
 mod siege_resource_purchase;
+mod strategic_deposit_prey;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
 mod civilian_coordination;
@@ -8693,6 +8699,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            strategic_deposit_prey: false,
             shared_danger: false,
             settler_detour_stays_near: false,
             siege_positive_damage_budget: false,
@@ -12977,8 +12984,17 @@ impl AdvancedAi {
                                 Self::city_within_declaration_range(g, pid, g.cities[city].pos)
                             })
                             .map(|(_, city)| city);
+                        // `strategic-deposit-prey`: a city holding the strategic
+                        // deposit the army lacks is worth the longer march; the
+                        // campaign value still prices its distance.
                         let short_march = |city: &crate::game::City| {
                             Self::city_within_first_capture_march(g, pid, city.pos)
+                                || self.strategic_deposit_prey_value(
+                                    g,
+                                    pid,
+                                    city,
+                                    GrandStrategy::Conquest,
+                                ) > 0.0
                         };
                         let best = |nearby_only: bool| {
                             g.cities
@@ -32704,6 +32720,7 @@ impl AdvancedAi {
             - recapture_value
             - liberation_value
             - siege_commitment
+            - self.strategic_deposit_prey_value(g, pid, city, strategy)
     }
 
     /// Rank settleable ground the way this agent would, for a caller outside the

@@ -4686,6 +4686,16 @@ impl AdvancedAi {
         self.policy_deck_hysteresis = false;
     }
 
+    /// Opt-in gene `strategic-deposit-prey`; see [`Self::strategic_deposit_prey`].
+    pub fn enable_strategic_deposit_prey(&mut self) {
+        self.strategic_deposit_prey = true;
+    }
+
+    /// The twin of `enable_strategic_deposit_prey`.
+    pub fn disable_strategic_deposit_prey(&mut self) {
+        self.strategic_deposit_prey = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

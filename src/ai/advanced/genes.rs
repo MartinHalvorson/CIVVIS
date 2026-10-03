@@ -2429,6 +2429,10 @@ pub const GENES: &[Gene] = &[
     // bill bankrupted the empire; Liberalism and Aesthetics alternated every
     // turn. See `AdvancedAi::maintenance_relief_held`.
     Gene { tag: "policy-deck-hysteresis", field: "policy_deck_hysteresis", kind: Kind::OptIn, enable: AdvancedAi::enable_policy_deck_hysteresis, disable: AdvancedAi::disable_policy_deck_hysteresis },
+    // Live King 052455Z drew no Oil or Aluminum at turn 182 while Spain, the
+    // rival at war, held both; every modern upgrade and the bomber wing
+    // waited on them. See `strategic_deposit_prey::STRATEGIC_DEPOSIT_PREY_VALUE`.
+    Gene { tag: "strategic-deposit-prey", field: "strategic_deposit_prey", kind: Kind::OptIn, enable: AdvancedAi::enable_strategic_deposit_prey, disable: AdvancedAi::disable_strategic_deposit_prey },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
