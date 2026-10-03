@@ -371,6 +371,13 @@ impl AdvancedAi {
             .values()
             .filter(|city| city.owner == rival)
             .filter(|city| city.districts.contains_key(district))
+            // The first objective must pass the declaration's own range
+            // gate. A distant victory district otherwise shadows a usable
+            // frontier and sends the army toward a war it cannot open.
+            // Once at war, retain distant infrastructure as a valid target.
+            .filter(|city| {
+                g.is_at_war(pid, rival) || Self::city_within_declaration_range(g, pid, city.pos)
+            })
             .filter(|city| !Self::should_defer_city_capture(g, pid, city.id))
             .min_by(|left, right| {
                 self.campaign_city_value(g, pid, left, GrandStrategy::Conquest)
@@ -392,6 +399,10 @@ mod domination_counter_tests;
 #[cfg(test)]
 #[path = "native_science_clock_tests.rs"]
 mod native_science_clock_tests;
+
+#[cfg(test)]
+#[path = "denial_frontier_tests.rs"]
+mod denial_frontier_tests;
 
 #[cfg(test)]
 mod tests {
@@ -729,12 +740,16 @@ mod tests {
         found_capitals(&mut game);
         game.turn = 190;
         game.record_contact(0, 1);
-        let rival_capital = game.player_city_ids(1)[0];
         let spaceport_city = game.found_city_for(
             1,
-            open_land_near(&game, game.cities[&rival_capital].pos, 4),
+            open_land_near(&game, game.cities[&game.player_city_ids(0)[0]].pos, 10),
             Some("Launch Complex".to_string()),
         );
+        assert!(AdvancedAi::city_within_declaration_range(
+            &game,
+            0,
+            game.cities[&spaceport_city].pos
+        ));
         let district = game.cities[&spaceport_city]
             .owned_tiles
             .iter()
