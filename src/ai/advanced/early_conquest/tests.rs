@@ -1839,3 +1839,30 @@ fn a_resumed_controller_names_the_opening_just_past_the_deadline() {
     stale.maintain_conquest_opening(&mut game, 0);
     assert!(stale.conquest_opening.is_none(), "a resume long past the window names nothing");
 }
+
+/// A live mirror's kills come from confirmed host deaths, not the engine's
+/// counter, which never sees a host combat.
+#[test]
+fn a_live_openings_kill_rate_reads_the_host_deaths() {
+    let game = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = armed();
+    let opening = ConquestOpening {
+        target: 1,
+        city: game.player_city_ids(1)[0],
+        opened: 20,
+        preparing_since: None,
+        grace_until: None,
+        rally: at(10, 12),
+        force: Default::default(),
+        assembled: Some(30),
+        declared: Some(35),
+        kills_at_war: 0,
+        losses: 2,
+        taken: 1,
+    };
+    assert_eq!(game.players[0].counters.get("kills").copied().unwrap_or(0), 0);
+    assert_eq!(ai.conquest_kills_per_loss(&game, 0, &opening), 0.0, "native: the counter");
+    ai.host_war_unit_losses = Some(std::collections::BTreeMap::from([((1, 0), 3), ((0, 1), 2)]));
+    assert_eq!(ai.conquest_kills(&game, 0, 1), 3, "their losses to us");
+    assert!((ai.conquest_kills_per_loss(&game, 0, &opening) - 1.5).abs() < 1e-9);
+}

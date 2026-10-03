@@ -323,13 +323,13 @@ impl ConquestOpening {
     /// at its kill count, and a war with neither is at the floor: an opening
     /// that has not yet paid anything is not evidence against itself.
     pub(crate) fn kills_per_loss(&self, g: &Game, pid: usize) -> f64 {
-        let kills = g.players[pid]
-            .counters
-            .get("kills")
-            .copied()
-            .unwrap_or(0)
-            .saturating_sub(self.kills_at_war)
-            .max(0) as f64;
+        self.kills_per_loss_at(g.players[pid].counters.get("kills").copied().unwrap_or(0))
+    }
+
+    /// The same rate against a kill total read elsewhere (see
+    /// `AdvancedAi::conquest_kills`).
+    pub(crate) fn kills_per_loss_at(&self, kills_now: i64) -> f64 {
+        let kills = kills_now.saturating_sub(self.kills_at_war).max(0) as f64;
         if self.losses == 0 {
             return kills.max(CONQUEST_KILLS_PER_LOSS_FLOOR);
         }
@@ -1221,6 +1221,24 @@ impl AdvancedAi {
                 .is_some_and(|opening| opening.declared.is_some())
     }
 
+    /// Our kills against `target` so far. A live mirror never replays combat
+    /// into the engine's `kills` counter, so it reads the confirmed host
+    /// deaths (`observe_host_war_losses`); a native game keeps the counter.
+    /// Live King 2026-10-03T135713Z took Ondini at turn 57 and closed the
+    /// opening at once, "trading at 0.00 kills per loss", against a Zulu
+    /// army of 35.
+    pub(crate) fn conquest_kills(&self, g: &Game, pid: usize, target: usize) -> i64 {
+        match &self.host_war_unit_losses {
+            Some(losses) => i64::from(losses.get(&(target, pid)).copied().unwrap_or(0)),
+            None => g.players[pid].counters.get("kills").copied().unwrap_or(0),
+        }
+    }
+
+    /// The opening's kills per loss on [`Self::conquest_kills`].
+    fn conquest_kills_per_loss(&self, g: &Game, pid: usize, opening: &ConquestOpening) -> f64 {
+        opening.kills_per_loss_at(self.conquest_kills(g, pid, opening.target))
+    }
+
     /// The war the declared conquest opening is fighting is against `other`.
     pub(crate) fn conquest_opening_war(&self, other: usize) -> bool {
         self.conquest_owns_the_campaign()
@@ -1278,7 +1296,10 @@ impl AdvancedAi {
     /// own declaration would.
     fn conquest_adopt_war(&mut self, g: &Game, pid: usize) {
         self.conquest_refresh_force(g, pid);
-        let kills = g.players[pid].counters.get("kills").copied().unwrap_or(0);
+        let Some(target) = self.conquest_opening.as_ref().map(|opening| opening.target) else {
+            return;
+        };
+        let kills = self.conquest_kills(g, pid, target);
         let Some(opening) = self.conquest_opening.as_mut() else {
             return;
         };
@@ -1648,7 +1669,7 @@ impl AdvancedAi {
         if g.apply(pid, &action).is_err() {
             return false;
         }
-        let kills = g.players[pid].counters.get("kills").copied().unwrap_or(0);
+        let kills = self.conquest_kills(g, pid, opening.target);
         if let Some(opening) = self.conquest_opening.as_mut() {
             opening.declared = Some(g.turn);
             opening.kills_at_war = kills;
@@ -1678,7 +1699,7 @@ impl AdvancedAi {
             return;
         }
         let taken = opening.taken + 1;
-        let rate = opening.kills_per_loss(g, pid);
+        let rate = self.conquest_kills_per_loss(g, pid, &opening);
         if rate < CONQUEST_KILLS_PER_LOSS_FLOOR {
             think!(self.journal(), Military, Strategy,
                    "Closing the conquest against {}", g.players[opening.target].civ;
@@ -1759,7 +1780,9 @@ impl AdvancedAi {
     /// zero after the first loss with no kill — would close every siege on
     /// its first casualty.
     fn conquest_peace(&mut self, g: &mut Game, pid: usize, opening: &ConquestOpening) {
-        if opening.taken == 0 || opening.kills_per_loss(g, pid) >= CONQUEST_KILLS_PER_LOSS_FLOOR {
+        if opening.taken == 0
+            || self.conquest_kills_per_loss(g, pid, opening) >= CONQUEST_KILLS_PER_LOSS_FLOOR
+        {
             return;
         }
         self.conquest_sue_for_peace(g, pid, opening.target);
