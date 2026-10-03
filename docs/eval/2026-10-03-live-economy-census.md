@@ -317,6 +317,15 @@ Campuses. Not yet acted on: the `campus-before-the-army-2`,
 `builder-before-the-army-2` and `settler-before-the-navy` set goes live from
 game 37, and should be read first.
 
+Read on game 37 (131343Z), the first game under that set. Its second slot
+sat idle from t40 to t100. A prototype `trader-before-the-army` (the Trader
+step ahead of the floor, yielding to a due Settler) was replayed on the ten
+idle-slot turns with an idle city. Nine kept their live pick: a due Settler,
+Walls, an Archer, a Builder or a Campus. The only change was a Trader in
+place of Bogotá's Campus at t74. Under the new order the idle slot is mostly
+the cost of expanding, which is the right priority, so the gene was not
+shipped.
+
 ## Result: version 2 of the build-order genes
 
 `campus-before-the-army` version 1 starved expansion. Game 34 (113755Z) held
