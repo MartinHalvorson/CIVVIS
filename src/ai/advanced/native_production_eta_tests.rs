@@ -95,6 +95,19 @@ fn native_quote_stays_specific_to_the_city_item_and_formation() {
             fallback(&g, &ai, cities[0], &other)
         );
     }
+    let warrior = Item::Unit {
+        unit: crate::name!("warrior"),
+    };
+    quote(&mut g, cities[0], &warrior, Some(2.0));
+    assert_eq!(ai.production_build_turns(&g, 0, cities[0], &warrior), 2.0);
+    let corps = Item::Formation {
+        unit: crate::name!("warrior"),
+        formation: 1,
+    };
+    assert_eq!(
+        ai.production_build_turns(&g, 0, cities[0], &corps),
+        fallback(&g, &ai, cities[0], &corps)
+    );
 }
 
 #[test]
