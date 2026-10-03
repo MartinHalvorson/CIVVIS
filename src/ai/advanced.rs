@@ -9617,10 +9617,16 @@ impl AdvancedAi {
         let mut cost: f64 = path
             .iter()
             .filter(|tech| !g.players[pid].techs.contains(&Name::new(tech)))
-            .map(|tech| g.tech_cost(tech.as_str()))
+            .map(|tech| {
+                g.host_remaining_research_cost(pid, Name::new(tech))
+                    .unwrap_or_else(|| g.tech_cost(tech.as_str()))
+            })
             .sum();
         if let Some(current) = g.players[pid].research.as_deref() {
-            if path.contains(current) {
+            if path.contains(current)
+                && g.host_remaining_research_cost(pid, Name::new(current))
+                    .is_none()
+            {
                 cost -= g.players[pid].research_progress.min(g.tech_cost(current));
             }
         }
@@ -42962,3 +42968,6 @@ mod reinforcement_arrival_tests;
 
 #[cfg(test)]
 mod native_production_eta_tests;
+
+#[cfg(test)]
+mod native_research_eta_tests;
