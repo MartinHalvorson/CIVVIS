@@ -4753,6 +4753,19 @@ impl AdvancedAi {
         self.siege_rally_holds = false;
     }
 
+    /// See `BasicAi::builder_before_the_army`: the delegated city governor's
+    /// Builder quota ahead of the Monument, the Settler and the military floor.
+    pub fn enable_builder_before_the_army(&mut self) {
+        self.builder_before_the_army = true;
+        self.base.builder_before_the_army = true;
+    }
+
+    /// The twin of `enable_builder_before_the_army`.
+    pub fn disable_builder_before_the_army(&mut self) {
+        self.builder_before_the_army = false;
+        self.base.builder_before_the_army = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

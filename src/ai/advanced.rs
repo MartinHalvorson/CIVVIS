@@ -5186,6 +5186,10 @@ pub struct AdvancedAi {
     /// One supply colony chosen by an otherwise untargeted Settler. Its
     /// guarded permission is rechecked while the ordinary escort walks it.
     air_resource_colony_target: Option<(u32, Pos)>,
+    /// The delegated city governor's own Builder quota ahead of the
+    /// Monument, the Settler and the military floor. Opt-in gene
+    /// `builder-before-the-army`; see `BasicAi::builder_before_the_army`.
+    builder_before_the_army: bool,
     // ---- append: c-d ------------------------------------------------
     /// `denial-nearest-finish`: a Domination army also answers a culture
     /// race projected along its geometric curve to finish within
@@ -8546,6 +8550,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             air_resource_colony_target: None,
+            builder_before_the_army: false,
             // ---- append: c-d ----------------------------------------
             denial_nearest_finish: false,
             campus_before_harbor: false,

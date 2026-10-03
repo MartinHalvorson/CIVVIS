@@ -2442,6 +2442,22 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `monument-first`.
     pub(crate) monument_first: bool,
+    /// The genome's own Builder quota (`builder_per_city`, at most one per
+    /// two cities) ahead of the Monument, the Settler, the military floor,
+    /// the recon and the navy, behind only the siege, barbarian and
+    /// economic-recovery steps. Stock reaches its Builder step after all of
+    /// them, and on the live board that step starves: live King
+    /// 2026-10-03T093332Z held zero Builders from t54 to t93 while the lent
+    /// war floor (15-20 units for 5-8 cities), Walls, Settlers and Monuments
+    /// took every queue. It had improved 5 of 73 owned land plots at t90; its
+    /// capital sat at population 2 for 70 turns working two 1-Food mines; and
+    /// at t100 it held 29 population and 18.5 Science against Persia's 61
+    /// and 88.6. Across 25 live King games, those with no Builder on 20% or
+    /// more of their turns (3+ cities, to t150) averaged 34 population and 32
+    /// Science at t100, those under 10% averaged 46 and 52.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `builder-before-the-army`.
+    pub(crate) builder_before_the_army: bool,
     /// A standing district's first building before the city opens another
     /// district. This governor tried every district the city still lacked
     /// before any building, so a district stood without the building that
@@ -5191,6 +5207,7 @@ impl BasicAi {
             campus_before_harbor: false,
             capital_campus_first: false,
             monument_first: false,
+            builder_before_the_army: false,
             district_buildings_first: false,
             capital_library_first: false,
             culture_defense_theater: false,
@@ -5660,6 +5677,7 @@ impl BasicAi {
             campus_before_harbor: false,
             capital_campus_first: false,
             monument_first: false,
+            builder_before_the_army: false,
             district_buildings_first: false,
             capital_library_first: false,
             culture_defense_theater: false,
@@ -12131,6 +12149,13 @@ impl BasicAi {
         // military floor and the Settler step, which otherwise kept a city
         // from ever reaching it. The capital sends the land grab's first two
         // Settlers out first, and an early rush still assembles its stack.
+        if self.builder_before_the_army && !self.minor && !self.barb && !emergency_defense {
+            if let Some(builder) =
+                self.builder_before_the_army_item(g, pid, cid, n_cities, builders)
+            {
+                return Some(builder);
+            }
+        }
         if self.monument_first
             && !self.minor
             && !self.barb
@@ -14406,6 +14431,40 @@ impl BasicAi {
     /// See `culture_defense_theater`: this city's Theater Square at its best
     /// site while the empire's Culture trails, the city holds none, and fewer
     /// than half of the empire's cities hold or have queued one.
+    /// See `builder_before_the_army`: a Builder while the empire holds (or
+    /// has queued) fewer than its quota, there is land to improve, and this
+    /// city finishes one within `LENT_FLOOR_MAX_BUILD_TURNS`. The quota is
+    /// the genome's `builder_per_city`, at most one per two cities, and at
+    /// least one once the empire holds two cities.
+    pub(crate) fn builder_before_the_army_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        builders: usize,
+    ) -> Option<Item> {
+        if n_cities < 2 {
+            return None;
+        }
+        let quota = ((self.w.builder_per_city * n_cities as f64).ceil() as usize)
+            .min(n_cities.div_ceil(2))
+            .max(1);
+        if builders >= quota || !Self::has_builder_work(g, pid) {
+            return None;
+        }
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        if !g.can_produce(pid, cid, &builder)
+            || Self::unit_build_turns(g, pid, cid, "builder")
+                > g.standard_duration(LENT_FLOOR_MAX_BUILD_TURNS) as f64
+        {
+            return None;
+        }
+        Some(builder)
+    }
+
     pub(crate) fn culture_defense_theater_item(
         g: &Game,
         pid: usize,
@@ -22319,6 +22378,33 @@ mod tests {
             },
         );
         (game, cid)
+    }
+
+    /// See `builder_before_the_army`: an empire with no Builder trains one
+    /// where the stock governor fills the military floor, and keeps the
+    /// stock choice once its quota is met or while it holds one city.
+    #[test]
+    fn a_builderless_empire_trains_a_builder_before_the_army() {
+        let (mut game, cid) = founded_capital_fixture("BUILDERFIRST", 91_831);
+        game.cities.get_mut(&cid).unwrap().pop = 3;
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        assert!(BasicAi::has_builder_work(&game, 0), "the fixture has land to improve");
+        let pick = |on: bool, n_cities: usize, builders: usize| {
+            let mut ai = BasicAi::new();
+            ai.builder_before_the_army = on;
+            ai.pick_item(&game, 0, cid, n_cities, 0, builders, 1, 0, 0, 0, 0)
+        };
+        let is_builder =
+            |item: &Option<Item>| matches!(item, Some(Item::Unit { unit }) if *unit == "builder");
+        let stock = pick(false, 3, 0);
+        assert!(
+            matches!(stock, Some(Item::Unit { .. })) && !is_builder(&stock),
+            "the fixture's stock pick fills the military floor: {stock:?}"
+        );
+        assert!(is_builder(&pick(true, 3, 0)), "{:?}", pick(true, 3, 0));
+        assert_eq!(pick(true, 3, 2), pick(false, 3, 2), "the quota of two is met");
+        assert_eq!(pick(true, 1, 0), pick(false, 1, 0), "one city keeps the stock choice");
     }
 
     /// See `monument_first`: a city without a Monument builds it where the

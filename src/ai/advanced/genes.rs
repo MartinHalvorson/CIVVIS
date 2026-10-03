@@ -2452,6 +2452,9 @@ pub const GENES: &[Gene] = &[
     // `objective_board::SIEGE_RALLY_SWITCH_MARGIN`.
     Gene { tag: "siege-rally-holds", field: "siege_rally_holds", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_rally_holds, disable: AdvancedAi::disable_siege_rally_holds },
     Gene { tag: "policy-deck-hysteresis-2", field: "policy_deck_hysteresis_2", kind: Kind::OptIn, enable: AdvancedAi::enable_policy_deck_hysteresis_2, disable: AdvancedAi::disable_policy_deck_hysteresis_2 },
+    // Live King 093332Z held zero Builders from t54 to t93; see
+    // `BasicAi::builder_before_the_army`.
+    Gene { tag: "builder-before-the-army", field: "builder_before_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_before_the_army, disable: AdvancedAi::disable_builder_before_the_army },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
