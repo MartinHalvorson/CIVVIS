@@ -7508,6 +7508,7 @@ mod air_resource_builders;
 mod air_resource_colony;
 mod air_resource_settlement;
 mod air_surge;
+mod native_air_assault;
 pub use air_city_assault::AirCityAssault;
 mod denial_nearest_finish;
 mod denial_needs_a_road;

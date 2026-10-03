@@ -7,6 +7,7 @@ use crate::game::{Action, Game, Item};
 use crate::Pos;
 
 pub mod aid;
+pub mod native_air_assault;
 
 /// Changes to information access or the fixed policy bundle change the
 /// experimental regime even when the set of randomized gene names does not.
