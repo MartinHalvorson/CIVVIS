@@ -209,6 +209,9 @@ pub(crate) const CONQUEST_APPROACHING_SHARE: f64 = 0.6;
 /// Eight once the assembly radius is five: the grace is for a column one
 /// march behind the formation, not for one already counted in it.
 pub(crate) const CONQUEST_APPROACHING_RADIUS: i32 = 8;
+/// Bodies of a full force that may still be beyond
+/// [`CONQUEST_APPROACHING_RADIUS`] when the extension is granted.
+pub(crate) const CONQUEST_APPROACHING_STRAGGLERS: usize = 1;
 pub(crate) const CONQUEST_APPROACHING_GRACE_TURNS: u32 = 12;
 
 /// Standard turns after the force first assembled that the opening waits for
@@ -595,14 +598,24 @@ impl AdvancedAi {
 
     /// All five reserved bodies are close enough that another short march
     /// can assemble the column; an incomplete or distant force gets no grace.
+    ///
+    /// One straggler does not cost the column its extension. Live King
+    /// 2026-10-03T052455Z held four of six bodies inside the assembly radius
+    /// and a fifth at eight tiles at the turn-40 deadline, with the second
+    /// melee body garrisoning thirteen tiles away, and released the opening.
     fn conquest_force_approaching(g: &Game, opening: &ConquestOpening) -> bool {
-        opening.force.len() == CONQUEST_RANGED + CONQUEST_MELEE
-            && Self::conquest_assembled_share(g, opening) >= CONQUEST_APPROACHING_SHARE
-            && opening.force.iter().all(|uid| {
-                g.units.get(uid).is_some_and(|unit| {
+        let far = opening
+            .force
+            .iter()
+            .filter(|uid| {
+                !g.units.get(uid).is_some_and(|unit| {
                     g.wdist(unit.pos, opening.rally) <= CONQUEST_APPROACHING_RADIUS
                 })
             })
+            .count();
+        opening.force.len() == CONQUEST_RANGED + CONQUEST_MELEE
+            && Self::conquest_assembled_share(g, opening) >= CONQUEST_APPROACHING_SHARE
+            && far <= CONQUEST_APPROACHING_STRAGGLERS
     }
 
     /// The opening can only be named before the original deadline. Once it

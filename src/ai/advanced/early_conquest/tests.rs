@@ -1747,3 +1747,49 @@ fn a_rally_on_a_mountain_moves_to_standable_ground() {
     let city = game.cities[&ai.conquest_opening.as_ref().unwrap().city].pos;
     assert!((CONQUEST_RALLY_MIN..=CONQUEST_RALLY_MAX).contains(&game.wdist(moved, city)));
 }
+
+/// One body still far from the rally does not cost a near-assembled column
+/// its extension; two do.
+#[test]
+fn one_straggler_does_not_cost_the_column_its_extension() {
+    let grace = |stragglers: usize| {
+        let mut game = board(&[at(6, 12), at(14, 12)]);
+        game.game_speed = crate::setup::GameSpeed::Online;
+        game.turn = 14;
+        let mut ai = opened(&mut game);
+        game.turn = 20;
+        game.found_city_for(0, at(6, 17), None);
+        ai.maintain_conquest_opening(&mut game, 0);
+        let rally = ai.conquest_opening.as_ref().unwrap().rally;
+        let near = CONQUEST_RANGED + CONQUEST_MELEE - 2;
+        bodies(&mut game, 0, "warrior", rally, 2, near);
+        bodies(&mut game, 0, "warrior", rally, CONQUEST_ASSEMBLY_RADIUS + 2, 2 - stragglers);
+        let far = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| {
+                game.wdist(*pos, rally) > CONQUEST_APPROACHING_RADIUS + 2
+                    && game.wdist(*pos, rally) <= CONQUEST_APPROACHING_RADIUS + 6
+                    && game.unit_ids_at(*pos).is_empty()
+                    && game.city_at(*pos).is_none()
+            })
+            .take(stragglers)
+            .collect::<Vec<_>>();
+        for pos in far {
+            game.spawn_test_unit("warrior", 0, pos);
+        }
+        game.turn = 39;
+        ai.maintain_conquest_opening(&mut game, 0);
+        assert_eq!(
+            ai.conquest_opening.as_ref().unwrap().force.len(),
+            CONQUEST_RANGED + CONQUEST_MELEE
+        );
+        game.turn = 40;
+        ai.maintain_conquest_opening(&mut game, 0);
+        ai.conquest_opening.as_ref().and_then(|opening| opening.grace_until)
+    };
+    assert!(grace(1).is_some(), "one straggler keeps the extension");
+    assert!(grace(2).is_none(), "two do not");
+}
