@@ -5207,9 +5207,10 @@ pub struct AdvancedAi {
     /// it holds a Campus. Opt-in gene `district-buildings-first-2`; see
     /// `BasicAi::capital_library_first`.
     district_buildings_first_2: bool,
-    /// A Theater Square ahead of the Harbor and the bred district order in
-    /// the delegated city governor while the empire's Culture trails the
-    /// strongest rival's. Opt-in gene `culture-defense-theater`; see
+    /// A Theater Square while the empire's Culture trails the strongest
+    /// rival's: claimed for one idle city ahead of the delegated governor
+    /// (`reserve_culture_defense_theater`), and in the delegated governor
+    /// ahead of the Harbor. Opt-in gene `culture-defense-theater`; see
     /// `BasicAi::culture_defense_theater`.
     culture_defense_theater: bool,
     /// `domination-specializes-earlier`: an assigned Domination lane's
@@ -7679,6 +7680,7 @@ mod settler_departure;
 pub use science_victory_drive::ScienceDrive;
 
 mod domination_research;
+mod culture_defense;
 mod standing_army_supply;
 /// Victory lanes are target contracts: their beelines and campaign objectives
 /// stay attached to the condition that can actually end (or deny) the game.
@@ -43565,6 +43567,7 @@ impl AdvancedAi {
             // city before the generic strategic scorer can refill it with a
             // Builder or unit.
             // Reach both governors without changing their dispatch or opening book.
+            self.reserve_culture_defense_theater(g, pid, &plan);
             self.reserve_higher_level_investment(g, pid, &plan);
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
             // A fighting Galley cannot also be the empire's sole eye. This
