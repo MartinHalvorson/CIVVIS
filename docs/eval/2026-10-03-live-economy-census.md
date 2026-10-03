@@ -283,3 +283,20 @@ plus deal Gold per turn. Income fell in three steps:
 The 24-game fires screen gives version 2 against version 1 −13.9 pp
 (±13.5, z −1.03). That is a fires check, not a verdict. Version 1 stays
 armed.
+
+## Lead: recovery spends a city's first district slot
+
+In `BasicAi::economic_recovery_item`, after a Trader and a gold-positive
+building, the fallback is the best-gold Commercial Hub or Harbor site. It has
+no build-time limit and no regard for the city's Campus. Across 13 games from
+2026-10-02 and 10-03, 17 of the 19 Hubs and Harbors that became a city's
+first district were placed in recovery. Most games had one or two; game 31
+(100536Z) had six, including Popayán (34 turns at 2.7 production) and Cuenca
+(59 turns at 1.8). Game 31's cities without a Campus held 5 Hubs at t140, and
+its Science per citizen was 0.91 against the top rival's 1.73.
+
+Simply swapping in the Campus is not clearly better in a deficit: it costs 1
+Gold upkeep, while the Hub and Harbor cost none and earn adjacency Gold. The
+defensible narrow rule is that a recovery district which cannot finish within
+`FIRST_CAMPUS_MAX_TURNS` (15) is not recovery. It should fall through to
+`upkeep_free_recovery_item` and leave the slot for later. Not yet built.
