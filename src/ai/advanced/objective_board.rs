@@ -647,6 +647,12 @@ impl AdvancedAi {
         self.objective_board_state.requisitions.clone()
     }
 
+    /// Test seam: post a shortfall as if the board had assessed it.
+    #[cfg(test)]
+    pub(super) fn post_requisition(&mut self, requisition: Requisition) {
+        self.objective_board_state.requisitions.push(requisition);
+    }
+
     /// The board as last assessed.
     pub fn objective_board(&self) -> &ObjectiveBoard {
         &self.objective_board_state

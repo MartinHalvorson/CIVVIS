@@ -261,20 +261,33 @@ impl AdvancedAi {
                 "the plan names no city of theirs to besiege".to_string()
             ));
         };
+        // `one_war_second_front`: the rival the one-war gate admits beside
+        // the burning war is not held by it here either.
+        let second_front = self.one_war_second_front(g, pid) == Some(target);
         if let Some(enemy) = self
             .one_war_enemies(g, pid)
             .into_iter()
-            .find(|enemy| *enemy != target)
+            .find(|enemy| *enemy != target && !second_front)
         {
             return Some(Err(format!(
                 "another major war, with {}, is being fought",
                 g.players[enemy].civ
             )));
         }
+        // A Domination seat countering this rival's clock at twice its power
+        // does not wait on a home Defend row. Live King
+        // civvis-20261003T113755Z (game 34) held its war on the Khmer for a
+        // short Defend row at turns 115, 125 and 135, the last at 438 power
+        // against 138, and lost to Khmer Buddhism at 153 without a war.
+        let counter_at_mercy = self.active_victory_target(g)
+            == Some(super::VictoryTarget::Domination)
+            && self.domination_counter_target(g, pid, target)
+            && g.military_power(pid) >= 2.0 * g.military_power(target).max(1.0);
         if let Some(short) = self
             .requisitions()
             .into_iter()
             .find(|requisition| requisition.kind == ObjectiveKind::Defend)
+            .filter(|_| !counter_at_mercy)
         {
             let name = short
                 .city
@@ -427,6 +440,7 @@ mod mobilization_tests;
 mod tests {
     use std::collections::BTreeMap;
 
+    use super::super::objective_board::{ForceNeed, Requisition};
     use super::super::{GrandStrategy, VictoryTarget};
     use super::*;
     use crate::game::{Game, WarLosses, WarRecord};
@@ -675,6 +689,64 @@ mod tests {
             panic!("a second front must hold the declaration");
         };
         assert!(reason.contains("another major war"), "{reason}");
+    }
+
+    /// A Domination seat countering a rival's clock at twice its power does
+    /// not wait on a home Defend row; short of twice, it does.
+    #[test]
+    fn a_defend_row_does_not_hold_the_war_on_a_counter_target_at_our_mercy() {
+        let verdict = |our_swordsmen: usize| {
+            let mut g = flat_board(36, &[at(6, 8), at(20, 8), at(30, 14)]);
+            let target = city_of(&g, 1, at(20, 8));
+            // Player 1 leads the culture race: a Domination counter target.
+            let stats = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats);
+            for pid in 0..3 {
+                stats.insert(
+                    pid,
+                    crate::game::ObservedPublicEmpireStats {
+                        domestic_tourists: Some(100),
+                        foreign_tourists: Some(if pid == 1 { 70 } else { 0 }),
+                        ..Default::default()
+                    },
+                );
+            }
+            spawn(&mut g, "swordsman", 1, at(21, 9));
+            for col in 0..our_swordsmen {
+                spawn(&mut g, "swordsman", 0, at(4 + col as i32, 12));
+            }
+            let mut ai = on();
+            ai.retarget(crate::ai::advanced::VictoryTarget::Domination);
+            ai.deny_leaders = true;
+            assert!(
+                ai.domination_counter_target(&g, 0, 1),
+                "fixture: a counter target"
+            );
+            ai.post_requisition(Requisition {
+                kind: ObjectiveKind::Defend,
+                count: 3,
+                by_turn: None,
+                city: g.player_city_ids(0).first().copied(),
+                unmet: ForceNeed::default(),
+                have: ForceNeed::default(),
+                sea_only: false,
+                label: "home".to_string(),
+            });
+            let mercy = g.military_power(0) >= 2.0 * g.military_power(1);
+            let plan = conquest(&g, Some(target));
+            (mercy, ai.war_policy_declaration(&g, 0, 1, &plan))
+        };
+        let (mercy, held) = verdict(1);
+        assert!(!mercy, "fixture: short of twice");
+        assert!(
+            matches!(&held, Some(Err(reason)) if reason.contains("Defend row")),
+            "{held:?}"
+        );
+        let (mercy, open) = verdict(6);
+        assert!(mercy, "fixture: twice their power");
+        assert!(
+            !matches!(&open, Some(Err(reason)) if reason.contains("Defend row")),
+            "{open:?}"
+        );
     }
 
     /// Our capital at war and under pressure from three warriors, the
