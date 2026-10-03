@@ -1212,6 +1212,7 @@ class Civ6PlayTest(unittest.TestCase):
              patch.object(civ6_play, "set_dropdown", return_value=True) as setter, \
              patch.object(civ6_play, "select_requested_map", return_value=True) as mapper, \
              patch.object(civ6_play, "select_requested_leader", return_value=True) as leader, \
+             patch.object(civ6_play, "clear_game_modes", return_value=True), \
              patch.object(civ6_play, "screenshot") as screenshot, \
              patch.object(civ6_play, "_observed_label_point",
                           return_value=(321, 432)) as observed, \
@@ -1257,6 +1258,7 @@ class Civ6PlayTest(unittest.TestCase):
              patch.object(civ6_play, "set_dropdown", return_value=True), \
              patch.object(civ6_play, "select_requested_map", return_value=True), \
              patch.object(civ6_play, "select_requested_leader", return_value=True), \
+             patch.object(civ6_play, "clear_game_modes", return_value=True), \
              patch.object(civ6_play, "screenshot") as screenshot, \
              patch.object(civ6_play, "_observed_label_point", return_value=None), \
              patch.object(civ6_play, "focus_game") as focus, \
@@ -1284,6 +1286,7 @@ class Civ6PlayTest(unittest.TestCase):
                  patch.object(civ6_play, "select_requested_map", return_value=True), \
                  patch.object(civ6_play, "select_requested_leader",
                               side_effect=select_leader), \
+                 patch.object(civ6_play, "clear_game_modes", return_value=True), \
                  patch.object(civ6_play, "screenshot", return_value=False), \
                  patch.object(civ6_play, "_observed_label_point",
                               side_effect=[(321, 432)]), \

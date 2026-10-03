@@ -2292,6 +2292,86 @@ def _map_picker_open(path: Path, bounds: tuple[int, int, int, int]) -> bool:
             or bool(_map_picker_labels(path, bounds, "All Maps")))
 
 
+# The Create Game panel's GAME MODES row: eight icons, each with a checkbox at
+# its lower right, laid out relative to the "Game Modes" label. Offsets are in
+# capture pixels for a game window 1728 capture pixels wide and scale with the
+# window. A ticked box's interior is the gold tick (mean luminance ~79 on the
+# 2026-10-03 capture); an empty one is the panel's dark blue (~25).
+#
+# ★★★★★ NOTHING DROVE THIS ROW, AND THE MODES PERSIST. The mod's setter clears
+# every mode only when the FrontEnd setup context hosts the game, and on this
+# install it never does -- the Create Game panel launches whatever it carries.
+# Live run civvis-20261003T035351Z started with Heroes & Legends ticked: Himiko
+# on the map, `"modes": ["GAMEMODE_HEROES"]` in the seat event.
+GAME_MODE_BOX_OFFSETS = [(-108, 55), (-49, 55), (10, 55), (69, 55), (128, 55),
+                         (-108, 114), (-49, 114), (10, 114)]
+GAME_MODE_REF_WINDOW_PX = 1728.0
+GAME_MODE_TICKED_LUMA = 50.0
+
+
+def _game_mode_boxes(path: Path, bounds: tuple[int, int, int, int]
+                     ) -> list[tuple[int, int, bool]] | None:
+    """Every Game Modes checkbox as (screen x, screen y, ticked), or None
+    when the row's label cannot be read."""
+    screen = desktop_size()
+    if screen is None:
+        return None
+    label = _observed_label_point(path, "Game Modes", bounds)
+    if label is None:
+        return None
+    try:
+        from PIL import Image
+        image = Image.open(path).convert("RGB")
+    except Exception:
+        return None
+    scale = image.size[0] / screen[0]
+    k = (bounds[2] * scale) / GAME_MODE_REF_WINDOW_PX
+    radius = max(1, int(round(3 * k)))
+    boxes = []
+    for dx, dy in GAME_MODE_BOX_OFFSETS:
+        cx = label[0] * scale + dx * k
+        cy = label[1] * scale + dy * k
+        values = [
+            sum(image.getpixel((x, y))) / 3.0
+            for x in range(int(round(cx - radius)), int(round(cx + radius)) + 1)
+            for y in range(int(round(cy - radius)), int(round(cy + radius)) + 1)
+            if 0 <= x < image.size[0] and 0 <= y < image.size[1]
+        ]
+        if not values:
+            return None
+        ticked = sum(values) / len(values) > GAME_MODE_TICKED_LUMA
+        boxes.append((int(round(cx / scale)), int(round(cy / scale)), ticked))
+    return boxes
+
+
+def clear_game_modes(bounds: tuple[int, int, int, int], run_dir: Path,
+                     requested: list[str]) -> bool:
+    """Untick every Game Modes box on the Create Game panel; True once all
+    read empty. A run that asks for a mode is left to its own setter."""
+    if requested:
+        return True
+    for attempt in range(4):
+        shot = run_dir / f"game-modes-{attempt}.png"
+        if not screenshot(shot) and not shot.is_file():
+            continue
+        boxes = _game_mode_boxes(shot, bounds)
+        if boxes is None:
+            print(f"[setup] game modes: label not read (capture {attempt})", flush=True)
+            continue
+        ticked = [i for i, (_, _, on) in enumerate(boxes) if on]
+        if not ticked:
+            print("[setup] game modes: all off, verified", flush=True)
+            return True
+        print(f"[setup] game modes: unticking box(es) {ticked}", flush=True)
+        focus_game(GAME_SIDE, GAME_FRACTION)
+        for index in ticked:
+            click_at(boxes[index][0], boxes[index][1])
+            time.sleep(0.6)
+        time.sleep(0.8)
+    print("[setup] game modes could NOT be verified off", flush=True)
+    return False
+
+
 def select_requested_map(bounds: tuple[int, int, int, int], map_script: str,
                          run_dir: Path, panel: Path | None = None,
                          panel_out: dict | None = None) -> bool:
@@ -2929,6 +3009,9 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     if not select_requested_leader(bounds, args.leader, run_dir, panel=panel["shot"],
                                    panel_out=panel, hint_dir=run_dir.parent):
         print("[setup] requested leader was NOT selected; refusing to start", flush=True)
+        return False
+    if not clear_game_modes(bounds, run_dir, list(getattr(args, "game_mode", []) or [])):
+        print("[setup] a game mode is still on; refusing to start", flush=True)
         return False
     setup_shot = run_dir / "setup.png"
     captured = screenshot(setup_shot)
