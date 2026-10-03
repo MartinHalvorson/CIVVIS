@@ -1866,3 +1866,36 @@ fn a_live_openings_kill_rate_reads_the_host_deaths() {
     assert_eq!(ai.conquest_kills(&game, 0, 1), 3, "their losses to us");
     assert!((ai.conquest_kills_per_loss(&game, 0, &opening) - 1.5).abs() < 1e-9);
 }
+
+/// The fog is not the rival's last city: with the only known city taken and
+/// the rival's public record still counting one, the war is not traded for
+/// terms. Without a public record the shipped close stands.
+#[test]
+fn a_rival_with_cities_in_the_fog_keeps_its_war_after_the_capture() {
+    for counted in [true, false] {
+        let mut game = board(&[at(6, 12), at(14, 12)]);
+        let mut ai = opened(&mut game);
+        let city = game.player_city_ids(1)[0];
+        let rally = ai.conquest_opening.as_ref().unwrap().rally;
+        bodies(&mut game, 0, "warrior", rally, 1, CONQUEST_RANGED + CONQUEST_MELEE);
+        ai.maintain_conquest_opening(&mut game, 0);
+        assert!(ai.conquest_declaration(&mut game, 0));
+        if counted {
+            std::sync::Arc::make_mut(&mut game.observed_public_empire_stats).insert(
+                1,
+                crate::game::ObservedPublicEmpireStats {
+                    city_count: Some(1),
+                    ..Default::default()
+                },
+            );
+        }
+        game.cities.get_mut(&city).unwrap().owner = 0;
+        ai.maintain_conquest_opening(&mut game, 0);
+        assert!(ai.conquest_opening.is_none(), "the opening hands over either way");
+        assert_eq!(
+            ai.peace_offers.contains(&1),
+            !counted,
+            "terms only when nothing of theirs is left on the record (counted {counted})"
+        );
+    }
+}

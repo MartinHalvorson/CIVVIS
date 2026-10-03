@@ -1721,6 +1721,26 @@ impl AdvancedAi {
             })
             .min_by_key(|cid| (g.wdist(g.cities[cid].pos, opening.rally), *cid));
         let Some(next) = next else {
+            // The fog is not the rival's last city. Live King
+            // 2026-10-03T135713Z took Ondini at turn 57 with Kwadukuza still
+            // unseen until turn 59, sued for terms, and lost Ondini to its
+            // own loyalty by turn 71. A rival whose public record still
+            // counts a city keeps its war: the ordinary desk finds and takes
+            // what the opening could not see.
+            let unseen = g
+                .observed_public_empire_stats
+                .get(&opening.target)
+                .and_then(|stats| stats.city_count)
+                .is_some_and(|count| count > 0);
+            if unseen {
+                think!(self.journal(), Military, Strategy,
+                       "The conquest has taken every city it knows of from {}",
+                       g.players[opening.target].civ;
+                       "trading at {:.2} kills per loss; their record still counts a city \
+                        in the fog, so the war goes on", rate);
+                self.conquest_release(g, "the rival's remaining cities are not yet found");
+                return;
+            }
             think!(self.journal(), Military, Strategy,
                    "The conquest has taken every city it knows of from {}",
                    g.players[opening.target].civ;
