@@ -531,6 +531,11 @@ const RUSH_ARMY: usize = 4;
 /// treatment asks whether a current land melee unit can route to this edge;
 /// it is not a fitted reach threshold.
 const RUSH_STAGING_RANGE: i32 = 3;
+/// How far `denial_reaches_far` lets an urgent denial war reach: half of the
+/// four-player Tiny Pangaea's 60-tile wrapped width.
+pub(crate) const DENIAL_FAR_REACH_TILES: i32 = 30;
+/// Our military over the urgent rival's at which the far reach opens.
+pub(crate) const DENIAL_FAR_REACH_RATIO: f64 = 3.0;
 /// A first capture this far from home can become a usable forward base before
 /// the capital march consumes the whole war. The diplomatic opening gate is
 /// wider; it does not mean an 18-tile capital is the best first siege.
@@ -13479,6 +13484,23 @@ impl AdvancedAi {
             .any(|city| g.wdist(g.cities[city].pos, objective) <= 18)
     }
 
+    /// `denial-nearest-finish`: a rival whose victory is urgent, that our
+    /// military outweighs [`DENIAL_FAR_REACH_RATIO`] times over, is worth a
+    /// march past the ordinary 18-tile declaration range, out to
+    /// [`DENIAL_FAR_REACH_TILES`]. A G24 replay (civvis-20261003T060034Z)
+    /// retargeted Sweden's culture race at turn 194 at 1,567 power against 81
+    /// and stopped on "no city of theirs is within 18 tiles of one of mine";
+    /// Sweden won at turn 205.
+    fn denial_reaches_far(&self, g: &Game, pid: usize, target: usize, objective: Pos) -> bool {
+        self.denial_nearest_finish
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.urgent_victory_threat(g, target)
+            && g.military_power(pid) >= DENIAL_FAR_REACH_RATIO * g.military_power(target).max(1.0)
+            && g.player_city_ids(pid)
+                .iter()
+                .any(|city| g.wdist(g.cities[city].pos, objective) <= DENIAL_FAR_REACH_TILES)
+    }
+
     fn city_within_first_capture_march(g: &Game, pid: usize, objective: Pos) -> bool {
         g.player_city_ids(pid)
             .iter()
@@ -20773,6 +20795,7 @@ impl AdvancedAi {
             .and_then(|cid| g.cities.get(&cid))
             .is_some_and(|target_city| {
                 Self::city_within_declaration_range(g, pid, target_city.pos)
+                    || self.denial_reaches_far(g, pid, target, target_city.pos)
             });
         let committed_domination = self.victory_target == Some(VictoryTarget::Domination);
         // An army that has reached the enemy border is the only practical

@@ -50935,3 +50935,40 @@ fn a_slow_city_leaves_the_lent_army_margin_to_fast_cities() {
         "without a loan the floor is the genome's own"
     );
 }
+
+    /// See `AdvancedAi::denial_reaches_far`: an urgent rival 25 tiles away is in
+    /// reach for an overwhelming Domination army under `denial-nearest-finish`,
+    /// and not otherwise.
+    #[test]
+    fn an_urgent_far_rival_is_in_reach_only_for_an_overwhelming_denial_army() {
+        let mut g = Game::new_full(2, 60, 24, 936_211, 500, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        let home = g.found_city_for(0, (5, 12), None);
+        let far = g.found_city_for(1, (30, 12), None);
+        g.players[0].met.insert(1);
+        g.players[1].met.insert(0);
+        g.players[1].dvp = 19;
+        g.turn = 150;
+        let objective = g.cities[&far].pos;
+        let distance = g.wdist(g.cities[&home].pos, objective);
+        assert!(distance > 18 && distance <= DENIAL_FAR_REACH_TILES, "{distance}");
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(ai.urgent_victory_threat(&g, 1), "a rival one vote from Diplomacy is urgent");
+        let at = g.cities[&home].pos;
+        g.spawn_test_unit("warrior", 1, objective);
+        for _ in 0..6 {
+            g.spawn_test_unit("swordsman", 0, at);
+        }
+        assert!(!ai.denial_reaches_far(&g, 0, 1, objective), "the gene is off");
+        ai.enable_denial_nearest_finish();
+        assert!(ai.denial_reaches_far(&g, 0, 1, objective));
+        for _ in 0..8 {
+            g.spawn_test_unit("swordsman", 1, objective);
+        }
+        assert!(
+            !ai.denial_reaches_far(&g, 0, 1, objective),
+            "a contested army keeps the ordinary range"
+        );
+    }
