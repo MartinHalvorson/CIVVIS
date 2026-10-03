@@ -4804,6 +4804,16 @@ impl AdvancedAi {
         self.base.campus_before_the_army = false;
     }
 
+    /// Opt-in gene `siege-holds-a-breach`; see [`Self::siege_holds_a_breach`].
+    pub fn enable_siege_holds_a_breach(&mut self) {
+        self.siege_holds_a_breach = true;
+    }
+
+    /// The twin of `enable_siege_holds_a_breach`.
+    pub fn disable_siege_holds_a_breach(&mut self) {
+        self.siege_holds_a_breach = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

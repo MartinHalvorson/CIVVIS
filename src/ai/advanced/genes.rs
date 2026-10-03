@@ -2463,6 +2463,10 @@ pub const GENES: &[Gene] = &[
     // Live King 103619Z: 5 of 6 cities without a Campus from t70 to t120;
     // see `BasicAi::campus_before_the_army`.
     Gene { tag: "campus-before-the-army", field: "campus_before_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_the_army, disable: AdvancedAi::disable_campus_before_the_army },
+    // Live King 103619Z had Tskhumi's walls 400 -> 276 and dropped to Stage;
+    // they stood at 400 again eight turns later. See
+    // `siege_train::HELD_BREACH_WALL_SHARE`.
+    Gene { tag: "siege-holds-a-breach", field: "siege_holds_a_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_holds_a_breach, disable: AdvancedAi::disable_siege_holds_a_breach },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
