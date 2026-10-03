@@ -316,6 +316,39 @@ impl CommitmentLedger {
         self.open.values()
     }
 
+    /// Carry the open decisions through a live board rebuild, which hands
+    /// out new unit and city ids. `unit` and `city` map an old id to its new
+    /// one. A decision whose owner or city has no new id is dropped: the next
+    /// reading reopens whatever the controller still holds.
+    pub(super) fn remap_ids(
+        &mut self,
+        unit: impl Fn(u32) -> Option<u32>,
+        city: impl Fn(u32) -> Option<u32>,
+    ) {
+        for ((kind, owner), mut c) in std::mem::take(&mut self.open) {
+            let owner = match owner {
+                Owner::Unit(uid) => match unit(uid) {
+                    Some(uid) => Owner::Unit(uid),
+                    None => continue,
+                },
+                Owner::Empire => Owner::Empire,
+            };
+            if let Target::City(cid) = c.target {
+                match city(cid) {
+                    Some(cid) => c.target = Target::City(cid),
+                    None => continue,
+                }
+            }
+            c.owner = owner;
+            self.open.insert((kind, owner), c);
+        }
+        self.cities_seen = self
+            .cities_seen
+            .iter()
+            .filter_map(|cid| city(*cid))
+            .collect();
+    }
+
     pub fn open_for(&self, kind: Kind, owner: Owner) -> Option<&Commitment> {
         self.open.get(&(kind, owner))
     }
