@@ -2425,7 +2425,7 @@ fn siege_support_obeys_wall_eras_replacements_and_urban_defenses() {
 #[test]
 fn modern_support_auras_apply_range_bombard_healing_and_movement() {
     let (mut game, _, ring) = controlled_game(31_433);
-    let siege = game.spawn_unit("catapult", 0, ring[0]);
+    let siege = game.spawn_unit("artillery", 0, ring[0]);
     let base_bombard = game.unit_bombard_strength(&game.units[&siege]);
     assert_eq!(game.unit_attack_range(siege), 2);
 

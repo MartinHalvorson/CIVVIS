@@ -19176,7 +19176,13 @@ impl Game {
         if bs <= 0.0 {
             return 0.0;
         }
-        bs + self.adjacent_support_effect(u, "adjacent_siege_bombard")
+        // Gathering Storm's CLASS_TARGETTING_ASSIST includes only these two
+        // units (Expansion1_Units.xml:37-38), not every Bombard-stat attacker.
+        bs + if matches!(u.kind.as_str(), "artillery" | "rocket_artillery") {
+            self.adjacent_support_effect(u, "adjacent_siege_bombard")
+        } else {
+            0.0
+        }
             // Bombarding a city is an attack.
             + self.government_combat_bonus(u, true)
             + self.unit_formation_bonus(u)
@@ -24575,7 +24581,10 @@ impl Game {
         let spec = &self.rules.units[unit.kind];
         spec.range.max(1)
             + self.promotion_effect(unit, "range") as i32
-            + if spec.siege {
+            // CLASS_FORWARD_OBSERVER belongs to ground siege. `siege` also
+            // marks Bombers for city-targeting, but they receive no Balloon
+            // or Drone range bonus (Base Units.xml:611-623).
+            + if spec.promotion_class == "siege" {
                 self.adjacent_support_effect(unit, "adjacent_siege_range") as i32
             } else {
                 0
@@ -36298,3 +36307,6 @@ mod fogged_elimination_tests;
 
 #[cfg(test)]
 mod host_war_permission_tests;
+
+#[cfg(test)]
+mod siege_support_eligibility_tests;
