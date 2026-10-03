@@ -456,3 +456,35 @@ fn a_siege_staging_at_an_unwalled_city_is_not_offered_stalled_peace() {
         "bounded"
     );
 }
+
+/// See the Recovery peace clause in `advanced_diplomacy`: a home emergency
+/// offers peace to a war the Recovery plan is not fighting, but a Domination
+/// seat keeps the war on a rival it has at its mercy.
+#[test]
+fn recovery_does_not_buy_peace_with_capital_prey() {
+    let recovery = |plan: StrategicPlan| StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        ..plan
+    };
+    let (mut g, mut ai, plan, _, _) = fixture();
+    ai.major_war_since = Some(115);
+    ai.last_campaign_progress = 118;
+    assert!(!ai.domination_capital_prey(&g, 0, 1));
+    ai.advanced_diplomacy(&mut g, 0, &recovery(plan));
+    assert!(
+        ai.peace_offers.contains(&1),
+        "the control: not the recovery war"
+    );
+
+    let (mut g, mut ai, plan, _, _) = fixture();
+    ai.major_war_since = Some(115);
+    ai.last_campaign_progress = 118;
+    for pos in [(17, 10), (17, 11)] {
+        g.spawn_test_unit("modern_armor", 0, pos);
+    }
+    assert!(ai.domination_capital_prey(&g, 0, 1));
+    ai.advanced_diplomacy(&mut g, 0, &recovery(plan));
+    assert!(!ai.peace_offers.contains(&1));
+}

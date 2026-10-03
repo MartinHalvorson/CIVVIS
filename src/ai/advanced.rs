@@ -20609,10 +20609,19 @@ impl AdvancedAi {
                     // unfought surge stands itself down after two in a row
                     // (`AIR_SURGE_RECOVERY_LIMIT`); a fought one keeps its
                     // war unless the outmatched clause above fires.
+                    // A home emergency does not buy peace with the rival a
+                    // Domination seat is countering or has at its mercy.
+                    // Live King civvis-20261003T093332Z (game 30) offered
+                    // Brazil "this is not the war the recovery plan is
+                    // fighting" at turn 121, at 661 power against 391, and
+                    // declared on it again at 122.
                     || (plan.strategy == GrandStrategy::Recovery
                         && plan.target_player != Some(*other)
                         && !siege_grace
-                        && !air_front)
+                        && !air_front
+                        && !(self.active_victory_target(g) == Some(VictoryTarget::Domination)
+                            && (self.domination_counter_target(g, pid, *other)
+                                || self.domination_capital_prey(g, pid, *other))))
                     || (self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                         && !appointed_objective)

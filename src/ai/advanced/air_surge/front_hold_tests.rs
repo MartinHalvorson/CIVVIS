@@ -671,6 +671,11 @@ fn a_recovery_reading_does_not_offer_the_wing_s_front_peace() {
         at_war(&mut g);
         if !hold {
             ai.air_surge_plan = None;
+            // Short of capital prey (`domination_capital_prey`), which a
+            // Domination Recovery never offers peace either.
+            while ai.domination_capital_prey(&g, 0, 1) {
+                g.spawn_test_unit("modern_armor", 1, (34, 20));
+            }
         }
         ai.air_surge_status = ai
             .air_surge_plan
