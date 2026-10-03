@@ -175,3 +175,27 @@ The churn is therefore the seat's own, and it has two forms.
 with (the host's deck on the live board) and counts a relief card held there
 as retained. Once Liberalism is slotted, a two-district city at 0 Amenities
 still calls for it, since Liberalism is exactly +1 in those cities.
+
+## Probe: the bankruptcy chain
+
+The probe is `victory_eval --domination-pair <gene> --games 16 --start-seed
+37150000` with the bankrupt-turn counter (8fc914742, schema 4).
+
+| | upkeep-reserve | policy-deck-hysteresis |
+|---|---|---|
+| pairs whose actions changed | 7 / 16 | 8 / 16 |
+| bankrupt turns, off / on | 61 / 56 | 61 / 56 |
+| games with any bankruptcy, off / on | 4 / 3 | 4 / 3 |
+| final score Δ | −6.6 (z −1.1) | −0.75 (z −0.1) |
+| t150 treasury Δ | +1.6 | +9.5 (z 1.6) |
+
+Both genes are neutral in the simulator, with a small reduction in
+bankruptcy. The simulated seat rarely meets the live trigger. On the live
+board three things combine:
+
+- a host-exported unit bill of about 200 Gold,
+- upgrade drains down to 30 Gold,
+- the base pass unslotting the relief card.
+
+The case for arming both rests on the live mechanism measured in game 21.
+Both genes do nothing until they bind.

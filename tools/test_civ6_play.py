@@ -2555,6 +2555,8 @@ class DealSessionConfigTests(unittest.TestCase):
         self.assertEqual(self._config(deal_sessions="peace")["DealSessions"], "peace")
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
         self.assertIn('ap.add_argument("--peace-deal-sessions", dest="deal_sessions",', source)
+        self.assertEqual(self._config(deal_sessions="trade")["DealSessions"], "trade")
+        self.assertIn('ap.add_argument("--trade-deal-sessions", dest="deal_sessions",', source)
 
     def test_civvis_decider_can_explicitly_opt_out(self):
         self.assertIs(

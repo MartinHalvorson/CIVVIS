@@ -898,7 +898,8 @@ def build_config(args: argparse.Namespace) -> dict:
         # A diplomacy screen is a blocker. Keep its in-game timer explicit and
         # bounded so old launchers cannot silently restore a multi-second close.
         "DialogueSeconds": min(2.0, max(0.0, float(dialogue_seconds))),
-        "DealSessions": ("peace" if deal_sessions == "peace" else bool(deal_sessions)),
+        "DealSessions": (deal_sessions if deal_sessions in ("peace", "trade")
+                         else bool(deal_sessions)),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -5654,6 +5655,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--peace-deal-sessions", dest="deal_sessions",
                     action="store_const", const="peace",
                     help="use interactive sessions only for peace proposals")
+    ap.add_argument("--trade-deal-sessions", dest="deal_sessions",
+                    action="store_const", const="trade",
+                    help="use interactive sessions for trades only; peace is sent directly")
     ap.add_argument("--no-deal-sessions", dest="deal_sessions", action="store_false",
                     help="keep direct diplomacy sends even for a Civvis-driven game")
     # ⚠ Deliberately NOT tied to --announcement-seconds. Every other screen is made

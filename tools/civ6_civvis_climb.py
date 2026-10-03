@@ -2447,7 +2447,12 @@ VERIFICATION_POLICY_FILE = Path(
 
 #: `civ6_play.py`'s deal-session flags by mode. `off` forwards nothing, so
 #: the default command line is unchanged.
-DEAL_SESSION_FLAGS = {"all": ["--deal-sessions"], "peace": ["--peace-deal-sessions"], "off": []}
+DEAL_SESSION_FLAGS = {
+    "all": ["--deal-sessions"],
+    "peace": ["--peace-deal-sessions"],
+    "trade": ["--trade-deal-sessions"],
+    "off": [],
+}
 
 
 def deal_sessions_mode(requested: str | None, environ=None, path: Path | None = None,
@@ -2851,6 +2856,9 @@ def main() -> int:
                          "MAKE_DEAL session (default: CIVVIS_DEAL_SESSIONS, else off)")
     ap.add_argument("--peace-deal-sessions", dest="deal_sessions", action="store_const",
                     const="peace", help="forwarded to civ6_play.py: sessions for peace only")
+    ap.add_argument("--trade-deal-sessions", dest="deal_sessions", action="store_const",
+                    const="trade",
+                    help="forwarded to civ6_play.py: sessions for trades, peace sent directly")
     ap.add_argument("--no-deal-sessions", dest="deal_sessions", action="store_const",
                     const="off", help="send every deal directly, whatever the policy says")
     ap.add_argument("--tile-export-every", type=int, default=4,

@@ -2570,6 +2570,7 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         self.assertEqual(cmd(None), base)
         self.assertIn("--deal-sessions", cmd("all"))
         self.assertIn("--peace-deal-sessions", cmd("peace"))
+        self.assertIn("--trade-deal-sessions", cmd("trade"))
         self.assertNotIn("--deal-sessions", base)
 
     def test_deal_sessions_mode_reads_flag_then_env_then_policy_file(self):

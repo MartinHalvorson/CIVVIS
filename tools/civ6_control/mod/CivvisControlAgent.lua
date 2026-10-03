@@ -10729,11 +10729,17 @@ CivvisTrade = { pending = {}, asked = {}, sessions = {}, unanswered = 0, disable
 -- and after `DealSessionStandDown` of those the lane stands down for the
 -- run rather than opening a screen a fourth time. `DealSessions = false`
 -- restores the direct send; `DealSessions = "peace"` reserves sessions for
--- peace so unanswered EQUALIZE sales or buys cannot stand peace down first.
+-- peace so unanswered EQUALIZE sales or buys cannot stand peace down first;
+-- `DealSessions = "trade"` is the reverse, sessions for trades and the direct
+-- send for peace. Live game 2026-10-03T063926Z closed about twenty trade
+-- sessions cleanly, and one peace session froze it at t150: the rival
+-- refused, then left `MAKE_DEAL, POSITIVE` pending to us after the session
+-- closed (DiplomacyManager.csv).
 CivvisTrade.ask = function(pid, subject, action, kind, turn)
 	local trade = CivvisTrade;
 	if cfg.DealSessions == false
 			or (cfg.DealSessions == "peace" and kind ~= "peace")
+			or (cfg.DealSessions == "trade" and kind == "peace")
 			or trade.disabled then
 		DealManager.SendWorkingDeal(DealProposalAction[action], pid, subject);
 		return "direct";
