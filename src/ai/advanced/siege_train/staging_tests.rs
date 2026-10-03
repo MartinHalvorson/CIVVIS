@@ -379,3 +379,49 @@ fn a_march_takes_the_land_road_around_a_bay() {
     // A road longer than the slack allows yields to the ordinary route.
     assert_eq!(g.route_step_dry(warrior, target, STAGING_FAR, 2), None);
 }
+
+/// See `siege_spotter`: an invested train that cannot see its city steps
+/// its nearest healthy soldier into sight instead of investing on memory.
+#[test]
+fn an_invested_siege_steps_a_spotter_into_sight_of_an_unseen_city() {
+    let (mut g, cid) = walled_city();
+    g.map_script = crate::setup::MapScript::Pangaea;
+    g.turn = 30;
+    g.at_war.insert((0, 1));
+    let city = g.cities[&cid].pos;
+    for pos in g.wdisk(city, 6) {
+        if pos == city {
+            continue;
+        }
+        let tile = g.map.tiles.get_mut(&pos).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    let start = super::tests::at_distance(&g, cid, 4)[0];
+    let soldier = g.spawn_unit("swordsman", 0, start);
+    assert!(
+        !g.sees(&g.player_vision_frame(0), city),
+        "fixture: nothing of ours sees the city"
+    );
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    let group = ForceGroup {
+        id: soldier,
+        domain: ForceDomain::Land,
+        units: vec![soldier],
+        anchor: start,
+        objective: city,
+        focus_target: None,
+        posture: ForcePosture::Advance,
+        readiness: 1.0,
+        local_strength_ratio: 2.0,
+    };
+    let view = CityView::of(&g, cid).unwrap();
+    assert_eq!(ai.siege_spotter(&g, 0, &group, &view), Some(soldier));
+    assert_eq!(ai.spotter_step(&mut g, 0, soldier, &view), Some(true));
+    let now = g.units[&soldier].pos;
+    assert!(g.wdist(now, city) <= g.unit_sight(soldier));
+    assert!(g.line_of_sight_from(now, city));
+    assert_eq!(ai.siege_spotter(&g, 0, &group, &view), None, "the city is in sight now");
+}
