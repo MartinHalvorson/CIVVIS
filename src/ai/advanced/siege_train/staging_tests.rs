@@ -449,3 +449,90 @@ fn a_posted_gun_walks_through_its_own_screen_toward_the_post() {
         "the gun closed on its post: {start:?} -> {now:?}"
     );
 }
+
+/// See `HELD_BREACH_WALL_SHARE`: an invested siege whose walls are well down
+/// holds through a relief that puts it under the ordinary abort share, and
+/// still falls back under the deep one.
+#[test]
+fn a_breached_siege_holds_through_a_modest_relief_under_the_gene() {
+    let run = |gene: bool, deep: bool| {
+        let (mut g, cid) = walled_city();
+        g.map_script = crate::setup::MapScript::Pangaea;
+        g.turn = 30;
+        g.at_war.insert((0, 1));
+        let city = g.cities[&cid].pos;
+        let max = g.city_max_wall_hp(&g.cities[&cid]);
+        assert!(max > 0, "fixture: a walled city");
+        g.cities.get_mut(&cid).unwrap().wall_hp = max * 6 / 10;
+        let guns: Vec<_> = super::tests::at_distance(&g, cid, 2)
+            .into_iter()
+            .take(2)
+            .map(|pos| g.spawn_unit("catapult", 0, pos))
+            .collect();
+        let taker = g.spawn_unit("swordsman", 0, ring_of(&g, cid)[0]);
+        let force = vec![guns[0], guns[1], taker];
+        let mut ai = AdvancedAi::new();
+        ai.enable_siege_train();
+        if gene {
+            ai.enable_siege_holds_a_breach();
+        }
+        let group = ForceGroup {
+            id: guns[0],
+            domain: ForceDomain::Land,
+            units: force.clone(),
+            anchor: g.units[&guns[0]].pos,
+            objective: city,
+            focus_target: None,
+            posture: ForcePosture::Advance,
+            readiness: 1.0,
+            local_strength_ratio: 2.0,
+        };
+        let plan = plan_against(&g, cid);
+        ai.sieges.insert(
+            cid,
+            Siege {
+                stage: SiegeStage::Reduce,
+                taker: None,
+                entered: 28,
+                assessed: 29,
+                posts: BTreeMap::new(),
+                short_since: None,
+            },
+        );
+        let strength: f64 = force.iter().map(|uid| unit_power(&g, *uid)).sum();
+        let share = if deep {
+            HELD_BREACH_ABORT_SHARE
+        } else {
+            ABORT_SHARE
+        };
+        // Relief arrives until the train sits under the chosen share.
+        for pos in super::tests::at_distance(&g, cid, 4) {
+            let view = CityView::of(&g, cid).unwrap();
+            if strength < share * siege_bill(&g, 0, &view) {
+                break;
+            }
+            g.spawn_unit("swordsman", 1, pos);
+        }
+        let view = CityView::of(&g, cid).unwrap();
+        let bill = siege_bill(&g, 0, &view);
+        assert!(strength < share * bill, "fixture: under the share");
+        if !deep {
+            assert!(
+                strength >= HELD_BREACH_ABORT_SHARE * bill,
+                "fixture: above the deep share ({strength} of {bill})"
+            );
+        }
+        for turn in [30, 31] {
+            g.turn = turn;
+            ai.assess_siege(&g, 0, cid, &plan, &group);
+        }
+        ai.sieges[&cid].stage
+    };
+    assert_eq!(run(false, false), SiegeStage::Stage, "the shipped abort");
+    assert_ne!(run(true, false), SiegeStage::Stage, "the breach holds");
+    assert_eq!(
+        run(true, true),
+        SiegeStage::Stage,
+        "a deep shortfall still falls back"
+    );
+}
