@@ -39,6 +39,13 @@ pub(super) const DENIAL_URGENT_FINISH: f64 = 20.0;
 pub(super) const CULTURE_SURGE_TOURISM_RATIO: f64 = 1.5;
 /// The share of the bar a surging leader's visitors must already hold.
 pub(super) const CULTURE_SURGE_BAR_SHARE: f64 = 0.2;
+/// Visitors at this share of the bar read as a surge whatever the Tourism
+/// ranking: two culture civilizations can run within the ratio of each
+/// other. Live King civvis-20261003T115745Z (game 35): Hungary led Spain on
+/// Tourism by only 1.1-1.5 times, held 23 visitors against a bar of 99 at
+/// turn 180 and 30 against 113 at 190, and won on Culture at 200 while the
+/// army fought Spain (diagnosed by -60).
+pub(super) const CULTURE_SURGE_SHARE_ALONE: f64 = 0.25;
 /// Standard turns before which no surge is read: early Tourism leads are
 /// small numbers.
 pub(super) const CULTURE_SURGE_TURN: u32 = 200;
@@ -146,10 +153,10 @@ impl AdvancedAi {
         })
     }
 
-    /// Whether `rival` leads the culture race on Tourism by
-    /// [`CULTURE_SURGE_TOURISM_RATIO`] over every other living major, with
-    /// its visitors already [`CULTURE_SURGE_BAR_SHARE`] of the bar it must
-    /// pass, after [`CULTURE_SURGE_TURN`].
+    /// Whether `rival` surges in the culture race after
+    /// [`CULTURE_SURGE_TURN`]: visitors at [`CULTURE_SURGE_SHARE_ALONE`] of
+    /// the bar it must pass, or at [`CULTURE_SURGE_BAR_SHARE`] with Tourism
+    /// [`CULTURE_SURGE_TOURISM_RATIO`] times every other living major's.
     pub(super) fn culture_surge(&self, g: &Game, rival: usize) -> bool {
         if g.turn < g.standard_duration(CULTURE_SURGE_TURN) {
             return false;
@@ -172,8 +179,10 @@ impl AdvancedAi {
             .max()
             .unwrap_or(1)
             .max(1);
-        g.tourism_per_turn(rival) >= CULTURE_SURGE_TOURISM_RATIO * next.max(1.0)
-            && g.foreign_tourists(rival) as f64 >= CULTURE_SURGE_BAR_SHARE * bar as f64
+        let share = g.foreign_tourists(rival) as f64 / bar as f64;
+        share >= CULTURE_SURGE_SHARE_ALONE
+            || (g.tourism_per_turn(rival) >= CULTURE_SURGE_TOURISM_RATIO * next.max(1.0)
+                && share >= CULTURE_SURGE_BAR_SHARE)
     }
 
     /// Whether `rival`'s culture race is projected to finish within
@@ -312,5 +321,13 @@ mod tests {
         g.turn = late(&g);
         assert!(!ai.culture_surge(&g, 1));
         assert!(ai.nearest_finish_culture_clock(&g, 1).is_none());
+
+        // Game 35's Hungary: a lead under the ratio, but visitors already a
+        // quarter of the bar.
+        let (mut g, ai) = surge_case(0, 147.0);
+        g.turn = late(&g);
+        tourists(&mut g, [0, 27, 0], [26, 142, 100]);
+        std::sync::Arc::make_mut(&mut g.observed_tourism_per_turn).insert(2, 103.0);
+        assert!(ai.culture_surge(&g, 1), "a quarter of the bar is a surge");
     }
 }
