@@ -1,0 +1,71 @@
+use super::*;
+use crate::ai::advanced::GrandStrategy;
+use crate::game::Item;
+
+fn board() -> (Game, u32, StrategicPlan) {
+    let mut g = Game::new_full(2, 24, 16, crate::rng::fixture_seed("CULTURERESERVE", 91_821), 250, 0, false);
+    let settler = g
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| g.units[unit].kind == "settler")
+        .unwrap();
+    g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let cid = g.player_city_ids(0)[0];
+    for unit in g.player_unit_ids(1) {
+        g.remove_unit(unit);
+    }
+    for position in g.nbrs(g.cities[&cid].pos) {
+        let tile = g.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+    }
+    g.players[0].civics.insert(crate::name!("drama_poetry"));
+    g.players[0].gold = 500.0;
+    g.players[0].gold_per_turn = 5.0;
+    let city = g.cities.get_mut(&cid).unwrap();
+    city.pop = 7;
+    city.queue.clear();
+    std::sync::Arc::make_mut(&mut g.observed_yield_adjustments).insert(
+        1,
+        crate::rules::Yields {
+            culture: 100.0,
+            ..Default::default()
+        },
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    (g, cid, plan)
+}
+
+fn queued_theater(g: &Game, cid: u32) -> bool {
+    matches!(g.cities[&cid].queue.first(), Some(Item::District { district, .. })
+        if g.district_family(*district) == "theater_square")
+}
+
+/// The reservation claims the idle city while Culture trails, and leaves it
+/// alone while the gene is off or the empire is in economic recovery.
+#[test]
+fn a_trailing_empire_reserves_a_theater_ahead_of_the_delegated_governor() {
+    let (mut g, cid, plan) = board();
+    let mut ai = AdvancedAi::new();
+    let mut off = g.clone();
+    ai.reserve_culture_defense_theater(&mut off, 0, &plan);
+    assert!(off.cities[&cid].queue.is_empty(), "off by default");
+
+    ai.enable_culture_defense_theater();
+    let mut broke = g.clone();
+    broke.players[0].gold = 10.0;
+    broke.players[0].gold_per_turn = -6.0;
+    ai.reserve_culture_defense_theater(&mut broke, 0, &plan);
+    assert!(broke.cities[&cid].queue.is_empty(), "economic recovery holds it");
+
+    ai.reserve_culture_defense_theater(&mut g, 0, &plan);
+    assert!(queued_theater(&g, cid), "queue: {:?}", g.cities[&cid].queue);
+}
