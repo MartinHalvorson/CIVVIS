@@ -151,6 +151,9 @@ struct Outcome {
     /// The focal seat's economy beside the strongest rival's at
     /// `ECONOMY_MARKS`, so a build-order policy is read on the axis it moves.
     economy: Vec<EconomySnapshot>,
+    /// Turns the focal seat spent bankrupt (its bankruptcy Amenity penalty
+    /// above zero), so a treasury policy is read on the failure it guards.
+    bankrupt_turns: u32,
 }
 
 /// Turns at which [`EconomySnapshot`] is taken: the live ladder's own
@@ -161,6 +164,7 @@ const ECONOMY_MARKS: [u32; 3] = [60, 100, 150];
 struct SeatEconomy {
     techs: usize,
     civics: usize,
+    treasury: f64,
     science: f64,
     culture: f64,
     gold: f64,
@@ -177,6 +181,7 @@ impl SeatEconomy {
         let mut seat = SeatEconomy {
             techs: g.players[pid].techs.len(),
             civics: g.players[pid].civics.len(),
+            treasury: g.players[pid].gold,
             ..Default::default()
         };
         for city in g.cities.values().filter(|city| city.owner == pid) {
@@ -205,6 +210,7 @@ impl SeatEconomy {
         SeatEconomy {
             techs: self.techs.max(other.techs),
             civics: self.civics.max(other.civics),
+            treasury: self.treasury.max(other.treasury),
             science: self.science.max(other.science),
             culture: self.culture.max(other.culture),
             gold: self.gold.max(other.gold),
@@ -366,6 +372,8 @@ fn trial(seed: u64, difficulty: Option<&str>, policy: &Gene, enabled: bool) -> T
     let mut held = BTreeSet::new();
     let mut conquest = ConquestProgress::default();
     let mut economy = Vec::new();
+    let mut bankrupt_turns = 0u32;
+    let mut bankrupt_seen_turn = None;
     // The journal is a ring of the last few thousand thoughts; drain it at
     // every turn boundary so the file holds the whole game.
     let mut lines = String::new();
@@ -373,6 +381,10 @@ fn trial(seed: u64, difficulty: Option<&str>, policy: &Gene, enabled: bool) -> T
     let mut observe = |g: &Game| {
         conquest.observe(g);
         observe_economy(g, &mut economy);
+        if g.players[0].bankruptcy_amenity_penalty > 0 && bankrupt_seen_turn != Some(g.turn) {
+            bankrupt_seen_turn = Some(g.turn);
+            bankrupt_turns += 1;
+        }
         for city in g.cities.values() {
             if city.owner == 0 && city.original_owner != 0 {
                 held.insert(city.id);
@@ -415,6 +427,7 @@ fn trial(seed: u64, difficulty: Option<&str>, policy: &Gene, enabled: bool) -> T
         conquest,
         air_surge: ais[0].air_surge_census_summary(),
         economy,
+        bankrupt_turns,
     };
     Trial {
         outcome,
@@ -460,7 +473,7 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
             domination[i] += usize::from(arm.outcome.focal_domination_won);
         }
         let row = serde_json::json!({
-            "schema": 3, "kind": "simulator_domination_policy_pair",
+            "schema": 4, "kind": "simulator_domination_policy_pair",
             "policy": config.policy.tag, "seed": seed,
             "execution_order": if index % 2 == 0 { "off,on" } else { "on,off" },
             "profile": profile(seed, config.difficulty), "civilizations": off.civs,
