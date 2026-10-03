@@ -3076,6 +3076,9 @@ pub struct BasicAi {
     /// (`AdvancedAi::enable_wonder_ring_recon`); the goal search is
     /// `wonder_ring_goal` in `advanced/wonder_sites.rs`.
     pub(crate) wonder_ring_recon: bool,
+    /// Settlers the opening's barbarian defense has displaced on a live
+    /// board. See `OPENING_DEFENSE_SETTLER_PREEMPTS`.
+    pub(crate) opening_defense_preempts: u32,
     /// Version two preserves every wonder pocket V1 would scout, but among
     /// goals no more than one tile beyond V1's nearest it picks the tile that
     /// reveals the most of the pocket. It therefore buys information without
@@ -5324,6 +5327,7 @@ impl BasicAi {
             explore_dead: RefCell::new(HashMap::new()),
             explore_commit: false,
             wonder_ring_recon: false,
+            opening_defense_preempts: 0,
             wonder_ring_recon_2: false,
             hut_collection: false,
             village_seeking: false,
@@ -5798,6 +5802,7 @@ impl BasicAi {
             explore_dead: RefCell::new(HashMap::new()),
             explore_commit: false,
             wonder_ring_recon: false,
+            opening_defense_preempts: 0,
             wonder_ring_recon_2: false,
             hut_collection: false,
             village_seeking: false,
@@ -9465,6 +9470,16 @@ impl BasicAi {
     /// standing, Walls and ordinary development return to their usual queue
     /// rules; an already-queued non-recon soldier is also already the right
     /// answer and is left alone.
+    /// Times the opening's barbarian defense may displace a queued Settler
+    /// on a live board before the Settler keeps the queue. The defenders it
+    /// raises are drawn off by the board to hunt the raiders, so the local
+    /// gap reopens every turn: live King 2026-10-03T145118Z started a Settler
+    /// at frame 0 and gave it to a Slinger at frame 1 on turns 12-13, 16-17
+    /// and 20-21, built Slingers and Archers from turn 10 to 37, and held one
+    /// city until turn 41. A besieged capital still answers through
+    /// `besieged_city_item`.
+    const OPENING_DEFENSE_SETTLER_PREEMPTS: u32 = 2;
+
     fn opening_barbarian_defense_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
         let city = g.cities.get(&cid).filter(|city| city.owner == pid)?;
         if self.minor
@@ -9689,15 +9704,31 @@ impl BasicAi {
             // of the same local threat it was waiting to survive.
             if let Some(item) = self.opening_barbarian_defense_item(g, pid, *cid) {
                 let displaced = g.cities[cid].queue.first().cloned();
-                if g.apply(
-                    pid,
-                    &Action::Produce {
-                        city: *cid,
-                        item: item.clone(),
-                    },
-                )
-                .is_ok()
+                let displaces_settler =
+                    matches!(&displaced, Some(Item::Unit { unit }) if unit == "settler");
+                let live = pid == crate::game::MIRRORED_SEAT && !g.host_observed.is_empty();
+                if live
+                    && displaces_settler
+                    && self.opening_defense_preempts >= Self::OPENING_DEFENSE_SETTLER_PREEMPTS
                 {
+                    think!(self.journal, Military, Detail,
+                           "{} keeps its Settler despite nearby barbarians", g.cities[cid].name;
+                           "the opening has already given the Settler's queue to {} defenders \
+                            and the board draws them off; the city keeps building",
+                           self.opening_defense_preempts);
+                } else if g
+                    .apply(
+                        pid,
+                        &Action::Produce {
+                            city: *cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                {
+                    if live && displaces_settler {
+                        self.opening_defense_preempts += 1;
+                    }
                     if self.journal.wants(crate::reasoning::Level::Decision) {
                         let city = &g.cities[cid];
                         think!(self.journal, Military, Decision,
@@ -24886,6 +24917,37 @@ mod tests {
     /// not threat recognition: the opening book simply skipped the alarm and
     /// left a nearly-finished Settler in place while civilians waited out the
     /// Scout. A first defender must take that queue.
+    /// On a live board the opening's defense displaces a queued Settler at
+    /// most `OPENING_DEFENSE_SETTLER_PREEMPTS` times; then the Settler keeps
+    /// the queue. A native board keeps yielding.
+    #[test]
+    fn a_live_opening_keeps_its_settler_after_the_defense_cap() {
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        for (live, preempts, yields) in [(true, 0, true), (true, 2, false), (false, 2, true)] {
+            let (mut g, city, scout) = barbarian_at_the_gates_game(91_503);
+            for uid in g.player_unit_ids(0) {
+                g.remove_unit(uid);
+            }
+            g.units.get_mut(&scout).unwrap().kind = crate::name!("scout");
+            g.cities.get_mut(&city).unwrap().pop = 2;
+            if live {
+                let pos = g.cities[&city].pos;
+                std::sync::Arc::make_mut(&mut g.host_observed).insert(pos);
+            }
+            g.apply(0, &Action::Produce { city, item: settler.clone() }).unwrap();
+            let mut ai = BasicAi::new();
+            ai.opening_defense_preempts = preempts;
+            ai.cities(&mut g, 0);
+            let kept = g.cities[&city].queue.first() == Some(&settler);
+            assert_eq!(!kept, yields, "live {live}, preempts {preempts}");
+            if live && yields {
+                assert_eq!(ai.opening_defense_preempts, preempts + 1);
+            }
+        }
+    }
+
     #[test]
     fn opening_queue_yields_to_an_unmarked_live_barbarian_scout() {
         let (mut native, native_city, native_scout) = barbarian_at_the_gates_game(91_502);
