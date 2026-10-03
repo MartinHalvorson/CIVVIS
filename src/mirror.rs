@@ -3276,6 +3276,43 @@ where
     })
 }
 
+fn apply_research_quotes(
+    game: &mut crate::game::Game,
+    state: &StateSnapshot,
+    unmapped: &mut Vec<String>,
+) {
+    let mut quotes = BTreeMap::new();
+    for row in &state.research_quotes {
+        let quote = crate::game::HostResearchQuote {
+            cost: row.c,
+            progress: row.p,
+        };
+        let name = civvis_node_name(&game.rules.techs, &row.t, "TECH_");
+        if let Some(name) = name.filter(|_| quote.remaining().is_some()) {
+            quotes.insert(Name::new(&name), quote);
+        } else {
+            let diagnostic = format!("research_quote:{}", row.t);
+            if !unmapped.contains(&diagnostic) {
+                unmapped.push(diagnostic);
+            }
+        }
+    }
+    // Replace, not union: a refreshed or older export cannot retain stale prices
+    // or already-spent progress. These quotes belong only to the mirrored seat.
+    game.host_research_quotes = Arc::new(BTreeMap::from([(0, quotes)]));
+}
+
+/// One native cost/progress quote for an unfinished technology.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateResearchQuote {
+    #[serde(default)]
+    pub t: String,
+    #[serde(default)]
+    pub c: Option<f64>,
+    #[serde(default)]
+    pub p: Option<f64>,
+}
+
 /// The whole board as one `state` event described it.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateSnapshot {
@@ -3335,6 +3372,10 @@ pub struct StateSnapshot {
     pub research: Option<String>,
     #[serde(default)]
     pub research_progress: f64,
+    /// Own-seat native prices/progress for all unfinished technologies, not
+    /// only the active selection. An older exporter leaves the list empty.
+    #[serde(default)]
+    pub research_quotes: Vec<StateResearchQuote>,
     /// The active Civilization VI civic and its accumulated culture.
     #[serde(default)]
     pub civic: Option<String>,
@@ -5895,7 +5936,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "kind", "event", "run", "ctx", "turn", "frame", "t", "utc", "techs", "civics", "research",
         "science_projects", "science_victory_points", "science_victory_points_per_turn",
         "science_victory_points_needed", "boosted_techs", "boosted_civics",
-        "research_progress", "civic", "civic_progress", "government", "used_governments",
+        "research_progress", "research_quotes", "civic", "civic_progress", "government", "used_governments",
         "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
         "holy_city", "inquisition_launched",
@@ -11915,6 +11956,7 @@ fn step_record_host_observed(ctx: &mut HostStepCtx<'_>) {
     // barbarian for this turn is on it by now, and the previous turn's
     // sightings were removed with them.
     strategic_income::apply(ctx.game, ctx.state, ctx.unmapped);
+    apply_research_quotes(ctx.game, ctx.state, ctx.unmapped);
     record_host_observed(ctx.game, ctx.snapshot);
 }
 
@@ -14532,6 +14574,7 @@ impl LiveMirror {
             apply_great_person_points(&mut self.game, state, &mut self.unmapped);
             apply_strategic_stockpiles(&mut self.game, state, &mut self.unmapped);
             strategic_income::apply(&mut self.game, state, &mut self.unmapped);
+            apply_research_quotes(&mut self.game, state, &mut self.unmapped);
             return;
         }
         self.foreign_uid_of.clear();
@@ -14946,3 +14989,6 @@ mod flood_state_tests;
 
 #[cfg(test)]
 mod war_type_permission_tests;
+
+#[cfg(test)]
+mod research_quote_tests;

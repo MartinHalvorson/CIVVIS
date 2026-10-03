@@ -474,7 +474,9 @@ pub mod quests;
 mod actions;
 mod city;
 mod growth;
+mod research_quotes;
 mod route_avoidance;
+pub use research_quotes::HostResearchQuote;
 
 #[cfg(test)]
 mod area_damage_unit_removal_tests;
@@ -6834,6 +6836,10 @@ pub struct Game {
     /// [`Game::item_cost_for_city`] prices from it.
     #[serde(default)]
     pub host_buildable: Arc<BTreeMap<u32, BTreeMap<String, HostMenuEntry>>>,
+    /// Observed native per-technology costs and saved research progress, by
+    /// player. Like production menus, these are refreshed host facts, not rules.
+    #[serde(default)]
+    pub host_research_quotes: Arc<BTreeMap<usize, BTreeMap<Name, HostResearchQuote>>>,
     /// Native strategic-resource prices for units and formations in each city,
     /// from `BuildQueue:GetUnitResourceCost(index, formation)`. These already
     /// include the host's modifiers; absent prices use the ordinary rules.
@@ -7584,6 +7590,7 @@ impl From<GameSer> for Game {
             blocked_production: Arc::new(BTreeMap::new()),
             blocked_purchases: Arc::new(BTreeMap::new()),
             host_buildable: Arc::new(BTreeMap::new()),
+            host_research_quotes: Arc::new(BTreeMap::new()),
             host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
             host_district_plots: Arc::new(BTreeMap::new()),
@@ -8304,6 +8311,7 @@ impl Game {
             blocked_production: Arc::new(BTreeMap::new()),
             blocked_purchases: Arc::new(BTreeMap::new()),
             host_buildable: Arc::new(BTreeMap::new()),
+            host_research_quotes: Arc::new(BTreeMap::new()),
             host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
             host_district_plots: Arc::new(BTreeMap::new()),
