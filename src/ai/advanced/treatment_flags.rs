@@ -4729,6 +4729,16 @@ impl AdvancedAi {
         self.siege_train_scales_with_walls = false;
     }
 
+    /// Opt-in gene `siege-rally-holds`; see [`Self::siege_rally_holds`].
+    pub fn enable_siege_rally_holds(&mut self) {
+        self.siege_rally_holds = true;
+    }
+
+    /// The twin of `enable_siege_rally_holds`.
+    pub fn disable_siege_rally_holds(&mut self) {
+        self.siege_rally_holds = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

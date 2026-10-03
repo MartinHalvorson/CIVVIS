@@ -6685,6 +6685,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-rally-holds`: a siege task force keeps its staging rally across
+    /// turns unless a fresh pick is clearly better. See
+    /// `AdvancedAi::held_siege_rally`. Off by default.
+    siege_rally_holds: bool,
     /// `siege-train-scales-with-walls`: a walled assault that cannot breach
     /// in time reserves up to `HEAVY_WALL_SIEGE_CAP` siege guns, not three,
     /// against walls of `HEAVY_WALL_HP` or more. Off by default.
@@ -8727,6 +8731,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_rally_holds: false,
             siege_train_scales_with_walls: false,
             strategic_deposit_prey: false,
             shared_danger: false,

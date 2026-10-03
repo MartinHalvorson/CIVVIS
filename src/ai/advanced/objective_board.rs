@@ -91,6 +91,11 @@ use crate::think;
 use crate::Pos;
 
 /// A Defend row's requirement is the hostile strength within
+/// `siege-rally-holds`: how much better, in tiles, a fresh siege rally must
+/// score before the force abandons the one it is marching to. See
+/// `AdvancedAi::held_siege_rally`.
+const SIEGE_RALLY_SWITCH_MARGIN: i32 = 2;
+
 /// [`THREAT_RELIEF_RADIUS`] times this, less the city's own strength.
 pub const DEFEND_MARGIN: f64 = 1.2;
 /// A Siege row's requirement is the campaign bill times this.
@@ -2062,15 +2067,14 @@ impl AdvancedAi {
     /// Siege forces prefer land on their approach side before pricing safety:
     /// a refuge beyond the enemy city is not a place to muster for taking it.
     /// If terrain leaves no approach-side land, retain the available ring.
-    fn far_side(
+    /// The medoid of the hostile soldiers we can see around `objective`.
+    fn rally_enemy(
         &self,
         g: &Game,
         pid: usize,
         objective: Pos,
-        force_medoid: Pos,
         visible: &crate::world::TileBits,
-        approach_only: bool,
-    ) -> Pos {
+    ) -> Option<Pos> {
         let hostile: Vec<Pos> = g
             .units
             .values()
@@ -2080,7 +2084,59 @@ impl AdvancedAi {
             .filter(|unit| self.observed(g, pid, visible, unit))
             .map(|unit| unit.pos)
             .collect();
-        let enemy = medoid(g, &hostile);
+        medoid(g, &hostile)
+    }
+
+    /// `siege-rally-holds`: keep last turn's siege rally while it is still a
+    /// land tile on the city's staging ring and the fresh `far_side` pick is
+    /// not better by [`SIEGE_RALLY_SWITCH_MARGIN`] (distance from the
+    /// defenders less distance from the force). The fresh pick reads two
+    /// moving inputs, the defenders and a force whose membership changes
+    /// every turn, so it flips across the city. Live King
+    /// civvis-20261003T081800Z mustered for unwalled Helsingborg from turn 68
+    /// to 150: the anchor jumped between (1, 20) and (5, 18) or (6, 16), the
+    /// force was 0% ready on almost every turn, and its soldiers stood 9-12
+    /// tiles out.
+    #[allow(clippy::too_many_arguments)]
+    fn held_siege_rally(
+        &self,
+        g: &Game,
+        pid: usize,
+        objective: Pos,
+        force_medoid: Pos,
+        visible: &crate::world::TileBits,
+        prior: Pos,
+        fresh: Pos,
+    ) -> Pos {
+        let on_ring = |pos: Pos| {
+            (2..=3).contains(&g.wdist(pos, objective))
+                && g.map
+                    .get(pos)
+                    .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+        };
+        if prior == fresh || !on_ring(prior) {
+            return fresh;
+        }
+        let enemy = self.rally_enemy(g, pid, objective, visible);
+        let score =
+            |pos: Pos| enemy.map_or(0, |enemy| g.wdist(pos, enemy)) - g.wdist(pos, force_medoid);
+        if score(fresh) >= score(prior) + SIEGE_RALLY_SWITCH_MARGIN {
+            fresh
+        } else {
+            prior
+        }
+    }
+
+    fn far_side(
+        &self,
+        g: &Game,
+        pid: usize,
+        objective: Pos,
+        force_medoid: Pos,
+        visible: &crate::world::TileBits,
+        approach_only: bool,
+    ) -> Pos {
+        let enemy = self.rally_enemy(g, pid, objective, visible);
         // A siege still needs to reach its city when no defending units are
         // visible. Mustering at the remote force center can otherwise keep
         // SiegeStage::Stage from ever gathering units near the objective.
@@ -2317,15 +2373,29 @@ impl AdvancedAi {
                 })
                 .sum();
             let rally = match kind {
-                Some(ObjectiveKind::Siege | ObjectiveKind::Defend | ObjectiveKind::Relieve) => self
-                    .far_side(
+                Some(ObjectiveKind::Siege | ObjectiveKind::Defend | ObjectiveKind::Relieve) => {
+                    let fresh = self.far_side(
                         g,
                         pid,
                         objective,
                         force_medoid,
                         &visible,
                         kind == Some(ObjectiveKind::Siege),
-                    ),
+                    );
+                    if self.siege_rally_holds && kind == Some(ObjectiveKind::Siege) {
+                        self.held_siege_rally(
+                            g,
+                            pid,
+                            objective,
+                            force_medoid,
+                            &visible,
+                            force.rally,
+                            fresh,
+                        )
+                    } else {
+                        fresh
+                    }
+                }
                 _ => force_medoid,
             };
             force.rally = rally;
@@ -2649,6 +2719,47 @@ mod tests {
             .expect("projected siege group");
         assert_eq!(group.posture, ForcePosture::Muster);
         assert_eq!(group.anchor, force.rally);
+    }
+
+    /// See `held_siege_rally`: a siege rally on the staging ring holds until
+    /// a fresh pick is better by the switch margin; an off-ring prior (the
+    /// row's own tile on the force's first turn) never holds.
+    #[test]
+    fn a_siege_rally_holds_until_a_clearly_better_one_appears() {
+        let objective = at(24, 10);
+        let mut g = flat_board(91_623, &[at(6, 10), objective], false);
+        war(&mut g, 0, 1);
+        let mut ai = on();
+        ai.battlefront_observation = false;
+        ai.enable_siege_rally_holds();
+        let visible = ai.battlefront_visibility(&g, 0);
+        let ring: Vec<Pos> = g
+            .wdisk(objective, 3)
+            .into_iter()
+            .filter(|pos| (2..=3).contains(&g.wdist(*pos, objective)))
+            .collect();
+        let medoid = at(12, 10);
+        let nearest = *ring
+            .iter()
+            .min_by_key(|pos| (g.wdist(**pos, medoid), **pos))
+            .unwrap();
+        let one_worse = *ring
+            .iter()
+            .find(|pos| g.wdist(**pos, medoid) == g.wdist(nearest, medoid) + 1)
+            .expect("fixture: a ring tile one step farther");
+        let far = *ring
+            .iter()
+            .max_by_key(|pos| (g.wdist(**pos, medoid), **pos))
+            .unwrap();
+        assert!(g.wdist(far, medoid) >= g.wdist(nearest, medoid) + 2);
+        let held =
+            |prior, fresh| ai.held_siege_rally(&g, 0, objective, medoid, &visible, prior, fresh);
+        // A fresh pick better by less than the margin does not move the force.
+        assert_eq!(held(one_worse, nearest), one_worse);
+        // A clearly better one does.
+        assert_eq!(held(far, nearest), nearest);
+        // A prior off the ring (the row's tile) never holds.
+        assert_eq!(held(objective, nearest), nearest);
     }
 
     #[test]
