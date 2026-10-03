@@ -28707,8 +28707,9 @@ fn conquest_razes_a_hopeless_isolated_city_instead_of_recapturing_it() {
 /// A developed conquest under heavy pressure is razed too: it revolts in
 /// the same three or four turns as a small one and returns to the enemy
 /// developed (live Antium, kept at turn 158 and lost at 161).
-#[test]
-fn conquest_razes_a_developed_city_that_revolts_under_heavy_pressure() {
+/// A captured six-population Antium under heavy Loyalty pressure, six tiles
+/// from our nearest city. Returns the board and the captured city.
+fn heavy_pressure_capture() -> (Game, u32) {
     let mut game = Game::new_full(2, 30, 18, 107_002, 120, 0, false);
     for pid in 0..2 {
         game.current = pid;
@@ -28777,8 +28778,34 @@ fn conquest_razes_a_developed_city_that_revolts_under_heavy_pressure() {
         development >= 35.0,
         "fixture: a developed city ({development})"
     );
+    (game, outpost)
+}
+
+#[test]
+fn conquest_razes_a_developed_city_that_revolts_under_heavy_pressure() {
+    let (mut game, outpost) = heavy_pressure_capture();
     let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
     ai.resolve_city_dispositions(&mut game, 0, GrandStrategy::Conquest);
+    assert!(
+        !game.cities.contains_key(&outpost),
+        "razed rather than handed back"
+    );
+}
+
+/// The Domination conquest opening captures under Expansion: a revolt-bound
+/// city is razed there too. Another seat's Expansion still keeps it.
+#[test]
+fn a_domination_opening_razes_a_revolt_bound_capture_under_expansion() {
+    let (mut game, outpost) = heavy_pressure_capture();
+    let mut ai = AdvancedAi::new();
+    ai.resolve_city_dispositions(&mut game, 0, GrandStrategy::Expansion);
+    assert!(
+        game.cities[&outpost].owner == 0,
+        "the control: an Expansion seat without the Domination target keeps it"
+    );
+    let (mut game, outpost) = heavy_pressure_capture();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.resolve_city_dispositions(&mut game, 0, GrandStrategy::Expansion);
     assert!(
         !game.cities.contains_key(&outpost),
         "razed rather than handed back"

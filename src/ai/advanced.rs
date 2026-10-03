@@ -43084,8 +43084,15 @@ impl AdvancedAi {
                 && turns_to_flip <= DOOMED_CAPTURE_TURNS
                 && loyalty_delta <= DOOMED_CAPTURE_PRESSURE
                 && development < DOOMED_CAPTURE_DEVELOPMENT;
+            // A Domination seat's Expansion half is when its conquest opening
+            // takes its first cities. Live King civvis-20261003T135713Z (game
+            // 38) kept Ondini at turn 57 (three population, -17 Loyalty a
+            // turn) under Expansion, and it flipped to a free city at 60.
+            let occupying = matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery)
+                || (strategy == GrandStrategy::Expansion
+                    && self.active_victory_target(before) == Some(VictoryTarget::Domination));
             let hopeless_occupation = disposable
-                && matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery)
+                && occupying
                 && ((loyalty_delta <= -8.0 && (imminent_low_value_revolt || unsupported_revolt))
                     || doomed_capture);
             match action {
