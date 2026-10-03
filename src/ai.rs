@@ -2531,6 +2531,19 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `settler-before-the-navy`.
     pub(crate) settler_before_the_navy: bool,
+    /// `housing_reserve_item` (a city within one of its housing: its Granary,
+    /// else its Aqueduct within `FIRST_CAMPUS_MAX_TURNS`) ahead of the
+    /// military floor, behind the Monument and the capital Settler, and never
+    /// while the city is due a Settler. `first-granary-reserve-3` arms the
+    /// stock step, which comes after the floor and the Settler, and the
+    /// Advanced reserve ahead of the strategic scorer, which a delegated live
+    /// seat never runs. Live King at t100: 2026-10-03T155014Z had 5 of 6
+    /// cities at their housing and no Granary; 164758Z 3 of 9 with 3
+    /// Granaries; 135713Z 4 of 10 with 1. Our cities held 4-5 citizens
+    /// against the rivals' 7-9.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `granary-before-the-army`.
+    pub(crate) granary_before_the_army: bool,
     /// A standing district's first building before the city opens another
     /// district. This governor tried every district the city still lacked
     /// before any building, so a district stood without the building that
@@ -5289,6 +5302,7 @@ impl BasicAi {
             campus_before_the_army_2: false,
             campus_before_the_army_3: false,
             settler_before_the_navy: false,
+            granary_before_the_army: false,
             district_buildings_first: false,
             capital_library_first: false,
             culture_defense_theater: false,
@@ -5765,6 +5779,7 @@ impl BasicAi {
             campus_before_the_army_2: false,
             campus_before_the_army_3: false,
             settler_before_the_navy: false,
+            granary_before_the_army: false,
             district_buildings_first: false,
             capital_library_first: false,
             culture_defense_theater: false,
@@ -12338,6 +12353,21 @@ impl BasicAi {
         } else {
             self.w.mil_per_city * n_cities as f64
         };
+        if self.granary_before_the_army
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(item) = Self::housing_reserve_item(g, pid, cid).filter(|item| {
+                !matches!(item, Item::District { .. })
+                    || g.host_production_turns(cid, item).unwrap_or_else(|| {
+                        g.item_cost_for(pid, item) / g.city_yields(cid).production.max(0.5)
+                    }) <= Self::FIRST_CAMPUS_MAX_TURNS
+            }) {
+                return Some(item);
+            }
+        }
         if (self.campus_before_the_army_2 || self.campus_before_the_army_3)
             && !self.minor
             && !self.barb
@@ -22627,6 +22657,31 @@ mod tests {
             },
         );
         (game, cid)
+    }
+
+    /// See `granary_before_the_army`: a city at its housing builds its Granary
+    /// where the stock governor fills the military floor.
+    #[test]
+    fn a_housing_bound_city_builds_its_granary_before_the_army() {
+        let (mut game, cid) = founded_capital_fixture("GRANARYFIRST", 91_861);
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("pottery"));
+        let housing = game.city_housing(&game.cities[&cid]);
+        game.cities.get_mut(&cid).unwrap().pop = housing.floor() as i32;
+        let granary = BasicAi::housing_reserve_item(&game, 0, cid);
+        assert!(
+            matches!(&granary, Some(Item::Building { building }) if *building == "granary"),
+            "the fixture is housing-bound: {granary:?}"
+        );
+        let pick = |on: bool, settlers: usize| {
+            let mut ai = BasicAi::new();
+            ai.granary_before_the_army = on;
+            ai.pick_item(&game, 0, cid, 3, settlers, 3, 1, 0, 0, 0, 0)
+        };
+        let stock = pick(false, 1);
+        assert_ne!(stock, granary, "the fixture's stock pick fills the military floor");
+        assert_eq!(pick(true, 1), granary, "the Granary comes first");
     }
 
     /// See `settler_before_the_navy`: a coastal city due a Settler trains it

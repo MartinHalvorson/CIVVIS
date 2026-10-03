@@ -2477,6 +2477,9 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "denial-needs-a-road", field: "denial_needs_a_road", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_needs_a_road, disable: AdvancedAi::disable_denial_needs_a_road },
     Gene { tag: "campus-before-the-army-2", field: "campus_before_the_army_2", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_the_army_2, disable: AdvancedAi::disable_campus_before_the_army_2 },
     Gene { tag: "campus-before-the-army-3", field: "campus_before_the_army_3", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_the_army_3, disable: AdvancedAi::disable_campus_before_the_army_3 },
+    // Live King 155014Z: 5 of 6 cities at their housing, no Granary, at t100;
+    // see `BasicAi::granary_before_the_army`.
+    Gene { tag: "granary-before-the-army", field: "granary_before_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_granary_before_the_army, disable: AdvancedAi::disable_granary_before_the_army },
     // Live King 113755Z: Galleys and Quadriremes ahead of the walkers at
     // three cities; see `BasicAi::settler_before_the_navy`.
     Gene { tag: "settler-before-the-navy", field: "settler_before_the_navy", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_before_the_navy, disable: AdvancedAi::disable_settler_before_the_navy },
