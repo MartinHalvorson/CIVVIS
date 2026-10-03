@@ -895,9 +895,17 @@ impl AdvancedAi {
                 && self.campaign_target_legal(g, pid, rival)
                 && outguns(rival)
         };
+        // A counter target need not be urgent. Its front is never traded
+        // while it is capital prey, so waiting for urgency waits for the loss:
+        // live King civvis-20261003T155014Z (game 41) held the Cree as the
+        // faithless-conversion counter from turn 91, at 2.2 times their power
+        // by 110, while the army besieged a prey America. The Cree read urgent
+        // only at 116, at 1.07 times, and won on Religion at 126.
         self.actionable_victory_denial(g, pid)
             .filter(|(rival, counter)| {
-                *counter == GrandStrategy::Conquest && self.urgent_victory_threat(g, *rival)
+                *counter == GrandStrategy::Conquest
+                    && (self.urgent_victory_threat(g, *rival)
+                        || self.domination_counter_target(g, pid, *rival))
             })
             .map(|(rival, _)| rival)
             .filter(|rival| usable(*rival))
