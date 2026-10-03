@@ -169,6 +169,26 @@ pub fn unit_purchase_keeps_solvent(gold_per_turn: f64, maintenance: f64) -> bool
     maintenance <= 0.0 || gold_per_turn - maintenance >= 0.0
 }
 
+/// `upkeep-reserve`: turns of the empire's unit bill an upgrade pass leaves
+/// in the treasury.
+///
+/// Both upgrade passes spent down to a flat 30 Gold at war. On live King
+/// 2026-10-03T040354Z the army's bill was 130-220 Gold a turn, and a deck
+/// that dropped Levée en Masse for one turn (a government change, a
+/// re-ranked military slot) added 60-70 to it: upgrades took the treasury
+/// from 155 to 30 at turn 179 and from 459 to 104 at turn 192, the swing
+/// then ran it to zero at turns 180-186 and 207-213 (net -108 and -128 a
+/// turn), and bankruptcy's Amenity penalty took 100-140 Science a turn while
+/// Kongo flew to its Technology victory. One and a half turns of the bill
+/// rides out a one-turn swing and most of a second.
+pub const UPKEEP_RESERVE_TURNS: f64 = 1.5;
+
+/// The treasury an upgrade pass keeps: `floor`, raised to
+/// [`UPKEEP_RESERVE_TURNS`] turns of a unit bill of `unit_upkeep`.
+pub fn upgrade_floor_from(floor: f64, unit_upkeep: f64) -> f64 {
+    floor.max(UPKEEP_RESERVE_TURNS * unit_upkeep.max(0.0))
+}
+
 impl AdvancedAi {
     /// `buy-what-cards-cannot-boost`: the card multiplier the purchase scorer
     /// prices this item's build at. Exactly 1.0 while the gene is off.
@@ -295,6 +315,17 @@ impl AdvancedAi {
 }
 
 impl AdvancedAi {
+    /// `upkeep-reserve`: the treasury an upgrade pass keeps, never below
+    /// [`UPKEEP_RESERVE_TURNS`] turns of the empire's unit bill (the host's
+    /// own figure when it exports one). `stock` comes back unchanged while
+    /// the gene is off.
+    pub(super) fn upgrade_treasury_floor(&self, g: &Game, pid: usize, stock: f64) -> f64 {
+        if !self.upkeep_reserve {
+            return stock;
+        }
+        upgrade_floor_from(stock, g.unit_gold_maintenance(pid))
+    }
+
     /// `treasury-at-work-2`: the reserve `advanced_gold_spending` keeps back,
     /// given the plan's stock reserve. Returns `stock` untouched while the
     /// gene is off.
@@ -1023,5 +1054,27 @@ mod tests {
         g.players[0].gold = 10_000.0;
         assert!(!ai.young_empire_purchase(&mut g, 0, reserve));
         let _ = builder;
+    }
+
+    #[test]
+    fn the_upgrade_floor_keeps_the_armys_bill_only_while_on() {
+        assert_eq!(upgrade_floor_from(30.0, 0.0), 30.0);
+        assert_eq!(upgrade_floor_from(30.0, 140.0), 210.0);
+        assert_eq!(upgrade_floor_from(300.0, 140.0), 300.0, "a larger floor stands");
+        let (mut g, _) = board();
+        std::sync::Arc::make_mut(&mut g.host_maintenance).insert(
+            0,
+            crate::game::HostMaintenance {
+                units: Some(140.0),
+                buildings: None,
+                districts: None,
+            },
+        );
+        let mut ai = AdvancedAi::new();
+        assert_eq!(ai.upgrade_treasury_floor(&g, 0, 30.0), 30.0, "off by default");
+        ai.enable_upkeep_reserve();
+        assert_eq!(ai.upgrade_treasury_floor(&g, 0, 30.0), 210.0);
+        ai.disable_upkeep_reserve();
+        assert_eq!(ai.upgrade_treasury_floor(&g, 0, 30.0), 30.0);
     }
 }

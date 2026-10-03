@@ -2294,6 +2294,15 @@
           "diplomatic-lane-forecast-2": null
         }
       },
+      "district-buildings-first": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "district-buildings-first": null,
+          "district-buildings-first-2": null
+        }
+      },
       "district-coverage": {
         "rule_on": [
           "district-coverage-2"

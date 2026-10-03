@@ -4552,13 +4552,31 @@ impl AdvancedAi {
     /// building before the delegated city governor opens another district.
     pub fn enable_district_buildings_first(&mut self) {
         self.district_buildings_first = true;
+        self.district_buildings_first_2 = false;
         self.base.district_buildings_first = true;
+        self.base.capital_library_first = false;
     }
 
     /// The twin of `enable_district_buildings_first`.
     pub fn disable_district_buildings_first(&mut self) {
         self.district_buildings_first = false;
-        self.base.district_buildings_first = false;
+        self.base.district_buildings_first = self.district_buildings_first_2;
+    }
+
+    /// See `BasicAi::capital_library_first`: version one, and the capital's
+    /// Library ahead of its next Settler once it holds a Campus.
+    pub fn enable_district_buildings_first_2(&mut self) {
+        self.district_buildings_first = false;
+        self.district_buildings_first_2 = true;
+        self.base.district_buildings_first = true;
+        self.base.capital_library_first = true;
+    }
+
+    /// The twin of `enable_district_buildings_first_2`.
+    pub fn disable_district_buildings_first_2(&mut self) {
+        self.district_buildings_first_2 = false;
+        self.base.district_buildings_first = self.district_buildings_first;
+        self.base.capital_library_first = false;
     }
 
     /// See `BasicAi::monument_first`: a city's Monument ahead of the military
@@ -4585,6 +4603,17 @@ impl AdvancedAi {
     pub fn disable_culture_defense_theater(&mut self) {
         self.culture_defense_theater = false;
         self.base.culture_defense_theater = false;
+    }
+
+    /// See `gold_and_cards::UPKEEP_RESERVE_TURNS`: upgrade passes keep one and
+    /// a half turns of the army's bill in the treasury.
+    pub fn enable_upkeep_reserve(&mut self) {
+        self.upkeep_reserve = true;
+    }
+
+    /// The twin of `enable_upkeep_reserve`.
+    pub fn disable_upkeep_reserve(&mut self) {
+        self.upkeep_reserve = false;
     }
 
     /// See `BasicAi::campus_before_harbor`: a city's first Campus before its

@@ -217,6 +217,7 @@ impl AdvancedAi {
         } else {
             120.0
         };
+        let floor = self.upgrade_treasury_floor(g, pid, floor);
         self.modernize_army_preserving_air_wing(g, pid, floor, 0.0);
         BasicAi::use_opportunistic_unit_tools(g, pid);
     }

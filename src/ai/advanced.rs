@@ -5186,6 +5186,10 @@ pub struct AdvancedAi {
     /// governor opens another district. Opt-in gene `district-buildings-first`;
     /// see `BasicAi::district_buildings_first`.
     district_buildings_first: bool,
+    /// Version one, and the capital's Library ahead of its next Settler once
+    /// it holds a Campus. Opt-in gene `district-buildings-first-2`; see
+    /// `BasicAi::capital_library_first`.
+    district_buildings_first_2: bool,
     /// A Theater Square ahead of the Harbor and the bred district order in
     /// the delegated city governor while the empire's Culture trails the
     /// strongest rival's. Opt-in gene `culture-defense-theater`; see
@@ -6865,6 +6869,10 @@ pub struct AdvancedAi {
     skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// Upgrade passes keep one and a half turns of the army's bill in the
+    /// treasury instead of a flat 30 Gold at war. Opt-in gene
+    /// `upkeep-reserve`; see `gold_and_cards::UPKEEP_RESERVE_TURNS`.
+    upkeep_reserve: bool,
     /// Price route food by the next population-gated district slot.
     trade_growth_to_district: bool,
     /// Price route production by time saved on an active space project.
@@ -8488,6 +8496,7 @@ impl AdvancedAi {
             campus_before_harbor: false,
             campus_before_harbor_2: false,
             district_buildings_first: false,
+            district_buildings_first_2: false,
             culture_defense_theater: false,
             domination_specializes_earlier: false,
             domination_ignores_city_states: false,
@@ -8708,6 +8717,7 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
+            upkeep_reserve: false,
             trade_growth_to_district: false,
             trade_production_to_launch: false,
             tourism_land_reservation: false,
@@ -10303,6 +10313,7 @@ impl AdvancedAi {
         } else {
             PEACETIME_UPGRADE_FLOOR
         };
+        let floor = self.upgrade_treasury_floor(g, pid, floor);
         let taken = self.modernize_army_preserving_air_wing(g, pid, floor, VETERAN_UPGRADE_WEIGHT);
         if taken > 0 {
             think!(self.journal(), Military, Decision,
