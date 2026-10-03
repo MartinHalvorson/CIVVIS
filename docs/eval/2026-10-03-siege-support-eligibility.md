@@ -106,8 +106,9 @@ Local validation used only this task's own build cache:
   CI-wiring tests passed.
 - Candidate range census: all 118 positive samples match the host.
 - Four 6-major/9-city-state, 74x46 Continents/Online simulator health games
-  with a 250-turn cap completed, seeds 261003740–743, jobs 2. Three ended by
-  score at the cap and one by Culture at 209. This is health, not strength.
+  with a 250-turn cap completed, seeds 261003740–743, jobs 2. Two ended by
+  score at the cap, one by Religion at 222, and one by Culture at 209. This
+  is health, not strength.
 
 | Frozen input/output | SHA-256 |
 |---|---|
