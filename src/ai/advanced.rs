@@ -6728,6 +6728,11 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-budget-counts-what-fires`: the siege damage budget charges a
+    /// land ranged unit the -17 it strikes a city at, and counts melee only
+    /// as the finishing blow. See `AdvancedAi::conversion_siege_budget`.
+    /// Off by default.
+    siege_budget_counts_what_fires: bool,
     /// `siege-holds-a-breach`: an invested siege whose walls are a quarter
     /// down falls back to Stage only under `HELD_BREACH_ABORT_SHARE` of the
     /// bill. See `siege_train::HELD_BREACH_WALL_SHARE`. Off by default.
@@ -8795,6 +8800,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_budget_counts_what_fires: false,
             siege_holds_a_breach: false,
             siege_ranged_floor: false,
             siege_rally_holds: false,

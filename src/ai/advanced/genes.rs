@@ -2479,6 +2479,10 @@ pub const GENES: &[Gene] = &[
     // Live King 113755Z: Galleys and Quadriremes ahead of the walkers at
     // three cities; see `BasicAi::settler_before_the_navy`.
     Gene { tag: "settler-before-the-navy", field: "settler_before_the_navy", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_before_the_navy, disable: AdvancedAi::disable_settler_before_the_navy },
+    // Live King 110427Z-cont1: the budget read Tenochtitlan ready in 2.8
+    // turns while Archers did 5 a shot and melee held the ring; it healed
+    // to 200 every turn. See `conversion_siege_budget`.
+    Gene { tag: "siege-budget-counts-what-fires", field: "siege_budget_counts_what_fires", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_budget_counts_what_fires, disable: AdvancedAi::disable_siege_budget_counts_what_fires },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

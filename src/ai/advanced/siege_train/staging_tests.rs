@@ -536,3 +536,48 @@ fn a_breached_siege_holds_through_a_modest_relief_under_the_gene() {
         "a deep shortfall still falls back"
     );
 }
+
+/// See `conversion_siege_budget` under `siege-budget-counts-what-fires`:
+/// Archers strike a city at 17 less and melee only finishes it, so two
+/// Archers and a Swordsman cannot out-damage an unwalled city's heal; the
+/// shipped budget reads the same force ready. Catapults, which strike
+/// without the penalty, make it finite again.
+#[test]
+fn the_budget_counts_only_the_damage_that_fires() {
+    let (mut g, cid) = walled_city();
+    {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.wall_hp = 0;
+        city.buildings
+            .retain(|building| building != "walls" && building != "medieval_walls");
+    }
+    // Tenochtitlan's host reading in game 33: 45 on its hill.
+    std::sync::Arc::make_mut(&mut g.observed_city_strength).insert(cid, 45.0);
+    let mut force: Vec<u32> = super::tests::at_distance(&g, cid, 2)
+        .into_iter()
+        .take(2)
+        .map(|pos| g.spawn_unit("archer", 0, pos))
+        .collect();
+    force.push(g.spawn_unit("swordsman", 0, ring_of(&g, cid)[0]));
+    let mut ai = AdvancedAi::new();
+    let (shipped, _) = ai.conversion_siege_budget(&g, 0, cid, &force).unwrap();
+    assert!(
+        shipped.is_finite(),
+        "the shipped budget reads it ready: {shipped}"
+    );
+    ai.enable_siege_budget_counts_what_fires();
+    let (truthful, _) = ai.conversion_siege_budget(&g, 0, cid, &force).unwrap();
+    assert!(truthful.is_infinite(), "Archers cannot out-damage the heal");
+    for pos in super::tests::at_distance(&g, cid, 2)
+        .into_iter()
+        .skip(2)
+        .take(3)
+    {
+        force.push(g.spawn_unit("catapult", 0, pos));
+    }
+    let (with_guns, _) = ai.conversion_siege_budget(&g, 0, cid, &force).unwrap();
+    assert!(
+        with_guns.is_finite(),
+        "siege guns strike without the penalty"
+    );
+}
