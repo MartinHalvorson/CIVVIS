@@ -5310,6 +5310,10 @@ pub struct AdvancedAi {
     /// been released, and this game has had its one attempt. `false`
     /// whenever the gene is off.
     conquest_closed: bool,
+    /// `early-conquest-opening`: the first turn this controller observed. A
+    /// controller started after turn one is a resumed game whose opening
+    /// was lost with the old process. See `conquest_naming_deadline`.
+    conquest_first_turn: Option<u32>,
     /// The denial war `science_threat_denial` opened and has not yet closed.
     denial_war: Option<science_threat_denial::DenialWar>,
     /// Arm the culture defence at 30 percent of the victory bar instead of
@@ -8599,6 +8603,7 @@ impl AdvancedAi {
             chop_for_expansion: false,
             conquest_opening: None,
             conquest_closed: false,
+            conquest_first_turn: None,
             denial_war: None,
             culture_threat_early: false,
             culture_building_catchup: false,
