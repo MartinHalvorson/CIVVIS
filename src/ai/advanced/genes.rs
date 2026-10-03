@@ -2467,6 +2467,10 @@ pub const GENES: &[Gene] = &[
     // they stood at 400 again eight turns later. See
     // `siege_train::HELD_BREACH_WALL_SHARE`.
     Gene { tag: "siege-holds-a-breach", field: "siege_holds_a_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_holds_a_breach, disable: AdvancedAi::disable_siege_holds_a_breach },
+    // Live King 100536Z aimed its culture denial at India for 45 turns with
+    // Phoenicia's closed borders between; no unit reached Delhi. See
+    // `advanced/denial_needs_a_road.rs`.
+    Gene { tag: "denial-needs-a-road", field: "denial_needs_a_road", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_needs_a_road, disable: AdvancedAi::disable_denial_needs_a_road },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

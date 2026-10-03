@@ -5205,6 +5205,11 @@ pub struct AdvancedAi {
     /// no Builder standing or queued. See `BasicAi::builder_before_the_army_2`.
     builder_before_the_army_2: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `denial-needs-a-road`: a Conquest counter to a rival's victory clock
+    /// is actionable only when a land path that respects closed borders
+    /// reaches one of its cities. See `AdvancedAi::rival_reachable_by_land`.
+    /// Off by default.
+    denial_needs_a_road: bool,
     /// `denial-nearest-finish`: a Domination army also answers a culture
     /// race projected along its geometric curve to finish within
     /// `DENIAL_FINISH_HORIZON` turns, ranked by how soon. See
@@ -7489,6 +7494,7 @@ mod air_resource_settlement;
 mod air_surge;
 pub use air_city_assault::AirCityAssault;
 mod denial_nearest_finish;
+mod denial_needs_a_road;
 mod siege_resource_purchase;
 mod strategic_deposit_prey;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
@@ -8583,6 +8589,7 @@ impl AdvancedAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             // ---- append: c-d ----------------------------------------
+            denial_needs_a_road: false,
             denial_nearest_finish: false,
             campus_before_harbor: false,
             campus_before_harbor_2: false,
@@ -11854,7 +11861,11 @@ impl AdvancedAi {
     ) -> bool {
         counter != GrandStrategy::Conquest
             || !self.battlefront_observation
-            || (self.campaign_target_legal(g, pid, rival) && !g.player_city_ids(rival).is_empty())
+            || (self.campaign_target_legal(g, pid, rival)
+                && !g.player_city_ids(rival).is_empty()
+                // `denial-needs-a-road`: an army that cannot march there
+                // counters nothing. See `advanced/denial_needs_a_road.rs`.
+                && (!self.denial_needs_a_road || self.rival_reachable_by_land(g, pid, rival)))
     }
 
     /// A Culture denial needs OUR culture to be the bar the leader must clear.

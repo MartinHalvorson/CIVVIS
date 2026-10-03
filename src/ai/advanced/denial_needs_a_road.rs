@@ -1,0 +1,123 @@
+//! `denial-needs-a-road`: a Domination army counters only a rival it can
+//! march to.
+//!
+//! Live King civvis-20261003T100536Z (game 31) aimed its denial campaign at
+//! India, the culture leader, from turn 130 to its Culture loss at 179. The
+//! Siege of Delhi read "0 of 8 units staged" for 45 turns while the army
+//! stood 15 to 21 tiles out. Delhi was within the straight-line declaration
+//! reach, but no land path reached its ring: Phoenicia, at peace with closed
+//! borders, stood between (a 48-step road with every border open; diagnosed
+//! by -60). Phoenicia itself, adjacent and 1.7-1.9 times outgunned, went
+//! unpunished.
+
+use super::AdvancedAi;
+use crate::game::Game;
+use std::collections::{BTreeSet, VecDeque};
+
+impl AdvancedAi {
+    /// Whether a land path from one of our cities reaches a tile beside one
+    /// of `rival`'s cities, crossing only unowned land, our own, the
+    /// rival's, any civilization's we are at war with, and territory whose
+    /// borders are open to us. Water, impassable tiles and closed borders
+    /// stop the march; units do not.
+    pub(super) fn rival_reachable_by_land(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        let passable = |pos: crate::Pos| {
+            let Some(tile) = g.map.get(pos) else {
+                return false;
+            };
+            if !g.rules.is_passable(tile) || g.rules.is_water(tile) {
+                return false;
+            }
+            match tile
+                .owner_city
+                .and_then(|cid| g.cities.get(&cid))
+                .map(|city| city.owner)
+            {
+                None => true,
+                Some(owner) => {
+                    owner == pid
+                        || owner == rival
+                        || g.is_at_war(pid, owner)
+                        || g.has_open_borders(pid, owner)
+                }
+            }
+        };
+        let goals: BTreeSet<crate::Pos> = g
+            .player_city_ids(rival)
+            .into_iter()
+            .flat_map(|cid| {
+                let pos = g.cities[&cid].pos;
+                std::iter::once(pos).chain(g.nbrs(pos))
+            })
+            .collect();
+        if goals.is_empty() {
+            return false;
+        }
+        let mut seen: BTreeSet<crate::Pos> = BTreeSet::new();
+        let mut queue: VecDeque<crate::Pos> = VecDeque::new();
+        for cid in g.player_city_ids(pid) {
+            let pos = g.cities[&cid].pos;
+            if seen.insert(pos) {
+                queue.push_back(pos);
+            }
+        }
+        while let Some(pos) = queue.pop_front() {
+            if goals.contains(&pos) {
+                return true;
+            }
+            for next in g.nbrs(pos) {
+                if !seen.contains(&next) && passable(next) {
+                    seen.insert(next);
+                    queue.push_back(next);
+                }
+            }
+        }
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{AdvancedAi, VictoryTarget};
+    use crate::game::Game;
+
+    /// A rival behind a third party's closed borders is unreachable; open
+    /// borders or a war on the third party opens the road.
+    #[test]
+    fn a_rival_behind_closed_borders_has_no_road() {
+        let mut g = Game::new_full(3, 40, 12, 931_036, 300, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        for tile in g.map.tiles.values_mut() {
+            // A strip of land, closed at both ends so the wrap cannot go
+            // around the middle civilization.
+            tile.terrain = if (4..=8).contains(&tile.pos.1) && (2..=36).contains(&tile.pos.0) {
+                crate::name!("grassland")
+            } else {
+                crate::name!("ocean")
+            };
+            tile.feature = None;
+            tile.hills = false;
+        }
+        let ours = g.found_city_for(0, (4, 6), None);
+        let screen = g.found_city_for(1, (18, 6), None);
+        g.found_city_for(2, (32, 6), None);
+        // The middle civilization's land spans the whole strip.
+        for tile in g.map.tiles.values_mut() {
+            if (14..=22).contains(&tile.pos.0) && (4..=8).contains(&tile.pos.1) {
+                tile.owner_city = Some(screen);
+            }
+        }
+        let _ = ours;
+        // Past Early Empire: the middle civilization closes its borders.
+        g.players[1].borders_enforced = Some(true);
+        let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(!g.has_open_borders(0, 1), "fixture: closed borders");
+        assert!(!ai.rival_reachable_by_land(&g, 0, 2));
+        assert!(ai.rival_reachable_by_land(&g, 0, 1), "the screen itself");
+        g.at_war.insert((0, 1));
+        g.at_war.insert((1, 0));
+        assert!(ai.rival_reachable_by_land(&g, 0, 2), "a war opens the road");
+    }
+}
