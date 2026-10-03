@@ -2454,6 +2454,23 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `district-buildings-first`.
     pub(crate) district_buildings_first: bool,
+    /// A Theater Square ahead of the Harbor and every other district while
+    /// the empire's Culture trails the strongest rival's, until half the
+    /// cities hold one. Culture is the culture-victory defense: a seat's
+    /// domestic Tourists are its lifetime Culture over 100
+    /// (`Game::domestic_tourists`), and a rival wins once its visitors from
+    /// every civilization outnumber that civilization's domestic Tourists.
+    /// Culture was the commonest live King loss (17 of 31 in late
+    /// September). In live King 2026-10-01T050754Z Germany won it at turn
+    /// 172 while our 23 domestic Tourists were the fewest on the board
+    /// (Sweden 83, Mongolia 39): our Culture ran 23-54 a turn against
+    /// Germany's 150-372, with one Theater Square across the 14 games of
+    /// 2026-10-01/02. `theater_square` is the last `DISTRICT_PRIORITY`
+    /// family in every bred genome, so a city reaches it only after the
+    /// other three.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `culture-defense-theater`.
+    pub(crate) culture_defense_theater: bool,
     /// The genome's own `mil_per_city` while `AdvancedAi::delegated_cities`
     /// has lent this governor a Domination war's higher army target, `None`
     /// otherwise. Below the genome's own floor every city still builds the
@@ -5166,6 +5183,7 @@ impl BasicAi {
             capital_campus_first: false,
             monument_first: false,
             district_buildings_first: false,
+            culture_defense_theater: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
@@ -5633,6 +5651,7 @@ impl BasicAi {
             capital_campus_first: false,
             monument_first: false,
             district_buildings_first: false,
+            culture_defense_theater: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
@@ -12513,6 +12532,13 @@ impl BasicAi {
                 return Some(item);
             }
         }
+        // `culture-defense-theater`: a Theater Square while the empire's
+        // Culture trails, ahead of the Harbor and the bred district order.
+        if self.culture_defense_theater && !self.minor && !self.barb {
+            if let Some(item) = Self::culture_defense_theater_item(g, pid, cid, n_cities) {
+                return Some(item);
+            }
+        }
         // Coastal infrastructure is part of the water strategy, not an
         // accidental fallback after every land district. A harbor also gives
         // later naval production somewhere sensible to concentrate.
@@ -14306,6 +14332,83 @@ impl BasicAi {
     /// stop for its Monument: the capital is the land grab's settler pump,
     /// and cities held at turn 60 drive the rest of the game.
     const MONUMENT_CAPITAL_MIN_CITIES: usize = 3;
+
+    /// `culture_defense_theater` answers while the empire's Culture a turn is
+    /// under this share of the strongest living rival major's — the bar the
+    /// Advanced governor's `culture-floor` uses (`CULTURE_FLOOR_RATIO`).
+    const CULTURE_DEFENSE_RATIO: f64 = 0.7;
+
+    /// A seat's Culture a turn: what its cities make, plus the host's
+    /// correction for that seat. On the live board a rival's cities are
+    /// rebuilt from what the seat has seen and its public Culture figure
+    /// lands in `observed_yield_adjustments`, so the cities alone would read
+    /// every rival at about zero. Empty on a native board.
+    pub(crate) fn seat_culture_per_turn(g: &Game, seat: usize) -> f64 {
+        g.player_city_ids(seat)
+            .into_iter()
+            .map(|city| g.city_yields(city).culture)
+            .sum::<f64>()
+            + g.observed_yield_adjustments
+                .get(&seat)
+                .map_or(0.0, |adjustment| adjustment.culture)
+    }
+
+    /// Whether the empire's Culture trails `CULTURE_DEFENSE_RATIO` of the
+    /// strongest living rival major's.
+    pub(crate) fn culture_trails_the_field(g: &Game, pid: usize) -> bool {
+        let best = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+            })
+            .map(|player| Self::seat_culture_per_turn(g, player.id))
+            .fold(0.0_f64, f64::max);
+        best > 0.0 && Self::seat_culture_per_turn(g, pid) < Self::CULTURE_DEFENSE_RATIO * best
+    }
+
+    /// See `culture_defense_theater`: this city's Theater Square at its best
+    /// site while the empire's Culture trails, the city holds none, and fewer
+    /// than half of the empire's cities hold or have queued one.
+    pub(crate) fn culture_defense_theater_item(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+    ) -> Option<Item> {
+        if g.city_has_district_family(&g.cities[&cid], crate::name!("theater_square")) {
+            return None;
+        }
+        let held = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|other| {
+                let city = &g.cities[other];
+                g.city_has_district_family(city, crate::name!("theater_square"))
+                    || matches!(
+                        city.queue.first(),
+                        Some(Item::District { district, .. })
+                            if g.district_family(*district) == "theater_square"
+                    )
+            })
+            .count();
+        if 2 * held >= n_cities.max(1) || !Self::culture_trails_the_field(g, pid) {
+            return None;
+        }
+        let theater = Self::civ_district(g, pid, "theater_square");
+        let pos = g.district_sites(cid, theater).into_iter().max_by(|a, b| {
+            g.district_yields(theater, *a)
+                .total()
+                .partial_cmp(&g.district_yields(theater, *b).total())
+                .unwrap_or(Ordering::Equal)
+                .then(a.cmp(b))
+        })?;
+        let item = Item::District {
+            district: theater,
+            pos,
+        };
+        g.can_produce(pid, cid, &item).then_some(item)
+    }
 
     /// District families whose first building `district_buildings_first`
     /// raises ahead of a new district, in the order it takes them. Science
@@ -22281,6 +22384,89 @@ mod tests {
             }),
             "the Campus takes its Library first"
         );
+    }
+
+    /// See `culture_defense_theater`: while a rival out-makes the empire's
+    /// Culture, the city opens a Theater Square the stock governor does not;
+    /// with no rival Culture to trail, the stock choice stands.
+    #[test]
+    fn a_trailing_empire_opens_a_theater_square() {
+        let mut game = Game::new_full(
+            2,
+            24,
+            16,
+            crate::rng::fixture_seed("CULTUREDEFENSE", 91_813),
+            250,
+            0,
+            false,
+        );
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = game.player_city_ids(0)[0];
+        // The rival is only a Culture figure here; its starting units on a
+        // small map would otherwise raise the local-defense steps.
+        for unit in game.player_unit_ids(1) {
+            game.remove_unit(unit);
+        }
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            cid,
+            crate::rules::Yields {
+                production: 10.0,
+                ..Default::default()
+            },
+        );
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+        for tech in ["writing", "currency"] {
+            game.players[0].techs.insert(Name::new(tech));
+        }
+        for position in game.nbrs(game.cities[&cid].pos) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+        }
+        let city = game.cities.get_mut(&cid).unwrap();
+        city.pop = 7;
+        if !city.buildings.contains(&crate::name!("monument")) {
+            city.buildings.push(crate::name!("monument"));
+        }
+        let pick = |game: &Game, on: bool| {
+            let mut ai = BasicAi::new();
+            ai.culture_defense_theater = on;
+            ai.pick_item(game, 0, cid, 12, 0, 6, 1, 0, 12, 6, 6)
+        };
+        let is_theater = |item: &Option<Item>, game: &Game| {
+            matches!(item, Some(Item::District { district, .. })
+                if game.district_family(*district) == "theater_square")
+        };
+        assert_eq!(pick(&game, true), pick(&game, false), "no rival Culture, no answer");
+        std::sync::Arc::make_mut(&mut game.observed_yield_adjustments).insert(
+            1,
+            crate::rules::Yields {
+                culture: 100.0,
+                ..Default::default()
+            },
+        );
+        assert!(BasicAi::culture_trails_the_field(&game, 0));
+        let stock = pick(&game, false);
+        assert!(!is_theater(&stock, &game), "the stock pick is not a Theater: {stock:?}");
+        let theater = BasicAi::civ_district(&game, 0, "theater_square");
+        let sites = game.district_sites(cid, theater);
+        let producible: Vec<bool> = sites
+            .iter()
+            .map(|pos| game.can_produce(0, cid, &Item::District { district: theater, pos: *pos }))
+            .collect();
+        assert!(
+            BasicAi::culture_defense_theater_item(&game, 0, cid, 12).is_some(),
+            "the city has a Theater site: {theater} sites {sites:?} producible {producible:?}"
+        );
+        let answer = pick(&game, true);
+        assert!(is_theater(&answer, &game), "a trailing empire opens one: {answer:?}");
     }
 
     /// See `district_buildings_first`: only a district's first building is

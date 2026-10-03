@@ -2403,6 +2403,11 @@ pub const GENES: &[Gene] = &[
     // Library and 13 of 19 Commercial Hubs without a Market. See
     // `BasicAi::district_buildings_first`.
     Gene { tag: "district-buildings-first", field: "district_buildings_first", kind: Kind::OptIn, enable: AdvancedAi::enable_district_buildings_first, disable: AdvancedAi::disable_district_buildings_first },
+    // Culture is the culture-victory defense (domestic Tourists are lifetime
+    // Culture over 100), and the commonest live King loss; the bred district
+    // order always ranks the Theater Square last. See
+    // `BasicAi::culture_defense_theater`.
+    Gene { tag: "culture-defense-theater", field: "culture_defense_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_defense_theater, disable: AdvancedAi::disable_culture_defense_theater },
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------

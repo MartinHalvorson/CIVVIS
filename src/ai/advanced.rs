@@ -5186,6 +5186,11 @@ pub struct AdvancedAi {
     /// governor opens another district. Opt-in gene `district-buildings-first`;
     /// see `BasicAi::district_buildings_first`.
     district_buildings_first: bool,
+    /// A Theater Square ahead of the Harbor and the bred district order in
+    /// the delegated city governor while the empire's Culture trails the
+    /// strongest rival's. Opt-in gene `culture-defense-theater`; see
+    /// `BasicAi::culture_defense_theater`.
+    culture_defense_theater: bool,
     /// `domination-specializes-earlier`: an assigned Domination lane's
     /// development half ends at [`DOMINATION_SPECIALIZATION_PERCENT`] of the
     /// clock (turn 100 of 250) instead of halfway, so it turns to Conquest
@@ -8483,6 +8488,7 @@ impl AdvancedAi {
             campus_before_harbor: false,
             campus_before_harbor_2: false,
             district_buildings_first: false,
+            culture_defense_theater: false,
             domination_specializes_earlier: false,
             domination_ignores_city_states: false,
             culture_lane_forecast_2: false,

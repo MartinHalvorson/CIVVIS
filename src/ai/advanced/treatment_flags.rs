@@ -4574,6 +4574,19 @@ impl AdvancedAi {
         self.base.monument_first = false;
     }
 
+    /// See `BasicAi::culture_defense_theater`: a Theater Square while the
+    /// empire's Culture trails the strongest rival's.
+    pub fn enable_culture_defense_theater(&mut self) {
+        self.culture_defense_theater = true;
+        self.base.culture_defense_theater = true;
+    }
+
+    /// The twin of `enable_culture_defense_theater`.
+    pub fn disable_culture_defense_theater(&mut self) {
+        self.culture_defense_theater = false;
+        self.base.culture_defense_theater = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     /// See `BasicAi::campus_before_harbor`: a city's first Campus before its
