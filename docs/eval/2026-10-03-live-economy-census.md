@@ -219,3 +219,67 @@ and a small war cost. With domestic Tourists equal to lifetime Culture over
 100, +21 Culture a turn from about t110 delays a culture victory like game
 24's Sweden by four to six turns. That is a delay, not a defense.
 `district-buildings-first-2` is null to slightly negative.
+
+## The Builder drought (`builder-before-the-army`)
+
+Games 29 and 30 (2026-10-03T090618Z and 093332Z) were the weakest economies
+of the series. Game 30 held 29 population and 18.5 Science at t100 against
+Persia's 61 and 88.6. Its capital sat at population 2 for 70 turns working
+two 1-Food mines. Both games held no Builder for long stretches: 29 turns
+from t42 in game 29, and 40 turns from t54 in game 30.
+
+Across 25 live King games (3+ cities, to t150):
+
+| zero-Builder share of turns | games | t100 population | t100 Science |
+|---|---:|---:|---:|
+| under 10% | 9 | 46 | 52 |
+| 20% or more | 7 | 34 | 32 |
+
+Weak empires both lack Builders and lag, so the table runs both ways, but the
+chain is direct. At t120 the strong games had improved 54-64 of their 80-89
+land plots, 15-20 of them Farms, with one bare flat plot left. Games 28-30
+had improved 15-23, with 0-4 Farms and 17-22 bare grassland and plains plots.
+Game 29 had all 9 cities at their housing cap.
+
+The stock Builder step in `BasicAi::pick_item` comes after the Monument, the
+capital Settler, the military floor, recon and navy. On the live board the
+lent war floor (15-20 units for 5-8 cities in game 30), Walls, Settlers and
+Monuments took every queue. The purchase fallback ("Buying a builder ... the
+empire having none") fired once, at t46, then the Builder's rising price
+passed the 120 working reserve. `builder-workforce-recovery` cannot help: its
+reservation returns while a war plan is set or the strategy is Recovery,
+which is when the droughts happen. A game 30 replay with it armed claimed
+nothing.
+
+`builder-before-the-army` puts the genome's own quota (`builder_per_city`,
+at most one per two cities, at least one from two cities) ahead of those
+steps. It stays behind the siege, barbarian and economic-recovery steps. It
+fires only while there is land to improve and the city finishes a Builder
+within 16 standard turns. Replaying game 30 from t55 to t80 gives Builders
+where stock trained a Settler, Archers, Walls and a Heavy Chariot.
+
+## Game 28: the late bankruptcy (`policy-deck-hysteresis-2`)
+
+Game 28 (081800Z) went bankrupt from t211 to t233. The host disbanded its
+army from 34 units to 7, and it lost a Technology victory at t236.
+
+Net income is city Gold, minus unit upkeep, minus building and district
+maintenance (`building_maintenance_total`, `district_maintenance_total`),
+plus deal Gold per turn. Income fell in three steps:
+
+1. **About −21 a turn.** Favor sold to Rome for Gold per turn stopped when
+   Rome went to war with us. Rome was never our campaign or denial target.
+2. **−29 a turn.** Conscription was evicted at t205. A mid-turn windfall
+   (250 → 485 Gold) lifted the treasury over the emergency reserve, and no
+   base conquest list names Conscription. From t206 to t208 it could not
+   return, because the slotting loop protects every wanted card, so Logistics
+   (rank 21) kept the slot. `policy-deck-hysteresis-2` keeps a held relief
+   while income is below its discount, and lets the emergency's relief evict
+   a lower-ranked wanted military card.
+3. **−64 a turn from t222.** Every player's
+   `public_stats.thermonuclear_devices` became 4 at an Arms Control
+   congress. This is exogenous and unexplained.
+
+The 24-game fires screen gives version 2 against version 1 −13.9 pp
+(±13.5, z −1.03). That is a fires check, not a verdict. Version 1 stays
+armed.
