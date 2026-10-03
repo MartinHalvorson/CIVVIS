@@ -6021,6 +6021,22 @@ end
 -- Lua's 200-local ceiling.
 CivvisMenus = {};
 
+-- TechTree.lua:1112/1114 reads these for every node, including locked and
+-- non-current technologies. The host progress already includes earned boosts.
+CivvisMenus.research_quote = function(techs, row)
+	if techs == nil then return nil; end
+	local quote = try(function()
+		return { t = row.TechnologyType,
+			c = techs:GetResearchCost(row.Index),
+			p = techs:GetResearchProgress(row.Index) };
+	end);
+	if quote == nil or type(quote.c) ~= "number" or type(quote.p) ~= "number"
+		or quote.c ~= quote.c or quote.p ~= quote.p
+		or quote.c < 0 or quote.p < 0
+		or quote.c == math.huge or quote.p == math.huge then return nil; end
+	return quote;
+end
+
 -- `AdjacencyBonusSupport.lua:280`: the engine's own placement offer for a
 -- district. Returns the count and up to sixteen of the plots.
 CivvisMenus.plots = function(city, param, hash)
@@ -8347,15 +8363,20 @@ local function exportState(player, pid, turn, frame, eventKind)
 	-- about what to research next.
 	local techs, civics = {}, {};
 	local boosted_techs, boosted_civics = {}, {};
+	local research_quotes = {};
 	local ptechs = try(function() return player:GetTechs(); end);
 	if ptechs ~= nil then
 		for row in GameInfo.Technologies() do
 			if try(function() return ptechs:HasTech(row.Index); end, false) then
 				techs[#techs + 1] = row.TechnologyType;
-			elseif try(function()
-				return ptechs:HasBoostBeenTriggered(row.Index);
-			end, false) then
-				boosted_techs[#boosted_techs + 1] = row.TechnologyType;
+			else
+				if try(function()
+					return ptechs:HasBoostBeenTriggered(row.Index);
+				end, false) then
+					boosted_techs[#boosted_techs + 1] = row.TechnologyType;
+				end
+				local quote = CivvisMenus.research_quote(ptechs, row);
+				if quote ~= nil then research_quotes[#research_quotes + 1] = quote; end
 			end
 		end
 	end
@@ -8897,6 +8918,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		civics = civics,
 		research = research,
 		research_progress = research_progress,
+		research_quotes = research_quotes,
 		civic = civic,
 		civic_progress = civic_progress,
 		government = government,
