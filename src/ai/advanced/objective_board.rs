@@ -132,6 +132,8 @@ const SIEGE_RALLY_SWITCH_MARGIN: i32 = 2;
 
 /// [`THREAT_RELIEF_RADIUS`] times this, less the city's own strength.
 pub const DEFEND_MARGIN: f64 = 1.2;
+/// `siege-needs-a-breaker`: the most siege guns a walled Siege row asks for.
+pub const BREAKER_GUNS_MAX: usize = 3;
 /// A Siege row's requirement is the campaign bill times this.
 pub const SIEGE_MARGIN: f64 = 1.25;
 /// `siege-ranged-floor`: the ranged bodies a Siege row asks for whatever its
@@ -516,6 +518,19 @@ impl UnitFacts {
         }
         total
     }
+}
+
+/// `siege-needs-a-breaker`: the siege guns a Siege row asks for against a
+/// city's standing walls — one a hundred points, at least one and at most
+/// [`BREAKER_GUNS_MAX`]. One gun before Medieval Walls is the one target the
+/// city strikes every turn it stands at range: live King
+/// civvis-20261003T135713Z's one assigned Bombard spent ten of Kwadukuza's
+/// turns healing while the two built after it waited in the Reserve.
+fn breaker_guns_wanted(city: &crate::game::City) -> usize {
+    if city.wall_hp <= 0 {
+        return 0;
+    }
+    (city.wall_hp as usize).div_ceil(100).clamp(1, BREAKER_GUNS_MAX)
 }
 
 /// A unit's production cost at its hit points, in hammers.
@@ -935,7 +950,11 @@ impl AdvancedAi {
             strength: bill.strength * SIEGE_MARGIN,
             melee: 1,
             ranged,
-            siege: usize::from(city.wall_hp > 0),
+            siege: if self.siege_needs_a_breaker {
+                breaker_guns_wanted(city)
+            } else {
+                usize::from(city.wall_hp > 0)
+            },
             bodies,
         }
     }
@@ -1493,10 +1512,19 @@ impl AdvancedAi {
     fn assess_board(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
         let visible = self.battlefront_visibility(g, pid);
         let pool = self.board_pool(g, pid);
-        let facts: BTreeMap<u32, UnitFacts> = pool
+        let mut facts: BTreeMap<u32, UnitFacts> = pool
             .iter()
             .map(|uid| (*uid, UnitFacts::of(g, *uid)))
             .collect();
+        // `siege-needs-a-breaker`: a gun the battle planner holds out to
+        // heal is a body, not the gun a walled Siege row asks for.
+        if self.siege_needs_a_breaker {
+            for (uid, unit) in facts.iter_mut() {
+                if unit.siege && !self.siege_member_fit(g, *uid) {
+                    unit.siege = false;
+                }
+            }
+        }
         let mut rows = self.board_rows(g, pid, plan, &visible, &pool);
         Self::rank_rows(g, &mut rows, &pool, &facts);
 
@@ -1801,12 +1829,31 @@ impl AdvancedAi {
                             && reserve_seeded(uid)
                     })
                     .collect();
-                surplus.sort_by_key(|uid| (g.wdist(facts[uid].pos, reserve_at), *uid));
+                // `siege-needs-a-breaker`: the bodies kept home are not
+                // the guns. The two nearest the Reserve tile are usually the
+                // newest units, and live King civvis-20261003T135713Z's
+                // newest were the Bombards a walled siege was waiting for.
+                surplus.sort_by_key(|uid| {
+                    (
+                        self.siege_needs_a_breaker && facts[uid].siege,
+                        g.wdist(facts[uid].pos, reserve_at),
+                        *uid,
+                    )
+                });
                 for uid in surplus.into_iter().skip(CAMPAIGN_SURPLUS_HOME_KEEP) {
                     assignment.insert(uid, index);
                     forces[index].units.push(uid);
                 }
             }
+        }
+        // `siege-needs-a-breaker`: a ram or tower is no body by strength, so
+        // it never met a row's need and never counted as surplus: it waited
+        // in the Reserve while a siege against the walls it opens went
+        // without it (live King civvis-20261003T135713Z, Kwadukuza's
+        // Medieval Walls). One whose effect works on the top walled Siege
+        // row's city joins that row's land force.
+        if self.siege_needs_a_breaker && !arena {
+            self.breach_support_joins_the_siege(g, &rows, &pool, &facts, &mut forces, &mut assignment);
         }
         // Leftovers: the Reserve, per domain — on an arena, the top force.
         for domain in [ForceDomain::Land, ForceDomain::Sea] {
@@ -1990,6 +2037,61 @@ impl AdvancedAi {
         board.forces = forces;
         board.next_force_id = next_id;
         board.requisitions = requisitions;
+    }
+
+    /// `siege-needs-a-breaker`: every free Battering Ram and Siege Tower
+    /// whose effect works on the city of the top-ranked Siege row with walls
+    /// a melee blow cannot open joins that row's land force, if it has one.
+    fn breach_support_joins_the_siege(
+        &self,
+        g: &Game,
+        rows: &[Objective],
+        pool: &[u32],
+        facts: &BTreeMap<u32, UnitFacts>,
+        forces: &mut [TaskForce],
+        assignment: &mut BTreeMap<u32, usize>,
+    ) {
+        let Some((key, cid)) = rows.iter().find_map(|row| match row.key {
+            ObjectiveKey::Siege(cid) if row.kind == ObjectiveKind::Siege && row.land => {
+                let city = g.cities.get(&cid)?;
+                let max = g.city_max_wall_hp(city);
+                (max > 0
+                    && f64::from(city.wall_hp)
+                        > super::siege_train::MELEE_WALL_FRACTION * f64::from(max))
+                .then_some((row.key, cid))
+            }
+            _ => None,
+        }) else {
+            return;
+        };
+        let Some(index) = forces
+            .iter()
+            .position(|force| force.objective_key == key && force.domain == ForceDomain::Land)
+        else {
+            return;
+        };
+        for uid in pool {
+            let unit = &g.units[uid];
+            let free = assignment
+                .get(uid)
+                .is_none_or(|current| forces[*current].objective_key == ObjectiveKey::Reserve);
+            if facts[uid].domain != ForceDomain::Land
+                || !matches!(unit.kind.as_str(), "battering_ram" | "siege_tower")
+                || unit.linked_to.is_some()
+                || !g.city_allows_siege_support(cid, unit.kind.as_str())
+                || !free
+            {
+                continue;
+            }
+            if let Some(current) = assignment.insert(*uid, index) {
+                if current != index {
+                    forces[current].units.retain(|other| other != uid);
+                }
+            }
+            if !forces[index].units.contains(uid) {
+                forces[index].units.push(*uid);
+            }
+        }
     }
 
     /// The land force of the top-ranked Siege row, raised if it has none,
@@ -3072,6 +3174,65 @@ mod tests {
             peace.1 > CAMPAIGN_SURPLUS_HOME_KEEP,
             "no campaign surplus without a war: {peace:?}"
         );
+    }
+
+    /// `siege-needs-a-breaker`: a walled Siege row asks for its guns by the
+    /// wall still standing, counts only guns fit to fire, keeps infantry home
+    /// rather than the guns, and takes the Siege Tower that opens its walls.
+    /// Live King civvis-20261003T135713Z: Kwadukuza's row held one healing
+    /// Bombard while two fresh ones and the Tower stood in the Reserve.
+    #[test]
+    fn a_walled_siege_row_claims_its_guns_and_the_tower_that_opens_its_walls() {
+        let mut g = flat_board(91_641, &[at(6, 8), at(30, 8)], false);
+        war(&mut g, 0, 1);
+        let target = city_of(&g, 1, at(30, 8));
+        let walled = g.cities.get_mut(&target).unwrap();
+        walled.buildings = vec![name!("walls"), name!("medieval_walls")];
+        walled.wall_hp = 200;
+        // The guns and the Tower are the newest units, beside home.
+        let guns: Vec<u32> = [at(7, 8), at(7, 9)]
+            .iter()
+            .map(|pos| spawn(&mut g, "bombard", 0, *pos))
+            .collect();
+        let tower = spawn(&mut g, "siege_tower", 0, at(6, 9));
+        let infantry: Vec<u32> = (0..6)
+            .map(|index| spawn(&mut g, "man_at_arms", 0, at(9 + index % 3, 7 + index / 3)))
+            .collect();
+        let plan = conquest(&g, Some(target));
+        let run = |ai: &mut AdvancedAi| {
+            ai.enable_objective_board();
+            ai.battlefront_observation = false;
+            ai.rebuild_force_groups(&g, 0, &plan);
+            let units = |key| force_for(ai, key).map_or(Vec::new(), |force| force.units.clone());
+            (units(ObjectiveKey::Siege(target)), units(ObjectiveKey::Reserve))
+        };
+
+        let mut off = AdvancedAi::targeting(VictoryTarget::Domination);
+        let (_, home) = run(&mut off);
+        assert!(home.contains(&tower), "a Tower is no surplus body: {home:?}");
+        assert!(guns.iter().any(|gun| home.contains(gun)), "the newest guns stay home");
+
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_siege_needs_a_breaker();
+        let row = ai.siege_requirement(&g, 0, target);
+        assert_eq!(row.siege, 2, "two guns against 200 walls");
+        let (siege, home) = run(&mut ai);
+        assert!(guns.iter().all(|gun| siege.contains(gun)), "{siege:?}");
+        assert!(siege.contains(&tower), "{siege:?}");
+        assert_eq!(home.len(), CAMPAIGN_SURPLUS_HOME_KEEP);
+        assert!(home.iter().all(|uid| infantry.contains(uid)), "{home:?}");
+
+        // A gun the planner holds out to heal is a body, not the gun.
+        let mut healing = AdvancedAi::targeting(VictoryTarget::Domination);
+        healing.enable_siege_needs_a_breaker();
+        healing.battle_planner_recovering.insert(guns[0]);
+        healing.enable_objective_board();
+        healing.battlefront_observation = false;
+        healing.rebuild_force_groups(&g, 0, &plan);
+        assert!(healing
+            .requisitions()
+            .iter()
+            .any(|req| req.kind == ObjectiveKind::Siege && req.unmet.siege == 1));
     }
 
     /// A task force keeps its id across turns and across the death of its

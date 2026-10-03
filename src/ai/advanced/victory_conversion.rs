@@ -1010,6 +1010,13 @@ impl AdvancedAi {
                 continue;
             }
             let ranged = spec.ranged_strength > 0.0 || spec.bombard_strength > 0.0;
+            // `siege-needs-a-breaker`: a gun or shooter the battle planner
+            // holds out to heal fires nothing, however near it stands. Live
+            // King civvis-20261003T135713Z read Kwadukuza "damage ready" for
+            // ten turns off a Bombard healing from 29 to 89 five tiles out.
+            if self.siege_needs_a_breaker && ranged && !self.siege_member_fit(g, *uid) {
+                continue;
+            }
             let mut attack = if ranged {
                 g.unit_ranged_attack_strength(unit)
             } else {

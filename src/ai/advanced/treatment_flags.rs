@@ -4874,6 +4874,17 @@ impl AdvancedAi {
         self.siege_budget_counts_what_fires = false;
     }
 
+    /// Opt-in gene `siege-needs-a-breaker`; see
+    /// [`Self::siege_needs_a_breaker`].
+    pub fn enable_siege_needs_a_breaker(&mut self) {
+        self.siege_needs_a_breaker = true;
+    }
+
+    /// The twin of `enable_siege_needs_a_breaker`.
+    pub fn disable_siege_needs_a_breaker(&mut self) {
+        self.siege_needs_a_breaker = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

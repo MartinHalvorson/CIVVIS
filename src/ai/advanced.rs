@@ -6728,6 +6728,16 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-needs-a-breaker`: a walled city is reduced only with a
+    /// wall-breaker at hand — a siege gun fit to fire within the staging
+    /// ring, a ram or tower that works on the walls, or shooters that can
+    /// breach within `siege_train::SHOOTER_BREACH_TURNS`. Without one the
+    /// train stages out of the city's reach instead of holding its ring, the
+    /// damage budget skips the guns the battle planner holds out to heal,
+    /// the train walks its ram or tower onto a melee carrier, and the board
+    /// asks a walled Siege row for fit guns and sends its rams and towers.
+    /// See `siege_train::BreachReading`. Off by default.
+    siege_needs_a_breaker: bool,
     /// `siege-budget-counts-what-fires`: the siege damage budget charges a
     /// land ranged unit the -17 it strikes a city at, and counts melee only
     /// as the finishing blow. See `AdvancedAi::conversion_siege_budget`.
@@ -8800,6 +8810,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_needs_a_breaker: false,
             siege_budget_counts_what_fires: false,
             siege_holds_a_breach: false,
             siege_ranged_floor: false,
