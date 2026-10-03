@@ -2454,20 +2454,29 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `district-buildings-first`.
     pub(crate) district_buildings_first: bool,
+    /// The capital's Library ahead of its next Settler once it holds a
+    /// Campus, at the slot `capital_campus_first` gives the Campus itself.
+    /// `campus-before-harbor-2` opens the capital's Campus there, but its
+    /// Library then waited behind the military floor, the Settlers and every
+    /// district the city lacked: live King 2026-10-03T040354Z, the best game
+    /// of the series, held 7 Campuses and 2 Libraries at turn 100.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `district-buildings-first-2`.
+    pub(crate) capital_library_first: bool,
     /// A Theater Square ahead of the Harbor and every other district while
     /// the empire's Culture trails the strongest rival's, until half the
-    /// cities hold one. Culture is the culture-victory defense: a seat's
-    /// domestic Tourists are its lifetime Culture over 100
-    /// (`Game::domestic_tourists`), and a rival wins once its visitors from
-    /// every civilization outnumber that civilization's domestic Tourists.
-    /// Culture was the commonest live King loss (17 of 31 in late
-    /// September). In live King 2026-10-01T050754Z Germany won it at turn
-    /// 172 while our 23 domestic Tourists were the fewest on the board
-    /// (Sweden 83, Mongolia 39): our Culture ran 23-54 a turn against
-    /// Germany's 150-372, with one Theater Square across the 14 games of
-    /// 2026-10-01/02. `theater_square` is the last `DISTRICT_PRIORITY`
-    /// family in every bred genome, so a city reaches it only after the
-    /// other three.
+    /// cities hold one. Culture buys the civics a government and its policy
+    /// slots wait on, and it is one bar of the culture-victory defense: a
+    /// seat's domestic Tourists are its lifetime Culture over 100
+    /// (`Game::domestic_tourists`), and a rival wins once its foreign
+    /// Tourists outnumber the highest domestic count among the others
+    /// (`Game::check_culture_victory`). Culture was the commonest live King
+    /// loss (17 of 31 in late September); in 2026-09-30T221624Z ours was that
+    /// highest count (53) when Byzantium won at 51 and climbing. Our Culture
+    /// ran a third to a half of the strongest rival's through the 14 live
+    /// games of 2026-10-01/02, which built one Theater Square between them:
+    /// `theater_square` is the last `DISTRICT_PRIORITY` family in every bred
+    /// genome, so a city reaches it only after the other three.
     ///
     /// Set from `AdvancedAi` by the opt-in gene `culture-defense-theater`.
     pub(crate) culture_defense_theater: bool,
@@ -5183,6 +5192,7 @@ impl BasicAi {
             capital_campus_first: false,
             monument_first: false,
             district_buildings_first: false,
+            capital_library_first: false,
             culture_defense_theater: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
@@ -5651,6 +5661,7 @@ impl BasicAi {
             capital_campus_first: false,
             monument_first: false,
             district_buildings_first: false,
+            capital_library_first: false,
             culture_defense_theater: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
@@ -12388,6 +12399,18 @@ impl BasicAi {
                 return Some(item);
             }
         }
+        // `district-buildings-first-2`: and the Campus's Library in the same
+        // slot once the Campus stands.
+        if self.capital_library_first
+            && !self.minor
+            && !self.barb
+            && n_cities >= Self::CAPITAL_CAMPUS_MIN_CITIES
+            && g.cities[&cid].is_capital
+        {
+            if let Some(item) = Self::campus_library_item(g, pid, cid) {
+                return Some(item);
+            }
+        }
         // ⚠ Five conditions in one `&&` chain, and an empire that ends the game
         // with one city cannot say which of them refused. Named individually so
         // "the site search found nothing" is distinguishable from "the window
@@ -14318,6 +14341,19 @@ impl BasicAi {
         if !g.can_produce(pid, cid, &item) {
             return None;
         }
+        let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+            g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
+        });
+        (turns <= Self::FIRST_CAMPUS_MAX_TURNS).then_some(item)
+    }
+
+    /// See `capital_library_first`: the Library of a Campus this city holds,
+    /// when the city would finish it within `FIRST_CAMPUS_MAX_TURNS`.
+    pub(crate) fn campus_library_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if !g.city_has_district_family(g.cities.get(&cid)?, crate::name!("campus")) {
+            return None;
+        }
+        let item = Self::civ_building(g, pid, cid, "library")?;
         let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
             g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
         });
@@ -22467,6 +22503,27 @@ mod tests {
         );
         let answer = pick(&game, true);
         assert!(is_theater(&answer, &game), "a trailing empire opens one: {answer:?}");
+    }
+
+    /// See `capital_library_first`: a three-city capital holding a Campus
+    /// takes its Library where the stock governor trains the next Settler.
+    #[test]
+    fn the_capital_takes_its_library_before_the_next_settler() {
+        let (mut game, cid) = campus_city_fixture();
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        let pick = |game: &Game, on: bool, n_cities: usize| {
+            let mut ai = BasicAi::new();
+            ai.capital_library_first = on;
+            ai.pick_item(game, 0, cid, n_cities, 0, 3, 1, 0, 6, 3, 3)
+        };
+        let library = Some(Item::Building {
+            building: crate::name!("library"),
+        });
+        let stock = pick(&game, false, 3);
+        assert_ne!(stock, library, "the fixture's stock pick is not the Library");
+        assert_eq!(pick(&game, true, 3), library, "the Library rides with its Campus");
+        assert_eq!(pick(&game, true, 2), pick(&game, false, 2), "two cities keep the stock choice");
     }
 
     /// See `district_buildings_first`: only a district's first building is

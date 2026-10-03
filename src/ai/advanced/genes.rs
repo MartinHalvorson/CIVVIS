@@ -2403,10 +2403,14 @@ pub const GENES: &[Gene] = &[
     // Library and 13 of 19 Commercial Hubs without a Market. See
     // `BasicAi::district_buildings_first`.
     Gene { tag: "district-buildings-first", field: "district_buildings_first", kind: Kind::OptIn, enable: AdvancedAi::enable_district_buildings_first, disable: AdvancedAi::disable_district_buildings_first },
-    // Culture is the culture-victory defense (domestic Tourists are lifetime
-    // Culture over 100), and the commonest live King loss; the bred district
-    // order always ranks the Theater Square last. See
-    // `BasicAi::culture_defense_theater`.
+    // V2 also gives the capital's Library the slot campus-before-harbor-2
+    // gives its Campus, ahead of the next Settler: the best live game held 7
+    // Campuses and 2 Libraries at turn 100. See `BasicAi::capital_library_first`.
+    Gene { tag: "district-buildings-first-2", field: "district_buildings_first_2", kind: Kind::OptIn, enable: AdvancedAi::enable_district_buildings_first_2, disable: AdvancedAi::disable_district_buildings_first_2 },
+    // Culture buys civics and is one bar of the culture-victory defense
+    // (domestic Tourists are lifetime Culture over 100); our Culture ran a
+    // third to a half of the strongest rival's and the bred district order
+    // always ranks the Theater Square last. See `BasicAi::culture_defense_theater`.
     Gene { tag: "culture-defense-theater", field: "culture_defense_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_defense_theater, disable: AdvancedAi::disable_culture_defense_theater },
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
@@ -2420,6 +2424,10 @@ pub const GENES: &[Gene] = &[
     // ---- append: s-s ------------------------------------------------
     Gene { tag: "shared-danger", field: "shared_danger", kind: Kind::OptIn, enable: AdvancedAi::enable_shared_danger, disable: AdvancedAi::disable_shared_danger },
     // ---- append: t-z ------------------------------------------------
+    // Upgrades spent the treasury to 30 Gold at war; a one-turn upkeep swing
+    // then bankrupted the empire (live King 040354Z t180-186, t207-213).
+    // See `gold_and_cards::UPKEEP_RESERVE_TURNS`.
+    Gene { tag: "upkeep-reserve", field: "upkeep_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_upkeep_reserve, disable: AdvancedAi::disable_upkeep_reserve },
     // V3 carries version one's housing rule into the delegated city governor,
     // where most live builds are placed, and follows the Granary with an
     // Aqueduct while the city stays housing-bound.
