@@ -279,6 +279,21 @@ host.districts["1:42"].damage = 40
 ledger.onCombatVisEnd({ attacker = id(0, 17), defender = districtID })
 check("valid health increase remains observable", has(lastEvent("combat"), '"damage_to_defender":-25'), true)
 
+-- Native strategic bombing at 183/186/189/194 supplies (-1,-1), not the
+-- component identity of a killed district. Preserve uncertainty and never
+-- synthesize damage or a kill from a failed lookup of that sentinel.
+local anonymousID = { playerID = -1, componentID = -1, componentType = ComponentType.DISTRICT }
+local anonymous = ledger.describe(anonymousID)
+check("anonymous defender is unresolved, not removed", anonymous.gone, nil)
+check("anonymous defender retains an explicit unknown marker", anonymous.unresolved, true)
+ledger.onCombatVisBegin({ attacker = id(0, 17), defender = anonymousID })
+ledger.onCombatVisEnd({ attacker = id(0, 17), defender = anonymousID })
+combat = lastEvent("combat")
+check("anonymous defender does not invent a kill", has(combat, '"defender_killed":false'), true)
+check("anonymous defender does not invent damage", has(combat, '"damage_to_defender":'), false)
+check("anonymous defender does not invent a target location", has(combat, '"id":-1,"player":-1,"type":"unknown","unresolved":true'), true)
+check("negative unit identity is not a removed unit", ledger.describe(id(1, -1)).gone, nil)
+
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
 	os.exit(1)

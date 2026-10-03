@@ -16,6 +16,13 @@ fn visible_home_spreaders(g: &Game, pid: usize, rival: usize, faith: &str) -> Ve
         .collect()
 }
 
+/// The interception opens a major war to condemn one spreader, so it needs
+/// at least the rival's power behind it. Live King 2026-10-03T100536Z
+/// declared on Phoenicia at turn 50 with 228 power against their 317. The
+/// next turn the plan read "at war and losing ground at home", and the war
+/// ended in our own peace offer at turn 80 ("the last window was a rout").
+pub(crate) const RELIGIOUS_INTERCEPTION_POWER_FLOOR: f64 = 1.0;
+
 impl AdvancedAi {
     /// A defensive condemnation must not occupy the only major-war slot
     /// after its victory threat is gone and a different visible city can be
@@ -103,6 +110,8 @@ impl AdvancedAi {
             if pressure.strategy != GrandStrategy::Religion
                 || !self.victory_pressure_is_urgent(g, rival, pressure)
                 || !self.campaign_target_legal(g, pid, rival)
+                || g.military_power(pid)
+                    < RELIGIOUS_INTERCEPTION_POWER_FLOOR * g.military_power(rival)
             {
                 continue;
             }

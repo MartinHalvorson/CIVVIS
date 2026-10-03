@@ -1212,6 +1212,15 @@ impl AdvancedAi {
                 .is_some_and(|opening| opening.declared.is_some())
     }
 
+    /// The war the declared conquest opening is fighting is against `other`.
+    pub(crate) fn conquest_opening_war(&self, other: usize) -> bool {
+        self.conquest_owns_the_campaign()
+            && self
+                .conquest_opening
+                .as_ref()
+                .is_some_and(|opening| opening.target == other)
+    }
+
     /// A declared opening keeps its surviving strike force when a new
     /// Settler looks for an escort. Existing civilian guards retain priority;
     /// this reservation applies only to new assignments while the war stands.
@@ -1391,7 +1400,7 @@ impl AdvancedAi {
                     .is_some_and(|city| city.owner == opening.target)
         });
         if adopt {
-            // Only an assembled force adopts the war. Live King
+            // Only an assembled force adopts the war, whoever opened it. Live King
             // 2026-10-03T090618Z: Khmer declared on turn 26 with the force
             // still Slingers scattered short of the rally; the opening pinned
             // the campaign to Angkor Thom, the bodies walked into the city's
@@ -1406,7 +1415,7 @@ impl AdvancedAi {
             } else {
                 self.conquest_release(
                     g,
-                    "the target declared before the strike force assembled; the ordinary war takes it",
+                    "the war opened before the strike force assembled; the ordinary war takes it",
                 );
                 return;
             }

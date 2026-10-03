@@ -748,6 +748,14 @@ impl AdvancedAi {
             && !self.domination_capital_prey(g, pid, other)
             && !self.domination_counter_target(g, pid, other)
             && self.nearest_finish_culture_clock(g, other).is_none()
+            // The conquest opening's own war answers to `conquest_peace`, not
+            // to another rival's clock. Live King 2026-10-03T103619Z declared
+            // on the Maori at turn 41 with 83% of the strike force at the
+            // rally and had Ngaruawahia at 182 of 200 when this clause
+            // offered peace at turn 55 ("freeing the Domination army ... 167
+            // power against their 147"); the Maori accepted and the opening
+            // was released with the city standing.
+            && !self.conquest_opening_war(other)
             && self
                 .actionable_victory_denial(g, pid)
                 .is_some_and(|(rival, counter)| {
@@ -819,10 +827,12 @@ impl AdvancedAi {
             g.turn.saturating_sub(since)
                 >= g.standard_duration(ONE_WAR_SECOND_FRONT_PATIENCE).max(1)
         });
-        // A capital-prey front is never offered the peace that would free
-        // the army (`one_war_peace`), so there is no refusal to wait for: an
-        // urgent rival opens beside it at once.
-        let prey_front = self.domination_capital_prey(g, pid, front);
+        // A capital-prey front, or the conquest opening's own war, is never
+        // offered the peace that would free the army (`one_war_peace`), so
+        // there is no refusal to wait for: an urgent rival opens beside it at
+        // once.
+        let prey_front =
+            self.domination_capital_prey(g, pid, front) || self.conquest_opening_war(front);
         if !refused && !prey_front {
             return None;
         }
