@@ -509,3 +509,64 @@ fn peaceful_wall_free_and_disabled_domination_plans_keep_the_army_ceiling() {
         );
     }
 }
+
+/// See `HEAVY_WALL_SIEGE_CAP`: three guns that cannot breach Renaissance
+/// Walls in time close the ordinary shortfall reservation; the gene keeps
+/// reserving against heavy walls, and never past its own cap.
+#[test]
+fn a_train_that_cannot_breach_heavy_walls_keeps_reserving_guns() {
+    use super::{HEAVY_WALL_HP, HEAVY_WALL_SIEGE_CAP, SHORTFALL_SIEGE_CAP};
+    let case = || {
+        let (mut g, mut ai, plan, home, target) = siege_gap_case();
+        ai.enable_lane_delegates_production_2();
+        ai.enable_siege_positive_damage_budget();
+        let pos = g.cities[&target].pos;
+        g.cities
+            .get_mut(&target)
+            .unwrap()
+            .buildings
+            .push(crate::name!("renaissance_walls"));
+        g.cities.get_mut(&target).unwrap().wall_hp = 300;
+        g.spawn_unit("modern_armor", 1, pos);
+        let mut force = vec![g.spawn_unit("swordsman", 0, (pos.0 - 1, pos.1))];
+        for offset in 0..3 {
+            force.push(g.spawn_unit("catapult", 0, (pos.0 - 2, pos.1 + offset - 1)));
+        }
+        (g, ai, plan, home, target, force)
+    };
+    let (mut g, ai, plan, _, target, force) = case();
+    assert!(g.city_max_wall_hp(&g.cities[&target]) >= HEAVY_WALL_HP);
+    let (finish, endurance) = ai
+        .conversion_siege_budget(&g, 0, target, &force)
+        .expect("the active siege is visible");
+    assert!(finish > endurance * 0.8, "{finish} against {endurance}");
+    assert_eq!(ai.counts(&g, 0).siege, SHORTFALL_SIEGE_CAP);
+    assert!(
+        ai.reserve_delegated_domination_siege(&mut g, 0, &plan)
+            .is_none(),
+        "the ordinary cap is spent"
+    );
+
+    let (mut g, mut ai, plan, home, _, _) = case();
+    ai.enable_siege_train_scales_with_walls();
+    assert!(ai
+        .reserve_delegated_domination_siege(&mut g, 0, &plan)
+        .is_some());
+    assert!(matches!(
+        g.cities[&home].queue.first(),
+        Some(Item::Unit { unit }) if g.rules.units[unit].siege
+    ));
+
+    let (mut g, mut ai, plan, _, target, _) = case();
+    ai.enable_siege_train_scales_with_walls();
+    let pos = g.cities[&target].pos;
+    for offset in 0..2 {
+        g.spawn_unit("catapult", 0, (pos.0 - 3, pos.1 + offset));
+    }
+    assert_eq!(ai.counts(&g, 0).siege, HEAVY_WALL_SIEGE_CAP);
+    assert!(
+        ai.reserve_delegated_domination_siege(&mut g, 0, &plan)
+            .is_none(),
+        "the heavy-wall cap is spent too"
+    );
+}

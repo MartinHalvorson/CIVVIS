@@ -4706,6 +4706,17 @@ impl AdvancedAi {
         self.denial_nearest_finish = false;
     }
 
+    /// Opt-in gene `siege-train-scales-with-walls`; see
+    /// [`Self::siege_train_scales_with_walls`].
+    pub fn enable_siege_train_scales_with_walls(&mut self) {
+        self.siege_train_scales_with_walls = true;
+    }
+
+    /// The twin of `enable_siege_train_scales_with_walls`.
+    pub fn disable_siege_train_scales_with_walls(&mut self) {
+        self.siege_train_scales_with_walls = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

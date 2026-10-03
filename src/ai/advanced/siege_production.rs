@@ -5,6 +5,20 @@ use super::*;
 /// prefers a faster city and existing/queued weapons close this reservation.
 pub(super) const FIRST_WEAPON_RESERVATION: f64 = 400.0;
 
+/// The siege guns a walled assault that cannot breach in time may reserve in
+/// total (`siege-positive-damage-budget`).
+pub(super) const SHORTFALL_SIEGE_CAP: usize = 3;
+
+/// `siege-train-scales-with-walls`: a target whose walls reach this many hit
+/// points at full strength (Renaissance Walls, or Urban Defenses' 400) may
+/// reserve up to [`HEAVY_WALL_SIEGE_CAP`] guns instead. Live King
+/// civvis-20261003T072557Z stood in Stage before Mistahi-Sipihk's 400 walls
+/// from turn 108 to 154 with two Trebuchets and a Bombard, needing 7.9 turns
+/// to breach against 5.2 turns of endurance. Its reservation had stopped at
+/// three guns.
+pub(super) const HEAVY_WALL_HP: i32 = 300;
+pub(super) const HEAVY_WALL_SIEGE_CAP: usize = 5;
+
 impl AdvancedAi {
     /// Remember wall breakers whose production would otherwise be lost when a
     /// later city governor writes over the queue. The target can complete
@@ -146,8 +160,14 @@ impl AdvancedAi {
             let spec = &g.rules.units[g.units[id].kind];
             spec.is_melee_capable() && spec.ranged_strength == 0.0 && spec.bombard_strength == 0.0
         });
+        let siege_cap =
+            if self.siege_train_scales_with_walls && g.city_max_wall_hp(target) >= HEAVY_WALL_HP {
+                HEAVY_WALL_SIEGE_CAP
+            } else {
+                SHORTFALL_SIEGE_CAP
+            };
         let breach_shortfall = self.siege_positive_damage_budget
-            && counts.siege < 3
+            && counts.siege < siege_cap
             && nearby_taker
             && self
                 .conversion_siege_budget(g, pid, target.id, &nearby_force)

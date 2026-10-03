@@ -6680,6 +6680,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-train-scales-with-walls`: a walled assault that cannot breach
+    /// in time reserves up to `HEAVY_WALL_SIEGE_CAP` siege guns, not three,
+    /// against walls of `HEAVY_WALL_HP` or more. Off by default.
+    siege_train_scales_with_walls: bool,
     /// `strategic-deposit-prey`: a Domination conquest values a rival city
     /// whose own tiles hold a revealed strategic deposit that a unit we have
     /// the tech for requires and that the empire draws no income of. See
@@ -8716,6 +8720,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_train_scales_with_walls: false,
             strategic_deposit_prey: false,
             shared_danger: false,
             settler_detour_stays_near: false,

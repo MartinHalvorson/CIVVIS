@@ -2438,6 +2438,10 @@ pub const GENES: &[Gene] = &[
     // turns while the army fought the science leader. See
     // `denial_nearest_finish::DENIAL_FINISH_HORIZON`.
     Gene { tag: "denial-nearest-finish", field: "denial_nearest_finish", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_nearest_finish, disable: AdvancedAi::disable_denial_nearest_finish },
+    // Live King 072557Z stood in Stage before 400 walls for 46 turns: the
+    // shortfall reservation stopped at three guns. See
+    // `siege_production::HEAVY_WALL_SIEGE_CAP`.
+    Gene { tag: "siege-train-scales-with-walls", field: "siege_train_scales_with_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_train_scales_with_walls, disable: AdvancedAi::disable_siege_train_scales_with_walls },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
