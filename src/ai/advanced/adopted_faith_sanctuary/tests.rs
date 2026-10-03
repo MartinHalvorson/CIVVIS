@@ -258,6 +258,139 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32) {
     fixture_with_players(3)
 }
 
+fn local_approach_fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
+    let (mut g, ai, plan, supplier, converted) = early_warning_fixture();
+    let city = g.cities.get_mut(&converted).unwrap();
+    city.pressure.clear();
+    city.atheist_pressure = 1000.0;
+    let source = g.cities[&supplier].pos;
+    let apostle = g.spawn_test_unit("apostle", 1, (source.0 + 5, source.1));
+    let unit = g.units.get_mut(&apostle).unwrap();
+    unit.religion = Some("Buddhism".into());
+    unit.moves_left = 0.0;
+    (g, ai, plan, supplier, apostle)
+}
+
+#[test]
+fn visible_charged_spreader_starts_counterfaith_chain_before_global_majority() {
+    let (mut g, ai, plan, supplier, _) = local_approach_fixture();
+    assert!(ai.adopted_faith_threat(&g, 0).is_none());
+    assert!(!g.civ_follows_religion(3, "Buddhism"));
+    ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+    assert!(matches!(
+        g.cities[&supplier].queue.first(),
+        Some(Item::District { district, .. }) if district == "holy_site"
+    ));
+}
+
+#[test]
+fn local_conversion_warning_completes_shrine_when_global_alarm_drops_out() {
+    let (mut g, mut ai, plan, supplier, _) = local_approach_fixture();
+    crate::game::install_test_district(&mut g, supplier, "holy_site");
+    let shrine = Item::Building {
+        building: crate::name!("shrine"),
+    };
+    ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+    assert_eq!(g.cities[&supplier].queue.first(), Some(&shrine));
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(g.cities[&supplier].queue.first(), Some(&shrine));
+}
+
+#[test]
+fn local_conversion_warning_reads_host_allowance_not_spent_movement() {
+    let (mut g, ai, _, supplier, apostle) = local_approach_fixture();
+    let source = g.cities[&supplier].pos;
+    g.units.get_mut(&apostle).unwrap().pos = (source.0 + 7, source.1);
+    std::sync::Arc::make_mut(&mut g.host_unit_facts).insert(
+        apostle,
+        crate::game::HostUnitFacts {
+            max_moves: Some(6.0),
+            ..Default::default()
+        },
+    );
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_some());
+    std::sync::Arc::make_mut(&mut g.host_unit_facts)
+        .get_mut(&apostle)
+        .unwrap()
+        .max_moves = Some(4.0);
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
+}
+
+#[test]
+fn distant_exhausted_or_same_faith_spreaders_do_not_start_sanctuaries() {
+    for mode in ["distant", "exhausted", "same-faith", "dead-founder", "guru"] {
+        let (mut g, ai, _, supplier, apostle) = local_approach_fixture();
+        match mode {
+            "distant" => g.units.get_mut(&apostle).unwrap().pos = (15, 18),
+            "exhausted" => g.units.get_mut(&apostle).unwrap().charges = 0,
+            "same-faith" => {
+                for cid in g.player_city_ids(0) {
+                    let city = g.cities.get_mut(&cid).unwrap();
+                    city.atheist_pressure = 0.0;
+                    city.pressure.clear();
+                    city.pressure.insert("Buddhism".into(), 1000.0);
+                }
+            }
+            "dead-founder" => g.players[1].alive = false,
+            _ => g.units.get_mut(&apostle).unwrap().kind = crate::name!("guru"),
+        }
+        assert!(
+            ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none(),
+            "{mode}"
+        );
+        assert!(g.cities[&supplier].queue.is_empty());
+    }
+}
+
+#[test]
+fn local_warning_keeps_lane_victory_supplier_and_existing_source_guards() {
+    for mode in ["science", "disabled", "converted", "threatened", "equipped"] {
+        let (mut g, mut ai, _, supplier, _) = local_approach_fixture();
+        let mut threatened = None;
+        match mode {
+            "science" => ai = AdvancedAi::targeting(VictoryTarget::Science),
+            "disabled" => g.victory_conditions.religious = false,
+            "converted" => {
+                let city = g.cities.get_mut(&supplier).unwrap();
+                city.pressure.clear();
+                city.pressure.insert("Buddhism".into(), 1000.0);
+            }
+            "threatened" => threatened = Some(supplier),
+            _ => {
+                crate::game::install_test_district(&mut g, supplier, "holy_site");
+                g.cities
+                    .get_mut(&supplier)
+                    .unwrap()
+                    .buildings
+                    .push(crate::name!("shrine"));
+            }
+        }
+        assert!(
+            ai.adopted_faith_sanctuary_choice(&g, 0, threatened)
+                .is_none(),
+            "{mode}"
+        );
+    }
+}
+
+#[test]
+fn global_conversion_alarm_keeps_priority_over_a_different_local_spreader() {
+    let (mut g, ai, _, _, _) = local_approach_fixture();
+    for cid in g.player_city_ids(3) {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.atheist_pressure = 0.0;
+        city.pressure.clear();
+        city.pressure.insert("Orthodoxy".into(), 1000.0);
+    }
+    assert!(g.civ_follows_religion(2, "Orthodoxy"));
+    assert!(g.civ_follows_religion(3, "Orthodoxy"));
+    assert!(!g.civ_follows_religion(1, "Orthodoxy"));
+    assert_eq!(
+        ai.adopted_faith_construction_threat(&g, 0).as_deref(),
+        Some("Orthodoxy")
+    );
+}
+
 fn early_warning_fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
     let (mut g, ai, plan, supplier) = fixture_with_players(4);
     let home = g.player_city_ids(0);
