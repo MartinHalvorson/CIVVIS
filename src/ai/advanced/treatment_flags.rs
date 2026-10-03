@@ -4824,6 +4824,16 @@ impl AdvancedAi {
         self.siege_ranged_floor = false;
     }
 
+    /// Opt-in gene `denial-needs-a-road`; see [`Self::denial_needs_a_road`].
+    pub fn enable_denial_needs_a_road(&mut self) {
+        self.denial_needs_a_road = true;
+    }
+
+    /// The twin of `enable_denial_needs_a_road`.
+    pub fn disable_denial_needs_a_road(&mut self) {
+        self.denial_needs_a_road = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
