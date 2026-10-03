@@ -423,5 +423,9 @@ fn an_invested_siege_steps_a_spotter_into_sight_of_an_unseen_city() {
     let now = g.units[&soldier].pos;
     assert!(g.wdist(now, city) <= g.unit_sight(soldier));
     assert!(g.line_of_sight_from(now, city));
-    assert_eq!(ai.siege_spotter(&g, 0, &group, &view), None, "the city is in sight now");
+    assert_eq!(
+        ai.siege_spotter(&g, 0, &group, &view),
+        None,
+        "the city is in sight now"
+    );
 }
