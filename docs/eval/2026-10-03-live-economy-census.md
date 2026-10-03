@@ -199,3 +199,23 @@ board three things combine:
 
 The case for arming both rests on the live mechanism measured in game 21.
 Both genes do nothing until they bind.
+
+## Probe: culture-defense-theater and district-buildings-first-2
+
+Both use the same probe, 16 paired seeds from 37150000.
+
+| | culture-defense-theater | district-buildings-first-2 |
+|---|---|---|
+| t100 culture Δ | +3.1 (z 2.7) | −1.4 (z −1.6) |
+| t150 culture Δ | +21.2, 44→65 (z 4.5) | — |
+| t150 civics Δ | +1.5 (z 5.1) | — |
+| t100 / t150 gold Δ | −4.3 (z −3.8) / −19.6 (z −1.9) | −3.0 (z −1.4) / — |
+| foreign cities held Δ | −0.25 (z −2.2) | +0.06 |
+| games with any bankruptcy, off / on | 4 / 8 | 4 / 8 |
+| final score Δ | +35 (z 1.4) | +19 (z 0.45) |
+
+`culture-defense-theater` buys culture and civics, and pays for it in Gold
+and a small war cost. With domestic Tourists equal to lifetime Culture over
+100, +21 Culture a turn from about t110 delays a culture victory like game
+24's Sweden by four to six turns. That is a delay, not a defense.
+`district-buildings-first-2` is null to slightly negative.

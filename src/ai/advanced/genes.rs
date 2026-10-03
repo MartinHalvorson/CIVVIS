@@ -2442,6 +2442,11 @@ pub const GENES: &[Gene] = &[
     // shortfall reservation stopped at three guns. See
     // `siege_production::HEAVY_WALL_SIEGE_CAP`.
     Gene { tag: "siege-train-scales-with-walls", field: "siege_train_scales_with_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_train_scales_with_walls, disable: AdvancedAi::disable_siege_train_scales_with_walls },
+    // V2 also researches the next stronger buildable land siege design once
+    // the target's walls reach the Medieval tier: live King 072557Z stayed on
+    // Trebuchets against 400-HP Cree walls from t123 to t142. See
+    // `SIEGE_UPGRADE_WALL_HP`.
+    Gene { tag: "domination-siege-research-2", field: "domination_siege_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_siege_research_2, disable: AdvancedAi::disable_domination_siege_research_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -211,7 +211,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `domination-capital-focus` | off (unmeasured) | Rank required capitals within the selected domination campaign front. | 1 \| 1 |
 | `domination-ignores-city-states` | off (unmeasured) | `domination-ignores-city-states`: an assigned Domination seat keeps city-states out of its campaign's fallback ranking. | 1 \| 1 |
 | `domination-lane-hands-over` | off (unmeasured) | The Domination lane hands over to Conquest at `DOMINATION_HANDOVER_CITIES` instead of waiting for a growing city target. | 1 \| 1 |
-| `domination-siege-research` | off (unmeasured) | Unlock the first land siege capability for a walled Conquest objective. | 1 \| 1 |
+| `domination-siege-research` | off (unmeasured) | Unlock the first land siege capability for a walled Conquest objective. | — \| 2 |
+| `domination-siege-research-2` | off (unmeasured) | Version one, and the next stronger buildable land siege design once the target's walls reach the Medieval tier. | — \| 2 |
 | `domination-specializes-earlier` | off (unmeasured) | `domination-specializes-earlier`: an assigned Domination lane leaves its development half at 40% of the clock. | 1 \| 1 |
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |
 | `first-granary-reserve-2` | off (unmeasured) | Reserve a Granary only when its housing accelerates the next citizen within the construction and growth budget. | 1 \| 3 |

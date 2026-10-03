@@ -4449,9 +4449,21 @@ impl AdvancedAi {
     /// Unlock the first land siege capability for a walled Conquest objective.
     pub fn enable_domination_siege_research(&mut self) {
         self.domination_siege_research = true;
+        self.domination_siege_research_2 = false;
     }
     pub fn disable_domination_siege_research(&mut self) {
         self.domination_siege_research = false;
+    }
+
+    /// Version one, and the next stronger buildable land siege design once
+    /// the target's walls reach the Medieval tier.
+    pub fn enable_domination_siege_research_2(&mut self) {
+        self.domination_siege_research = false;
+        self.domination_siege_research_2 = true;
+    }
+    /// The twin of `enable_domination_siege_research_2`.
+    pub fn disable_domination_siege_research_2(&mut self) {
+        self.domination_siege_research_2 = false;
     }
 
     /// Rank required capitals within the selected domination campaign front.

@@ -5246,6 +5246,10 @@ pub struct AdvancedAi {
     /// `domination-siege-research`: unlock the first land siege capability
     /// for a Conquest objective with observed walls, before elective detours.
     domination_siege_research: bool,
+    /// Version one, and the next stronger buildable land siege design once
+    /// the target's walls reach the Medieval tier. Opt-in gene
+    /// `domination-siege-research-2`; see `SIEGE_UPGRADE_WALL_HP`.
+    domination_siege_research_2: bool,
     /// `domination-capital-focus`: rank missing original capitals within
     /// the selected campaign front, independently of other rivals.
     domination_capital_focus: bool,
@@ -8546,6 +8550,7 @@ impl AdvancedAi {
             culture_faith_reservation: false,
             culture_tourism_payback: false,
             domination_siege_research: false,
+            domination_siege_research_2: false,
             domination_capital_focus: false,
             conquest_takes_the_soft_city: false,
             counter_culture_by_conquest: false,
