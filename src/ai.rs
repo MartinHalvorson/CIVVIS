@@ -2510,6 +2510,17 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `campus-before-the-army-2`.
     pub(crate) campus_before_the_army_2: bool,
+    /// `campus_before_the_army_2`, on past the Library to the University and
+    /// the Research Lab (each, with its civilization's replacement, within
+    /// `FIRST_CAMPUS_MAX_TURNS`). Live King 2026-10-03T131343Z, the first game
+    /// with version 2, held a Campus and a Library in all 10 cities at t150
+    /// and a University in 4 of them; 5 Universities and 1 Research Lab at
+    /// t200, while those cities trained Artillery, Spies and Builders. It
+    /// lost a Technology victory at t238, the leader's Science going from
+    /// 207 to 416 between t175 and t200 against our 148 and 166.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `campus-before-the-army-3`.
+    pub(crate) campus_before_the_army_3: bool,
     /// The navy step (`naval < desired_navy`) waits while this city's
     /// Settler step would train a Settler (`settler_due`). It stands ahead of
     /// the Settler step, so at three cities against a target of ten live King
@@ -5276,6 +5287,7 @@ impl BasicAi {
             builder_before_the_army_2: false,
             campus_before_the_army: false,
             campus_before_the_army_2: false,
+            campus_before_the_army_3: false,
             settler_before_the_navy: false,
             district_buildings_first: false,
             capital_library_first: false,
@@ -5751,6 +5763,7 @@ impl BasicAi {
             builder_before_the_army_2: false,
             campus_before_the_army: false,
             campus_before_the_army_2: false,
+            campus_before_the_army_3: false,
             settler_before_the_navy: false,
             district_buildings_first: false,
             capital_library_first: false,
@@ -12262,7 +12275,7 @@ impl BasicAi {
             }
         }
         if self.campus_before_the_army && !self.minor && !self.barb && !emergency_defense {
-            if let Some(item) = Self::campus_before_the_army_item(g, pid, cid, n_cities) {
+            if let Some(item) = Self::campus_before_the_army_item(g, pid, cid, n_cities, false) {
                 return Some(item);
             }
         }
@@ -12325,13 +12338,19 @@ impl BasicAi {
         } else {
             self.w.mil_per_city * n_cities as f64
         };
-        if self.campus_before_the_army_2
+        if (self.campus_before_the_army_2 || self.campus_before_the_army_3)
             && !self.minor
             && !self.barb
             && !emergency_defense
             && !self.settler_due(g, pid, cid, n_cities, settlers)
         {
-            if let Some(item) = Self::campus_before_the_army_item(g, pid, cid, n_cities) {
+            if let Some(item) = Self::campus_before_the_army_item(
+                g,
+                pid,
+                cid,
+                n_cities,
+                self.campus_before_the_army_3,
+            ) {
                 return Some(item);
             }
         }
@@ -14554,6 +14573,7 @@ impl BasicAi {
         pid: usize,
         cid: u32,
         n_cities: usize,
+        chain: bool,
     ) -> Option<Item> {
         if n_cities < Self::CAPITAL_CAMPUS_MIN_CITIES {
             return None;
@@ -14564,7 +14584,7 @@ impl BasicAi {
             .filter(|city| match g.cities[city].queue.first() {
                 Some(Item::District { district, .. }) => g.district_family(*district) == "campus",
                 Some(Item::Building { building }) => g.rules.buildings.get(building).is_some_and(|spec| {
-                    spec.requires.is_empty()
+                    (chain || spec.requires.is_empty())
                         && spec
                             .district
                             .is_some_and(|district| g.district_family(district) == "campus")
@@ -14575,7 +14595,26 @@ impl BasicAi {
         if in_flight >= n_cities.div_ceil(2) {
             return None;
         }
-        Self::first_campus_item(g, pid, cid).or_else(|| Self::campus_library_item(g, pid, cid))
+        Self::first_campus_item(g, pid, cid)
+            .or_else(|| Self::campus_library_item(g, pid, cid))
+            .or_else(|| chain.then(|| Self::campus_tier_item(g, pid, cid)).flatten())
+    }
+
+    /// See `campus_before_the_army_3`: the University, else the Research Lab,
+    /// of the Campus this city holds (its civilization's replacement where it
+    /// has one), when the city would finish it within
+    /// `FIRST_CAMPUS_MAX_TURNS`.
+    pub(crate) fn campus_tier_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if !g.city_has_district_family(g.cities.get(&cid)?, crate::name!("campus")) {
+            return None;
+        }
+        ["university", "research_lab"].into_iter().find_map(|family| {
+            let item = Self::civ_building(g, pid, cid, family)?;
+            let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+                g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
+            });
+            (turns <= Self::FIRST_CAMPUS_MAX_TURNS).then_some(item)
+        })
     }
 
     /// See `capital_library_first`: the Library of a Campus this city holds,
@@ -22673,6 +22712,21 @@ mod tests {
             matches!(&library, Some(Item::Building { building }) if *building == "library"),
             "{library:?}"
         );
+        // Version 3 goes on to the University once the Library stands.
+        game.cities.get_mut(&cid).unwrap().buildings.push(crate::name!("library"));
+        game.players[0].techs.insert(crate::name!("education"));
+        let third = |game: &Game, on: bool| {
+            let mut ai = BasicAi::new();
+            ai.campus_before_the_army_2 = !on;
+            ai.campus_before_the_army_3 = on;
+            ai.pick_item(game, 0, cid, 3, 1, 3, 1, 0, 0, 0, 0)
+        };
+        let university = third(&game, true);
+        assert!(
+            matches!(&university, Some(Item::Building { building }) if *building == "university"),
+            "{university:?}"
+        );
+        assert_ne!(third(&game, false), university, "version 2 stops at the Library");
     }
 
     /// See `builder_before_the_army`: an empire with no Builder trains one
