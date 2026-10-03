@@ -2447,6 +2447,7 @@ pub const GENES: &[Gene] = &[
     // Trebuchets against 400-HP Cree walls from t123 to t142. See
     // `SIEGE_UPGRADE_WALL_HP`.
     Gene { tag: "domination-siege-research-2", field: "domination_siege_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_siege_research_2, disable: AdvancedAi::disable_domination_siege_research_2 },
+    Gene { tag: "policy-deck-hysteresis-2", field: "policy_deck_hysteresis_2", kind: Kind::OptIn, enable: AdvancedAi::enable_policy_deck_hysteresis_2, disable: AdvancedAi::disable_policy_deck_hysteresis_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

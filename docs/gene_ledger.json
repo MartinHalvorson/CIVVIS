@@ -2523,6 +2523,15 @@
           "pass-picket-2": null
         }
       },
+      "policy-deck-hysteresis": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "policy-deck-hysteresis": null,
+          "policy-deck-hysteresis-2": null
+        }
+      },
       "power-the-laboratory": {
         "rule_on": [
           "power-the-laboratory-2"

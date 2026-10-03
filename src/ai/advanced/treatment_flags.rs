@@ -4691,11 +4691,25 @@ impl AdvancedAi {
     /// relief and its Amenity repair card through the turn's reshuffles.
     pub fn enable_policy_deck_hysteresis(&mut self) {
         self.policy_deck_hysteresis = true;
+        self.policy_deck_hysteresis_2 = false;
     }
 
     /// The twin of `enable_policy_deck_hysteresis`.
     pub fn disable_policy_deck_hysteresis(&mut self) {
         self.policy_deck_hysteresis = false;
+    }
+
+    /// See `AdvancedAi::relief_outruns_income`: version 1, and the relief
+    /// holds while the income does not cover it and may evict a lower-ranked
+    /// wanted military card. Exclusive with version 1.
+    pub fn enable_policy_deck_hysteresis_2(&mut self) {
+        self.policy_deck_hysteresis = false;
+        self.policy_deck_hysteresis_2 = true;
+    }
+
+    /// The twin of `enable_policy_deck_hysteresis_2`.
+    pub fn disable_policy_deck_hysteresis_2(&mut self) {
+        self.policy_deck_hysteresis_2 = false;
     }
 
     /// Opt-in gene `strategic-deposit-prey`; see [`Self::strategic_deposit_prey`].
