@@ -71,3 +71,50 @@ Both decision-replay arms use identical recorded event prefixes and the same
 23 supported canonical forced treatments, not the experimental runtime's full
 30-treatment bundle. Persistent decider replay measures requests on unchanged
 observations, not execution of counterfactual turns in Firaxis.
+
+## Recorded-history result and validation
+
+The full replay finished with 584 observation frames, 583 board decisions,
+and both processes exiting zero. Each arm's consumed prefix hash equals the
+original events hash above. Ordered host actions differ on 21 frames, first
+at turn 195/frame 0; internal native-action lists differ on 26 frames. After
+excluding AIR_ATTACK and verification telemetry, every ordered host-action
+list is identical. All host-order differences concern Bomber `8650780`.
+
+On turn 195, baseline reproduces all three native-invalid distance-11
+requests. Candidate instead targets `(35,17)`, `(34,18)`, `(34,18)`, at
+distances 8, 7, 7 from its observed base. Across the full history, the ordered
+multiset has 19 added and 5 removed AIR_ATTACK requests. All 19 additions are
+within the unit's observed range 10, with no preceding rebase order. Of the
+five removals, three are the invalid turn-195 requests; two are range-valid
+requests at turn 203/frame 1 and 205/frame 0. Those missing requests are not
+claimed as beneficial. The 21 changed frames cover eight unit-turns; repeated
+requests are not independent available attacks. Different persistent memory
+is being fed the unchanged original game's subsequent acknowledgments.
+
+The replacement targets have not been executed in Firaxis. Being within range
+does not establish full native permission, a consumed attack, damage, a kill,
+or a better terminal result. In particular, this is not a counterfactual
+repair of the original Sweden Culture loss.
+
+Local validation used only this task's own build cache:
+
+- `cargo test --profile ci --locked`: 4,469 passed, zero failed, 53 existing
+  ignores (49 library, four documentation).
+- Five focused regressions passed after four failed first on old code.
+- Changed-Rust quality passed on all three changed source files; seven
+  CI-wiring tests passed.
+- Candidate range census: all 118 positive samples match the host.
+- Four 6-major/9-city-state, 74x46 Continents/Online simulator health games
+  with a 250-turn cap completed, seeds 261003740–743, jobs 2. Three ended by
+  score at the cap and one by Culture at 209. This is health, not strength.
+
+| Frozen input/output | SHA-256 |
+|---|---|
+| Baseline orders binary | `b56a5fb5221b436a2918b9b29318e0d8dfbf69f0dbd719750599199fb2e54bc8` |
+| Candidate orders binary | `13c2321840ec5541f04392161791e1e98dca1f2713d644932842e15e467c9bdc` |
+| Baseline actual dependency library | `fa8356010274bb94e0e2dfaf7dfd6d3251c03a4ab6ceeb945c194603d5323ca8` |
+| Candidate actual dependency library | `bc545ec68f9bd68a9faaf7e04e20bef453a90b1d60b930ce0182cfe511d48ab8` |
+| Forced-treatment file | `a79c0e54e708a92ccf8cd8b286da851fea43b643dff58cdedb8905ce74dfec3b` |
+| Baseline range census | `6e2fd5631aa5b39db716f8288079e717c6a6daec8fbdd41d207fa97cd31b35d4` |
+| Candidate range census | `bea995d2d87081b4c875d065d6435d34ec91f9c8abc6dde21843dd653c76368e` |
