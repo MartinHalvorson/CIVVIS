@@ -5652,6 +5652,9 @@ pub struct AdvancedAi {
     /// Settler in the delegated city governor. Opt-in gene
     /// `campus-before-the-army`; see `BasicAi::campus_before_the_army`.
     campus_before_the_army: bool,
+    /// `campus-before-the-army-2`: the same Campus and Library, behind the
+    /// Monument and the capital Settler. See `BasicAi::campus_before_the_army_2`.
+    campus_before_the_army_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// A district is worth the land-grab building it will host.
     ///
@@ -6956,6 +6959,10 @@ pub struct AdvancedAi {
     /// `skip-the-prophet-race-2`.
     skip_the_prophet_race_2: bool,
 
+    /// The delegated city governor's navy step yields to a due Settler.
+    /// Opt-in gene `settler-before-the-navy`; see
+    /// `BasicAi::settler_before_the_navy`.
+    settler_before_the_navy: bool,
     // ---- append: t-z ------------------------------------------------
     /// Upgrade passes keep one and a half turns of the army's bill in the
     /// treasury instead of a flat 30 Gold at war. Opt-in gene
@@ -8676,6 +8683,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             campus_before_the_army: false,
+            campus_before_the_army_2: false,
             // ---- append: e-f ----------------------------------------
             expansion_hall_district: false,
             early_conquest_opening: false,
@@ -8829,6 +8837,7 @@ impl AdvancedAi {
             spaceport_surplus_veto: false,
             skip_the_prophet_race_2: false,
 
+            settler_before_the_navy: false,
             // ---- append: t-z ----------------------------------------
             upkeep_reserve: false,
             trade_growth_to_district: false,

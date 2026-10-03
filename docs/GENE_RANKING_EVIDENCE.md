@@ -196,7 +196,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `builders-work-through-raiders` | off (unmeasured) | `builders-work-through-raiders`: the live capture lessons' reach holds keep Settlers only. | 1 \| 1 |
 | `campus-before-harbor` | off (unmeasured) | `campus-before-harbor`: see `BasicAi::campus_before_harbor`. | — \| 2 |
 | `campus-before-harbor-2` | off (unmeasured) | `campus-before-harbor-2`: version one, and the capital's first Campus before its next Settler. | — \| 2 |
-| `campus-before-the-army` | off (unmeasured) | A city's first Campus ahead of the military floor and the capital Settler in the delegated city governor. | 1 \| 1 |
+| `campus-before-the-army` | off (unmeasured) | A city's first Campus ahead of the military floor and the capital Settler in the delegated city governor. | — \| 2 |
+| `campus-before-the-army-2` | off (unmeasured) | `campus-before-the-army-2`: the same Campus and Library, behind the Monument and the capital Settler. | — \| 2 |
 | `capital-campaign-router` | off (unmeasured) | Enable `capital-campaign-router` for measurement. | 1 \| 1 |
 | `capture-hold-chain` | off (unmeasured) | Enable `capture-hold-chain` for measurement. | 1 \| 1 |
 | `connect-the-luxury-2` | off (unmeasured) | Research a first-copy luxury only when it can relieve an Amenity deficit after a legal, affordable unlock. | 1 \| 2 |
@@ -234,6 +235,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `raze-a-doomed-capture` | off (unmeasured) | Opt-in gene `raze-a-doomed-capture`; see `Self::raze_doomed_capture`. | 1 \| 1 |
 | `reinforce-before-stall` | off (unmeasured) | Enable `reinforce-before-stall` for measurement. | 1 \| 1 |
 | `research-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 1 \| 3 |
+| `settler-before-the-navy` | off (unmeasured) | The delegated city governor's navy step yields to a due Settler. | 1 \| 1 |
 | `settler-detour-stays-near` | off (unmeasured) | `settler-detour-stays-near`: a threat detour's fallback must lie about as close as the site it leaves. | 1 \| 1 |
 | `shared-danger` | off (unmeasured) | Opt-in gene `shared-danger`; see `Self::shared_danger`. | 1 \| 1 |
 | `siege-holds-a-breach` | off (unmeasured) | Opt-in gene `siege-holds-a-breach`; see `Self::siege_holds_a_breach`. | 1 \| 1 |

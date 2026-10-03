@@ -12,7 +12,8 @@
 //! best site, while the empire's Culture trails and fewer than half its
 //! cities hold or have queued one (`BasicAi::culture_defense_theater_item`).
 //!
-//! Only a city that already holds a Campus is claimed. Live King
+//! Only a city that already holds a Campus, and that the Settler step would
+//! not send a Settler from, is claimed. Live King
 //! 2026-10-03T090618Z, the first game with the reservation, claimed Quito at
 //! t48 and the capital at t50, with 3 cities wanting 9 and no Campus anywhere:
 //! a King rival's early Culture is four times ours, so the trailing rule holds
@@ -41,11 +42,27 @@ impl AdvancedAi {
         if g.players[pid].gold_per_turn < -0.5 && g.players[pid].gold < recovery_reserve {
             return;
         }
+        // A city the Settler step would send out a Settler from keeps it:
+        // live King 2026-10-03T113755Z held 3 cities from t42 to t100 while
+        // Theaters, Campuses and ships took the queues ahead of the walkers.
+        let settlers = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|unit| g.units[unit].kind == "settler")
+            .count()
+            + city_ids
+                .iter()
+                .filter(|cid| {
+                    matches!(g.cities[cid].queue.first(),
+                        Some(crate::game::Item::Unit { unit }) if unit == "settler")
+                })
+                .count();
         let mut best = None;
         for &cid in &city_ids {
             let city = &g.cities[&cid];
             if !city.queue.is_empty()
                 || !g.city_has_district_family(city, crate::name!("campus"))
+                || self.base.settler_due(g, pid, cid, city_ids.len(), settlers)
                 || plan.threatened_city == Some(cid)
                 || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
             {
