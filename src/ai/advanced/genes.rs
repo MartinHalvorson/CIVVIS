@@ -2388,8 +2388,6 @@ pub const GENES: &[Gene] = &[
     // and below. King ladder proxy, 64 paired games: foreign cities held
     // 8 -> 22, alive 49 -> 54, +0.90 pp; Emperor -1.06 pp, so not above King. See `AdvancedAi::phase_specialization_active`.
     Gene { tag: "domination-specializes-earlier", field: "domination_specializes_earlier", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_specializes_earlier, disable: AdvancedAi::disable_domination_specializes_earlier },
-    // ---- append: a-b ------------------------------------------------
-    // ---- append: c-d ------------------------------------------------
     // The delegated city governor asked every coastal city for a Harbor before
     // any specialty district; live King Tiny Pangaea started no Campus between
     // turns 20 and 65 in two of three games. See `BasicAi::campus_before_harbor`.
@@ -2403,35 +2401,37 @@ pub const GENES: &[Gene] = &[
     // Library and 13 of 19 Commercial Hubs without a Market. See
     // `BasicAi::district_buildings_first`.
     Gene { tag: "district-buildings-first", field: "district_buildings_first", kind: Kind::OptIn, enable: AdvancedAi::enable_district_buildings_first, disable: AdvancedAi::disable_district_buildings_first },
-    // V2 also gives the capital's Library the slot campus-before-harbor-2
-    // gives its Campus, ahead of the next Settler: the best live game held 7
-    // Campuses and 2 Libraries at turn 100. See `BasicAi::capital_library_first`.
-    Gene { tag: "district-buildings-first-2", field: "district_buildings_first_2", kind: Kind::OptIn, enable: AdvancedAi::enable_district_buildings_first_2, disable: AdvancedAi::disable_district_buildings_first_2 },
     // Culture buys civics and is one bar of the culture-victory defense
     // (domestic Tourists are lifetime Culture over 100); our Culture ran a
     // third to a half of the strongest rival's and the bred district order
     // always ranks the Theater Square last. See `BasicAi::culture_defense_theater`.
     Gene { tag: "culture-defense-theater", field: "culture_defense_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_defense_theater, disable: AdvancedAi::disable_culture_defense_theater },
-    // ---- append: e-f ------------------------------------------------
-    // ---- append: g-k ------------------------------------------------
-    // ---- append: l-o ------------------------------------------------
+    // V3 carries version one's housing rule into the delegated city governor,
+    // where most live builds are placed, and follows the Granary with an
+    // Aqueduct while the city stays housing-bound.
+    Gene { tag: "first-granary-reserve-3", field: "first_granary_reserve_3", kind: Kind::OptIn, enable: AdvancedAi::enable_first_granary_reserve_3, disable: AdvancedAi::disable_first_granary_reserve_3 },
     // The Monument sat behind the military floor, the Settler, the Builders
     // and the Trader: live King turn 60 to 100, only 54-57% of cities older
     // than 20 turns held one and culture trailed 10.6 against 27.3. See
     // `BasicAi::monument_first`.
     Gene { tag: "monument-first", field: "monument_first", kind: Kind::OptIn, enable: AdvancedAi::enable_monument_first, disable: AdvancedAi::disable_monument_first },
-    // ---- append: p-r ------------------------------------------------
-    // ---- append: s-s ------------------------------------------------
     Gene { tag: "shared-danger", field: "shared_danger", kind: Kind::OptIn, enable: AdvancedAi::enable_shared_danger, disable: AdvancedAi::disable_shared_danger },
-    // ---- append: t-z ------------------------------------------------
+    // V2 also gives the capital's Library the slot campus-before-harbor-2
+    // gives its Campus, ahead of the next Settler: the best live game held 7
+    // Campuses and 2 Libraries at turn 100. See `BasicAi::capital_library_first`.
+    Gene { tag: "district-buildings-first-2", field: "district_buildings_first_2", kind: Kind::OptIn, enable: AdvancedAi::enable_district_buildings_first_2, disable: AdvancedAi::disable_district_buildings_first_2 },
     // Upgrades spent the treasury to 30 Gold at war; a one-turn upkeep swing
     // then bankrupted the empire (live King 040354Z t180-186, t207-213).
     // See `gold_and_cards::UPKEEP_RESERVE_TURNS`.
     Gene { tag: "upkeep-reserve", field: "upkeep_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_upkeep_reserve, disable: AdvancedAi::disable_upkeep_reserve },
-    // V3 carries version one's housing rule into the delegated city governor,
-    // where most live builds are placed, and follows the Granary with an
-    // Aqueduct while the city stays housing-bound.
-    Gene { tag: "first-granary-reserve-3", field: "first_granary_reserve_3", kind: Kind::OptIn, enable: AdvancedAi::enable_first_granary_reserve_3, disable: AdvancedAi::disable_first_granary_reserve_3 },
+    // ---- append: a-b ------------------------------------------------
+    // ---- append: c-d ------------------------------------------------
+    // ---- append: e-f ------------------------------------------------
+    // ---- append: g-k ------------------------------------------------
+    // ---- append: l-o ------------------------------------------------
+    // ---- append: p-r ------------------------------------------------
+    // ---- append: s-s ------------------------------------------------
+    // ---- append: t-z ------------------------------------------------
 ];
 
 // ═══ GENERATED BY tools/genes.py — THE VERDICTS. Do not edit below: `python3 tools/genes.py write` ═══

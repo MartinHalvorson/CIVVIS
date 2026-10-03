@@ -112,6 +112,8 @@ pub(super) const DEFENDER_RADIUS: i32 = 6;
 pub(super) const WALL_STRENGTH_PER_100_HP: f64 = 10.0;
 /// Under this share of the bill the train falls back to the staging ring.
 pub(super) const ABORT_SHARE: f64 = 0.8;
+/// The health a spotter needs before it steps into sight of an unseen city.
+const SPOTTER_MIN_HP: i32 = 60;
 /// Consecutive short assessments before an invested train falls back. The
 /// bill counts every visible defender within [`DEFENDER_RADIUS`], so one unit
 /// walking into or out of sight swings it. Live King civvis-20261001T024402Z,
@@ -996,6 +998,18 @@ impl AdvancedAi {
             })
     }
 
+    /// Whether this unit is a member of an active Domination siege (see
+    /// `active_siege_member`) whose city stands without walls: its shot
+    /// is the city's health, and the battle planner leaves it to the train.
+    pub(super) fn unwalled_siege_member(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        self.active_siege_member(g, pid, uid)
+            && self.force_groups.iter().any(|group| {
+                group.units.contains(&uid)
+                    && g.city_at(group.objective)
+                        .is_some_and(|cid| g.cities[&cid].wall_hp <= 0)
+            })
+    }
+
     /// The doctrine's turn for one unit: `Some(acted)` when a siege or an
     /// anvil owns the unit's decision, `None` for the ladder. Returns before
     /// reading the board with both genes off.
@@ -1329,6 +1343,11 @@ impl AdvancedAi {
         if siege.stage == SiegeStage::Stage {
             return Some(self.siege_stage_step(g, pid, uid, &city, plan));
         }
+        if self.siege_spotter(g, pid, group, &city) == Some(uid) {
+            if let Some(acted) = self.spotter_step(g, pid, uid, &city) {
+                return Some(acted);
+            }
+        }
         if siege.taker == Some(uid) {
             return Some(self.taker_step(g, pid, uid, &city));
         }
@@ -1338,6 +1357,86 @@ impl AdvancedAi {
             Arm::Shooter => Some(self.siege_shooter_step(g, pid, uid, &city)),
             Arm::Other => None,
         }
+    }
+
+    /// The member that steps into sight of an invested city nobody of ours
+    /// can see: the nearest healthy land soldier with moves within
+    /// [`STAGING_FAR`]. `None` while the city is in sight. Every reading the
+    /// train takes of an unseen city is memory: in sim seed 37140004 the
+    /// Siege of Hastings sat in Invest for eighteen turns, its units 3-4 tiles
+    /// out at the anchor, on a wall reading of 22/400 frozen from the last
+    /// sighting (diagnosed by -c9).
+    fn siege_spotter(
+        &self,
+        g: &Game,
+        pid: usize,
+        group: &ForceGroup,
+        city: &CityView,
+    ) -> Option<u32> {
+        if g.sees(&g.player_vision_frame(pid), city.pos) {
+            return None;
+        }
+        group
+            .units
+            .iter()
+            .copied()
+            .filter(|uid| {
+                g.units.get(uid).is_some_and(|unit| {
+                    let spec = &g.rules.units[unit.kind];
+                    unit.owner == pid
+                        && spec.class == "military"
+                        && spec.domain.as_deref().is_none_or(|domain| domain == "land")
+                        && !g.is_embarked(unit)
+                        && unit.hp >= SPOTTER_MIN_HP
+                        && unit.moves_left > 0.0
+                        && g.wdist(unit.pos, city.pos) <= STAGING_FAR
+                })
+            })
+            .min_by_key(|uid| (g.wdist(g.units[uid].pos, city.pos), *uid))
+    }
+
+    /// Walk the spotter to the tile it can reach this turn that sees the
+    /// city, where its expected reply leaves it more than half its health.
+    fn spotter_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        city: &CityView,
+    ) -> Option<bool> {
+        let unit = g.units.get(&uid)?.clone();
+        let sight = g.unit_sight(uid).max(1);
+        let mut candidates: Vec<Pos> = g
+            .reachable(uid)
+            .into_iter()
+            .filter(|pos| {
+                *pos != unit.pos
+                    && g.city_at(*pos).is_none()
+                    && g.wdist(*pos, city.pos) <= sight
+                    && g.line_of_sight_from(*pos, city.pos)
+            })
+            .collect();
+        candidates.sort_by_key(|pos| {
+            (
+                g.wdist(unit.pos, *pos),
+                Reverse(g.wdist(*pos, city.pos)),
+                *pos,
+            )
+        });
+        let half = f64::from(unit.hp) * 0.5;
+        let dest = candidates
+            .into_iter()
+            .take(12)
+            .find(|pos| self.approach_danger(g, pid, *pos, uid) < half)?;
+        if !self.base.path_walk_to(g, pid, uid, dest) {
+            return None;
+        }
+        think!(self.journal(), Military, Detail,
+            "Siege of {}: the {} steps into sight of the city", g.cities[&city.id].name, unit.kind;
+            "nothing of ours saw it, so every wall and garrison reading was memory; {:?} sees it at {} tiles",
+            dest, g.wdist(dest, city.pos);
+            city.pos);
+        Some(true)
     }
 
     /// Stage: fight what comes out, step out of the city's reach, march to
@@ -1547,10 +1646,10 @@ impl AdvancedAi {
         let range = g.unit_attack_range(uid).max(1);
         let distance = g.wdist(unit.pos, city.pos);
         if distance <= range && unit.moves_left > 0.0 {
-            if let Some(acted) = self.reliever_kill_shot(g, pid, uid, city) {
-                return acted;
-            }
             if city.wall_hp > 0 {
+                if let Some(acted) = self.reliever_kill_shot(g, pid, uid, city) {
+                    return acted;
+                }
                 if let Some(acted) = self.best_unit_shot(g, pid, uid) {
                     return acted;
                 }
@@ -1558,7 +1657,16 @@ impl AdvancedAi {
                     return acted;
                 }
             } else {
+                // A city without walls is the shot: every reliever killed
+                // instead let it heal. Live King civvis-20261003T035351Z,
+                // unwalled Washington, turns 40-58 in Reduce with four to
+                // nine units near: our archers shot units about sixty times
+                // and the city five, and it stood at 200/200 until it built
+                // walls at turn 59.
                 if let Some(acted) = self.city_shot(g, pid, uid, city) {
+                    return acted;
+                }
+                if let Some(acted) = self.reliever_kill_shot(g, pid, uid, city) {
                     return acted;
                 }
                 if let Some(acted) = self.best_unit_shot(g, pid, uid) {

@@ -4616,8 +4616,6 @@ impl AdvancedAi {
         self.upkeep_reserve = false;
     }
 
-    // ---- append: a-b ------------------------------------------------
-    // ---- append: c-d ------------------------------------------------
     /// See `BasicAi::campus_before_harbor`: a city's first Campus before its
     /// Harbor in the delegated city governor.
     pub fn enable_campus_before_harbor(&mut self) {
@@ -4648,7 +4646,6 @@ impl AdvancedAi {
         self.base.campus_before_harbor = self.campus_before_harbor;
         self.base.capital_campus_first = false;
     }
-    // ---- append: e-f ------------------------------------------------
     /// See `AdvancedAi::first_granary_reserve_3`: a housing-bound city's
     /// Granary, then its Aqueduct, in both production governors.
     pub fn enable_first_granary_reserve_3(&mut self) {
@@ -4664,13 +4661,9 @@ impl AdvancedAi {
         self.base.housing_reserve = false;
     }
 
-    // ---- append: g-k ------------------------------------------------
 
-    // ---- append: l-o ------------------------------------------------
 
-    // ---- append: p-r ------------------------------------------------
 
-    // ---- append: s-s ------------------------------------------------
     /// Opt-in gene `shared-danger`; see [`Self::shared_danger`].
     pub fn enable_shared_danger(&mut self) {
         self.shared_danger = true;
@@ -4681,6 +4674,13 @@ impl AdvancedAi {
         self.shared_danger = false;
     }
 
+    // ---- append: a-b ------------------------------------------------
+    // ---- append: c-d ------------------------------------------------
+    // ---- append: e-f ------------------------------------------------
+    // ---- append: g-k ------------------------------------------------
+    // ---- append: l-o ------------------------------------------------
+    // ---- append: p-r ------------------------------------------------
+    // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 }
 

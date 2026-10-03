@@ -250,6 +250,52 @@ class EngagementSectionTest(unittest.TestCase):
         self.assertEqual(flagged["army_kills_per_loss"], unflagged["army_kills_per_loss"])
 
 
+class NativeAttackRangeTest(unittest.TestCase):
+    def test_host_range_one_overrides_the_ranged_estimate(self) -> None:
+        for kind in ("UNIT_SLINGER", "UNIT_SKIRMISHER", "UNIT_QUADRIREME"):
+            with self.subTest(kind=kind):
+                self.assertEqual(ledger._attack_range(
+                    _unit(1, kind, 5, 5, ranged=30, range=1)), 1)
+
+    def test_host_range_can_include_promotions_and_support(self) -> None:
+        # Siege strength is exported separately from `ranged`; neither its
+        # spelling nor a zero ranged value may override the native reading.
+        self.assertEqual(ledger._attack_range(
+            _unit(1, "UNIT_BOMBARD", 4, 5, ranged=0, range=3)), 3)
+        self.assertEqual(ledger._attack_range(
+            _unit(2, "UNIT_JET_BOMBER", 1, 5, ranged=100, range=10)), 10)
+
+    def test_native_melee_range_zero_still_means_adjacent_attack(self) -> None:
+        self.assertEqual(ledger._attack_range(
+            _unit(1, "UNIT_WARRIOR", 6, 5, range=0)), 1)
+
+    def test_missing_or_invalid_readings_keep_the_legacy_estimate(self) -> None:
+        for invalid in (None, -1, True, False, "3", 3.5):
+            with self.subTest(invalid=invalid):
+                self.assertEqual(ledger._attack_range(
+                    _unit(1, "UNIT_ARCHER", 5, 5, ranged=25, range=invalid)), 2)
+        self.assertEqual(ledger._attack_range(_unit(2, "UNIT_CATAPULT", 5, 5)), 2)
+        self.assertEqual(ledger._attack_range(_unit(3, "UNIT_WARRIOR", 6, 5)), 1)
+
+    def test_engagement_denominator_uses_each_units_native_range(self) -> None:
+        state = {
+            "kind": "state", "turn": 10, "frame": 0,
+            "units": [
+                _unit(1, "UNIT_SKIRMISHER", 5, 5, ranged=30, range=1),
+                _unit(2, "UNIT_SLINGER", 6, 4, ranged=15, range=1),
+                _unit(3, "UNIT_QUADRIREME", 5, 5, ranged=25, range=1),
+                _unit(4, "UNIT_WARRIOR", 6, 5, range=0),
+                _unit(5, "UNIT_BOMBARD", 4, 5, range=3),
+            ],
+            "hostiles": [H1],
+        }
+        section = ledger.engagement_section([state, _strike(10, 5, 100, 0)], US)
+        self.assertEqual(section["firepower_utilisation"],
+                         {"numerator": 1, "denominator": 2, "share": 0.5})
+        self.assertEqual(section["idle_healthy_share"],
+                         {"numerator": 1, "denominator": 2, "share": 0.5})
+
+
 class EngagementInTheLedgerTest(unittest.TestCase):
     def test_the_report_carries_the_section_in_json_and_text(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

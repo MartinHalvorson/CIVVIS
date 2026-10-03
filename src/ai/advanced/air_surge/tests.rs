@@ -304,3 +304,50 @@ fn an_outclassed_cavalry_line_hands_the_capture_to_the_strongest_melee_body() {
         Some((Name::new("cuirassier"), true))
     );
 }
+
+/// A ground army three times the target's takes the declaration while the
+/// wing is still arming; a closer race keeps the surge's hold.
+#[test]
+fn an_overwhelming_ground_army_does_not_wait_for_the_wing() {
+    let mut g = Game::new_full(2, 40, 24, 936011, 500, 0, false);
+    let home = g.found_city_for(0, (6, 12), None);
+    let target = g.found_city_for(1, (20, 12), None);
+    g.players[0].met.insert(1);
+    g.at_war.clear();
+    g.turn = 100;
+    let mut ai = AdvancedAi::new();
+    ai.enable_air_surge_2();
+    ai.victory_target = Some(VictoryTarget::Domination);
+    ai.air_surge_plan = Some(AirSurge {
+        target_player: 1,
+        objective_city: target,
+        objective_pos: g.cities[&target].pos,
+        body_unit: Name::new("musketman"),
+        body_is_cavalry: false,
+        opened_at_war: false,
+        phase: AirSurgePhase::Beeline,
+        appointed_turn: 90,
+        tech_turn: None,
+        declared_turn: None,
+        last_reviewed_turn: 100,
+        recovery_assessments: 0,
+    });
+    for unit in g.player_unit_ids(0).into_iter().chain(g.player_unit_ids(1)) {
+        g.remove_unit(unit);
+    }
+    let at = g.cities[&home].pos;
+    g.spawn_test_unit("warrior", 1, g.cities[&target].pos);
+    g.spawn_test_unit("warrior", 0, at);
+    assert!(!AdvancedAi::air_surge_ground_overwhelms(&g, 0, 1));
+    assert!(ai.air_surge_opening(&mut g, 0, 1), "an even army waits for the wing");
+    for _ in 0..5 {
+        g.spawn_test_unit("swordsman", 0, at);
+    }
+    assert!(AdvancedAi::air_surge_ground_overwhelms(&g, 0, 1));
+    assert!(
+        !ai.air_surge_opening(&mut g, 0, 1),
+        "the surge hands the declaration to the ground campaign"
+    );
+    assert!(ai.air_surge_plan.is_some(), "the wing keeps building");
+    assert!(!g.is_at_war(0, 1), "the surge itself declares nothing");
+}

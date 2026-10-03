@@ -68,6 +68,11 @@ use crate::think;
 use crate::Pos;
 
 /// The technology the whole appointment is built around.
+/// Our military power over the surge target's at which the ground campaign
+/// declares without waiting for the wing. Three is the line the opening and
+/// the denial layers already treat as decisive.
+pub(crate) const AIR_SURGE_GROUND_RELEASE_RATIO: f64 = 3.0;
+
 pub(crate) const AIR_SURGE_GOAL_TECH: &str = "advanced_flight";
 /// How far out the beeline may open, counted in technologies still missing on
 /// the path to [`AIR_SURGE_GOAL_TECH`].
@@ -2390,6 +2395,13 @@ impl AdvancedAi {
         false
     }
 
+    /// Whether our military already stands at
+    /// [`AIR_SURGE_GROUND_RELEASE_RATIO`] times the target's, so the ground
+    /// campaign need not wait for the wing.
+    pub(crate) fn air_surge_ground_overwhelms(g: &Game, pid: usize, target: usize) -> bool {
+        g.military_power(pid) >= AIR_SURGE_GROUND_RELEASE_RATIO * g.military_power(target).max(1.0)
+    }
+
     pub(crate) fn air_surge_opening(&mut self, g: &mut Game, pid: usize, target: usize) -> bool {
         let Some(plan) = self
             .air_surge_plan
@@ -2418,6 +2430,21 @@ impl AdvancedAi {
             self.record_air_surge_abort(g, "victory denial superseded the surge");
             self.air_surge_plan = None;
             self.air_surge_status = AirSurgeStatus::default();
+            return false;
+        }
+        // A ground army that already overwhelms the surge's target does not
+        // wait for the wing. Live King civvis-20261003T040354Z held Rome at
+        // peace from turn 91 with 805 power against 95 ("power 11.22× theirs"
+        // for Ravenna) because every phase before Strike spent the turn's
+        // war-opening decision on nothing, and the wing of game 15 arrived at
+        // turns 163-168. The ordinary declaration still checks the staged
+        // army, the treasury and the peace deadline; the wing keeps its
+        // research and production and joins the war when it is ready.
+        if plan.phase != AirSurgePhase::Strike
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.threatened_city(g, pid).is_none()
+            && Self::air_surge_ground_overwhelms(g, pid, target)
+        {
             return false;
         }
         if plan.phase != AirSurgePhase::Strike {

@@ -20463,7 +20463,23 @@ impl AdvancedAi {
                     // from 167 to 18 against our thousand, Macedon took it at
                     // 167, and the surge stood down. The wing's own front is
                     // not a second front.
-                    || (one_war_peace.is_some() && !air_front)
+                    // ...except when the front's Domination purpose is
+                    // complete. Live King civvis-20261003T040354Z took Rome
+                    // at turn 198 (loyalty 100 by 203); the wing had been
+                    // redirected to Ostia, so this suppressed the
+                    // capital-secured peace every turn while the army
+                    // cleared Rome's towns and Kongo -- the science leader,
+                    // holding the last original capital we needed -- won a
+                    // Technology victory at turn 216 from peace.
+                    || (one_war_peace.is_some()
+                        && (!air_front
+                            || matches!(
+                                one_war_peace,
+                                Some(
+                                    one_war::OneWarPeace::CapitalSecured
+                                        | one_war::OneWarPeace::CapitalElsewhere
+                                )
+                            )))
                     || (interception_handoff && !air_front)
                     || science_defensive_peace)
             {
