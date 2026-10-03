@@ -886,7 +886,10 @@ impl AdvancedAi {
         // objective: the ordinary war desk already handles a stalled front,
         // a rout, or a secured capital.
         if self.active_victory_target(g) == Some(VictoryTarget::Domination)
-            && self.one_war_front() == Some(campaign.target)
+            && (self.one_war_front() == Some(campaign.target)
+                // Nor while the capital it took bleeds Loyalty: peace hands
+                // it back. See `holds_bleeding_capital_of`.
+                || self.holds_bleeding_capital_of(g, pid, campaign.target))
         {
             return;
         }

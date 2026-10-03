@@ -488,3 +488,33 @@ fn recovery_does_not_buy_peace_with_capital_prey() {
     ai.advanced_diplomacy(&mut g, 0, &recovery(plan));
     assert!(!ai.peace_offers.contains(&1));
 }
+
+/// See `holds_bleeding_capital_of`: a Domination seat holding a rival's
+/// original capital whose Loyalty is falling keeps the war on that rival; a
+/// rising capital does not hold it.
+#[test]
+fn a_bleeding_captured_capital_holds_the_war() {
+    let (mut g, mut ai, plan, _, _) = fixture();
+    let capital = g
+        .player_city_ids(1)
+        .into_iter()
+        .find(|cid| g.cities[cid].is_capital)
+        .expect("fixture: a rival capital");
+    g.cities.get_mut(&capital).unwrap().owner = 0;
+    let observed = std::sync::Arc::make_mut(&mut g.observed_city_loyalty_per_turn);
+    observed.insert(capital, -17.0);
+    assert!(ai.holds_bleeding_capital_of(&g, 0, 1));
+    assert!(ai.domination_front_crushed(&g, 0, 1));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1), "the war keeps the capital");
+
+    let (mut g, ai, _, _, _) = fixture();
+    let capital = g
+        .player_city_ids(1)
+        .into_iter()
+        .find(|cid| g.cities[cid].is_capital)
+        .unwrap();
+    g.cities.get_mut(&capital).unwrap().owner = 0;
+    std::sync::Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(capital, 4.0);
+    assert!(!ai.holds_bleeding_capital_of(&g, 0, 1));
+}
