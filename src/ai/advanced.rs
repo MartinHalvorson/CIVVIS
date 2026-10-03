@@ -7525,6 +7525,7 @@ mod native_air_assault;
 pub use air_city_assault::AirCityAssault;
 mod denial_nearest_finish;
 mod denial_needs_a_road;
+mod city_memory;
 mod siege_resource_purchase;
 mod strategic_deposit_prey;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};

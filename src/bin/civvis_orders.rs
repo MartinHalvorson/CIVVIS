@@ -9104,6 +9104,7 @@ fn main() {
                                     &board.game,
                                     &carried,
                                 );
+                                ai.remap_city_memory(&previous_board.game, &board.game, &carried);
                             }
                             ai.remap_unit_memory(&carried);
                         }
