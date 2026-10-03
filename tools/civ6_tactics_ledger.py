@@ -781,7 +781,7 @@ ENGAGEMENT_WOUNDED_HP = 50
 LEFT_LOW_HP = 30
 #: An attack that does less than this to its defender is a chip.
 CHIP_DAMAGE = 15
-#: Kinds that reach two tiles whatever the export's `ranged` field says.
+#: Legacy range estimate for siege kinds when the host did not report range.
 SIEGE_KIND_MARKERS = ("CATAPULT", "TREBUCHET", "BOMBARD", "ARTILLERY")
 #: Activities in which a wounded unit that stands still is healing on purpose.
 HEALING_ACTIVITIES = frozenset({"heal", "healing", "fortified", "fortify", "sleep"})
@@ -852,6 +852,14 @@ def _hostile_unit_plots(state: dict[str, Any]) -> list[tuple[int, int]]:
 
 
 def _attack_range(unit: dict[str, Any]) -> int:
+    # UnitPanel.lua:2250 reads Unit:GetRange(); current own-unit exports carry
+    # that reading. Ranged does not imply range 2 (Slingers/Skirmishers reach
+    # 1), and promotions/support can extend it. Native melee units report 0
+    # but can attack an adjacent tile. Preserve the estimate for older or
+    # unreadable exports; JSON booleans are not integer range observations.
+    observed = unit.get("range")
+    if type(observed) is int and observed >= 0:
+        return max(1, observed)
     kind = str(unit.get("kind") or "").upper()
     if (unit.get("ranged") or 0) > 0 or any(marker in kind for marker in SIEGE_KIND_MARKERS):
         return 2
@@ -904,12 +912,14 @@ def engagement_section(
       unit / all such wounded unit-turns; `wounded_healing_share`: the ones
       fortified or in a `HEALING_ACTIVITIES` activity.
     * `firepower_utilisation`: unit-turns with a hostile combat unit within
-      the unit's attack range (2 for a ranged or siege kind, else 1; embarked
-      units cannot strike and are skipped) that issued a `strike` that turn /
+      the unit's observed native range (at least 1 for adjacent melee attacks;
+      absent/invalid readings retain the estimate of 2 for ranged or siege,
+      else 1; embarked units are skipped) that issued a `strike` that turn /
       all such unit-turns; `idle_healthy_share`: the in-range unit-turns of a
       unit at or above `ENGAGEMENT_WOUNDED_HP` that did not strike, over the
       same denominator, so firepower + idle healthy + `idle_wounded` is the
-      whole.
+      whole. This is a geometric envelope, not a host legality, line-of-sight,
+      remaining-attacks, or safe-shot verdict.
     * `focus`: our unit attacks grouped by (turn, defender): `targets`,
       `multi_hit_share` (more than one attack), `left_low_share` (the last
       attack left the defender alive at or below `LEFT_LOW_HP`).
