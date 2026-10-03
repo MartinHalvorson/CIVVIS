@@ -1602,6 +1602,22 @@ impl AdvancedAi {
             .siege_needs_a_breaker
             .then(|| self.breach_reading(g, pid, &city, &force));
         let no_breaker = !arena && breach.is_some_and(|reading| !reading.at_hand(&city));
+        // `siege-needs-a-breaker`: walls a breaker at hand can open are
+        // opened before the taker comes. The damage budget reads a train
+        // with no melee taker in reach as never finishing (`inf`), so a
+        // force of shooters that would breach in a few turns staged instead.
+        // Live King civvis-20261003T164758Z (game 43) held Thebes's 100
+        // walls in Stage from turn 90 to 100 with Archers at 20 wall a turn,
+        // the bill met, until a Horseman came. The train invests to open
+        // the walls; the budget gates the assault once they are a quarter
+        // down (`siege-holds-a-breach` holds that breach).
+        let opens_walls = !arena
+            && !walls_open_to_melee(&city)
+            && breach.is_some_and(|reading| reading.at_hand(&city))
+            && !force.iter().any(|uid| {
+                arm_of(g, *uid) == Arm::Melee
+                    && g.wdist(g.units[uid].pos, city.pos) <= STAGING_FAR
+            });
         if self.siege_needs_a_breaker {
             if no_breaker {
                 let wait = self
@@ -1645,7 +1661,10 @@ impl AdvancedAi {
             };
             if invested
                 && (strength < abort_share * bill
-                    || (!damage_can_continue && breach_taker.is_none() && !held_breach)
+                    || (!damage_can_continue
+                        && breach_taker.is_none()
+                        && !held_breach
+                        && !opens_walls)
                     || no_breaker)
             {
                 let since = *record.short_since.get_or_insert(turn);
@@ -1663,7 +1682,7 @@ impl AdvancedAi {
                     // the whole-force bill and positive-damage gate, but let
                     // a healthy, reachable capturer exploit that breach.
                     if ((arena && gathered) || staged >= bill || breach_taker.is_some())
-                        && damage_entry_ready
+                        && (damage_entry_ready || opens_walls)
                         && !no_breaker
                     {
                         stage = SiegeStage::Invest;
@@ -1760,6 +1779,8 @@ impl AdvancedAi {
                     reading.shooter_walls,
                     if no_breaker {
                         " — nothing to open the walls, so the train holds outside the city's reach"
+                    } else if opens_walls {
+                        " — no taker in reach yet, so the train opens the walls first"
                     } else {
                         ""
                     }

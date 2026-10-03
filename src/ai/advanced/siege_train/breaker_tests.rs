@@ -289,3 +289,48 @@ fn a_siege_tower_joins_a_melee_member_of_the_train() {
     off.enable_siege_train();
     assert_eq!(off.siege_doctrine_step(&mut g, 0, tower, &plan), None);
 }
+
+/// Thebes, game 43: Archers that breach 100 walls in five turns staged for
+/// ten, because the damage budget reads a train with no melee taker in
+/// reach as never finishing. With the gene the train invests to open the
+/// walls and stays invested while they come down.
+#[test]
+fn shooters_open_the_walls_before_the_taker_comes() {
+    let (mut g, cid) = walled_city();
+    flatten(&mut g, cid);
+    g.map_script = crate::setup::MapScript::Pangaea;
+    g.turn = 30;
+    g.at_war.insert((0, 1));
+    let bows: Vec<u32> = at_distance(&g, cid, 3)
+        .into_iter()
+        .take(4)
+        .map(|pos| g.spawn_unit("crossbowman", 0, pos))
+        .collect();
+    let group = group_on(&g, cid, &bows);
+    let plan = plan_against(&g, cid);
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_siege_positive_damage_budget();
+    ai.force_groups.push(group.clone());
+    let mut off = ai.clone();
+    ai.enable_siege_needs_a_breaker();
+
+    let city = CityView::of(&g, cid).unwrap();
+    let staged: f64 = bows.iter().map(|uid| unit_power(&g, *uid)).sum();
+    assert!(staged >= siege_bill(&g, 0, &city), "the bill is met");
+    assert!(ai.breach_reading(&g, 0, &city, &bows).at_hand(&city));
+    assert!(
+        !ai.conversion_siege_ready(&g, 0, cid, &bows),
+        "no taker: the budget never finishes"
+    );
+
+    off.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(off.sieges[&cid].stage, SiegeStage::Stage);
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(ai.sieges[&cid].stage, SiegeStage::Invest);
+    for turn in 31..35 {
+        g.turn = turn;
+        ai.assess_siege(&g, 0, cid, &plan, &group);
+        assert_ne!(ai.sieges[&cid].stage, SiegeStage::Stage, "turn {turn}");
+    }
+}
