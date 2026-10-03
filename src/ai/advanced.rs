@@ -544,6 +544,17 @@ const DOMINATION_FIRST_CAPTURE_MARCH: i32 = 8;
 /// turn makes a forecast revolt within four turns hopeless however developed
 /// the city is. See `city_disposition_value`.
 const HEAVY_LOYALTY_PRESSURE: f64 = -12.0;
+/// `raze-a-doomed-capture`: a captured city forecast to revolt within this
+/// many turns, at [`DOOMED_CAPTURE_PRESSURE`] Loyalty a turn or worse and
+/// under [`DOOMED_CAPTURE_DEVELOPMENT`], is razed: a Governor takes about
+/// five turns to establish, and Praetorium waits on an established one. Live
+/// King civvis-20261003T090618Z took Bhavapura (four population) at turn 66
+/// at 43 Loyalty and -6.6 a turn; the Resource Manager moved in from the
+/// capital and established at 71, Praetorium was slotted the same turn, and
+/// the city revolted at 73. Antium (game 21, -24 a turn) went the same way.
+const DOOMED_CAPTURE_TURNS: f64 = 7.0;
+const DOOMED_CAPTURE_PRESSURE: f64 = -5.0;
+const DOOMED_CAPTURE_DEVELOPMENT: f64 = 50.0;
 /// A fully defended objective with no army near it can yield to a city at
 /// least this much closer to the field force. The gap keeps the replacement
 /// from becoming another continuously changing march order.
@@ -6504,6 +6515,10 @@ pub struct AdvancedAi {
     lane_delegates_production_2: bool,
 
     // ---- append: p-r ------------------------------------------------
+    /// `raze-a-doomed-capture`: a Conquest razes a small captured city that
+    /// will revolt before any rescue can establish. See
+    /// `DOOMED_CAPTURE_TURNS`. Off by default.
+    raze_doomed_capture: bool,
     /// The policy deck keeps the maintenance relief the host held at the
     /// turn's start and the Amenity repair card while it is what keeps a city
     /// content. Opt-in gene `policy-deck-hysteresis`; see
@@ -8705,6 +8720,7 @@ impl AdvancedAi {
             lane_delegates_production_2: false,
 
             // ---- append: p-r ----------------------------------------
+            raze_doomed_capture: false,
             policy_deck_hysteresis: false,
             reinforce_before_stall: false,
             research_alliance_first: false,
@@ -42926,10 +42942,16 @@ impl AdvancedAi {
             let imminent_low_value_revolt = turns_to_flip <= 4.0
                 && (development < 35.0 || loyalty_delta <= HEAVY_LOYALTY_PRESSURE);
             let unsupported_revolt = nearest_core > 9 && turns_to_flip <= 8.0;
+            // `raze-a-doomed-capture`: a small city that flips before any
+            // rescue can establish. See `DOOMED_CAPTURE_TURNS`.
+            let doomed_capture = self.raze_doomed_capture
+                && turns_to_flip <= DOOMED_CAPTURE_TURNS
+                && loyalty_delta <= DOOMED_CAPTURE_PRESSURE
+                && development < DOOMED_CAPTURE_DEVELOPMENT;
             let hopeless_occupation = disposable
                 && matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery)
-                && loyalty_delta <= -8.0
-                && (imminent_low_value_revolt || unsupported_revolt);
+                && ((loyalty_delta <= -8.0 && (imminent_low_value_revolt || unsupported_revolt))
+                    || doomed_capture);
             match action {
                 Action::KeepCity { .. } => {
                     value += development;

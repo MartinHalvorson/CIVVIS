@@ -4739,6 +4739,16 @@ impl AdvancedAi {
         self.siege_rally_holds = false;
     }
 
+    /// Opt-in gene `raze-a-doomed-capture`; see [`Self::raze_doomed_capture`].
+    pub fn enable_raze_doomed_capture(&mut self) {
+        self.raze_doomed_capture = true;
+    }
+
+    /// The twin of `enable_raze_doomed_capture`.
+    pub fn disable_raze_doomed_capture(&mut self) {
+        self.raze_doomed_capture = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

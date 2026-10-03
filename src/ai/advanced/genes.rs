@@ -2451,6 +2451,10 @@ pub const GENES: &[Gene] = &[
     // the rally flipped across the city. See
     // `objective_board::SIEGE_RALLY_SWITCH_MARGIN`.
     Gene { tag: "siege-rally-holds", field: "siege_rally_holds", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_rally_holds, disable: AdvancedAi::disable_siege_rally_holds },
+    // Live King 090618Z kept Bhavapura at 43 Loyalty and -6.6 a turn; it
+    // revolted at 73, seven turns after the capture, before the moved
+    // Governor could hold it. See `DOOMED_CAPTURE_TURNS`.
+    Gene { tag: "raze-a-doomed-capture", field: "raze_doomed_capture", kind: Kind::OptIn, enable: AdvancedAi::enable_raze_doomed_capture, disable: AdvancedAi::disable_raze_doomed_capture },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
