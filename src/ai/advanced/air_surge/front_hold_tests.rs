@@ -184,6 +184,59 @@ fn a_stalled_war_against_the_armed_surge_target_is_not_offered_peace() {
     assert!(!offers(true), "the surge's own front keeps its war");
 }
 
+/// A front whose original capital we hold securely is done for Domination
+/// even when it is the wing's front: peace is offered so the campaign can
+/// move to the rival that holds the next original capital.
+#[test]
+fn a_secured_capital_releases_the_wing_s_front_for_the_next_capital() {
+    let (mut g, mut ai, target) = fixture_with(3);
+    at_war(&mut g);
+    let next = g.found_city_for(2, (32, 6), None);
+    assert!(g.cities[&next].is_capital);
+    g.record_contact(0, 2);
+    {
+        let capital = g.cities.get_mut(&target).unwrap();
+        assert!(capital.is_capital, "the fixture's target is player 1's original capital");
+        capital.owner = 0;
+        capital.loyalty = 100.0;
+    }
+    ai.enable_one_war_at_a_time();
+    ai.one_war = Some(crate::ai::advanced::one_war::OneWarFront {
+        target: 1,
+        since: g.turn - 30,
+        ledger: (0, 0, 0, 0),
+        window: std::collections::VecDeque::new(),
+        tide_against_since: None,
+        city_health: std::collections::BTreeMap::new(),
+        sieges_advancing: 0,
+    });
+    assert_eq!(ai.domination_followup_target(&g, 0, Some(1)), Some(2));
+    ai.air_surge_status = ai
+        .air_surge_plan
+        .as_ref()
+        .map(|plan| ai.air_surge_status(&g, 0, plan))
+        .unwrap_or_default();
+    let remaining = g
+        .player_city_ids(1)
+        .into_iter()
+        .next()
+        .expect("player 1 keeps a town");
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(remaining),
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(
+        ai.peace_offers.contains(&1),
+        "the wing's front with its capital secured is offered peace"
+    );
+}
+
 /// The same front refuses the target's own peace offer: an accepted treaty
 /// stands the wing down and blocks a new appointment for thirty turns.
 #[test]
