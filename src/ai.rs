@@ -2429,6 +2429,31 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `campus-before-harbor-2`.
     pub(crate) capital_campus_first: bool,
+    /// A city's Monument ahead of the military floor and the Settler step;
+    /// the capital first sends out two Settlers. This governor reached
+    /// the Monument only after the floor, the Settler, the Builders and the
+    /// Trader, so across the 14 live King Gran Colombia games of 2026-10-01/02
+    /// only 54-57% of our cities older than 20 turns held one from turn 60 to
+    /// 100 (27% at turn 30). A new city's first 40 turns went 3.5% to the
+    /// Monument against 6.9% to Walls and about a quarter to soldiers and
+    /// ships. Culture trailed 10.6 against the rival median's 27.3 at turn
+    /// 60 (civics 9.5 against 12), and culture is also what grows a city's
+    /// borders: our cities owned three or four unworked plots apiece.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `monument-first`.
+    pub(crate) monument_first: bool,
+    /// A standing district's first building before the city opens another
+    /// district. This governor tried every district the city still lacked
+    /// before any building, so a district stood without the building that
+    /// makes it pay until the city ran out of district slots. Live King
+    /// 2026-10-01/02, turn 100: 15 of 45 Campuses without a Library, 13 of
+    /// 19 Commercial Hubs without a Market, 4 of 4 Industrial Zones without
+    /// a Workshop; turn 120: 23 of 41 Hubs, 8 of 13 Entertainment Complexes
+    /// without an Arena. Science per citizen trailed about 0.9 against the
+    /// rivals' 2.0.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `district-buildings-first`.
+    pub(crate) district_buildings_first: bool,
     /// The genome's own `mil_per_city` while `AdvancedAi::delegated_cities`
     /// has lent this governor a Domination war's higher army target, `None`
     /// otherwise. Below the genome's own floor every city still builds the
@@ -5139,6 +5164,8 @@ impl BasicAi {
             housing_reserve: false,
             campus_before_harbor: false,
             capital_campus_first: false,
+            monument_first: false,
+            district_buildings_first: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
@@ -5604,6 +5631,8 @@ impl BasicAi {
             housing_reserve: false,
             campus_before_harbor: false,
             capital_campus_first: false,
+            monument_first: false,
+            district_buildings_first: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
@@ -12068,6 +12097,22 @@ impl BasicAi {
                 .economic_recovery_item(g, pid, cid, traders)
                 .or_else(|| self.upkeep_free_recovery_item(g, pid, cid));
         }
+        // `monument-first`: the cheapest culture in the game before the
+        // military floor and the Settler step, which otherwise kept a city
+        // from ever reaching it. The capital sends the land grab's first two
+        // Settlers out first, and an early rush still assembles its stack.
+        if self.monument_first
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && (!g.cities[&cid].is_capital
+                || n_cities + settlers >= Self::MONUMENT_CAPITAL_MIN_CITIES)
+            && (self.rush_military_floor == 0 || military >= self.rush_military_floor)
+        {
+            if let Some(monument) = Self::civ_building(g, pid, cid, "monument") {
+                return Some(monument);
+            }
+        }
         // `capital-settler-after-completion` opens one specific expansion
         // window: when the capital's whole queue has drained and it has
         // reached the engine's population-two floor, a Settler gets the next
@@ -12453,6 +12498,13 @@ impl BasicAi {
         }
         if let Some(monument) = Self::civ_building(g, pid, cid, "monument") {
             return Some(monument);
+        }
+        // `district-buildings-first`: the building that makes a standing
+        // district pay before the city opens another district.
+        if self.district_buildings_first && !self.minor && !self.barb {
+            if let Some(item) = Self::district_building_item(g, pid, cid) {
+                return Some(item);
+            }
         }
 
         // `campus-before-harbor`: the city's first Campus before its Harbor.
@@ -14250,6 +14302,61 @@ impl BasicAi {
     /// population is within one of its housing. Neither while the city has
     /// room to grow, and the Aqueduct only once the Granary stands or cannot
     /// be built here.
+    /// Cities founded or on the road before `monument_first` lets the capital
+    /// stop for its Monument: the capital is the land grab's settler pump,
+    /// and cities held at turn 60 drive the rest of the game.
+    const MONUMENT_CAPITAL_MIN_CITIES: usize = 3;
+
+    /// District families whose first building `district_buildings_first`
+    /// raises ahead of a new district, in the order it takes them. Science
+    /// first; the Arena before the Theater because a city short of Amenities
+    /// loses a tenth of every yield; the Encampment last, as a soldier's
+    /// building rather than an economy's.
+    const DISTRICT_BUILDING_ORDER: [&'static str; 8] = [
+        "campus",
+        "commercial_hub",
+        "industrial_zone",
+        "entertainment_complex",
+        "theater_square",
+        "harbor",
+        "holy_site",
+        "encampment",
+    ];
+
+    /// See `district_buildings_first`: the first building of a district the
+    /// city already holds — one that requires no other building, so a
+    /// Library and never a University — in `DISTRICT_BUILDING_ORDER`.
+    pub(crate) fn district_building_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let city = &g.cities[&cid];
+        Self::DISTRICT_BUILDING_ORDER
+            .iter()
+            .filter(|family| g.city_has_district_family(city, Name::new(family)))
+            .find_map(|family| {
+                let mut tier_one: Vec<(i64, Name)> = g
+                    .rules
+                    .buildings
+                    .iter()
+                    .filter(|(_, spec)| {
+                        !spec.wonder
+                            && spec.requires.is_empty()
+                            && spec.requires_any.is_empty()
+                            && spec
+                                .district
+                                .is_some_and(|district| g.district_family(district) == *family)
+                    })
+                    .map(|(name, spec)| (spec.cost as i64, *name))
+                    .filter(|(_, name)| {
+                        g.can_produce(pid, cid, &Item::Building { building: *name })
+                    })
+                    .collect();
+                tier_one.sort();
+                tier_one
+                    .into_iter()
+                    .next()
+                    .map(|(_, building)| Item::Building { building })
+            })
+    }
+
     pub(crate) fn housing_reserve_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
         let city = &g.cities[&cid];
         if (city.pop as f64) + 1.0 < g.city_housing(city) {
@@ -22044,6 +22151,153 @@ mod tests {
         assert!(!is_campus(&stock), "the fixture's stock pick is not the Campus: {stock:?}");
         assert!(is_campus(&pick(true, 3)), "a three-city capital opens its Campus");
         assert_eq!(pick(true, 2), pick(false, 2), "two cities keep the stock choice");
+    }
+
+    /// One founded capital with ten Production a turn, the shared fixture of
+    /// the `monument_first` and `district_buildings_first` tests below.
+    fn founded_capital_fixture(tag: &str, seed: u64) -> (Game, u32) {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed(tag, seed),
+            250,
+            0,
+            false,
+        );
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = game.player_city_ids(0)[0];
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            cid,
+            crate::rules::Yields {
+                production: 10.0,
+                ..Default::default()
+            },
+        );
+        (game, cid)
+    }
+
+    /// See `monument_first`: a city without a Monument builds it where the
+    /// stock governor fills the military floor, and a capital that has not
+    /// yet sent out two Settlers keeps the stock choice.
+    #[test]
+    fn the_monument_comes_before_the_military_floor() {
+        let (mut game, cid) = founded_capital_fixture("MONUMENTFIRST", 91_811);
+        let city = game.cities.get_mut(&cid).unwrap();
+        city.pop = 3;
+        // The fixture's start grants a Monument; this city has none.
+        city.buildings.retain(|building| building != "monument");
+        // A treasury, so the economic-recovery branch ahead of both steps
+        // stays shut.
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        let pick = |game: &Game, first: bool, n_cities: usize, settlers: usize| {
+            let mut ai = BasicAi::new();
+            ai.monument_first = first;
+            ai.pick_item(game, 0, cid, n_cities, settlers, 3, 1, 0, 0, 0, 0)
+        };
+        let is_monument = |item: &Option<Item>| {
+            matches!(item, Some(Item::Building { building }) if *building == "monument")
+        };
+        assert!(
+            BasicAi::civ_building(&game, 0, cid, "monument").is_some(),
+            "the fixture can build a Monument"
+        );
+        let ai = BasicAi::new();
+        assert_eq!(ai.barbarian_defense_item(&game, 0, cid), None, "no barbarian alarm");
+        assert_eq!(ai.besieged_city_item(&game, 0, cid), None, "no siege");
+        let stock = pick(&game, false, 3, 0);
+        assert!(
+            matches!(stock, Some(Item::Unit { .. })),
+            "the fixture's stock pick fills the military floor: {stock:?}"
+        );
+        let first = pick(&game, true, 3, 0);
+        assert!(is_monument(&first), "the Monument comes first: {first:?}");
+        assert_eq!(
+            pick(&game, true, 2, 0),
+            pick(&game, false, 2, 0),
+            "a capital that has sent one Settler keeps the stock choice"
+        );
+        assert!(
+            is_monument(&pick(&game, true, 2, 1)),
+            "a Settler on the road counts as sent"
+        );
+        game.cities.get_mut(&cid).unwrap().buildings.push(crate::name!("monument"));
+        assert_eq!(
+            pick(&game, true, 3, 0),
+            stock,
+            "a city holding a Monument is not asked again"
+        );
+    }
+
+    /// A capital holding a Monument and a Campus, with the Writing, Currency
+    /// and Astrology it needs for a Library and two more districts.
+    fn campus_city_fixture() -> (Game, u32) {
+        let (mut game, cid) = founded_capital_fixture("DISTRICTBUILDINGS", 91_812);
+        let site = game.cities[&cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&cid].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
+        let city = game.cities.get_mut(&cid).unwrap();
+        city.pop = 7;
+        city.districts.insert(crate::name!("campus"), site);
+        if !city.buildings.contains(&crate::name!("monument")) {
+            city.buildings.push(crate::name!("monument"));
+        }
+        for tech in ["writing", "currency", "astrology", "pottery"] {
+            game.players[0].techs.insert(Name::new(tech));
+        }
+        (game, cid)
+    }
+
+    /// See `district_buildings_first`: the stock governor opens another
+    /// district beside a Campus that has no Library; the gene builds the
+    /// Library first.
+    #[test]
+    fn a_standing_campus_takes_its_library_before_another_district() {
+        let (game, cid) = campus_city_fixture();
+        let pick = |first: bool| {
+            let mut ai = BasicAi::new();
+            ai.district_buildings_first = first;
+            ai.pick_item(&game, 0, cid, 12, 0, 6, 1, 0, 12, 6, 6)
+        };
+        let stock = pick(false);
+        assert!(
+            matches!(stock, Some(Item::District { .. })),
+            "the fixture's stock pick opens another district: {stock:?}"
+        );
+        assert_eq!(
+            pick(true),
+            Some(Item::Building {
+                building: crate::name!("library")
+            }),
+            "the Campus takes its Library first"
+        );
+    }
+
+    /// See `district_buildings_first`: only a district's first building is
+    /// raised. A Campus holding its Library does not pull the University
+    /// ahead of a new district.
+    #[test]
+    fn a_district_buildings_first_city_does_not_raise_the_second_tier() {
+        let (mut game, cid) = campus_city_fixture();
+        game.players[0].techs.insert(crate::name!("education"));
+        game.cities.get_mut(&cid).unwrap().buildings.push(crate::name!("library"));
+        assert_eq!(BasicAi::district_building_item(&game, 0, cid), None);
+        let pick = |first: bool| {
+            let mut ai = BasicAi::new();
+            ai.district_buildings_first = first;
+            ai.pick_item(&game, 0, cid, 12, 0, 6, 1, 0, 12, 6, 6)
+        };
+        assert_eq!(pick(true), pick(false));
     }
 
     /// A Scout the host bounces between two tiles toward the same goal is as
