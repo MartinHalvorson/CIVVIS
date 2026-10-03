@@ -373,3 +373,32 @@ fn a_crushed_front_is_not_offered_stalled_peace() {
     ai.advanced_diplomacy(&mut g, 0, &plan);
     assert!(!ai.peace_offers.contains(&1));
 }
+
+/// See `domination_capital_prey`: a stalled war against a rival that still
+/// holds the original capital Domination needs, and that we outgun twice
+/// over, keeps going. Live King civvis-20261003T040354Z offered Kongo that
+/// peace at 613 power against 224 and never fought it again.
+#[test]
+fn a_rival_holding_its_capital_at_twice_our_power_is_not_offered_stalled_peace() {
+    let (mut g, mut ai, plan, city, _) = fixture();
+    assert!(!ai.domination_capital_prey(&g, 0, 1), "the control");
+    for pos in [(17, 10), (17, 11)] {
+        g.spawn_test_unit("modern_armor", 0, pos);
+    }
+    assert!(g.cities[&city].is_capital && g.cities[&city].original_owner == 1);
+    assert!(
+        g.military_power(0) < 4.0 * g.military_power(1),
+        "short of crushed"
+    );
+    assert!(ai.domination_capital_prey(&g, 0, 1));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1));
+
+    // A rival that no longer holds its own capital is not prey.
+    let (mut g, ai, _, city, _) = fixture();
+    for pos in [(17, 10), (17, 11)] {
+        g.spawn_test_unit("modern_armor", 0, pos);
+    }
+    g.cities.get_mut(&city).unwrap().is_capital = false;
+    assert!(!ai.domination_capital_prey(&g, 0, 1));
+}
