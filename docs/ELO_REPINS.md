@@ -2155,3 +2155,24 @@ The unchanged five-profile probe now measures **18,909 decisions and
 hashing function agree. The full suite exposed this deliberate shared-engine
 change; updating the pin records that boundary. The fingerprint and smoke
 games do not establish stronger play or a native Domination win.
+
+## v42 (2026-10-03) — a ranged strike reads the target's terrain height
+
+d212a7973 corrects shared line of sight for ranged strikes:
+`has_line_of_sight` and `unit_has_line_of_sight_from` now measure the target
+tile at its terrain height instead of `sight_height`, which added a City
+Center's or Encampment's +1 vantage. Civilization VI refuses a shot from flat
+ground at a Hills city across a Hills tile; over the recorded range-2 strikes of
+five live games the terrain-height target predicts all ten host refusals of a
+city shot the vantage had read as clear and contradicts none of the 47 range-2
+city hits. Sight itself keeps the vantage. This is engine fidelity that every
+controller uses, including `AdvancedAi::legacy()`; it is not an AI policy and
+not a gene gate.
+
+A bisect over the pinned live branch (good fa854b694, bad d212a7973, the
+commit alone) located the change, and the anchor at d212a7973 and at the
+branch tip agree, so nothing later moved it. The unchanged five-profile probe
+now measures **18,903 decisions and `0xbad7_b8b7_5c93_0af0`**, replacing v41's
+**18,909 decisions and `0x73b8_2ccc_dff4_361b`**. The fingerprint does not
+establish stronger play.
+
