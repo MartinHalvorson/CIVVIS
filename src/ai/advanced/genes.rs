@@ -2456,6 +2456,9 @@ pub const GENES: &[Gene] = &[
     // revolted at 73, seven turns after the capture, before the moved
     // Governor could hold it. See `DOOMED_CAPTURE_TURNS`.
     Gene { tag: "raze-a-doomed-capture", field: "raze_doomed_capture", kind: Kind::OptIn, enable: AdvancedAi::enable_raze_doomed_capture, disable: AdvancedAi::disable_raze_doomed_capture },
+    // Live King 093332Z held zero Builders from t54 to t93; see
+    // `BasicAi::builder_before_the_army`.
+    Gene { tag: "builder-before-the-army", field: "builder_before_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_before_the_army, disable: AdvancedAi::disable_builder_before_the_army },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
