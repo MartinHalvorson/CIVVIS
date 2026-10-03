@@ -2629,6 +2629,32 @@ fn hold_planner_favor_sales(plan: Option<(&str, Option<&str>)>, orders: &mut Vec
     before - orders.len()
 }
 
+/// Drop the deal offers aimed at a rival this batch also declares war on or
+/// offers peace to. Every deal, war and peace opens the same per-rival
+/// diplomacy session, and the host refuses a second request while one is
+/// open. Live King civvis-20261003T060034Z, turn 112: `sell
+/// RESOURCE_AMBER=1` to Phoenicia went first, the declaration's request found
+/// the session busy ("Requested Session but already had one open" in
+/// DiplomacyManager.csv), no war happened, and the refusal cooldown held the
+/// campaign at peace with the rival it was countering. Returns how many
+/// offers were dropped.
+fn drop_deals_beside_war_or_peace(orders: &mut Vec<Order>) -> usize {
+    let contested: std::collections::BTreeSet<i64> = orders
+        .iter()
+        .filter(|order| matches!(order.kind, "war" | "peace"))
+        .filter_map(|order| order.subject)
+        .collect();
+    if contested.is_empty() {
+        return 0;
+    }
+    let before = orders.len();
+    orders.retain(|order| {
+        !(matches!(order.kind, "sell" | "buy")
+            && order.subject.is_some_and(|subject| contested.contains(&subject)))
+    });
+    before - orders.len()
+}
+
 /// Why no favor sale order was appended this turn, for the note; `None` when
 /// one was. `plan` is the plan report's `(strategy, victory_target)`.
 fn append_favor_sale_order(
@@ -4454,6 +4480,10 @@ fn decide(
     let (host_legal, deferred_peace_retries) =
         defer_host_peace_retries(orders, state, host_peace_retries);
     orders = host_legal;
+    let session_conflicts = drop_deals_beside_war_or_peace(&mut orders);
+    if session_conflicts > 0 {
+        note_bits.push(format!("deals_dropped_for_war_or_peace={session_conflicts}"));
+    }
     if let Some((target, needed)) = envoy_reclaim {
         let submitted = orders
             .iter()
@@ -9914,6 +9944,35 @@ mod tests {
     }
 
     use super::*;
+
+    /// See `drop_deals_beside_war_or_peace`: a sale to the rival we declare on
+    /// is dropped so the declaration gets the diplomacy session; deals with
+    /// anyone else, and the war itself, stand.
+    #[test]
+    fn a_deal_is_dropped_beside_a_war_or_peace_with_the_same_rival() {
+        let order = |kind: &'static str, subject: i64, verb: &str| Order {
+            kind,
+            subject: Some(subject),
+            verb: Some(verb.to_string()),
+            pos: None,
+        };
+        let mut orders = vec![
+            order("sell", 1, "RESOURCE_AMBER=1"),
+            order("war", 1, "DECLARE_FORMAL_WAR"),
+            order("sell", 2, "FAVOR=20"),
+            order("buy", 3, "LUXURY_ANY"),
+            order("peace", 3, "MAKE_PEACE"),
+        ];
+        assert_eq!(drop_deals_beside_war_or_peace(&mut orders), 2);
+        let left: Vec<(&str, i64)> = orders
+            .iter()
+            .map(|order| (order.kind, order.subject.unwrap()))
+            .collect();
+        assert_eq!(left, vec![("war", 1), ("sell", 2), ("peace", 3)]);
+        let mut quiet = vec![order("sell", 2, "FAVOR=20")];
+        assert_eq!(drop_deals_beside_war_or_peace(&mut quiet), 0);
+        assert_eq!(quiet.len(), 1);
+    }
     use civvis::mirror::{
         Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateEmergency,
         StateEmergencyOurs, StateEmergencyScore, StateGovernor, StateGreatPerson, StateGreatWork,
