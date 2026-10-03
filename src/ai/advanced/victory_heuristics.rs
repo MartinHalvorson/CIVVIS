@@ -740,12 +740,16 @@ mod tests {
         found_capitals(&mut game);
         game.turn = 190;
         game.record_contact(0, 1);
-        let rival_capital = game.player_city_ids(1)[0];
         let spaceport_city = game.found_city_for(
             1,
-            open_land_near(&game, game.cities[&rival_capital].pos, 4),
+            open_land_near(&game, game.cities[&game.player_city_ids(0)[0]].pos, 10),
             Some("Launch Complex".to_string()),
         );
+        assert!(AdvancedAi::city_within_declaration_range(
+            &game,
+            0,
+            game.cities[&spaceport_city].pos
+        ));
         let district = game.cities[&spaceport_city]
             .owned_tiles
             .iter()
