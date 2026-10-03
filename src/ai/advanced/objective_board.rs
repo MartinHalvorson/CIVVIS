@@ -1558,8 +1558,15 @@ impl AdvancedAi {
                         }
                         if unit.recon
                             && row.kind != ObjectiveKind::Recon
-                            && row.requirement.strength > 0.0
-                            && unit.strength < 15.0
+                            && ((row.requirement.strength > 0.0 && unit.strength < 15.0)
+                                // `early-conquest-opening`: the opening's eyes
+                                // take no fight at all. Live King
+                                // 2026-10-03T081800Z: a "Destroy 1 of scout"
+                                // row recruited our Scout at turns 5 and 28 --
+                                // non-lethal swings that left it at 42 and 10
+                                // health -- and no rival city was seen before
+                                // turn 67, past the opening's deadline.
+                                || self.early_conquest_opening)
                         {
                             // A scout is not a body for a fight.
                             continue;
@@ -3025,6 +3032,32 @@ mod tests {
         ai.rebuild_force_groups(&g, 0, &plan);
         let far_row = row(&ai, ObjectiveKey::Camp(far)).expect("a far ClearCamp row");
         assert_eq!(far_row.requirement.bodies, 0, "a far camp keeps the plain rule");
+    }
+
+    /// Under `early-conquest-opening` a Scout is never recruited for a
+    /// Destroy row, whatever its strength reads.
+    #[test]
+    fn the_opening_keeps_its_scout_out_of_destroy_rows() {
+        let assigned = |opening: bool| {
+            let mut g = flat_board(17, &[at(6, 8), at(30, 8)], true);
+            let barb = g.barb_pid.expect("barbarians");
+            let enemy = spawn(&mut g, "scout", barb, at(10, 8));
+            let ours = spawn(&mut g, "scout", 0, at(9, 8));
+            g.units.get_mut(&ours).unwrap().hp = 100;
+            let mut ai = on();
+            if opening {
+                ai.enable_early_conquest_opening();
+            }
+            let plan = conquest(&g, None);
+            ai.rebuild_force_groups(&g, 0, &plan);
+            let _ = enemy;
+            ai.objective_board()
+                .forces
+                .iter()
+                .filter(|force| matches!(force.objective_key, ObjectiveKey::Reserve) == false)
+                .any(|force| force.units.contains(&ours))
+        };
+        assert!(!assigned(true), "the opening's scout takes no fight row");
     }
 
     /// A camp within nine of a city is a row before turn 100 and not after.
