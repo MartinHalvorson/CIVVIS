@@ -2447,6 +2447,10 @@ pub const GENES: &[Gene] = &[
     // Trebuchets against 400-HP Cree walls from t123 to t142. See
     // `SIEGE_UPGRADE_WALL_HP`.
     Gene { tag: "domination-siege-research-2", field: "domination_siege_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_siege_research_2, disable: AdvancedAi::disable_domination_siege_research_2 },
+    // Live King 081800Z mustered for unwalled Helsingborg for 82 turns while
+    // the rally flipped across the city. See
+    // `objective_board::SIEGE_RALLY_SWITCH_MARGIN`.
+    Gene { tag: "siege-rally-holds", field: "siege_rally_holds", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_rally_holds, disable: AdvancedAi::disable_siege_rally_holds },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

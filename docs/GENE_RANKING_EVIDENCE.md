@@ -231,6 +231,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `settler-detour-stays-near` | off (unmeasured) | `settler-detour-stays-near`: a threat detour's fallback must lie about as close as the site it leaves. | 1 \| 1 |
 | `shared-danger` | off (unmeasured) | Opt-in gene `shared-danger`; see `Self::shared_danger`. | 1 \| 1 |
 | `siege-positive-damage-budget` | off (unmeasured) | Enable `siege-positive-damage-budget` for measurement. | 1 \| 1 |
+| `siege-rally-holds` | off (unmeasured) | Opt-in gene `siege-rally-holds`; see `Self::siege_rally_holds`. | 1 \| 1 |
 | `siege-train-scales-with-walls` | off (unmeasured) | Opt-in gene `siege-train-scales-with-walls`; see `Self::siege_train_scales_with_walls`. | 1 \| 1 |
 | `strategic-deposit-prey` | off (unmeasured) | Opt-in gene `strategic-deposit-prey`; see `Self::strategic_deposit_prey`. | 1 \| 1 |
 | `threatened-city-reserve-2` | off (unmeasured) | V2 reserves the engine's local quote for an available defender in the threatened city. | 1 \| 2 |
