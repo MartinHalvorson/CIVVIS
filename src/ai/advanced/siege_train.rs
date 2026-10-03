@@ -919,9 +919,13 @@ fn siege_posts(
                         && g.unit_ids_at(*pos).is_empty()
                 })
                 .min_by_key(|pos| {
+                    // The gun's own side of the city first: a post across the
+                    // city is a walk around its strike ring (Natal, game 30:
+                    // guns on the west were posted east).
+                    let far_side = g.wdist(here, *pos) > g.wdist(here, city.pos);
                     let behind = ring_taken.iter().any(|held| g.wdist(*held, *pos) == 1);
                     let exposure = hostiles.iter().filter(|h| g.wdist(**h, *pos) <= 2).count();
-                    (!behind, exposure, g.wdist(here, *pos), *pos)
+                    (far_side, !behind, exposure, g.wdist(here, *pos), *pos)
                 })
         });
         if let Some(pos) = best {
@@ -1823,6 +1827,24 @@ impl AdvancedAi {
             let Some(next) =
                 siege_route_step(g, pid, uid, goal, city_pos).filter(|next| g.can_move(uid, *next))
             else {
+                // The step-by-step route treats our own soldiers as walls, so
+                // a crowded staging band boxes a gun in behind its own army.
+                // Walk through them to the free post in one move, which may
+                // pass friendly units. Live King civvis-20261003T093332Z: two
+                // of three Bombards before Natal held posts for turns 160-170
+                // and stood five to seven tiles out, never firing, while the
+                // walls went 400 -> 68 under one Bombard's fire.
+                let hp = f64::from(unit.hp);
+                if let Some(dest) = (!moved)
+                    .then(|| g.pass_through_destination(uid, goal, 0))
+                    .flatten()
+                    .filter(|dest| {
+                        g.wdist(*dest, city_pos) > CITY_STRIKE_RANGE
+                            || hp > self.approach_danger(g, pid, *dest, uid) + 20.0
+                    })
+                {
+                    moved = self.base.path_walk_to(g, pid, uid, dest);
+                }
                 break;
             };
             // A post inside the city's firing ring can be covered by more

@@ -429,3 +429,23 @@ fn an_invested_siege_steps_a_spotter_into_sight_of_an_unseen_city() {
         "the city is in sight now"
     );
 }
+
+/// See `approach`: a gun whose step-by-step route to its firing post is
+/// walled off by its own soldiers walks through them toward the post
+/// instead of standing still (Natal, game 30).
+#[test]
+fn a_posted_gun_walks_through_its_own_screen_toward_the_post() {
+    let (mut g, cid, gun, _, _) = crowded_approach();
+    let target = g.cities[&cid].pos;
+    let post = (target.0 - 3, target.1);
+    assert_eq!(siege_route_step(&g, 0, gun, post, target), None, "boxed in");
+    let start = g.units[&gun].pos;
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    assert_eq!(ai.approach(&mut g, 0, gun, post, target), Some(true));
+    let now = g.units[&gun].pos;
+    assert!(
+        g.wdist(now, post) < g.wdist(start, post),
+        "the gun closed on its post: {start:?} -> {now:?}"
+    );
+}
