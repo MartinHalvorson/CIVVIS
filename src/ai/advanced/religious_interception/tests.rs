@@ -168,3 +168,18 @@ fn a_visible_spreader_keeps_the_religious_front_open_until_the_threat_recedes() 
     ai.disable_religious_veto_defence();
     assert!(!ai.religious_interception_holds_war(&g, 0, 1));
 }
+
+/// A rival that out-guns us is not intercepted: the condemnation would open a
+/// major war we are losing.
+#[test]
+fn an_outgunned_seat_does_not_open_a_religious_interception() {
+    let (mut g, mut ai, plan, _, missionary) = fixture();
+    for _ in 0..4 {
+        g.spawn_test_unit("swordsman", 1, (36, 20));
+    }
+    assert!(g.military_power(1) > g.military_power(0));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!g.is_at_war(0, 1), "an out-gunned seat keeps the peace");
+    assert!(g.units.contains_key(&missionary));
+    assert_eq!(ai.religious_interception_war, None);
+}

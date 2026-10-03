@@ -1391,7 +1391,7 @@ impl AdvancedAi {
                     .is_some_and(|city| city.owner == opening.target)
         });
         if adopt {
-            // Only an assembled force adopts the war. Live King
+            // Only an assembled force adopts the war, whoever opened it. Live King
             // 2026-10-03T090618Z: Khmer declared on turn 26 with the force
             // still Slingers scattered short of the rally; the opening pinned
             // the campaign to Angkor Thom, the bodies walked into the city's
@@ -1406,7 +1406,7 @@ impl AdvancedAi {
             } else {
                 self.conquest_release(
                     g,
-                    "the target declared before the strike force assembled; the ordinary war takes it",
+                    "the war opened before the strike force assembled; the ordinary war takes it",
                 );
                 return;
             }
