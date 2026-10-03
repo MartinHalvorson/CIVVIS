@@ -2070,6 +2070,16 @@ impl AdvancedAi {
         else {
             return;
         };
+        // A ram or tower works only for a melee or anti-cavalry blow; a
+        // force with no such member would march it to the walls alone.
+        let users = forces[index].units.iter().any(|uid| {
+            g.units.get(uid).is_some_and(|unit| {
+                crate::ai::siege_support::eligible_attacker(&g.rules.units[unit.kind])
+            })
+        });
+        if !users {
+            return;
+        }
         for uid in pool {
             let unit = &g.units[uid];
             let free = assignment
