@@ -690,6 +690,19 @@ impl AdvancedAi {
                 || self.holds_bleeding_capital_of(g, pid, other))
     }
 
+    /// Whether a war on `other`, beside the front, is one the Domination
+    /// counter wants kept: `other`'s clock is urgent, or it is a counter
+    /// target we outgun [`ONE_WAR_SECOND_FRONT_RATIO`] times over. See
+    /// `one_war_peace`.
+    pub(crate) fn second_front_war_kept(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.is_at_war(pid, other)
+            && (self.urgent_victory_threat(g, other)
+                || (self.domination_counter_target(g, pid, other)
+                    && g.military_power(pid)
+                        >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(other).max(1.0)))
+    }
+
     /// Whether a Domination seat holds `rival`'s original capital while the
     /// city's Loyalty is falling. A peace then hands the capital back: the
     /// war is what finds and takes the cities whose pressure is draining it.
@@ -741,6 +754,14 @@ impl AdvancedAi {
             return None;
         }
         if front.target != other {
+            // A war the Domination counter wants is not a second front to
+            // close: `one_war_second_front` opened it on purpose. Live King
+            // civvis-20261003T135713Z (game 38) declared on Scythia at turn
+            // 208 for its culture surge, beside the war on Korea, and offered
+            // it "one war at a time" peace the same turn.
+            if self.second_front_war_kept(g, pid, other) {
+                return None;
+            }
             return Some(OneWarPeace::SecondFront);
         }
         if let Some(next) = self.domination_followup_target(g, pid, Some(other)) {

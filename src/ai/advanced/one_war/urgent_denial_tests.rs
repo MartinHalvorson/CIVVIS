@@ -453,3 +453,24 @@ fn the_conquest_opening_war_is_not_traded_for_a_victory_threat() {
         "the urgent rival opens beside the opening's war"
     );
 }
+
+/// See `second_front_war_kept`: a war on an urgent rival beside the front is
+/// not offered "one war at a time" peace; a war on a rival whose clock is
+/// not a counter still is.
+#[test]
+fn a_second_front_on_an_urgent_rival_is_kept() {
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
+    // Both wars run (the fixture is at war with 1 and 2); the front is 1.
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(1));
+    assert_eq!(
+        ai.one_war_peace(&g, 0, 2),
+        Some(OneWarPeace::SecondFront),
+        "the control: a plain second war is closed"
+    );
+    convert(&mut g, &[0, 1, 2]);
+    assert!(ai.urgent_victory_threat(&g, 2));
+    assert!(ai.second_front_war_kept(&g, 0, 2));
+    assert_eq!(ai.one_war_peace(&g, 0, 2), None);
+}
