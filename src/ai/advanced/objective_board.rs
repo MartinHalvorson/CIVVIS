@@ -103,6 +103,18 @@ pub const DESTROY_MARGIN: f64 = 1.5;
 pub const CAMP_RADIUS: i32 = crate::ai::HOME_CAMP_RADIUS;
 /// …before this turn (game-speed scaled).
 pub const CAMP_TURN_LIMIT: u32 = 100;
+/// A camp this close to one of our cities is that city's raider nest: its row
+/// asks for at least [`CAMP_NEAR_BODIES`] bodies, and an unseen guard is
+/// priced as [`CAMP_UNSEEN_GUARD_STRENGTH`]. Live King
+/// civvis-20261003T063926Z: the camp six tiles from Bogotá stood on the board
+/// from turn 9 to turn 65 at "need 0" -- its guard unseen -- and drew single
+/// units that stalled and were pulled back to Defend Bogotá, while the capital
+/// spent its opening on Slingers, Warriors and Walls: three cities at turn 77.
+pub const CAMP_NEAR_RADIUS: i32 = 8;
+/// Bodies a near camp's row asks for.
+pub const CAMP_NEAR_BODIES: usize = 2;
+/// A near camp whose guard we cannot see is priced as an Ancient Spearman.
+pub const CAMP_UNSEEN_GUARD_STRENGTH: f64 = 25.0;
 /// The lane's own district counts this much more in a city's value.
 pub const LANE_PREMIUM: f64 = 1.5;
 /// Hammers a citizen is worth.
@@ -1177,6 +1189,14 @@ impl AdvancedAi {
                         g.rules.units[g.units[&uid].kind].cost,
                     )
                 });
+                let near = our_cities
+                    .iter()
+                    .any(|(_, pos)| g.wdist(*pos, *camp) <= CAMP_NEAR_RADIUS);
+                let guard_strength = if near && guard.is_none() {
+                    CAMP_UNSEEN_GUARD_STRENGTH
+                } else {
+                    guard_strength
+                };
                 rows.push(Objective {
                     kind: ObjectiveKind::ClearCamp,
                     key: ObjectiveKey::Camp(*camp),
@@ -1187,7 +1207,7 @@ impl AdvancedAi {
                         melee: 1,
                         ranged: 0,
                         siege: 0,
-                        bodies: 0,
+                        bodies: if near { CAMP_NEAR_BODIES } else { 0 },
                     },
                     deadline: None,
                     state: RowState::Open,
@@ -2964,6 +2984,49 @@ mod tests {
         );
     }
 
+    /// A near camp with no guard in sight asks for two bodies and a guard's
+    /// strength; a far one keeps the plain rule.
+    #[test]
+    fn a_near_camp_asks_for_a_real_party_even_when_its_guard_is_unseen() {
+        let mut g = flat_board(17, &[at(6, 8), at(30, 8)], true);
+        let near = at(12, 10);
+        g.barb_camps.insert(near, g.turn);
+        assert!(g.wdist(near, at(6, 8)) <= CAMP_NEAR_RADIUS);
+        spawn(&mut g, "warrior", 0, at(7, 8));
+        let mut ai = on();
+        let plan = conquest(&g, None);
+        ai.rebuild_force_groups(&g, 0, &plan);
+        let near_row = row(&ai, ObjectiveKey::Camp(near)).expect("a ClearCamp row");
+        assert_eq!(near_row.requirement.bodies, CAMP_NEAR_BODIES);
+        assert!(near_row.requirement.strength >= CAMP_UNSEEN_GUARD_STRENGTH * CAMP_MARGIN - 1e-9);
+        let far = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| {
+                let d = g.wdist(*pos, at(6, 8));
+                d > CAMP_NEAR_RADIUS
+                    && d <= CAMP_RADIUS
+                    && g.wdist(*pos, at(30, 8)) > g.wdist(*pos, at(6, 8)) + 4
+                    && g.city_at(*pos).is_none()
+                    && g.map.get(*pos).is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .expect("a tile in the outer camp band");
+        g.barb_camps.clear();
+        g.barb_camps.insert(far, g.turn);
+        let beside = g
+            .nbrs(far)
+            .into_iter()
+            .find(|pos| g.unit_ids_at(*pos).is_empty())
+            .unwrap();
+        spawn(&mut g, "warrior", 0, beside);
+        g.turn += 1;
+        ai.rebuild_force_groups(&g, 0, &plan);
+        let far_row = row(&ai, ObjectiveKey::Camp(far)).expect("a far ClearCamp row");
+        assert_eq!(far_row.requirement.bodies, 0, "a far camp keeps the plain rule");
+    }
+
     /// A camp within nine of a city is a row before turn 100 and not after.
     #[test]
     fn a_camp_within_nine_is_a_row_before_turn_100_and_not_after() {
@@ -2972,6 +3035,7 @@ mod tests {
         g.barb_camps.insert(camp, g.turn);
         assert!(g.wdist(camp, at(6, 8)) <= CAMP_RADIUS);
         spawn(&mut g, "warrior", 0, at(7, 8));
+        spawn(&mut g, "warrior", 0, at(7, 9));
         let mut ai = on();
         let plan = conquest(&g, None);
         g.turn = g.standard_duration(CAMP_TURN_LIMIT) - 1;

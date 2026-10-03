@@ -4686,6 +4686,26 @@ impl AdvancedAi {
         self.policy_deck_hysteresis = false;
     }
 
+    /// Opt-in gene `strategic-deposit-prey`; see [`Self::strategic_deposit_prey`].
+    pub fn enable_strategic_deposit_prey(&mut self) {
+        self.strategic_deposit_prey = true;
+    }
+
+    /// The twin of `enable_strategic_deposit_prey`.
+    pub fn disable_strategic_deposit_prey(&mut self) {
+        self.strategic_deposit_prey = false;
+    }
+
+    /// Opt-in gene `denial-nearest-finish`; see [`Self::denial_nearest_finish`].
+    pub fn enable_denial_nearest_finish(&mut self) {
+        self.denial_nearest_finish = true;
+    }
+
+    /// The twin of `enable_denial_nearest_finish`.
+    pub fn disable_denial_nearest_finish(&mut self) {
+        self.denial_nearest_finish = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

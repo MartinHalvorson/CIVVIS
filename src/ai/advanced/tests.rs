@@ -28704,6 +28704,87 @@ fn conquest_razes_a_hopeless_isolated_city_instead_of_recapturing_it() {
     );
 }
 
+/// A developed conquest under heavy pressure is razed too: it revolts in
+/// the same three or four turns as a small one and returns to the enemy
+/// developed (live Antium, kept at turn 158 and lost at 161).
+#[test]
+fn conquest_razes_a_developed_city_that_revolts_under_heavy_pressure() {
+    let mut game = Game::new_full(2, 30, 18, 107_002, 120, 0, false);
+    for pid in 0..2 {
+        game.current = pid;
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    let home = game.player_city_ids(0)[0];
+    let rival_capital = game.player_city_ids(1)[0];
+    let rival_pos = game.cities[&rival_capital].pos;
+    let outpost_pos = game
+        .wdisk(rival_pos, 4)
+        .into_iter()
+        .find(|position| {
+            game.wdist(*position, rival_pos) == 4
+                && game.wdist(*position, game.cities[&home].pos) > 9
+                && game.city_at(*position).is_none()
+                && game.map.tiles[position].owner_city.is_none()
+        })
+        .expect("test map has an isolated rival outpost site");
+    {
+        let tile = game.map.tiles.get_mut(&outpost_pos).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    game.cities.get_mut(&rival_capital).unwrap().pop = 40;
+    game.cities.get_mut(&home).unwrap().pop = 3;
+    let outpost = game.found_city_for(1, outpost_pos, Some("Antium".to_string()));
+    {
+        let captured = game.cities.get_mut(&outpost).unwrap();
+        captured.owner = 0;
+        captured.pop = 6;
+        captured.loyalty = 50.0;
+        captured.captured_from = Some(1);
+        captured.occupied_from = Some(1);
+    }
+    game.current = 0;
+    // A core city six tiles away: the isolated-outpost rule does not apply.
+    let near_home_pos = game
+        .wdisk(outpost_pos, 6)
+        .into_iter()
+        .find(|position| {
+            game.wdist(*position, outpost_pos) == 6
+                && game.city_at(*position).is_none()
+                && game.map.tiles[position].owner_city.is_none()
+                && game.rules.is_passable(&game.map.tiles[position])
+                && !game.rules.is_water(&game.map.tiles[position])
+        })
+        .expect("test map has a core site six tiles from the captured outpost");
+    game.cities.get_mut(&home).unwrap().pos = near_home_pos;
+    let delta = AdvancedAi::population_loyalty_delta(&game, 0, outpost);
+    assert!(
+        delta <= HEAVY_LOYALTY_PRESSURE && 50.0 / -delta <= 4.0,
+        "fixture: heavy pressure, a revolt within four turns ({delta})"
+    );
+    let city = &game.cities[&outpost];
+    let development = city.pop.max(1) as f64 * 6.0
+        + city.districts.len() as f64 * 12.0
+        + city.wonders.len() as f64 * 35.0;
+    assert!(
+        development >= 35.0,
+        "fixture: a developed city ({development})"
+    );
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.resolve_city_dispositions(&mut game, 0, GrandStrategy::Conquest);
+    assert!(
+        !game.cities.contains_key(&outpost),
+        "razed rather than handed back"
+    );
+}
+
 #[test]
 fn adaptive_turn_uses_live_victory_focus_for_mandatory_city_disposition() {
     let mut game = Game::new_full(2, 24, 16, 107_001, 80, 1, false);
@@ -50854,3 +50935,40 @@ fn a_slow_city_leaves_the_lent_army_margin_to_fast_cities() {
         "without a loan the floor is the genome's own"
     );
 }
+
+    /// See `AdvancedAi::denial_reaches_far`: an urgent rival 25 tiles away is in
+    /// reach for an overwhelming Domination army under `denial-nearest-finish`,
+    /// and not otherwise.
+    #[test]
+    fn an_urgent_far_rival_is_in_reach_only_for_an_overwhelming_denial_army() {
+        let mut g = Game::new_full(2, 60, 24, 936_211, 500, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        let home = g.found_city_for(0, (5, 12), None);
+        let far = g.found_city_for(1, (30, 12), None);
+        g.players[0].met.insert(1);
+        g.players[1].met.insert(0);
+        g.players[1].dvp = 19;
+        g.turn = 150;
+        let objective = g.cities[&far].pos;
+        let distance = g.wdist(g.cities[&home].pos, objective);
+        assert!(distance > 18 && distance <= DENIAL_FAR_REACH_TILES, "{distance}");
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(ai.urgent_victory_threat(&g, 1), "a rival one vote from Diplomacy is urgent");
+        let at = g.cities[&home].pos;
+        g.spawn_test_unit("warrior", 1, objective);
+        for _ in 0..6 {
+            g.spawn_test_unit("swordsman", 0, at);
+        }
+        assert!(!ai.denial_reaches_far(&g, 0, 1, objective), "the gene is off");
+        ai.enable_denial_nearest_finish();
+        assert!(ai.denial_reaches_far(&g, 0, 1, objective));
+        for _ in 0..8 {
+            g.spawn_test_unit("swordsman", 1, objective);
+        }
+        assert!(
+            !ai.denial_reaches_far(&g, 0, 1, objective),
+            "a contested army keeps the ordinary range"
+        );
+    }

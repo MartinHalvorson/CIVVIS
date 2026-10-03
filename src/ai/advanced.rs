@@ -531,10 +531,19 @@ const RUSH_ARMY: usize = 4;
 /// treatment asks whether a current land melee unit can route to this edge;
 /// it is not a fitted reach threshold.
 const RUSH_STAGING_RANGE: i32 = 3;
+/// How far `denial_reaches_far` lets an urgent denial war reach: half of the
+/// four-player Tiny Pangaea's 60-tile wrapped width.
+pub(crate) const DENIAL_FAR_REACH_TILES: i32 = 30;
+/// Our military over the urgent rival's at which the far reach opens.
+pub(crate) const DENIAL_FAR_REACH_RATIO: f64 = 3.0;
 /// A first capture this far from home can become a usable forward base before
 /// the capital march consumes the whole war. The diplomatic opening gate is
 /// wider; it does not mean an 18-tile capital is the best first siege.
 const DOMINATION_FIRST_CAPTURE_MARCH: i32 = 8;
+/// Population pressure on a captured city at or below this many Loyalty a
+/// turn makes a forecast revolt within four turns hopeless however developed
+/// the city is. See `city_disposition_value`.
+const HEAVY_LOYALTY_PRESSURE: f64 = -12.0;
 /// A fully defended objective with no army near it can yield to a city at
 /// least this much closer to the field force. The gap keeps the replacement
 /// from becoming another continuously changing march order.
@@ -3290,6 +3299,9 @@ pub struct AdvancedAi {
     /// Fed once per turn by `record_stock_pressures`; read by
     /// `stock_pressure_slope`. Bounded to the slope window's span.
     stock_pressure_history: BTreeMap<usize, Vec<(u32, i32)>>,
+    /// `denial-nearest-finish`: each rival's recent (turn, foreign tourists,
+    /// bar) readings. See `AdvancedAi::record_culture_curves`.
+    culture_curves: BTreeMap<usize, Vec<(u32, i64, i64)>>,
 
     /// Whether the empire will open an **ancient rush**: pick the nearest
     /// weak neighbour before the walls go up, march a small stack to their
@@ -5175,6 +5187,11 @@ pub struct AdvancedAi {
     /// guarded permission is rechecked while the ordinary escort walks it.
     air_resource_colony_target: Option<(u32, Pos)>,
     // ---- append: c-d ------------------------------------------------
+    /// `denial-nearest-finish`: a Domination army also answers a culture
+    /// race projected along its geometric curve to finish within
+    /// `DENIAL_FINISH_HORIZON` turns, ranked by how soon. See
+    /// `AdvancedAi::nearest_finish_culture_clock`. Off by default.
+    denial_nearest_finish: bool,
     /// `campus-before-harbor`: see `BasicAi::campus_before_harbor`. The
     /// delegated city governor asks a city for its first Campus before its
     /// Harbor. Opt-in.
@@ -6663,6 +6680,11 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `strategic-deposit-prey`: a Domination conquest values a rival city
+    /// whose own tiles hold a revealed strategic deposit that a unit we have
+    /// the tech for requires and that the empire draws no income of. See
+    /// `AdvancedAi::strategic_deposit_prey_value`. Off by default.
+    strategic_deposit_prey: bool,
     /// `shared-danger`: the battle planner's rotation and doomed-blow checks
     /// read each hostile's blow shared among our units inside its reach (never
     /// under the strongest single blow), not every blow on every unit at once.
@@ -7414,7 +7436,9 @@ mod air_resource_colony;
 mod air_resource_settlement;
 mod air_surge;
 pub use air_city_assault::AirCityAssault;
+mod denial_nearest_finish;
 mod siege_resource_purchase;
+mod strategic_deposit_prey;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
 mod civilian_coordination;
@@ -8047,6 +8071,7 @@ impl AdvancedAi {
         self.settler_vanished.clear();
         self.summoned_guard_turn.clear();
         self.stock_pressure_history.clear();
+        self.culture_curves.clear();
         self.settler_retreats.clear();
         self.settler_walk_started.clear();
         self.settler_walk_clock.clear();
@@ -8369,6 +8394,7 @@ impl AdvancedAi {
             stock_denial_lead_time: false,
             projected_stock_denial: false,
             stock_pressure_history: BTreeMap::new(),
+            culture_curves: BTreeMap::new(),
             early_rush: false,
             timed_war: false,
             selective_timed_war: false,
@@ -8502,6 +8528,7 @@ impl AdvancedAi {
 
             air_resource_colony_target: None,
             // ---- append: c-d ----------------------------------------
+            denial_nearest_finish: false,
             campus_before_harbor: false,
             campus_before_harbor_2: false,
             district_buildings_first: false,
@@ -8689,6 +8716,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            strategic_deposit_prey: false,
             shared_danger: false,
             settler_detour_stays_near: false,
             siege_positive_damage_budget: false,
@@ -11296,7 +11324,8 @@ impl AdvancedAi {
             25 + (30 * player.techs.len() / g.rules.techs.len().max(1)).min(30) as i32;
         let project_progress = player.science_projects.len().min(4) as i32 * 18;
         let travel_progress = if player.science_projects.contains("exoplanet_expedition") {
-            (player.exoplanet_distance * 100.0 / 50.0).clamp(0.0, 100.0) as i32
+            (g.science_victory_points(pid) * 100.0 / g.science_victory_points_needed(pid))
+                .clamp(0.0, 100.0) as i32
         } else {
             0
         };
@@ -11938,6 +11967,9 @@ impl AdvancedAi {
 
     fn urgent_victory_threat(&self, g: &Game, target: usize) -> bool {
         self.victory_pressure_is_urgent(g, target, self.rival_victory_pressure(g, target))
+            // `denial-nearest-finish`: a culture race about to finish on its
+            // curve. See `advanced/denial_nearest_finish.rs`.
+            || self.culture_finish_is_urgent(g, target)
     }
 
     /// Diagnostic seam: what this planner believes `target`'s best race is,
@@ -12787,8 +12819,13 @@ impl AdvancedAi {
             // `one_war_at_a_time`: the front already chosen stays the plan's
             // target while it is at war with us, so the army and the peace
             // desk agree on which war this is. See `advanced/one_war.rs`.
-            self.one_war_front()
-                .filter(|front| active_fronts.contains(front))
+            // A second front the Domination plan must open (the next
+            // capital, an urgent clock) takes the plan's target first.
+            self.one_war_second_front(g, pid)
+                .or_else(|| {
+                    self.one_war_front()
+                        .filter(|front| active_fronts.contains(front))
+                })
                 // `city_campaign`: the war the plan opened stays the front
                 // while it is being fought. See `advanced/city_campaign.rs`.
                 .or_else(|| {
@@ -12967,8 +13004,17 @@ impl AdvancedAi {
                                 Self::city_within_declaration_range(g, pid, g.cities[city].pos)
                             })
                             .map(|(_, city)| city);
+                        // `strategic-deposit-prey`: a city holding the strategic
+                        // deposit the army lacks is worth the longer march; the
+                        // campaign value still prices its distance.
                         let short_march = |city: &crate::game::City| {
                             Self::city_within_first_capture_march(g, pid, city.pos)
+                                || self.strategic_deposit_prey_value(
+                                    g,
+                                    pid,
+                                    city,
+                                    GrandStrategy::Conquest,
+                                ) > 0.0
                         };
                         let best = |nearby_only: bool| {
                             g.cities
@@ -13436,6 +13482,23 @@ impl AdvancedAi {
         g.player_city_ids(pid)
             .iter()
             .any(|city| g.wdist(g.cities[city].pos, objective) <= 18)
+    }
+
+    /// `denial-nearest-finish`: a rival whose victory is urgent, that our
+    /// military outweighs [`DENIAL_FAR_REACH_RATIO`] times over, is worth a
+    /// march past the ordinary 18-tile declaration range, out to
+    /// [`DENIAL_FAR_REACH_TILES`]. A G24 replay (civvis-20261003T060034Z)
+    /// retargeted Sweden's culture race at turn 194 at 1,567 power against 81
+    /// and stopped on "no city of theirs is within 18 tiles of one of mine";
+    /// Sweden won at turn 205.
+    fn denial_reaches_far(&self, g: &Game, pid: usize, target: usize, objective: Pos) -> bool {
+        self.denial_nearest_finish
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.urgent_victory_threat(g, target)
+            && g.military_power(pid) >= DENIAL_FAR_REACH_RATIO * g.military_power(target).max(1.0)
+            && g.player_city_ids(pid)
+                .iter()
+                .any(|city| g.wdist(g.cities[city].pos, objective) <= DENIAL_FAR_REACH_TILES)
     }
 
     fn city_within_first_capture_march(g: &Game, pid: usize, objective: Pos) -> bool {
@@ -18417,8 +18480,11 @@ impl AdvancedAi {
                     // illegal for its term. Live King
                     // civvis-20261001T022028Z asked Brazil for a Research
                     // Alliance at turns 125 and 135 while its Catholicism held
-                    // two of four majors, and Brazil won at 147.
+                    // two of four majors, and Brazil won at 147. Nor is a
+                    // rival still holding the capital Domination needs that
+                    // we outgun twice over (`domination_capital_prey`).
                     && !self.domination_counter_target(g, pid, other.id)
+                    && !self.domination_capital_prey(g, pid, other.id)
                     // `science-threat-denial`: a research agreement hands a
                     // science threat the yield it is winning with, and any
                     // alliance makes the denial war illegal for its whole
@@ -20705,8 +20771,11 @@ impl AdvancedAi {
         let rushing = self
             .early_rush_victim(g, pid)
             .is_some_and(|(victim, _)| victim == target);
+        // `one_war_second_front`: the next capital's owner or an urgent clock
+        // may be declared on beside the burning war.
+        let second_front = self.one_war_second_front(g, pid) == Some(target);
         if plan.strategy != GrandStrategy::Conquest
-            || major_wars > 0
+            || (major_wars > 0 && !second_front)
             || (!rushing && g.turn < 35)
             || g.turn < self.peace_until
             || (!rushing && g.player_city_ids(pid).len() < 2)
@@ -20726,6 +20795,7 @@ impl AdvancedAi {
             .and_then(|cid| g.cities.get(&cid))
             .is_some_and(|target_city| {
                 Self::city_within_declaration_range(g, pid, target_city.pos)
+                    || self.denial_reaches_far(g, pid, target, target_city.pos)
             });
         let committed_domination = self.victory_target == Some(VictoryTarget::Domination);
         // An army that has reached the enemy border is the only practical
@@ -32688,6 +32758,7 @@ impl AdvancedAi {
             - recapture_value
             - liberation_value
             - siege_commitment
+            - self.strategic_deposit_prey_value(g, pid, city, strategy)
     }
 
     /// Rank settleable ground the way this agent would, for a caller outside the
@@ -42830,7 +42901,13 @@ impl AdvancedAi {
                 && !before.players[city.original_owner].is_minor
                 && city.original_owner != pid
                 && !before.are_allied(pid, city.original_owner);
-            let imminent_low_value_revolt = development < 35.0 && turns_to_flip <= 4.0;
+            // ★ A developed city under heavy pressure flips just the same.
+            // Live King civvis-20261003T040354Z kept Antium (four
+            // population, a district) at turn 158; it fell to Rome by loyalty
+            // at turn 161 with a reading of 9 and -16 a turn, handing the
+            // enemy back the city it had just lost.
+            let imminent_low_value_revolt = turns_to_flip <= 4.0
+                && (development < 35.0 || loyalty_delta <= HEAVY_LOYALTY_PRESSURE);
             let unsupported_revolt = nearest_core > 9 && turns_to_flip <= 8.0;
             let hopeless_occupation = disposable
                 && matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery)
@@ -43137,6 +43214,8 @@ impl AdvancedAi {
         // One stock-pressure sample per rival per turn, before anything reads
         // urgency this turn. See `projected_stock_denial`.
         self.record_stock_pressures(g, pid);
+        // `denial-nearest-finish`: one culture-curve reading per rival.
+        self.record_culture_curves(g, pid);
         self.maintain_war_plan(g, pid);
         // The air surge's own lifecycle, after the melee appointment so the
         // two can never both own the grand strategy in the same turn: the

@@ -95,6 +95,12 @@ pub(crate) const ONE_WAR_CRUSHED_RATIO: f64 = 4.0;
 /// A front we outgun this many times over is still being won: a bad window
 /// of losses there is the price of a siege, not a rout or a turned tide.
 pub(crate) const ONE_WAR_WINNING_RATIO: f64 = 2.0;
+/// The power margin over a second rival at which a Domination seat opens
+/// that war beside the one it is fighting. See `one_war_second_front`.
+pub(crate) const ONE_WAR_SECOND_FRONT_RATIO: f64 = 1.5;
+/// Standard turns the front may refuse the peace that would free the army
+/// before the second front opens beside it.
+pub(crate) const ONE_WAR_SECOND_FRONT_PATIENCE: u32 = 3;
 /// A second-front unit this close to a threatened city of ours keeps that
 /// enemy in the force planner's sights: the relief column's own radius.
 pub(crate) const ONE_WAR_RELIEF_REACH: i32 = 8;
@@ -121,6 +127,10 @@ pub(crate) struct OneWarFront {
     pub(crate) city_health: BTreeMap<u32, (i32, i32)>,
     /// Cities of the front whose health fell at the last observation.
     pub(crate) sieges_advancing: usize,
+    /// The first turn of the current run of observations in which the gene
+    /// wanted this front closed for a purpose elsewhere (a secured capital, a
+    /// displaced one, or a victory threat). See `one_war_second_front`.
+    pub(crate) closure_wanted_since: Option<u32>,
 }
 
 impl OneWarFront {
@@ -133,6 +143,7 @@ impl OneWarFront {
             tide_against_since: None,
             city_health: BTreeMap::new(),
             sieges_advancing: 0,
+            closure_wanted_since: None,
         }
     }
 
@@ -515,6 +526,24 @@ impl AdvancedAi {
             front.tide_against_since.get_or_insert(g.turn);
         }
         self.one_war = Some(front);
+        // The closure clock: how long the gene has wanted this front closed
+        // for a purpose elsewhere. Read once the front is stored, since
+        // `one_war_peace` reads it.
+        let wants_closure = matches!(
+            self.one_war_peace(g, pid, target),
+            Some(
+                OneWarPeace::CapitalSecured
+                    | OneWarPeace::CapitalElsewhere
+                    | OneWarPeace::VictoryThreat
+            )
+        );
+        if let Some(front) = self.one_war.as_mut() {
+            if wants_closure {
+                front.closure_wanted_since.get_or_insert(g.turn);
+            } else {
+                front.closure_wanted_since = None;
+            }
+        }
     }
 
     /// Whether the front still offers something worth the next turn: a city
@@ -653,7 +682,24 @@ impl AdvancedAi {
     pub(crate) fn domination_front_crushed(&self, g: &Game, pid: usize, other: usize) -> bool {
         self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && (self.one_war_front_crushed(g, pid, other)
-                || self.siege_reducing_a_city_of(g, other))
+                || self.siege_reducing_a_city_of(g, other)
+                || self.domination_capital_prey(g, pid, other))
+    }
+
+    /// A rival still holding its own original capital, which Domination
+    /// needs, that we outgun [`ONE_WAR_WINNING_RATIO`] times over: a war to
+    /// keep, and no ally to bind ourselves to. Live King
+    /// civvis-20261003T040354Z offered Kongo "the war has stalled" peace at
+    /// turn 136 at 613 power against 224, and proposed it a Research Alliance
+    /// the same turn. Kongo held Kabasa, the last original capital the seat
+    /// would need, and won on Science at turn 216 while the army finished
+    /// Rome's towns.
+    pub(crate) fn domination_capital_prey(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.military_power(pid) >= ONE_WAR_WINNING_RATIO * g.military_power(other).max(1.0)
+            && g.cities
+                .values()
+                .any(|city| city.is_capital && city.original_owner == other && city.owner == other)
     }
 
     /// Whether the gene wants peace with `other` this turn, and why.
@@ -729,10 +775,62 @@ impl AdvancedAi {
                 || (front.tide_against_since.is_none() && self.one_war_prizes_in_reach(g, pid)))
     }
 
+    /// The rival a Domination seat must go to war with beside the war it is
+    /// already fighting: the owner of the next original capital once the
+    /// current front's capital is secured (`domination_followup_target`),
+    /// or a rival whose victory clock is urgent, when we outgun it
+    /// [`ONE_WAR_SECOND_FRONT_RATIO`] times over. The one-war gate kept the
+    /// plan, the declaration and the front on the burning war. Live King
+    /// civvis-20261003T040354Z held Rome's original capital from turn 199
+    /// and spent turns 199-216 on Rome's towns at 2,114 power against
+    /// Kongo's 1,347. Kongo, holding Kabasa (the last capital Domination
+    /// needed) and past its Exoplanet launch at 198, won on Science at 216.
+    pub(crate) fn one_war_second_front(&self, g: &Game, pid: usize) -> Option<usize> {
+        if !self.one_war_at_a_time
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || self.forced_target_player.is_some()
+        {
+            return None;
+        }
+        let front_state = self.one_war.as_ref()?;
+        let front = front_state.target;
+        // An offered peace is not a refused one: the front gets a few turns
+        // to accept before a second war opens beside it.
+        let refused = front_state.closure_wanted_since.is_some_and(|since| {
+            g.turn.saturating_sub(since)
+                >= g.standard_duration(ONE_WAR_SECOND_FRONT_PATIENCE).max(1)
+        });
+        if !refused {
+            return None;
+        }
+        let outguns = |rival: usize| {
+            g.military_power(pid) >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(rival).max(1.0)
+        };
+        let usable = |rival: usize| {
+            rival != front
+                && !g.is_at_war(pid, rival)
+                && self.campaign_target_legal(g, pid, rival)
+                && outguns(rival)
+        };
+        self.actionable_victory_denial(g, pid)
+            .filter(|(rival, counter)| {
+                *counter == GrandStrategy::Conquest && self.urgent_victory_threat(g, *rival)
+            })
+            .map(|(rival, _)| rival)
+            .filter(|rival| usable(*rival))
+            .or_else(|| {
+                self.domination_followup_target(g, pid, Some(front))
+                    .filter(|rival| usable(*rival))
+            })
+    }
+
     /// Whether a declaration on `target` is held: a major war is already
     /// being fought against someone else and `target` is not about to win.
     pub(crate) fn one_war_holds_declaration(&self, g: &Game, pid: usize, target: usize) -> bool {
-        if !self.one_war_at_a_time || g.is_at_war(pid, target) {
+        if !self.one_war_at_a_time
+            || g.is_at_war(pid, target)
+            || self.one_war_second_front(g, pid) == Some(target)
+        {
             return false;
         }
         let other_war = self

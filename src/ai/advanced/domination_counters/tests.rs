@@ -8,9 +8,13 @@ fn board(strategy: GrandStrategy) -> (Game, u32) {
     for rival in 1..4 {
         g.record_contact(0, rival);
     }
-    let capital = g.player_city_ids(1)[0];
-    let site = super::tests::open_land_near(&g, g.cities[&capital].pos, 4);
+    // This fixture exercises the infrastructure preference, not preparation
+    // for a city outside the declaration's range. Far objectives are covered
+    // separately by denial_frontier_tests.
+    let home = g.player_city_ids(0)[0];
+    let site = super::tests::open_land_near(&g, g.cities[&home].pos, 10);
     let objective = g.found_city_for(1, site, None);
+    assert!(AdvancedAi::city_within_declaration_range(&g, 0, site));
     g.spawn_test_unit("scout", 0, site);
     match strategy {
         GrandStrategy::Culture => {
