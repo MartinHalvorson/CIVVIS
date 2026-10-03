@@ -29295,6 +29295,15 @@ impl AdvancedAi {
     }
 
     fn production_build_turns(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> f64 {
+        // Firaxis ProductionPanel.lua:2138 reads this exact city's item quote.
+        // It already includes native modifiers and banked production; do not
+        // rescale it or reconstruct it from an approximate production rate.
+        if let Some(turns) = g
+            .host_production_turns(cid, item)
+            .filter(|turns| turns.is_finite() && *turns >= 0.0)
+        {
+            return turns;
+        }
         let production = g.city_yields(cid).production.max(1.0);
         let rate = if self.victory_planning {
             (production * g.item_prod_mult(pid, cid, Some(item))).max(1.0)
@@ -43951,3 +43960,6 @@ mod observed_movement_memory_tests;
 
 #[cfg(test)]
 mod reinforcement_arrival_tests;
+
+#[cfg(test)]
+mod native_production_eta_tests;
