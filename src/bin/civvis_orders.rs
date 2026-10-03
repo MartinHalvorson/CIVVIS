@@ -45,6 +45,8 @@ use civvis::mirror;
 
 #[path = "civvis_orders/air_assault.rs"]
 mod air_assault;
+#[path = "civvis_orders/air_assault_continuation.rs"]
+mod air_assault_continuation;
 
 fn arg_text(args: &[String], flag: &str) -> Option<String> {
     args.iter()
@@ -3715,6 +3717,7 @@ struct DecisionMemory<'a> {
     host_move_refusals: &'a mut HostMoveRefusals,
     /// The actuation contract's memory: orders the host has provably refused.
     host_order_refusals: &'a mut HostOrderRefusals,
+    air_assault_continuation: &'a mut air_assault_continuation::Continuation,
 }
 
 fn decide(
@@ -3730,6 +3733,7 @@ fn decide(
         host_peace_retries,
         host_move_refusals,
         host_order_refusals,
+        air_assault_continuation,
     } = memory;
     // Only the live bridge has Firaxis's non-walking Trader representation and
     // host-city religious purchase rule. Enable those narrow adapters before
@@ -3776,8 +3780,8 @@ fn decide(
         host_order_refusals,
     );
     air_assault::observe(ai, snapshot, state);
-    let (war_finishers, ai_actions_begin) =
-        civvis::ai::player::plan_frame(ai, &mut planned_game, 0, &mirror_state.civ6_of);
+    let (war_finishers, ai_actions_begin, air_assault_resumed) =
+        air_assault_continuation.plan_frame(ai, &mut planned_game, state, &mirror_state.civ6_of);
     // Finishing attacks are translated explicitly below, including the reserve
     // order that was intentionally not applied to the planning board. Ordinary
     // AI actions start after the attacks that were applied there.
@@ -3858,6 +3862,9 @@ fn decide(
     let mut skipped: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     let mut skipped_examples: Vec<String> = Vec::new();
     let mut note_bits: Vec<String> = Vec::new();
+    if air_assault_resumed {
+        note_bits.push("air_assault_continuation=1".into());
+    }
     // ⚠ Which rule is refusing the army its attacks. 45 of 87 declined attacks
     // on a replay of run `civvis-20260803T005930Z` were the forward model
     // rejecting the action outright rather than judging it bad, 27 of them a
@@ -4408,6 +4415,7 @@ fn decide(
 
     // Remember where each move sends which host unit, so next turn's positions
     // can prove a destination unwalkable. See `HostMoveRefusals`.
+    air_assault_continuation.record(state, ai.planned_air_city_assault(), &orders);
     host_move_refusals.record(&orders, state, &first_unknown_steps);
     if !host_move_refusals.dead.is_empty() {
         note_bits.push(format!("host_dead_plots={}", host_move_refusals.dead.len()));
@@ -8814,6 +8822,7 @@ fn main() {
         let mut host_peace_retries = HostPeaceRetries::default();
         let mut host_move_refusals = HostMoveRefusals::default();
         let mut host_order_refusals = HostOrderRefusals::default();
+        let mut air_assault_continuation = air_assault_continuation::Continuation::default();
         let reply = decide(
             &mut live,
             &mut ai,
@@ -8825,6 +8834,7 @@ fn main() {
                 host_peace_retries: &mut host_peace_retries,
                 host_move_refusals: &mut host_move_refusals,
                 host_order_refusals: &mut host_order_refusals,
+                air_assault_continuation: &mut air_assault_continuation,
             },
         );
         // ⚠ `--explain` USED TO WORK ONLY UNDER `--serve`, which is the mode you cannot
@@ -8863,6 +8873,7 @@ fn main() {
     let mut host_peace_retries = HostPeaceRetries::default();
     let mut host_move_refusals = HostMoveRefusals::default();
     let mut host_order_refusals = HostOrderRefusals::default();
+    let mut air_assault_continuation = air_assault_continuation::Continuation::default();
     // The Firaxis repair cooldown belongs to the host, not the reconstructed
     // board. It must therefore survive `--fresh-board` just like the peace and
     // treasury handoffs above.
@@ -9014,6 +9025,7 @@ fn main() {
                             host_peace_retries: &mut host_peace_retries,
                             host_move_refusals: &mut host_move_refusals,
                             host_order_refusals: &mut host_order_refusals,
+                            air_assault_continuation: &mut air_assault_continuation,
                         },
                     );
                     live = Some(board);
@@ -9043,6 +9055,7 @@ fn main() {
                                     host_peace_retries: &mut host_peace_retries,
                                     host_move_refusals: &mut host_move_refusals,
                                     host_order_refusals: &mut host_order_refusals,
+                                    air_assault_continuation: &mut air_assault_continuation,
                                 },
                             );
                             live = Some(fresh);
@@ -9078,6 +9091,7 @@ fn main() {
                                         host_peace_retries: &mut host_peace_retries,
                                         host_move_refusals: &mut host_move_refusals,
                                         host_order_refusals: &mut host_order_refusals,
+                                        air_assault_continuation: &mut air_assault_continuation,
                                     },
                                 )
                             } else {
@@ -9092,6 +9106,7 @@ fn main() {
                                         host_peace_retries: &mut host_peace_retries,
                                         host_move_refusals: &mut host_move_refusals,
                                         host_order_refusals: &mut host_order_refusals,
+                                        air_assault_continuation: &mut air_assault_continuation,
                                     },
                                 )
                             }
@@ -10229,6 +10244,7 @@ mod tests {
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
                 host_order_refusals: &mut HostOrderRefusals::default(),
+                air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
             },
         ))
         .expect("the decision is JSON");
@@ -10273,6 +10289,7 @@ mod tests {
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
                 host_order_refusals: &mut HostOrderRefusals::default(),
+                air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
             },
         ))
         .expect("the confirmed decision is JSON");
@@ -11793,6 +11810,7 @@ mod tests {
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
                 host_order_refusals: &mut HostOrderRefusals::default(),
+                air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
             },
         ))
         .unwrap();
@@ -11919,6 +11937,7 @@ mod tests {
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
                 host_order_refusals: &mut HostOrderRefusals::default(),
+                air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
             },
         ))
         .unwrap();
@@ -11985,6 +12004,7 @@ mod tests {
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
                 host_order_refusals: &mut HostOrderRefusals::default(),
+                air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
             },
         ))
         .unwrap();
@@ -16483,6 +16503,7 @@ mod tests {
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
                 host_order_refusals: &mut HostOrderRefusals::default(),
+                air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
             },
         ))
         .expect("the decision is JSON");
@@ -16654,6 +16675,7 @@ mod tests {
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
                 host_order_refusals: &mut HostOrderRefusals::default(),
+                air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
             },
         ))
         .expect("the decision is JSON");
@@ -17099,6 +17121,7 @@ mod tests {
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
                 host_order_refusals: &mut HostOrderRefusals::default(),
+                air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
             },
         );
 
@@ -17177,6 +17200,7 @@ mod tests {
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
                 host_order_refusals: &mut HostOrderRefusals::default(),
+                air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
             },
         ))
         .expect("the decision is JSON");
@@ -17254,6 +17278,7 @@ mod tests {
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
                 host_order_refusals: &mut HostOrderRefusals::default(),
+                air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
             },
         );
 
