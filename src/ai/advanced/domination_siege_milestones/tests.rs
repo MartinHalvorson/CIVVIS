@@ -402,3 +402,47 @@ fn a_rival_holding_its_capital_at_twice_our_power_is_not_offered_stalled_peace()
     g.cities.get_mut(&city).unwrap().is_capital = false;
     assert!(!ai.domination_capital_prey(&g, 0, 1));
 }
+
+/// See `domination_siege_train_mobilizing`: an unwalled objective needs no
+/// wall breaker, so a siege the train is working with a soldier in its
+/// staging band keeps the war; without one the stalled war still tires, and
+/// the war-age limit bounds it.
+#[test]
+fn a_siege_staging_at_an_unwalled_city_is_not_offered_stalled_peace() {
+    let case = |siege: bool, war_since: u32| {
+        let (mut g, mut ai, plan, city, _) = fixture();
+        let target = g.cities.get_mut(&city).unwrap();
+        target.wall_hp = 0;
+        target.buildings.clear();
+        ai.major_war_since = Some(war_since);
+        if siege {
+            ai.sieges.insert(
+                city,
+                crate::ai::advanced::siege_train::Siege {
+                    stage: crate::ai::advanced::siege_train::SiegeStage::Stage,
+                    taker: None,
+                    entered: g.turn,
+                    assessed: g.turn,
+                    posts: Default::default(),
+                    short_since: None,
+                },
+            );
+        }
+        (g, ai, plan)
+    };
+    let (mut g, mut ai, plan) = case(false, 90);
+    assert!(!ai.domination_siege_train_mobilizing(&g, 0, 1, &plan));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(ai.peace_offers.contains(&1), "the control: a stalled war");
+
+    let (mut g, mut ai, plan) = case(true, 90);
+    assert!(ai.domination_siege_train_mobilizing(&g, 0, 1, &plan));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1));
+
+    let (g, ai, plan) = case(true, 120 - SIEGE_TRAIN_WAR_LIMIT);
+    assert!(
+        !ai.domination_siege_train_mobilizing(&g, 0, 1, &plan),
+        "bounded"
+    );
+}
