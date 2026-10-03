@@ -19048,9 +19048,6 @@ impl Game {
             s += self.adjacent_friendly_unit_effect(u, "adjacent_combat_strength");
         }
         s += self.taxis_holy_city_strength(u.owner);
-        if u.kind == "giant_death_robot" {
-            s += self.tree_effect(u.owner, "gdr_armor");
-        }
         if self.has_ability(u.owner, "gifts_for_the_tlatoani") {
             s += self.empire_luxuries(u.owner) as f64; // Montezuma
         }
@@ -19158,6 +19155,13 @@ impl Game {
             // FASCISM_ATTACK_BUFF carries FASCISM_REQUIREMENTS, a single
             // REQUIREMENT_PLAYER_IS_ATTACKING.
             s -= self.government_combat_bonus(u, true) - self.government_combat_bonus(u, false);
+            // GDR_ARMOR_DEFENSES requires the defender and a non-air
+            // opponent (Expansion2_UnitPromotions.xml). Ground melee,
+            // ranged and city shots use this defensive value; air strikes
+            // against GDRs use their dedicated Anti-Air Strength instead.
+            if u.kind == "giant_death_robot" {
+                s += self.tree_effect(u.owner, "gdr_armor");
+            }
             s += self.governor_unit_defense_bonus(u);
             s += 3.0 * u.fortify_turns.clamp(0, 2) as f64;
             s += self.promotion_effect(u, "defend_all");
@@ -36352,6 +36356,9 @@ mod visibility_tests;
 
 #[cfg(test)]
 mod combat_scenarios;
+
+#[cfg(test)]
+mod gdr_armor_tests;
 
 #[cfg(test)]
 mod movement_rule_tests;
