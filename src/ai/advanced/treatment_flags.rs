@@ -4795,6 +4795,7 @@ impl AdvancedAi {
     /// the military floor and the capital Settler.
     pub fn enable_campus_before_the_army(&mut self) {
         self.disable_campus_before_the_army_2();
+        self.disable_campus_before_the_army_3();
         self.campus_before_the_army = true;
         self.base.campus_before_the_army = true;
     }
@@ -4840,6 +4841,7 @@ impl AdvancedAi {
     /// floor only. Exclusive with version 1.
     pub fn enable_campus_before_the_army_2(&mut self) {
         self.disable_campus_before_the_army();
+        self.disable_campus_before_the_army_3();
         self.campus_before_the_army_2 = true;
         self.base.campus_before_the_army_2 = true;
     }
@@ -4848,6 +4850,21 @@ impl AdvancedAi {
     pub fn disable_campus_before_the_army_2(&mut self) {
         self.campus_before_the_army_2 = false;
         self.base.campus_before_the_army_2 = false;
+    }
+
+    /// See `BasicAi::campus_before_the_army_3`: version 2, on through the
+    /// University and the Research Lab. Exclusive with versions 1 and 2.
+    pub fn enable_campus_before_the_army_3(&mut self) {
+        self.disable_campus_before_the_army();
+        self.disable_campus_before_the_army_2();
+        self.campus_before_the_army_3 = true;
+        self.base.campus_before_the_army_3 = true;
+    }
+
+    /// The twin of `enable_campus_before_the_army_3`.
+    pub fn disable_campus_before_the_army_3(&mut self) {
+        self.campus_before_the_army_3 = false;
+        self.base.campus_before_the_army_3 = false;
     }
 
     /// See `BasicAi::settler_before_the_navy`: the navy step yields to a due
