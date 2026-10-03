@@ -314,7 +314,7 @@ fn domination_finish_at_hand_outlasts_the_stalled_war_counter() {
 
 #[test]
 fn domination_keeps_a_crushed_front_until_the_counter_is_urgent() {
-    let (mut g, ai) = two_fronts();
+    let (mut g, mut ai) = two_fronts();
     g.at_war.remove(&(0, 2));
     let culture = |g: &mut Game, visiting: usize| {
         let stats = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats);
@@ -356,6 +356,11 @@ fn domination_keeps_a_crushed_front_until_the_counter_is_urgent() {
         g.spawn_test_unit("modern_armor", 1, (15, 12));
     }
     assert!(!ai.one_war_front_crushed(&g, 0, 1));
+    // A front chosen this turn is kept against a clock that is not urgent
+    // (`ONE_WAR_FRESH_FRONT_TURNS`); an older one is traded.
+    assert_eq!(ai.one_war_peace(&g, 0, 1), None);
+    let aged = g.turn - g.standard_duration(ONE_WAR_FRESH_FRONT_TURNS);
+    ai.one_war.as_mut().unwrap().since = aged;
     assert_eq!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
 }
 

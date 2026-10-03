@@ -20985,7 +20985,17 @@ impl AdvancedAi {
         // The Culture clock may expire before capture units reach the ring.
         // A concrete, safe Theater Square sortie can start denial meanwhile.
         let air_ready = !staged && self.urgent_culture_air_opening_ready(g, pid, target, plan);
-        if close_enough && ready && (staged || air_ready) {
+        // A religious match point is countered by the war itself: Apostles
+        // and Inquisitors may condemn the founder's units only at war, and the
+        // army pillages its Holy Sites on the way. It need not wait for a
+        // siege bill. Live King civvis-20261003T113755Z read "the army has not
+        // finished staging" at turns 145-150 at 578-602 power against 210-362
+        // while Khmer Buddhism took our cities, and lost at 153.
+        let religion_counter_ready = urgent_denial
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.rival_victory_pressure(g, target).strategy == GrandStrategy::Religion
+            && my_power >= target_power;
+        if close_enough && ready && (staged || air_ready || religion_counter_ready) {
             // `coalition_before_war`: invite the target's neighbours to a
             // joint war first, and hold while an answer is due. See
             // `advanced/coalition.rs`.

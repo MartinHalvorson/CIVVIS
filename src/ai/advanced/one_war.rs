@@ -101,6 +101,9 @@ pub(crate) const ONE_WAR_SECOND_FRONT_RATIO: f64 = 1.5;
 /// Standard turns the front may refuse the peace that would free the army
 /// before the second front opens beside it.
 pub(crate) const ONE_WAR_SECOND_FRONT_PATIENCE: u32 = 3;
+/// Standard turns a newly chosen front is kept against a merely
+/// outranking (not urgent) clock elsewhere. See `one_war_peace`.
+pub(crate) const ONE_WAR_FRESH_FRONT_TURNS: u32 = 10;
 /// A second-front unit this close to a threatened city of ours keeps that
 /// enemy in the force planner's sights: the relief column's own radius.
 pub(crate) const ONE_WAR_RELIEF_REACH: i32 = 8;
@@ -759,11 +762,17 @@ impl AdvancedAi {
             && self
                 .actionable_victory_denial(g, pid)
                 .is_some_and(|(rival, counter)| {
+                    // A war just opened is not traded for a clock that only
+                    // now outranks it: game 36 (civvis-20261003T123922Z)
+                    // declared on the Ottomans at turn 103 and offered them
+                    // this peace at 105 and 106.
+                    let fresh_front = g.turn.saturating_sub(front.since)
+                        < g.standard_duration(ONE_WAR_FRESH_FRONT_TURNS);
                     rival != other
                         && counter == GrandStrategy::Conquest
                         && self.domination_counter_target(g, pid, rival)
                         && (self.urgent_victory_threat(g, rival)
-                            || !self.one_war_front_crushed(g, pid, other))
+                            || (!fresh_front && !self.one_war_front_crushed(g, pid, other)))
                 })
             && !self.one_war_capture_at_hand(g, pid, other)
         {
