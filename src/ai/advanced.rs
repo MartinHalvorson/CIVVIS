@@ -6509,6 +6509,11 @@ pub struct AdvancedAi {
     /// content. Opt-in gene `policy-deck-hysteresis`; see
     /// `AdvancedAi::maintenance_relief_held`.
     policy_deck_hysteresis: bool,
+    /// `policy-deck-hysteresis-2`: version 1, and a held relief stays while
+    /// the income does not cover its discount, and the emergency's relief
+    /// may evict a lower-ranked wanted military card. See
+    /// `AdvancedAi::relief_outruns_income`.
+    policy_deck_hysteresis_2: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     reinforce_before_stall: bool,
     /// The stock alliance desk asks for a Research Alliance, on any turn,
@@ -8706,6 +8711,7 @@ impl AdvancedAi {
 
             // ---- append: p-r ----------------------------------------
             policy_deck_hysteresis: false,
+            policy_deck_hysteresis_2: false,
             reinforce_before_stall: false,
             research_alliance_first: false,
             research_alliance_asked: BTreeMap::new(),
@@ -17029,7 +17035,24 @@ impl AdvancedAi {
                 .any(|card| matches!(card.as_str(), "conscription" | "levee_en_masse"))
         };
         relief(&g.players[pid].policies)
-            || (self.policy_deck_hysteresis && relief(&self.turn_start_policies))
+            || ((self.policy_deck_hysteresis || self.policy_deck_hysteresis_2)
+                && relief(&self.turn_start_policies))
+    }
+
+    /// Whether a held maintenance relief still pays for itself: with
+    /// `policy-deck-hysteresis-2`, the maintenance emergency outlasts a
+    /// treasury over the reserve while the income is below the discount the
+    /// card gives (1 Gold per military unit, Conscription's; Levée's is 2).
+    /// Live King 2026-10-03T081800Z t205: a mid-turn windfall took the
+    /// treasury from 250 to 485, over the 300 reserve, so the emergency ended
+    /// and Conscription, which no base conquest list names, was the first card
+    /// evicted. Income went from +14 to -15 and the unit bill from 104 to 133;
+    /// the treasury was empty at t211 and the army disbanded from 34 units to
+    /// 7 by t234.
+    pub(super) fn relief_outruns_income(&self, g: &Game, pid: usize, military: usize) -> bool {
+        self.policy_deck_hysteresis_2
+            && self.maintenance_relief_held(g, pid)
+            && g.players[pid].gold_per_turn < military as f64
     }
 
     /// The Amenity surplus under which a two-district city calls for
@@ -17040,7 +17063,7 @@ impl AdvancedAi {
     /// deficit, and back in a turn later: live King 2026-10-03T040354Z
     /// alternated Aesthetics and Liberalism every turn from 110 to 132.
     pub(super) fn liberalism_repair_bar(&self, g: &Game, pid: usize) -> i64 {
-        if self.policy_deck_hysteresis
+        if (self.policy_deck_hysteresis || self.policy_deck_hysteresis_2)
             && g.players[pid]
                 .policies
                 .contains(&crate::name!("liberalism"))
@@ -17361,7 +17384,8 @@ impl AdvancedAi {
         let maintenance_emergency = (self.war_economy || domination_target)
             && (at_major_war || staged_conquest)
             && military > 0
-            && g.players[pid].gold < recovery_reserve
+            && (g.players[pid].gold < recovery_reserve
+                || (domination_target && self.relief_outruns_income(g, pid, military)))
             && (g.players[pid].gold_per_turn < -0.5 || retained_domination_relief)
             || upgrade_funding_relief;
         if maintenance_emergency {
@@ -17707,7 +17731,15 @@ impl AdvancedAi {
                             && !nobel_peace_direct_favor_cards.contains(&current.as_str())
                             && self.builder_window_can_replace(g, pid, current);
                     }
-                    if upgrade_funding_relief && matches!(card, "conscription" | "levee_en_masse") {
+                    // With `policy-deck-hysteresis-2` the same holds for the
+                    // maintenance emergency: a wanted card's rank does not
+                    // otherwise let it evict a lower-ranked wanted card, and
+                    // live King 2026-10-03T081800Z t206-t208 kept Conscription
+                    // out behind Logistics (rank 21) while the treasury drained.
+                    if (upgrade_funding_relief
+                        || (self.policy_deck_hysteresis_2 && maintenance_emergency))
+                        && matches!(card, "conscription" | "levee_en_masse")
+                    {
                         // Ordinary desired military cards must not lock out
                         // the cash needed by the upgrade discount itself.
                         return g.rules.policies[current].slot == "military"

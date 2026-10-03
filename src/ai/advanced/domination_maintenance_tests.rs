@@ -181,3 +181,62 @@ fn liberalism_is_kept_while_it_holds_a_city_at_zero() {
     game.players[0].policies.remove(&crate::name!("liberalism"));
     assert_eq!(ai.liberalism_repair_bar(&game, 0), 0);
 }
+
+/// See `AdvancedAi::relief_outruns_income`: a windfall over the reserve does
+/// not end the emergency while the income is below the relief's discount.
+/// Version 1 lets the held Conscription go; version 2 keeps it.
+#[test]
+fn a_windfall_over_the_reserve_keeps_the_relief_the_income_needs() {
+    let (mut game, mut ai) = deficit_campaign();
+    let military = game
+        .player_unit_ids(0)
+        .into_iter()
+        .filter(|unit| game.rules.units[game.units[unit].kind].class == "military")
+        .count();
+    assert!(military >= 1);
+    game.players[0].gold = 500.0;
+    game.players[0].gold_per_turn = military as f64 - 0.5;
+    ai.turn_start_policies = BTreeSet::from([
+        crate::name!("conscription"),
+        crate::name!("urban_planning"),
+    ]);
+    ai.enable_policy_deck_hysteresis();
+    let mut first = game.clone();
+    ai.strategic_policies(&mut first, 0, GrandStrategy::Conquest);
+    assert!(
+        !first.players[0]
+            .policies
+            .contains(&crate::name!("conscription")),
+        "version 1 ends the emergency over the reserve"
+    );
+    ai.enable_policy_deck_hysteresis_2();
+    ai.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+    assert!(game.players[0]
+        .policies
+        .contains(&crate::name!("conscription")));
+}
+
+/// See `policy-deck-hysteresis-2`: the emergency's relief evicts a
+/// lower-ranked wanted military card, which version 1 protects.
+#[test]
+fn the_emergency_relief_evicts_a_lower_ranked_wanted_card() {
+    let (mut game, mut ai) = deficit_campaign();
+    game.players[0].policies.remove(&crate::name!("discipline"));
+    game.players[0].policies.insert(crate::name!("logistics"));
+    ai.enable_policy_deck_hysteresis();
+    let mut first = game.clone();
+    ai.strategic_policies(&mut first, 0, GrandStrategy::Conquest);
+    assert!(
+        first.players[0].policies.contains(&crate::name!("logistics")),
+        "version 1 protects the wanted card: {:?}",
+        first.players[0].policies
+    );
+    ai.enable_policy_deck_hysteresis_2();
+    ai.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+    assert!(
+        game.players[0].policies.contains(&crate::name!("conscription")),
+        "{:?}",
+        game.players[0].policies
+    );
+    assert!(!game.players[0].policies.contains(&crate::name!("logistics")));
+}

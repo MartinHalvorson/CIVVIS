@@ -2451,6 +2451,7 @@ pub const GENES: &[Gene] = &[
     // the rally flipped across the city. See
     // `objective_board::SIEGE_RALLY_SWITCH_MARGIN`.
     Gene { tag: "siege-rally-holds", field: "siege_rally_holds", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_rally_holds, disable: AdvancedAi::disable_siege_rally_holds },
+    Gene { tag: "policy-deck-hysteresis-2", field: "policy_deck_hysteresis_2", kind: Kind::OptIn, enable: AdvancedAi::enable_policy_deck_hysteresis_2, disable: AdvancedAi::disable_policy_deck_hysteresis_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
