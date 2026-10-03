@@ -83,7 +83,7 @@ fn absence_of_an_issued_barrier_cannot_create_a_continuation() {
 fn only_an_issued_observation_records_the_observed_native_owner() {
     let report = AirCityAssault {
         target: (15, 23),
-        cavalry: 7,
+        cavalry: Some(7),
         spot: (13, 23),
         moved_to_spot: true,
         aircraft: vec![20],
