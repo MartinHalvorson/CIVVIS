@@ -148,6 +148,101 @@ struct Outcome {
     conquest: ConquestProgress,
     /// The focal seat's air-surge census at the end of the game.
     air_surge: String,
+    /// The focal seat's economy beside the strongest rival's at
+    /// `ECONOMY_MARKS`, so a build-order policy is read on the axis it moves.
+    economy: Vec<EconomySnapshot>,
+}
+
+/// Turns at which [`EconomySnapshot`] is taken: the live ladder's own
+/// checkpoints (`cities_at_60`, `techs_at_100`) and a later one.
+const ECONOMY_MARKS: [u32; 3] = [60, 100, 150];
+
+#[derive(Debug, Default, Serialize, Clone)]
+struct SeatEconomy {
+    techs: usize,
+    civics: usize,
+    science: f64,
+    culture: f64,
+    gold: f64,
+    population: i64,
+    cities: usize,
+    districts: usize,
+    monuments: usize,
+    granaries: usize,
+    libraries: usize,
+}
+
+impl SeatEconomy {
+    fn of(g: &Game, pid: usize) -> Self {
+        let mut seat = SeatEconomy {
+            techs: g.players[pid].techs.len(),
+            civics: g.players[pid].civics.len(),
+            ..Default::default()
+        };
+        for city in g.cities.values().filter(|city| city.owner == pid) {
+            let yields = g.city_yields(city.id);
+            seat.science += yields.science;
+            seat.culture += yields.culture;
+            seat.gold += yields.gold;
+            seat.population += i64::from(city.pop);
+            seat.cities += 1;
+            seat.districts += city
+                .districts
+                .keys()
+                .filter(|district| g.rules.districts[district].specialty)
+                .count();
+            let has = |name: &str| city.buildings.iter().any(|b| b.as_str() == name);
+            seat.monuments += usize::from(has("monument"));
+            seat.granaries += usize::from(has("granary"));
+            seat.libraries += usize::from(has("library"));
+        }
+        seat
+    }
+
+    /// Field-wise maximum, so `best_rival` reads the strongest rival on each
+    /// axis rather than one rival on all of them.
+    fn max(self, other: Self) -> Self {
+        SeatEconomy {
+            techs: self.techs.max(other.techs),
+            civics: self.civics.max(other.civics),
+            science: self.science.max(other.science),
+            culture: self.culture.max(other.culture),
+            gold: self.gold.max(other.gold),
+            population: self.population.max(other.population),
+            cities: self.cities.max(other.cities),
+            districts: self.districts.max(other.districts),
+            monuments: self.monuments.max(other.monuments),
+            granaries: self.granaries.max(other.granaries),
+            libraries: self.libraries.max(other.libraries),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct EconomySnapshot {
+    turn: u32,
+    focal: SeatEconomy,
+    best_rival: SeatEconomy,
+}
+
+fn observe_economy(g: &Game, economy: &mut Vec<EconomySnapshot>) {
+    let Some(&mark) = ECONOMY_MARKS.get(economy.len()) else {
+        return;
+    };
+    if g.turn < mark {
+        return;
+    }
+    let best_rival = g
+        .players
+        .iter()
+        .filter(|p| p.id != 0 && p.alive && !p.is_minor && !p.is_barbarian)
+        .map(|p| SeatEconomy::of(g, p.id))
+        .fold(SeatEconomy::default(), SeatEconomy::max);
+    economy.push(EconomySnapshot {
+        turn: g.turn,
+        focal: SeatEconomy::of(g, 0),
+        best_rival,
+    });
 }
 
 /// Observations occur at turn boundaries and once at the end. These times are
@@ -270,12 +365,14 @@ fn trial(seed: u64, difficulty: Option<&str>, policy: &Gene, enabled: bool) -> T
     });
     let mut held = BTreeSet::new();
     let mut conquest = ConquestProgress::default();
+    let mut economy = Vec::new();
     // The journal is a ring of the last few thousand thoughts; drain it at
     // every turn boundary so the file holds the whole game.
     let mut lines = String::new();
     let mut cursor = 0;
     let mut observe = |g: &Game| {
         conquest.observe(g);
+        observe_economy(g, &mut economy);
         for city in g.cities.values() {
             if city.owner == 0 && city.original_owner != 0 {
                 held.insert(city.id);
@@ -317,6 +414,7 @@ fn trial(seed: u64, difficulty: Option<&str>, policy: &Gene, enabled: bool) -> T
         applied_actions: game.log.len(),
         conquest,
         air_surge: ais[0].air_surge_census_summary(),
+        economy,
     };
     Trial {
         outcome,
@@ -362,7 +460,7 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
             domination[i] += usize::from(arm.outcome.focal_domination_won);
         }
         let row = serde_json::json!({
-            "schema": 2, "kind": "simulator_domination_policy_pair",
+            "schema": 3, "kind": "simulator_domination_policy_pair",
             "policy": config.policy.tag, "seed": seed,
             "execution_order": if index % 2 == 0 { "off,on" } else { "on,off" },
             "profile": profile(seed, config.difficulty), "civilizations": off.civs,

@@ -200,10 +200,12 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `conquest-takes-the-soft-city` | off (unmeasured) | `conquest-takes-the-soft-city`: rank the early conquest target by what can be taken before what is worth most. | 1 \| 1 |
 | `counter-culture-by-conquest` | off (unmeasured) | `counter-culture-by-conquest`: answer a culture leader with war aimed at its Great Works. | 1 \| 1 |
 | `culture-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 2 \| 3 |
+| `culture-defense-theater` | off (unmeasured) | A Theater Square ahead of the Harbor and the bred district order in the delegated city governor while the empire's Culture trails the strongest rival's. | 1 \| 1 |
 | `culture-faith-reservation` | off (unmeasured) | Enable `culture-faith-reservation` for measurement. | 1 \| 1 |
 | `culture-lane-forecast-2` | off (unmeasured) | Version 2 of the Culture clock forecast: project secular and religious Tourism through each rival's current international modifiers. | 1 \| 2 |
 | `culture-tourism-payback` | off (unmeasured) | Enable `culture-tourism-payback` for measurement. | 1 \| 1 |
 | `denial-outranks-expansion` | off (unmeasured) | A rival close to winning is answered before the lane's expansion rule. | 1 \| 1 |
+| `district-buildings-first` | off (unmeasured) | A standing district's first building before the delegated city governor opens another district. | 1 \| 1 |
 | `domination-capital-focus` | off (unmeasured) | Rank required capitals within the selected domination campaign front. | 1 \| 1 |
 | `domination-ignores-city-states` | off (unmeasured) | `domination-ignores-city-states`: an assigned Domination seat keeps city-states out of its campaign's fallback ranking. | 1 \| 1 |
 | `domination-lane-hands-over` | off (unmeasured) | The Domination lane hands over to Conquest at `DOMINATION_HANDOVER_CITIES` instead of waiting for a growing city target. | 1 \| 1 |
@@ -218,6 +220,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `housing-research-2` | off (unmeasured) | Research housing that the capped cities can actually build. | 1 \| 2 |
 | `lane-delegates-production` | off (unmeasured) | Until the development half ends, an assigned lane's cities take the unassigned seat's production dispatch. | — \| 2 |
 | `lane-delegates-production-2` | off (unmeasured) | Version two: an assigned lane's cities take the unassigned seat's production dispatch for the whole game. | — \| 2 |
+| `monument-first` | off (unmeasured) | A city's Monument ahead of the military floor and the Settler step in the delegated city governor. | 1 \| 1 |
 | `ranged-hp-reserve` | off (unmeasured) | A ranged unit keeps `RANGED_HP_RESERVE` in hand against the lethal pool. | 1 \| 1 |
 | `reinforce-before-stall` | off (unmeasured) | Enable `reinforce-before-stall` for measurement. | 1 \| 1 |
 | `research-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 1 \| 3 |

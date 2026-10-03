@@ -2398,9 +2398,24 @@ pub const GENES: &[Gene] = &[
     // the empire holds three cities: the capital trained eight Settlers by
     // turn 57 and opened no Campus until turn 66. See `BasicAi::capital_campus_first`.
     Gene { tag: "campus-before-harbor-2", field: "campus_before_harbor_2", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_harbor_2, disable: AdvancedAi::disable_campus_before_harbor_2 },
+    // The delegated city governor tried every district a city lacked before
+    // any building: live King turn 100 held 15 of 45 Campuses without a
+    // Library and 13 of 19 Commercial Hubs without a Market. See
+    // `BasicAi::district_buildings_first`.
+    Gene { tag: "district-buildings-first", field: "district_buildings_first", kind: Kind::OptIn, enable: AdvancedAi::enable_district_buildings_first, disable: AdvancedAi::disable_district_buildings_first },
+    // Culture is the culture-victory defense (domestic Tourists are lifetime
+    // Culture over 100), and the commonest live King loss; the bred district
+    // order always ranks the Theater Square last. See
+    // `BasicAi::culture_defense_theater`.
+    Gene { tag: "culture-defense-theater", field: "culture_defense_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_defense_theater, disable: AdvancedAi::disable_culture_defense_theater },
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
+    // The Monument sat behind the military floor, the Settler, the Builders
+    // and the Trader: live King turn 60 to 100, only 54-57% of cities older
+    // than 20 turns held one and culture trailed 10.6 against 27.3. See
+    // `BasicAi::monument_first`.
+    Gene { tag: "monument-first", field: "monument_first", kind: Kind::OptIn, enable: AdvancedAi::enable_monument_first, disable: AdvancedAi::disable_monument_first },
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
     Gene { tag: "shared-danger", field: "shared_danger", kind: Kind::OptIn, enable: AdvancedAi::enable_shared_danger, disable: AdvancedAi::disable_shared_danger },

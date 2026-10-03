@@ -4548,6 +4548,45 @@ impl AdvancedAi {
         self.domination_specializes_earlier = false;
     }
 
+    /// See `BasicAi::district_buildings_first`: a standing district's first
+    /// building before the delegated city governor opens another district.
+    pub fn enable_district_buildings_first(&mut self) {
+        self.district_buildings_first = true;
+        self.base.district_buildings_first = true;
+    }
+
+    /// The twin of `enable_district_buildings_first`.
+    pub fn disable_district_buildings_first(&mut self) {
+        self.district_buildings_first = false;
+        self.base.district_buildings_first = false;
+    }
+
+    /// See `BasicAi::monument_first`: a city's Monument ahead of the military
+    /// floor and the Settler step in the delegated city governor.
+    pub fn enable_monument_first(&mut self) {
+        self.monument_first = true;
+        self.base.monument_first = true;
+    }
+
+    /// The twin of `enable_monument_first`.
+    pub fn disable_monument_first(&mut self) {
+        self.monument_first = false;
+        self.base.monument_first = false;
+    }
+
+    /// See `BasicAi::culture_defense_theater`: a Theater Square while the
+    /// empire's Culture trails the strongest rival's.
+    pub fn enable_culture_defense_theater(&mut self) {
+        self.culture_defense_theater = true;
+        self.base.culture_defense_theater = true;
+    }
+
+    /// The twin of `enable_culture_defense_theater`.
+    pub fn disable_culture_defense_theater(&mut self) {
+        self.culture_defense_theater = false;
+        self.base.culture_defense_theater = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     /// See `BasicAi::campus_before_harbor`: a city's first Campus before its

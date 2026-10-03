@@ -5182,6 +5182,15 @@ pub struct AdvancedAi {
     /// `campus-before-harbor-2`: version one, and the capital's first Campus
     /// before its next Settler. See `BasicAi::capital_campus_first`. Opt-in.
     campus_before_harbor_2: bool,
+    /// A standing district's first building before the delegated city
+    /// governor opens another district. Opt-in gene `district-buildings-first`;
+    /// see `BasicAi::district_buildings_first`.
+    district_buildings_first: bool,
+    /// A Theater Square ahead of the Harbor and the bred district order in
+    /// the delegated city governor while the empire's Culture trails the
+    /// strongest rival's. Opt-in gene `culture-defense-theater`; see
+    /// `BasicAi::culture_defense_theater`.
+    culture_defense_theater: bool,
     /// `domination-specializes-earlier`: an assigned Domination lane's
     /// development half ends at [`DOMINATION_SPECIALIZATION_PERCENT`] of the
     /// clock (turn 100 of 250) instead of halfway, so it turns to Conquest
@@ -6139,6 +6148,10 @@ pub struct AdvancedAi {
     host_war_unit_losses: Option<BTreeMap<(usize, usize), u32>>,
 
     // ---- append: l-o ------------------------------------------------
+    /// A city's Monument ahead of the military floor and the Settler step in
+    /// the delegated city governor. Opt-in gene `monument-first`; see
+    /// `BasicAi::monument_first`.
+    monument_first: bool,
     /// Opt-in governor relocation; see `governor_dividends`.
     magnus_follows_settlers: bool,
     /// Opt-in governor relocation; see `governor_dividends`.
@@ -8474,6 +8487,8 @@ impl AdvancedAi {
             // ---- append: c-d ----------------------------------------
             campus_before_harbor: false,
             campus_before_harbor_2: false,
+            district_buildings_first: false,
+            culture_defense_theater: false,
             domination_specializes_earlier: false,
             domination_ignores_city_states: false,
             culture_lane_forecast_2: false,
@@ -8600,6 +8615,7 @@ impl AdvancedAi {
 
             host_war_unit_losses: None,
             // ---- append: l-o ----------------------------------------
+            monument_first: false,
             magnus_follows_settlers: false,
             liang_follows_builders: false,
             modernize_before_spending: false,
