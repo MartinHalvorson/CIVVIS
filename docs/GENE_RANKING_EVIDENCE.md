@@ -240,6 +240,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `shared-danger` | off (unmeasured) | Opt-in gene `shared-danger`; see `Self::shared_danger`. | 1 \| 1 |
 | `siege-budget-counts-what-fires` | off (unmeasured) | Opt-in gene `siege-budget-counts-what-fires`; see `Self::siege_budget_counts_what_fires`. | 1 \| 1 |
 | `siege-holds-a-breach` | off (unmeasured) | Opt-in gene `siege-holds-a-breach`; see `Self::siege_holds_a_breach`. | 1 \| 1 |
+| `siege-needs-a-breaker` | off (unmeasured) | Opt-in gene `siege-needs-a-breaker`; see `Self::siege_needs_a_breaker`. | 1 \| 1 |
 | `siege-positive-damage-budget` | off (unmeasured) | Enable `siege-positive-damage-budget` for measurement. | 1 \| 1 |
 | `siege-rally-holds` | off (unmeasured) | Opt-in gene `siege-rally-holds`; see `Self::siege_rally_holds`. | 1 \| 1 |
 | `siege-ranged-floor` | off (unmeasured) | Opt-in gene `siege-ranged-floor`; see `Self::siege_ranged_floor`. | 1 \| 1 |

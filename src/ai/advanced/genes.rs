@@ -2483,6 +2483,12 @@ pub const GENES: &[Gene] = &[
     // turns while Archers did 5 a shot and melee held the ring; it healed
     // to 200 every turn. See `conversion_siege_budget`.
     Gene { tag: "siege-budget-counts-what-fires", field: "siege_budget_counts_what_fires", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_budget_counts_what_fires, disable: AdvancedAi::disable_siege_budget_counts_what_fires },
+    // Live King 135713Z held Kwadukuza's ring with two Knights and three
+    // Men-at-Arms from turn 113 to 122 at 198/200 walls, reading "damage
+    // ready" off a Bombard healing five tiles out; the two fresh Bombards and
+    // the Siege Tower walked in circles in the Reserve. See
+    // `siege_train::BreachReading`.
+    Gene { tag: "siege-needs-a-breaker", field: "siege_needs_a_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_needs_a_breaker, disable: AdvancedAi::disable_siege_needs_a_breaker },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

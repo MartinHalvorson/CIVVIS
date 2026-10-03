@@ -582,9 +582,7 @@ impl Game {
                     if !embarked
                         && spec.has_ranged_attack()
                         && u.attacks_left > 0
-                        && (!spec.siege
-                            || !u.moved
-                            || self.promotion_effect(&u, "attack_after_move") > 0.0)
+                        && (!spec.siege || !u.moved || self.siege_may_attack_after_moving(&u))
                     {
                         let range = self.unit_attack_range(uid);
                         for pos in self.wdisk(u.pos, range) {
@@ -1867,9 +1865,7 @@ impl Game {
         spec.domain.as_deref() != Some("air")
             && spec.has_ranged_attack()
             && !self.is_embarked(unit)
-            && (!spec.siege
-                || !unit.moved
-                || self.promotion_effect(unit, "attack_after_move") > 0.0)
+            && (!spec.siege || !unit.moved || self.siege_may_attack_after_moving(unit))
             && unit.moves_left > 0.0
             && unit.attacks_left > 0
             && self.wdist(unit.pos, target) <= self.unit_attack_range(uid)
@@ -3662,7 +3658,7 @@ impl Game {
         if self.is_embarked(&u) {
             return Err("cannot attack while embarked".into());
         }
-        if spec.siege && u.moved && self.promotion_effect(&u, "attack_after_move") == 0.0 {
+        if spec.siege && u.moved && !self.siege_may_attack_after_moving(&u) {
             return Err("siege units cannot move and attack in the same turn".into());
         }
         if u.moves_left <= 0.0 || u.attacks_left <= 0 {

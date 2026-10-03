@@ -17917,6 +17917,26 @@ impl Game {
             .sum()
     }
 
+    /// Whether a siege unit may still attack after moving this turn.
+    /// Civilization VI's data gives every siege unit "Cannot move and attack
+    /// in the same turn" (`ABILITY_NO_MOVE_AND_SHOOT`, lifted by Expert
+    /// Crew), and a native board keeps that rule. The live host does not hold
+    /// our seat to it: across the live runs of 2026-09-30 to 10-03, 94 of the
+    /// 104 Range Attacks a siege unit of ours was ordered to make after a Move
+    /// To earlier in the same turn resolved, the same nine in ten an unmoved
+    /// gun's shot resolves, and none of those guns had Expert Crew. Live King
+    /// civvis-20261003T135713Z, turn 101: a fresh Trebuchet stepped from
+    /// (16,16) to (15,15) and struck Kwadukuza's walls for 23. The mirror
+    /// clears `moved` at every frame, so before this the shot happened only
+    /// when a re-plan frame came after the step; the planned turn left the gun
+    /// standing in the city's reach unfired. So a siege unit of the mirrored
+    /// seat fires after moving, as the host lets it, and a hostile one keeps
+    /// the rule.
+    pub(crate) fn siege_may_attack_after_moving(&self, unit: &Unit) -> bool {
+        self.promotion_effect(unit, "attack_after_move") > 0.0
+            || (unit.owner == MIRRORED_SEAT && !self.host_observed.is_empty())
+    }
+
     /// Numeric abilities inherent to the unit type plus earned promotions.
     fn unit_effect(&self, unit: &Unit, effect: &str) -> f64 {
         self.rules.units[unit.kind]
@@ -27634,9 +27654,7 @@ impl Game {
 
             if spec.has_ranged_attack()
                 && !self.unit_is_embarked_at(unit, from)
-                && (!spec.siege
-                    || from == start
-                    || self.promotion_effect(unit, "attack_after_move") > 0.0)
+                && (!spec.siege || from == start || self.siege_may_attack_after_moving(unit))
             {
                 self.map.for_each_disk(from, attack_range, |target| {
                     if target != from && self.unit_has_line_of_sight_from(uid, from, target) {
