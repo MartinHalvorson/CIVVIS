@@ -4848,7 +4848,17 @@ def _play(args: argparse.Namespace) -> int:
         print("could not load the saved game" if args.load_save else
               "could not start a game from the main menu", file=sys.stderr)
         return 5
-    print("in a configured game; the agent holds the seat from here")
+    # ★★★★★ THE SEAT EVENT USUALLY ARRIVES DURING BOOTSTRAP, so `finished` never
+    # sees it and the refusal above never fired: live run
+    # civvis-20261003T035351Z logged "game modes are ['GAMEMODE_HEROES'], asked
+    # for []" and then "in a configured game" and played 75 turns of Heroes &
+    # Legends. A seat that disagrees with the request is refused here too.
+    refused_at_seat = state.get("seat") is not None and not state.get("configured")
+    if refused_at_seat:
+        print("the game does not match what was asked for; refusing to play it",
+              flush=True)
+    else:
+        print("in a configured game; the agent holds the seat from here")
 
     # Unattended upkeep is optional on a shared desktop. Keep processing
     # retirement and game events even when periodic GUI upkeep is disabled.
@@ -4936,12 +4946,13 @@ def _play(args: argparse.Namespace) -> int:
     # the budget ask "can this still get there?" instead of "is the clock up?".
     ceiling_s = (args.timeout_ceiling if args.timeout_ceiling is not None
                  else args.timeout * 1.5)
-    reason = watch.follow(tail, args.timeout, record, stop_when=finished,
-                          each_poll=keep_foreground, poll_s=poll_s,
-                          stall_s=args.stall_seconds,
-                          frozen_s=args.frozen_seconds,
-                          pause_when=console_locked,
-                          finish_turn=args.max_turns, ceiling_s=ceiling_s)
+    reason = "stopped" if refused_at_seat else watch.follow(
+        tail, args.timeout, record, stop_when=finished,
+        each_poll=keep_foreground, poll_s=poll_s,
+        stall_s=args.stall_seconds,
+        frozen_s=args.frozen_seconds,
+        pause_when=console_locked,
+        finish_turn=args.max_turns, ceiling_s=ceiling_s)
     # ★★★ PHOTOGRAPH A STALL BEFORE KILLING IT. Stalls are now the dominant way runs
     # end — t87, t95, t106, t184 — and the event stream goes silent by definition, so
     # it cannot say what is on screen. One screen (`DiplomacyDealView`) was already
