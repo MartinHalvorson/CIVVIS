@@ -2433,6 +2433,11 @@ pub const GENES: &[Gene] = &[
     // rival at war, held both; every modern upgrade and the bomber wing
     // waited on them. See `strategic_deposit_prey::STRATEGIC_DEPOSIT_PREY_VALUE`.
     Gene { tag: "strategic-deposit-prey", field: "strategic_deposit_prey", kind: Kind::OptIn, enable: AdvancedAi::enable_strategic_deposit_prey, disable: AdvancedAi::disable_strategic_deposit_prey },
+    // Live King 060034Z lost on Culture to Sweden at turn 205: 40 percent at
+    // 185, under the counter's bar, yet compounding to a finish in about 28
+    // turns while the army fought the science leader. See
+    // `denial_nearest_finish::DENIAL_FINISH_HORIZON`.
+    Gene { tag: "denial-nearest-finish", field: "denial_nearest_finish", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_nearest_finish, disable: AdvancedAi::disable_denial_nearest_finish },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

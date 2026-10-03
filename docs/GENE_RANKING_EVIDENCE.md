@@ -204,6 +204,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-faith-reservation` | off (unmeasured) | Enable `culture-faith-reservation` for measurement. | 1 \| 1 |
 | `culture-lane-forecast-2` | off (unmeasured) | Version 2 of the Culture clock forecast: project secular and religious Tourism through each rival's current international modifiers. | 1 \| 2 |
 | `culture-tourism-payback` | off (unmeasured) | Enable `culture-tourism-payback` for measurement. | 1 \| 1 |
+| `denial-nearest-finish` | off (unmeasured) | Opt-in gene `denial-nearest-finish`; see `Self::denial_nearest_finish`. | 1 \| 1 |
 | `denial-outranks-expansion` | off (unmeasured) | A rival close to winning is answered before the lane's expansion rule. | 1 \| 1 |
 | `district-buildings-first` | off (unmeasured) | A standing district's first building before the delegated city governor opens another district. | — \| 2 |
 | `district-buildings-first-2` | off (unmeasured) | Version one, and the capital's Library ahead of its next Settler once it holds a Campus. | — \| 2 |

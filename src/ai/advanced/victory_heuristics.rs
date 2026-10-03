@@ -433,6 +433,14 @@ impl AdvancedAi {
             {
                 clocks.push((rival, launches));
             }
+            // `denial-nearest-finish`: a culture race near its finish, read
+            // by how soon it ends. See `advanced/denial_nearest_finish.rs`.
+            if let Some(culture) = self.nearest_finish_culture_clock(g, rival).filter(|clock| {
+                (pressure.strategy != GrandStrategy::Culture || clock.progress > pressure.progress)
+                    && self.domination_counter_pressure(g, *clock)
+            }) {
+                clocks.push((rival, culture));
+            }
         }
         clocks.sort_by(|left, right| {
             right

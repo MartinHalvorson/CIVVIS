@@ -3294,6 +3294,9 @@ pub struct AdvancedAi {
     /// Fed once per turn by `record_stock_pressures`; read by
     /// `stock_pressure_slope`. Bounded to the slope window's span.
     stock_pressure_history: BTreeMap<usize, Vec<(u32, i32)>>,
+    /// `denial-nearest-finish`: each rival's recent (turn, foreign tourists,
+    /// bar) readings. See `AdvancedAi::record_culture_curves`.
+    culture_curves: BTreeMap<usize, Vec<(u32, i64, i64)>>,
 
     /// Whether the empire will open an **ancient rush**: pick the nearest
     /// weak neighbour before the walls go up, march a small stack to their
@@ -5179,6 +5182,11 @@ pub struct AdvancedAi {
     /// guarded permission is rechecked while the ordinary escort walks it.
     air_resource_colony_target: Option<(u32, Pos)>,
     // ---- append: c-d ------------------------------------------------
+    /// `denial-nearest-finish`: a Domination army also answers a culture
+    /// race projected along its geometric curve to finish within
+    /// `DENIAL_FINISH_HORIZON` turns, ranked by how soon. See
+    /// `AdvancedAi::nearest_finish_culture_clock`. Off by default.
+    denial_nearest_finish: bool,
     /// `campus-before-harbor`: see `BasicAi::campus_before_harbor`. The
     /// delegated city governor asks a city for its first Campus before its
     /// Harbor. Opt-in.
@@ -7423,6 +7431,7 @@ mod air_resource_colony;
 mod air_resource_settlement;
 mod air_surge;
 pub use air_city_assault::AirCityAssault;
+mod denial_nearest_finish;
 mod siege_resource_purchase;
 mod strategic_deposit_prey;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
@@ -8057,6 +8066,7 @@ impl AdvancedAi {
         self.settler_vanished.clear();
         self.summoned_guard_turn.clear();
         self.stock_pressure_history.clear();
+        self.culture_curves.clear();
         self.settler_retreats.clear();
         self.settler_walk_started.clear();
         self.settler_walk_clock.clear();
@@ -8379,6 +8389,7 @@ impl AdvancedAi {
             stock_denial_lead_time: false,
             projected_stock_denial: false,
             stock_pressure_history: BTreeMap::new(),
+            culture_curves: BTreeMap::new(),
             early_rush: false,
             timed_war: false,
             selective_timed_war: false,
@@ -8512,6 +8523,7 @@ impl AdvancedAi {
 
             air_resource_colony_target: None,
             // ---- append: c-d ----------------------------------------
+            denial_nearest_finish: false,
             campus_before_harbor: false,
             campus_before_harbor_2: false,
             district_buildings_first: false,
@@ -11950,6 +11962,9 @@ impl AdvancedAi {
 
     fn urgent_victory_threat(&self, g: &Game, target: usize) -> bool {
         self.victory_pressure_is_urgent(g, target, self.rival_victory_pressure(g, target))
+            // `denial-nearest-finish`: a culture race about to finish on its
+            // curve. See `advanced/denial_nearest_finish.rs`.
+            || self.culture_finish_is_urgent(g, target)
     }
 
     /// Diagnostic seam: what this planner believes `target`'s best race is,
@@ -43176,6 +43191,8 @@ impl AdvancedAi {
         // One stock-pressure sample per rival per turn, before anything reads
         // urgency this turn. See `projected_stock_denial`.
         self.record_stock_pressures(g, pid);
+        // `denial-nearest-finish`: one culture-curve reading per rival.
+        self.record_culture_curves(g, pid);
         self.maintain_war_plan(g, pid);
         // The air surge's own lifecycle, after the melee appointment so the
         // two can never both own the grand strategy in the same turn: the
