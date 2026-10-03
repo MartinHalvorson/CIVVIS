@@ -1212,6 +1212,15 @@ impl AdvancedAi {
                 .is_some_and(|opening| opening.declared.is_some())
     }
 
+    /// The war the declared conquest opening is fighting is against `other`.
+    pub(crate) fn conquest_opening_war(&self, other: usize) -> bool {
+        self.conquest_owns_the_campaign()
+            && self
+                .conquest_opening
+                .as_ref()
+                .is_some_and(|opening| opening.target == other)
+    }
+
     /// A declared opening keeps its surviving strike force when a new
     /// Settler looks for an escort. Existing civilian guards retain priority;
     /// this reservation applies only to new assignments while the war stands.

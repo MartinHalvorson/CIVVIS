@@ -410,3 +410,41 @@ fn an_urgent_rival_at_peace_opens_a_second_front() {
     assert_eq!(ai.one_war_second_front(&g, 0), None);
     assert!(ai.one_war_holds_declaration(&g, 0, 2));
 }
+
+/// The conquest opening's declared war is not traded for another rival's
+/// victory clock; the opening's own peace rules decide it.
+#[test]
+fn the_conquest_opening_war_is_not_traded_for_a_victory_threat() {
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
+    convert(&mut g, &[0, 1, 2]);
+    g.at_war.remove(&(0, 2));
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
+    let city = g.player_city_ids(1)[0];
+    ai.early_conquest_opening = true;
+    ai.conquest_opening = Some(crate::ai::advanced::early_conquest::ConquestOpening {
+        target: 1,
+        city,
+        opened: g.turn.saturating_sub(20),
+        preparing_since: None,
+        grace_until: None,
+        rally: (10, 12),
+        force: Default::default(),
+        assembled: Some(g.turn.saturating_sub(10)),
+        declared: Some(g.turn.saturating_sub(8)),
+        kills_at_war: 0,
+        losses: 0,
+        taken: 0,
+    });
+    assert_eq!(ai.one_war_peace(&g, 0, 1), None, "the opening keeps its war");
+    for y in [2, 3, 4, 5] {
+        g.spawn_test_unit("modern_armor", 0, (4, y));
+    }
+    assert!(g.military_power(0) >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(2).max(1.0));
+    assert_eq!(
+        ai.one_war_second_front(&g, 0),
+        Some(2),
+        "the urgent rival opens beside the opening's war"
+    );
+}
