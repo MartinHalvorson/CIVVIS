@@ -50,6 +50,18 @@ pub(crate) const LIVELOCK_ESCAPE_VALUE: f64 = 8.0;
 /// spend training toward a lent war target above the genome's own floor.
 const LENT_FLOOR_MAX_BUILD_TURNS: u32 = 16;
 
+/// The gates of `BasicAi::pick_item`'s Settler step; see
+/// `BasicAi::settler_gates`.
+struct SettlerGates {
+    room: bool,
+    stranded: usize,
+    pipeline: usize,
+    parked_brake: bool,
+    none_in_flight: bool,
+    grown: bool,
+    in_window: bool,
+}
+
 /// After this many fruitless turns the tabu has had every chance to work and
 /// has not: whatever the unit is trying to reach, it cannot. Standing it down
 /// is strictly better than another lap — it fortifies, heals, and stops
@@ -2484,6 +2496,30 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `campus-before-the-army`.
     pub(crate) campus_before_the_army: bool,
+    /// `campus_before_the_army`'s Campus and Library behind the Monument and
+    /// the capital Settler, and never while this city's Settler step would
+    /// train a Settler (`settler_due`), so they displace only the military
+    /// floor and what follows it. Version 1 stood ahead of all three. Live
+    /// King 2026-10-03T113755Z, its first game, held 3 cities from t42 to
+    /// t100 against a target of 10, with its first Settler at t88, while
+    /// Campuses, Libraries, Theaters, Builders and ships took the queues. 16 domination pairs
+    /// (seeds 37150000) bought +1.44 techs at t100 (z +2.98) and +1.0
+    /// Library (z +3.30), and paid 4.8 citizens (z -3.19), 0.62 civics
+    /// (z -2.82) and 5.8 Culture (z -2.33): the culture and civics
+    /// `monument-first` buys, and the capital's walkers.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `campus-before-the-army-2`.
+    pub(crate) campus_before_the_army_2: bool,
+    /// The navy step (`naval < desired_navy`) waits while this city's
+    /// Settler step would train a Settler (`settler_due`). It stands ahead of
+    /// the Settler step, so at three cities against a target of ten live King
+    /// 2026-10-03T113755Z built two Galleys and two Quadriremes from t80 to
+    /// t89 in Cartagena, its first Settlers coming at t88. A replay with
+    /// `campus-before-the-army-2` still trained Galleys and a Quadrireme at
+    /// t52, t75 and t80 where the walkers were due.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `settler-before-the-navy`.
+    pub(crate) settler_before_the_navy: bool,
     /// A standing district's first building before the city opens another
     /// district. This governor tried every district the city still lacked
     /// before any building, so a district stood without the building that
@@ -5236,6 +5272,8 @@ impl BasicAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             campus_before_the_army: false,
+            campus_before_the_army_2: false,
+            settler_before_the_navy: false,
             district_buildings_first: false,
             capital_library_first: false,
             culture_defense_theater: false,
@@ -5708,6 +5746,8 @@ impl BasicAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             campus_before_the_army: false,
+            campus_before_the_army_2: false,
+            settler_before_the_navy: false,
             district_buildings_first: false,
             capital_library_first: false,
             culture_defense_theater: false,
@@ -12254,6 +12294,16 @@ impl BasicAi {
         } else {
             self.w.mil_per_city * n_cities as f64
         };
+        if self.campus_before_the_army_2
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(item) = Self::campus_before_the_army_item(g, pid, cid, n_cities) {
+                return Some(item);
+            }
+        }
         // ★★★★★ THE FLOOR IS A HEADCOUNT AND CANNOT SEE A MISSING ARM.
         //
         // `military_floor` is `mil_per_city * n_cities`. It counts bodies and
@@ -12444,7 +12494,13 @@ impl BasicAi {
             }
         }
         let naval = Self::naval_counts(g, pid).0;
-        if can_add_military && naval < Self::desired_navy(g, pid) {
+        if can_add_military
+            && naval < Self::desired_navy(g, pid)
+            && !(self.settler_before_the_navy
+                && !self.minor
+                && !self.barb
+                && self.settler_due(g, pid, cid, n_cities, settlers))
+        {
             if let Some(unit) = self.best_naval_unit(g, pid, cid) {
                 return Some(Item::Unit {
                     unit: Name::new(&unit),
@@ -12484,53 +12540,15 @@ impl BasicAi {
             // ones. The cap on how many cities the empire is still trying to
             // reach must not move; only the "one at a time" serialisation is
             // discounted. See `stranded_settlers`.
-            let room = ((n_cities + settlers) as f64) < self.w.city_target;
-            let stranded = self.stranded_settlers(g, pid);
-            // ★★★★ ONE SETTLER AT A TIME IS THE PACE OF THE WHOLE EMPIRE. On the
-            // live Civilization VI seat the cities of run civvis-20260815T210845Z
-            // were founded at t2/19/45/58/78 and "a settler is already in flight"
-            // was the refusal on t19, t42, t43 and t47 — a two-city empire with
-            // pop to spare and land open, waiting on one walker. Under
-            // `parallel_settlers` a second Settler may start once the empire
-            // holds two cities and is still at least two short of its target;
-            // the target stays the hard cap and every other gate below is
-            // unchanged.
-            // ★★★★ AND UNDER THE LAND GRAB THE PIPELINE WIDENS WITH THE
-            // EMPIRE: two walkers from the first city, one more per three
-            // cities, never more than the seats still short. See `land_grab`
-            // and `AdvancedAi::settler_in_flight_allowed`, which opens the
-            // same width for the strategic governor.
-            let pipeline = self.settler_pipeline_width(g, n_cities, settlers);
-            // ★★★★ A PARKED SETTLER HOLDS THE PIPELINE, IT DOES NOT OPEN IT.
-            // `stranded-settler-discount` above subtracts a Settler idle
-            // twelve turns so its replacement may start — and the replacement
-            // refuses the same sites. See `settler_backlog_brake`.
-            let v1_scope =
-                self.settler_backlog_brake && n_cities >= Self::SETTLER_BACKLOG_MIN_CITIES;
-            let v2_scope =
-                self.settler_backlog_brake_2 && n_cities >= Self::SETTLER_BACKLOG_V2_MIN_CITIES;
-            let parked = if v1_scope || v2_scope {
-                self.parked_settlers(g, pid, Self::SETTLER_BACKLOG_IDLE_TURNS)
-            } else {
-                0
-            };
-            let parked_brake = (v1_scope || v2_scope) && parked > 0;
-            let none_in_flight = !parked_brake && settlers.saturating_sub(stranded) < pipeline;
-            // ★★★★ THE HOST'S FLOOR, NOT THE GENOME'S. See `host_settler_pop`:
-            // Civilization VI starts a Settler at population 2, and the live
-            // genome's 2.456 held a food-poor capital at one city for forty
-            // turns waiting for population 3.
-            let settler_min_pop = if self.host_settler_pop || self.rapid_city_expansion_2 {
-                self.w.settler_min_pop.min(HOST_SETTLER_MIN_POP)
-            } else {
-                self.w.settler_min_pop
-            };
-            let grown = (city_pop as f64) >= settler_min_pop;
-            // ★★★★ THE LAND GRAB SETTLES UNTIL A SETTLER CAN NO LONGER
-            // REPAY, not until the genome's turn. See `land_grab`.
-            let in_window = (g.turn as f64) < self.w.settler_stop_turn
-                || ((self.land_grab || self.rapid_city_expansion_2)
-                    && g.turn + g.standard_duration(LAND_GRAB_SETTLE_HORIZON) < g.max_turns);
+            let SettlerGates {
+                room,
+                stranded,
+                pipeline,
+                parked_brake,
+                none_in_flight,
+                grown,
+                in_window,
+            } = self.settler_gates(g, pid, city_pop, n_cities, settlers);
             if room && none_in_flight && grown && in_window {
                 if self.has_practical_settle_site(g, pid) {
                     return Some(Item::Unit {
@@ -14409,6 +14427,91 @@ impl BasicAi {
             g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
         });
         (turns <= Self::FIRST_CAMPUS_MAX_TURNS).then_some(item)
+    }
+
+    /// The gates of the delegated governor's Settler step, shared with the
+    /// steps that must yield to it (`campus_before_the_army_2`).
+    fn settler_gates(
+        &self,
+        g: &Game,
+        pid: usize,
+        city_pop: i32,
+        n_cities: usize,
+        settlers: usize,
+    ) -> SettlerGates {
+        let room = ((n_cities + settlers) as f64) < self.w.city_target;
+        let stranded = self.stranded_settlers(g, pid);
+        // ★★★★ ONE SETTLER AT A TIME IS THE PACE OF THE WHOLE EMPIRE. On the
+        // live Civilization VI seat the cities of run civvis-20260815T210845Z
+        // were founded at t2/19/45/58/78 and "a settler is already in flight"
+        // was the refusal on t19, t42, t43 and t47 — a two-city empire with
+        // pop to spare and land open, waiting on one walker. Under
+        // `parallel_settlers` a second Settler may start once the empire
+        // holds two cities and is still at least two short of its target;
+        // the target stays the hard cap and every other gate below is
+        // unchanged.
+        // ★★★★ AND UNDER THE LAND GRAB THE PIPELINE WIDENS WITH THE
+        // EMPIRE: two walkers from the first city, one more per three
+        // cities, never more than the seats still short. See `land_grab`
+        // and `AdvancedAi::settler_in_flight_allowed`, which opens the
+        // same width for the strategic governor.
+        let pipeline = self.settler_pipeline_width(g, n_cities, settlers);
+        // ★★★★ A PARKED SETTLER HOLDS THE PIPELINE, IT DOES NOT OPEN IT.
+        // `stranded-settler-discount` above subtracts a Settler idle
+        // twelve turns so its replacement may start — and the replacement
+        // refuses the same sites. See `settler_backlog_brake`.
+        let v1_scope =
+            self.settler_backlog_brake && n_cities >= Self::SETTLER_BACKLOG_MIN_CITIES;
+        let v2_scope =
+            self.settler_backlog_brake_2 && n_cities >= Self::SETTLER_BACKLOG_V2_MIN_CITIES;
+        let parked = if v1_scope || v2_scope {
+            self.parked_settlers(g, pid, Self::SETTLER_BACKLOG_IDLE_TURNS)
+        } else {
+            0
+        };
+        let parked_brake = (v1_scope || v2_scope) && parked > 0;
+        let none_in_flight = !parked_brake && settlers.saturating_sub(stranded) < pipeline;
+        // ★★★★ THE HOST'S FLOOR, NOT THE GENOME'S. See `host_settler_pop`:
+        // Civilization VI starts a Settler at population 2, and the live
+        // genome's 2.456 held a food-poor capital at one city for forty
+        // turns waiting for population 3.
+        let settler_min_pop = if self.host_settler_pop || self.rapid_city_expansion_2 {
+            self.w.settler_min_pop.min(HOST_SETTLER_MIN_POP)
+        } else {
+            self.w.settler_min_pop
+        };
+        let grown = (city_pop as f64) >= settler_min_pop;
+        // ★★★★ THE LAND GRAB SETTLES UNTIL A SETTLER CAN NO LONGER
+        // REPAY, not until the genome's turn. See `land_grab`.
+        let in_window = (g.turn as f64) < self.w.settler_stop_turn
+            || ((self.land_grab || self.rapid_city_expansion_2)
+                && g.turn + g.standard_duration(LAND_GRAB_SETTLE_HORIZON) < g.max_turns);
+        SettlerGates {
+            room,
+            stranded,
+            pipeline,
+            parked_brake,
+            none_in_flight,
+            grown,
+            in_window,
+        }
+    }
+
+    /// Whether the Settler step would train a Settler in this city now.
+    pub(crate) fn settler_due(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        settlers: usize,
+    ) -> bool {
+        let gates = self.settler_gates(g, pid, g.cities[&cid].pop, n_cities, settlers);
+        gates.room
+            && gates.none_in_flight
+            && gates.grown
+            && gates.in_window
+            && self.has_practical_settle_site(g, pid)
     }
 
     /// See `campus_before_the_army`: this city's first Campus, else the
@@ -22456,6 +22559,40 @@ mod tests {
         (game, cid)
     }
 
+    /// See `settler_before_the_navy`: a coastal city due a Settler trains it
+    /// where the stock navy step would launch a ship.
+    #[test]
+    fn a_due_settler_comes_before_the_navy() {
+        let (mut game, cid) = founded_capital_fixture("SETTLERNAVY", 91_851);
+        game.cities.get_mut(&cid).unwrap().pop = 4;
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("sailing"));
+        let shore = game.nbrs(game.cities[&cid].pos)[0];
+        let tile = game.map.tiles.get_mut(&shore).unwrap();
+        tile.terrain = crate::name!("coast");
+        tile.feature = None;
+        assert!(BasicAi::city_is_coastal(&game, cid));
+        assert!(BasicAi::desired_navy(&game, 0) > 0, "the fixture wants a ship");
+        let pick = |on: bool, settlers: usize| {
+            let mut ai = BasicAi::new();
+            ai.settler_before_the_navy = on;
+            // A standing army well over the floor, so the navy step is reached.
+            ai.pick_item(&game, 0, cid, 3, settlers, 3, 1, 0, 30, 15, 15)
+        };
+        let stock = pick(false, 0);
+        assert!(BasicAi::new().settler_due(&game, 0, cid, 3, 0), "the fixture is due a Settler");
+        let is_ship = |item: &Option<Item>| matches!(item, Some(Item::Unit { unit })
+            if game.rules.units.get(unit).is_some_and(|spec| spec.domain.as_deref() == Some("sea")));
+        assert!(is_ship(&stock), "the fixture's stock pick launches a ship: {stock:?}");
+        assert_eq!(
+            pick(true, 0),
+            Some(Item::Unit { unit: crate::name!("settler") }),
+            "the due Settler comes first"
+        );
+        assert_eq!(pick(true, 1), pick(false, 1), "a Settler on the road leaves the navy step alone");
+    }
+
     /// See `campus_before_the_army`: a city without a Campus opens one where
     /// the stock governor fills the military floor, from three cities on.
     #[test]
@@ -22483,6 +22620,16 @@ mod tests {
         assert!(!is_campus(&stock), "the fixture's stock pick is not the Campus: {stock:?}");
         assert!(is_campus(&pick(&game, true, 3)), "{:?}", pick(&game, true, 3));
         assert_eq!(pick(&game, true, 2), pick(&game, false, 2), "two cities keep the stock choice");
+        let second = |game: &Game, settlers: usize| {
+            let mut ai = BasicAi::new();
+            ai.campus_before_the_army_2 = true;
+            ai.pick_item(game, 0, cid, 3, settlers, 3, 1, 0, 0, 0, 0)
+        };
+        let stock_ai = BasicAi::new();
+        assert!(!stock_ai.settler_due(&game, 0, cid, 3, 1), "a Settler on the road fills the pipeline");
+        assert!(is_campus(&second(&game, 1)), "version 2 takes the floor's build");
+        assert!(stock_ai.settler_due(&game, 0, cid, 3, 0), "the fixture is due a Settler");
+        assert!(!is_campus(&second(&game, 0)), "version 2 yields to a due Settler");
         // With the Campus standing, the Library comes next.
         let site = match BasicAi::first_campus_item(&game, 0, cid) {
             Some(Item::District { pos, .. }) => pos,

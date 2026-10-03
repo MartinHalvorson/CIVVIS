@@ -4794,6 +4794,7 @@ impl AdvancedAi {
     /// See `BasicAi::campus_before_the_army`: a city's first Campus ahead of
     /// the military floor and the capital Settler.
     pub fn enable_campus_before_the_army(&mut self) {
+        self.disable_campus_before_the_army_2();
         self.campus_before_the_army = true;
         self.base.campus_before_the_army = true;
     }
@@ -4802,6 +4803,34 @@ impl AdvancedAi {
     pub fn disable_campus_before_the_army(&mut self) {
         self.campus_before_the_army = false;
         self.base.campus_before_the_army = false;
+    }
+
+    /// See `BasicAi::campus_before_the_army_2`: version 1's Campus and Library
+    /// behind the Monument and the capital Settler, ahead of the military
+    /// floor only. Exclusive with version 1.
+    pub fn enable_campus_before_the_army_2(&mut self) {
+        self.disable_campus_before_the_army();
+        self.campus_before_the_army_2 = true;
+        self.base.campus_before_the_army_2 = true;
+    }
+
+    /// The twin of `enable_campus_before_the_army_2`.
+    pub fn disable_campus_before_the_army_2(&mut self) {
+        self.campus_before_the_army_2 = false;
+        self.base.campus_before_the_army_2 = false;
+    }
+
+    /// See `BasicAi::settler_before_the_navy`: the navy step yields to a due
+    /// Settler.
+    pub fn enable_settler_before_the_navy(&mut self) {
+        self.settler_before_the_navy = true;
+        self.base.settler_before_the_navy = true;
+    }
+
+    /// The twin of `enable_settler_before_the_navy`.
+    pub fn disable_settler_before_the_navy(&mut self) {
+        self.settler_before_the_navy = false;
+        self.base.settler_before_the_navy = false;
     }
 
     // ---- append: a-b ------------------------------------------------

@@ -54,7 +54,7 @@ fn queued_theater(g: &Game, cid: u32) -> bool {
 
 /// The reservation claims the idle Campus city while Culture trails, and
 /// leaves it alone while the gene is off, the empire is in economic recovery,
-/// or the city has no Campus yet.
+/// the city has no Campus yet, or the city is due a Settler.
 #[test]
 fn a_trailing_empire_reserves_a_theater_ahead_of_the_delegated_governor() {
     let (mut g, cid, plan) = board();
@@ -69,6 +69,12 @@ fn a_trailing_empire_reserves_a_theater_ahead_of_the_delegated_governor() {
     broke.players[0].gold_per_turn = -6.0;
     ai.reserve_culture_defense_theater(&mut broke, 0, &plan);
     assert!(broke.cities[&cid].queue.is_empty(), "economic recovery holds it");
+
+    let mut due = g.clone();
+    ai.reserve_culture_defense_theater(&mut due, 0, &plan);
+    assert!(due.cities[&cid].queue.is_empty(), "a city due a Settler keeps it");
+    // At its city target the empire sends no Settler.
+    ai.base.w.city_target = 1.0;
 
     let mut no_campus = g.clone();
     no_campus.cities.get_mut(&cid).unwrap().districts.remove(&crate::name!("campus"));
