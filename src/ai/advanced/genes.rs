@@ -2459,6 +2459,10 @@ pub const GENES: &[Gene] = &[
     // Live King 093332Z held zero Builders from t54 to t93; see
     // `BasicAi::builder_before_the_army`.
     Gene { tag: "builder-before-the-army", field: "builder_before_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_before_the_army, disable: AdvancedAi::disable_builder_before_the_army },
+    Gene { tag: "builder-before-the-army-2", field: "builder_before_the_army_2", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_before_the_army_2, disable: AdvancedAi::disable_builder_before_the_army_2 },
+    // Live King 103619Z: 5 of 6 cities without a Campus from t70 to t120;
+    // see `BasicAi::campus_before_the_army`.
+    Gene { tag: "campus-before-the-army", field: "campus_before_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_the_army, disable: AdvancedAi::disable_campus_before_the_army },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

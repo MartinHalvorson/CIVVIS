@@ -2145,6 +2145,15 @@
           "border-parity-3": null
         }
       },
+      "builder-before-the-army": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "builder-before-the-army": null,
+          "builder-before-the-army-2": null
+        }
+      },
       "builder-workforce-recovery": {
         "rule_on": [
           "builder-workforce-recovery-2"

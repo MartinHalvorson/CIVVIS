@@ -4766,6 +4766,7 @@ impl AdvancedAi {
     /// See `BasicAi::builder_before_the_army`: the delegated city governor's
     /// Builder quota ahead of the Monument, the Settler and the military floor.
     pub fn enable_builder_before_the_army(&mut self) {
+        self.disable_builder_before_the_army_2();
         self.builder_before_the_army = true;
         self.base.builder_before_the_army = true;
     }
@@ -4774,6 +4775,33 @@ impl AdvancedAi {
     pub fn disable_builder_before_the_army(&mut self) {
         self.builder_before_the_army = false;
         self.base.builder_before_the_army = false;
+    }
+
+    /// See `BasicAi::builder_before_the_army_2`: version 1's step, only while
+    /// the empire has no Builder standing or queued. Exclusive with version 1.
+    pub fn enable_builder_before_the_army_2(&mut self) {
+        self.disable_builder_before_the_army();
+        self.builder_before_the_army_2 = true;
+        self.base.builder_before_the_army_2 = true;
+    }
+
+    /// The twin of `enable_builder_before_the_army_2`.
+    pub fn disable_builder_before_the_army_2(&mut self) {
+        self.builder_before_the_army_2 = false;
+        self.base.builder_before_the_army_2 = false;
+    }
+
+    /// See `BasicAi::campus_before_the_army`: a city's first Campus ahead of
+    /// the military floor and the capital Settler.
+    pub fn enable_campus_before_the_army(&mut self) {
+        self.campus_before_the_army = true;
+        self.base.campus_before_the_army = true;
+    }
+
+    /// The twin of `enable_campus_before_the_army`.
+    pub fn disable_campus_before_the_army(&mut self) {
+        self.campus_before_the_army = false;
+        self.base.campus_before_the_army = false;
     }
 
     // ---- append: a-b ------------------------------------------------
