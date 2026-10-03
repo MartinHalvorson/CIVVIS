@@ -6724,6 +6724,10 @@ pub struct AdvancedAi {
     /// down falls back to Stage only under `HELD_BREACH_ABORT_SHARE` of the
     /// bill. See `siege_train::HELD_BREACH_WALL_SHARE`. Off by default.
     siege_holds_a_breach: bool,
+    /// `siege-ranged-floor`: a Siege row asks for
+    /// `objective_board::SIEGE_RANGED_FLOOR` ranged bodies whatever its bill,
+    /// so the city's own hit points and heal are paid for. Off by default.
+    siege_ranged_floor: bool,
     /// `siege-rally-holds`: a siege task force keeps its staging rally across
     /// turns unless a fresh pick is clearly better. See
     /// `AdvancedAi::held_siege_rally`. Off by default.
@@ -8777,6 +8781,7 @@ impl AdvancedAi {
 
             // ---- append: s-s ----------------------------------------
             siege_holds_a_breach: false,
+            siege_ranged_floor: false,
             siege_rally_holds: false,
             siege_train_scales_with_walls: false,
             strategic_deposit_prey: false,

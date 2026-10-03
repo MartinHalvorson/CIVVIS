@@ -4814,6 +4814,16 @@ impl AdvancedAi {
         self.siege_holds_a_breach = false;
     }
 
+    /// Opt-in gene `siege-ranged-floor`; see [`Self::siege_ranged_floor`].
+    pub fn enable_siege_ranged_floor(&mut self) {
+        self.siege_ranged_floor = true;
+    }
+
+    /// The twin of `enable_siege_ranged_floor`.
+    pub fn disable_siege_ranged_floor(&mut self) {
+        self.siege_ranged_floor = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

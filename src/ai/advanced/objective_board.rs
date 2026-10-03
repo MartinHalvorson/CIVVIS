@@ -100,6 +100,16 @@ const SIEGE_RALLY_SWITCH_MARGIN: i32 = 2;
 pub const DEFEND_MARGIN: f64 = 1.2;
 /// A Siege row's requirement is the campaign bill times this.
 pub const SIEGE_MARGIN: f64 = 1.25;
+/// `siege-ranged-floor`: the ranged bodies a Siege row asks for whatever its
+/// bill. The bill prices the defenders, not the city: live King
+/// 2026-10-03T115745Z sieged unwalled Pest on a bill of 31-79 with two to
+/// four bodies while ten held in reserve at home, landed one Archer shot a
+/// turn (11-14 damage, below the city's heal), and Pest walled at turn 78
+/// with the city at 183 of 200. Three shooters out-damage the heal.
+pub const SIEGE_RANGED_FLOOR: usize = 3;
+/// `siege-ranged-floor`: the field bodies a Siege row asks for, the shooters
+/// and a melee taker with a spare.
+pub const SIEGE_BODY_FLOOR: usize = 5;
 /// A camp's requirement is its guard's strength times this.
 pub const CAMP_MARGIN: f64 = 1.5;
 /// A Destroy row's requirement is the hostile force's strength times this.
@@ -876,12 +886,17 @@ impl AdvancedAi {
             Self::campaign_strength_of(g, &army) / army.len() as f64
         };
         let bill = self.campaign_city_requirement(g, pid, cid, &appraisal, average_body);
+        let (ranged, bodies) = if self.siege_ranged_floor {
+            (SIEGE_RANGED_FLOOR, SIEGE_BODY_FLOOR)
+        } else {
+            (0, 0)
+        };
         ForceNeed {
             strength: bill.strength * SIEGE_MARGIN,
             melee: 1,
-            ranged: 0,
+            ranged,
             siege: usize::from(city.wall_hp > 0),
-            bodies: 0,
+            bodies,
         }
     }
 
@@ -1722,6 +1737,19 @@ impl AdvancedAi {
             if let Some(index) =
                 self.campaign_surplus_force(g, pid, &rows, &mut forces, &facts, &mut next_id)
             {
+                // Last turn's Reserve members are seeded into `assignment`
+                // with the Reserve's index, as the leftovers pass below
+                // records; they are the surplus, not taken bodies. Live King
+                // civvis-20261003T115745Z declared on Hungary at turn 72 with
+                // the army already sitting in the Reserve from peacetime: the
+                // Siege of Pest held two to four bodies while seven to eight
+                // stayed home, and only a fresh board (every replay, and the
+                // test above) moved them.
+                let reserve_seeded = |uid: &u32| {
+                    assignment.get(uid).is_none_or(|index| {
+                        forces[*index].objective_key == ObjectiveKey::Reserve
+                    })
+                };
                 let mut surplus: Vec<u32> = pool
                     .iter()
                     .copied()
@@ -1730,7 +1758,7 @@ impl AdvancedAi {
                         unit.domain == ForceDomain::Land
                             && !unit.recon
                             && unit.strength >= CAMPAIGN_SURPLUS_MIN_STRENGTH
-                            && !assignment.contains_key(uid)
+                            && reserve_seeded(uid)
                     })
                     .collect();
                 surplus.sort_by_key(|uid| (g.wdist(facts[uid].pos, reserve_at), *uid));
@@ -3005,6 +3033,33 @@ mod tests {
         }
     }
 
+    /// The surplus is found on a persistent board too: an army that sat in
+    /// the peacetime Reserve joins the siege when the war opens, not only one
+    /// a fresh board allocates.
+    #[test]
+    fn a_peacetime_reserve_joins_the_siege_when_the_war_opens() {
+        let mut g = flat_board(91_640, &[at(6, 8), at(30, 8)], false);
+        let target = city_of(&g, 1, at(30, 8));
+        let ours: Vec<u32> = (0..8)
+            .map(|index| spawn(&mut g, "warrior", 0, at(8 + index % 4, 7 + index / 4)))
+            .collect();
+        let plan = conquest(&g, Some(target));
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_objective_board();
+        ai.battlefront_observation = false;
+        ai.rebuild_force_groups(&g, 0, &plan);
+        let reserve = force_for(&ai, ObjectiveKey::Reserve).map_or(0, |f| f.units.len());
+        assert!(reserve > CAMPAIGN_SURPLUS_HOME_KEEP, "peace keeps the army home: {reserve}");
+
+        war(&mut g, 0, 1);
+        g.turn += 1;
+        ai.rebuild_force_groups(&g, 0, &plan);
+        let siege = force_for(&ai, ObjectiveKey::Siege(target)).map_or(0, |f| f.units.len());
+        let reserve = force_for(&ai, ObjectiveKey::Reserve).map_or(0, |f| f.units.len());
+        assert_eq!(reserve, CAMPAIGN_SURPLUS_HOME_KEEP, "two stay home");
+        assert_eq!(siege, ours.len() - CAMPAIGN_SURPLUS_HOME_KEEP, "the rest march");
+    }
+
     /// A Siege row asks the campaign's own bill times the margin, with a
     /// melee taker and siege while the walls stand.
     #[test]
@@ -3037,6 +3092,23 @@ mod tests {
             .force_groups
             .iter()
             .any(|group| group.objective == g.cities[&target].pos));
+    }
+
+    /// `siege-ranged-floor`: the Siege row asks three shooters and five
+    /// bodies whatever its bill; off, the shipped requirement stands.
+    #[test]
+    fn the_ranged_floor_asks_three_shooters_of_a_siege() {
+        let mut g = flat_board(9, &[at(6, 8), at(20, 8)], false);
+        war(&mut g, 0, 1);
+        let target = city_of(&g, 1, at(20, 8));
+        let mut ai = on();
+        assert_eq!(ai.siege_requirement(&g, 0, target).ranged, 0);
+        assert_eq!(ai.siege_requirement(&g, 0, target).bodies, 0);
+        ai.enable_siege_ranged_floor();
+        let need = ai.siege_requirement(&g, 0, target);
+        assert_eq!(need.ranged, SIEGE_RANGED_FLOOR);
+        assert_eq!(need.bodies, SIEGE_BODY_FLOOR);
+        assert_eq!(need.melee, 1, "the taker stays");
     }
 
     /// A Defend whose deadline is inside the relief time outranks a Siege of

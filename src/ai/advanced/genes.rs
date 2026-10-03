@@ -2467,6 +2467,10 @@ pub const GENES: &[Gene] = &[
     // they stood at 400 again eight turns later. See
     // `siege_train::HELD_BREACH_WALL_SHARE`.
     Gene { tag: "siege-holds-a-breach", field: "siege_holds_a_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_holds_a_breach, disable: AdvancedAi::disable_siege_holds_a_breach },
+    // Live King 115745Z sieged unwalled Pest with one Archer shot a turn
+    // while ten bodies held in reserve; the city walled at turn 78. See
+    // `objective_board::SIEGE_RANGED_FLOOR`.
+    Gene { tag: "siege-ranged-floor", field: "siege_ranged_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_ranged_floor, disable: AdvancedAi::disable_siege_ranged_floor },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
