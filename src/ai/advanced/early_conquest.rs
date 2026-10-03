@@ -1766,6 +1766,18 @@ impl AdvancedAi {
         if !g.is_at_war(pid, target) || self.peace_offers.contains(&target) {
             return;
         }
+        // A captured original capital that is bleeding Loyalty is kept by the
+        // war that finds the cities feeding the pressure, not by a treaty that
+        // leaves them standing. Live King 2026-10-03T135713Z took Ondini at
+        // turn 57 at 33 Loyalty and -17 a turn, sued for terms the same turn,
+        // and the Zulu held it again by turn 71. See
+        // `holds_bleeding_capital_of`.
+        if self.holds_bleeding_capital_of(g, pid, target) {
+            think!(self.journal(), Military, Strategy,
+                   "Keeping the war on {}", g.players[target].civ;
+                   "we hold their original capital and its Loyalty is falling");
+            return;
+        }
         let pending = g.pending_deals.iter().any(|deal| {
             deal.peace
                 && ((deal.from == pid && deal.to == target)

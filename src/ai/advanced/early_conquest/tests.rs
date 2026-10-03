@@ -1325,7 +1325,7 @@ fn a_live_opening_reserves_the_capital_before_the_scripted_settler() {
     game.players[0].gold = 0.0;
     game.players[0].gold_per_turn = 10.0;
     let mut ai = opened(&mut game);
-    ai.victory_target = Some(VictoryTarget::Domination);
+    ai.victory_target = Some(crate::ai::VictoryTarget::Domination);
     ai.base.book_pos = 1;
     ai.enable_rapid_city_expansion_2();
     let mut control = ai.clone();
@@ -1897,5 +1897,28 @@ fn a_rival_with_cities_in_the_fog_keeps_its_war_after_the_capture() {
             !counted,
             "terms only when nothing of theirs is left on the record (counted {counted})"
         );
+    }
+}
+
+/// A captured original capital bleeding Loyalty keeps the opening's war: the
+/// close after the capture hands over without terms. A rising capital lets
+/// the shipped close ask for them.
+#[test]
+fn a_bleeding_captured_capital_is_not_traded_for_terms() {
+    for (rate, sues) in [(-17.0, false), (4.0, true)] {
+        let mut game = board(&[at(6, 12), at(14, 12)]);
+        let mut ai = opened(&mut game);
+        ai.victory_target = Some(crate::ai::VictoryTarget::Domination);
+        let city = game.player_city_ids(1)[0];
+        assert!(game.cities[&city].is_capital);
+        let rally = ai.conquest_opening.as_ref().unwrap().rally;
+        bodies(&mut game, 0, "warrior", rally, 1, CONQUEST_RANGED + CONQUEST_MELEE);
+        ai.maintain_conquest_opening(&mut game, 0);
+        assert!(ai.conquest_declaration(&mut game, 0));
+        game.cities.get_mut(&city).unwrap().owner = 0;
+        std::sync::Arc::make_mut(&mut game.observed_city_loyalty_per_turn).insert(city, rate);
+        ai.maintain_conquest_opening(&mut game, 0);
+        assert!(ai.conquest_opening.is_none(), "the opening hands over");
+        assert_eq!(ai.peace_offers.contains(&1), sues, "loyalty {rate}");
     }
 }
