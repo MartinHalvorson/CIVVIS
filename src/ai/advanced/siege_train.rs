@@ -1619,7 +1619,7 @@ impl AdvancedAi {
         let range = g.unit_attack_range(uid).max(1);
         let distance = g.wdist(unit.pos, city.pos);
         let can_fire = unit.moves_left > 0.0
-            && !(unit.moved && g.promotion_effect(&unit, "attack_after_move") == 0.0);
+            && !(unit.moved && !g.siege_may_attack_after_moving(&unit));
         if distance <= range && can_fire {
             if let Some(acted) = self.reliever_kill_shot(g, pid, uid, city) {
                 return acted;
@@ -1953,7 +1953,7 @@ impl AdvancedAi {
                 spec.siege,
             )
         };
-        if ranged && siege && unit.moved && g.promotion_effect(&unit, "attack_after_move") == 0.0 {
+        if ranged && siege && unit.moved && !g.siege_may_attack_after_moving(&unit) {
             return None;
         }
         let radius = if ranged {
