@@ -1280,6 +1280,55 @@ impl AdvancedAi {
         })
     }
 
+    /// `siege-needs-a-breaker`: whether the siege train for `cid` is
+    /// gathering on its staging ring — its record in Stage, assessed this
+    /// turn or the last, for at most [`BREAKER_WAIT_TURNS`] standard turns,
+    /// with a land soldier of ours within [`STAGING_FAR`]. Stage holds the
+    /// train three to five tiles out until the staged strength meets the bill
+    /// and the damage budget is ready, so the capture ledger read it as
+    /// "nobody went" (no one within `CAPTURE_PRESENCE_RADIUS`) or, counted
+    /// present, as "not winning". Live King civvis-20261003T162445Z
+    /// (game 42r): Cairo, undefended, its train 126 strength near against a
+    /// bill of 158 with a Bombard on the ring, was stood down at turn 114
+    /// as "the objective nobody went to".
+    pub(super) fn siege_mustering(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        if !self.siege_needs_a_breaker {
+            return false;
+        }
+        let (Some(siege), Some(city)) = (self.sieges.get(&cid), g.cities.get(&cid)) else {
+            return false;
+        };
+        siege.stage == SiegeStage::Stage
+            && g.turn.saturating_sub(siege.assessed) <= 1
+            && g.turn.saturating_sub(siege.entered) <= g.standard_duration(BREAKER_WAIT_TURNS)
+            && g.units.values().any(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                unit.owner == pid
+                    && spec.class == "military"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && g.wdist(unit.pos, city.pos) <= STAGING_FAR
+            })
+    }
+
+    /// `siege-needs-a-breaker`: why the capture of `cid` is waiting on its
+    /// own train this turn, if it is — a breaker on its way, or the train
+    /// gathering on its staging ring. The commitment ledger counts such a
+    /// turn as neither forgotten nor stalled.
+    pub(super) fn capture_waits_on_the_train(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> Option<&'static str> {
+        if self.waiting_for_a_breaker(g, pid, cid) {
+            Some("for a wall-breaker on its way")
+        } else if self.siege_mustering(g, pid, cid) {
+            Some("while its siege train gathers on the staging ring")
+        } else {
+            None
+        }
+    }
+
     /// `siege-needs-a-breaker`: what the train holds within the staging ring
     /// that can bring the walls down. See [`BreachReading`].
     fn breach_reading(&self, g: &Game, pid: usize, city: &CityView, force: &[u32]) -> BreachReading {
