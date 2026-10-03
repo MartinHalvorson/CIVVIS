@@ -4323,3 +4323,19 @@ class PollCadenceKeepsItsWallClock(unittest.TestCase):
         self.assertIn(f"cfg.OrdersWaitPolls or {civ6_play.ORDERS_WAIT_POLLS})", lua)
         self.assertIn(f"cfg.OrdersFallbackPolls or {civ6_play.ORDERS_FALLBACK_POLLS})", lua)
         self.assertIn(f"tonumber(cfg.CombatFramePolls) or {civ6_play.COMBAT_FRAME_POLLS})", lua)
+
+
+class StallMainMenuTests(unittest.TestCase):
+    """A stall photographed on the main menu ends the attempt at once."""
+
+    def test_the_main_menu_is_read_from_the_stall_photograph(self) -> None:
+        shot = Path("/tmp/stalled-1.png")
+        with mock.patch.object(civ6_play, "_menu_ocr_observations",
+                               return_value=[{"text": "Single Player"},
+                                             {"text": "Multiplayer"}]):
+            self.assertTrue(civ6_play.stall_screen_is_main_menu(shot))
+        with mock.patch.object(civ6_play, "_menu_ocr_observations",
+                               return_value=[{"text": "Next Turn"}]):
+            self.assertFalse(civ6_play.stall_screen_is_main_menu(shot))
+        with mock.patch.object(civ6_play, "_menu_ocr_observations", return_value=[]):
+            self.assertFalse(civ6_play.stall_screen_is_main_menu(shot))

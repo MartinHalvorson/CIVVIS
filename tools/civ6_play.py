@@ -2723,6 +2723,20 @@ def _main_menu_visible(path: Path) -> bool:
     )
 
 
+def stall_screen_is_main_menu(shot: Path) -> bool:
+    """Whether a stall's photograph shows Firaxis's main menu.
+
+    A stalled run whose screen is the main menu has lost its game session, so
+    no dialogue rescue can bring the turn back. Live King
+    civvis-20261003T161112Z loaded turn 1 at 16:13:47Z, then sat on the main
+    menu while the agent awaited it for ten minutes, until the climb's frozen
+    clock would have killed it at fifteen. Ending the attempt on the first
+    photograph hands it straight to the climb, which restarts a game frozen
+    before turn 20 and reloads the newest autosave of a later one.
+    """
+    return _main_menu_visible(shot)
+
+
 def _menu_ocr_observations(path: Path) -> list[dict]:
     """Return menu OCR observations, treating an unreadable capture as empty.
 
@@ -4993,6 +5007,12 @@ def _play(args: argparse.Namespace) -> int:
         print(f"stalled — photographed to {shot}; rescue attempt {consecutive} "
               f"of {args.stall_rescues} on this screen ({rescues} this run)",
               flush=True)
+        if stall_screen_is_main_menu(shot):
+            print("stalled at Civilization VI's main menu: the game session is "
+                  "gone and no dialogue rescue can recover it; ending the "
+                  "attempt so the climb restarts or reloads it", flush=True)
+            reason = "stalled: main menu"
+            break
         dismiss_leader_dialogue()
         reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                               each_poll=keep_foreground, poll_s=poll_s,
