@@ -686,7 +686,26 @@ impl AdvancedAi {
         self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && (self.one_war_front_crushed(g, pid, other)
                 || self.siege_reducing_a_city_of(g, other)
-                || self.domination_capital_prey(g, pid, other))
+                || self.domination_capital_prey(g, pid, other)
+                || self.holds_bleeding_capital_of(g, pid, other))
+    }
+
+    /// Whether a Domination seat holds `rival`'s original capital while the
+    /// city's Loyalty is falling. A peace then hands the capital back: the
+    /// war is what finds and takes the cities whose pressure is draining it.
+    /// Live King civvis-20261003T135713Z (game 38) took Ondini, the Zulu
+    /// capital, at turn 57 at 33 Loyalty and -17 a turn, offered the Zulu
+    /// peace twice the same turn (the opening's "taken every city it knows
+    /// of" with Kwadukuza still in the fog, and the campaign's "has taken its
+    /// 1 city"), and the city was the Zulu's again by turn 71.
+    pub(crate) fn holds_bleeding_capital_of(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.cities.values().any(|city| {
+                city.owner == pid
+                    && city.is_capital
+                    && city.original_owner == rival
+                    && g.city_loyalty_per_turn(city) < 0.0
+            })
     }
 
     /// A rival still holding its own original capital, which Domination
@@ -749,6 +768,7 @@ impl AdvancedAi {
             && !g.emergency_war_pair(pid, other)
             && !self.urgent_victory_threat(g, other)
             && !self.domination_capital_prey(g, pid, other)
+            && !self.holds_bleeding_capital_of(g, pid, other)
             && !self.domination_counter_target(g, pid, other)
             && self.nearest_finish_culture_clock(g, other).is_none()
             // The conquest opening's own war answers to `conquest_peace`, not
