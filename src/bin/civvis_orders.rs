@@ -6398,6 +6398,31 @@ fn combat_evidence(
     })
 }
 
+/// Firaxis can finish an aircraft operation with an anonymous plot defender
+/// (-1/-1), without any defender position, health or infrastructure result.
+/// That own-attacker callback cannot locate this order's effect. Do not turn
+/// missing attribution into either a verified strike or a refusal cooldown.
+fn anonymous_air_combat(evidence: &[serde_json::Value], turn: u32, attacker: i64) -> bool {
+    evidence.iter().any(|event| {
+        event.get("kind").and_then(|v| v.as_str()) == Some("combat")
+            && event.get("turn").and_then(|v| v.as_u64()) == Some(u64::from(turn))
+            && event.get("ours").and_then(|v| v.as_bool()) == Some(true)
+            && event
+                .get("attacker")
+                .and_then(|v| v.get("id"))
+                .and_then(|v| v.as_i64())
+                == Some(attacker)
+            && event.get("defender").is_some_and(|defender| {
+                ["player", "id"].iter().any(|key| {
+                    defender
+                        .get(key)
+                        .and_then(|v| v.as_i64())
+                        .is_some_and(|id| id < 0)
+                })
+            })
+    })
+}
+
 fn deal_answered(evidence: &[serde_json::Value], subject: Option<i64>) -> bool {
     evidence.iter().any(|event| {
         let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
@@ -6612,6 +6637,14 @@ fn verify_unit_order(
             let air_target_harmed = verb == "AIR_ATTACK" && target_damage_observed;
             if exact_combat || (air_target_harmed && refusal.is_none()) {
                 Verdict::Verified
+            } else if verb == "AIR_ATTACK"
+                && refusal.is_none()
+                && anonymous_air_combat(evidence, turn, id)
+            {
+                // No target location or pillage-layer postcondition came back.
+                // This callback proves neither this request's success nor its
+                // failure, even when an older mod labeled (-1/-1) as killed.
+                Verdict::Unverifiable
             } else {
                 // The host's own reason when it gave one; see
                 // `strike_refusal_reason`.
@@ -19642,3 +19675,7 @@ mod air_pillage_tests;
 #[cfg(test)]
 #[path = "civvis_orders/air_sequence_tests.rs"]
 mod air_sequence_tests;
+
+#[cfg(test)]
+#[path = "civvis_orders/air_receipt_tests.rs"]
+mod air_receipt_tests;

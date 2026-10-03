@@ -11228,6 +11228,12 @@ CivvisLedger.describe = function(id)
 	local player = tonumber(try(function() return id.playerID; end, nil));
 	local comp = tonumber(try(function() return id.componentID; end, nil));
 	if player == nil or comp == nil then return nil; end
+	-- Strategic bombing can report an anonymous plot component (-1/-1).
+	-- It never identified a live district/unit, so a failed lookup cannot
+	-- establish its removal. Retain the sentinel, without location or health.
+	if player < 0 or comp < 0 then
+		return { player = player, id = comp, type = "unknown", unresolved = true };
+	end
 	local isUnit = try(function() return id.componentType == ComponentType.UNIT; end, true);
 	if isUnit ~= false then
 		local unit = try(function() return UnitManager.GetUnit(player, comp); end);
