@@ -11,6 +11,13 @@
 //! higher-level investments: one idle, unthreatened city per call, at its
 //! best site, while the empire's Culture trails and fewer than half its
 //! cities hold or have queued one (`BasicAi::culture_defense_theater_item`).
+//!
+//! Only a city that already holds a Campus is claimed. Live King
+//! 2026-10-03T090618Z, the first game with the reservation, claimed Quito at
+//! t48 and the capital at t50, with 3 cities wanting 9 and no Campus anywhere:
+//! a King rival's early Culture is four times ours, so the trailing rule holds
+//! from Drama and Poetry on, while the culture victories it answers come after
+//! t150. The Theater is a later district, never the first.
 
 use super::{AdvancedAi, StrategicPlan};
 use crate::ai::BasicAi;
@@ -38,6 +45,7 @@ impl AdvancedAi {
         for &cid in &city_ids {
             let city = &g.cities[&cid];
             if !city.queue.is_empty()
+                || !g.city_has_district_family(city, crate::name!("campus"))
                 || plan.threatened_city == Some(cid)
                 || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
             {
