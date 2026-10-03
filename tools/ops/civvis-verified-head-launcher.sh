@@ -264,8 +264,8 @@ if [[ -f "$POLICY" ]]; then
         # Validated here, read by the climb itself at every game
         # (`deal_sessions_mode`): the live supervisor that builds the climb's
         # command line runs from a tree the per-game refresh does not update.
-        [[ "$value" == all || "$value" == peace || "$value" == off ]] \
-          || refuse "$POLICY:$lineno CIVVIS_DEAL_SESSIONS='$value' must be all, peace or off" ;;
+        [[ "$value" == all || "$value" == peace || "$value" == trade || "$value" == off ]] \
+          || refuse "$POLICY:$lineno CIVVIS_DEAL_SESSIONS='$value' must be all, peace, trade or off" ;;
       CIVVIS_SCREEN_GENE)
         # One registry tag: the gene a live screen deals each game an arm of
         # (docs/LIVE_SCREEN.md). The climb refuses a tag with no live arm and
