@@ -260,6 +260,12 @@ if [[ -f "$POLICY" ]]; then
       CIVVIS_RESTART_BELOW_LEADER_RATIO)
         [[ "$value" =~ '^(0|1|0?\.[0-9]+|1\.0+)$' ]] \
           || refuse "$POLICY:$lineno $key='$value' must be a ratio from 0 to 1" ;;
+      CIVVIS_DEAL_SESSIONS)
+        # Validated here, read by the climb itself at every game
+        # (`deal_sessions_mode`): the live supervisor that builds the climb's
+        # command line runs from a tree the per-game refresh does not update.
+        [[ "$value" == all || "$value" == peace || "$value" == off ]] \
+          || refuse "$POLICY:$lineno CIVVIS_DEAL_SESSIONS='$value' must be all, peace or off" ;;
       CIVVIS_SCREEN_GENE)
         # One registry tag: the gene a live screen deals each game an arm of
         # (docs/LIVE_SCREEN.md). The climb refuses a tag with no live arm and
@@ -267,7 +273,7 @@ if [[ -f "$POLICY" ]]; then
         [[ "$value" =~ '^[a-z0-9][a-z0-9-]*$' ]] \
           || refuse "$POLICY:$lineno CIVVIS_SCREEN_GENE='$value' is not one gene tag" ;;
       *)
-        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_VICTORY CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING CIVVIS_BUILD_MODE)"
+        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_VICTORY CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_DEAL_SESSIONS CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING CIVVIS_BUILD_MODE)"
         continue ;;
     esac
     policy[$key]=$value
