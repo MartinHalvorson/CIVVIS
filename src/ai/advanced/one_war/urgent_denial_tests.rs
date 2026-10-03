@@ -408,12 +408,45 @@ fn an_urgent_rival_at_peace_opens_a_second_front() {
         "the plan aims at it"
     );
 
+    // A rival with no clock stays held by the one-war gate.
     let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    ai.one_war_observe(&g, 0);
+    assert!(!ai.domination_counter_target(&g, 0, 2));
+    assert_eq!(ai.one_war_second_front(&g, 0), None);
+    assert!(ai.one_war_holds_declaration(&g, 0, 2));
+}
+
+/// See `one_war_second_front`: beside a capital-prey front, a counter target
+/// we outgun opens a second front before its clock turns urgent. Live King
+/// civvis-20261003T155014Z (game 41) lost on Religion to a counter target it
+/// outgunned twice over while the army stayed on the prey front.
+#[test]
+fn a_counter_target_opens_a_second_front_beside_a_prey_front() {
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    // Our own cities follow the rival's faith: the faithless counter.
+    convert(&mut g, &[0, 2]);
+    ai.one_war_observe(&g, 0);
+    assert!(ai.domination_capital_prey(&g, 0, 1));
+    assert!(ai.domination_counter_target(&g, 0, 2));
+    assert!(!ai.urgent_victory_threat(&g, 2), "fixture: not yet urgent");
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2));
+    assert!(!ai.one_war_holds_declaration(&g, 0, 2));
+    assert_eq!(
+        ai.assess(&g, 0).target_player,
+        Some(2),
+        "the plan aims at it"
+    );
+
+    // A front that can still fight back first gets its peace offer.
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
     g.at_war.remove(&(0, 2));
     convert(&mut g, &[0, 2]);
     ai.one_war_observe(&g, 0);
+    assert!(!ai.domination_capital_prey(&g, 0, 1));
     assert_eq!(ai.one_war_second_front(&g, 0), None);
-    assert!(ai.one_war_holds_declaration(&g, 0, 2));
 }
 
 /// The conquest opening's declared war is not traded for another rival's
