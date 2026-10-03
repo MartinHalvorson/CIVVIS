@@ -394,13 +394,23 @@ fn a_rival_holding_its_capital_at_twice_our_power_is_not_offered_stalled_peace()
     ai.advanced_diplomacy(&mut g, 0, &plan);
     assert!(!ai.peace_offers.contains(&1));
 
-    // A rival that no longer holds its own capital is not prey.
+    // A rival known to have lost its own capital is not prey; one whose
+    // capital is merely unseen still is.
     let (mut g, ai, _, city, _) = fixture();
     for pos in [(17, 10), (17, 11)] {
         g.spawn_test_unit("modern_armor", 0, pos);
     }
-    g.cities.get_mut(&city).unwrap().is_capital = false;
+    g.cities.get_mut(&city).unwrap().owner = 0;
     assert!(!ai.domination_capital_prey(&g, 0, 1));
+    let (mut g, ai, _, city, _) = fixture();
+    for pos in [(17, 10), (17, 11)] {
+        g.spawn_test_unit("modern_armor", 0, pos);
+    }
+    g.cities.remove(&city);
+    assert!(
+        ai.domination_capital_prey(&g, 0, 1),
+        "an unseen capital is still held"
+    );
 }
 
 /// See `domination_siege_train_mobilizing`: an unwalled objective needs no
