@@ -91,6 +91,40 @@ use crate::think;
 use crate::Pos;
 
 /// A Defend row's requirement is the hostile strength within
+/// How far, in land steps, a siege rally is searched for from its force.
+const SIEGE_RALLY_LAND_REACH: i32 = 60;
+/// Land steps past the nearest reachable ring tile still on the near side.
+const SIEGE_RALLY_LAND_SLACK: i32 = 2;
+
+/// Land steps from `from` to every passable land tile within `reach`,
+/// ignoring units and borders. Empty when `from` is not on land.
+fn land_steps(g: &Game, from: Pos, reach: i32) -> BTreeMap<Pos, i32> {
+    let land = |pos: Pos| {
+        g.map
+            .get(pos)
+            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+    };
+    let mut steps = BTreeMap::new();
+    if !land(from) {
+        return steps;
+    }
+    steps.insert(from, 0);
+    let mut queue = std::collections::VecDeque::from([from]);
+    while let Some(pos) = queue.pop_front() {
+        let here = steps[&pos];
+        if here >= reach {
+            continue;
+        }
+        for next in g.nbrs(pos) {
+            if !steps.contains_key(&next) && land(next) {
+                steps.insert(next, here + 1);
+                queue.push_back(next);
+            }
+        }
+    }
+    steps
+}
+
 /// `siege-rally-holds`: how much better, in tiles, a fresh siege rally must
 /// score before the force abandons the one it is marching to. See
 /// `AdvancedAi::held_siege_rally`.
@@ -2188,6 +2222,33 @@ impl AdvancedAi {
                     .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
             })
             .collect();
+        // A siege rally the force can walk to. The straight-line approach
+        // side can lie across water: live King civvis-20261003T131343Z
+        // (game 37) mustered 17-25 bodies for coastal Bristol at a rally on
+        // its side of a bay, the army stood on the far shore for twelve turns
+        // ("0 of 17-22 units staged"), and the only road rounded the bay 37
+        // steps away (diagnosed by -60). Read the ring by land path from the
+        // force; where no ring tile is reachable by land, keep the line.
+        if approach_only {
+            let land = land_steps(g, force_medoid, SIEGE_RALLY_LAND_REACH);
+            if let Some(nearest) = candidates.iter().filter_map(|pos| land.get(pos)).min() {
+                let near_side = nearest + SIEGE_RALLY_LAND_SLACK;
+                if let Some(pos) = candidates
+                    .iter()
+                    .copied()
+                    .filter(|pos| land.get(pos).is_some_and(|steps| *steps <= near_side))
+                    .max_by_key(|pos| {
+                        (
+                            enemy.map_or(0, |enemy| g.wdist(*pos, enemy)),
+                            -land[pos],
+                            *pos,
+                        )
+                    })
+                {
+                    return pos;
+                }
+            }
+        }
         let approach_distance = g.wdist(force_medoid, objective);
         let approach_available = approach_only
             && candidates
@@ -2794,6 +2855,42 @@ mod tests {
         assert_eq!(held(far, nearest), nearest);
         // A prior off the ring (the row's tile) never holds.
         assert_eq!(held(objective, nearest), nearest);
+    }
+
+    /// See `far_side`: a siege across a bay rallies where the army can walk,
+    /// on the near side of the land road around the water, not on the
+    /// straight-line approach that lies across it (Bristol, game 37).
+    #[test]
+    fn a_siege_across_a_bay_rallies_on_the_land_road() {
+        let objective = at(24, 10);
+        let approach = at(12, 10);
+        let mut g = flat_board(91_624, &[at(4, 10), objective], false);
+        war(&mut g, 0, 1);
+        // A bay of water columns 16-21, closed except a land bridge at the
+        // southern rows.
+        for tile in g.map.tiles.values_mut() {
+            let (col, row) = crate::hex::axial_to_offset(tile.pos.0, tile.pos.1);
+            if (16..=21).contains(&col) && row < 18 {
+                tile.terrain = name!("coast");
+            }
+        }
+        let mut ai = on();
+        ai.battlefront_observation = false;
+        let visible = ai.battlefront_visibility(&g, 0);
+        let rally = ai.far_side(&g, 0, objective, approach, &visible, true);
+        let land = land_steps(&g, approach, SIEGE_RALLY_LAND_REACH);
+        let nearest = g
+            .wdisk(objective, 3)
+            .into_iter()
+            .filter(|pos| g.wdist(*pos, objective) >= 2)
+            .filter_map(|pos| land.get(&pos).copied())
+            .min()
+            .expect("the ring is reachable around the bay");
+        let steps = *land.get(&rally).expect("the rally is reachable by land");
+        assert!(
+            steps <= nearest + SIEGE_RALLY_LAND_SLACK,
+            "rally {rally:?} at {steps} steps, nearest {nearest}"
+        );
     }
 
     #[test]
