@@ -4674,6 +4674,18 @@ impl AdvancedAi {
         self.shared_danger = false;
     }
 
+    /// See `AdvancedAi::maintenance_relief_held` and
+    /// `AdvancedAi::liberalism_repair_bar`: the deck keeps its maintenance
+    /// relief and its Amenity repair card through the turn's reshuffles.
+    pub fn enable_policy_deck_hysteresis(&mut self) {
+        self.policy_deck_hysteresis = true;
+    }
+
+    /// The twin of `enable_policy_deck_hysteresis`.
+    pub fn disable_policy_deck_hysteresis(&mut self) {
+        self.policy_deck_hysteresis = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

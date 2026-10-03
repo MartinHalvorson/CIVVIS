@@ -140,3 +140,44 @@ fn domination_keeps_relief_until_the_cash_reserve_recovers() {
         "a recovered reserve releases the ordinary policy portfolio"
     );
 }
+
+/// See `AdvancedAi::maintenance_relief_held`: the host's deck held
+/// Conscription when the turn began, the base governor's reshuffle has put
+/// Discipline back, and the relief is paying for itself (+2.9 a turn). Stock
+/// lets the relief go; `policy-deck-hysteresis` keeps it.
+#[test]
+fn the_deck_keeps_the_relief_the_host_held_through_the_base_reshuffle() {
+    let (mut game, mut ai) = deficit_campaign();
+    game.players[0].gold_per_turn = 2.9;
+    ai.turn_start_policies = BTreeSet::from([
+        crate::name!("conscription"),
+        crate::name!("urban_planning"),
+    ]);
+    let mut stock = game.clone();
+    ai.strategic_policies(&mut stock, 0, GrandStrategy::Conquest);
+    assert!(
+        !stock.players[0]
+            .policies
+            .contains(&crate::name!("conscription")),
+        "stock reads the relief as already gone"
+    );
+    ai.enable_policy_deck_hysteresis();
+    ai.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+    assert!(game.players[0]
+        .policies
+        .contains(&crate::name!("conscription")));
+}
+
+/// See `AdvancedAi::liberalism_repair_bar`: once Liberalism is slotted, a
+/// two-district city at 0 Amenities still needs it.
+#[test]
+fn liberalism_is_kept_while_it_holds_a_city_at_zero() {
+    let (mut game, mut ai) = deficit_campaign();
+    assert_eq!(ai.liberalism_repair_bar(&game, 0), 0);
+    game.players[0].policies.insert(crate::name!("liberalism"));
+    assert_eq!(ai.liberalism_repair_bar(&game, 0), 0, "stock asks only on a deficit");
+    ai.enable_policy_deck_hysteresis();
+    assert_eq!(ai.liberalism_repair_bar(&game, 0), 1);
+    game.players[0].policies.remove(&crate::name!("liberalism"));
+    assert_eq!(ai.liberalism_repair_bar(&game, 0), 0);
+}

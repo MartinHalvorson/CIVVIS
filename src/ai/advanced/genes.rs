@@ -2424,6 +2424,11 @@ pub const GENES: &[Gene] = &[
     // then bankrupted the empire (live King 040354Z t180-186, t207-213).
     // See `gold_and_cards::UPKEEP_RESERVE_TURNS`.
     Gene { tag: "upkeep-reserve", field: "upkeep_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_upkeep_reserve, disable: AdvancedAi::disable_upkeep_reserve },
+    // The base governor's deck pass unslotted Levée en Masse before the
+    // strategic deck read it, so the relief flipped out and the next turn's
+    // bill bankrupted the empire; Liberalism and Aesthetics alternated every
+    // turn. See `AdvancedAi::maintenance_relief_held`.
+    Gene { tag: "policy-deck-hysteresis", field: "policy_deck_hysteresis", kind: Kind::OptIn, enable: AdvancedAi::enable_policy_deck_hysteresis, disable: AdvancedAi::disable_policy_deck_hysteresis },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

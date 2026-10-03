@@ -6482,6 +6482,11 @@ pub struct AdvancedAi {
     lane_delegates_production_2: bool,
 
     // ---- append: p-r ------------------------------------------------
+    /// The policy deck keeps the maintenance relief the host held at the
+    /// turn's start and the Amenity repair card while it is what keeps a city
+    /// content. Opt-in gene `policy-deck-hysteresis`; see
+    /// `AdvancedAi::maintenance_relief_held`.
+    policy_deck_hysteresis: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     reinforce_before_stall: bool,
     /// The stock alliance desk asks for a Research Alliance, on any turn,
@@ -6956,6 +6961,10 @@ pub struct AdvancedAi {
     /// The two yield-floor shortfalls, computed once a seat-turn. See
     /// `advanced/yield_floors.rs`.
     yield_floor_frame: RefCell<yield_floors::YieldFloorFrame>,
+    /// The seat's slotted policies as the turn began, before the base
+    /// governor's `revise_policy_deck` reshuffles them; on the live board
+    /// that is the host's own deck. Read by `policy-deck-hysteresis`.
+    turn_start_policies: BTreeSet<Name>,
     /// The purchase reserve is one emergency defender plus ten turns of any
     /// recurring deficit, not `250 + 75` Gold per city, and one under-bought
     /// compounding asset — the empire's first Builder, then a Monument where
@@ -8654,6 +8663,7 @@ impl AdvancedAi {
             lane_delegates_production_2: false,
 
             // ---- append: p-r ----------------------------------------
+            policy_deck_hysteresis: false,
             reinforce_before_stall: false,
             research_alliance_first: false,
             research_alliance_asked: BTreeMap::new(),
@@ -8732,6 +8742,7 @@ impl AdvancedAi {
             threatened_city_reserve: false,
             threatened_city_reserve_2: false,
             yield_floor_frame: RefCell::new(yield_floors::YieldFloorFrame::default()),
+            turn_start_policies: BTreeSet::new(),
             treasury_at_work_2: false,
             treasury_at_work_2_2: false,
             war_needs_a_treasury: false,
@@ -16924,6 +16935,42 @@ impl AdvancedAi {
     /// admitted only when their explicit downside is safe for the live empire.
     /// Typed cards preferentially replace cards of their own type so wildcard
     /// capacity remains useful.
+    /// Whether the deck holds a maintenance-relief card (Conscription,
+    /// Levée en Masse). With `policy-deck-hysteresis` the deck the turn began
+    /// with counts too. The base governor's `revise_policy_deck` runs first
+    /// in the turn and may unslot the card, and the relief then read as
+    /// already gone. The emergency dropped it while the Gold still covered
+    /// the bill, and the host charged the full bill next turn. Live King
+    /// 2026-10-03T040354Z t206: Levée left the deck at 33 Gold and +2.9 a
+    /// turn, the bill rose from 206 to 272, and the treasury hit zero.
+    pub(super) fn maintenance_relief_held(&self, g: &Game, pid: usize) -> bool {
+        let relief = |deck: &BTreeSet<Name>| {
+            deck.iter()
+                .any(|card| matches!(card.as_str(), "conscription" | "levee_en_masse"))
+        };
+        relief(&g.players[pid].policies)
+            || (self.policy_deck_hysteresis && relief(&self.turn_start_policies))
+    }
+
+    /// The Amenity surplus under which a two-district city calls for
+    /// Liberalism. Liberalism is +1 Amenity in exactly those cities, so once
+    /// it is slotted a city that sits at 0 needs it to stay content. Without
+    /// `policy-deck-hysteresis` the rule asked only while a deficit showed.
+    /// It then swapped Liberalism out the turn after it had repaired the
+    /// deficit, and back in a turn later: live King 2026-10-03T040354Z
+    /// alternated Aesthetics and Liberalism every turn from 110 to 132.
+    pub(super) fn liberalism_repair_bar(&self, g: &Game, pid: usize) -> i64 {
+        if self.policy_deck_hysteresis
+            && g.players[pid]
+                .policies
+                .contains(&crate::name!("liberalism"))
+        {
+            1
+        } else {
+            0
+        }
+    }
+
     fn strategic_policies(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
         let objective = self.decision_objective(strategy);
 
@@ -17224,11 +17271,8 @@ impl AdvancedAi {
         let domination_target = self.active_victory_target(g) == Some(VictoryTarget::Domination);
         // Positive income may be the discount's own effect. Keep it while
         // rebuilding the reserve instead of immediately restoring the bill.
-        let retained_domination_relief = domination_target
-            && g.players[pid]
-                .policies
-                .iter()
-                .any(|card| matches!(card.as_str(), "conscription" | "levee_en_masse"));
+        let retained_domination_relief =
+            domination_target && self.maintenance_relief_held(g, pid);
         // A discounted upgrade still needs cash. Give a named offensive
         // upkeep relief when four turns of income cannot fund its cohort.
         let upgrade_funding_relief = domination_target
@@ -17313,7 +17357,8 @@ impl AdvancedAi {
                 .iter()
                 .filter(|cid| {
                     let city = &g.cities[cid];
-                    g.city_specialty_district_count(city) >= 2 && g.city_amenity_surplus(city) < 0
+                    g.city_specialty_district_count(city) >= 2
+                        && g.city_amenity_surplus(city) < self.liberalism_repair_bar(g, pid)
                 })
                 .count()
                 >= 2
@@ -42977,6 +43022,7 @@ impl AdvancedAi {
     }
 
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
+        self.turn_start_policies = g.players[pid].policies.clone();
         self.air_city_assault = None;
         self.builder_support.clear();
         self.battlefront_frame = None;
