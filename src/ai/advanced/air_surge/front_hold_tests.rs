@@ -150,9 +150,9 @@ fn a_stalled_war_against_the_armed_surge_target_is_not_offered_peace() {
     let offers = |hold: bool| {
         let (mut g, mut ai, target) = fixture();
         at_war(&mut g);
-        // Short of crushed (`domination_front_crushed`): the live fronts
-        // were 2.7x and 1.7x.
-        for pos in [(36, 20), (36, 21)] {
+        // Short of crushed and of capital prey (`domination_front_crushed`):
+        // under twice our power.
+        for pos in [(36, 20), (36, 21), (35, 20), (35, 21)] {
             g.spawn_test_unit("cuirassier", 1, pos);
         }
         g.players[0].gold = 0.0;
@@ -209,6 +209,7 @@ fn a_secured_capital_releases_the_wing_s_front_for_the_next_capital() {
         tide_against_since: None,
         city_health: std::collections::BTreeMap::new(),
         sieges_advancing: 0,
+        closure_wanted_since: None,
     });
     assert_eq!(ai.domination_followup_target(&g, 0, Some(1)), Some(2));
     ai.air_surge_status = ai
@@ -628,6 +629,7 @@ fn one_war_does_not_offer_the_wing_s_front_peace() {
             tide_against_since: None,
             city_health: Default::default(),
             sieges_advancing: 0,
+            closure_wanted_since: None,
         });
         if !hold {
             ai.air_surge_plan = None;

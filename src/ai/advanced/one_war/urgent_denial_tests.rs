@@ -344,3 +344,44 @@ fn domination_keeps_a_crushed_front_until_the_counter_is_urgent() {
     assert!(!ai.one_war_front_crushed(&g, 0, 1));
     assert_eq!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
 }
+
+/// See `one_war_second_front`: a rival at peace whose clock is urgent may be
+/// declared on beside the burning war when we outgun it; an ordinary rival
+/// stays held by the one-war gate.
+#[test]
+fn an_urgent_rival_at_peace_opens_a_second_front() {
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 1, 2]);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(
+        ai.one_war_front(),
+        Some(1),
+        "the burning war stays the front"
+    );
+    assert!(ai.urgent_victory_threat(&g, 2));
+    assert_eq!(
+        ai.one_war_second_front(&g, 0),
+        None,
+        "the front first gets its chance to accept the peace"
+    );
+    for _ in 0..g.standard_duration(ONE_WAR_SECOND_FRONT_PATIENCE).max(1) {
+        g.turn += 1;
+        ai.one_war_observe(&g, 0);
+    }
+    assert_eq!(ai.one_war_front(), Some(1));
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2));
+    assert!(!ai.one_war_holds_declaration(&g, 0, 2));
+    assert_eq!(
+        ai.assess(&g, 0).target_player,
+        Some(2),
+        "the plan aims at it"
+    );
+
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_second_front(&g, 0), None);
+    assert!(ai.one_war_holds_declaration(&g, 0, 2));
+}

@@ -535,6 +535,10 @@ const RUSH_STAGING_RANGE: i32 = 3;
 /// the capital march consumes the whole war. The diplomatic opening gate is
 /// wider; it does not mean an 18-tile capital is the best first siege.
 const DOMINATION_FIRST_CAPTURE_MARCH: i32 = 8;
+/// Population pressure on a captured city at or below this many Loyalty a
+/// turn makes a forecast revolt within four turns hopeless however developed
+/// the city is. See `city_disposition_value`.
+const HEAVY_LOYALTY_PRESSURE: f64 = -12.0;
 /// A fully defended objective with no army near it can yield to a city at
 /// least this much closer to the field force. The gap keeps the replacement
 /// from becoming another continuously changing march order.
@@ -12788,8 +12792,13 @@ impl AdvancedAi {
             // `one_war_at_a_time`: the front already chosen stays the plan's
             // target while it is at war with us, so the army and the peace
             // desk agree on which war this is. See `advanced/one_war.rs`.
-            self.one_war_front()
-                .filter(|front| active_fronts.contains(front))
+            // A second front the Domination plan must open (the next
+            // capital, an urgent clock) takes the plan's target first.
+            self.one_war_second_front(g, pid)
+                .or_else(|| {
+                    self.one_war_front()
+                        .filter(|front| active_fronts.contains(front))
+                })
                 // `city_campaign`: the war the plan opened stays the front
                 // while it is being fought. See `advanced/city_campaign.rs`.
                 .or_else(|| {
@@ -18418,8 +18427,11 @@ impl AdvancedAi {
                     // illegal for its term. Live King
                     // civvis-20261001T022028Z asked Brazil for a Research
                     // Alliance at turns 125 and 135 while its Catholicism held
-                    // two of four majors, and Brazil won at 147.
+                    // two of four majors, and Brazil won at 147. Nor is a
+                    // rival still holding the capital Domination needs that
+                    // we outgun twice over (`domination_capital_prey`).
                     && !self.domination_counter_target(g, pid, other.id)
+                    && !self.domination_capital_prey(g, pid, other.id)
                     // `science-threat-denial`: a research agreement hands a
                     // science threat the yield it is winning with, and any
                     // alliance makes the denial war illegal for its whole
@@ -20706,8 +20718,11 @@ impl AdvancedAi {
         let rushing = self
             .early_rush_victim(g, pid)
             .is_some_and(|(victim, _)| victim == target);
+        // `one_war_second_front`: the next capital's owner or an urgent clock
+        // may be declared on beside the burning war.
+        let second_front = self.one_war_second_front(g, pid) == Some(target);
         if plan.strategy != GrandStrategy::Conquest
-            || major_wars > 0
+            || (major_wars > 0 && !second_front)
             || (!rushing && g.turn < 35)
             || g.turn < self.peace_until
             || (!rushing && g.player_city_ids(pid).len() < 2)
@@ -42831,7 +42846,13 @@ impl AdvancedAi {
                 && !before.players[city.original_owner].is_minor
                 && city.original_owner != pid
                 && !before.are_allied(pid, city.original_owner);
-            let imminent_low_value_revolt = development < 35.0 && turns_to_flip <= 4.0;
+            // ★ A developed city under heavy pressure flips just the same.
+            // Live King civvis-20261003T040354Z kept Antium (four
+            // population, a district) at turn 158; it fell to Rome by loyalty
+            // at turn 161 with a reading of 9 and -16 a turn, handing the
+            // enemy back the city it had just lost.
+            let imminent_low_value_revolt = turns_to_flip <= 4.0
+                && (development < 35.0 || loyalty_delta <= HEAVY_LOYALTY_PRESSURE);
             let unsupported_revolt = nearest_core > 9 && turns_to_flip <= 8.0;
             let hopeless_occupation = disposable
                 && matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery)
