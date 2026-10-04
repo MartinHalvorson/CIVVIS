@@ -1503,8 +1503,69 @@ def _ocr_remember(key: tuple | None, observations: list[dict]) -> None:
     _OCR_CACHE[key] = [dict(observation) for observation in observations]
 
 
-def recognize_once(path: Path) -> list[dict]:
+#: Points of desktop kept around the game window when only the window is read.
+WINDOW_OCR_MARGIN = 8
+
+
+def _recognize_window(path: Path, bounds: tuple[int, int, int, int]) -> list[dict]:
+    """Read only the game window of a desktop capture, in full-capture coordinates.
+
+    ★ HALF THE TIME, AND THE TEXT IS THE SAME TEXT. A setup capture is the whole
+    3456x2234 desktop -- the CIVVIS page, terminals, the menu bar -- and Vision
+    reads all ~140 lines of it (1.12 s a read on 24 captures of 2026-10-04's
+    starts) for callers that keep only what lies inside ``bounds``. The window
+    alone reads in 0.55 s, and reads it better: "Exit to Desktop" for "Fyit to
+    Deckton", "CHOOSE GAME SPEED" for "CHOOSE (TAME SPARI". Boxes are mapped
+    back to the full capture, so every caller's coordinates are unchanged.
+    Anything unreadable falls back to the full capture.
+    """
+    try:
+        from PIL import Image
+
+        screen = desktop_size()
+        image = Image.open(path)
+        width, height = image.size
+        if screen is None or width <= 0 or height <= 0:
+            return macos_ocr.recognize(path)
+        sx, sy = width / screen[0], height / screen[1]
+        x, y, w, h = bounds
+        m = WINDOW_OCR_MARGIN
+        x0, y0 = max(0, int((x - m) * sx)), max(0, int((y - m) * sy))
+        x1, y1 = min(width, int((x + w + m) * sx)), min(height, int((y + h + m) * sy))
+        if x1 - x0 < 64 or y1 - y0 < 64:
+            return macos_ocr.recognize(path)
+        handle, crop_name = tempfile.mkstemp(suffix=".png", prefix="civvis-window-ocr-")
+        os.close(handle)
+        crop = Path(crop_name)
+        try:
+            image.crop((x0, y0, x1, y1)).save(crop)
+            observations = macos_ocr.recognize(crop)
+        finally:
+            crop.unlink(missing_ok=True)
+    except (ImportError, OSError, ValueError):
+        # No Pillow (CI), or an unreadable image: read the whole capture.
+        return macos_ocr.recognize(path)
+    cw, ch = x1 - x0, y1 - y0
+    mapped = []
+    for observation in observations:
+        try:
+            item = dict(observation)
+            item["x"] = (float(observation["x"]) * cw + x0) / width
+            item["y"] = (float(observation["y"]) * ch + y0) / height
+            item["width"] = float(observation["width"]) * cw / width
+            item["height"] = float(observation["height"]) * ch / height
+        except (KeyError, TypeError, ValueError):
+            continue
+        mapped.append(item)
+    return mapped
+
+
+def recognize_once(path: Path,
+                   bounds: tuple[int, int, int, int] | None = None) -> list[dict]:
     """`macos_ocr.recognize`, paid once per distinct capture.
+
+    With ``bounds`` (the game window, in points) only the window is read; see
+    `_recognize_window`. The two reads are cached apart.
 
     A zero-dimensioned native OCR frame is an ordinary unreadable poll, not a
     reason to end setup: every caller already treats no observations as a
@@ -1513,12 +1574,13 @@ def recognize_once(path: Path) -> list[dict]:
     broken frame.  A missing file is still not cached, so its I/O error
     surfaces exactly as it did; the copy returned is the caller's to extend.
     """
-    key = _shot_key(path)
+    key = _shot_key(path) if bounds is None else _shot_key(path, "window", tuple(bounds))
     hit = _ocr_cached(key)
     if hit is not None:
         return hit
     try:
-        observations = macos_ocr.recognize(path)
+        observations = (macos_ocr.recognize(path) if bounds is None
+                        else _recognize_window(path, bounds))
     except macos_ocr.OCRUnavailable as error:
         print(f"[ocr] capture {path.name} is unreadable ({error}); treating this read as empty",
               flush=True)
@@ -1566,7 +1628,7 @@ def _setup_current_value(path: Path, bounds: tuple[int, int, int, int],
         _normalized_label(_setup_option_label(option)): option
         for option in OPTIONS[name]
     }
-    observations = recognize_once(path)
+    observations = recognize_once(path, bounds)
     observations.extend(_menu_crop_ocr(path, bounds))
 
     left, right = SETUP_COLUMN
@@ -1800,7 +1862,7 @@ def _setup_current_leader(path: Path, bounds: tuple[int, int, int, int]
 
     screen_w, screen_h = screen
     x, y, w, h = bounds
-    observations = recognize_once(path)
+    observations = recognize_once(path, bounds)
     observations.extend(_menu_crop_ocr(path, bounds))
     headings: dict[str, int] = {}
     for observation in observations:
@@ -2120,30 +2182,68 @@ def _leader_intro_button_ocr(path: Path,
 def advance_leader_intro(bounds: tuple[int, int, int, int],
                          leader: str | None, run_dir: Path, attempt: int,
                          *, retries: int = 4, poll_s: float = 1.0,
-                         board_ready=None) -> bool:
+                         board_ready=None, relay_s: float | None = None) -> bool:
     """Click the leader card's Begin Game control after visual confirmation.
 
-    ``board_ready`` is checked only after the screen has failed the exact intro
+    ``board_ready`` decides only after the screen has failed the exact intro
     proof.  It therefore cannot bypass a rendered leader card just because the
     in-game agent loaded behind it, but it can end the remaining probe budget
     when a direct host transition has already opened the board.
+
+    ★ THE FIRST BOARD WAITED FOR THE CAPTURE. ``board_ready`` drains the log
+    and relays what it holds, but it ran only between probes, and a probe is a
+    screenshot: with the host refusing captures (systemstatusd) each one spent
+    ~7 s on two failed attempts while the game sat on turn 1 with its board
+    already exported. The first `state` reached the brain a median ~10 s after
+    the mod wrote it (0.6-17 s over the last twelve games of 2026-10-04), and
+    in 92 play logs of October the card was clicked 0 times. With ``relay_s``
+    the log is drained on that cadence by a helper thread for the whole probe,
+    so the brain starts at once; the decision to stop probing still waits for
+    the screen to fail the intro proof.
     """
     x, y, w, h = bounds
-    for retry in range(retries):
-        shot = run_dir / f"leader-intro-attempt{attempt}-{retry}.png"
-        screenshot(shot)
-        if _leader_intro_visible(shot, bounds, leader):
-            click_at(int(x + w * LEADER_INTRO_BEGIN[0]),
-                     int(y + h * LEADER_INTRO_BEGIN[1]))
-            print(f"[setup] verified {leader_display_name(leader or '')} intro; "
-                  "clicked Begin Game", flush=True)
-            return True
-        if board_ready is not None and board_ready():
-            print("[setup] live board arrived before a leader intro was visible; "
-                  "stopping redundant intro probes", flush=True)
-            return False
-        time.sleep(poll_s)
-    return False
+    lock = threading.Lock()
+    seen = [False]
+    stop = threading.Event()
+
+    def ready_now() -> bool:
+        with lock:
+            if board_ready():
+                seen[0] = True
+            return seen[0]
+
+    pump = None
+    if board_ready is not None and relay_s:
+        def relay() -> None:
+            while not stop.is_set():
+                try:
+                    ready_now()
+                except Exception:  # noqa: BLE001 -- the probe's own check reports it
+                    pass
+                stop.wait(relay_s)
+
+        pump = threading.Thread(target=relay, name="intro-relay", daemon=True)
+        pump.start()
+    try:
+        for retry in range(retries):
+            shot = run_dir / f"leader-intro-attempt{attempt}-{retry}.png"
+            screenshot(shot)
+            if _leader_intro_visible(shot, bounds, leader):
+                click_at(int(x + w * LEADER_INTRO_BEGIN[0]),
+                         int(y + h * LEADER_INTRO_BEGIN[1]))
+                print(f"[setup] verified {leader_display_name(leader or '')} intro; "
+                      "clicked Begin Game", flush=True)
+                return True
+            if board_ready is not None and ready_now():
+                print("[setup] live board arrived before a leader intro was visible; "
+                      "stopping redundant intro probes", flush=True)
+                return False
+            time.sleep(poll_s)
+        return False
+    finally:
+        if pump is not None:
+            stop.set()
+            pump.join(timeout=2.0)
 
 
 def read_leader_hint(hint_dir: Path | None, leader: str | None) -> int:
@@ -2266,7 +2366,7 @@ def _map_picker_labels(path: Path, bounds: tuple[int, int, int, int],
         return []
     screen_w, screen_h = screen
     x, y, w, h = bounds
-    observations = list(_menu_ocr_observations(path))
+    observations = list(_menu_ocr_observations(path, bounds))
     observations.extend(_menu_crop_ocr(path, bounds, MAP_PICKER_STRIP, "map-picker"))
     found: list[tuple[int, int]] = []
     for observation in observations:
@@ -2763,7 +2863,8 @@ def _intro_screen_visible(path: Path, bounds: tuple[int, int, int, int]) -> bool
     return not any(label in text for text in texts for label in MAIN_MENU_LABELS)
 
 
-def _menu_ocr_observations(path: Path) -> list[dict]:
+def _menu_ocr_observations(path: Path,
+                           bounds: tuple[int, int, int, int] | None = None) -> list[dict]:
     """Return menu OCR observations, treating an unreadable capture as empty.
 
     Vision occasionally receives a PNG that ``screencapture`` created while the
@@ -2773,7 +2874,7 @@ def _menu_ocr_observations(path: Path) -> list[dict]:
     discards a healthy launch before turn one.
     """
     try:
-        return recognize_once(path)
+        return recognize_once(path, bounds)
     except macos_ocr.OCRUnavailable as error:
         print(f"[ocr] menu capture {path.name} is unreadable ({error}); "
               "treating this poll as empty", flush=True)
@@ -2818,7 +2919,7 @@ def _observed_label_points(path: Path, label: str,
                 found.append((px, py))
         return found
 
-    points = collect(_menu_ocr_observations(path))
+    points = collect(_menu_ocr_observations(path, bounds))
     if not points:
         points = collect(_menu_crop_ocr(path, bounds))
     if strip is not None:
@@ -3322,7 +3423,7 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         intro_retries = max(4, min(60, int(verify_s / 2)))
         advance_leader_intro(bounds, args.leader, run_dir, attempt,
                              retries=intro_retries, poll_s=2.0,
-                             board_ready=board_is_ready)
+                             board_ready=board_is_ready, relay_s=0.05)
         if board_seen["value"]:
             # A direct host transition can open the board without ever drawing
             # the leader card.  Its state has already been relayed above, so do

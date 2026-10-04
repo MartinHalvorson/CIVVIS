@@ -22,6 +22,12 @@ from unittest.mock import call, patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_play
+
+try:
+    import PIL  # noqa: F401
+    _HAVE_PIL = True
+except ImportError:
+    _HAVE_PIL = False
 from civ6_control import orders  # noqa: E402
 
 try:
@@ -1053,6 +1059,61 @@ class Civ6PlayTest(unittest.TestCase):
             ],
         )
         sleep.assert_called_once_with(1.0)
+
+    def test_the_first_board_is_relayed_while_a_capture_is_still_running(self) -> None:
+        """G73: the board waited 11.2 s behind two failed captures."""
+        import threading as _threading
+        bounds = (864, 33, 864, 542)
+        calls, active, overlap = [], [0], [False]
+        guard = _threading.Lock()
+        capture = {}
+
+        def board_ready():
+            with guard:
+                active[0] += 1
+                if active[0] > 1:
+                    overlap[0] = True
+            calls.append(time.monotonic())
+            time.sleep(0.002)
+            with guard:
+                active[0] -= 1
+            return True
+
+        def slow_screenshot(path, **_kw):
+            capture["start"] = time.monotonic()
+            time.sleep(0.3)
+            capture["end"] = time.monotonic()
+
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot", side_effect=slow_screenshot), \
+             patch.object(civ6_play, "_leader_intro_visible", return_value=False):
+            started = time.monotonic()
+            self.assertFalse(civ6_play.advance_leader_intro(
+                bounds, "LEADER_TRAJAN", Path(temporary), 1, retries=3,
+                poll_s=0.01, board_ready=board_ready, relay_s=0.02))
+        during = [t for t in calls if capture["start"] <= t <= capture["end"]]
+        self.assertTrue(during, "the log was drained while the capture ran")
+        self.assertLess(calls[0] - started, 0.1, "the board is relayed at once")
+        self.assertFalse(overlap[0], "the log is never drained by two threads at once")
+        after = len(calls)
+        time.sleep(0.1)
+        self.assertEqual(len(calls), after, "the relay stops with the probe")
+
+    def test_the_relay_does_not_end_the_probe_before_the_screen_is_read(self) -> None:
+        bounds = (864, 33, 864, 542)
+        order = []
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot",
+                          side_effect=lambda path, **_kw: (time.sleep(0.05), order.append("shot"))), \
+             patch.object(civ6_play, "_leader_intro_visible",
+                          side_effect=lambda *a: (order.append("proof"), True)[1]), \
+             patch.object(civ6_play, "click_at") as click:
+            self.assertTrue(civ6_play.advance_leader_intro(
+                bounds, "LEADER_TRAJAN", Path(temporary), 1, retries=3,
+                poll_s=0.01, board_ready=lambda: True, relay_s=0.01))
+        click.assert_called_once()
+        self.assertEqual(order[:2], ["shot", "proof"],
+                         "a visible card is still clicked even with the board relayed")
 
     def test_live_run_holds_macos_awake_for_its_process_lifetime(self) -> None:
         with patch.object(civ6_play.sys, "platform", "darwin"), \
@@ -3688,6 +3749,73 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         self.assertEqual(second, [{"text": "Settler"}])
         self.assertEqual(third, [{"text": "Settler"}])
         self.assertEqual(fourth, [{"text": "Settler"}])
+
+    def _window_shot(self, folder: Path) -> Path:
+        from PIL import Image
+        shot = folder / "setup.png"
+        Image.new("RGB", (3456, 2234), (10, 10, 10)).save(shot)
+        return shot
+
+    @unittest.skipUnless(_HAVE_PIL, "Pillow is not installed")
+    def test_a_window_read_maps_its_boxes_back_to_the_full_capture(self) -> None:
+        seen = {}
+
+        def recognize(path):
+            from PIL import Image
+            seen["path"] = Path(path)
+            seen["size"] = Image.open(path).size
+            return [{"text": "Single Player", "x": 0.5, "y": 0.5, "width": 0.1, "height": 0.1}]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = self._window_shot(Path(temporary))
+            with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+                 patch.object(civ6_play.macos_ocr, "recognize", side_effect=recognize):
+                observations = civ6_play.recognize_once(shot, (0, 33, 864, 542))
+        # Window +8 pt each side at 2x: x 0..1744, y 50..1166 of 3456x2234.
+        self.assertEqual(seen["size"], (1744, 1116))
+        self.assertNotEqual(seen["path"], shot)
+        self.assertFalse(seen["path"].exists(), "the temporary crop is removed")
+        box = observations[0]
+        self.assertEqual(box["text"], "Single Player")
+        self.assertAlmostEqual(box["x"], (0.5 * 1744 + 0) / 3456)
+        self.assertAlmostEqual(box["y"], (0.5 * 1116 + 50) / 2234)
+        self.assertAlmostEqual(box["width"], 0.1 * 1744 / 3456)
+        self.assertAlmostEqual(box["height"], 0.1 * 1116 / 2234)
+
+    @unittest.skipUnless(_HAVE_PIL, "Pillow is not installed")
+    def test_window_and_full_reads_are_cached_apart(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = self._window_shot(Path(temporary))
+            with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+                 patch.object(civ6_play.macos_ocr, "recognize",
+                              return_value=[{"text": "x", "x": 0, "y": 0, "width": 0, "height": 0}]
+                              ) as recognize:
+                civ6_play.recognize_once(shot)
+                civ6_play.recognize_once(shot, (0, 33, 864, 542))
+                civ6_play.recognize_once(shot)
+                civ6_play.recognize_once(shot, (0, 33, 864, 542))
+        self.assertEqual(recognize.call_count, 2)
+
+    def test_an_unreadable_image_falls_back_to_the_full_capture(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = Path(temporary) / "broken.png"
+            shot.write_bytes(b"not a png")
+            with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+                 patch.object(civ6_play.macos_ocr, "recognize",
+                              return_value=[{"text": "Create Game"}]) as recognize:
+                observations = civ6_play.recognize_once(shot, (0, 33, 864, 542))
+        recognize.assert_called_once_with(shot)
+        self.assertEqual(observations, [{"text": "Create Game"}])
+
+    def test_the_setup_readers_read_the_window_only(self) -> None:
+        import inspect
+        for fn, call in ((civ6_play._setup_current_value, "recognize_once(path, bounds)"),
+                         (civ6_play._setup_current_leader, "recognize_once(path, bounds)"),
+                         (civ6_play._map_picker_labels, "_menu_ocr_observations(path, bounds)"),
+                         (civ6_play._observed_label_points, "_menu_ocr_observations(path, bounds)")):
+            self.assertIn(call, inspect.getsource(fn), fn.__name__)
+        # Recovery's menu check keeps the whole desktop (no window bounds there).
+        self.assertIn("_menu_ocr_observations(path)", inspect.getsource(civ6_play._main_menu_visible))
 
     def test_a_missing_capture_is_not_cached_and_still_raises(self) -> None:
         with patch.object(civ6_play.macos_ocr, "recognize",

@@ -399,6 +399,81 @@ check("a stood-down lane asks directly", direct.sends[1] and direct.sends[1][1],
 check("a stood-down lane opens no session", #sessions.requested, requestedBefore)
 
 -- ── The auto-closer honours the hold, and only for the diplomacy views ──
+-- ── A sent ask closed unanswered holds the end turn (G72 t126 wedge) ──
+-- The rival's verdict still arrives, as its own session to us; ending the
+-- turn under it is the wedge. Hold until the rival speaks or the window ends.
+local queue = rawget(_G, "CivvisQueue")
+local clock, endTurns = 1000.0, 0
+UI = setmetatable({ GetElapsedTime = function() return clock end,
+       HasSentTurnComplete = function() return false end,
+       RequestAction = function() endTurns = endTurns + 1 end },
+       { __index = function() return stub() end })
+ActionTypes = { ACTION_ENDTURN = "end_turn" }
+CivvisControlConfig.DealAnswerHoldSeconds = 30
+-- A fresh lane: the earlier sections' unanswered asks left holds and sessions.
+trade.disabled, trade.unanswered, trade.turnHold = false, 0, nil
+trade.sessions, trade.pending, trade.asked = {}, {}, {}
+local function holdPhase() return eventField(lastEvent("deal_turn_hold"), "phase") end
+
+TURN = 200
+local held, heldPlayer = fixture()
+check("a held-turn ask goes out",
+	applyOrder(heldPlayer, 7, { kind = "sell", subject = "3", verb = "RESOURCE_DYES=1", x = 60 }, TURN), true)
+onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 960 })
+onClosed(960)
+check("a sent ask closed unanswered holds the turn", holdPhase(), "held")
+queue.requestEndTurn(TURN)
+check("…the end turn is not requested", endTurns, 0)
+check("…and the hold says so once", holdPhase(), "holding")
+clock = clock + 10
+queue.requestEndTurn(TURN, { REASON = "UserForced" })
+check("…a forced end turn is held too", endTurns, 0)
+onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 961 })
+check("the rival speaking releases the hold", holdPhase(), "released")
+check("…naming why", eventField(lastEvent("deal_turn_hold"), "why"), "rival_spoke")
+clock = clock + 1
+queue.requestEndTurn(TURN)
+check("…and the turn ends", endTurns, 1)
+
+TURN = 210
+local quiet2, quiet2Player = fixture()
+applyOrder(quiet2Player, 7, { kind = "sell", subject = "3", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
+onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 962 })
+onClosed(962)
+clock = clock + 29
+queue.requestEndTurn(TURN)
+check("inside the window the turn is held", endTurns, 1)
+clock = clock + 2
+queue.requestEndTurn(TURN)
+check("after DealAnswerHoldSeconds the turn ends", endTurns, 2)
+check("…the hold expired", eventField(lastEvent("deal_turn_hold"), "why"), "expired")
+
+TURN = 220
+local stale, stalePlayer = fixture()
+applyOrder(stalePlayer, 7, { kind = "sell", subject = "3", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
+onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 964 })
+onClosed(964)
+TURN = 221
+clock = clock + 1
+queue.requestEndTurn(TURN)
+check("a hold from an earlier turn does not hold this one", endTurns, 3)
+check("…it is dropped as over", eventField(lastEvent("deal_turn_hold"), "why"), "turn_over")
+
+-- An ask that never went out (no opening statement) leaves no hold.
+TURN = 230
+local unsent, unsentPlayer = fixture()
+applyOrder(unsentPlayer, 7, { kind = "sell", subject = "3", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
+local before = #events
+for subject, session in pairs(trade.sessions) do
+	if subject == 3 then session.sent = false end
+end
+trade.abandon(3, "session_closed")
+check("an unsent ask closed unanswered holds nothing", trade.turnHold, nil)
+clock = clock + 1
+queue.requestEndTurn(TURN)
+check("…the turn ends at once", endTurns, 4)
+UI = nil  -- back to the stub for the sections below
+
 local closerSrc = assert(io.open(here .. "/CivvisControlAutoClose.lua")):read("*a")
 check("the closer listens for the session hold",
 	closerSrc:find("LuaEvents.CivvisDealSession.Add(", 1, true) ~= nil, true)
