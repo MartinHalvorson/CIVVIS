@@ -1,0 +1,12 @@
+61004800: turn 109, winner Some(1), alive true
+61004801: turn 106, winner Some(3), alive true
+61004802: turn 151, winner Some(2), alive true
+61004803: turn 112, winner Some(1), alive true
+61004804: turn 151, winner Some(2), alive true
+61004805: turn 121, winner Some(3), alive true
+61004806: turn 151, winner Some(1), alive true
+61004807: turn 132, winner Some(3), alive true
+61004808: turn 104, winner Some(3), alive true
+61004809: turn 151, winner Some(2), alive true
+61004810: turn 128, winner Some(2), alive true
+61004811: turn 134, winner Some(3), alive true
