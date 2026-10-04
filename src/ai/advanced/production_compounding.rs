@@ -102,6 +102,108 @@ impl AdvancedAi {
             }
         }
         best.map(|(_, item)| item)
+            .or_else(|| self.profitable_industrial_district(g, pid, cid, plan))
+    }
+
+    /// Open the missing production chain instead of waiting for a district
+    /// the discretionary scorer never bought. Price both stages, including
+    /// the worked production displaced by placement. This is a forecast;
+    /// future Workshop cost is modelled when the host cannot quote it yet.
+    fn profitable_industrial_district(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> Option<Item> {
+        let city = &g.cities[&cid];
+        let cities = g.player_city_ids(pid);
+        let workshop = crate::name!("workshop");
+        let spec = &g.rules.buildings[&workshop];
+        let district = g.civ_district_variant(pid, "industrial_zone");
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || plan.strategy == GrandStrategy::Recovery
+            || cities.len() < 2
+            || self.counts(g, pid).military < cities.len()
+            || Self::city_holds_district_family(g, city, "industrial_zone")
+            || g.city_amenity_surplus(city) < 0
+            || g.players[pid].gold_per_turn
+                < spec.maintenance + g.rules.districts[&district].maintenance
+            || spec
+                .tech
+                .is_some_and(|tech| !g.players[pid].techs.contains(&tech))
+            || spec
+                .civic
+                .is_some_and(|civic| !g.players[pid].civics.contains(&civic))
+            || !spec.requires.is_empty()
+            || !spec.requires_any.is_empty()
+        {
+            return None;
+        }
+        // One new chain at a time. Existing building reservations still run
+        // above, so this gate never prevents paying the pending Workshop.
+        if cities.iter().any(|id| {
+            let other = &g.cities[id];
+            other.owned_tiles.iter().any(|pos| {
+                g.map.tiles[pos]
+                    .district_foundation
+                    .as_ref()
+                    .is_some_and(|f| g.district_family(f.district) == "industrial_zone")
+            }) || other.queue.first().is_some_and(|item| {
+                matches!(item, Item::Building { building }
+                    if g.rules.buildings[building].district.is_some_and(|d|
+                        g.district_family(d) == "industrial_zone"))
+            })
+        }) {
+            return None;
+        }
+        let remaining = if g.max_turns > 0 {
+            g.max_turns.saturating_sub(g.turn) as f64
+        } else {
+            g.game_speed.turn_limit() as f64 * 0.16
+        };
+        let workshop_item = Item::Building { building: workshop };
+        // Do not spend this city's overflow twice on the two stages.
+        let workshop_cost = g.item_cost_for_city(pid, cid, &workshop_item);
+        let production = g.city_yields(cid).production.max(1.0);
+        let worked = g.city_citizen_plan(cid).worked_tiles;
+        let mut best: Option<(f64, Item)> = None;
+        for pos in g.district_sites(cid, district) {
+            let item = Item::District { district, pos };
+            if !g.can_produce(pid, cid, &item) {
+                continue;
+            }
+            let displaced = if worked.contains(&pos) {
+                g.workable_tile_yields(pos).production
+            } else {
+                0.0
+            };
+            let adjacency = g
+                .district_adjacency_assuming(district, pos, None, None)
+                .production;
+            let district_gain = adjacency - displaced;
+            // The first stage must itself improve production; an empty
+            // district cannot borrow all of its value from the next queue.
+            if district_gain < 1.0 {
+                continue;
+            }
+            let gain = district_gain + spec.yields.production;
+            let district_turns = self.production_build_turns(g, pid, cid, &item);
+            let workshop_rate =
+                (production + district_gain) * g.item_prod_mult(pid, cid, Some(&workshop_item));
+            let build_turns = district_turns + workshop_cost / workshop_rate.max(1.0);
+            let cost = g.item_remaining_cost_for_city(pid, cid, &item) + workshop_cost;
+            // Conservatively credit no earnings until both stages finish.
+            let returned = (remaining - build_turns).max(0.0) * gain;
+            if returned < cost || !returned.is_finite() {
+                continue;
+            }
+            let score = (returned - cost) / (build_turns + 1.0);
+            if best.as_ref().is_none_or(|(old, _)| score > *old) {
+                best = Some((score, item));
+            }
+        }
+        best.map(|(_, item)| item)
     }
 
     /// Full premium when the remaining production repays itself before the
