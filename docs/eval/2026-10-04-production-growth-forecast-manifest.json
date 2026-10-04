@@ -1,0 +1,84 @@
+{
+  "created_before_native_play_at": "2026-10-04T11:39:59.316000+00:00",
+  "control_source": "c351dca598cbe30abef98ed4b3405e8b3cf7aba9",
+  "control_runtime_source": "afba14116415131f730a462dff4e1d7811aced93",
+  "control_library_sha256": "6418026abe8e14ae7756c55d24d2f24162e810bc50caacda04c844a8878a21c4",
+  "candidate": "PR 3900 frozen prototype, commit and binary hashes recorded before play",
+  "hypothesis": "Reserve at most one Granary when a thirty Online turn fixed-board projection returns 110% of its remaining Production cost; preserve existing higher-priority survival/research/growth/income bids.",
+  "protocol": {
+    "players": 4,
+    "map": "pangaea",
+    "width": 60,
+    "height": 38,
+    "city_states": 6,
+    "speed": "online",
+    "turn_cap": 150,
+    "victories": "all",
+    "focal_civ": "Gran Colombia",
+    "focal_target": "domination",
+    "handicap_exempt": [
+      0
+    ],
+    "rivals": "unchanged AdvancedAi::fleet",
+    "barbarian_difficulty": "same as major difficulty",
+    "checkpoints": [
+      25,
+      50,
+      75,
+      100,
+      125,
+      150
+    ],
+    "columns": [
+      "seed",
+      "turn",
+      "cities",
+      "production",
+      "rival_production",
+      "science",
+      "culture",
+      "gold",
+      "cumulative_production",
+      "alive",
+      "winner",
+      "population",
+      "granaries",
+      "housing_bound",
+      "housing_bound_without_granary",
+      "amenity_short_cities",
+      "builders",
+      "military_power",
+      "rival_cities",
+      "rival_population"
+    ]
+  },
+  "pilot": {
+    "emperor": {
+      "first_seed": 61006400,
+      "count": 4
+    },
+    "deity": {
+      "first_seed": 61006500,
+      "count": 4
+    }
+  },
+  "confirmation": {
+    "emperor": {
+      "first_seed": 61006600,
+      "count": 12
+    },
+    "deity": {
+      "first_seed": 61006700,
+      "count": 8
+    }
+  },
+  "acceptance": "Require an early production improvement at turns 75 and 100 on both difficulties in fresh confirmation, improved production relative to strongest rival, and no material science/culture/expansion/survival regression. No AI-parity claim from a Granary forecast or conditional late checkpoints. Reject runtime if evidence is negative; retain all outcomes and missing checkpoints.",
+  "validation": {
+    "status": "in progress"
+  },
+  "notes": [
+    "Both arms use the same harness and CI profile libraries. Treatment is runtime change only; no opt-in Granary policy is enabled.",
+    "Forecast holds other city populations and actions fixed. Native games test effects outside this approximation.",
+    "Real Firaxis controller and private gene profile are untouched."
+  ]
+}
