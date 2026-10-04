@@ -19778,14 +19778,6 @@ end;
 -- unchanged is a stall. Say so once, with what the UI shows, from the HUD
 -- pulse, which keeps firing while the core waits. The wedge watchdog reads
 -- `ai_phase_stall` and hands the game over without waiting out its own clocks.
-CivvisQueue.STALL_VIEWS = {
-	"DiplomacyActionView", "DiplomacyDealView", "LeaderScene", "WorldCongressPopup",
-	"WorldCongressIntro", "WorldCongressBetweenTurns", "WonderBuiltPopup",
-	"NaturalWonderPopup", "EraCompletePopup", "EraReviewPopup", "HistoricMoments",
-	"TechCivicCompletedPopup", "BoostUnlockedPopup", "ProjectBuiltPopup",
-	"NaturalDisasterPopup", "InGamePopup", "DedicationPopup", "GreatWorkShowcase",
-	"RockBandMoviePopup", "EndGameMenu",
-};
 CivvisQueue.checkAiPhaseStall = function()
 	local w = CivvisQueue.endTurnWait;
 	if w == nil or not w.emitted or w.stall_reported or type(w.ended_at) ~= "number" then
@@ -19812,8 +19804,21 @@ CivvisQueue.checkAiPhaseStall = function()
 			if type(id) == "number" then sessions[#sessions + 1] = { with = p, session = id }; end
 		end
 	end
+	-- ⚠ Built HERE, not at top level. As `CivvisQueue.STALL_VIEWS = {...}`
+	-- in the main chunk, its 20 items took that chunk from 199 to 212 peak
+	-- registers. Civ VI's Lua (Havok Script) refuses a function past 200, so
+	-- the whole agent failed to load, silently, on pins 2ddcd5889 and
+	-- 66de612ed (G86, G88). See register_budget_test.lua.
+	local views = {
+		"DiplomacyActionView", "DiplomacyDealView", "LeaderScene", "WorldCongressPopup",
+		"WorldCongressIntro", "WorldCongressBetweenTurns", "WonderBuiltPopup",
+		"NaturalWonderPopup", "EraCompletePopup", "EraReviewPopup", "HistoricMoments",
+		"TechCivicCompletedPopup", "BoostUnlockedPopup", "ProjectBuiltPopup",
+		"NaturalDisasterPopup", "InGamePopup", "DedicationPopup", "GreatWorkShowcase",
+		"RockBandMoviePopup", "EndGameMenu",
+	};
 	local visible = {};
-	for _, name in ipairs(CivvisQueue.STALL_VIEWS) do
+	for _, name in ipairs(views) do
 		local hidden = try(function()
 			return ContextPtr:LookUpControl("/InGame/" .. name):IsHidden();
 		end, nil);
