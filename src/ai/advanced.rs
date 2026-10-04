@@ -28763,6 +28763,7 @@ impl AdvancedAi {
                 };
                 if counts.builders < desired {
                     base + 35.0 * (desired - counts.builders) as f64
+                        + self.named_productive_builder_value(g, pid, cid, plan, counts)
                 } else {
                     25.0
                 }

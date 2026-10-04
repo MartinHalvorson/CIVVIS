@@ -214,3 +214,38 @@ fn a_slow_builder_queue_elsewhere_does_not_block_a_profitable_local_worker() {
     ai.reserve_higher_level_investment(&mut g, 0, &plan);
     assert!(ai.named_productive_workforce_target(&g, 0, &plan).is_none());
 }
+
+#[test]
+fn a_last_charge_covers_one_job_instead_of_the_entire_city() {
+    let (mut g, ai, plan, city, builder) = board();
+    g.units.get_mut(&builder).unwrap().pos = g.cities[&city].pos;
+    g.units.get_mut(&builder).unwrap().charges = 1;
+    let counts = ai.counts(&g, 0);
+    assert!(ai.named_productive_builder_value(&g, 0, city, &plan, &counts) > 0.0);
+    g.units.get_mut(&builder).unwrap().charges = 3;
+    assert_eq!(
+        ai.named_productive_builder_value(&g, 0, city, &plan, &counts),
+        0.0
+    );
+}
+
+#[test]
+fn productive_work_competes_during_review_of_an_occupied_queue() {
+    let (mut g, ai, plan, city, _) = board();
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    g.cities.get_mut(&city).unwrap().queue = vec![Item::Building {
+        building: crate::name!("monument"),
+    }];
+    let counts = ai.counts_without_city_queue(&g, 0, city);
+    let useful = ai.production_value(&g, 0, city, &builder, &plan, &counts);
+    assert!(ai.named_productive_builder_value(&g, 0, city, &plan, &counts) > 0.0);
+    Arc::make_mut(&mut g.observed_city_worked_tiles).insert(city, Vec::new());
+    let bare = ai.production_value(&g, 0, city, &builder, &plan, &counts);
+    assert!(
+        useful > bare,
+        "worked production must reach the actual scorer"
+    );
+    assert!(ai.named_productive_workforce_target(&g, 0, &plan).is_none());
+}
