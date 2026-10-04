@@ -339,14 +339,18 @@ fn execute_observed_action_recorded(
                     .or_default() += 1;
             }
         }
-        // A rejected queue or financial trade leaves independent military
-        // orders executable. Refresh after the batch: stopping here can
+        // A rejected queue, plot purchase or financial trade leaves independent
+        // production and military orders executable. Refresh after the batch: stopping here can
         // repeat the same economic refusal in every frame and never reach
         // the army. Orders still pay their authoritative costs when applied.
         // District foundations clear terrain; city transfers and access
         // treaties change tactical facts too. Their refusals still invalidate
         // the remaining plan.
         let economic = match action {
+            // A failed annexation changes neither ownership nor treasury.
+            // Visible borders can have an unseen city, so the view offers a
+            // plot the board refuses; aborting repeats it before any queue.
+            Action::BuyPlot { .. } => true,
             Action::Produce { item, .. } => !matches!(item, crate::game::Item::District { .. }),
             Action::Trade { offer, request, .. } => {
                 offer.cities.is_empty()
@@ -390,3 +394,6 @@ mod tests;
 
 #[cfg(test)]
 mod execution_tests;
+
+#[cfg(test)]
+mod plot_refusal_tests;
