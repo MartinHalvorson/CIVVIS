@@ -5006,6 +5006,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `breaker-supply-scales-2`: an original capital Domination needs is
+    /// supplied with guns in parallel, without displacing a building under
+    /// way. See `siege_production::SUPPLY_STRENGTH_WINDOW`. Off by default.
+    breaker_supply_scales_2: bool,
     /// `breaker-supply-scales`: a high-walled Domination target is supplied
     /// with guns in parallel, the strongest first. See
     /// `siege_production::SUPPLY_WALL_HP`. Off by default.
@@ -8636,6 +8640,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            breaker_supply_scales_2: false,
             breaker_supply_scales: false,
             breaker_before_the_war: false,
             befriend_the_strongest: false,

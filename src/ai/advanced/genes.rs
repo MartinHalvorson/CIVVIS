@@ -2517,6 +2517,9 @@ pub const GENES: &[Gene] = &[
     // waiting on one Bombard while Artillery was unlocked. See
     // `siege_production::SUPPLY_WALL_HP`.
     Gene { tag: "breaker-supply-scales", field: "breaker_supply_scales", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales, disable: AdvancedAi::disable_breaker_supply_scales },
+    // Version 1 measured -9.7 +/- 5.3 pp: only the capitals Domination
+    // needs, no displaced building. See `siege_production::SUPPLY_STRENGTH_WINDOW`.
+    Gene { tag: "breaker-supply-scales-2", field: "breaker_supply_scales_2", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales_2, disable: AdvancedAi::disable_breaker_supply_scales_2 },
     // Live King 122037Z held war on France "for staging" from turn 163 to its
     // Culture win at 181, at 2 to 4 times its power. See
     // `one_war::culture_counter_due`.
