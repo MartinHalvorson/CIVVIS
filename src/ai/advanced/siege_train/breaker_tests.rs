@@ -162,7 +162,15 @@ fn melee_do_not_hold_the_ring_of_walls_nothing_can_open() {
     ai.assess_siege(&g, 0, cid, &plan, &group);
     assert_eq!(ai.sieges[&cid].stage, SiegeStage::Reduce, "one short turn holds");
     // The hold is recorded, and the healing gun is a breaker on its way.
-    assert_eq!(ai.siege_breaker_waits.get(&city.pos), Some(&(30, 30)));
+    assert_eq!(
+        ai.siege_breaker_waits.get(&city.pos),
+        Some(&BreakerWait {
+            since: 30,
+            last: 30,
+            nearest: 4,
+            nearest_turn: 30,
+        })
+    );
     assert!(ai.waiting_for_a_breaker(&g, 0, cid));
     assert!(!off.waiting_for_a_breaker(&g, 0, cid), "gene off");
     g.turn = 31;
@@ -333,4 +341,92 @@ fn shooters_open_the_walls_before_the_taker_comes() {
         ai.assess_siege(&g, 0, cid, &plan, &group);
         assert_ne!(ai.sieges[&cid].stage, SiegeStage::Stage, "turn {turn}");
     }
+}
+
+/// A breaker counts as coming while it comes nearer, or while a city of
+/// ours within reach is about to finish one; a gun that stands off for
+/// `BREAKER_STALL_TURNS`, or one barely started, does not. Live King
+/// civvis-20261004T025448Z held Napata "for a wall-breaker on its way" for
+/// sixteen turns on a Catapult that never came nearer than eight tiles.
+#[test]
+fn a_breaker_is_coming_only_while_it_comes_nearer_or_is_nearly_built() {
+    let (mut g, cid) = medieval_city();
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_siege_needs_a_breaker();
+    let pos = g.cities[&cid].pos;
+    let stall = g.standard_duration(BREAKER_STALL_TURNS);
+    let wait = |nearest: i32, nearest_turn: u32| BreakerWait {
+        since: 30,
+        last: 30 + stall + 1,
+        nearest,
+        nearest_turn,
+    };
+    g.turn = 30 + stall + 1;
+    ai.siege_breaker_waits.insert(pos, wait(8, 30 + stall));
+    assert!(ai.waiting_for_a_breaker(&g, 0, cid), "it came nearer lately");
+    ai.siege_breaker_waits.insert(pos, wait(8, 30));
+    assert!(!ai.waiting_for_a_breaker(&g, 0, cid), "it stood off");
+
+    // A Catapult nearly built in a city of ours within reach is coming; one
+    // barely started is not.
+    let site = at_distance(&g, cid, 10)
+        .into_iter()
+        .find(|p| g.city_at(*p).is_none())
+        .expect("land for a city of ours");
+    let own = g.found_city_for(0, site, None);
+    let catapult = crate::game::Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+    let cost = g.item_cost_for_city(0, own, &catapult);
+    g.cities.get_mut(&own).unwrap().queue = vec![catapult];
+    g.cities.get_mut(&own).unwrap().production = cost - 1.0;
+    assert!(ai.waiting_for_a_breaker(&g, 0, cid), "nearly built");
+    g.cities.get_mut(&own).unwrap().production = 0.0;
+    assert!(!ai.waiting_for_a_breaker(&g, 0, cid), "barely started");
+}
+
+/// A train that dwarfs its bill gives its shooters twice as long to breach:
+/// two Crossbows chip 200 walls too slowly for a train of their own size,
+/// and fast enough beside four Knights of the same train.
+#[test]
+fn a_dominant_train_gives_its_shooters_longer_to_breach() {
+    let (mut g, cid) = medieval_city();
+    let near = at_distance(&g, cid, 3);
+    let bows: Vec<u32> = near[..2]
+        .iter()
+        .map(|pos| g.spawn_unit("crossbowman", 0, *pos))
+        .collect();
+    let plan = plan_against(&g, cid);
+    let city = CityView::of(&g, cid).unwrap();
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_siege_needs_a_breaker();
+    let shooters = ai.breach_reading(&g, 0, &city, &bows).shooter_walls;
+    assert!(
+        shooters * SHOOTER_BREACH_TURNS < f64::from(city.wall_hp)
+            && shooters * SHOOTER_BREACH_TURNS_DOMINANT >= f64::from(city.wall_hp),
+        "the fixture sits between the two horizons: {shooters:.1} a turn"
+    );
+
+    let small = group_on(&g, cid, &bows);
+    let mut lone = ai.clone();
+    lone.force_groups.push(small.clone());
+    lone.assess_siege(&g, 0, cid, &plan, &small);
+    assert!(lone.siege_breaker_waits.contains_key(&city.pos), "no breaker");
+
+    let mut units = bows.clone();
+    for pos in at_distance(&g, cid, 8).into_iter().take(4) {
+        units.push(g.spawn_unit("knight", 0, pos));
+    }
+    let strength: f64 = units.iter().map(|uid| unit_power(&g, *uid)).sum();
+    assert!(strength >= DOMINANT_BILL_SHARE * siege_bill(&g, 0, &city));
+    let big = group_on(&g, cid, &units);
+    let mut dominant = ai.clone();
+    dominant.force_groups.push(big.clone());
+    dominant.assess_siege(&g, 0, cid, &plan, &big);
+    assert!(
+        !dominant.siege_breaker_waits.contains_key(&city.pos),
+        "the shooters are the breaker"
+    );
 }

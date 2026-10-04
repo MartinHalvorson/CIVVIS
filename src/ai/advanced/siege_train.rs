@@ -163,6 +163,12 @@ const OBJECTIVE_REACH: i32 = 8;
 /// 100 to 26 in a dozen turns at about ten a shot, while Crossbows against its
 /// Medieval Walls did five or six a shot and 200 walls stood.
 pub(super) const SHOOTER_BREACH_TURNS: f64 = 6.0;
+/// `siege-needs-a-breaker`: a train at least this many times its bill
+/// gives its shooters [`SHOOTER_BREACH_TURNS_DOMINANT`] to breach. Live King
+/// civvis-20261004T025448Z (game 45) outgunned Nubia four to seven times and
+/// held its walled sieges for a gun that never came.
+pub(super) const DOMINANT_BILL_SHARE: f64 = 2.5;
+pub(super) const SHOOTER_BREACH_TURNS_DOMINANT: f64 = 12.0;
 /// `siege-needs-a-breaker`: how far a ram or tower walks to join a siege.
 const BREACH_SUPPORT_REACH: i32 = 15;
 /// `siege-needs-a-breaker`: a gun this close to a walled city, or a city of
@@ -175,6 +181,29 @@ const BREAKER_COMING_REACH: i32 = 24;
 /// civvis-20261003T145118Z (game 41)'s guns took about sixteen Online turns
 /// to reach a walled siege; thirty standard turns is twenty Online ones.
 pub(super) const BREAKER_WAIT_TURNS: u32 = 30;
+/// `siege-needs-a-breaker`: standard turns a breaker on its way may go
+/// without coming nearer before it no longer counts as coming. Live King
+/// civvis-20261004T025448Z (game 45): a lone Catapult hovered eight to
+/// fourteen tiles from Napata from turn 90 to 105, struck to 26 hp, while
+/// the capture was held "for a wall-breaker on its way" every turn.
+pub(super) const BREAKER_STALL_TURNS: u32 = 5;
+/// `siege-needs-a-breaker`: a gun in production counts as coming only when
+/// it finishes within this many standard turns.
+pub(super) const BREAKER_BUILD_TURNS: u32 = 8;
+
+/// `siege-needs-a-breaker`: one run of breakerless holds before a walled
+/// city, kept by the city's position (stable through a live rebuild's id
+/// churn). See `AdvancedAi::waiting_for_a_breaker`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct BreakerWait {
+    /// The first and the latest turn of the run.
+    pub(super) since: u32,
+    pub(super) last: u32,
+    /// The nearest a siege gun, ram or tower of ours has stood to the city
+    /// during the run, and the turn it first stood that near.
+    pub(super) nearest: i32,
+    pub(super) nearest_turn: u32,
+}
 
 /// A ranked choice of tile: the best key seen so far, and where it was.
 type Pick<K> = Option<(K, Pos)>;
@@ -295,6 +324,31 @@ fn breach_support_works(g: &Game, uid: u32, cid: u32) -> bool {
     })
 }
 
+/// A land siege gun: the Catapult's line, the units that break walls whole.
+fn land_gun(g: &Game, kind: crate::name::Name) -> bool {
+    let spec = &g.rules.units[kind];
+    spec.class == "military"
+        && spec.siege
+        && spec.has_ranged_attack()
+        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+}
+
+/// `siege-needs-a-breaker`: the nearest a siege gun, or a ram or tower that
+/// opens these walls, of ours stands to the city within
+/// [`BREAKER_COMING_REACH`]; `i32::MAX` with none.
+fn nearest_breaker(g: &Game, pid: usize, city: &CityView) -> i32 {
+    g.units
+        .values()
+        .filter(|unit| {
+            unit.owner == pid
+                && (land_gun(g, unit.kind) || breach_support_works(g, unit.id, city.id))
+        })
+        .map(|unit| g.wdist(unit.pos, city.pos))
+        .filter(|distance| *distance <= BREAKER_COMING_REACH)
+        .min()
+        .unwrap_or(i32::MAX)
+}
+
 /// A melee unit a ram or tower lends its effect to: `siege_support_effects`
 /// answers only for the melee and anti-cavalry classes.
 fn breach_support_user(g: &Game, uid: u32) -> bool {
@@ -338,6 +392,9 @@ pub(super) struct BreachReading {
     pub(super) support: usize,
     /// The expected wall damage a turn from the fit shooters within reach.
     pub(super) shooter_walls: f64,
+    /// Turns the shooters are given to breach: [`SHOOTER_BREACH_TURNS`], or
+    /// [`SHOOTER_BREACH_TURNS_DOMINANT`] for a dominant train.
+    pub(super) horizon: f64,
 }
 
 impl BreachReading {
@@ -345,7 +402,7 @@ impl BreachReading {
         walls_open_to_melee(city)
             || self.guns > 0
             || self.support > 0
-            || self.shooter_walls * SHOOTER_BREACH_TURNS >= f64::from(city.wall_hp)
+            || self.shooter_walls * self.horizon >= f64::from(city.wall_hp)
     }
 }
 
@@ -1252,32 +1309,35 @@ impl AdvancedAi {
         let Some(city) = g.cities.get(&cid) else {
             return false;
         };
-        let Some(&(since, last)) = self.siege_breaker_waits.get(&city.pos) else {
+        let Some(wait) = self.siege_breaker_waits.get(&city.pos) else {
             return false;
         };
-        if g.turn.saturating_sub(last) > 1
-            || g.turn.saturating_sub(since) > g.standard_duration(BREAKER_WAIT_TURNS)
+        if g.turn.saturating_sub(wait.last) > 1
+            || g.turn.saturating_sub(wait.since) > g.standard_duration(BREAKER_WAIT_TURNS)
         {
             return false;
         }
-        let gun = |kind: crate::name::Name| {
-            let spec = &g.rules.units[kind];
-            spec.class == "military"
-                && spec.siege
-                && spec.has_ranged_attack()
-                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
-        };
-        g.units.values().any(|unit| {
-            unit.owner == pid
-                && g.wdist(unit.pos, city.pos) <= BREAKER_COMING_REACH
-                && (gun(unit.kind) || breach_support_works(g, unit.id, cid))
-        }) || g.cities.values().any(|own| {
+        // On its way: one has come nearer within BREAKER_STALL_TURNS. A gun
+        // that stands off — driven back, healing, boxed in — is not coming.
+        let closing = wait.nearest <= BREAKER_COMING_REACH
+            && g.turn.saturating_sub(wait.nearest_turn) <= g.standard_duration(BREAKER_STALL_TURNS);
+        // Or nearly built in a city of ours within reach.
+        let building = g.cities.values().any(|own| {
             own.owner == pid
                 && g.wdist(own.pos, city.pos) <= BREAKER_COMING_REACH
                 && own.queue.first().is_some_and(|item| {
-                    matches!(item, crate::game::Item::Unit { unit } if gun(*unit))
+                    let crate::game::Item::Unit { unit } = item else {
+                        return false;
+                    };
+                    if !land_gun(g, *unit) {
+                        return false;
+                    }
+                    let left = (g.item_cost_for_city(pid, own.id, item) - own.production).max(0.0);
+                    let rate = g.city_yields(own.id).production.max(0.1);
+                    left / rate <= f64::from(g.standard_duration(BREAKER_BUILD_TURNS))
                 })
-        })
+        });
+        closing || building
     }
 
     /// `siege-needs-a-breaker`: whether the siege train for `cid` is
@@ -1332,7 +1392,10 @@ impl AdvancedAi {
     /// `siege-needs-a-breaker`: what the train holds within the staging ring
     /// that can bring the walls down. See [`BreachReading`].
     fn breach_reading(&self, g: &Game, pid: usize, city: &CityView, force: &[u32]) -> BreachReading {
-        let mut reading = BreachReading::default();
+        let mut reading = BreachReading {
+            horizon: SHOOTER_BREACH_TURNS,
+            ..BreachReading::default()
+        };
         let mut users = false;
         for uid in force {
             let Some(unit) = g.units.get(uid) else {
@@ -1598,9 +1661,13 @@ impl AdvancedAi {
         // `siege-needs-a-breaker`: walls nothing in the train can open are
         // not besieged — the melee would hold a ring under the city's fire
         // with nothing to show for it. See `BreachReading`.
-        let breach = self
-            .siege_needs_a_breaker
-            .then(|| self.breach_reading(g, pid, &city, &force));
+        let breach = self.siege_needs_a_breaker.then(|| {
+            let mut reading = self.breach_reading(g, pid, &city, &force);
+            if strength >= DOMINANT_BILL_SHARE * bill {
+                reading.horizon = SHOOTER_BREACH_TURNS_DOMINANT;
+            }
+            reading
+        });
         let no_breaker = !arena && breach.is_some_and(|reading| !reading.at_hand(&city));
         // `siege-needs-a-breaker`: walls a breaker at hand can open are
         // opened before the taker comes. The damage budget reads a train
@@ -1620,11 +1687,21 @@ impl AdvancedAi {
             });
         if self.siege_needs_a_breaker {
             if no_breaker {
+                let nearest = nearest_breaker(g, pid, &city);
                 let wait = self
                     .siege_breaker_waits
                     .entry(city.pos)
-                    .or_insert((turn, turn));
-                wait.1 = turn;
+                    .or_insert(BreakerWait {
+                        since: turn,
+                        last: turn,
+                        nearest,
+                        nearest_turn: turn,
+                    });
+                wait.last = turn;
+                if nearest < wait.nearest {
+                    wait.nearest = nearest;
+                    wait.nearest_turn = turn;
+                }
             } else {
                 self.siege_breaker_waits.remove(&city.pos);
             }

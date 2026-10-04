@@ -6855,7 +6855,7 @@ pub struct AdvancedAi {
     /// for want of a breaker, keyed by the city's position (stable through a
     /// live rebuild's id churn): the first and the latest turn of the run.
     /// See `AdvancedAi::waiting_for_a_breaker`.
-    siege_breaker_waits: BTreeMap<Pos, (u32, u32)>,
+    siege_breaker_waits: BTreeMap<Pos, siege_train::BreakerWait>,
     /// `settler-site-gate`: a city starts a Settler only while an acceptable,
     /// unclaimed site worth founding exists for it. Opt-in gene; see
     /// `advanced/settler_site_gate.rs`.
