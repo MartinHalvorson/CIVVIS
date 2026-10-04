@@ -59,10 +59,13 @@ use std::collections::BTreeSet;
 /// the ancient opening has its own archery/conquest research.
 pub(super) const DECISIVE_WINDOW_OPENS: u32 = 60;
 /// Standard-speed turns of research a package may cost and still be a window
-/// rather than a wish: 40 Online turns, which at the live seat's measured
-/// t100 science (46 a turn) is Siege Tactics, Military Science and Metal
-/// Casting from a Medieval tree with room to spare.
-pub(super) const DECISIVE_RESEARCH_HORIZON: u32 = 80;
+/// rather than a wish: 25 Online turns. Frame-0 replays of live King G45-G47
+/// priced the packages that matter well inside it — Masonry for rams against
+/// Canada at t48 (24 turns), Knights and catapults at t72 (6), Musketmen and
+/// Bombards at t90 (5), Line Infantry or Llaneros and Bombards at t100 (19) —
+/// while every package past t115 (Tanks and Artillery, Modern Armor and
+/// Bombers: 30-52 turns) is a long modernization the air surge prices better.
+pub(super) const DECISIVE_RESEARCH_HORIZON: u32 = 50;
 /// The assault must out-strength the defender by this much: 30·e^(5/25) ≈ 37
 /// damage a blow against ≈ 24 taken — the first margin that wins trades.
 pub(super) const DECISIVE_MARGIN: f64 = 5.0;
