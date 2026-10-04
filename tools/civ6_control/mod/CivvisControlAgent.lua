@@ -10951,6 +10951,21 @@ CivvisTrade.abandon = function(subject, why)
 		queued = try(function()
 			return DiplomacyManager.HasQueuedSession(Game.GetLocalPlayer());
 		end, nil) });
+	-- ★★ A SENT ASK CLOSED UNANSWERED HOLDS THE TURN OPEN. The rival's verdict
+	-- still comes, as its own session to us; every observed pending-deal
+	-- wedge was that session arriving after our turn had ended (10-03, and
+	-- G72 civvis-20261004T185259Z t126: asked 19:04:17.211, closed unanswered
+	-- 0.53 s later, turn forced to end 0.5 s after that, Game Core waiting on
+	-- a GameUpdate forever, the game lost). Rival-initiated sessions that
+	-- arrive while our turn is open are processed normally, so keep it open
+	-- until the rival speaks or `DealAnswerHoldSeconds` pass. See
+	-- `CivvisTrade.holdsEndTurn`.
+	if session.sent and why == "session_closed" then
+		trade.turnHold = { turn = turn, target = subject,
+			at = try(function() return UI.GetElapsedTime(); end, nil) };
+		emit("deal_turn_hold", { turn = turn, target = subject, phase = "held",
+			seconds = tonumber(cfg.DealAnswerHoldSeconds) or 30 });
+	end
 	if not trade.disabled and trade.unanswered >= (cfg.DealSessionStandDown or 3) then
 		trade.disabled = true;
 		emit("deal_sessions_stood_down", { turn = turn, unanswered = trade.unanswered });
@@ -10966,6 +10981,13 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 	if pid == nil or pid < 0 or (fromPlayer ~= pid and toPlayer ~= pid) then return; end
 	local other = (fromPlayer == pid) and toPlayer or fromPlayer;
 	local trade = CivvisTrade;
+	-- The rival whose answer we are holding the turn for has spoken.
+	local hold = trade.turnHold;
+	if hold ~= nil and fromPlayer == hold.target then
+		trade.turnHold = nil;
+		emit("deal_turn_hold", { turn = hold.turn, target = hold.target,
+			phase = "released", why = "rival_spoke" });
+	end
 	local session = trade.sessions[other];
 	if session == nil then return; end
 	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
@@ -19704,6 +19726,28 @@ CivvisQueue.onLocalTurnEnd = function()
 	});
 end;
 
+-- Whether an unanswered deal ask still holds this turn open (see abandon).
+-- Bounded by `DealAnswerHoldSeconds` of the UI clock; a hold from another
+-- turn, or with no clock to bound it, is dropped rather than kept.
+CivvisTrade.holdsEndTurn = function(turn)
+	local hold = CivvisTrade.turnHold;
+	if hold == nil then return false; end
+	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local limit = tonumber(cfg.DealAnswerHoldSeconds) or 30;
+	if hold.turn ~= turn or type(now) ~= "number" or type(hold.at) ~= "number"
+			or now < hold.at or now - hold.at >= limit then
+		CivvisTrade.turnHold = nil;
+		emit("deal_turn_hold", { turn = hold.turn, target = hold.target,
+			phase = "released", why = hold.turn ~= turn and "turn_over" or "expired" });
+		return false;
+	end
+	if not hold.reported then
+		hold.reported = true;
+		emit("deal_turn_hold", { turn = turn, target = hold.target, phase = "holding" });
+	end
+	return true;
+end;
+
 -- Submission is not acceptance: the host may still be settling a movement.
 CivvisQueue.requestEndTurn = function(turn, parameters)
 	-- ActionPanel.lua:505-506 uses the same guard for automatic end turns.
@@ -19712,6 +19756,8 @@ CivvisQueue.requestEndTurn = function(turn, parameters)
 	if try(function() return UI.HasSentTurnComplete(); end, false) == true then
 		return false;
 	end
+	-- Forced or not: the wedge needs only the turn to end under the reply.
+	if CivvisTrade.holdsEndTurn(turn) then return false; end
 	-- The completion flag can clear repeatedly while the host rejects a turn.
 	-- Native t208 logged 7,843 unready requests, up to 70 in one second. Bound
 	-- retries across ALL callbacks, not just the divided game-core tick. The
