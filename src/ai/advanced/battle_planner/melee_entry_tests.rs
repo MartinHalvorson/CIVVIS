@@ -1,5 +1,180 @@
 use super::*;
 
+// Historical fb9f933 query, function-name/visibility change only. Keep this
+// oracle independent of the affordability treatment when auditing host blows.
+fn historical_unfiltered_strike_reach(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos> {
+    let Some(saved) = probe.units.get(&uid).cloned() else {
+        return Vec::new();
+    };
+    let spec = &probe.rules.units[saved.kind];
+    if spec.class != "military" || !(spec.is_melee_capable() || spec.has_ranged_attack()) {
+        return Vec::new();
+    }
+    if spec.domain.as_deref() == Some("air") {
+        return probe.attack_reach(uid);
+    }
+    let max_moves = probe.unit_max_moves(uid);
+    if max_moves <= 0.0 {
+        return Vec::new();
+    }
+    let melee = spec.is_melee_capable();
+    let ranged = spec.has_ranged_attack();
+    let siege = spec.siege;
+    let sea = spec.domain.as_deref() == Some("sea");
+    if let Some(live) = probe.units.get_mut(&uid) {
+        live.moves_left = max_moves;
+        live.moved = false;
+        live.acted = false;
+        live.zoc_stopped = false;
+        live.started_turn_in_zoc = false;
+    }
+    let mut stands: Vec<(Pos, f64)> = vec![(saved.pos, max_moves)];
+    stands.extend(
+        probe
+            .approach_reach(uid)
+            .into_iter()
+            .map(|(pos, (kept, _path))| (pos, kept)),
+    );
+    if let Some(live) = probe.units.get_mut(&uid) {
+        *live = saved.clone();
+    }
+    let range = if ranged {
+        probe.unit_attack_range(uid).max(1)
+    } else {
+        0
+    };
+    let after_move = probe.promotion_effect(&saved, "attack_after_move") > 0.0;
+    let host_sight = mirrored_board(probe, pid);
+    let mut targets: Vec<Pos> = Vec::new();
+    for (from, kept) in stands {
+        if kept <= 0.0 {
+            continue;
+        }
+        // A land unit standing on water is embarked there and strikes nothing.
+        let embarked = !sea
+            && probe
+                .map
+                .get(from)
+                .is_some_and(|tile| probe.rules.is_water(tile));
+        if embarked {
+            continue;
+        }
+        if melee {
+            for target in probe.nbrs(from) {
+                if probe.map.tiles.contains_key(&target)
+                    && probe.unit_can_melee_target_domain(uid, target)
+                {
+                    targets.push(target);
+                }
+            }
+        }
+        if ranged && (!siege || from == saved.pos || after_move) {
+            for target in probe.wdisk(from, range) {
+                if target != from
+                    && probe.map.tiles.contains_key(&target)
+                    && (host_sight || probe.unit_has_line_of_sight_from(uid, from, target))
+                {
+                    targets.push(target);
+                }
+            }
+        }
+    }
+    targets.sort_unstable();
+    targets.dedup();
+    targets
+}
+
+#[test]
+#[ignore = "read-only enemy host-combat forecasts supplied by external manifest"]
+fn inspect_recorded_enemy_strike_forecasts() {
+    let manifest = std::env::var("CIVVIS_ENEMY_STRIKE_MANIFEST").unwrap();
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(manifest).unwrap()).unwrap();
+    assert_eq!(manifest["setup"]["players"], 4);
+    assert_eq!(manifest["setup"]["city_states"], 6);
+    assert_eq!(manifest["setup"]["max_turns"], 650);
+    let mut rows = Vec::new();
+    for case in manifest["cases"].as_array().unwrap() {
+        let path = std::path::Path::new(case["prefix"].as_str().unwrap());
+        let snapshot = crate::mirror::snapshot_from_events(path).unwrap();
+        let state = crate::mirror::state_from_events(path, None).unwrap();
+        assert_eq!(u64::from(state.turn), case["turn"].as_u64().unwrap());
+        assert_eq!(u64::from(state.frame), case["frame"].as_u64().unwrap());
+        let live = crate::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 650, 6);
+        let enemy = live.foreign_uid_of[&case["native_enemy"].as_i64().unwrap()];
+        let defender = live.uid_of[&case["native_defender"].as_i64().unwrap()];
+        let mut g = live.game;
+        let position = |key: &str| {
+            at(
+                case[key][0].as_i64().unwrap() as i32,
+                case[key][1].as_i64().unwrap() as i32,
+            )
+        };
+        let target = position("target");
+        let attack_from = position("attack_from");
+        assert_eq!(g.units[&enemy].pos, position("start"));
+        assert_eq!(g.units[&defender].pos, target);
+        assert_eq!(
+            g.units[&enemy].kind.as_str(),
+            case["native_enemy_kind"]
+                .as_str()
+                .unwrap()
+                .strip_prefix("UNIT_")
+                .unwrap()
+                .to_ascii_lowercase()
+        );
+        assert_eq!(
+            g.units[&enemy].hp,
+            case["start_unit"]["hp"].as_i64().unwrap() as i32
+        );
+        assert_eq!(
+            g.unit_max_moves(enemy),
+            case["host_max_moves"].as_f64().unwrap()
+        );
+        let before = serde_json::to_value(&g).unwrap();
+        let index: Vec<_> = g
+            .map
+            .tiles
+            .keys()
+            .map(|pos| (*pos, g.unit_ids_at(*pos).to_vec()))
+            .collect();
+        let original = historical_unfiltered_strike_reach(&mut g, 0, enemy);
+        let filtered = strike_reach_of(&mut g, 0, enemy);
+        assert!(serde_json::to_value(&g).unwrap() == before);
+        let saved = g.units[&enemy].clone();
+        let maximum = g.unit_max_moves(enemy);
+        let unit = g.units.get_mut(&enemy).unwrap();
+        unit.moves_left = maximum;
+        unit.moved = false;
+        unit.acted = false;
+        unit.zoc_stopped = false;
+        unit.started_turn_in_zoc = false;
+        let reach = g.approach_reach(enemy);
+        let kept = if attack_from == saved.pos {
+            Some(maximum)
+        } else {
+            reach.get(&attack_from).map(|(kept, _)| *kept)
+        };
+        *g.units.get_mut(&enemy).unwrap() = saved;
+        let entry_cost = g.step_cost_for(enemy, attack_from, target);
+        let payable = kept.map(|kept| g.can_pay_melee_entry_from(enemy, attack_from, kept, target));
+        assert!(serde_json::to_value(&g).unwrap() == before);
+        for (pos, ids) in index {
+            assert_eq!(g.unit_ids_at(pos), ids);
+        }
+        let mut row = case.clone();
+        row["original_covers_actual_target"] = serde_json::json!(original.contains(&target));
+        row["filtered_covers_actual_target"] = serde_json::json!(filtered.contains(&target));
+        row["model_kept_at_actual_attack_from"] = serde_json::json!(kept);
+        row["model_entry_cost_at_actual_attack_from"] = serde_json::json!(entry_cost);
+        row["model_can_pay_at_actual_attack_from"] = serde_json::json!(payable);
+        row["scope"] = serde_json::json!("Modeled forecast on pre-combat own observation, not actual enemy issue-time MP or independently known path; unobserved opponent changes remain possible");
+        rows.push(row);
+    }
+    let output = std::env::var("CIVVIS_ENEMY_STRIKE_OUTPUT").unwrap();
+    std::fs::write(output, serde_json::to_vec_pretty(&rows).unwrap()).unwrap();
+}
+
 fn at(col: i32, row: i32) -> Pos {
     crate::hex::offset_to_axial(col, row)
 }
