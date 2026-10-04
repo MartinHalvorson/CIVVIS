@@ -2493,6 +2493,23 @@ pub const GENES: &[Gene] = &[
     // the Siege Tower walked in circles in the Reserve. See
     // `siege_train::BreachReading`.
     Gene { tag: "siege-needs-a-breaker", field: "siege_needs_a_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_needs_a_breaker, disable: AdvancedAi::disable_siege_needs_a_breaker },
+    // Live King October 2026: the delegated governor's district list never
+    // names the Industrial Zone, so 28 games held 0.1 zones at t100 and 0.9
+    // at t200 against 7.9 Campuses, with ~95% of production from worked
+    // tiles. See `BasicAi::industry_before_the_army`.
+    Gene { tag: "industry-before-the-army", field: "industry_before_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_industry_before_the_army, disable: AdvancedAi::disable_industry_before_the_army },
+    // Live King October 2026: Urban Planning in 11 of 26 games at t100; the
+    // timed economy held a one-slot deck's Colonization through the whole
+    // expansion phase. See `AdvancedAi::colonization_earns_its_slot`.
+    // Version 1 over 22 domination pairs: +302 production by t150 (z +2.8),
+    // -2.2 Gold a turn at t120 (z -2.6), rivals' Culture wins 12 of 22
+    // against 6. See `BasicAi::industry_before_the_army_2`.
+    Gene { tag: "industry-before-the-army-2", field: "industry_before_the_army_2", kind: Kind::OptIn, enable: AdvancedAi::enable_industry_before_the_army_2, disable: AdvancedAi::disable_industry_before_the_army_2 },
+    // The zone in the stock district list, behind the floor: version 1 ahead
+    // of the floor thinned the wartime army. See
+    // `BasicAi::industry_in_the_district_list`.
+    Gene { tag: "industry-in-the-district-list", field: "industry_in_the_district_list", kind: Kind::OptIn, enable: AdvancedAi::enable_industry_in_the_district_list, disable: AdvancedAi::disable_industry_in_the_district_list },
+    Gene { tag: "colonization-earns-its-slot", field: "colonization_earns_its_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_colonization_earns_its_slot, disable: AdvancedAi::disable_colonization_earns_its_slot },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

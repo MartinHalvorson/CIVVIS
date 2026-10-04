@@ -5658,6 +5658,15 @@ pub struct AdvancedAi {
     /// `campus-before-the-army-3`: version 2, on through the University and
     /// the Research Lab. See `BasicAi::campus_before_the_army_3`.
     campus_before_the_army_3: bool,
+    /// `colonization-earns-its-slot`: the timed economy commits an economic
+    /// slot to Colonization only while the Settlers actually in production
+    /// would gain more from it than every city gains from Urban Planning.
+    /// The stock timing commits the slot for the whole expansion phase, so a
+    /// one-slot government held Colonization with no Settler queued and
+    /// Urban Planning (+1 Production in every city) never reached the deck:
+    /// 11 of 26 live King games held it at t100. Policy swaps are free on
+    /// the host, so the slot can follow the queue turn by turn.
+    colonization_earns_its_slot: bool,
     // ---- append: e-f ------------------------------------------------
     /// A district is worth the land-grab building it will host.
     ///
@@ -6214,6 +6223,16 @@ pub struct AdvancedAi {
     /// Aqueduct) ahead of the military floor. Opt-in gene
     /// `granary-before-the-army`; see `BasicAi::granary_before_the_army`.
     granary_before_the_army: bool,
+    /// The delegated city governor's Industrial Zone, Workshop and Factory
+    /// ahead of the military floor. Opt-in gene `industry-before-the-army`;
+    /// see `BasicAi::industry_before_the_army`.
+    industry_before_the_army: bool,
+    /// Version 2 of `industry-before-the-army`; see
+    /// `BasicAi::industry_before_the_army_2`.
+    industry_before_the_army_2: bool,
+    /// The Industrial Zone in the delegated governor's district list; see
+    /// `BasicAi::industry_in_the_district_list`.
+    industry_in_the_district_list: bool,
     // ---- append: l-o ------------------------------------------------
     /// A city's Monument ahead of the military floor and the Settler step in
     /// the delegated city governor. Opt-in gene `monument-first`; see
@@ -8717,6 +8736,7 @@ impl AdvancedAi {
             campus_before_the_army: false,
             campus_before_the_army_2: false,
             campus_before_the_army_3: false,
+            colonization_earns_its_slot: false,
             // ---- append: e-f ----------------------------------------
             expansion_hall_district: false,
             early_conquest_opening: false,
@@ -8770,6 +8790,9 @@ impl AdvancedAi {
 
             host_war_unit_losses: None,
             granary_before_the_army: false,
+            industry_before_the_army: false,
+            industry_before_the_army_2: false,
+            industry_in_the_district_list: false,
             // ---- append: l-o ----------------------------------------
             monument_first: false,
             magnus_follows_settlers: false,
@@ -17183,6 +17206,36 @@ impl AdvancedAi {
         }
     }
 
+    /// See `colonization_earns_its_slot`: whether Urban Planning, available
+    /// to this empire, adds more production than Colonization's +50% adds to
+    /// the cities whose queue opens with a Settler.
+    fn urban_planning_outearns_colonization(g: &Game, pid: usize, city_ids: &[u32]) -> bool {
+        let planning = Name::new("urban_planning");
+        let colonization = Name::new("colonization");
+        if !g.available_policies(pid).contains(&planning) && !g.players[pid].policies.contains(&planning) {
+            return false;
+        }
+        let pct = |card: &Name, effect: &str| {
+            g.rules
+                .policies
+                .get(card)
+                .and_then(|spec| spec.effects.get(effect).copied())
+                .unwrap_or(0.0)
+        };
+        let settler_gain: f64 = city_ids
+            .iter()
+            .filter(|city| {
+                matches!(
+                    g.cities[city].queue.first(),
+                    Some(Item::Unit { unit }) if unit == "settler"
+                )
+            })
+            .map(|city| g.city_yields(*city).production * pct(&colonization, "settler_production_pct") / 100.0)
+            .sum();
+        let planning_gain = pct(&planning, "city_production") * city_ids.len() as f64;
+        planning_gain > settler_gain
+    }
+
     fn strategic_policies(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
         let objective = self.decision_objective(strategy);
 
@@ -17409,6 +17462,12 @@ impl AdvancedAi {
                 )
             });
             let expansion_active = settler_queued || city_ids.len() + settlers < city_goal;
+            // `colonization-earns-its-slot`: an expansion phase with no
+            // Settler worth half Urban Planning's yield in production leaves
+            // the slot to Urban Planning this turn.
+            let expansion_active = expansion_active
+                && !(self.colonization_earns_its_slot
+                    && Self::urban_planning_outearns_colonization(g, pid, &city_ids));
             if expansion_active || builder_queued {
                 const TIMED_ECONOMY: [&str; 6] = [
                     "expropriation",

@@ -2467,6 +2467,15 @@
           "housing-research-2": null
         }
       },
+      "industry-before-the-army": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "industry-before-the-army": null,
+          "industry-before-the-army-2": null
+        }
+      },
       "lane-delegates-production": {
         "rule_on": [],
         "head": null,

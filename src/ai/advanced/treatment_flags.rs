@@ -4915,6 +4915,57 @@ impl AdvancedAi {
         self.siege_needs_a_breaker = false;
     }
 
+    /// See `BasicAi::industry_before_the_army`: the Industrial Zone, its
+    /// Workshop and its Factory ahead of the military floor.
+    pub fn enable_industry_before_the_army(&mut self) {
+        self.disable_industry_before_the_army_2();
+        self.industry_before_the_army = true;
+        self.base.industry_before_the_army = true;
+    }
+
+    /// The twin of `enable_industry_before_the_army`.
+    pub fn disable_industry_before_the_army(&mut self) {
+        self.industry_before_the_army = false;
+        self.base.industry_before_the_army = false;
+    }
+
+    /// See `BasicAi::industry_before_the_army_2`: version 1 keeping a slot
+    /// for the Theater and five Gold a turn. Exclusive with version 1.
+    pub fn enable_industry_before_the_army_2(&mut self) {
+        self.disable_industry_before_the_army();
+        self.industry_before_the_army_2 = true;
+        self.base.industry_before_the_army_2 = true;
+    }
+
+    /// The twin of `enable_industry_before_the_army_2`.
+    pub fn disable_industry_before_the_army_2(&mut self) {
+        self.industry_before_the_army_2 = false;
+        self.base.industry_before_the_army_2 = false;
+    }
+
+    /// See `BasicAi::industry_in_the_district_list`.
+    pub fn enable_industry_in_the_district_list(&mut self) {
+        self.industry_in_the_district_list = true;
+        self.base.industry_in_the_district_list = true;
+    }
+
+    /// The twin of `enable_industry_in_the_district_list`.
+    pub fn disable_industry_in_the_district_list(&mut self) {
+        self.industry_in_the_district_list = false;
+        self.base.industry_in_the_district_list = false;
+    }
+
+    /// Opt-in gene `colonization-earns-its-slot`; see
+    /// [`Self::colonization_earns_its_slot`].
+    pub fn enable_colonization_earns_its_slot(&mut self) {
+        self.colonization_earns_its_slot = true;
+    }
+
+    /// The twin of `enable_colonization_earns_its_slot`.
+    pub fn disable_colonization_earns_its_slot(&mut self) {
+        self.colonization_earns_its_slot = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
