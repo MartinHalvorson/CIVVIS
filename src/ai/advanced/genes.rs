@@ -2519,6 +2519,10 @@ pub const GENES: &[Gene] = &[
     // See `BasicAi::builder_before_the_army_3`.
     Gene { tag: "builder-before-the-army-3", field: "builder_before_the_army_3", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_before_the_army_3, disable: AdvancedAi::disable_builder_before_the_army_3 },
     Gene { tag: "colonization-earns-its-slot", field: "colonization_earns_its_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_colonization_earns_its_slot, disable: AdvancedAi::disable_colonization_earns_its_slot },
+    // Live King civvis-20261004T033533Z: Babylon's catapults held six to ten
+    // tiles out for eighteen turns, each refusing any tile one archer could
+    // reach. See `siege_train::STAGING_ESCORT_BODIES`.
+    Gene { tag: "staging-gun-trusts-its-escort", field: "staging_gun_trusts_its_escort", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_trusts_its_escort, disable: AdvancedAi::disable_staging_gun_trusts_its_escort },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
