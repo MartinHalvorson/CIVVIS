@@ -6379,6 +6379,23 @@ CivvisUnitVisible = function(pid, unit)
 	end, false) == true;
 end;
 
+-- UnitPanel.lua:2151-2155 and EspionageOverview.lua:644-647 use the
+-- purchase city even when a running Spy stands on its target district.
+-- Only our own Spy crosses; no foreign agent or unobserved city is sampled.
+CivvisSpyCity = function(unit, name, pid)
+	if name ~= "UNIT_SPY" then return nil; end
+	return try(function()
+		if unit:GetOwner() ~= pid then return nil; end
+		local plot = Map.GetPlot(unit:GetX(), unit:GetY());
+		if plot == nil then return nil; end
+		local city = Cities.GetPlotPurchaseCity(plot);
+		if city == nil then return nil; end
+		local id, player, x, y = city:GetID(), city:GetOwner(), city:GetX(), city:GetY();
+		if id == nil or player == nil or x == nil or y == nil then return nil; end
+		return { id = id, player = player, x = x, y = y };
+	end, nil);
+end;
+
 local function exportState(player, pid, turn, frame, eventKind)
 	-- Keep export-only helpers inside this function: the main chunk is near
 	-- Lua's local-variable ceiling.
@@ -7564,6 +7581,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			spy_operation = spyOperation,
 			spy_operation_end_turn = spyEnds,
 			spy_missions_available = spyMissions,
+			spy_city = CivvisSpyCity(unit, name, pid),
 			great_person = greatPerson,
 			concert_plots = CivvisRockBandConcertPlots(unit, name),
 			offered_promotions = CivvisRockBandPromotionChoices(unit, name),

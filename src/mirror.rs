@@ -42,8 +42,10 @@ mod capital_identity;
 mod dedication_history;
 mod host_deaths;
 mod religion_state;
+mod spy_posting;
 mod strategic_income;
 pub use host_deaths::HostUnitDeath;
+pub use spy_posting::StateSpyCity;
 
 use crate::{
     name::Name,
@@ -2341,6 +2343,10 @@ pub struct StateUnit {
     pub spy_operation_end_turn: Option<i64>,
     #[serde(default)]
     pub spy_missions_available: Option<Vec<String>>,
+    /// The host purchase city of a Spy's plot, including a district operation:
+    /// `UnitPanel.lua:2151-2155`, not a nearest-city or city-center guess.
+    #[serde(default)]
+    pub spy_city: Option<StateSpyCity>,
     /// Exact host experience and promotion state. Option distinguishes an older
     /// archive that never exported the facts from a level-one unit with none.
     #[serde(default)]
@@ -5865,6 +5871,7 @@ const UNIT_KEYS: &[&str] = &[
     "spy_operation",
     "spy_operation_end_turn",
     "spy_missions_available",
+    "spy_city",
     "concert_plots",
 ];
 
@@ -8004,7 +8011,7 @@ struct LiveSpySeat {
     ready_turn: u32,
 }
 
-fn seat_live_spies(game: &mut crate::game::Game) {
+fn seat_live_spies(game: &mut crate::game::Game, state: &StateSnapshot) {
     game.spies.retain(|_, spy| spy.owner != 0);
     let turn = game.turn;
     let live: Vec<LiveSpySeat> = game
@@ -8012,11 +8019,7 @@ fn seat_live_spies(game: &mut crate::game::Game) {
         .values()
         .filter(|unit| unit.owner == 0 && unit.kind == "spy")
         .map(|unit| {
-            let city = game
-                .cities
-                .iter()
-                .find(|(_, city)| city.pos == unit.pos)
-                .map(|(id, _)| *id);
+            let city = spy_posting::city_of(game, state, unit.id, unit.pos);
             // ★★★ THE HOST'S OWN OPERATION, WHEN IT CROSSED. Every seat 0 Spy
             // is re-seated fresh on every sync, so until the host's
             // `GetSpyOperation` reached this board a Spy on a mission read as
@@ -12801,7 +12804,7 @@ pub fn rebuild_from_state(
     let menus = host_menus_from(&state.cities, &city_ids, &game.rules);
     game.replace_host_unit_resource_prices(menus.unit_resource_prices);
     game.replace_host_menus(menus.buildable, menus.purchasable, menus.district_plots);
-    seat_live_spies(&mut game);
+    seat_live_spies(&mut game, state);
     block_live_spy_production(&mut game, state.spy_capacity);
     let blocked_purchases =
         blocked_production_from(&state.refused_purchases, &city_ids, &game.rules);
@@ -14476,15 +14479,12 @@ impl LiveMirror {
             }
         }
 
-        // This host rule is permanent, unlike a recent refusal cooldown. Apply it after
-        // each replacement and after newly observed cities have been placed.
-        seat_live_spies(&mut self.game);
-        block_live_spy_production(&mut self.game, state.spy_capacity);
-
         // --- rivals ----------------------------------------------------------
         // Rebuilt wholesale: what we can see of them is fog-dependent and they carry
         // no plan of ours worth preserving.
         if skip_rivals {
+            seat_live_spies(&mut self.game, state);
+            block_live_spy_production(&mut self.game, state.spy_capacity);
             apply_governor_state(&mut self.game, state, &mut self.unmapped);
             apply_great_person_points(&mut self.game, state, &mut self.unmapped);
             apply_strategic_stockpiles(&mut self.game, state, &mut self.unmapped);
@@ -14871,6 +14871,10 @@ impl LiveMirror {
         .with_board(&self.known_city_ids, &minor_assignments, &seat_of_host);
         run_host_steps(&mut ctx, HostPhase::Board);
         run_host_steps(&mut ctx, HostPhase::Finish);
+        // The posting can name a newly observed foreign city. Resolve it
+        // after the same whole-board reconstruction as the district itself.
+        seat_live_spies(&mut self.game, state);
+        block_live_spy_production(&mut self.game, state.spy_capacity);
     }
 }
 
