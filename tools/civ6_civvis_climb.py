@@ -447,8 +447,18 @@ def remember_cleanup_game_processes(tag: str) -> list[dict]:
         # process whose second-resolution ``lstart`` does not prove it began
         # after that preparation; losing a recovery is safer than adopting an
         # orphan that was already on the desktop.
+        # ⚠⚠ BUT `lstart` IS TRUNCATED TO THE SECOND, and the game starts within
+        # milliseconds of this receipt (live G73: receipt 19:07:40.977, Civ VI
+        # 19:07:41). A process that began in the receipt's own second reads
+        # as that second's :00, i.e. BEFORE the fractional launch epoch, and
+        # was rejected: live King civvis-20261004T185259Z (game 72) froze at
+        # t126 with an empty `game_processes`, teardown refused "foreign run
+        # with no readable tag", and the autosave resume never ran — a game
+        # holding two capitals at 698 vs 456 power, thrown away on a coin flip
+        # of sub-second timing. Compare against the launch SECOND: the
+        # baseline above already excludes every process that predates it.
         started_epoch = _process_start_epoch(started)
-        if started_epoch is None or started_epoch <= launch_epoch:
+        if started_epoch is None or started_epoch < math.floor(launch_epoch):
             continue
         if known.get(pid) != started:
             known[pid] = started

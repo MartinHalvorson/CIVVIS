@@ -454,6 +454,37 @@ class ExitConfirmationRecoveryTests(unittest.TestCase):
             finally:
                 climb.RUN_ROOT = old_root
 
+    def test_remember_adopts_a_game_started_in_the_receipts_own_second(self):
+        # `lstart` is whole seconds; the game starts within milliseconds of
+        # the receipt (live G72 froze with an empty receipt and its resume
+        # was refused). Same second as the receipt: ours. A second earlier:
+        # not proven, and still refused.
+        with tempfile.TemporaryDirectory() as temporary:
+            old_root = climb.RUN_ROOT
+            climb.RUN_ROOT = Path(temporary)
+            try:
+                path = climb._cleanup_ownership_path(self.TAG)
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps({
+                    "tag": self.TAG,
+                    "player_pid": 99,
+                    "launch_epoch": 1000.546,
+                    "baseline_game_processes": [],
+                    "game_processes": [],
+                }))
+                epochs = {"same-second": 1000.0, "second-before": 999.0}
+                with mock.patch.object(
+                        climb, "_game_process_identities", return_value=[
+                            {"pid": 202, "started": "same-second"},
+                            {"pid": 303, "started": "second-before"},
+                        ]), mock.patch.object(
+                            climb, "_process_start_epoch",
+                            side_effect=lambda stamp: epochs[stamp]):
+                    recorded = climb.remember_cleanup_game_processes(self.TAG)
+                self.assertEqual([{"pid": 202, "started": "same-second"}], recorded)
+            finally:
+                climb.RUN_ROOT = old_root
+
     def test_missing_tag_recovery_clicks_only_the_verified_owned_dialog(self):
         with tempfile.TemporaryDirectory() as temporary:
             old_root = climb.RUN_ROOT
