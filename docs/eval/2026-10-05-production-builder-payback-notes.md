@@ -47,7 +47,9 @@ requires improvement at both difficulties without lower survival or more than
   two legal improvements with exactly zero net Production gain.
 - Treatment append-point suite: fourteen passed.
 - Prototype-one GitHub full Cargo gate passed on source `159b212a5`.
-- Local Rust quality passed for all four changed Rust files.
+- Prototype-one local Rust quality passed for all four changed Rust files.
+- Final Rust quality passed for the historical probe after runtime removal;
+  final changed native-source set is empty. `git diff --check` passed.
 - A new five-test fast suite passes after the shared turn-driver reservation;
   this includes a full native delegated turn with the opening already complete
   and both required Scouts present. A disabled control chooses another item.
