@@ -1054,6 +1054,61 @@ class Civ6PlayTest(unittest.TestCase):
         )
         sleep.assert_called_once_with(1.0)
 
+    def test_the_first_board_is_relayed_while_a_capture_is_still_running(self) -> None:
+        """G73: the board waited 11.2 s behind two failed captures."""
+        import threading as _threading
+        bounds = (864, 33, 864, 542)
+        calls, active, overlap = [], [0], [False]
+        guard = _threading.Lock()
+        capture = {}
+
+        def board_ready():
+            with guard:
+                active[0] += 1
+                if active[0] > 1:
+                    overlap[0] = True
+            calls.append(time.monotonic())
+            time.sleep(0.002)
+            with guard:
+                active[0] -= 1
+            return True
+
+        def slow_screenshot(path, **_kw):
+            capture["start"] = time.monotonic()
+            time.sleep(0.3)
+            capture["end"] = time.monotonic()
+
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot", side_effect=slow_screenshot), \
+             patch.object(civ6_play, "_leader_intro_visible", return_value=False):
+            started = time.monotonic()
+            self.assertFalse(civ6_play.advance_leader_intro(
+                bounds, "LEADER_TRAJAN", Path(temporary), 1, retries=3,
+                poll_s=0.01, board_ready=board_ready, relay_s=0.02))
+        during = [t for t in calls if capture["start"] <= t <= capture["end"]]
+        self.assertTrue(during, "the log was drained while the capture ran")
+        self.assertLess(calls[0] - started, 0.1, "the board is relayed at once")
+        self.assertFalse(overlap[0], "the log is never drained by two threads at once")
+        after = len(calls)
+        time.sleep(0.1)
+        self.assertEqual(len(calls), after, "the relay stops with the probe")
+
+    def test_the_relay_does_not_end_the_probe_before_the_screen_is_read(self) -> None:
+        bounds = (864, 33, 864, 542)
+        order = []
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot",
+                          side_effect=lambda path, **_kw: (time.sleep(0.05), order.append("shot"))), \
+             patch.object(civ6_play, "_leader_intro_visible",
+                          side_effect=lambda *a: (order.append("proof"), True)[1]), \
+             patch.object(civ6_play, "click_at") as click:
+            self.assertTrue(civ6_play.advance_leader_intro(
+                bounds, "LEADER_TRAJAN", Path(temporary), 1, retries=3,
+                poll_s=0.01, board_ready=lambda: True, relay_s=0.01))
+        click.assert_called_once()
+        self.assertEqual(order[:2], ["shot", "proof"],
+                         "a visible card is still clicked even with the board relayed")
+
     def test_live_run_holds_macos_awake_for_its_process_lifetime(self) -> None:
         with patch.object(civ6_play.sys, "platform", "darwin"), \
              patch.object(civ6_play.os, "getpid", return_value=4321), \
