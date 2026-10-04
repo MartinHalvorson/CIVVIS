@@ -368,3 +368,25 @@ Against version 2 it scored −51 (z −1.87), with Science −12, Culture −10
 Gold −8.6 at t150. A 72-game confirmation screen of the armed version 2
 (seeds 31004000) gave +1.1 pp (z +0.26). The earlier 24-game −14.7 pp
 (z −2.90) was noise.
+
+## Where the economy stands (2026-10-04 early UTC)
+
+Armed from game 36/37 on: `builder-before-the-army-2`, `campus-before-the-army-2`,
+`settler-before-the-navy`, `policy-deck-hysteresis-2`, plus `culture-defense-theater`
+(with the Campus and Settler gates) and `upkeep-reserve`.
+
+| game | t100 cities / pop | t100 Science vs best | later |
+|---|---|---|---|
+| 37 (131343Z) | 9 / 40 | 72 vs 95 (0.76) | 138 vs 174 at t150; Technology loss t238 to a 15-city, 200-pop runaway |
+| 44 (025448Z) | 8 / 42 | 59 vs 69 (0.85) | **191 vs 133 at t175, Science lead**; Culture loss t194 to Nubia |
+| 46 (033533Z) | 9 / 52 | 71 vs 106 (0.67) | lost 2 cities by t150, 69 vs 179 |
+
+The t100 economy is no longer what loses these games. Game 44 led Science, ran
++67 Gold a turn and had no bankrupt turns. Its own domestic Tourists (75-77)
+sat at the culture bar. It still lost the culture race to Nubia, whom the
+campaign had targeted from t130. Nubia grew from 5 to 9 cities while our
+sieges stood in Stage with nothing staged. Across today's runs, 26 Siege
+streaks lasted 8 or more turns with "0 of N units staged". The force shrinks
+on about one staging turn in three everywhere (the drain), but the empty
+streaks carry larger forces than average. So they are a convergence problem
+for the siege lane, and the next lever is there, not in the economy.
