@@ -5013,9 +5013,22 @@ impl AdvancedAi {
         self.base.industrial_hub = false;
     }
 
+    /// Opt-in gene `colonization-earns-its-slot-2`; see
+    /// [`Self::colonization_earns_its_slot_2`]. Exclusive with version 1.
+    pub fn enable_colonization_earns_its_slot_2(&mut self) {
+        self.disable_colonization_earns_its_slot();
+        self.colonization_earns_its_slot_2 = true;
+    }
+
+    /// The twin of `enable_colonization_earns_its_slot_2`.
+    pub fn disable_colonization_earns_its_slot_2(&mut self) {
+        self.colonization_earns_its_slot_2 = false;
+    }
+
     /// Opt-in gene `colonization-earns-its-slot`; see
     /// [`Self::colonization_earns_its_slot`].
     pub fn enable_colonization_earns_its_slot(&mut self) {
+        self.disable_colonization_earns_its_slot_2();
         self.colonization_earns_its_slot = true;
     }
 

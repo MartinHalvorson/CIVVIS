@@ -22031,6 +22031,82 @@ fn live_war_economy_recovers_before_rearming_a_bankrupt_army() {
     );
 }
 
+/// See `colonization_earns_its_slot_2`: a queued Builder no longer holds the
+/// one early economic slot for Ilkum when Urban Planning out-produces it.
+#[test]
+fn colonization_earns_its_slot_2_weighs_the_builder_cards_too() {
+    let setup = |version: u8| {
+        let (mut game, city, _) = empire_with_a_capital(79_099);
+        game.cities.get_mut(&city).unwrap().pop = 3;
+        game.players[0].government = Some("chiefdom".to_string());
+        game.players[0].civics.extend([
+            crate::name!("code_of_laws"),
+            crate::name!("early_empire"),
+            crate::name!("craftsmanship"),
+        ]);
+        game.players[0]
+            .policies
+            .extend([crate::name!("discipline"), crate::name!("urban_planning")]);
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: Item::Unit {
+                    unit: crate::name!("builder"),
+                },
+            },
+        )
+        .expect("the capital can build a Builder");
+        // A second city, not building a Builder: Urban Planning's +1 in
+        // each of two cities outweighs Ilkum's +30% on one capital.
+        let center = game.cities[&city].pos;
+        let site = game
+            .map
+            .tiles
+            .iter()
+            .find(|(pos, tile)| {
+                game.wdist(center, **pos) == 4
+                    && !game.rules.terrains[&tile.terrain].water
+                    && tile.terrain != "mountain"
+                    && tile.owner_city.is_none()
+            })
+            .map(|(pos, _)| *pos)
+            .expect("the fixture has room for a second city");
+        game.found_city_for(0, site, None);
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+        ai.enable_wide_map_capacity();
+        if version == 1 {
+            ai.enable_colonization_earns_its_slot();
+        } else {
+            ai.enable_colonization_earns_its_slot_2();
+        }
+        ai.plan = Some(StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 1,
+            assessed_turn: game.turn,
+            rush: false,
+        });
+        ai.strategic_policies(&mut game, 0, GrandStrategy::Science);
+        game
+    };
+    let first = setup(1);
+    assert!(
+        first.players[0].policies.contains(&crate::name!("ilkum")),
+        "version 1 commits the slot to Ilkum for the queued Builder"
+    );
+    let second = setup(2);
+    assert!(
+        second.players[0]
+            .policies
+            .contains(&crate::name!("urban_planning")),
+        "version 2 keeps Urban Planning over Ilkum on one Builder in two cities"
+    );
+    assert!(!second.players[0].policies.contains(&crate::name!("ilkum")));
+}
+
 /// See `colonization_earns_its_slot`: with no Settler in production, the
 /// one early economic slot stays with Urban Planning even while the city
 /// plan is short; a queued Settler still takes it for Colonization.

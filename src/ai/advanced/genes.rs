@@ -2523,6 +2523,10 @@ pub const GENES: &[Gene] = &[
     // One zone where its Factory reaches the most cities: 5.6 of 8.6 live
     // cities at t130. See `BasicAi::industrial_hub`.
     Gene { tag: "industrial-hub", field: "industrial_hub", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_hub, disable: AdvancedAi::disable_industrial_hub },
+    // Version 1's test for the Builder cards too: builder-before-the-army-3
+    // queues Builders often enough to hold Urban Planning out behind Ilkum.
+    // See `AdvancedAi::colonization_earns_its_slot_2`.
+    Gene { tag: "colonization-earns-its-slot-2", field: "colonization_earns_its_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_colonization_earns_its_slot_2, disable: AdvancedAi::disable_colonization_earns_its_slot_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

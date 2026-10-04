@@ -2262,6 +2262,15 @@
           "coastal-city-sites-2": null
         }
       },
+      "colonization-earns-its-slot": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "colonization-earns-its-slot": null,
+          "colonization-earns-its-slot-2": null
+        }
+      },
       "connect-the-luxury": {
         "rule_on": [
           "connect-the-luxury"

@@ -160,7 +160,7 @@ struct Outcome {
 /// checkpoints (`cities_at_60`, `techs_at_100`) and a later one.
 /// Schema 5 adds turns 40, 80, 120 and 200 so a production policy is read on
 /// the curve it bends, not only at the ladder's checkpoints.
-const ECONOMY_MARKS: [u32; 7] = [40, 60, 80, 100, 120, 150, 200];
+const ECONOMY_MARKS: [u32; 10] = [40, 60, 80, 100, 120, 140, 150, 160, 180, 200];
 
 #[derive(Debug, Default, Serialize, Clone)]
 struct SeatEconomy {
@@ -261,6 +261,10 @@ struct EconomySnapshot {
     turn: u32,
     focal: SeatEconomy,
     best_rival: SeatEconomy,
+    /// Every living major's `(seat, domestic tourists, foreign tourists)`:
+    /// a Culture victory is foreign tourists above every other major's
+    /// domestic count, so this names who holds the bar.
+    tourists: Vec<(usize, i64, i64)>,
 }
 
 /// Adds each seat's city production for this turn to its running total.
@@ -288,10 +292,17 @@ fn observe_economy(g: &Game, totals: &[f64], economy: &mut Vec<EconomySnapshot>)
         .filter(|p| p.id != 0 && p.alive && !p.is_minor && !p.is_barbarian)
         .map(|p| SeatEconomy::of(g, p.id, to_date(p.id)))
         .fold(SeatEconomy::default(), SeatEconomy::max);
+    let tourists = g
+        .players
+        .iter()
+        .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
+        .map(|p| (p.id, g.domestic_tourists(p.id), g.foreign_tourists(p.id)))
+        .collect();
     economy.push(EconomySnapshot {
         turn: g.turn,
         focal: SeatEconomy::of(g, 0, to_date(0)),
         best_rival,
+        tourists,
     });
 }
 

@@ -5670,6 +5670,13 @@ pub struct AdvancedAi {
     /// 11 of 26 live King games held it at t100. Policy swaps are free on
     /// the host, so the slot can follow the queue turn by turn.
     colonization_earns_its_slot: bool,
+    /// `colonization-earns-its-slot-2`: version 1, and the same test for the
+    /// Builder cards. A queued Builder commits the slot only to a card that
+    /// adds build charges (Serfdom, Public Works) or to an Ilkum whose +30%
+    /// on the queued Builders out-produces Urban Planning's +1 in every
+    /// city; `builder-before-the-army-3` queues Builders often enough that
+    /// the stock Ilkum commitment would hold Urban Planning out again.
+    colonization_earns_its_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// A district is worth the land-grab building it will host.
     ///
@@ -8756,6 +8763,7 @@ impl AdvancedAi {
             campus_before_the_army_2: false,
             campus_before_the_army_3: false,
             colonization_earns_its_slot: false,
+            colonization_earns_its_slot_2: false,
             // ---- append: e-f ----------------------------------------
             expansion_hall_district: false,
             early_conquest_opening: false,
@@ -17263,6 +17271,44 @@ impl AdvancedAi {
         planning_gain > settler_gain
     }
 
+    /// See `colonization_earns_its_slot_2`: whether Urban Planning, available
+    /// to this empire, adds more production than Ilkum's +30% adds to the
+    /// cities whose queue opens with a Builder, while no card adding build
+    /// charges (Serfdom, Public Works) is on the menu or slotted.
+    fn urban_planning_outearns_builder_cards(g: &Game, pid: usize, city_ids: &[u32]) -> bool {
+        let planning = Name::new("urban_planning");
+        let held_or_offered = |card: &Name| {
+            g.players[pid].policies.contains(card) || g.available_policies(pid).contains(card)
+        };
+        if !held_or_offered(&planning)
+            || ["serfdom", "public_works"]
+                .iter()
+                .any(|card| held_or_offered(&Name::new(card)))
+        {
+            return false;
+        }
+        let pct = |card: &str, effect: &str| {
+            g.rules
+                .policies
+                .get(&Name::new(card))
+                .and_then(|spec| spec.effects.get(effect).copied())
+                .unwrap_or(0.0)
+        };
+        let ilkum_gain: f64 = city_ids
+            .iter()
+            .filter(|city| {
+                matches!(
+                    g.cities[city].queue.first(),
+                    Some(Item::Unit { unit }) if unit == "builder"
+                )
+            })
+            .map(|city| {
+                g.city_yields(*city).production * pct("ilkum", "builder_production_pct") / 100.0
+            })
+            .sum();
+        pct("urban_planning", "city_production") * city_ids.len() as f64 > ilkum_gain
+    }
+
     fn strategic_policies(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
         let objective = self.decision_objective(strategy);
 
@@ -17493,8 +17539,13 @@ impl AdvancedAi {
             // Settler worth half Urban Planning's yield in production leaves
             // the slot to Urban Planning this turn.
             let expansion_active = expansion_active
-                && !(self.colonization_earns_its_slot
+                && !((self.colonization_earns_its_slot || self.colonization_earns_its_slot_2)
                     && Self::urban_planning_outearns_colonization(g, pid, &city_ids));
+            // Version 2: and a queued Builder only for a charge card or an
+            // Ilkum that out-produces Urban Planning.
+            let builder_queued = builder_queued
+                && !(self.colonization_earns_its_slot_2
+                    && Self::urban_planning_outearns_builder_cards(g, pid, &city_ids));
             if expansion_active || builder_queued {
                 const TIMED_ECONOMY: [&str; 6] = [
                     "expropriation",
