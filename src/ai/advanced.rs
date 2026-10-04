@@ -6139,6 +6139,10 @@ pub struct AdvancedAi {
     /// Aqueduct follows the Granary while the city is still housing-bound. See
     /// `BasicAi::housing_reserve`.
     first_granary_reserve_3: bool,
+    /// The delegated governor's military floor builds where the unit reaches
+    /// the campaign's target city soonest. Opt-in gene `front-weighted-floor`;
+    /// see `BasicAi::front_weighted_floor`.
+    front_weighted_floor: bool,
     // ---- append: g-k ------------------------------------------------
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     great_work_completion_value: bool,
@@ -8898,6 +8902,7 @@ impl AdvancedAi {
             early_settler_homes: BTreeMap::new(),
             first_granary_reserve_3: false,
 
+            front_weighted_floor: false,
             // ---- append: g-k ----------------------------------------
             great_work_completion_value: false,
             industrial_chain_debt: false,
@@ -13654,6 +13659,14 @@ impl AdvancedAi {
     /// it. The speed-aware deadline similarly extends the raw turn-150 gene on
     /// slower or longer games without removing the endgame reserve.
     fn delegated_cities(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        // `front-weighted-floor`: the campaign's target city, for the floor's
+        // arrival test in `BasicAi::pick_item`.
+        self.base.front_objective = (self.front_weighted_floor
+            && self.victory_target == Some(VictoryTarget::Domination))
+        .then(|| plan.target_city.and_then(|city| g.cities.get(&city)))
+        .flatten()
+        .filter(|city| city.owner != pid)
+        .map(|city| city.pos);
         let restore_space_race = self.base.exclude_space_race;
         self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
         let restore_military = self.base.w.mil_per_city;

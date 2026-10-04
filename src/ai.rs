@@ -54,6 +54,15 @@ pub(crate) const UNIQUE_UNIT_POWER_CREDIT: f64 = 5.0;
 /// See `BasicAi::lent_military_floor_base`: the most standard turns a city may
 /// spend training toward a lent war target above the genome's own floor.
 const LENT_FLOOR_MAX_BUILD_TURNS: u32 = 16;
+/// See `BasicAi::front_weighted_floor`: how much sooner, in standard turns,
+/// another city must put the floor's unit at the front for this one to skip it.
+/// Two: in 160213Z the floor's median city stood 15 tiles from the objective
+/// and the near city 4-8, which for Gran Colombia's three-move infantry
+/// (Ejército Patriota, +1) is only two or three turns of walking.
+const FRONT_ARRIVAL_MARGIN: u32 = 2;
+/// See `BasicAi::front_weighted_floor`: below this share of its floor the
+/// army is built wherever a queue is free.
+const FRONT_FLOOR_SHARE: f64 = 0.75;
 
 /// The gates of `BasicAi::pick_item`'s Settler step; see
 /// `BasicAi::settler_gates`.
@@ -2576,6 +2585,26 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `granary-before-the-army`.
     pub(crate) granary_before_the_army: bool,
+    /// The military floor's unit is built where it reaches the campaign's
+    /// target soonest: a city skips the floor while another city of ours that
+    /// can build the same unit would put it at `front_objective` at least
+    /// `FRONT_ARRIVAL_MARGIN` standard turns sooner (build turns plus a
+    /// straight-line walk at the unit's speed, civilization bonus included),
+    /// so long as the army already
+    /// holds `FRONT_FLOOR_SHARE` of its floor. The floor stays empire-wide, so
+    /// the army is still built, nearer the front. Live King 2026-10-04: during
+    /// sieges 69% of 160213Z's land-military city-turns were in cities more
+    /// than 12 tiles from the objective (median 15), while a city of ours
+    /// stood within 8 tiles on 171 of 189 siege turns and spent about three
+    /// quarters of its turns on buildings and districts; 153748Z 52%, with a
+    /// near city on every siege turn. The reinforcement walk was a median of
+    /// 16 tiles.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `front-weighted-floor`.
+    pub(crate) front_weighted_floor: bool,
+    /// The campaign's target city, set by `AdvancedAi` for
+    /// `front_weighted_floor`; `None` with the gene off or no target.
+    pub(crate) front_objective: Option<Pos>,
     /// `granary_before_the_army`, behind the Campus step and the Builder
     /// backlog instead of ahead of them, so the housing reserve displaces
     /// only the military floor. Version 1 stood ahead of
@@ -5415,6 +5444,8 @@ impl BasicAi {
             campus_before_the_army_3: false,
             settler_before_the_navy: false,
             granary_before_the_army: false,
+            front_weighted_floor: false,
+            front_objective: None,
             granary_before_the_army_2: false,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
@@ -5900,6 +5931,8 @@ impl BasicAi {
             campus_before_the_army_3: false,
             settler_before_the_navy: false,
             granary_before_the_army: false,
+            front_weighted_floor: false,
+            front_objective: None,
             granary_before_the_army_2: false,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
@@ -12695,6 +12728,15 @@ impl BasicAi {
                             <= g.standard_duration(LENT_FLOOR_MAX_BUILD_TURNS) as f64
                 })
             });
+            // `front-weighted-floor`: leave the unit to a city that puts it at
+            // the front sooner.
+            let force_pick = force_pick.filter(|unit| {
+                !self.front_weighted_floor
+                    || (military as f64) < FRONT_FLOOR_SHARE * military_floor
+                    || self.front_objective.is_none_or(|objective| {
+                        !Self::another_city_arrives_sooner(g, pid, cid, unit, objective)
+                    })
+            });
             let picked = recon_pick.or(naval_recon_pick).or(force_pick);
             if let Some(m) = picked {
                 // ⚠ THE BRANCH THAT WINS MUST SAY SO.
@@ -14845,6 +14887,58 @@ impl BasicAi {
             && gates.grown
             && gates.in_window
             && self.has_practical_settle_site(g, pid)
+    }
+
+    /// See `front_weighted_floor`: turns for `cid` to build `unit` and walk it
+    /// to `objective` in a straight line at the unit's speed.
+    fn front_arrival_turns(g: &Game, pid: usize, cid: u32, unit: &str, objective: Pos) -> f64 {
+        let moves = g.rules.units.get(&Name::new(unit)).map_or(2.0, |spec| spec.moves)
+            + Self::land_movement_bonus(g, pid);
+        Self::unit_build_turns(g, pid, cid, unit)
+            + g.wdist(g.cities[&cid].pos, objective) as f64 / moves.max(1.0)
+    }
+
+    /// The movement our land soldiers carry beyond their spec, read from the
+    /// standing army (`Game::unit_max_moves`, the host's own figure on the
+    /// live board): the least extra any land military unit on land shows,
+    /// so a road or a promotion on one unit does not inflate it. Gran
+    /// Colombia's Ejército Patriota reads +1. Zero with no such unit.
+    fn land_movement_bonus(g: &Game, pid: usize) -> f64 {
+        g.player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|uid| {
+                let unit = &g.units[&uid];
+                let spec = g.rules.units.get(&unit.kind)?;
+                (spec.class == "military"
+                    && spec.domain.as_deref().is_none_or(|domain| domain == "land")
+                    && !g.map.get(unit.pos).is_some_and(|tile| g.rules.is_water(tile)))
+                    .then(|| (g.unit_max_moves(uid) - spec.moves).max(0.0))
+            })
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap_or(0.0)
+            .min(2.0)
+    }
+
+    /// See `front_weighted_floor`: whether another city of ours that can build
+    /// `unit` would put it at `objective` at least `FRONT_ARRIVAL_MARGIN`
+    /// standard turns before `cid` would.
+    pub(crate) fn another_city_arrives_sooner(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+        objective: Pos,
+    ) -> bool {
+        let item = Item::Unit {
+            unit: Name::new(unit),
+        };
+        let ours = Self::front_arrival_turns(g, pid, cid, unit, objective);
+        let margin = g.standard_duration(FRONT_ARRIVAL_MARGIN) as f64;
+        g.player_city_ids(pid).into_iter().any(|other| {
+            other != cid
+                && g.can_produce(pid, other, &item)
+                && Self::front_arrival_turns(g, pid, other, unit, objective) + margin < ours
+        })
     }
 
     /// See `campus_before_the_army`: this city's first Campus, else the
@@ -23209,6 +23303,60 @@ mod tests {
             },
         );
         (game, cid)
+    }
+
+    /// See `front_weighted_floor`: the city far from the campaign's target
+    /// leaves the floor's unit to an equally productive city beside it, which
+    /// keeps it; a slow colony beside the front does not take it.
+    #[test]
+    fn the_floor_builds_beside_the_front() {
+        let (mut game, capital) = founded_capital_fixture("FRONTFLOOR", 91_871);
+        let home = game.cities[&capital].pos;
+        let candidates: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(home, *pos) >= 9 && game.wdist(home, *pos) <= 12)
+            .collect();
+        let far_site = candidates
+            .into_iter()
+            .find(|pos| {
+                let settler = game.spawn_test_unit("settler", 0, *pos);
+                let ok = game.can_found_city(settler);
+                game.remove_unit(settler);
+                ok
+            })
+            .expect("a foundable site nine to twelve tiles out");
+        let settler = game.spawn_test_unit("settler", 0, far_site);
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let front = game.city_at(far_site).expect("the second city");
+        let objective = game
+            .nbrs(far_site)
+            .into_iter()
+            .find(|pos| game.wdist(*pos, home) > game.wdist(far_site, home))
+            .unwrap_or(far_site);
+        assert!(game.can_produce(0, front, &Item::Unit { unit: crate::name!("warrior") }));
+        // A pop-1 colony is too slow to beat the capital's build and walk.
+        assert!(
+            !BasicAi::another_city_arrives_sooner(&game, 0, capital, "warrior", objective),
+            "a slow city beside the front does not take the floor from a fast capital"
+        );
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            front,
+            crate::rules::Yields {
+                production: 10.0,
+                ..Default::default()
+            },
+        );
+        assert!(
+            BasicAi::another_city_arrives_sooner(&game, 0, capital, "warrior", objective),
+            "the capital leaves the warrior to the city beside the front"
+        );
+        assert!(
+            !BasicAi::another_city_arrives_sooner(&game, 0, front, "warrior", objective),
+            "the city beside the front keeps it"
+        );
     }
 
     /// See `granary_before_the_army`: a city at its housing builds its Granary

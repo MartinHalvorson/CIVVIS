@@ -3123,6 +3123,20 @@ impl AdvancedAi {
         self.naval_escort_patience = false;
     }
 
+    /// See `BasicAi::front_weighted_floor`: the military floor builds where
+    /// the unit reaches the campaign's target soonest.
+    pub fn enable_front_weighted_floor(&mut self) {
+        self.front_weighted_floor = true;
+        self.base.front_weighted_floor = true;
+    }
+
+    /// The twin of `enable_front_weighted_floor`.
+    pub fn disable_front_weighted_floor(&mut self) {
+        self.front_weighted_floor = false;
+        self.base.front_weighted_floor = false;
+        self.base.front_objective = None;
+    }
+
     /// The working reserve, and the first Builder or a missing Monument
     /// bought ahead of the purchase argmax. See `treasury_at_work_2`.
     pub fn enable_treasury_at_work_2(&mut self) {
