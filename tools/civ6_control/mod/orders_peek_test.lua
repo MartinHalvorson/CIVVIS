@@ -238,6 +238,10 @@ local handlers = {}
 Events = setmetatable({}, { __index = function(_, name)
 	return { Add = function(handler) handlers[name] = handler end }
 end })
+local luaHandlers = {}
+LuaEvents = setmetatable({}, { __index = function(_, name)
+	return { Add = function(handler) luaHandlers[name] = handler end }
+end })
 local chunk, err = loadfile(here .. "/CivvisControlAgent.lua")
 assert(chunk, "could not load agent: " .. tostring(err))
 local ran, runtime_err = pcall(chunk)
@@ -313,6 +317,62 @@ local publish = handlers.GameCoreEventPublishComplete
 check("the publish-batch handler is registered", type(publish), "function")
 local landed = queue.ordersLanded
 check("CivvisQueue.ordersLanded is exported", type(landed), "function")
+
+-- 0. The HUD clock's peek (`CivvisControlPeek`): a quiet game core publishes
+-- no batch, so the same bounded peek is offered from the UI clock. First, on
+-- turns 3 and 4: this host has no cities, and past turn 5 the agent reports
+-- the seat eliminated and stops ticking (`finished`), which the peek honours.
+local uiPeek = luaHandlers.CivvisControlPeek
+check("CivvisControlPeek is registered", type(uiPeek), "function")
+local function wakes() return count("orders_peek_wake") end
+-- 0a. No board out: nothing is asked and nothing wakes.
+host.units = { [7] = { id = 7, kind = "UNIT_SCOUT", x = 1, y = 1, moves = 3 } }
+host.ops = {}
+openTurn(3)
+answer(3, 0, { row(0, 7, "FORTIFY", nil, nil, 0) })
+check("turn 3 settles", settle(3, 50), true)
+readyQueries = 0
+clock = clock + 1
+uiPeek()
+check("a settled turn: the UI peek asks nothing", readyQueries, 0)
+check("…and wakes nothing", wakes(), 0)
+-- 0b. Board out, no answer: one bounded query, no wake.
+host.units = { [8] = { id = 8, kind = "UNIT_SCOUT", x = 1, y = 1, moves = 3 } }
+host.ops = {}
+channel.ready = {}; channel.orders = {}
+openTurn(4)
+readyQueries = 0
+clock = clock + 1
+uiPeek()
+check("no answer yet: one query", readyQueries, 1)
+check("…no wake", wakes(), 0)
+-- 0c. The answer lands; within the shared 50 ms budget nothing is asked.
+answer(4, 0, { row(0, 8, "MOVE_TO", 2, 1, 0) })
+clock = clock + 0.02
+uiPeek()
+check("inside the shared 50 ms budget: no query", readyQueries, 1)
+check("…no wake", wakes(), 0)
+-- 0d. The next due UI peek finds it, says so, and forces the poll.
+local beforeForce = queue.forcePoll
+clock = clock + 0.05
+queue.lastTickAt = clock - 0.75              -- the core went quiet 0.75 s ago
+uiPeek()
+check("the due UI peek queries once more", readyQueries >= 2, true)
+check("…and wakes the controller", wakes(), 1)
+check("…naming the turn", has(lastEvent("orders_peek_wake"), '"turn":4'), true)
+check("…with the time since the last tick", has(lastEvent("orders_peek_wake"), '"since_tick":0.75'), true)
+check("the forced poll was armed (or already consumed by the tick)",
+	beforeForce == false and (queue.forcePoll == true or ops(8, "UNITOPERATION_MOVE_TO") == 1), true)
+-- 0e. A publish-batch peek and a UI peek share one budget.
+host.units = { [9] = { id = 9, kind = "UNIT_SCOUT", x = 1, y = 1, moves = 3 } }
+host.ops = {}
+channel.ready = {}; channel.orders = {}
+openTurn(5)
+local before = readyQueries
+clock = clock + 1
+landed()
+uiPeek()
+check("batch peek then UI peek within 50 ms: one query", readyQueries - before, 1)
 
 -- 1. A settled turn has no board out: no peek, no query.
 revealed = {}; reveal(1, 1)
