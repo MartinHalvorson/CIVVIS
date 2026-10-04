@@ -48,3 +48,11 @@ The first expansion analysis was attempted before both Deity processes had
 finished and stopped on a missing final-world file. That incomplete invocation
 produced no final result file. The complete invocation ran only after all four
 batch processes reported exit zero and includes all eight pairs.
+
+
+Final verification: both standalone probes compiled normally optimized against
+the immutable baseline library; all 32 executions exited zero. Incremental Rust
+quality passed for both probes. `git diff --check origin/main...` passed, and the
+final native source, Cargo files and data are identical to merged main. A new
+full Cargo run is not needed for this documentation-only change; #3938's
+runtime baseline already passed its full suite. No runtime setting is promoted.
