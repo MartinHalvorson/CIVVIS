@@ -19760,6 +19760,9 @@ CivvisQueue.onLocalTurnEnd = function()
 		blockers = w.blockers,
 		quick_movement = try(function() return UserConfiguration.IsQuickMovement(); end, nil),
 		quick_combat = try(function() return UserConfiguration.IsQuickCombat(); end, nil),
+		-- Locks still held by a UI context as our turn ends (the AutoClose
+		-- ledger); a normal turn ends with none.
+		held_locks = try(function() return ExposedMembers.CivvisEventLocks.count; end, nil),
 	});
 end;
 
@@ -19816,8 +19819,19 @@ CivvisQueue.checkAiPhaseStall = function()
 		end, nil);
 		if hidden == false then visible[#visible + 1] = name; end
 	end
+	-- The event-lock ledger the AutoClose contexts keep (see the shim): every
+	-- lock still held, with the context and turn that took it.
+	local held, overflow = {}, nil;
+	pcall(function()
+		local ledger = ExposedMembers.CivvisEventLocks;
+		for id, entry in pairs(ledger.held) do
+			held[#held + 1] = { id = id, ctx = entry.ctx, turn = entry.turn, at = entry.at };
+		end
+		overflow = ledger.overflow;
+	end);
 	emit("ai_phase_stall", {
 		turn = turn, waited = math.floor(waited * 10 + 0.5) / 10,
+		held_locks = held, lock_overflow = overflow,
 		core_busy = try(function() return UI.IsGameCoreBusy(); end, nil),
 		processing = try(function() return UI.IsProcessingMessages(); end, nil),
 		active_players = active, open_sessions = sessions, visible = visible,
