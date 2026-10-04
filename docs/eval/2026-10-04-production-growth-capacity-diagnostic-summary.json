@@ -1,0 +1,368 @@
+{
+  "verified_at": "2026-10-04T18:28:37.023367+00:00",
+  "purpose": "Consumed-seed coverage diagnostic; no fresh strength samples",
+  "fresh_strength_samples": 0,
+  "paired_games": 8,
+  "executions": 16,
+  "unchanged_pairs": 8,
+  "identical_actions": 183726,
+  "all_controls_identical_to_previous_live": true,
+  "rows": [
+    {
+      "difficulty": "emperor",
+      "seed": 61007000,
+      "actions": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "4e24ccff646507a984f536d5de4cf65e5694fb733e340d91e8cbcc79ad1f51da",
+          "candidate": "4e24ccff646507a984f536d5de4cf65e5694fb733e340d91e8cbcc79ad1f51da"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "action_count": {
+        "control": 14440,
+        "candidate": 14440
+      },
+      "final": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "1edb52d71fb15b1855d345342c4a8b2020554f1361d1d5b2de4399f558379178",
+          "candidate": "1edb52d71fb15b1855d345342c4a8b2020554f1361d1d5b2de4399f558379178"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "outcome": {
+        "control": {
+          "last_turn": 91,
+          "winner": 1,
+          "alive": true
+        },
+        "candidate": {
+          "last_turn": 91,
+          "winner": 1,
+          "alive": true
+        }
+      }
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61007001,
+      "actions": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "3297a9921aa9fb5ff844377f304bebc8ddd3a49e2b4618e5de6df0cdf4d350f2",
+          "candidate": "3297a9921aa9fb5ff844377f304bebc8ddd3a49e2b4618e5de6df0cdf4d350f2"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "action_count": {
+        "control": 26195,
+        "candidate": 26195
+      },
+      "final": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "f7d7761ba9bd279d3aafe354d5506eee56799f267ebdfcaffd0e5de3eed2bd43",
+          "candidate": "f7d7761ba9bd279d3aafe354d5506eee56799f267ebdfcaffd0e5de3eed2bd43"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "outcome": {
+        "control": {
+          "last_turn": 136,
+          "winner": 2,
+          "alive": true
+        },
+        "candidate": {
+          "last_turn": 136,
+          "winner": 2,
+          "alive": true
+        }
+      }
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61007002,
+      "actions": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "e84ebbd7367af8a808d6c79bb8f1d168fe06343be5c94a5daf4b8a567f91c8f7",
+          "candidate": "e84ebbd7367af8a808d6c79bb8f1d168fe06343be5c94a5daf4b8a567f91c8f7"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "action_count": {
+        "control": 16047,
+        "candidate": 16047
+      },
+      "final": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "14e8a783c15faed7711ee97f8847eb83e97a7fe0926eddc78bbbaf843be07cbb",
+          "candidate": "14e8a783c15faed7711ee97f8847eb83e97a7fe0926eddc78bbbaf843be07cbb"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "outcome": {
+        "control": {
+          "last_turn": 100,
+          "winner": 2,
+          "alive": true
+        },
+        "candidate": {
+          "last_turn": 100,
+          "winner": 2,
+          "alive": true
+        }
+      }
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61007003,
+      "actions": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "69f19d586486d9e90a456d967c0a364392e12a87ea06945b627bc988e1277d0e",
+          "candidate": "69f19d586486d9e90a456d967c0a364392e12a87ea06945b627bc988e1277d0e"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "action_count": {
+        "control": 20400,
+        "candidate": 20400
+      },
+      "final": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "9edb03c537153949711d90e1cc4e4f70fbb92843a8d7a399b6ab5915e382bdaa",
+          "candidate": "9edb03c537153949711d90e1cc4e4f70fbb92843a8d7a399b6ab5915e382bdaa"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "outcome": {
+        "control": {
+          "last_turn": 123,
+          "winner": 3,
+          "alive": true
+        },
+        "candidate": {
+          "last_turn": 123,
+          "winner": 3,
+          "alive": true
+        }
+      }
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61007100,
+      "actions": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "03843cd221b5ae6fa5130b5b1d6bcc3fa567519ce7415ac5e1f08bcb8505d896",
+          "candidate": "03843cd221b5ae6fa5130b5b1d6bcc3fa567519ce7415ac5e1f08bcb8505d896"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "action_count": {
+        "control": 12555,
+        "candidate": 12555
+      },
+      "final": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "9aa25b93a75389fdf1b8c948585f2f1a22875d967d613ee71fa4d8796bb14cf3",
+          "candidate": "9aa25b93a75389fdf1b8c948585f2f1a22875d967d613ee71fa4d8796bb14cf3"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "outcome": {
+        "control": {
+          "last_turn": 72,
+          "winner": 2,
+          "alive": true
+        },
+        "candidate": {
+          "last_turn": 72,
+          "winner": 2,
+          "alive": true
+        }
+      }
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61007101,
+      "actions": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "96796d0d483e1e11a4a75fca58eb465024b914445b12cf957a310c325974c7a1",
+          "candidate": "96796d0d483e1e11a4a75fca58eb465024b914445b12cf957a310c325974c7a1"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "action_count": {
+        "control": 34454,
+        "candidate": 34454
+      },
+      "final": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "395d697c4f8b9a1070df296b95a57ca083eea7893a6b0b3c8282535aa97f1fef",
+          "candidate": "395d697c4f8b9a1070df296b95a57ca083eea7893a6b0b3c8282535aa97f1fef"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "outcome": {
+        "control": {
+          "last_turn": 151,
+          "winner": 3,
+          "alive": true
+        },
+        "candidate": {
+          "last_turn": 151,
+          "winner": 3,
+          "alive": true
+        }
+      }
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61007102,
+      "actions": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "13313fa484394af61e7271156f37609c28c9e6298fc7352ac9614790400b4e69",
+          "candidate": "13313fa484394af61e7271156f37609c28c9e6298fc7352ac9614790400b4e69"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "action_count": {
+        "control": 32001,
+        "candidate": 32001
+      },
+      "final": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "af299b3a9cea1e74b19a39350fc30876891d6d676b05ec3b2fea97f3a8b4a02d",
+          "candidate": "af299b3a9cea1e74b19a39350fc30876891d6d676b05ec3b2fea97f3a8b4a02d"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "outcome": {
+        "control": {
+          "last_turn": 151,
+          "winner": 3,
+          "alive": true
+        },
+        "candidate": {
+          "last_turn": 151,
+          "winner": 3,
+          "alive": true
+        }
+      }
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61007103,
+      "actions": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "8b21b85a5b61a7f9743335eee64ce007f89a03800754d677f706c06d8017bfc0",
+          "candidate": "8b21b85a5b61a7f9743335eee64ce007f89a03800754d677f706c06d8017bfc0"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "action_count": {
+        "control": 27634,
+        "candidate": 27634
+      },
+      "final": {
+        "byte_identical": true,
+        "sha256": {
+          "control": "b5c37d93cdf0ab695bd5750312c9138b95dfba3b2eeed17080255eaeeb07b5cf",
+          "candidate": "b5c37d93cdf0ab695bd5750312c9138b95dfba3b2eeed17080255eaeeb07b5cf"
+        },
+        "control_identical_to_previous_live": true
+      },
+      "outcome": {
+        "control": {
+          "last_turn": 124,
+          "winner": 1,
+          "alive": true
+        },
+        "candidate": {
+          "last_turn": 124,
+          "winner": 1,
+          "alive": true
+        }
+      }
+    }
+  ],
+  "durable_evidence": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/capacity/diagnostic",
+  "sha256": {
+    "civvis-production-growth-capacity-deity-61007100-candidate-actions.json": "03843cd221b5ae6fa5130b5b1d6bcc3fa567519ce7415ac5e1f08bcb8505d896",
+    "civvis-production-growth-capacity-deity-61007100-candidate-cities.jsonl": "a70a4aac690a7e20f55c992c5abe23fe071084a2fdf4864d7e890fc6c9262d2c",
+    "civvis-production-growth-capacity-deity-61007100-candidate-final.json": "9aa25b93a75389fdf1b8c948585f2f1a22875d967d613ee71fa4d8796bb14cf3",
+    "civvis-production-growth-capacity-deity-61007100-candidate-setup.json": "911196f5e644526d89106641341f8840e2fa0df5c5df3ae2e014d2432092e65f",
+    "civvis-production-growth-capacity-deity-61007100-control-actions.json": "03843cd221b5ae6fa5130b5b1d6bcc3fa567519ce7415ac5e1f08bcb8505d896",
+    "civvis-production-growth-capacity-deity-61007100-control-cities.jsonl": "a70a4aac690a7e20f55c992c5abe23fe071084a2fdf4864d7e890fc6c9262d2c",
+    "civvis-production-growth-capacity-deity-61007100-control-final.json": "9aa25b93a75389fdf1b8c948585f2f1a22875d967d613ee71fa4d8796bb14cf3",
+    "civvis-production-growth-capacity-deity-61007100-control-setup.json": "95520a5fed952cc62ac1edd7f23739d8d9b4c3e7c3161b12814ed88589dcd49b",
+    "civvis-production-growth-capacity-deity-61007101-candidate-actions.json": "96796d0d483e1e11a4a75fca58eb465024b914445b12cf957a310c325974c7a1",
+    "civvis-production-growth-capacity-deity-61007101-candidate-cities.jsonl": "05fbf56214a7e445caee2a0d77950b61958565bc6ffc0edd521cf23d5b6afbda",
+    "civvis-production-growth-capacity-deity-61007101-candidate-final.json": "395d697c4f8b9a1070df296b95a57ca083eea7893a6b0b3c8282535aa97f1fef",
+    "civvis-production-growth-capacity-deity-61007101-candidate-setup.json": "21fd952602b9d8269ecb6dd269146300960d7e4690f05c29f292d7b0b7f449ca",
+    "civvis-production-growth-capacity-deity-61007101-control-actions.json": "96796d0d483e1e11a4a75fca58eb465024b914445b12cf957a310c325974c7a1",
+    "civvis-production-growth-capacity-deity-61007101-control-cities.jsonl": "05fbf56214a7e445caee2a0d77950b61958565bc6ffc0edd521cf23d5b6afbda",
+    "civvis-production-growth-capacity-deity-61007101-control-final.json": "395d697c4f8b9a1070df296b95a57ca083eea7893a6b0b3c8282535aa97f1fef",
+    "civvis-production-growth-capacity-deity-61007101-control-setup.json": "9ec736f845c2db9ced170c1c88a935f9d3ef432a9d5d87dc4830a0937da6541e",
+    "civvis-production-growth-capacity-deity-61007102-candidate-actions.json": "13313fa484394af61e7271156f37609c28c9e6298fc7352ac9614790400b4e69",
+    "civvis-production-growth-capacity-deity-61007102-candidate-cities.jsonl": "ba38a45baf35810cf2e95e45d0a24d652d3fa4e6fe0164e1fcf93dfe7e444502",
+    "civvis-production-growth-capacity-deity-61007102-candidate-final.json": "af299b3a9cea1e74b19a39350fc30876891d6d676b05ec3b2fea97f3a8b4a02d",
+    "civvis-production-growth-capacity-deity-61007102-candidate-setup.json": "a190705cc88fb4d586132d46cd74719da863185ec73356583c02be6693d83cdf",
+    "civvis-production-growth-capacity-deity-61007102-control-actions.json": "13313fa484394af61e7271156f37609c28c9e6298fc7352ac9614790400b4e69",
+    "civvis-production-growth-capacity-deity-61007102-control-cities.jsonl": "ba38a45baf35810cf2e95e45d0a24d652d3fa4e6fe0164e1fcf93dfe7e444502",
+    "civvis-production-growth-capacity-deity-61007102-control-final.json": "af299b3a9cea1e74b19a39350fc30876891d6d676b05ec3b2fea97f3a8b4a02d",
+    "civvis-production-growth-capacity-deity-61007102-control-setup.json": "cd4e36c7046d9df22f8550bf1a7f2a2652b28c7bf619c473f8f48a8cd648f2d5",
+    "civvis-production-growth-capacity-deity-61007103-candidate-actions.json": "8b21b85a5b61a7f9743335eee64ce007f89a03800754d677f706c06d8017bfc0",
+    "civvis-production-growth-capacity-deity-61007103-candidate-cities.jsonl": "dcd823e084fba399b67deea4c05c5cdfb295ed859d0bc82e199949cd35a62188",
+    "civvis-production-growth-capacity-deity-61007103-candidate-final.json": "b5c37d93cdf0ab695bd5750312c9138b95dfba3b2eeed17080255eaeeb07b5cf",
+    "civvis-production-growth-capacity-deity-61007103-candidate-setup.json": "8acfba07dadd3502f2365223f19f90a167404868ef62f162991d4dd362520c5d",
+    "civvis-production-growth-capacity-deity-61007103-control-actions.json": "8b21b85a5b61a7f9743335eee64ce007f89a03800754d677f706c06d8017bfc0",
+    "civvis-production-growth-capacity-deity-61007103-control-cities.jsonl": "dcd823e084fba399b67deea4c05c5cdfb295ed859d0bc82e199949cd35a62188",
+    "civvis-production-growth-capacity-deity-61007103-control-final.json": "b5c37d93cdf0ab695bd5750312c9138b95dfba3b2eeed17080255eaeeb07b5cf",
+    "civvis-production-growth-capacity-deity-61007103-control-setup.json": "ac76ba7dc18afe0448e52cfdd4b52803bd7f81f910c04b9451c409717fd35cdd",
+    "civvis-production-growth-capacity-emperor-61007000-candidate-actions.json": "4e24ccff646507a984f536d5de4cf65e5694fb733e340d91e8cbcc79ad1f51da",
+    "civvis-production-growth-capacity-emperor-61007000-candidate-cities.jsonl": "8488694427463b46c910ccd23ab1f8bb6d1b574b280eaef8d2091168d220e2de",
+    "civvis-production-growth-capacity-emperor-61007000-candidate-final.json": "1edb52d71fb15b1855d345342c4a8b2020554f1361d1d5b2de4399f558379178",
+    "civvis-production-growth-capacity-emperor-61007000-candidate-setup.json": "bb02cff9b144ad3b08343f81c275e03d862fa9e260d3bed695c96e6bbb405065",
+    "civvis-production-growth-capacity-emperor-61007000-control-actions.json": "4e24ccff646507a984f536d5de4cf65e5694fb733e340d91e8cbcc79ad1f51da",
+    "civvis-production-growth-capacity-emperor-61007000-control-cities.jsonl": "8488694427463b46c910ccd23ab1f8bb6d1b574b280eaef8d2091168d220e2de",
+    "civvis-production-growth-capacity-emperor-61007000-control-final.json": "1edb52d71fb15b1855d345342c4a8b2020554f1361d1d5b2de4399f558379178",
+    "civvis-production-growth-capacity-emperor-61007000-control-setup.json": "17b182f450393f63b1f94704a6e46198efabc826be6bdd756c6bbc2c9d64327d",
+    "civvis-production-growth-capacity-emperor-61007001-candidate-actions.json": "3297a9921aa9fb5ff844377f304bebc8ddd3a49e2b4618e5de6df0cdf4d350f2",
+    "civvis-production-growth-capacity-emperor-61007001-candidate-cities.jsonl": "56e992f093665b6cc439ef329c8c327541146d3a37a9d8b7f6b6827eae601408",
+    "civvis-production-growth-capacity-emperor-61007001-candidate-final.json": "f7d7761ba9bd279d3aafe354d5506eee56799f267ebdfcaffd0e5de3eed2bd43",
+    "civvis-production-growth-capacity-emperor-61007001-candidate-setup.json": "bd260b94842d7eece935407e4d5fa457c997729320db0f2f6a3d0c7381398b1c",
+    "civvis-production-growth-capacity-emperor-61007001-control-actions.json": "3297a9921aa9fb5ff844377f304bebc8ddd3a49e2b4618e5de6df0cdf4d350f2",
+    "civvis-production-growth-capacity-emperor-61007001-control-cities.jsonl": "56e992f093665b6cc439ef329c8c327541146d3a37a9d8b7f6b6827eae601408",
+    "civvis-production-growth-capacity-emperor-61007001-control-final.json": "f7d7761ba9bd279d3aafe354d5506eee56799f267ebdfcaffd0e5de3eed2bd43",
+    "civvis-production-growth-capacity-emperor-61007001-control-setup.json": "619698f1b5220a9a468441b8e0cd90f1b1aed0207352d68e7dce8136d5a88ccf",
+    "civvis-production-growth-capacity-emperor-61007002-candidate-actions.json": "e84ebbd7367af8a808d6c79bb8f1d168fe06343be5c94a5daf4b8a567f91c8f7",
+    "civvis-production-growth-capacity-emperor-61007002-candidate-cities.jsonl": "baecc3aa996fd95d90fe2fa1647c5f9d9fd226656681b8a1e2ce1e6583c9f7c4",
+    "civvis-production-growth-capacity-emperor-61007002-candidate-final.json": "14e8a783c15faed7711ee97f8847eb83e97a7fe0926eddc78bbbaf843be07cbb",
+    "civvis-production-growth-capacity-emperor-61007002-candidate-setup.json": "2a5150305fe0718ee8dc5d0ba8d64fe03d8c4dc37270007217ffd453d3e7d200",
+    "civvis-production-growth-capacity-emperor-61007002-control-actions.json": "e84ebbd7367af8a808d6c79bb8f1d168fe06343be5c94a5daf4b8a567f91c8f7",
+    "civvis-production-growth-capacity-emperor-61007002-control-cities.jsonl": "baecc3aa996fd95d90fe2fa1647c5f9d9fd226656681b8a1e2ce1e6583c9f7c4",
+    "civvis-production-growth-capacity-emperor-61007002-control-final.json": "14e8a783c15faed7711ee97f8847eb83e97a7fe0926eddc78bbbaf843be07cbb",
+    "civvis-production-growth-capacity-emperor-61007002-control-setup.json": "bf096dc922401f0155c8128550cd9bb2362cc858978e6fd18e1459f009b5c15d",
+    "civvis-production-growth-capacity-emperor-61007003-candidate-actions.json": "69f19d586486d9e90a456d967c0a364392e12a87ea06945b627bc988e1277d0e",
+    "civvis-production-growth-capacity-emperor-61007003-candidate-cities.jsonl": "df0b598f24cebc1603893e11d0a72de7e5bab4bab4dbe3b8a8b36743959ffe8c",
+    "civvis-production-growth-capacity-emperor-61007003-candidate-final.json": "9edb03c537153949711d90e1cc4e4f70fbb92843a8d7a399b6ab5915e382bdaa",
+    "civvis-production-growth-capacity-emperor-61007003-candidate-setup.json": "a861ac6a6b8aa954a11a10997ca5c1158559ea1a407ce4243c8a58ea99bd2f5f",
+    "civvis-production-growth-capacity-emperor-61007003-control-actions.json": "69f19d586486d9e90a456d967c0a364392e12a87ea06945b627bc988e1277d0e",
+    "civvis-production-growth-capacity-emperor-61007003-control-cities.jsonl": "df0b598f24cebc1603893e11d0a72de7e5bab4bab4dbe3b8a8b36743959ffe8c",
+    "civvis-production-growth-capacity-emperor-61007003-control-final.json": "9edb03c537153949711d90e1cc4e4f70fbb92843a8d7a399b6ab5915e382bdaa",
+    "civvis-production-growth-capacity-emperor-61007003-control-setup.json": "2021469b985f89752783d9405ea4bd5e76376026e85186fb80ecf4561b77d185"
+  },
+  "actual_Firaxis_verification": false
+}
