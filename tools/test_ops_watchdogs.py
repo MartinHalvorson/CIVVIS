@@ -9,7 +9,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -221,6 +223,76 @@ class SynchronizedProgressTokenTest(unittest.TestCase):
 
 
 class WatchdogWiringTest(unittest.TestCase):
+    def test_a_burst_inside_one_healthy_turn_is_not_a_wedge_yet(self) -> None:
+        # civvis-20261004T192700Z t105: seven sightings in 0.7 s, then t106
+        # three seconds later. Read between the burst and the next turn, the
+        # count alone said "wedged" and the watchdog killed a healthy game.
+        events = [{"kind": "turn", "turn": 105,
+                   "utc": "2026-10-04T19:35:24.235Z"}]
+        for stamp in ("24.830", "25.000", "25.160", "25.320", "25.360",
+                      "25.480", "25.540"):
+            events.append({"kind": "blocked", "turn": 105,
+                           "blocker": "ENDTURN_BLOCKING_UNITS",
+                           "utc": f"2026-10-04T19:35:{stamp}Z"})
+        first = watchdog_state._utc_seconds(events[1])
+        self.assertIsNone(watchdog_state.repeating_unit_blocker(
+            events, now=first + 2.0, min_age_s=60.0))
+        # The same blocker still unresolved a minute later is the wedge.
+        self.assertEqual(
+            watchdog_state.repeating_unit_blocker(
+                events, now=first + 61.0, min_age_s=60.0),
+            (105, "ENDTURN_BLOCKING_UNITS", 7),
+        )
+
+    def test_the_age_is_counted_from_the_first_sighting_on_that_turn(self) -> None:
+        events = [
+            {"kind": "blocked", "turn": 152, "blocker": "ENDTURN_BLOCKING_UNITS",
+             "utc": "2026-10-04T19:00:00Z"},
+            {"kind": "turn", "turn": 153},
+            {"kind": "blocked", "turn": 153, "blocker": "ENDTURN_BLOCKING_UNITS",
+             "utc": "2026-10-04T19:01:00Z"},
+            {"kind": "blocked", "turn": 153, "blocker": "ENDTURN_BLOCKING_UNITS",
+             "utc": "2026-10-04T19:01:50Z"},
+        ]
+        t153 = watchdog_state._utc_seconds(events[2])
+        self.assertIsNone(watchdog_state.repeating_unit_blocker(
+            events, now=t153 + 59.0, min_age_s=60.0))
+        self.assertEqual(
+            watchdog_state.repeating_unit_blocker(
+                events, now=t153 + 60.0, min_age_s=60.0),
+            (153, "ENDTURN_BLOCKING_UNITS", 2),
+        )
+
+    def test_an_unstamped_sighting_keeps_the_count_only_rule(self) -> None:
+        events = [{"kind": "blocked", "turn": 153,
+                   "blocker": "ENDTURN_BLOCKING_UNITS"}] * 6
+        self.assertEqual(
+            watchdog_state.repeating_unit_blocker(
+                events, now=0.0, min_age_s=60.0),
+            (153, "ENDTURN_BLOCKING_UNITS", 6),
+        )
+
+    def test_the_cli_the_shell_calls_applies_the_minute_by_default(self) -> None:
+        now = time.time()
+        stamp = lambda age: datetime.fromtimestamp(
+            now - age, timezone.utc).isoformat().replace("+00:00", "Z")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+
+            def run(age: float) -> str:
+                path.write_text("".join(
+                    json.dumps({"kind": "blocked", "turn": 105,
+                                "blocker": "ENDTURN_BLOCKING_UNITS",
+                                "utc": stamp(age)}) + "\n"
+                    for _ in range(7)))
+                return subprocess.run(
+                    [sys.executable, str(OPS / "civvis_watchdog_state.py"),
+                     str(path)],
+                    capture_output=True, text=True, check=True).stdout.strip()
+
+            self.assertEqual(run(5.0), "")
+            self.assertEqual(run(120.0), "105 ENDTURN_BLOCKING_UNITS 7")
+
     def test_agent_watchdog_escalates_an_explicit_repeating_unit_blocker(self) -> None:
         source = (OPS / "civvis-agent-wedge-watchdog.sh").read_text()
         self.assertIn("CIVVIS_WEDGE_BLOCKER_STREAK", source)
