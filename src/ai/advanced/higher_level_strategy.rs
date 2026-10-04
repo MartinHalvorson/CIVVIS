@@ -185,7 +185,7 @@ impl AdvancedAi {
         // Installed improvements pay as soon as the technology completes.
         // Bare tiles retain the existing Builder opportunity forecast; do not
         // invent a replacement operation on an already improved tile.
-        let potential = |world: &Game, pos: Pos| {
+        let potential = |world: &Game, pos: crate::Pos| {
             let current = world.modeled_tile_yields(pos).production;
             if world.map.tiles[&pos].improvement.is_some() {
                 return current;
