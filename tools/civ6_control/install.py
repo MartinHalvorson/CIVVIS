@@ -87,6 +87,36 @@ def lua_value(value) -> str:
     raise TypeError(f"cannot express {type(value).__name__} in Lua")
 
 
+# ⚠⚠ CIV VI DROPS A LUA SCRIPT THAT IS TOO LARGE, SILENTLY. 2026-10-04, pin
+# 2ddcd5889: the installed agent (source + settings prelude) reached 1,050,464
+# bytes, and G86 reached turn 1 with every other context loaded and not one
+# agent line: the decider never got a board. The same agent at 1,046,538
+# bytes (G85) loaded; 1,049,809 was never played. The ceiling therefore lies
+# in (1,046,538, 1,049,809] and is presumably 1 MiB. The installer refuses
+# anything above the largest size known to load, and the installed copy
+# drops blank and comment-only lines: about half the agent is commentary the
+# game never reads.
+LUA_SIZE_KNOWN_GOOD = 1_046_538
+_LONG_BRACKET = re.compile(r"\[=*\[")
+
+
+def installed_lua(source: str) -> str:
+    """The script as installed: blank and comment-only lines dropped.
+
+    A file with any Lua long bracket (`[[`, `[=[`) is left whole, because a
+    line inside a long string or long comment is not what it looks like. So
+    is a file with any line ending in a backslash: a quoted string continued
+    onto a line that starts with `--` would lose that line.
+    Every other line is kept byte-for-byte, so the code is unchanged; only
+    line numbers move, and nothing in the mod reads its own line numbers.
+    """
+    if _LONG_BRACKET.search(source) or any(
+            line.rstrip("\r\n").endswith("\\") for line in source.splitlines()):
+        return source
+    return "".join(line for line in source.splitlines(keepends=True)
+                   if line.strip() and not line.lstrip().startswith("--"))
+
+
 def prelude(config: dict) -> str:
     lines = [PRELUDE_HEADER, "CivvisControlConfig = {\n"]
     for key in sorted(config):
@@ -174,7 +204,14 @@ def _write_mod(target: Path, config: dict) -> None:
     for src in sorted(MOD_SOURCE.iterdir()):
         if src.name in SCRIPTS:
             written = target / src.name
-            written.write_text(text + src.read_text())
+            script = text + installed_lua(src.read_text())
+            size = len(script.encode("utf-8"))
+            if size > LUA_SIZE_KNOWN_GOOD:
+                raise SystemExit(
+                    f"{src.name} would install at {size} bytes, above the "
+                    f"{LUA_SIZE_KNOWN_GOOD} known to load; Civ VI drops a "
+                    f"larger script without a word (pin 2ddcd5889, G86)")
+            written.write_text(script)
             error = check_syntax(written)
             if error:
                 raise SystemExit(f"{src.name} does not parse: {error}")
