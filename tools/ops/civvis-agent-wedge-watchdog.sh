@@ -521,6 +521,24 @@ PY_STOPPED
     continue
   fi
 
+  # The mod names an AI phase that never handed the turn back (`ai_phase_stall`,
+  # 30 s after our turn ended): G84 t117 sat two minutes with the game core
+  # idle before the unit-blocker rule above happened to fire. Act on the
+  # mod's own verdict now instead of waiting out the silence clocks below.
+  stall_signal=""
+  if [[ -f "$STATE_READER" ]]; then
+    stall_signal=$(python3 "$STATE_READER" --ai-stall "$RUNS/$tag/events.jsonl" 2>/dev/null || true)
+  fi
+  stall_turn=""; stall_waited=""
+  [[ -n "$stall_signal" ]] && read -r stall_turn stall_waited <<< "$stall_signal"
+  if [[ "$stall_turn" =~ '^[0-9]+$' ]]; then
+    restart_attempt "$tag AI PHASE STALL at t${stall_turn} (no turn ${stall_waited}s after ours ended)" \
+      "$climb_pid" "$play_pid" "$tag" "$stall_turn"
+    strikes=0
+    reset_progress
+    continue
+  fi
+
   mirror_status=$(curl -s --max-time 5 "http://127.0.0.1:${PORT}/status" 2>/dev/null)
   mirror_turn=$(print -r -- "$mirror_status" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("turn") or 0)' 2>/dev/null)
   [[ "$mirror_turn" =~ '^[0-9]+$' ]] || { strikes=0; reset_progress; continue }

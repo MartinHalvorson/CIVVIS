@@ -11679,6 +11679,11 @@ CivvisLedger.onCombatVisEnd = function(kVisData)
 	if combat == nil then return; end
 	local attackerNow = CivvisLedger.describe(combat.attacker_id);
 	local defenderNow = CivvisLedger.describe(combat.defender_id);
+	if CivvisFrames ~= nil and combat.attacker ~= nil and combat.defender ~= nil
+			and combat.attacker.type == "unit" then
+		CivvisFrames.finishStrikeCombat(combat.attacker.player, combat.attacker.id,
+			combat.turn, combat.defender.x, combat.defender.y);
+	end
 	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
 	local preview = nil;
 	if combat.attacker ~= nil and combat.attacker.player == pid then
@@ -14753,8 +14758,12 @@ local function applyOrder(player, pid, row, turn)
 			local survivalRefusal = CivvisLedger.refuseLethalPreview(unit, subject, verb, x, y, turn, row);
 			if survivalRefusal ~= nil then return false, survivalRefusal; end
 			CivvisLedger.strike(unit, subject, verb, x, y, turn);
+			-- Arm before RequestOperation: the host can deliver its completion
+			-- callback synchronously. A refused request removes only its ticket.
+			local strikeTicket = CivvisFrames.startStrike(pid, subject, turn, x, y);
 			local accepted = operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params);
 			if not accepted then
+				CivvisFrames.finishStrike(strikeTicket);
 				-- The simulator can preview a shot that the host rejects for a
 				-- target-specific reason (LOS, range, diplomatic state, etc.). Keep
 				-- the decision and the host verdict separate so the next run can
@@ -18260,6 +18269,9 @@ CivvisFrames.reset = function()
 	-- and the sweep must not run on each of them.
 	CivvisFrames.settled = false;
 	CivvisFrames.productionRepairs = 0;
+	CivvisFrames.pendingStrikes = {};
+	CivvisFrames.strikeSequence = 0;
+	CivvisFrames.strikeWait = 0;
 end;
 
 -- Called from CivvisLedger.strike for every strike issued, opening or queued.
@@ -18277,6 +18289,67 @@ end;
 
 CivvisFrames.max = function()
 	return math.max(CivvisFrames.combatMax(), CivvisFrames.replanMax());
+end;
+
+-- An accepted ranged request can outlive the move queue. Four closed native
+-- attempts on 2026-10-04 opened replan snapshots before 221 unambiguous own
+-- shots completed;
+-- 168 later requests by those actors were refused before the original combat
+-- ended. Some snapshots said awake with an attack left: neither activity nor
+-- RequestOperation's return proves a settled board. The shipped
+-- WorldView/SelectedUnit.lua:295 reads CombatVisEnd's attacker after combat.
+-- Track only requested ranged shots, not every animation or foreign combat.
+CivvisFrames.startStrike = function(pid, subject, turn, x, y)
+	-- Production repair can request a frame even with both normal caps at
+	-- zero. Its two leases are separate, but its board must be settled too.
+	if CivvisFrames.max() <= 0 and cfg.CivvisDecides ~= true then return nil; end
+	CivvisFrames.pendingStrikes = CivvisFrames.pendingStrikes or {};
+	CivvisFrames.strikeSequence = (CivvisFrames.strikeSequence or 0) + 1;
+	local ticket = CivvisFrames.strikeSequence;
+	CivvisFrames.pendingStrikes[ticket] = { player = pid, unit = subject, turn = turn, x = x, y = y };
+	return ticket;
+end;
+
+CivvisFrames.finishStrike = function(ticket)
+	if ticket ~= nil and CivvisFrames.pendingStrikes ~= nil then
+		CivvisFrames.pendingStrikes[ticket] = nil;
+	end
+end;
+
+CivvisFrames.finishStrikeCombat = function(pid, subject, turn, x, y)
+	local first = nil;
+	for ticket, shot in pairs(CivvisFrames.pendingStrikes or {}) do
+		if shot.player == pid and shot.unit == subject and shot.turn == turn
+				and shot.x == x and shot.y == y and (first == nil or ticket < first) then
+			first = ticket;
+		end
+	end
+	-- One combat ends one request, including multi-attack units. Host unit ids
+	-- are player-local; a foreign same-id attacker must not release our shot.
+	CivvisFrames.finishStrike(first);
+end;
+
+CivvisFrames.strikesSettled = function(turn)
+	local pending = 0;
+	for _, shot in pairs(CivvisFrames.pendingStrikes or {}) do
+		if shot.turn == turn then pending = pending + 1; end
+	end
+	if pending == 0 then CivvisFrames.strikeWait = 0; return true; end
+	CivvisFrames.strikeWait = (CivvisFrames.strikeWait or 0) + 1;
+	local waited = CivvisFrames.strikeWait;
+	if waited == 1 then
+		emit("strike_frame_wait", { turn = turn, frame = CivvisFrames.current, pending = pending });
+	end
+	-- A missing callback or accepted no-op costs a bounded wait, never turn
+	-- progress. Name this unknown settlement; do not report it as a landed hit.
+	if waited < (tonumber(cfg.OrderQueueGraceTicks) or 30) then return false; end
+	emit("strike_frame_timeout", { turn = turn, frame = CivvisFrames.current,
+		pending = pending, waited = waited });
+	for ticket, shot in pairs(CivvisFrames.pendingStrikes) do
+		if shot.turn == turn then CivvisFrames.pendingStrikes[ticket] = nil; end
+	end
+	CivvisFrames.strikeWait = 0;
+	return true;
 end;
 
 -- Look at the settled board once, before asking `wanted`: how many plots this
@@ -18320,6 +18393,9 @@ end;
 -- Open the next frame: export the board again, stamped, and re-arm the
 -- handshake so `settleTurn` waits for this frame's answer.
 CivvisFrames.begin = function(player, pid, turn, requestedReason)
+	-- Every export boundary, including production repair after the normal
+	-- combat cap, uses this gate. A held frame changes no handshake or budget.
+	if not CivvisFrames.strikesSettled(turn) then return false; end
 	local reason = requestedReason or CivvisFrames.why() or "strike";
 	CivvisFrames.current = CivvisFrames.current + 1;
 	CivvisFrames.reason = reason;
@@ -18342,6 +18418,7 @@ CivvisFrames.begin = function(player, pid, turn, requestedReason)
 		strikes = strikes, revealed = revealed, movers = CivvisFrames.movers,
 	});
 	pcall(function() exportState(player, pid, turn, CivvisFrames.current); end);
+	return true;
 end;
 
 -- A city can finish or appear after the opening board, including while a unit
@@ -18356,8 +18433,11 @@ CivvisFrames.repairProduction = function(player, pid, turn)
 		if current == 0 then empty = empty + 1; end
 	end);
 	if empty == 0 then return false; end
-	CivvisFrames.productionRepairs = (CivvisFrames.productionRepairs or 0) + 1;
-	CivvisFrames.begin(player, pid, turn, "production");
+	if CivvisFrames.begin(player, pid, turn, "production") then
+		CivvisFrames.productionRepairs = (CivvisFrames.productionRepairs or 0) + 1;
+	end
+	-- The caller also holds the turn when a repair is waiting for combat;
+	-- only an opened frame spends a lease. The same grace bounds this wait.
 	return true;
 end;
 
@@ -19786,6 +19866,7 @@ CivvisQueue.onLocalTurnEnd = function()
 	if w == nil or w.turn ~= turn or w.emitted then return; end
 	w.emitted = true;
 	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	w.ended_at = now;
 	local function since(t)
 		if type(now) ~= "number" or type(t) ~= "number" then return nil; end
 		return math.floor((now - t) * 1000 + 0.5) / 1000;
@@ -19797,7 +19878,84 @@ CivvisQueue.onLocalTurnEnd = function()
 		blockers = w.blockers,
 		quick_movement = try(function() return UserConfiguration.IsQuickMovement(); end, nil),
 		quick_combat = try(function() return UserConfiguration.IsQuickCombat(); end, nil),
+		-- Locks still held by a UI context as our turn ends (the AutoClose
+		-- ledger); a normal turn ends with none.
+		held_locks = try(function() return ExposedMembers.CivvisEventLocks.count; end, nil),
 	});
+end;
+
+-- ★★ THE APP CAN STOP DRIVING THE GAME AFTER OUR TURN ENDS. G84
+-- (civvis-20261004T223225Z) t117, twice from AutoSave_0116: our turn ended,
+-- `Player 2 set TurnActive 1`, then not one GameUpdate pass for two minutes.
+-- The watchdog's stack sample had the Game Core thread idle in
+-- pthread_cond_wait in every sample while WinMain kept rendering: a UI-side
+-- pause, not an engine loop. Nothing in the mod's record named it, and the
+-- watchdog took ~2 min to call it (a unit-blocker age rule that happened to
+-- fire). Today's 3,906 AI phases ran at most 14 s (p99 8 s), so
+-- `AiPhaseStallSeconds` (30) after our turn ended with the turn number
+-- unchanged is a stall. Say so once, with what the UI shows, from the HUD
+-- pulse, which keeps firing while the core waits. The wedge watchdog reads
+-- `ai_phase_stall` and hands the game over without waiting out its own clocks.
+CivvisQueue.STALL_VIEWS = {
+	"DiplomacyActionView", "DiplomacyDealView", "LeaderScene", "WorldCongressPopup",
+	"WorldCongressIntro", "WorldCongressBetweenTurns", "WonderBuiltPopup",
+	"NaturalWonderPopup", "EraCompletePopup", "EraReviewPopup", "HistoricMoments",
+	"TechCivicCompletedPopup", "BoostUnlockedPopup", "ProjectBuiltPopup",
+	"NaturalDisasterPopup", "InGamePopup", "DedicationPopup", "GreatWorkShowcase",
+	"RockBandMoviePopup", "EndGameMenu",
+};
+CivvisQueue.checkAiPhaseStall = function()
+	local w = CivvisQueue.endTurnWait;
+	if w == nil or not w.emitted or w.stall_reported or type(w.ended_at) ~= "number" then
+		return false;
+	end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	if turn ~= w.turn then return false; end
+	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	if type(now) ~= "number" or now ~= now or now < w.ended_at then return false; end
+	local waited = now - w.ended_at;
+	if waited < (tonumber(cfg.AiPhaseStallSeconds) or 30) then return false; end
+	w.stall_reported = true;
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	local active = {};
+	for _, p in ipairs(try(function() return PlayerManager.GetAliveIDs(); end, {}) or {}) do
+		if try(function() return Players[p]:IsTurnActive(); end, false) == true then
+			active[#active + 1] = p;
+		end
+	end
+	local sessions = {};
+	for _, p in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {}) or {}) do
+		if p ~= pid then
+			local id = try(function() return DiplomacyManager.FindOpenSessionID(pid, p); end, nil);
+			if type(id) == "number" then sessions[#sessions + 1] = { with = p, session = id }; end
+		end
+	end
+	local visible = {};
+	for _, name in ipairs(CivvisQueue.STALL_VIEWS) do
+		local hidden = try(function()
+			return ContextPtr:LookUpControl("/InGame/" .. name):IsHidden();
+		end, nil);
+		if hidden == false then visible[#visible + 1] = name; end
+	end
+	-- The event-lock ledger the AutoClose contexts keep (see the shim): every
+	-- lock still held, with the context and turn that took it.
+	local held, overflow = {}, nil;
+	pcall(function()
+		local ledger = ExposedMembers.CivvisEventLocks;
+		for id, entry in pairs(ledger.held) do
+			held[#held + 1] = { id = id, ctx = entry.ctx, turn = entry.turn, at = entry.at };
+		end
+		overflow = ledger.overflow;
+	end);
+	emit("ai_phase_stall", {
+		turn = turn, waited = math.floor(waited * 10 + 0.5) / 10,
+		held_locks = held, lock_overflow = overflow,
+		core_busy = try(function() return UI.IsGameCoreBusy(); end, nil),
+		processing = try(function() return UI.IsProcessingMessages(); end, nil),
+		active_players = active, open_sessions = sessions, visible = visible,
+		queued = try(function() return DiplomacyManager.HasQueuedSession(pid); end, nil),
+	});
+	return true;
 end;
 
 -- Whether an unanswered deal ask still holds this turn open (see abandon).
@@ -21201,6 +21359,7 @@ CivvisQueue.onUiPulse = function(source)
 	local rejected = finished and "finished" or inTick and "in_tick"
 		or cfg.Play == false and "disabled" or not cfg.CivvisDecides and "standalone";
 	if rejected then CivvisQueue.noteUiPulse(source, rejected); return; end
+	pcall(CivvisQueue.checkAiPhaseStall);
 	local serial = CivvisQueue.controllerTicks or 0;
 	if CivvisQueue.lastUiTick ~= serial then
 		CivvisQueue.noteUiPulse(source, "observing");

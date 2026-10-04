@@ -1,0 +1,89 @@
+{
+  "purpose": "Consumed diagnostics; excluded from fresh strength",
+  "source": "47386e0f0",
+  "actual_Firaxis_verification": false,
+  "games": [
+    {
+      "seed": 61007901,
+      "difficulty": "deity",
+      "exit_code": 0,
+      "production_checkpoints": {
+        "25": {
+          "control": 18.0,
+          "candidate": 16.0
+        },
+        "50": {
+          "control": 25.200000000000003,
+          "candidate": 32.7
+        },
+        "75": {
+          "control": 24.95,
+          "candidate": 43.0
+        },
+        "100": {
+          "control": 41.0,
+          "candidate": null
+        },
+        "125": {
+          "control": 66.7,
+          "candidate": null
+        },
+        "150": {
+          "control": null,
+          "candidate": null
+        }
+      },
+      "reference_world_equality": {
+        "actions": false,
+        "final": false
+      },
+      "raw_sha256": {
+        "civvis-production-builder-opening-paired-deity-61007901-candidate-setup.json": "7e9159f31c6fb3dad3dfb5fdd1ad610b73a82f9f8f2fa2e423bcb8c4e14c078d",
+        "civvis-production-builder-opening-paired-deity-61007901-candidate-final.json": "1837868b10e8ccb284292ac2f2c969e5e652ff01af7234433ba5772597a5960a",
+        "civvis-production-builder-opening-paired-deity-61007901-candidate-cities.jsonl": "289869613b0d2afac3604ef5491411ebc3e9266ea3fadb7284004ec4f8f1535c",
+        "civvis-production-builder-opening-paired-deity-61007901-candidate-actions.json": "9e0ee40612fe8c1fb06271ca20e5e94ee70b4ca8f60b62ee7b959b0a5ad5eedc"
+      }
+    },
+    {
+      "seed": 61007903,
+      "difficulty": "deity",
+      "exit_code": 0,
+      "production_checkpoints": {
+        "25": {
+          "control": 15.0,
+          "candidate": 15.0
+        },
+        "50": {
+          "control": 27.3,
+          "candidate": 27.3
+        },
+        "75": {
+          "control": 38.9,
+          "candidate": 38.9
+        },
+        "100": {
+          "control": 55.8,
+          "candidate": 55.8
+        },
+        "125": {
+          "control": null,
+          "candidate": null
+        },
+        "150": {
+          "control": null,
+          "candidate": null
+        }
+      },
+      "reference_world_equality": {
+        "actions": true,
+        "final": true
+      },
+      "raw_sha256": {
+        "civvis-production-builder-opening-paired-deity-61007903-candidate-final.json": "11dce413622f8ef6b59044b036a7ccea2e5c3a674905e6a3e1d9cb57d6154ba0",
+        "civvis-production-builder-opening-paired-deity-61007903-candidate-actions.json": "085d1c13a0c5f6bda94d707d522de1360a515e530c69c94f4c2ed070ea107766",
+        "civvis-production-builder-opening-paired-deity-61007903-candidate-cities.jsonl": "dee0f1e41b5100f316f687208c0e80614266dcef03ae8f486aa59f5e41736854",
+        "civvis-production-builder-opening-paired-deity-61007903-candidate-setup.json": "e9c0dda084ab889af2ccb1a9a94dcc29534d782f496a32c64398f8aba241ec9f"
+      }
+    }
+  ]
+}
