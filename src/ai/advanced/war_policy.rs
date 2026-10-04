@@ -393,6 +393,10 @@ impl AdvancedAi {
         if self.domination_siege_has_grace(g, pid, other) {
             return None;
         }
+        // See `war_holds_the_road`.
+        if self.war_holds_the_road(g, pid, other) {
+            return None;
+        }
         let tide = self
             .war_policy
             .tides

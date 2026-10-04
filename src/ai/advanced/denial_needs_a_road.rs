@@ -21,6 +21,59 @@ impl AdvancedAi {
     /// borders are open to us. Water, impassable tiles and closed borders
     /// stop the march; units do not.
     pub(super) fn rival_reachable_by_land(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        Self::reachable_by_land_closing(g, pid, rival, None)
+    }
+
+    /// Whether our war on `other` holds the only land road to `rival`: open
+    /// with the war, shut by `other`'s borders without it.
+    pub(super) fn holds_the_road_to(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+        rival: usize,
+    ) -> bool {
+        rival != other
+            && g.is_at_war(pid, other)
+            && Self::reachable_by_land_closing(g, pid, rival, None)
+            && !Self::reachable_by_land_closing(g, pid, rival, Some(other))
+    }
+
+    /// `denial-needs-a-road`, Domination lane: whether the war on `other`
+    /// holds the only land road to the front, the plan's target or the
+    /// actionable denial rival, so peace with `other` would shut it. Live
+    /// King civvis-20261003T164758Z (game 43) offered Egypt peace at turn
+    /// 164 ("no siege against them is feasible ... the tide has run against
+    /// us"). Egypt's land was the only road to the Aztecs, the denial target,
+    /// and the army then mustered for Tenochtitlan for thirty turns without
+    /// a path to its ring (diagnosed by -60).
+    pub(super) fn war_holds_the_road(&self, g: &Game, pid: usize, other: usize) -> bool {
+        if !self.denial_needs_a_road
+            || self.active_victory_target(g) != Some(super::VictoryTarget::Domination)
+            || !g.is_at_war(pid, other)
+        {
+            return false;
+        }
+        let mut targets: BTreeSet<usize> = BTreeSet::new();
+        targets.extend(self.one_war_front());
+        targets.extend(self.plan.as_ref().and_then(|plan| plan.target_player));
+        targets.extend(
+            self.actionable_victory_denial(g, pid)
+                .map(|(rival, _)| rival),
+        );
+        targets
+            .into_iter()
+            .any(|rival| self.holds_the_road_to(g, pid, other, rival))
+    }
+
+    /// The land search behind [`Self::rival_reachable_by_land`], with
+    /// `closed`'s ground read as at peace with us.
+    fn reachable_by_land_closing(
+        g: &Game,
+        pid: usize,
+        rival: usize,
+        closed: Option<usize>,
+    ) -> bool {
         let passable = |pos: crate::Pos| {
             let Some(tile) = g.map.get(pos) else {
                 return false;
@@ -37,7 +90,7 @@ impl AdvancedAi {
                 Some(owner) => {
                     owner == pid
                         || owner == rival
-                        || g.is_at_war(pid, owner)
+                        || (g.is_at_war(pid, owner) && Some(owner) != closed)
                         || g.has_open_borders(pid, owner)
                 }
             }
@@ -85,6 +138,18 @@ mod tests {
     /// borders or a war on the third party opens the road.
     #[test]
     fn a_rival_behind_closed_borders_has_no_road() {
+        let (mut g, ai) = strip();
+        assert!(!g.has_open_borders(0, 1), "fixture: closed borders");
+        assert!(!ai.rival_reachable_by_land(&g, 0, 2));
+        assert!(ai.rival_reachable_by_land(&g, 0, 1), "the screen itself");
+        g.at_war.insert((0, 1));
+        g.at_war.insert((1, 0));
+        assert!(ai.rival_reachable_by_land(&g, 0, 2), "a war opens the road");
+    }
+
+    /// A land strip: us at the west end, a civilization with closed borders
+    /// across the middle, the target at the east end.
+    fn strip() -> (Game, AdvancedAi) {
         let mut g = Game::new_full(3, 40, 12, 931_036, 300, 0, false);
         for unit in g.units.keys().copied().collect::<Vec<_>>() {
             g.remove_unit(unit);
@@ -112,12 +177,33 @@ mod tests {
         let _ = ours;
         // Past Early Empire: the middle civilization closes its borders.
         g.players[1].borders_enforced = Some(true);
-        let ai = AdvancedAi::targeting(VictoryTarget::Domination);
-        assert!(!g.has_open_borders(0, 1), "fixture: closed borders");
-        assert!(!ai.rival_reachable_by_land(&g, 0, 2));
-        assert!(ai.rival_reachable_by_land(&g, 0, 1), "the screen itself");
+        (g, AdvancedAi::targeting(VictoryTarget::Domination))
+    }
+
+    /// See `war_holds_the_road`: the war on the middle civilization is the
+    /// only road to the target behind it, and is not a war to close.
+    #[test]
+    fn the_war_that_holds_the_road_is_kept() {
+        let (mut g, _) = strip();
         g.at_war.insert((0, 1));
         g.at_war.insert((1, 0));
-        assert!(ai.rival_reachable_by_land(&g, 0, 2), "a war opens the road");
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_denial_needs_a_road();
+        assert!(ai.holds_the_road_to(&g, 0, 1, 2));
+        ai.plan = Some(super::super::StrategicPlan {
+            strategy: super::super::GrandStrategy::Conquest,
+            target_player: Some(2),
+            target_city: g.player_city_ids(2).first().copied(),
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: g.turn,
+            rush: false,
+        });
+        assert!(ai.war_holds_the_road(&g, 0, 1));
+        assert!(ai.second_front_war_kept(&g, 0, 1));
+        // Open borders leave another road: the war holds nothing.
+        g.players[1].borders_enforced = Some(false);
+        assert!(!ai.holds_the_road_to(&g, 0, 1, 2));
+        assert!(!ai.war_holds_the_road(&g, 0, 1));
     }
 }
