@@ -16251,6 +16251,37 @@ CivvisQueue.drain = function(player, pid, turn)
 						for _ in pairs(path.plots) do n = n + 1; end
 						unpathed = n <= 1;
 					end
+					-- RECORD-ONLY: does a stalled operation ever step? G77
+					-- (civvis-20261004T201619Z): 22 of the 23 no-ops that held
+					-- their frame to the 30-tick grace as `unknown` were in
+					-- ACTIVITY_OPERATION. The accepted MOVE_TO was active, the
+					-- unit was still on its origin with its movement intact, and
+					-- the host's path ended this turn (~3.8 s each, ~90 s a game).
+					-- Cancelling such a leg here would recover that, but only if
+					-- these legs almost never step later. Mark them here, then
+					-- `stall_probe_resolved` (stepped) or the grace `move_noop`
+					-- (which carries `stall_probe`) says which. No decision reads it.
+					local attempt = CivvisBoard.moveAttempts[subject];
+					if not unpathed and not spentNow and attempt ~= nil and attempt.turn == turn
+							and attempt.moves ~= nil and moves ~= nil and moves >= attempt.moves
+							and ActivityTypes.ACTIVITY_OPERATION ~= nil
+							and try(function() return UnitManager.GetActivityType(unit); end, nil)
+								== ActivityTypes.ACTIVITY_OPERATION then
+						entry.stall_probe = entry.wait;
+						emit("stall_probe", { turn = turn, unit = subject,
+							unit_kind = unitTypeName(unit), tick = entry.wait, moves = moves,
+							from = { ux, uy }, want = { entry.expect.x, entry.expect.y } });
+					end
+				end
+				if entry.stall_probe ~= nil and not entry.stall_resolved and entry.origin ~= nil then
+					local attempt = CivvisBoard.moveAttempts[subject];
+					if ux ~= entry.origin.x or uy ~= entry.origin.y
+							or (moves ~= nil and attempt ~= nil and attempt.moves ~= nil
+								and moves < attempt.moves) then
+						entry.stall_resolved = true;
+						emit("stall_probe_resolved", { turn = turn, unit = subject,
+							outcome = "stepped", probe_tick = entry.stall_probe, tick = entry.wait });
+					end
 				end
 				-- Arrival is not the same as settlement on the live host. Civ VI can
 				-- place a unit on the requested plot while its MOVE_TO operation is
@@ -16830,11 +16861,14 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 	local afterFallback = attempt ~= nil and attempt.turn == turn and attempt.fallback == true;
 	local why = CivvisBoard.classifyNoop(player, pid, unit, ux, uy, wantX, wantY, moves);
 	CivvisBoard.stats.move_noop = CivvisBoard.stats.move_noop + 1;
+	local stalled = not entry.stall_resolved and entry.stall_probe or nil;
+	if stalled ~= nil then entry.stall_resolved = true; end
 	emit("move_noop", {
 		turn = turn, unit = subject, unit_kind = unitTypeName(unit),
 		from = { ux, uy }, want = { wantX, wantY }, moves = moves,
 		ticks = entry.wait, why = why, after_fallback = afterFallback,
 		native = CivvisBoard.noopEvidence(unit, wantX, wantY),
+		stall_probe = stalled,
 	});
 	if afterFallback then return false; end
 	local sent = CivvisBoard.fallbackStep(player, pid, unit, subject, ux, uy, wantX, wantY, turn, why);
