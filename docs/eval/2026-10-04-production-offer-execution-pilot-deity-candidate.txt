@@ -1,0 +1,4 @@
+61007900: turn 151, winner Some(1), alive true
+61007901: turn 126, winner Some(2), alive true
+61007902: turn 151, winner Some(1), alive true
+61007903: turn 107, winner Some(2), alive true

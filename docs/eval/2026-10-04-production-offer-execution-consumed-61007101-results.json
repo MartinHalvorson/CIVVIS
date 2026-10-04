@@ -1,0 +1,94 @@
+{
+  "created_at": "2026-10-04T20:33:05.313796+00:00",
+  "seed": 61007101,
+  "difficulty": "deity",
+  "terminal_exit_code": 0,
+  "fresh_strength_samples": 0,
+  "actual_Firaxis_verification": false,
+  "raw_sha256": {
+    "civvis-production-offer-execution-deity-61007101-candidate-final.json": "0295a19648f5e65a4a18d679eedb7965d544fcd4be635edf79428845fe7f5987",
+    "civvis-production-offer-execution-deity-61007101-candidate-actions.json": "787e00d2b74cbc4ad8718a2debb9fee10117b0972ce07a5f40f94bb0a9fff43f",
+    "civvis-production-offer-execution-deity-61007101-candidate-setup.json": "21fd952602b9d8269ecb6dd269146300960d7e4690f05c29f292d7b0b7f449ca",
+    "civvis-production-offer-execution-deity-61007101-candidate-cities.jsonl": "e569c428b0d46823d597d7c96e4a4518511594de12b9606d42104889292f809b"
+  },
+  "action_counts": {
+    "control": 34454,
+    "candidate": 35434
+  },
+  "first_authoritative_difference": {
+    "zero_based_action_index": 9956,
+    "control_turn_at_prefix": 63,
+    "control_action": [
+      0,
+      {
+        "type": "end_turn"
+      }
+    ],
+    "candidate_action": [
+      0,
+      {
+        "type": "produce",
+        "city": 314,
+        "item": {
+          "unit": "galley"
+        }
+      }
+    ]
+  },
+  "checkpoint_deltas": {
+    "25": {
+      "production": 0.0,
+      "rival_production": 0.0,
+      "cumulative_production": 0.0,
+      "science": 0.0,
+      "military_power": 0.0,
+      "cities": 0.0,
+      "productive_improvements": 0.0
+    },
+    "50": {
+      "production": 0.0,
+      "rival_production": 0.0,
+      "cumulative_production": 0.0,
+      "science": 0.0,
+      "military_power": 0.0,
+      "cities": 0.0,
+      "productive_improvements": 0.0
+    },
+    "75": {
+      "production": 0.7999999999999972,
+      "rival_production": -0.8000000000000114,
+      "cumulative_production": -22.800000000000182,
+      "science": -3.3999999999999986,
+      "military_power": -30.319999999999993,
+      "cities": 0.0,
+      "productive_improvements": 0.0
+    },
+    "100": {
+      "production": 2.799999999999997,
+      "rival_production": 18.19999999999999,
+      "cumulative_production": 69.0,
+      "science": -1.5499999999999972,
+      "military_power": 46.97000000000003,
+      "cities": -2.0,
+      "productive_improvements": 4.0
+    },
+    "125": {
+      "production": 24.800000000000004,
+      "rival_production": 81.0,
+      "cumulative_production": 428.8000000000002,
+      "science": 29.499999999999993,
+      "military_power": 142.03000000000003,
+      "cities": 3.0,
+      "productive_improvements": 13.0
+    },
+    "150": {
+      "production": -20.200000000000003,
+      "rival_production": 176.0,
+      "cumulative_production": 492.75,
+      "science": -31.25,
+      "military_power": 50.72999999999996,
+      "cities": -3.0,
+      "productive_improvements": 12.0
+    }
+  }
+}
