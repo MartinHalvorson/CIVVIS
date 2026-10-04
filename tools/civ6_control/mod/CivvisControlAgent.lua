@@ -16664,9 +16664,43 @@ end;
 -- Preserve native evidence before trying a fallback. A path can exist without
 -- ending on the requested plot, and an accepted request can remain active.
 -- WorldInput.lua:961 reads GetMoveToPathEx; UnitPanel.lua:2147 reads activity.
+-- The stock activity names (UnitActivities.artdef), lowercased, for a value
+-- from `UnitManager.GetActivityType`; the raw value as a string for one this
+-- list does not know, nil for nil. The same list and rule as the state
+-- export's unit `activity` (kept inline there for its install test), so a
+-- mirror row and a `move_noop` name an activity alike.
+CivvisBoard.activityName = function(kind)
+	if kind == nil then return nil; end
+	for _, label in ipairs({
+		"SLEEP", "HOLD", "OPERATION", "AWAKE",
+		"HEAL", "SENTRY", "INTERCEPT", "NO_ACTIVITY",
+		"BUILD", "DIG", "CUT", "REPAIR",
+		"SPREAD_RELIGION", "LAUNCH_INQUISITION",
+		"EVANGELIZE_BELIEF", "EXCAVATE", "DESIGNATE_PARK",
+		"FOUND_RELIGION",
+	}) do
+		local enum = label == "NO_ACTIVITY"
+			and ActivityTypes.NO_ACTIVITY
+			or ActivityTypes["ACTIVITY_" .. label];
+		if enum ~= nil and enum == kind then
+			return string.lower(label);
+		end
+	end
+	return tostring(kind);
+end;
+
+-- ⚠ G77 (civvis-20261004T201619Z): 22 of the 23 no-ops that waited the full
+-- grace as `unknown` (CanStartOperation true, path ending this turn, nothing
+-- stacked or hostile) carried native activity 1225574625, a value only 30 of
+-- the game's 1,217 no-ops had; the board had read those units `awake` or
+-- `operation` before the order. `activity_name` says which state the accepted
+-- leg left the unit in, an active operation that never steps or something else.
 CivvisBoard.noopEvidence = function(unit, x, y)
 	local evidence = {};
 	evidence.activity = tonumber(try(function() return UnitManager.GetActivityType(unit); end, nil));
+	evidence.activity_name = try(function()
+		return CivvisBoard.activityName(UnitManager.GetActivityType(unit));
+	end, nil);
 	local destination = try(function() return Map.GetPlotIndex(x, y); end, nil);
 	local path = try(function() return UnitManager.GetMoveToPathEx(unit, destination); end, nil);
 	if type(path) == "table" and type(path.plots) == "table" then
