@@ -7554,6 +7554,7 @@ mod yield_floors;
 mod marginal_usefulness;
 mod production_commitment;
 mod production_compounding;
+mod production_growth_capacity;
 
 /// `opening-warrior-recon-2` gives the Settler's escorting Warrior the first
 /// move before the capital is founded. One opt-in gene; see
@@ -26872,6 +26873,32 @@ impl AdvancedAi {
                                 continue;
                             }
                         }
+                    }
+                }
+            }
+            // A short production-return forecast can reserve housing before
+            // the research reservation consumes an idle growth-bound queue.
+            if committed.is_none() {
+                if let Some(investment) = self.early_growth_capacity(g, pid, cid, plan) {
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: investment.item.clone(),
+                        },
+                    )
+                    .is_ok()
+                    {
+                        if self.journal().wants(crate::reasoning::Level::Decision) {
+                            let city_name = g.cities[&cid].name.clone();
+                            think!(self.journal(), Economy, Decision,
+                                "{} invests in early growth capacity", city_name;
+                                "the short forecast returns {:.1} Production against a {:.1} bill",
+                                investment.returned, investment.cost);
+                        }
+                        counts.add_item(g, &investment.item);
+                        self.clear_idle_production_streak(cid);
+                        continue;
                     }
                 }
             }
