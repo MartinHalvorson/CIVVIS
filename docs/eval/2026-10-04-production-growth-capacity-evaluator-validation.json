@@ -1,0 +1,11 @@
+{
+  "verified_at": "2026-10-04T18:15:57.995949+00:00",
+  "fixture": "Copies of two consumed control games, synthetic candidate copies and deliberate corruptions; no games executed",
+  "fresh_strength_samples": 0,
+  "identical_actions_rejected_as_improvement": true,
+  "false_live_repair_flag_rejected": true,
+  "truncated_csv_rejected": true,
+  "early_world_ending_retained_and_coverage_failed": true,
+  "additional_elimination_failed": true,
+  "summarizer_sha256": "901925a4b8cd004d616f8f1ca7d18c05a156929d93d95472f001542b2d610394"
+}
