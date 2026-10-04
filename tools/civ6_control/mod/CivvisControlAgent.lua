@@ -9683,6 +9683,17 @@ local function exportState(player, pid, turn, frame, eventKind)
 		end, nil),
 	});
 	CivvisExportClock.mark("state_table_and_emit");
+	-- ★★★ LOAD-BEARING, NOT DIAGNOSTICS: THIS RECORD RELEASES THE STATE.
+	-- The game holds the latest `Automation.Log` record in memory and writes
+	-- it to the file only when the next record is logged. A replan or combat
+	-- frame's `state` is the last line of its export, so before this report
+	-- existed it waited for the next poll's `await`: `replan_frame` -> `state`
+	-- reached the relay a median 0.22-0.24 s apart in G67-G69, 0.000 in G70,
+	-- the first game with this record behind it (drained -> next board 0.000
+	-- vs 0.22-0.26 s, ~0.27 s a turn). Its clocks read whole seconds, so it
+	-- looks like a useless probe; removing it, or emitting anything between
+	-- the state and the end of this function conditionally, brings the delay
+	-- back. `export_timing_test.lua` holds it unconditional.
 	CivvisExportClock.report(turn, frame);
 end
 
@@ -19732,6 +19743,7 @@ local function tick()
 	if finished or inTick or cfg.Play == false then return; end
 	inTick = true;
 	CivvisQueue.controllerTicks = (CivvisQueue.controllerTicks or 0) + 1;
+	CivvisQueue.lastTickAt = try(function() return UI.GetElapsedTime(); end, nil);
 	local ok, err = pcall(function()
 		-- ★★★★ RETIRE, WHICH IS HOW A QUIT GAME GETS A RESULT AT ALL.
 		--
@@ -21005,6 +21017,34 @@ CivvisQueue.onUiPulse = function(source)
 	CivvisQueue.lastUiTick = CivvisQueue.controllerTicks or 0;
 end;
 
+-- ★★ A QUIET GAME CORE HELD LANDED ORDERS ~1 S.
+--
+-- `CivvisQueue.ordersLanded` peeks from game-core publish batches, and so does
+-- the poll; while the core publishes nothing there is no tick to peek from.
+-- In G69 (civvis-20261004T180652Z, the peek's first game) every frame whose
+-- landed orders waited over 0.7 s was such a drought: no mod line at all for
+-- 0.7-1.1 s after the brain's write, mostly right after a combat frame (8 of
+-- 64 combat frames vs 3 of 85 replan frames); the 1 s UI pulse above never
+-- fired because the core resumed first. The HUD's per-frame clock does not
+-- stop with the core, so it raises `CivvisControlPeek` every
+-- `OrdersPeekSeconds` and this asks the same bounded peek -- one `ready` query
+-- per 50 ms shared with the publish-batch path, nothing at all unless a CIVVIS
+-- board is out. A hit ticks with the forced poll, exactly as a batch hit does.
+-- `orders_peek_wake` says how long the controller had gone without a tick.
+CivvisQueue.onPeekPulse = function()
+	if finished or inTick or cfg.Play == false or not cfg.CivvisDecides then return; end
+	if not CivvisQueue.ordersLanded() then return; end
+	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local last = CivvisQueue.lastTickAt;
+	emit("orders_peek_wake", {
+		turn = awaiting.turn, frame = awaiting.frame or 0,
+		since_tick = (type(now) == "number" and type(last) == "number")
+			and math.floor((now - last) * 1000 + 0.5) / 1000 or nil,
+	});
+	CivvisQueue.forcePoll = true;
+	tick();
+end;
+
 local function onTeamVictory(team, victoryType, eventID)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
 	local ourTeam = try(function()
@@ -21202,6 +21242,7 @@ end;
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false });
 	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse); end);
+	pcall(function() LuaEvents.CivvisControlPeek.Add(CivvisQueue.onPeekPulse); end);
 	for name, handler in pairs({
 		LocalPlayerTurnBegin = onLocalPlayerTurnBegin,
 		LocalPlayerTurnEnd = function() CivvisQueue.onLocalTurnEnd(); end,

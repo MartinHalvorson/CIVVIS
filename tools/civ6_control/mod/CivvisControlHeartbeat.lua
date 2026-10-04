@@ -64,9 +64,19 @@ end
 if cfg.Play ~= false and cfg.CivvisDecides then
 	local elapsed = 0;
 	local abTurns = math.floor(tonumber(cfg.VSyncABTurns) or 0);
+	-- The agent's landed-orders peek on this clock, which keeps running while
+	-- the game core publishes nothing (`CivvisQueue.onPeekPulse`). The agent
+	-- bounds the query itself; this only offers it a chance each interval.
+	local peekElapsed = 0;
+	local peekEvery = math.max(0.02, tonumber(cfg.OrdersPeekSeconds) or 0.05);
 	ContextPtr:SetUpdate(function(dt)
 		local delta = math.max(0, tonumber(dt) or 0);
 		if abTurns > 0 then CivvisVSyncAB.frame(delta); end
+		peekElapsed = peekElapsed + delta;
+		if peekElapsed >= peekEvery then
+			peekElapsed = 0;
+			pcall(function() LuaEvents.CivvisControlPeek(); end);
+		end
 		elapsed = elapsed + delta;
 		if elapsed < 1 then return; end
 		-- A long frame gets one pulse, never a burst of catch-up calls.
