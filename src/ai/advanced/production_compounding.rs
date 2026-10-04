@@ -9,6 +9,7 @@
 use super::{AdvancedAi, ChainRung, GrandStrategy, StrategicPlan, VictoryTarget};
 use crate::game::{Game, Item};
 use crate::rules::{BuildingSpec, Yields};
+use crate::think;
 
 pub(super) struct BuilderInvestment {
     pub(super) jobs: usize,
@@ -48,6 +49,16 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> Option<BuilderInvestment> {
+        self.production_builder_status(g, pid, cid, plan).ok()
+    }
+
+    fn production_builder_status(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> Result<BuilderInvestment, &'static str> {
         if !self.builder_payback_reserve
             || self.active_victory_target(g).is_none()
             || self.base.minor
@@ -56,9 +67,9 @@ impl AdvancedAi {
             || g.turn > g.standard_duration(160)
             || plan.threatened_city == Some(cid)
         {
-            return None;
+            return Err("inactive lane, recovery, age, or strategic threat");
         }
-        let city = g.cities.get(&cid)?;
+        let city = g.cities.get(&cid).ok_or("missing city")?;
         let builder = Item::Unit {
             unit: crate::name!("builder"),
         };
@@ -68,7 +79,7 @@ impl AdvancedAi {
             || self.base.barbarian_local_alarm_for_controller(g, pid, cid)
             || !Self::production_commitment_is_legal(g, pid, cid, &builder)
         {
-            return None;
+            return Err("city output, recent attack, local alarm, or production legality");
         }
         let cities = g.player_city_ids(pid);
         let counts = self.counts_without_city_queue(g, pid, cid);
@@ -79,7 +90,7 @@ impl AdvancedAi {
                 .iter()
                 .any(|other| *other != cid && g.cities[other].queue.first() == Some(&builder))
         {
-            return None;
+            return Err("existing workforce, another queued Builder, or insolvency");
         }
         let local_charges: usize = g
             .player_unit_ids(pid)
@@ -143,7 +154,7 @@ impl AdvancedAi {
             .take(g.builder_charges(pid).max(0) as usize)
             .collect();
         if jobs.len() < 2 {
-            return None;
+            return Err("fewer than two uncovered worked production jobs");
         }
         let build_turns = self.production_build_turns(g, pid, cid, &builder);
         let window = g.standard_duration(80) as f64;
@@ -162,14 +173,75 @@ impl AdvancedAi {
             })
             .sum();
         let cost = g.item_remaining_cost_for_city(pid, cid, &builder);
-        (returned >= cost && cost.is_finite() && returned.is_finite()).then_some(
-            BuilderInvestment {
-                jobs: jobs.len(),
-                returned,
-                cost,
-                build_turns,
-            },
-        )
+        if returned < cost || !cost.is_finite() || !returned.is_finite() {
+            return Err("worked production cannot repay the Builder within the window");
+        }
+        Ok(BuilderInvestment {
+            jobs: jobs.len(),
+            returned,
+            cost,
+            build_turns,
+        })
+    }
+
+    /// Reach the delegated and strategic governors through their common
+    /// turn driver. Direct previews retain the city-local check as well.
+    pub(super) fn reserve_production_builder(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        if !self.builder_payback_reserve {
+            return;
+        }
+        let cities = g.player_city_ids(pid);
+        let counts = self.counts(g, pid);
+        if counts.military < cities.len() {
+            return;
+        }
+        let mut best: Option<(u32, BuilderInvestment)> = None;
+        for cid in cities {
+            if !g.cities[&cid].queue.is_empty()
+                || (counts.traders == 0
+                    && self
+                        .base
+                        .should_add_trader_in_city_for_controller(g, pid, cid, 0))
+            {
+                continue;
+            }
+            match self.production_builder_status(g, pid, cid, plan) {
+                Ok(investment) => {
+                    if best.as_ref().is_none_or(|(old_city, old)| {
+                        investment
+                            .build_turns
+                            .total_cmp(&old.build_turns)
+                            .then_with(|| cid.cmp(old_city))
+                            .is_lt()
+                    }) {
+                        best = Some((cid, investment));
+                    }
+                }
+                Err(reason) => {
+                    think!(self.journal(), Economy, Detail,
+                        "{} defers the worked-production Builder", g.cities[&cid].name;
+                        "{reason}");
+                }
+            }
+        }
+        if let Some((cid, investment)) = best {
+            let item = Item::Unit {
+                unit: crate::name!("builder"),
+            };
+            if g.apply(pid, &crate::game::Action::Produce { city: cid, item })
+                .is_ok()
+            {
+                think!(self.journal(), Economy, Decision,
+                    "{} reserves a Builder for worked production", g.cities[&cid].name;
+                    "{} uncovered jobs forecast {:.1} production returned against {:.1} remaining cost, after {:.1} build turns; common production driver",
+                    investment.jobs,investment.returned,investment.cost,investment.build_turns);
+            }
+        }
     }
 
     /// The Science reservation must compare its owed research building with

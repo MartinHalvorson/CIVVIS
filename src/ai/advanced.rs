@@ -42752,6 +42752,7 @@ impl AdvancedAi {
             // Scout as a weak Warrior. Same claim discipline as the naval eye:
             // one idle, safe queue, only while `recon_is_the_missing_arm`.
             self.reserve_idle_land_recon(g, pid, &plan);
+            self.reserve_production_builder(g, pid, &plan);
             if (self.governor_in_recovery && plan.strategy == GrandStrategy::Recovery)
                 || dispatch_target.is_some()
                 || adaptive_expansion_dispatch

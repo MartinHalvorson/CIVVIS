@@ -168,3 +168,28 @@ fn siege_and_insolvency_retain_their_priority() {
         if g.rules.units[unit].class == "military")
     );
 }
+
+#[test]
+fn the_delegated_turn_driver_reserves_repayable_worked_production() {
+    use crate::ai::Ai;
+    let (mut g, mut ai, plan, cid, other, builder) = fixture();
+    g.spawn_test_unit("warrior", 0, g.cities[&cid].pos);
+    g.spawn_test_unit("warrior", 0, g.cities[&other].pos);
+    ai.skip_opening_book();
+    g.spawn_test_unit("scout", 0, (8, 11));
+    g.spawn_test_unit("scout", 0, (9, 11));
+    ai.enable_lane_delegates_production_2();
+    ai.base.solvency_first_trade_slot = false;
+    ai.plan = Some(plan.clone());
+    assert!(ai.lane_delegates_now(Some(VictoryTarget::Domination), false));
+    assert!(ai
+        .production_builder_investment(&g, 0, cid, &plan)
+        .is_some());
+    let mut control = g.clone();
+    let mut ordinary = ai.clone();
+    ordinary.builder_payback_reserve = false;
+    ordinary.take_turn(&mut control, 0);
+    assert_ne!(control.cities[&cid].queue.first(), Some(&builder));
+    ai.take_turn(&mut g, 0);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&builder));
+}

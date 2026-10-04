@@ -1,4 +1,4 @@
-use civvis::ai::{run_game_observed, AdvancedAi, VictoryTarget};
+use civvis::ai::{run_game_observed, AdvancedAi, Ai, VictoryTarget};
 use civvis::game::{Game, GameOptions};
 use std::collections::BTreeSet;
 use std::io::Write;
@@ -83,7 +83,16 @@ fn main() {
                     let c=&g.cities[cid];
                     serde_json::json!({"id":cid,"name":c.name,"population":c.pop,"food_bank":c.food,"housing":g.city_housing(c),"amenities":g.city_amenity_surplus(c),"yields":g.city_yields(*cid),"queue":c.queue,"progress":c.production,"buildings":c.buildings,"districts":c.districts,"worked_tiles":g.city_citizen_plan(*cid).worked_tiles})
                 }).collect();
-                writeln!(detail,"{}",serde_json::json!({"seed":seed,"turn":g.turn,"gold":g.players[0].gold,"income":g.players[0].gold_per_turn,"bankruptcy_amenity_penalty":g.players[0].bankruptcy_amenity_penalty,"government":g.players[0].government,"policies":g.players[0].policies,"cities":city_records})).unwrap();
+                let rival_cities: Vec<_> = (1..4).flat_map(|pid| {
+                    g.player_city_ids(pid).into_iter().map(move |cid| (pid,cid))
+                }).map(|(pid,cid)| {
+                    let c = &g.cities[&cid];
+                    serde_json::json!({"owner":pid,"id":cid,"name":c.name,"population":c.pop,
+                        "housing":g.city_housing(c),"amenities":g.city_amenity_surplus(c),
+                        "yields":g.city_yields(cid),"queue":c.queue,"buildings":c.buildings,
+                        "districts":c.districts,"worked_tiles":g.city_citizen_plan(cid).worked_tiles})
+                }).collect();
+                writeln!(detail,"{}",serde_json::json!({"seed":seed,"turn":g.turn,"gold":g.players[0].gold,"income":g.players[0].gold_per_turn,"bankruptcy_amenity_penalty":g.players[0].bankruptcy_amenity_penalty,"government":g.players[0].government,"policies":g.players[0].policies,"cities":city_records,"rival_cities":rival_cities})).unwrap();
                 let rival = (1..4)
                     .map(|pid| {
                         let cities = g.player_city_ids(pid);
