@@ -937,10 +937,22 @@ impl AdvancedAi {
         group: &ForceGroup,
     ) {
         let turn = g.turn;
+        // A capture on a disposable planning board can leave persistent memory
+        // in Hold even when the next host frame still shows an enemy city.
+        // Reconcile that contradiction before the once-per-turn cache: native
+        // air-assault continuations can deliver a fresh board in the same turn.
+        let held_enemy_city = self
+            .sieges
+            .get(&cid)
+            .is_some_and(|siege| siege.stage == SiegeStage::Hold)
+            && g.cities
+                .get(&cid)
+                .is_some_and(|city| city.owner != pid && g.is_at_war(pid, city.owner));
         if self
             .sieges
             .get(&cid)
             .is_some_and(|siege| siege.assessed == turn)
+            && !held_enemy_city
         {
             return;
         }
@@ -979,7 +991,11 @@ impl AdvancedAi {
         });
         record.assessed = turn;
         let previous = record.stage;
-        let mut stage = previous;
+        let mut stage = if held_enemy_city {
+            SiegeStage::Reduce
+        } else {
+            previous
+        };
         if city.owner == pid {
             stage = SiegeStage::Hold;
         } else {
