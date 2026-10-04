@@ -1,0 +1,19 @@
+{
+  "source_before_fixture_correction": "0d59c32d145e5e1fb990fdf6b23c6ad0708e0315",
+  "ci_run": 37231150398,
+  "ci_job": 111520865230,
+  "ci_partial_result": {
+    "passed": 2182,
+    "failed": 1,
+    "skipped": 50,
+    "not_run_due_to_failure": 2391
+  },
+  "ci_failure": "new rejected_access_proposal test assumed closed borders before Early Empire; failed initial !has_open_borders assertion before executing batch",
+  "fixture_correction": "recipient learns Early Empire; proposer does not; assert recipient enforces borders before checking no access",
+  "runtime_policy_changed_by_correction": false,
+  "initial_local_full_run": {
+    "exit_code": 130,
+    "scope": "Interrupted own Cargo run after CI identified fixture precondition failure, before running tests. Linked candidate library was frozen and preserved."
+  },
+  "corrected_local_full_suite": "running; no result yet"
+}
