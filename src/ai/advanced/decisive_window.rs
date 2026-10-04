@@ -82,6 +82,9 @@ const WALL_TIER_HP: i32 = 100;
 const ANTI_CAVALRY_BONUS: f64 = 10.0;
 const MELEE_VS_SPEAR_BONUS: f64 = 5.0;
 
+/// The civic that unlocks Corps (`corps_fleets`): +10 strength on a merged body.
+const CORPS_CIVIC: &str = "nationalism";
+
 /// The technology that raises a civilization to each wall tier.
 const WALL_TIER_TECHS: [&str; 4] = ["masonry", "castles", "siege_tactics", "steel"];
 
@@ -540,16 +543,40 @@ impl AdvancedAi {
             .and_then(|window| window.tech_goal)
     }
 
-    /// The civic a civic-gated window unit needs next (the Samurai's
-    /// Feudalism, the Tagma's Divine Right, the Winged Hussar's Mercantilism).
+    /// The civic the window needs next: a civic-gated window unit's (the
+    /// Samurai's Feudalism, the Tagma's Divine Right, the Winged Hussar's
+    /// Mercantilism), else Nationalism once it is inside the horizon — Corps
+    /// are +10 strength on every body of whatever package the army carries,
+    /// the largest single step the civic tree sells, and the live seat forms
+    /// them as soon as it can (6-19 FORM_CORPS/FORM_ARMY orders a game) but
+    /// reached Nationalism at t150 against the best rival's t106.
     pub(super) fn decisive_window_civic_goal(
         &self,
         g: &Game,
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<Name> {
-        self.decisive_window(g, pid, plan)
-            .and_then(|window| window.civic_goal)
+        let horizon = g.standard_duration(DECISIVE_RESEARCH_HORIZON) as f64;
+        self.decisive_window_civic_goal_within(g, pid, plan, horizon)
+    }
+
+    /// [`Self::decisive_window_civic_goal`] with the horizon as an argument.
+    pub(super) fn decisive_window_civic_goal_within(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        horizon: f64,
+    ) -> Option<Name> {
+        let window = self.decisive_window_within(g, pid, plan, horizon)?;
+        if window.civic_goal.is_some() {
+            return window.civic_goal;
+        }
+        let corps = Name::new(CORPS_CIVIC);
+        (g.rules.civics.contains_key(&corps)
+            && !g.players[pid].civics.contains(&corps)
+            && Self::decisive_turns(g, pid, &[], &[corps]) <= horizon)
+            .then_some(corps)
     }
 }
 

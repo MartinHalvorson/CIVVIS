@@ -278,3 +278,28 @@ fn the_build_picker_prefers_the_llanero_until_half_the_army() {
         Some("llanero")
     );
 }
+
+/// With the window's package needing no civic, Nationalism (Corps) is the
+/// civic goal once it is inside the horizon — and not before.
+#[test]
+fn nationalism_is_the_civic_goal_inside_the_horizon() {
+    let (mut g, ai, plan) = board("Gran Colombia");
+    learn(&mut g, 1, &["siege_tactics", "gunpowder", "military_tactics"]);
+    learn(&mut g, 0, &["printing", "castles", "gunpowder", "animal_husbandry"]);
+    g.players[0].strategic_resources.insert(name!("horses"), 40.0);
+    g.players[0].strategic_resources.insert(name!("niter"), 40.0);
+    assert_eq!(
+        ai.decisive_window_civic_goal_within(&g, 0, &plan, f64::INFINITY),
+        Some(name!("nationalism"))
+    );
+    assert_eq!(
+        ai.decisive_window_civic_goal_within(&g, 0, &plan, 0.0),
+        None,
+        "outside the horizon nothing is owed"
+    );
+    learn_civics(&mut g, 0, &["nationalism"]);
+    assert_eq!(
+        ai.decisive_window_civic_goal_within(&g, 0, &plan, f64::INFINITY),
+        None
+    );
+}
