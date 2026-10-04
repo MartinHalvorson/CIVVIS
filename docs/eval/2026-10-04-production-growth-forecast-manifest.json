@@ -80,5 +80,28 @@
     "Both arms use the same harness and CI profile libraries. Treatment is runtime change only; no opt-in Granary policy is enabled.",
     "Forecast holds other city populations and actions fixed. Native games test effects outside this approximation.",
     "Real Firaxis controller and private gene profile are untouched."
-  ]
+  ],
+  "prototype_commit": "f9975f48db721ce4bb99c32e507f0a36b0a9246c",
+  "probe_sha256": "38e0473df9b66e951a8b12762253bb5a2347dee7c98fe92ec72d26894db9608f",
+  "control_binary_sha256": "6a9a9794d1cff1ac561788f2e3abd1e1315f351887c56040f7fa1064bd9a3095",
+  "control_link_note": "Archived serde_derive dynamic library was missing from the preserved dependency bundle; added the matching dependency from this task CI build. Baseline runtime library remains unchanged.",
+  "control_proc_macro_sha256": "d7f302f4fa4627ff707ba1f0131a44c3023c5f836fa8d1bfb5206175c3aae910",
+  "compile_args": [
+    "--edition=2021",
+    "-O",
+    "-C",
+    "debug-assertions=on"
+  ],
+  "treatment_scope": "Default runtime guard applies to explicit Domination seats. This harness has only focal seat 0 explicitly targeted; AdvancedAi::fleet constructs adaptive rivals, so their production policy is unchanged. Strongest-rival Production is still measured independently in each arm to capture interactions.",
+  "numeric_gate_recorded_before_candidate_play_at": "2026-10-04T11:54:46.564439+00:00",
+  "acceptance_numeric": {
+    "confirmation_mean_production_change_pct_min_at_75_and_100_both_difficulties": 3,
+    "confirmation_mean_production_to_strongest_rival_change_pct_min_at_75_and_100_both_difficulties": 0,
+    "confirmation_cumulative_production_change_pct_min_at_100_both_difficulties": 0,
+    "confirmation_science_culture_cities_military_power_change_pct_min_at_75_and_100_both_difficulties": -5,
+    "confirmation_more_production_pairs_than_lower_at_75_and_100": true,
+    "confirmation_eliminations_no_more_than_control": true,
+    "confirmation_wins_no_fewer_than_control": true,
+    "pilot_stop": "Stop if every paired recorded checkpoint is identical, or Deity mean Production falls at least 5% at both turns 75 and 100. Otherwise run the fixed confirmation batch without changing the policy."
+  }
 }

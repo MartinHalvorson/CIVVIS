@@ -6,9 +6,12 @@ use std::sync::Arc;
 fn board() -> (Game, u32, StrategicPlan) {
     let mut options = GameOptions::new(2, 32, 20, 61006499, 250, 0);
     options.speed = "online".into();
+    options.barbarians = false;
+    options.disaster_intensity = 0;
     options.handicap_exempt = BTreeSet::from([0]);
     let mut g = Game::new_with(options);
     for pid in 0..2 {
+        g.current = pid;
         let settler = g
             .player_unit_ids(pid)
             .into_iter()
@@ -16,6 +19,7 @@ fn board() -> (Game, u32, StrategicPlan) {
             .unwrap();
         g.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
     }
+    g.current = 0;
     let cid = g.player_city_ids(0)[0];
     let center = g.cities[&cid].pos;
     let second = g
@@ -229,7 +233,7 @@ fn production_growth_preserves_threats_queues_and_expansion() {
                     .filter(|id| g.rules.units[g.units[id].kind.as_str()].class == "military")
                     .collect();
                 for id in ids {
-                    g.units.remove(&id);
+                    g.remove_unit(id);
                 }
                 let other = g
                     .player_city_ids(0)

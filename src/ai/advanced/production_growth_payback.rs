@@ -40,7 +40,9 @@ fn growth_production_projection(
     let mut production = 0.0;
     let mut completed = item.is_none();
     for step in 0..window {
-        g.turn = original.turn.saturating_add(step);
+        // City income is paid at the beginning of its next player turn.
+        // Expire known timed effects at that boundary before reading yields.
+        g.turn = original.turn.saturating_add(step).saturating_add(1);
         let (earned, food, construction) = {
             let _memo = g.query_memo();
             let city = &g.cities[&cid];
