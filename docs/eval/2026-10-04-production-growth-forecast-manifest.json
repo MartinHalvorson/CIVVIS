@@ -74,7 +74,7 @@
   },
   "acceptance": "Require an early production improvement at turns 75 and 100 on both difficulties in fresh confirmation, improved production relative to strongest rival, and no material science/culture/expansion/survival regression. No AI-parity claim from a Granary forecast or conditional late checkpoints. Reject runtime if evidence is negative; retain all outcomes and missing checkpoints.",
   "validation": {
-    "status": "in progress",
+    "status": "complete",
     "focused_unoptimized": {
       "passed": 4,
       "failed": 0,
@@ -117,6 +117,43 @@
           4
         ]
       ]
+    },
+    "final_full_optimized": {
+      "passed": 4548,
+      "ignored": 54,
+      "source": "cc7911f8908a12d08c1ce4f54eb481bda373c732",
+      "command": "cargo test --profile ci --locked",
+      "suite_rows": [
+        [
+          4296,
+          50
+        ],
+        [
+          14,
+          0
+        ],
+        [
+          217,
+          0
+        ],
+        [
+          17,
+          0
+        ],
+        [
+          4,
+          0
+        ],
+        [
+          0,
+          4
+        ]
+      ]
+    },
+    "final_quality": {
+      "passed": true,
+      "base": "f57abec5e369e9a95f7f6bf47a197c646b14a3f3",
+      "head": "cc7911f89"
     }
   },
   "notes": [
@@ -180,5 +217,34 @@
   "confirmation_runtime_unchanged": true,
   "ci_prototype_source": "50594d440",
   "ci_prototype_all_checks_success": true,
-  "runtime_prototype_removed": true
+  "runtime_prototype_removed": true,
+  "final_runtime_inputs_match_origin_main": true,
+  "final_main_merged": "f57abec5e369e9a95f7f6bf47a197c646b14a3f3",
+  "compiler": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: aarch64-apple-darwin\nrelease: 1.97.1\nLLVM version: 22.1.6\n",
+  "ledger_sha256": "e86a761d3fc5d51f3d41b289c5b7275810fe5adbbe2a85581d32833ad3e05a45",
+  "artifact_sha256": {
+    "2026-10-04-production-growth-forecast-confirmation-deity-candidate.csv": "3a7c3bc41e043a0efbdb160753a1f29a40c4994c155ba2fc2b3701ad6af2e765",
+    "2026-10-04-production-growth-forecast-confirmation-deity-candidate.txt": "070fff027a3747d12b9c1002380c17c5d84f2df5c46bae82c1bf6b14a22a33bf",
+    "2026-10-04-production-growth-forecast-confirmation-deity-control.csv": "840f16662005ac2fbb3f419990be3e65bf87d77cde68a10d5c0fe80e97065f18",
+    "2026-10-04-production-growth-forecast-confirmation-deity-control.txt": "c6049558df9709a32863fb84fe95fb9a492ebed41eaa621114b250ab0ca5ad7a",
+    "2026-10-04-production-growth-forecast-confirmation-emperor-candidate.csv": "c85206fa780c27dd5caa897b505f5fed4429629ff05dc0ceddcd206ef4b73417",
+    "2026-10-04-production-growth-forecast-confirmation-emperor-candidate.txt": "bc9fabc123219ecce8661cb5ba1dd3e1be8fa485ed9dbc39034e382915255977",
+    "2026-10-04-production-growth-forecast-confirmation-emperor-control.csv": "e19c0dc4d1520b330c3fc823a1ebcc9fcdeba8d9e73efc6cad94a230c805ea28",
+    "2026-10-04-production-growth-forecast-confirmation-emperor-control.txt": "283d6ed51c757558a7669c77993f7950e3acb887d40486c81fe227868529452e",
+    "2026-10-04-production-growth-forecast-confirmation-summary.json": "aba1282dbafd7559bf753463242599969b37aabc68a6d7398773f98f686eec81",
+    "2026-10-04-production-growth-forecast-decision.json": "8b8a2541979205fe083d43a5d4bf164641a94db15f00afc568c1df4d8d4e7831",
+    "2026-10-04-production-growth-forecast-pilot-deity-candidate.csv": "5d5b28a3d4e1777675c19d88f45ec344716b865faea517095d5f80419879611c",
+    "2026-10-04-production-growth-forecast-pilot-deity-candidate.txt": "ea4679048899bdfd1ea7547c4abd53323d82e918fff739bbdd892f817bca82bc",
+    "2026-10-04-production-growth-forecast-pilot-deity-control.csv": "9355fd5dd973797aa90c32bec1b2025c61763c67cc100cd496715f88ddbec5fc",
+    "2026-10-04-production-growth-forecast-pilot-deity-control.txt": "a72f16177cceffeb807ecd38b9ab58b6eeed972aae7db4f883a91ebe546f8336",
+    "2026-10-04-production-growth-forecast-pilot-emperor-candidate.csv": "4a81bfe35173e7d45e4070ff457a4a98202adb888a504323b1e2f07b65be3ccd",
+    "2026-10-04-production-growth-forecast-pilot-emperor-candidate.txt": "791b120af7cb0d1f2ab8c499f90f00e1fb7cf052afe4392e9c2ce0ef4336a2cb",
+    "2026-10-04-production-growth-forecast-pilot-emperor-control.csv": "4a81bfe35173e7d45e4070ff457a4a98202adb888a504323b1e2f07b65be3ccd",
+    "2026-10-04-production-growth-forecast-pilot-emperor-control.txt": "791b120af7cb0d1f2ab8c499f90f00e1fb7cf052afe4392e9c2ce0ef4336a2cb",
+    "2026-10-04-production-growth-forecast-pilot-summary.json": "dc535956c694ec6f7af70d46a30501030d7f700650ad629972e6036708072103",
+    "2026-10-04-production-growth-forecast-probe.rs": "38e0473df9b66e951a8b12762253bb5a2347dee7c98fe92ec72d26894db9608f",
+    "2026-10-04-production-growth-forecast-prototype.patch": "9029c32fa2549ac5f77a39cc037b88c10571845f32681b37e730c0fc4a56cf3a",
+    "2026-10-04-production-growth-forecast-summarize.py": "a2b5555ff6f37de7e7ee79afaecb0d7471a577299ab4d25ce8fcdf445c5073b2",
+    "2026-10-04-production-growth-forecast.md": "34918988d73210455421ca0de040433c34b54e6eaacffc2b09728098a4c892d3"
+  }
 }

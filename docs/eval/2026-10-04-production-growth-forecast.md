@@ -91,8 +91,10 @@ CI source `50594d440` also passes cargo-test, rust-quality, collaboration-policy
 overwrite-guard, paired-cost, published-build and control-mod. The cost gate's
 adaptive shape does not measure this explicit Domination forecast's overhead.
 
-Full local optimized validation and final runtime removal are recorded in the
-manifest once complete. The prototype is preserved as a patch against the control
+The runtime prototype is removed. Final runtime inputs match current trunk.
+The final local optimized suite passes 4,548 tests with 54 ignored; changed-line
+Rust quality passes. The prototype suite passed 4,552 tests with 54 ignored.
+Exact tested sources and commands are recorded in the manifest. The prototype is preserved as a patch against the control
 report merge and in PR #3900's checkpoint history. Neither the real Firaxis
 controller, its pin, private profile, nor any running game was altered.
 
