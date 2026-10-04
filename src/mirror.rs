@@ -580,6 +580,21 @@ fn state_line_can_match_turn(line: &str, turn: Option<u32>) -> bool {
     let Some(want) = turn else {
         return true;
     };
+    // ★★★★ SKIP THE SERDE WALK FOR EVERY OTHER TURN'S BOARD.
+    //
+    // The typed header still has to step over the whole record to reach
+    // `turn` — keys are written sorted, so it sits behind `units`, `tiles`,
+    // `players` and the rest — and a live seat asks for one turn out of
+    // hundreds of 100-300 KB state records. Profiled on a t220 frame of
+    // civvis-20261003T164758Z (96 MB events.jsonl): this header walk was 18% of
+    // the decider's CPU, run twice per frame over all ~690 state records.
+    // A record that spells an integer `"turn"` member and never `"turn": <want>`
+    // is another turn's board and is rejected without the walk. Anything the
+    // scan cannot settle — no integer `turn` at all, as in the ambiguous
+    // headers below — still goes through the exact parse, as before.
+    if !turn_may_match(line, want) {
+        return false;
+    }
     #[derive(Deserialize)]
     struct TurnHeader {
         turn: Option<u32>,
@@ -588,6 +603,146 @@ fn state_line_can_match_turn(line: &str, turn: Option<u32>) -> bool {
         .ok()
         .and_then(|header| header.turn)
         .is_none_or(|found| found == want)
+}
+
+/// False only when `line` spells at least one integer `"turn"` member and none
+/// of them is `want`: a record that cannot be turn `want`'s board. True when
+/// the scan cannot tell (no integer `turn` anywhere), so the exact parse still
+/// owns missing, null, string, escaped and duplicate keys. Nesting is ignored.
+fn turn_may_match(line: &str, want: u32) -> bool {
+    let bytes = line.as_bytes();
+    let key = "\"turn\"";
+    let want = want.to_string();
+    let mut saw_integer = false;
+    let mut from = 0;
+    while let Some(found) = line[from..].find(key) {
+        let mut at = from + found + key.len();
+        from = from + found + 1;
+        while at < bytes.len() && matches!(bytes[at], b' ' | b'\t' | b'\n' | b'\r') {
+            at += 1;
+        }
+        if at >= bytes.len() || bytes[at] != b':' {
+            continue;
+        }
+        at += 1;
+        while at < bytes.len() && matches!(bytes[at], b' ' | b'\t' | b'\n' | b'\r') {
+            at += 1;
+        }
+        let digits = bytes[at..].iter().take_while(|b| b.is_ascii_digit()).count();
+        if digits == 0 {
+            continue;
+        }
+        let after = bytes.get(at + digits).copied();
+        if after.is_some_and(|b| matches!(b, b'.' | b'e' | b'E')) {
+            continue;
+        }
+        if &line[at..at + digits] == want.as_str() {
+            return true;
+        }
+        saw_integer = true;
+    }
+    !saw_integer
+}
+
+/// Whether `line` could hold `<key>: <literal>` as one JSON member.
+///
+/// A cheap NECESSARY condition for a serde check that follows it, never a
+/// replacement: every occurrence of `key` (quoted, e.g. `"\"kind\""`) is
+/// tested for optional JSON whitespace, a colon, optional whitespace and then
+/// `literal` (`"\"combat\""`, or a number's digits), and a numeric literal
+/// must not run on into more of a number. Nesting is ignored, so a nested
+/// member also passes — the caller's parse decides. What it buys: a substring
+/// such as `"combat"` also occurs in every state record (unit strength keys),
+/// and a 300 KB record is not parsed to learn that it is not a combat event.
+pub(crate) fn json_may_have_value(line: &str, key: &str, literal: &str) -> bool {
+    let bytes = line.as_bytes();
+    let numeric = literal.as_bytes().last().is_some_and(|b| b.is_ascii_digit());
+    let mut from = 0;
+    while let Some(found) = line[from..].find(key) {
+        let mut at = from + found + key.len();
+        from = from + found + 1;
+        while at < bytes.len() && matches!(bytes[at], b' ' | b'\t' | b'\n' | b'\r') {
+            at += 1;
+        }
+        if at >= bytes.len() || bytes[at] != b':' {
+            continue;
+        }
+        at += 1;
+        while at < bytes.len() && matches!(bytes[at], b' ' | b'\t' | b'\n' | b'\r') {
+            at += 1;
+        }
+        if !line[at..].starts_with(literal) {
+            continue;
+        }
+        let after = bytes.get(at + literal.len()).copied();
+        if numeric && after.is_some_and(|b| b.is_ascii_digit() || matches!(b, b'.' | b'e' | b'E')) {
+            continue;
+        }
+        return true;
+    }
+    false
+}
+
+#[cfg(test)]
+mod log_scan_prefilter_tests {
+    use super::{json_may_have_value, state_line_can_match_turn, turn_may_match};
+
+    #[test]
+    fn a_kind_matches_with_or_without_spaces() {
+        assert!(json_may_have_value(r#"{"kind": "combat", "turn": 3}"#, "\"kind\"", "\"combat\""));
+        assert!(json_may_have_value(r#"{"kind":"combat"}"#, "\"kind\"", "\"combat\""));
+        assert!(json_may_have_value("{\"kind\" :\t\"combat\"}", "\"kind\"", "\"combat\""));
+    }
+
+    #[test]
+    fn the_word_alone_is_not_the_kind() {
+        // Every exported unit carries a `combat` strength; a state record must
+        // not look like a combat event to the prefilter.
+        let state = r#"{"kind": "state", "turn": 9, "units": [{"combat": 20, "kind": "UNIT_WARRIOR"}]}"#;
+        assert!(!json_may_have_value(state, "\"kind\"", "\"combat\""));
+        assert!(!json_may_have_value(r#"{"label": "kind", "x": "combat"}"#, "\"kind\"", "\"combat\""));
+    }
+
+    #[test]
+    fn a_turn_number_must_end_where_it_ends() {
+        let line = r#"{"kind": "state", "turn": 220, "utc": "x"}"#;
+        assert!(json_may_have_value(line, "\"turn\"", "220"));
+        assert!(!json_may_have_value(line, "\"turn\"", "22"));
+        assert!(!json_may_have_value(line, "\"turn\"", "2"));
+        assert!(!json_may_have_value(r#"{"turn": 2201}"#, "\"turn\"", "220"));
+        assert!(!json_may_have_value(r#"{"turn": 220.5}"#, "\"turn\"", "220"));
+        assert!(json_may_have_value(r#"{"turn":220}"#, "\"turn\"", "220"));
+        // A nested member passes: the exact parse behind the prefilter decides.
+        assert!(json_may_have_value(r#"{"turn": 5, "deal": {"turn": 220}}"#, "\"turn\"", "220"));
+    }
+
+    #[test]
+    fn the_turn_prefilter_only_rejects_what_the_header_would() {
+        let other = r#"{"kind": "state", "turn": 219, "units": []}"#;
+        let ours = r#"{"kind": "state", "turn": 220, "units": []}"#;
+        let nested = r#"{"kind": "state", "deals": [{"turn": 220}], "turn": 219}"#;
+        assert!(!state_line_can_match_turn(other, Some(220)));
+        assert!(state_line_can_match_turn(ours, Some(220)));
+        // Passes the prefilter, then the exact header rejects it.
+        assert!(!state_line_can_match_turn(nested, Some(220)));
+        assert!(state_line_can_match_turn(other, None));
+    }
+
+    #[test]
+    fn what_the_scan_cannot_settle_still_reaches_the_parser() {
+        for line in [
+            r#"{"kind":"state"}"#,
+            r#"{"kind":"state","turn":null}"#,
+            r#"{"kind":"state","turn":"7"}"#,
+            r#"{"kind":"state","turn":7.0}"#,
+            r#"{"kind":"state","tu\u0072n":7}"#,
+        ] {
+            assert!(turn_may_match(line, 7), "{line}");
+        }
+        assert!(!turn_may_match(r#"{"kind":"state","turn":8}"#, 7));
+        assert!(!turn_may_match(r#"{"kind":"state","turn":70}"#, 7));
+        assert!(turn_may_match(r#"{"kind":"state","turn":8,"turn":7}"#, 7));
+    }
 }
 
 /// The line at which [`state_from_events`] selects its state.
