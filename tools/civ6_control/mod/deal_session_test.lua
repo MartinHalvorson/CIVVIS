@@ -79,6 +79,7 @@ DiplomacyResponseTypes = { INITIAL = 0, ACKNOWLEDGE = 1 }
 DiplomacyManager = {
 	GetKeyName = function(key) return key end,
 	FindOpenSessionID = function() return nil end,
+	HasQueuedSession = function() return true end,
 	RequestSession = function(pid, subject, kind)
 		sessions.requested[#sessions.requested + 1] = { pid = pid, subject = subject, kind = kind }
 	end,
@@ -184,7 +185,8 @@ local function fixture(opts)
 		CopyIncomingToOutgoingWorkingDeal = function() state.copied = true end,
 		AreWorkingDealsEqual = function() return state.dealsEqual end,
 		SendWorkingDeal = function(action, pid, subject)
-			state.sends[#state.sends + 1] = { action, pid, subject }
+			state.sends[#state.sends + 1] = { action, pid, subject, holds = #holds }
+			if opts.onSend ~= nil then opts.onSend(action) end
 		end,
 	}
 	local player = {
@@ -232,6 +234,13 @@ check("the question is EQUALIZE", sale.sends[1] and sale.sends[1][1], "equalize"
 check("the question names both players", sale.sends[1] and (sale.sends[1][2] .. ":" .. sale.sends[1][3]), "7:3")
 check("the session id is kept", trade.sessions[3] and trade.sessions[3].sessionID, 901)
 check("the ask is in the ledger", eventField(lastEvent("deal_session"), "phase"), "asked")
+-- The rival answers from the game core, behind the turn's queued commands
+-- (DiplomacyActionView.lua:2582): live answers took up to 14.7 s, and a
+-- session the 4-second opening hold closed first froze the game four times.
+check("the ask re-arms the closer's hold", holds[#holds] and holds[#holds].open, true)
+check("the answer window outlasts the opening hold", holds[#holds] and holds[#holds].seconds, 30)
+check("the hold is re-armed before the question goes out", sale.sends[1] and sale.sends[1].holds, #holds)
+check("the ask records its answer window", eventField(lastEvent("deal_session"), "hold"), "30")
 
 trade.unanswered = 2
 -- Firaxis distinguishes the opening acknowledgement from deal evaluation
@@ -272,6 +281,30 @@ onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 902, DealAction = D
 check("a lowball is not accepted", #low.sends, 1)
 check("a lowball is in the ledger", eventField(lastEvent("deal_declined"), "worth"), "20")
 check("a declined session is closed too", sessions.closed[2], 902)
+
+-- ── An answer delivered from inside the send still releases the closer ──
+-- The answer window is armed before the send, so the close an inline answer
+-- triggers is the last thing the closer hears; armed after, it would hold a
+-- closed session's screen for the whole window.
+TURN = 65
+local inline, inlinePlayer
+inline, inlinePlayer = fixture({
+	incoming = {
+		{ kind = "gold", from = 3, duration = 0, amount = 20 },
+		{ kind = "resources", from = 7, duration = 30, amount = 1, valueType = 12 },
+	},
+	onSend = function(action)
+		if action == "equalize" then
+			onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 907,
+				DealAction = DealProposalAction.ADJUSTED })
+		end
+	end,
+})
+applyOrder(inlinePlayer, 7, { kind = "sell", subject = "3", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
+onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 907 })
+check("an inline answer is read as the answer", eventField(lastEvent("deal_declined"), "worth"), "20")
+check("an inline answer closes the session", trade.sessions[3], nil)
+check("the closer ends released after an inline answer", holds[#holds] and holds[#holds].open, false)
 
 -- ── Peace rides the same lane: PROPOSED on our statement, then waits for the
 -- host frame that proves ACCEPTED actually ended the war. ──
@@ -351,6 +384,10 @@ for i = 1, 3 do
 	onClosed(910 + i)
 	check("unanswered session " .. i .. " is counted", trade.unanswered, i)
 	check("unanswered session " .. i .. " drops the ask", trade.pending[3], nil)
+	check("unanswered session " .. i .. " says the question went out",
+		eventField(lastEvent("deal_session"), "sent"), "true")
+	check("unanswered session " .. i .. " records a queued rival session",
+		eventField(lastEvent("deal_session"), "queued"), "true")
 end
 check("the lane stands down after three", trade.disabled, true)
 check("the stand-down is in the ledger", lastEvent("deal_sessions_stood_down") ~= nil, true)
@@ -425,6 +462,12 @@ assert(type(update) == "function", "the autoclose shim did not register an updat
 sessionListener(4, true, 4)
 update(0.05)
 check("a live deal session does not close during its hold", closeCalls, 0)
+
+-- The ask re-arms the hold with the answer window: a slow answer is not
+-- closed out from under it when the opening hold's four seconds run out.
+sessionListener(4, true, 30)
+update(4.5)
+check("an asked deal outlives the opening hold", closeCalls, 0)
 
 -- The host closes it early. With the old listener this next update waits on
 -- the never-stopping fade and leaves `closeCalls` at zero.
