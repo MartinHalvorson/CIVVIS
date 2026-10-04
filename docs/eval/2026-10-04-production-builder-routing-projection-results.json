@@ -1,0 +1,212 @@
+{
+  "seed": 61007101,
+  "difficulty": "deity",
+  "terminal_exit_code": 0,
+  "fresh_strength_samples": 0,
+  "actual_Firaxis_verification": false,
+  "raw_sha256": {
+    "civvis-production-builder-routing-projection-deity-61007101-trace-cities.jsonl": "05fbf56214a7e445caee2a0d77950b61958565bc6ffc0edd521cf23d5b6afbda",
+    "civvis-production-builder-routing-projection-deity-61007101-trace-actions.json": "96796d0d483e1e11a4a75fca58eb465024b914445b12cf957a310c325974c7a1",
+    "civvis-production-builder-routing-projection-deity-61007101-trace-view-t50.json": "2bb0002bccb88745fbd27f6ddd1a83b47487a74bfa06468cdb32ba6db8cadb91",
+    "civvis-production-builder-routing-projection-deity-61007101-trace-rounds.jsonl": "5d3925c982ffb34f8149002696fa63475e6620653dc10521b43fe8abe222c176",
+    "civvis-production-builder-routing-projection-deity-61007101-trace-setup.json": "1bca46f10b3892abc1f70fe16e7459d64f80ce474959dcc305e9ea72ba1309c7",
+    "civvis-production-builder-routing-projection-deity-61007101-trace-final.json": "395d697c4f8b9a1070df296b95a57ca083eea7893a6b0b3c8282535aa97f1fef",
+    "civvis-production-builder-routing-projection-deity-61007101-trace-projections.jsonl": "af212d846d1f0c04e016d010c3dd7261e41304029c023f6ec98a2226530f6592",
+    "civvis-production-builder-routing-projection-deity-61007101-trace-view-t75.json": "6ff4da435aa40abb175eb40553d61ce97f2ccdb6a5620d123e405f454d5bbe94"
+  },
+  "actions.json_equal_to_original_trace": true,
+  "final.json_equal_to_original_trace": true,
+  "first_frame_projections": 41,
+  "replayed_action_count": 34454,
+  "peace_offer_blocks_builder_turns": [
+    {
+      "turn": 63,
+      "refusal": {
+        "action": {
+          "alliance": null,
+          "friendship": false,
+          "give_gold": 0.0,
+          "open_borders": false,
+          "peace": true,
+          "player": 2,
+          "request_gold": 0.0,
+          "type": "propose_deal"
+        },
+        "refused": true,
+        "result": "invalid diplomatic deal"
+      },
+      "unexecuted_projected_builder_actions": [
+        {
+          "to": [
+            29,
+            7
+          ],
+          "type": "move",
+          "unit": 362
+        }
+      ]
+    },
+    {
+      "turn": 64,
+      "refusal": {
+        "action": {
+          "alliance": null,
+          "friendship": false,
+          "give_gold": 0.0,
+          "open_borders": false,
+          "peace": true,
+          "player": 2,
+          "request_gold": 0.0,
+          "type": "propose_deal"
+        },
+        "refused": true,
+        "result": "invalid diplomatic deal"
+      },
+      "unexecuted_projected_builder_actions": [
+        {
+          "to": [
+            29,
+            7
+          ],
+          "type": "move",
+          "unit": 362
+        }
+      ]
+    },
+    {
+      "turn": 65,
+      "refusal": {
+        "action": {
+          "alliance": null,
+          "friendship": false,
+          "give_gold": 0.0,
+          "open_borders": false,
+          "peace": true,
+          "player": 2,
+          "request_gold": 0.0,
+          "type": "propose_deal"
+        },
+        "refused": true,
+        "result": "invalid diplomatic deal"
+      },
+      "unexecuted_projected_builder_actions": [
+        {
+          "to": [
+            29,
+            7
+          ],
+          "type": "move",
+          "unit": 362
+        }
+      ]
+    },
+    {
+      "turn": 66,
+      "refusal": {
+        "action": {
+          "alliance": null,
+          "friendship": false,
+          "give_gold": 0.0,
+          "open_borders": false,
+          "peace": true,
+          "player": 2,
+          "request_gold": 0.0,
+          "type": "propose_deal"
+        },
+        "refused": true,
+        "result": "invalid diplomatic deal"
+      },
+      "unexecuted_projected_builder_actions": [
+        {
+          "to": [
+            29,
+            7
+          ],
+          "type": "move",
+          "unit": 362
+        }
+      ]
+    },
+    {
+      "turn": 67,
+      "refusal": {
+        "action": {
+          "alliance": null,
+          "friendship": false,
+          "give_gold": 0.0,
+          "open_borders": false,
+          "peace": true,
+          "player": 2,
+          "request_gold": 0.0,
+          "type": "propose_deal"
+        },
+        "refused": true,
+        "result": "invalid diplomatic deal"
+      },
+      "unexecuted_projected_builder_actions": [
+        {
+          "to": [
+            29,
+            7
+          ],
+          "type": "move",
+          "unit": 362
+        }
+      ]
+    },
+    {
+      "turn": 68,
+      "refusal": {
+        "action": {
+          "alliance": null,
+          "friendship": false,
+          "give_gold": 0.0,
+          "open_borders": false,
+          "peace": true,
+          "player": 2,
+          "request_gold": 0.0,
+          "type": "propose_deal"
+        },
+        "refused": true,
+        "result": "invalid diplomatic deal"
+      },
+      "unexecuted_projected_builder_actions": [
+        {
+          "to": [
+            29,
+            7
+          ],
+          "type": "move",
+          "unit": 362
+        }
+      ]
+    },
+    {
+      "turn": 69,
+      "refusal": {
+        "action": {
+          "alliance": null,
+          "friendship": false,
+          "give_gold": 0.0,
+          "open_borders": false,
+          "peace": true,
+          "player": 2,
+          "request_gold": 0.0,
+          "type": "propose_deal"
+        },
+        "refused": true,
+        "result": "invalid diplomatic deal"
+      },
+      "unexecuted_projected_builder_actions": [
+        {
+          "to": [
+            29,
+            7
+          ],
+          "type": "move",
+          "unit": 362
+        }
+      ]
+    }
+  ]
+}
