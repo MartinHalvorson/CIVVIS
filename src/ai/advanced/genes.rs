@@ -2483,6 +2483,9 @@ pub const GENES: &[Gene] = &[
     // Live King 124613Z: 79 Settler-turns afloat waiting on one Galley; see
     // `AdvancedAi::naval_escort_patience`.
     Gene { tag: "naval-escort-patience", field: "naval_escort_patience", kind: Kind::HostOnly, enable: AdvancedAi::enable_naval_escort_patience, disable: AdvancedAi::disable_naval_escort_patience },
+    // Live King 160213Z: 69% of the siege army built more than 12 tiles from
+    // the objective; see `BasicAi::front_weighted_floor`.
+    Gene { tag: "front-weighted-floor", field: "front_weighted_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_front_weighted_floor, disable: AdvancedAi::disable_front_weighted_floor },
     // Live King 113755Z: Galleys and Quadriremes ahead of the walkers at
     // three cities; see `BasicAi::settler_before_the_navy`.
     Gene { tag: "settler-before-the-navy", field: "settler_before_the_navy", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_before_the_navy, disable: AdvancedAi::disable_settler_before_the_navy },
