@@ -6738,6 +6738,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-force-keeps-its-members`: a Siege force's member is not taken
+    /// by a Destroy, Escort or ClearCamp row unless its target is within
+    /// [`objective_board::SIEGE_MEMBER_STRIKE_REACH`]. Off by default.
+    siege_force_keeps_its_members: bool,
     /// `siege-needs-a-breaker`: a walled city is reduced only with a
     /// wall-breaker at hand — a siege gun fit to fire within the staging
     /// ring, a ram or tower that works on the walls, or shooters that can
@@ -8830,6 +8834,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_force_keeps_its_members: false,
             siege_needs_a_breaker: false,
             siege_budget_counts_what_fires: false,
             siege_holds_a_breach: false,

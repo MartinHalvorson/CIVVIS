@@ -2493,6 +2493,11 @@ pub const GENES: &[Gene] = &[
     // the Siege Tower walked in circles in the Reserve. See
     // `siege_train::BreachReading`.
     Gene { tag: "siege-needs-a-breaker", field: "siege_needs_a_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_needs_a_breaker, disable: AdvancedAi::disable_siege_needs_a_breaker },
+    // Live King civvis-20261004T025448Z: the Napata Siege force shrank from
+    // seven to three as Destroy rows took its members each turn, and none of
+    // seven to ten bodies reached its anchor in eighteen turns. See
+    // `objective_board::SIEGE_MEMBER_STRIKE_REACH`.
+    Gene { tag: "siege-force-keeps-its-members", field: "siege_force_keeps_its_members", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_force_keeps_its_members, disable: AdvancedAi::disable_siege_force_keeps_its_members },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

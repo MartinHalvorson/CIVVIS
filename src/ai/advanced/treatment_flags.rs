@@ -4915,6 +4915,17 @@ impl AdvancedAi {
         self.siege_needs_a_breaker = false;
     }
 
+    /// Opt-in gene `siege-force-keeps-its-members`; see
+    /// [`Self::siege_force_keeps_its_members`].
+    pub fn enable_siege_force_keeps_its_members(&mut self) {
+        self.siege_force_keeps_its_members = true;
+    }
+
+    /// The twin of `enable_siege_force_keeps_its_members`.
+    pub fn disable_siege_force_keeps_its_members(&mut self) {
+        self.siege_force_keeps_its_members = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

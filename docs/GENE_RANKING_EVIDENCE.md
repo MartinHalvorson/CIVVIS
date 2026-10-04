@@ -241,6 +241,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `settler-detour-stays-near` | off (unmeasured) | `settler-detour-stays-near`: a threat detour's fallback must lie about as close as the site it leaves. | 1 \| 1 |
 | `shared-danger` | off (unmeasured) | Opt-in gene `shared-danger`; see `Self::shared_danger`. | 1 \| 1 |
 | `siege-budget-counts-what-fires` | off (unmeasured) | Opt-in gene `siege-budget-counts-what-fires`; see `Self::siege_budget_counts_what_fires`. | 1 \| 1 |
+| `siege-force-keeps-its-members` | off (unmeasured) | Opt-in gene `siege-force-keeps-its-members`; see `Self::siege_force_keeps_its_members`. | 1 \| 1 |
 | `siege-holds-a-breach` | off (unmeasured) | Opt-in gene `siege-holds-a-breach`; see `Self::siege_holds_a_breach`. | 1 \| 1 |
 | `siege-needs-a-breaker` | off (unmeasured) | Opt-in gene `siege-needs-a-breaker`; see `Self::siege_needs_a_breaker`. | 1 \| 1 |
 | `siege-positive-damage-budget` | off (unmeasured) | Enable `siege-positive-damage-budget` for measurement. | 1 \| 1 |

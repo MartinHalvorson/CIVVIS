@@ -207,6 +207,17 @@ pub const CAMPAIGN_SURPLUS_HOME_KEEP: usize = 2;
 /// A unit under this strength is not a body for the campaign surplus — the
 /// same bar that keeps a scout out of a fight.
 pub const CAMPAIGN_SURPLUS_MIN_STRENGTH: f64 = 15.0;
+/// `siege-force-keeps-its-members`: a Siege force's member may still be
+/// taken by a Destroy, Escort or ClearCamp row whose target is this close.
+/// A blow it can land on its way costs the siege a turn; a detour across
+/// the front costs it the muster. Live King civvis-20261004T025448Z (game
+/// 45): from turn 88 to 106 Destroy rows against Nubian warrior monks and
+/// crossbowmen took four or five units a turn from the Napata force, which
+/// shrank from seven to three, and none of seven to ten bodies came within
+/// five tiles of Napata at 5 to 10 times Nubia's power. A member's worth to
+/// its own row is discounted by its march to the objective, so a force still
+/// staging ten tiles out loses every comparison against a skirmish at hand.
+pub const SIEGE_MEMBER_STRIKE_REACH: i32 = 2;
 /// A scout within this of a sector's centre holds it.
 const RECON_HOLD_RADIUS: i32 = 6;
 /// At most this many Recon rows a turn.
@@ -1660,6 +1671,22 @@ impl AdvancedAi {
                             continue;
                         }
                         let distance = g.wdist(unit.pos, row.at);
+                        // See `SIEGE_MEMBER_STRIKE_REACH`.
+                        if self.siege_force_keeps_its_members
+                            && !row.urgent
+                            && matches!(
+                                row.kind,
+                                ObjectiveKind::Destroy
+                                    | ObjectiveKind::Escort
+                                    | ObjectiveKind::ClearCamp
+                            )
+                            && distance > SIEGE_MEMBER_STRIKE_REACH
+                            && assignment.get(uid).is_some_and(|current| {
+                                matches!(forces[*current].objective_key, ObjectiveKey::Siege(_))
+                            })
+                        {
+                            continue;
+                        }
                         match row.kind {
                             ObjectiveKind::Defend
                                 if !row.urgent && distance > THREAT_RELIEF_RADIUS =>
@@ -3612,3 +3639,6 @@ mod staging_tests;
 
 #[cfg(test)]
 mod defense_priority_tests;
+
+#[cfg(test)]
+mod siege_member_tests;
