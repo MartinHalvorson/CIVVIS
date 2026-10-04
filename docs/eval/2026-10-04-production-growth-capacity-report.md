@@ -73,9 +73,20 @@ growth and completion turns, an accepted reservation reaching the governor,
 rejection of growth without Production, and preservation of threats, queues and
 expansion. A six-test rerun passed five and found the maintenance assumption in
 the sixth fixture. That assumption was corrected without changing policy. The corrected prototype
-passed CI’s Rust test step on checkpoint `2fdc5f04c`; the remaining CI steps and
-own-target full suite were still running when the runtime policy was removed.
-Full prototype and final-source suite results are recorded separately when complete.
+passed CI on checkpoint `2fdc5f04c`. Its own-target full library run passed all
+six policy tests and 4,316 tests overall, with 50 ignored and one existing server
+page-response failure. The exact failed test passed an isolated repeat against the
+frozen same test executable (one passed, zero failed). That run stopped before
+binary and documentation tests. The final-source full suite is separate; these
+results do not represent a clean full prototype run. The captured I/O failure
+does not establish a specific cause.
+
+After removing the runtime policy and merging current main, the final own-target
+full suite passed **4,563 tests, zero failed, 54 ignored**, with four test threads.
+Rust quality passed for the final changed probe. The final native source, locked
+Cargo files and rules data have identical Git object IDs to the baseline and
+merged current main. `2026-10-04-production-growth-capacity-validation.json`
+records these scopes and the original prototype failure separately.
 
 The paired evaluator was checked with copies of consumed games. It rejects a
 false live repair field, truncated checkpoint output and unchanged actions as
