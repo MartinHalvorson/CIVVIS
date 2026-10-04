@@ -510,15 +510,16 @@ local function resolveActions()
 		-- `BasicAi::spies` iterate -- is empty for an entire live game, so a
 		-- tuned, victory-aimed disruption layer (great_work_heist 340 against a
 		-- Culture leader, disrupt_rocketry 290 against a Science one) was a
-		-- guaranteed no-op. These are the thirteen the live build exposes; a
-		-- survey of `UnitOperationTypes` dumped every one.
+		-- guaranteed no-op. Resolve through the database, including Gathering
+		-- Storm's dam mission: DLC/Expansion2/Data/Expansion2_UnitOperations.xml:12
+		-- defines BREACH_DAM with TargetDistrict="DISTRICT_DAM".
 		"UNITOPERATION_SPY_TRAVEL_NEW_CITY", "UNITOPERATION_SPY_COUNTERSPY",
 		"UNITOPERATION_SPY_LISTENING_POST", "UNITOPERATION_SPY_GAIN_SOURCES",
 		"UNITOPERATION_SPY_STEAL_TECH_BOOST", "UNITOPERATION_SPY_SIPHON_FUNDS",
 		"UNITOPERATION_SPY_GREAT_WORK_HEIST", "UNITOPERATION_SPY_SABOTAGE_PRODUCTION",
 		"UNITOPERATION_SPY_DISRUPT_ROCKETRY", "UNITOPERATION_SPY_NEUTRALIZE_GOVERNOR",
 		"UNITOPERATION_SPY_RECRUIT_PARTISANS", "UNITOPERATION_SPY_FOMENT_UNREST",
-		"UNITOPERATION_SPY_FABRICATE_SCANDAL",
+		"UNITOPERATION_SPY_FABRICATE_SCANDAL", "UNITOPERATION_SPY_BREACH_DAM",
 	}) do
 		OP[name] = opHash(name);
 	end
