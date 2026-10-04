@@ -1731,6 +1731,22 @@ class ProtectedInstallTest(unittest.TestCase):
         )
         self.assertIn("<DefaultValue>Continents.lua</DefaultValue>", rendered)
         self.assertIn("<DefaultValue>MAPSIZE_SMALL</DefaultValue>", rendered)
+        # Static, like difficulty and speed, so Create Game opens on the
+        # requested map instead of the picker being driven by screenshot.
+        self.assertIn(
+            'SourceId="RULESET" SourceValue="RULESET_EXPANSION_2"\n'
+            '\t\t\t TargetGroup="Map" TargetId="MAP_SCRIPT" '
+            'TargetValue="Continents.lua"\n'
+            '\t\t\t Static="1"',
+            rendered,
+        )
+        self.assertIn(
+            'SourceId="RULESET" SourceValue="RULESET_EXPANSION_2"\n'
+            '\t\t\t TargetGroup="Map" TargetId="MAP_SIZE" '
+            'TargetValue="MAPSIZE_SMALL"\n'
+            '\t\t\t Hash="1" Static="1"',
+            rendered,
+        )
         self.assertIn("<DefaultValue>650</DefaultValue>", rendered)
         self.assertIn("<DefaultValue>TURNLIMIT_CUSTOM</DefaultValue>", rendered)
         self.assertIn(
