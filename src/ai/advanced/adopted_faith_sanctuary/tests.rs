@@ -165,6 +165,41 @@ fn repeated_reservation_does_not_start_a_second_supplier() {
 }
 
 #[test]
+fn one_sanctuary_does_not_chase_the_counterfaith_into_a_second_city() {
+    for gene in [false, true] {
+        let (mut g, mut ai, plan, home) = fixture();
+        if gene {
+            ai.enable_one_sanctuary();
+        }
+        ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+        assert!(g.cities[&home].queue.first().is_some_and(
+            |item| matches!(item, Item::District { district, .. } if district == "holy_site")
+        ));
+        // The supplier converts to the threat; another city takes up the
+        // counterfaith. Live King 20261004T094143Z: four cities by turn 98.
+        let other = g
+            .player_city_ids(0)
+            .into_iter()
+            .find(|cid| *cid != home)
+            .unwrap();
+        for (cid, faith) in [(home, "Buddhism"), (other, "Orthodoxy")] {
+            let city = g.cities.get_mut(&cid).unwrap();
+            city.pressure.clear();
+            city.pressure.insert(faith.into(), 1000.0);
+        }
+        let choice = ai.adopted_faith_sanctuary_choice(&g, 0, None);
+        if gene {
+            assert!(choice.is_none(), "{choice:?}");
+        } else {
+            assert!(matches!(
+                choice,
+                Some((cid, Item::District { district, .. })) if cid == other && district == "holy_site"
+            ));
+        }
+    }
+}
+
+#[test]
 fn adopted_missionaries_stop_when_their_counterfaith_becomes_the_threat() {
     let (mut g, ai, _, home) = fixture();
     let target = g

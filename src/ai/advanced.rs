@@ -6604,6 +6604,10 @@ pub struct AdvancedAi {
     /// or ClearCamp rows beyond `SIEGE_MEMBER_STRIKE_REACH`; see
     /// `objective_board` and `conquest_force_member`.
     opening_force_keeps_its_members: bool,
+    /// `one-sanctuary`: the religious-defense sanctuary builds at most one
+    /// Holy Site district for the empire. See
+    /// `advanced/adopted_faith_sanctuary.rs`.
+    one_sanctuary: bool,
     // ---- append: p-r ------------------------------------------------
     /// `runaway-expander-counter`: a rival outgrowing us reads as a
     /// Domination counter clock. See `advanced/runaway_expander.rs`. Off by
@@ -8884,6 +8888,7 @@ impl AdvancedAi {
             lane_delegates_production_2: false,
 
             opening_force_keeps_its_members: false,
+            one_sanctuary: false,
             // ---- append: p-r ----------------------------------------
             runaway_expander_counter: false,
             raze_doomed_capture: false,

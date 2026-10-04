@@ -149,6 +149,23 @@ impl AdvancedAi {
             && self.adopted_faith_threat(g, pid).as_deref() != Some(faith)
     }
 
+    /// A city that owns a Holy Site, queues one, or holds paid progress on one.
+    fn sanctuary_district_investment(g: &Game, cid: u32) -> bool {
+        let city = &g.cities[&cid];
+        let holy_site = |district: &str| g.district_family(Name::new(district)).as_str() == "holy_site";
+        g.city_has_district_family(city, crate::name!("holy_site"))
+            || city.queue.iter().any(|item| {
+                matches!(item, Item::District { district, .. } if holy_site(district.as_str()))
+            })
+            || city.production_progress.iter().any(|(key, paid)| {
+                *paid > 0.0
+                    && key
+                        .strip_prefix("district:")
+                        .and_then(|rest| rest.split(':').next())
+                        .is_some_and(holy_site)
+            })
+    }
+
     fn sanctuary_item(g: &Game, item: &Item) -> bool {
         match item {
             Item::District { district, .. } => g.district_family(*district).as_str() == "holy_site",
@@ -217,6 +234,17 @@ impl AdvancedAi {
         let shrine = Item::Building {
             building: crate::name!("shrine"),
         };
+        // `one-sanctuary`: ★★ THE SANCTUARY CHASED EVERY CONVERSION. The
+        // shrine check above only counts cities that still hold the
+        // counterfaith, so each time the sanctuary's city converted, another
+        // city started a Holy Site. Live King 20261004T094143Z: Maracaibo,
+        // Guayaquil, Bogotá and Cuenca all started one by turn 98, and every
+        // city followed the rival faith anyway; G49 made thirty starts across
+        // six cities. One district is the empire's investment: only the city
+        // that already owns, queues or has paid into a Holy Site may build it.
+        let invested = |cid: u32| Self::sanctuary_district_investment(g, cid);
+        let empire_invested =
+            self.one_sanctuary && g.player_city_ids(pid).into_iter().any(invested);
         let mut best: Option<(f64, u32, Item)> = None;
         for cid in eligible {
             let production = g.city_yields(cid).production.max(1.0);
@@ -224,6 +252,9 @@ impl AdvancedAi {
                 .producible_items(pid, cid)
                 .into_iter()
                 .filter(|item| Self::sanctuary_item(g, item))
+                .filter(|item| {
+                    !(empire_invested && matches!(item, Item::District { .. }) && !invested(cid))
+                })
             {
                 let remaining = g.item_remaining_cost_for_city(pid, cid, &item)
                     + if matches!(item, Item::District { .. }) {
