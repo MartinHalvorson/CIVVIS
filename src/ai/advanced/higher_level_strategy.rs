@@ -104,6 +104,122 @@ impl Debt {
 }
 
 impl AdvancedAi {
+    /// A named victory's productive tiles must not wait for the empire's last
+    /// Builder to disappear. Reserve one additional worker only for local,
+    /// currently worked production jobs that can repay the construction.
+    /// Existing higher-level debts and all occupied queues retain priority.
+    fn named_productive_workforce_target(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<(u32, Item)> {
+        let target = self.active_victory_target(g)?;
+        if self.base.minor || self.base.barb || plan.strategy == GrandStrategy::Recovery {
+            return None;
+        }
+        let _memo = g.query_memo();
+        let cities = g.player_city_ids(pid);
+        let counts = self.counts(g, pid);
+        let ceiling = (super::PRODUCTION_BUILDERS_PER_CITY * cities.len() as f64).ceil() as usize;
+        if cities.len() < 2
+            || counts.builders >= ceiling
+            || counts.military < cities.len()
+            || self.live_war_economy_requires_recovery(g, pid, &counts)
+            || cities.iter().any(|cid| {
+                matches!(g.cities[cid].queue.first(), Some(Item::Unit { unit }) if unit == "builder")
+            })
+        {
+            return None;
+        }
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        let charges = g.builder_charges(pid).max(0) as usize;
+        let mut best: Option<(f64, u32)> = None;
+        for cid in cities {
+            let city = &g.cities[&cid];
+            if !city.queue.is_empty()
+                || city.loyalty < 76.0
+                || plan.threatened_city == Some(cid)
+                || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+                || self.base.barbarian_local_alarm_for_controller(g, pid, cid)
+                || (target == super::VictoryTarget::Science && Self::city_has_spaceport(g, cid))
+                || !g.can_produce(pid, cid, &builder)
+                || (counts.traders == 0
+                    && self
+                        .base
+                        .should_add_trader_in_city_for_controller(g, pid, cid, 0))
+                || g.units.values().any(|unit| {
+                    unit.owner == pid
+                        && unit.kind == "builder"
+                        && unit.charges >= 2
+                        && g.wdist(unit.pos, city.pos) <= 3
+                })
+            {
+                continue;
+            }
+            // Only jobs whose printed production survives the operation.
+            // Resource access, future citizens, tree bonuses and repairs do
+            // not inflate this conservative local repayment estimate.
+            let mut gains: Vec<f64> = g
+                .city_citizen_plan(cid)
+                .worked_tiles
+                .into_iter()
+                .filter_map(|pos| {
+                    let tile = g.map.get(pos)?;
+                    if pos == city.pos
+                        || tile.owner_city != Some(cid)
+                        || tile.improvement.is_some()
+                        || tile.district.is_some()
+                        || g.wdist(city.pos, pos) > 3
+                    {
+                        return None;
+                    }
+                    g.valid_improvements(pid, pos)
+                        .into_iter()
+                        .filter_map(|name| {
+                            let spec = &g.rules.improvements[name];
+                            (spec.builder_buildable
+                                && !spec.removes_feature
+                                && spec.yields.production > 0.0)
+                                .then_some(spec.yields.production)
+                        })
+                        .max_by(f64::total_cmp)
+                })
+                .collect();
+            gains.sort_by(|a, b| b.total_cmp(a));
+            gains.truncate(charges);
+            if gains.len() < 2 {
+                continue;
+            }
+            let gain: f64 = gains.iter().sum();
+            let build = self
+                .production_build_turns(g, pid, cid, &builder)
+                .ceil()
+                .max(1.0);
+            // Up to three tiles from the center and six between subsequent
+            // jobs, at the stock two movement, plus one operation per job.
+            // Colombia's extra movement and researched yields only help.
+            let service = ((3 + 6 * (gains.len() - 1)) as f64 / 2.0).ceil() + gains.len() as f64;
+            let payback =
+                build + service + g.item_remaining_cost_for_city(pid, cid, &builder) / gain;
+            let window = g.game_speed.scale(80.0).min(
+                g.turn_limit()
+                    .map_or(f64::INFINITY, |limit| limit.saturating_sub(g.turn) as f64),
+            );
+            if payback > window {
+                continue;
+            }
+            if best
+                .is_none_or(|(old, old_city)| payback < old || (payback == old && cid < old_city))
+            {
+                best = Some((payback, cid));
+            }
+        }
+        best.map(|(_, cid)| (cid, builder))
+    }
+
     /// Enable the independently screenable disciplined variant.
     pub fn enable_trade_building_before_bankruptcy_2(&mut self) {
         self.trade_building_before_bankruptcy_2 = true;
@@ -654,7 +770,13 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        let Some((city, item, debt)) = self.higher_level_investment_target(g, pid, plan) else {
+        let (city, item, reason) = if let Some((city, item, debt)) =
+            self.higher_level_investment_target(g, pid, plan)
+        {
+            (city, item, debt.tag(self))
+        } else if let Some((city, item)) = self.named_productive_workforce_target(g, pid, plan) {
+            (city, item, "named productive workforce")
+        } else {
             return;
         };
         if g.apply(
@@ -668,7 +790,7 @@ impl AdvancedAi {
             && self.journal().wants(Level::Decision)
         {
             think!(self.journal(), Economy, Decision,
-                "{} starts {} for {}", g.cities[&city].name, Self::plain_item(&item), debt.tag(self);
+                "{} starts {} for {}", g.cities[&city].name, Self::plain_item(&item), reason;
                 "one safe idle queue services the development shortfall");
         }
     }
@@ -685,3 +807,6 @@ mod queued_yield_tests;
 
 #[cfg(test)]
 mod campus_foundation_tests;
+
+#[cfg(test)]
+mod production_workforce_tests;
