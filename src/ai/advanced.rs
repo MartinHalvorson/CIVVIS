@@ -6569,6 +6569,11 @@ pub struct AdvancedAi {
     /// `advanced/lane_delegates_production.rs`.
     lane_delegates_production_2: bool,
 
+    /// `opening-force-keeps-its-members`: the undeclared early-conquest
+    /// opening's strike force is not drafted into non-urgent Destroy, Escort
+    /// or ClearCamp rows beyond `SIEGE_MEMBER_STRIKE_REACH`; see
+    /// `objective_board` and `conquest_force_member`.
+    opening_force_keeps_its_members: bool,
     // ---- append: p-r ------------------------------------------------
     /// `raze-a-doomed-capture`: a Conquest razes a small captured city that
     /// will revolt before any rescue can establish. See
@@ -8836,6 +8841,7 @@ impl AdvancedAi {
             lane_delegates_production: false,
             lane_delegates_production_2: false,
 
+            opening_force_keeps_its_members: false,
             // ---- append: p-r ----------------------------------------
             raze_doomed_capture: false,
             policy_deck_hysteresis: false,

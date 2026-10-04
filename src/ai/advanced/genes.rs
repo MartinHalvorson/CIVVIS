@@ -2523,6 +2523,11 @@ pub const GENES: &[Gene] = &[
     // tiles out for eighteen turns, each refusing any tile one archer could
     // reach. See `siege_train::STAGING_ESCORT_BODIES`.
     Gene { tag: "staging-gun-trusts-its-escort", field: "staging_gun_trusts_its_escort", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_trusts_its_escort, disable: AdvancedAi::disable_staging_gun_trusts_its_escort },
+    // Live King civvis-20261004T070716Z (game 49): the opening on Kyoto had
+    // its 4 Archers and 2 Warriors by turn 30, but a ClearCamp row and
+    // Destroy rows against raiders kept four of them home and it released
+    // at turn 40. See `AdvancedAi::conquest_force_member`.
+    Gene { tag: "opening-force-keeps-its-members", field: "opening_force_keeps_its_members", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_force_keeps_its_members, disable: AdvancedAi::disable_opening_force_keeps_its_members },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

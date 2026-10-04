@@ -55,3 +55,56 @@ fn a_staging_siege_force_keeps_its_members() {
         }
     }
 }
+
+/// `opening-force-keeps-its-members`: a skirmish row away from home does
+/// not draft the undeclared opening's strike force. Live King
+/// civvis-20261004T070716Z (game 49): four of the Kyoto opening's six bodies
+/// stayed home on a ClearCamp row and Destroy rows against raiders, and the
+/// opening released at turn 40.
+#[test]
+fn the_opening_strike_force_keeps_its_members() {
+    for keeps in [false, true] {
+        let mut g = flat_board(374_612, &[at(6, 10), at(30, 10), at(20, 19)], false);
+        let target = g.city_at(at(30, 10)).unwrap();
+        // A war with a third empire supplies the raider; the opening's target
+        // is at peace.
+        war(&mut g, 0, 2);
+        let members: Vec<u32> = (9..=12)
+            .map(|row| g.spawn_test_unit("archer", 0, at(8, row)))
+            .collect();
+        let mut ai = on();
+        ai.early_conquest_opening = true;
+        if keeps {
+            ai.enable_opening_force_keeps_its_members();
+        }
+        ai.conquest_opening = Some(crate::ai::advanced::early_conquest::ConquestOpening {
+            target: 1,
+            city: target,
+            opened: g.turn,
+            preparing_since: None,
+            grace_until: None,
+            rally: at(27, 10),
+            force: members.iter().copied().collect(),
+            assembled: None,
+            declared: None,
+            kills_at_war: 0,
+            losses: 0,
+            taken: 0,
+        });
+        assert_eq!(members.iter().all(|uid| ai.conquest_force_member(*uid)), keeps);
+        // A raider five tiles off, in a scout's sight.
+        g.spawn_test_unit("horseman", 2, at(8, 16));
+        g.spawn_test_unit("scout", 0, at(9, 15));
+        let plan = conquest(&g, Some(target));
+        ai.rebuild_force_groups(&g, 0, &plan);
+        let taken = members
+            .iter()
+            .filter(|uid| matches!(row_of(&ai, **uid), Some(ObjectiveKey::Destroy(_))))
+            .count();
+        if keeps {
+            assert_eq!(taken, 0, "the opening keeps its strike force");
+        } else {
+            assert!(taken > 0, "control: the Destroy row takes the opening's bodies");
+        }
+    }
+}

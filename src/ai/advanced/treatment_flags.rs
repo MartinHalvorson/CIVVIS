@@ -5006,6 +5006,17 @@ impl AdvancedAi {
         self.staging_gun_trusts_its_escort = false;
     }
 
+    /// Opt-in gene `opening-force-keeps-its-members`; see
+    /// [`Self::opening_force_keeps_its_members`].
+    pub fn enable_opening_force_keeps_its_members(&mut self) {
+        self.opening_force_keeps_its_members = true;
+    }
+
+    /// The twin of `enable_opening_force_keeps_its_members`.
+    pub fn disable_opening_force_keeps_its_members(&mut self) {
+        self.opening_force_keeps_its_members = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

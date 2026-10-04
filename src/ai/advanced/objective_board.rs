@@ -1687,6 +1687,25 @@ impl AdvancedAi {
                         {
                             continue;
                         }
+                        // `opening-force-keeps-its-members`: the same rule for
+                        // the undeclared opening's strike force, which has no
+                        // row of its own and gathers as the Reserve. Live King
+                        // civvis-20261004T070716Z (game 49) had all six bodies
+                        // by turn 30; a ClearCamp row and Destroy rows against
+                        // raiders kept four at home, and Kyoto's opening
+                        // released at turn 40 with two at the rally.
+                        if !row.urgent
+                            && matches!(
+                                row.kind,
+                                ObjectiveKind::Destroy
+                                    | ObjectiveKind::Escort
+                                    | ObjectiveKind::ClearCamp
+                            )
+                            && distance > SIEGE_MEMBER_STRIKE_REACH
+                            && self.conquest_force_member(*uid)
+                        {
+                            continue;
+                        }
                         match row.kind {
                             ObjectiveKind::Defend
                                 if !row.urgent && distance > THREAT_RELIEF_RADIUS =>
