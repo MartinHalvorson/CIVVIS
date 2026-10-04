@@ -1,5 +1,5 @@
 use civvis::ai::{run_game_observed, AdvancedAi, VictoryTarget};
-use civvis::game::{Game, GameOptions, Item};
+use civvis::game::{Game, GameOptions};
 use std::collections::BTreeSet;
 
 fn main() {
@@ -25,43 +25,13 @@ fn main() {
         let mut ais = AdvancedAi::fleet(&g);
         ais[0] = AdvancedAi::targeting(VictoryTarget::Domination);
         ais[0].apply_gene_ledger();
-        if candidate {
-            ais[0].enable_treasury_at_work_2_2();
-        }
+        if candidate { ais[0].enable_treasury_at_work_2_2(); }
         let mut sum = 0.0;
         run_game_observed(&mut g, &mut ais, |g| {
             let _memo = g.query_memo();
             let cities = g.player_city_ids(0);
             let p: f64 = cities.iter().map(|c| g.city_yields(*c).production).sum();
             sum += p;
-            if [25, 50, 75, 100].contains(&g.turn) {
-                let builders = g
-                    .player_unit_ids(0)
-                    .iter()
-                    .filter(|u| g.units[u].kind == "builder")
-                    .count();
-                let queued = cities.iter().filter(|c| matches!(g.cities[c].queue.first(), Some(Item::Unit { unit }) if unit == "builder")).count();
-                for cid in &cities {
-                    let city = &g.cities[cid];
-                    let yield_p = g.city_yields(*cid).production;
-                    let eta = city.queue.first().map(|item| {
-                        (g.item_cost_for_city(0, *cid, item) - city.production).max(0.0)
-                            / (yield_p * g.item_prod_mult(0, *cid, Some(item))).max(0.001)
-                    });
-                    let worked = g.city_citizen_plan(*cid).worked_tiles;
-                    let legal_worked = worked
-                        .iter()
-                        .filter(|pos| {
-                            let tile = g.map.get(**pos).unwrap();
-                            tile.improvement.is_none()
-                                && g.valid_improvements(0, **pos).iter().any(|name| {
-                                    matches!(name.as_str(), "mine" | "quarry" | "lumber_mill")
-                                })
-                        })
-                        .count();
-                    eprintln!("diagnostic seed={seed} turn={} city={cid} gold={:.1} gpt={:.1} field_builders={builders} queued_builders={queued} worked_legal_mine_quarry_lumber={legal_worked} production={yield_p:.1} queue={:?} eta_at_current_rate={eta:?} builder_gold_price={:?}", g.turn, g.players[0].gold, g.players[0].gold_per_turn, city.queue.first(), g.unit_purchase_cost(0, *cid, "builder", "gold"));
-                }
-            }
             if [25, 50, 75, 100, 125, 150].contains(&g.turn) {
                 let rival = (1..4)
                     .map(|pid| {

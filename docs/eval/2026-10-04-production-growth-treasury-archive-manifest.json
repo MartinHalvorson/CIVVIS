@@ -10,7 +10,8 @@
     "2026-10-04-production-growth-treasury-diagnostic-deity.txt": "d5d17027a1164d423aea5b0aa995996ee3af2cae53b398d1b4d84c7a98559199",
     "2026-10-04-production-growth-treasury-diagnostic-emperor.csv": "1666068b59cbef696ea0c55de36884c118ccd969afd1116f366d053b45331893",
     "2026-10-04-production-growth-treasury-diagnostic-emperor.txt": "baf78ae6686cd6901e4f7372043f08e42f7d043b984e5e031242623e61c55899",
-    "2026-10-04-production-growth-treasury-diagnostic-probe.rs": "6e956eba87ad8314ef6fbc494beed7da203139800a636aad9c9e4138b7c9c03e",
+    "2026-10-04-production-growth-treasury-diagnostic-probe.rs": "c45cda4463c52289d26cceeaf10222cb182dc3923592c0fff7fc1a55a9a42a9b",
+    "2026-10-04-production-growth-treasury-diagnostic-probe.rs.txt": "6e956eba87ad8314ef6fbc494beed7da203139800a636aad9c9e4138b7c9c03e",
     "2026-10-04-production-growth-treasury-smoke-deity-candidate.csv": "b2ab52cb8dd55cd005cd6f1a60e7a2f48b27daa2a354b365dcbf815c04f894b5",
     "2026-10-04-production-growth-treasury-smoke-deity-candidate.txt": "dad9c438e896d9be5e0d3cefaf53e417c530bcad060c9231276dd32d9792f52c",
     "2026-10-04-production-growth-treasury-smoke-deity-control.csv": "b2ab52cb8dd55cd005cd6f1a60e7a2f48b27daa2a354b365dcbf815c04f894b5",
@@ -21,9 +22,11 @@
     "2026-10-04-production-growth-treasury-smoke-emperor-control.txt": "10c5a8a986e4b5993e982520e16cdabba45b5a5e0b2a77936b21cda22b2a1d09",
     "2026-10-04-production-growth-treasury-smoke-manifest.json": "7c263fcabb0cd86f91db5d06d680aea7511532a7c6b322dcb0ac0d92a02358ae",
     "2026-10-04-production-growth-treasury-smoke-paired-summary.json": "849ab5b2b7241ec6071df1b659d62eb1cfcd276928f40949b9d97db50d548540",
-    "2026-10-04-production-growth-treasury-smoke-probe.rs": "bb51093cb79c50fa7a1f8d2b11d7465f90248e6f1c922b85cd84d207b68432bf",
+    "2026-10-04-production-growth-treasury-smoke-probe.rs": "8644df19044cdb22d3bfee73e5cc082cf6bfd708ed272ee193d1dc5fbee7dd4b",
+    "2026-10-04-production-growth-treasury-smoke-probe.rs.txt": "bb51093cb79c50fa7a1f8d2b11d7465f90248e6f1c922b85cd84d207b68432bf",
     "2026-10-04-production-growth-treasury-smoke-summary.json": "e93f9a6f0d665e608a8ad0525d4ce2f42458aa13e1196e3abf46f528a8c7fa25",
     "2026-10-04-production-growth-treasury-summarize.py": "c03baf379140bcfe1a4144aaf2e90dc5245c54abca7f9cae6bca89c34a1954b5",
-    "2026-10-04-production-growth-treasury.md": "7f022ccb919ec4c6b49f9af66af1c40cc410b45dc2493d9dfea293702400daf7"
-  }
+    "2026-10-04-production-growth-treasury.md": "ecc83f7cbec06d6f3f7ffab1982b8dc9ab4beb93130d0d5db57e6457e2839e82"
+  },
+  "source_archive_note": "Exact executed source bytes are in *-probe.rs.txt; corresponding .rs files are rustfmt-only derivatives."
 }

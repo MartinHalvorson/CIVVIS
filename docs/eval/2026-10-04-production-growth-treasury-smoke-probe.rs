@@ -25,7 +25,9 @@ fn main() {
         let mut ais = AdvancedAi::fleet(&g);
         ais[0] = AdvancedAi::targeting(VictoryTarget::Domination);
         ais[0].apply_gene_ledger();
-        if candidate { ais[0].enable_treasury_at_work_2_2(); }
+        if candidate {
+            ais[0].enable_treasury_at_work_2_2();
+        }
         let mut sum = 0.0;
         run_game_observed(&mut g, &mut ais, |g| {
             let _memo = g.query_memo();
