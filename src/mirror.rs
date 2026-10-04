@@ -539,32 +539,100 @@ pub fn snapshot_from_events_at(
     // In stream order, so a later chunk's plot wins whichever kind it is;
     // a delta (`CivvisTiles.sweep`) merges without standing for a sweep —
     // see `Snapshot::merge_delta`.
+    let ranges = line_ranges_containing(&raw, "\"tiles\"");
+    // Up to the selected state record every chunk counts (subject to the turn
+    // limit); after it, only the same board's. The first part is the same
+    // prefix for every later request of a growing log, so it is merged once
+    // and kept (`SnapshotPrefix`), and each request clones it and merges only
+    // what is new. Chunks merge in stream order either way.
+    let split = ranges.partition_point(|(start, _)| state_start.is_none_or(|limit| *start <= limit));
+    let (head, tail) = ranges.split_at(split);
+    let generation = events_generation(path, &raw);
     let mut snapshot = Snapshot::default();
-    for (start, end) in line_ranges_containing(&raw, "\"tiles\"") {
-        let line = &raw[start..end];
-        if state_start.is_some_and(|limit| start > limit) {
-            let same_board = board.is_some_and(|(board_turn, board_frame)| {
-                serde_json::from_str::<TilesBoardStamp>(line)
-                    .is_ok_and(|stamp| stamp.turn == board_turn && stamp.frame <= board_frame)
-            });
-            if !same_board {
-                continue;
+    let mut done = 0;
+    let mut max_turn = 0;
+    if let Some(generation) = generation {
+        SNAPSHOT_PREFIX.with(|cell| {
+            if let Some(kept) = cell.borrow().as_ref() {
+                let last_kept_start = kept.covered.checked_sub(1);
+                if kept.path == path
+                    && kept.generation == generation
+                    && turn.is_none_or(|limit| kept.max_turn <= limit)
+                    && last_kept_start.is_none_or(|last| state_start.is_none_or(|limit| last <= limit))
+                {
+                    done = head.partition_point(|(start, _)| *start < kept.covered);
+                    snapshot = kept.snapshot.clone();
+                    max_turn = kept.max_turn;
+                }
             }
+        });
+    }
+    let mut keep = generation.is_some();
+    for &(start, end) in &head[done..] {
+        if let Ok(chunk) = serde_json::from_str::<TilesChunk>(&raw[start..end]) {
+            if !chunk.plots.is_empty() {
+                if turn.is_none_or(|limit| chunk.turn <= limit) {
+                    merge_chunk(&mut snapshot, &raw[start..end], &chunk);
+                    max_turn = max_turn.max(chunk.turn);
+                } else {
+                    // A later request with a higher limit would merge this
+                    // chunk here; never keep a prefix that skipped it.
+                    keep = false;
+                }
+            }
+        }
+    }
+    if keep {
+        if let (Some(generation), Some(&(last, _))) = (generation, head.last()) {
+            SNAPSHOT_PREFIX.with(|cell| {
+                *cell.borrow_mut() = Some(SnapshotPrefix {
+                    path: path.to_path_buf(),
+                    generation,
+                    covered: last + 1,
+                    max_turn,
+                    snapshot: snapshot.clone(),
+                })
+            });
+        }
+    }
+    for &(start, end) in tail {
+        let line = &raw[start..end];
+        let same_board = board.is_some_and(|(board_turn, board_frame)| {
+            serde_json::from_str::<TilesBoardStamp>(line)
+                .is_ok_and(|stamp| stamp.turn == board_turn && stamp.frame <= board_frame)
+        });
+        if !same_board {
+            continue;
         }
         if let Ok(chunk) = serde_json::from_str::<TilesChunk>(line) {
             if !chunk.plots.is_empty() && turn.is_none_or(|limit| chunk.turn <= limit) {
-                let is_delta =
-                    serde_json::from_str::<TilesDeltaStamp>(line).is_ok_and(|stamp| stamp.delta);
-                if is_delta {
-                    snapshot.merge_delta(&chunk);
-                } else {
-                    snapshot.merge_sweep(&chunk);
-                }
+                merge_chunk(&mut snapshot, line, &chunk);
             }
         }
     }
     apply_finished_improvements(&raw, turn, state_start, &mut snapshot);
     Ok(snapshot)
+}
+
+/// The merged tiles up to some `tiles` line of the log `read_events` holds:
+/// every chunk starting before byte `covered` has been merged, in order.
+struct SnapshotPrefix {
+    path: std::path::PathBuf,
+    generation: u64,
+    covered: usize,
+    /// The highest chunk turn merged; a request limited below it cannot reuse it.
+    max_turn: u32,
+    snapshot: Snapshot,
+}
+
+/// Merge one parsed `tiles` chunk as a sweep, or as a delta when its line says so.
+fn merge_chunk(snapshot: &mut Snapshot, line: &str, chunk: &TilesChunk) {
+    let is_delta = serde_json::from_str::<TilesDeltaStamp>(line).is_ok_and(|stamp| stamp.delta);
+    if is_delta {
+        snapshot.merge_delta(chunk);
+    } else {
+        snapshot.merge_sweep(chunk);
+    }
 }
 
 // The live reader requests one turn, but late-game logs contain hundreds of
@@ -665,11 +733,16 @@ pub fn turn_may_be_any(line: &str, turns: &[u32]) -> bool {
 // direct read and `raw.lines().filter(|l| l.contains(needle))` answered.
 thread_local! {
     static EVENTS_READ: std::cell::RefCell<Option<EventsRead>> = const { std::cell::RefCell::new(None) };
+    static EVENTS_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static SNAPSHOT_PREFIX: std::cell::RefCell<Option<SnapshotPrefix>> = const { std::cell::RefCell::new(None) };
 }
 
 struct EventsRead {
     path: std::path::PathBuf,
     text: std::rc::Rc<String>,
+    /// Bumped on every full read; the same while the log only grows, so
+    /// anything derived from a prefix of the text stays valid under it.
+    generation: u64,
     /// Per needle: the byte ranges of the lines that contain it, and how far
     /// into `text` they were looked for. Kept while the log only grows.
     hits: std::collections::HashMap<String, NeedleHits>,
@@ -726,10 +799,14 @@ pub fn read_events(path: &std::path::Path) -> std::io::Result<std::rc::Rc<String
                         let mut slot = cell.borrow_mut();
                         // The old text is a prefix of the new one, so every
                         // line found in it is still where it was.
-                        let hits = slot.take().map(|read| read.hits).unwrap_or_default();
+                        let (hits, generation) = slot
+                            .take()
+                            .map(|read| (read.hits, read.generation))
+                            .unwrap_or_default();
                         *slot = Some(EventsRead {
                             path: path.to_path_buf(),
                             text: grown.clone(),
+                            generation,
                             hits,
                         })
                     });
@@ -739,14 +816,32 @@ pub fn read_events(path: &std::path::Path) -> std::io::Result<std::rc::Rc<String
         }
     }
     let text = std::rc::Rc::new(std::fs::read_to_string(path)?);
+    let generation = EVENTS_GENERATION.with(|counter| {
+        counter.set(counter.get() + 1);
+        counter.get()
+    });
     EVENTS_READ.with(|cell| {
         *cell.borrow_mut() = Some(EventsRead {
             path: path.to_path_buf(),
             text: text.clone(),
+            generation,
             hits: Default::default(),
         })
     });
     Ok(text)
+}
+
+/// The generation of the log `read_events` holds for `path`, when `raw` is
+/// that very text; None otherwise.
+fn events_generation(path: &std::path::Path, raw: &str) -> Option<u64> {
+    EVENTS_READ.with(|cell| {
+        cell.borrow().as_ref().and_then(|read| {
+            (read.path == path
+                && std::ptr::eq(read.text.as_ptr(), raw.as_ptr())
+                && read.text.len() == raw.len())
+            .then_some(read.generation)
+        })
+    })
 }
 
 /// `raw.lines().filter(|line| line.contains(needle))`, in order, each line
@@ -963,6 +1058,46 @@ mod log_scan_prefilter_tests {
         // A replaced file drops what was kept.
         std::fs::write(&path, "zz build_no_plot\n").unwrap();
         check("build_no_plot");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_kept_tile_prefix_answers_like_a_cold_read() {
+        use super::{snapshot_from_events_at, EVENTS_READ, SNAPSHOT_PREFIX};
+        let forget = || {
+            EVENTS_READ.with(|cell| *cell.borrow_mut() = None);
+            SNAPSHOT_PREFIX.with(|cell| *cell.borrow_mut() = None);
+        };
+        let dir = std::env::temp_dir().join(format!("civvis-tile-prefix-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("events.jsonl");
+        let tiles = |turn: u32, frame: u32, delta: bool, x: i32| {
+            format!(
+                r#"{{"kind": "tiles", "turn": {turn}, "frame": {frame}, "delta": {delta}, "width": 8, "height": 8, "plots": [{{"x": {x}, "y": 1, "t": "TERRAIN_GRASS"}}]}}"#
+            )
+        };
+        let state = |turn: u32, frame: u32| format!(r#"{{"kind": "state", "turn": {turn}, "frame": {frame}}}"#);
+        let mut log = vec![state(1, 0), tiles(1, 0, false, 1), state(2, 0), tiles(2, 0, true, 2)];
+        let check = |log: &Vec<String>, turn: u32| {
+            std::fs::write(&path, log.join("\n") + "\n").unwrap();
+            let warm = format!("{:?}", snapshot_from_events_at(&path, Some(turn)).unwrap());
+            forget();
+            let cold = format!("{:?}", snapshot_from_events_at(&path, Some(turn)).unwrap());
+            assert_eq!(warm, cold, "turn {turn} after {} lines", log.len());
+            // Warm the caches again the way a persistent decider holds them.
+            let _ = snapshot_from_events_at(&path, Some(turn));
+        };
+        check(&log, 2);
+        log.extend([state(2, 1), tiles(2, 1, true, 3)]);
+        check(&log, 2);
+        log.extend([state(3, 0), tiles(3, 0, false, 4), tiles(3, 0, true, 5)]);
+        check(&log, 3);
+        // A lower limit after a higher one must not reuse what it cannot see.
+        check(&log, 2);
+        check(&log, 3);
+        log.extend([state(4, 0), tiles(4, 0, true, 6), state(4, 1), tiles(4, 1, true, 7)]);
+        check(&log, 4);
+        forget();
         let _ = std::fs::remove_dir_all(&dir);
     }
 
