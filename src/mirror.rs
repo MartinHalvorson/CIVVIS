@@ -6613,6 +6613,36 @@ fn civvis_node_name<T>(
             "american_rough_rider" => Some("rough_rider"),
             "vietnamese_voi_chien" => Some("voi_chien"),
             "lahore_nihang" => Some("nihang"),
+            "arabian_mamluk" => Some("mamluk"),
+            "babylonian_sabum_kibittum" => Some("sabum_kibittum"),
+            "brazilian_minas_geraes" => Some("minas_geraes"),
+            "byzantine_dromon" => Some("dromon"),
+            "canada_mountie" => Some("mountie"),
+            "cree_okihtcitaw" => Some("okihtcitaw"),
+            "norwegian_longship" => Some("viking_longship"),
+            "english_seadog" => Some("sea_dog"),
+            "english_redcoat" => Some("redcoat"),
+            "french_garde_imperiale" => Some("garde_imperiale"),
+            "georgian_khevsureti" => Some("khevsureti"),
+            "german_uboat" => Some("u_boat"),
+            "hungary_huszar" => Some("huszar"),
+            "hungary_black_army" => Some("black_army"),
+            "inca_warakaq" => Some("warakaq"),
+            "indonesian_jong" => Some("jong"),
+            "khmer_domrey" => Some("domrey"),
+            "korean_hwacha" => Some("hwacha"),
+            "macedonian_hetairoi" => Some("hetairoi"),
+            "mapuche_malon_raider" => Some("malon_raider"),
+            "mayan_hulche" => Some("hulche"),
+            "norwegian_berserker" => Some("berserker"),
+            "ottoman_barbary_corsair" => Some("barbary_corsair"),
+            "suleiman_janissary" => Some("janissary"),
+            "persian_immortal" => Some("immortal"),
+            "scottish_highlander" => Some("highlander"),
+            "spanish_conquistador" => Some("conquistador"),
+            "sweden_carolean" => Some("carolean"),
+            "zulu_impi" => Some("impi"),
+            "american_p51" => Some("p51_mustang"),
             "antiair_gun" => Some("anti_air_gun"),
             _ => None,
         };
@@ -6753,16 +6783,18 @@ fn civvis_unit_name(civ6: &str) -> String {
         // Firaxis retained Poland's implementation id after the unit's display
         // name became Winged Hussar.
         "polish_hussar" => "winged_hussar".to_string(),
-        // These two unique unit specifications are still absent from CIVVIS.
-        // Firaxis's own UnitReplaces table names their exact stock role, which
-        // is preferable to deleting a visible hostile from the board entirely.
-        "scottish_highlander" => "ranger".to_string(),
-        "korean_hwacha" => "field_cannon".to_string(),
-        // Georgia's Khevsureti replaces Man-at-Arms. The live export does not
-        // include `base` or `class` for this rival unit, so the generic fallback
-        // cannot recover it; keep the hostile on the threat board as its stock
-        // role (the unique hill bonus is not modeled).
-        "georgian_khevsureti" => "man_at_arms".to_string(),
+        // Modeled since the unique-unit roster was completed from the shipped
+        // database (docs/DECISIVE_WINDOWS.md §6). These three used to stand in
+        // as their stock role; the Khevsureti's live export still carries no
+        // `base` or `class`, so its explicit spelling stays here.
+        "scottish_highlander" => "highlander".to_string(),
+        "korean_hwacha" => "hwacha".to_string(),
+        "georgian_khevsureti" => "khevsureti".to_string(),
+        // Firaxis runs these nouns together, CIVVIS spells them out, and the
+        // P-51 keeps its name: no qualifier-stripping can find them.
+        "english_seadog" => "sea_dog".to_string(),
+        "german_uboat" => "u_boat".to_string(),
+        "american_p51" => "p51_mustang".to_string(),
         _ => base,
     }
 }
