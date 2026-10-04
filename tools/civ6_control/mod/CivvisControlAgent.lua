@@ -19216,7 +19216,11 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- query that deadlocked 20260730T110209Z — and the poll budgets below are
 	-- scaled by the same factor so every wall-clock allowance is unchanged.
 	local every = cfg.OrdersPollTicks or 2;
-	if awaiting.ticks % every ~= 0 then return false; end
+	-- `CivvisQueue.forcePoll` is set when `CivvisQueue.ordersLanded` found the
+	-- answer already in the channel: this tick reads it rather than waiting
+	-- for its turn.
+	if awaiting.ticks % every ~= 0 and not CivvisQueue.forcePoll then return false; end
+	CivvisQueue.forcePoll = false;
 	awaiting.polls = (awaiting.polls or 0) + 1;
 
 	-- ★★★★★ THE HEARTBEAT IS LOAD-BEARING. IT IS NOT DIAGNOSTICS.
@@ -20804,11 +20808,48 @@ end
 -- queries the notification system and the turn state before deciding it has
 -- nothing to do -- so acting on all of them spends the game's own frame budget
 -- on asking whether there is anything to spend it on.
+-- ★★★ THE ANSWER WAITED FOR THE NEXT POLL, NOT FOR THE BRAIN.
+--
+-- With the relay and the decider fast, a board's orders are in the channel
+-- 0.06 s after the board leaves (median, G66 civvis-20261004T164910Z), but
+-- the poll above runs every `OrdersPollTicks` ticks of `TickEvery` publish
+-- batches, and a game sitting on its turn publishes slowly: the mod read
+-- them 0.27 s later (median; mean 0.41, p90 0.66) -- 85% of every frame's
+-- round trip, three frames a turn.
+--
+-- So while a board is out, each publish batch may PEEK at the channel's
+-- one-row `ready` marker -- the same query the poll starts with -- at most
+-- once per `OrdersPeekSeconds` of the UI clock (`requestEndTurn`'s clock).
+-- A hit runs the tick now and makes its poll read the answer. ⚠ The peek is
+-- wall-clock bounded, never per batch: a query on EVERY publish batch is
+-- what deadlocked civvis-20260730T110209Z, and 20 a second at most is two
+-- orders of magnitude short of that. The poll's own cadence, and the poll
+-- budgets counted in it, are untouched; a miss changes nothing.
+CivvisQueue.ordersLanded = function()
+	if cfg.Play == false or not cfg.CivvisDecides or awaiting.done
+			or awaiting.turn == nil or awaiting.turn < 0 then
+		return false;
+	end
+	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	if type(now) ~= "number" or now ~= now then return false; end
+	local last = CivvisQueue.ordersPeekAt;
+	if last ~= nil and now >= last
+			and now - last < (tonumber(cfg.OrdersPeekSeconds) or 0.05) then
+		return false;
+	end
+	CivvisQueue.ordersPeekAt = now;
+	local ready = ordersReady(awaiting.turn, awaiting.frame or 0);
+	return ready ~= nil and ready >= 0;
+end;
+
 local function onGameCoreTick()
 	ensureStarted();
 	CivvisTrade.pollPeace();
 	ticksSeen = ticksSeen + 1;
-	if ticksSeen % (cfg.TickEvery or 16) ~= 0 then return; end
+	if ticksSeen % (cfg.TickEvery or 16) ~= 0 then
+		if not CivvisQueue.ordersLanded() then return; end
+		CivvisQueue.forcePoll = true;
+	end
 	ticksTaken = ticksTaken + 1;
 	tick();
 end
