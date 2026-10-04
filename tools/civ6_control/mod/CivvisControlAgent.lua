@@ -19488,6 +19488,68 @@ function CivvisBoard.movementNotYetRestored(player, turn)
 	return true;
 end
 
+-- ★★ WHAT DOES THE HOST WAIT FOR AFTER OUR LAST ORDER?
+--
+-- On 149 of 184 turns of civvis-20261004T164910Z the end turn was requested
+-- and refused until one of our units settled: last orders -> last
+-- `turn_retry_settled` median 1.93 s, 288 s over the game. A UserForced
+-- request waits just as long, and the late units are every kind -- builders
+-- 3.3 s, catapults 2.3 s, archers 1.6 s after their move. Quick Movement
+-- reads 1 in UserOptions.txt, but the stock Options.lua copies it into the
+-- live UserConfiguration only on its own Confirm.
+--
+-- This only RECORDS: per turn, how many requests the host refused and what
+-- the shipped predicates said at each (`UI.IsGameCoreBusy`, `UI.CanEndTurn`,
+-- `UI.IsProcessingMessages`, the first end-turn blocker), how long from the
+-- first request to our turn ending, and the live Quick Movement/Combat. One
+-- `end_turn_wait` per turn, from `LocalPlayerTurnEnd`. Sampled after the
+-- 0.25 s rate guard, so at most four reads a second; on `CivvisQueue`
+-- because the main chunk is at its local ceiling.
+CivvisQueue.noteEndTurnRequest = function(turn, now, forced)
+	local w = CivvisQueue.endTurnWait;
+	if w == nil or w.turn ~= turn then
+		w = { turn = turn, first = now, last = now, requests = 0, forced = 0,
+		      busy = 0, cannot = 0, processing = 0, blockers = {} };
+		CivvisQueue.endTurnWait = w;
+	end
+	w.requests = w.requests + 1;
+	w.last = now;
+	if forced then w.forced = w.forced + 1; end
+	if try(function() return UI.IsGameCoreBusy(); end, nil) == true then w.busy = w.busy + 1; end
+	if try(function() return UI.CanEndTurn(); end, nil) == false then w.cannot = w.cannot + 1; end
+	if try(function() return UI.IsProcessingMessages(); end, nil) == true then
+		w.processing = w.processing + 1;
+	end
+	local blocker = try(function()
+		return NotificationManager.GetFirstEndTurnBlocking(Game.GetLocalPlayer());
+	end, nil);
+	local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, nil);
+	if blocker ~= nil and blocker ~= none then
+		local key = tostring(blocker);
+		w.blockers[key] = (w.blockers[key] or 0) + 1;
+	end
+end;
+
+CivvisQueue.onLocalTurnEnd = function()
+	local w = CivvisQueue.endTurnWait;
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	if w == nil or w.turn ~= turn or w.emitted then return; end
+	w.emitted = true;
+	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local function since(t)
+		if type(now) ~= "number" or type(t) ~= "number" then return nil; end
+		return math.floor((now - t) * 1000 + 0.5) / 1000;
+	end
+	emit("end_turn_wait", {
+		turn = turn, requests = w.requests, forced = w.forced,
+		wait = since(w.first), after_last = since(w.last),
+		busy = w.busy, cannot = w.cannot, processing = w.processing,
+		blockers = w.blockers,
+		quick_movement = try(function() return UserConfiguration.IsQuickMovement(); end, nil),
+		quick_combat = try(function() return UserConfiguration.IsQuickCombat(); end, nil),
+	});
+end;
+
 -- Submission is not acceptance: the host may still be settling a movement.
 CivvisQueue.requestEndTurn = function(turn, parameters)
 	-- ActionPanel.lua:505-506 uses the same guard for automatic end turns.
@@ -19515,6 +19577,7 @@ CivvisQueue.requestEndTurn = function(turn, parameters)
 		CivvisQueue.endTurnSubmittedAt = now;
 	end
 	CivvisQueue.endTurnRetryTurn = turn;
+	CivvisQueue.noteEndTurnRequest(turn, now, parameters ~= nil);
 	if parameters == nil then
 		UI.RequestAction(ActionTypes.ACTION_ENDTURN);
 	else
@@ -20998,6 +21061,7 @@ function Initialize()
 	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse); end);
 	for name, handler in pairs({
 		LocalPlayerTurnBegin = onLocalPlayerTurnBegin,
+		LocalPlayerTurnEnd = function() CivvisQueue.onLocalTurnEnd(); end,
 		GameCoreEventPublishComplete = onGameCoreTick,
 		EndTurnBlockingChanged = onEndTurnBlockingChanged,
 		UnitMoveComplete = function(player, unitId) CivvisQueue.onUnitSettled(player, unitId); end,
