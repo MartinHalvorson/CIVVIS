@@ -2191,8 +2191,18 @@ civilization that owns one now trains it in place of the unit it replaces —
 every controller reads, including `AdvancedAi::legacy()`; it is not an AI
 policy and not a gene gate. See `docs/DECISIVE_WINDOWS.md` §6.
 
+The same change stops `AdvancedAi::tech_value`'s one-step lookahead from
+counting other civilizations' unique units as unlocks. It had always counted
+them (the Pitati behind Archery, the Hoplite behind Bronze Working, for every
+civilization), and with the whole roster Military Tactics alone carries the
+Impi, the Berserker and the Khevsureti: +24 on Mathematics for everyone. The
+lookahead now counts a unit only when `unique_to` is absent or names the
+seat's own civilization. This reaches `legacy()` too, and belongs to the
+roster: without it the new rows would distort every civilization's research.
+
 The genes added alongside it (`decisive-window`, `unique-unit-preference`)
-are default-off and left the anchor unchanged at their own commit; only the
-data commit moves it. The unchanged five-profile probe now measures **18,951
-decisions and `0x1c4c_d7be_51af_a50e`**, replacing v42's **18,903 decisions and
+are default-off and left the anchor unchanged at their own commit. The data
+alone measured 18,951 decisions and `0x1c4c_d7be_51af_a50e`; with the
+lookahead filter the unchanged five-profile probe now measures **19,362
+decisions and `0x0f0e_d009_a74c_279c`**, replacing v42's **18,903 decisions and
 `0xbad7_b8b7_5c93_0af0`**. The fingerprint does not establish stronger play.

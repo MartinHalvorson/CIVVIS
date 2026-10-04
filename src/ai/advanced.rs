@@ -18055,9 +18055,17 @@ impl AdvancedAi {
                 } else {
                     power * 1.1
                 };
-                if !self.civ_blind
-                    && g.rules.civs[&g.players[pid].civ].unique_unit.as_deref() == Some(name)
-                {
+                // `unique-unit-preference`: the credit reads the rules' own
+                // `unique_to`, which every unique unit carries. The civs.json
+                // `unique_unit` field names one for 14 of 105 civilizations
+                // (Gran Colombia's Llanero is not among them), so the credit
+                // never reached most of the roster.
+                let ours = if self.base.unique_unit_preference {
+                    unit.unique_to.as_deref() == Some(g.players[pid].civ.as_str())
+                } else {
+                    g.rules.civs[&g.players[pid].civ].unique_unit.as_deref() == Some(name)
+                };
+                if !self.civ_blind && ours {
                     value += 55.0;
                 }
             }
@@ -18233,13 +18241,21 @@ impl AdvancedAi {
             }
         }
         // One-step lookahead prevents cheap prerequisites from being ignored.
+        // Only units this civilization can field count: another
+        // civilization's unique unit is no unlock here, and with the whole
+        // shipped roster Military Tactics alone carries the Impi, the
+        // Berserker and the Khevsureti — +24 on Mathematics for everyone.
+        let civ = g.players[pid].civ.as_str();
         for (future, child) in &g.rules.techs {
             if child.requires.iter().any(|r| r == tech) {
                 let unlocks = g
                     .rules
                     .units
                     .values()
-                    .filter(|u| u.tech.as_deref() == Some(future))
+                    .filter(|u| {
+                        u.tech.as_deref() == Some(future)
+                            && u.unique_to.as_deref().is_none_or(|owner| owner == civ)
+                    })
                     .count()
                     + g.rules
                         .buildings

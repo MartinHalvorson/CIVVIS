@@ -151,6 +151,11 @@ city's current build. A Llanero (62) is then trained over the Line Infantry
 (65) and Cuirassier (64) it unlocks beside — and the column still gets Line
 Infantry beside it, which it needs against Pike and Shot (+10 vs cavalry).
 
+The same gene points the research scorer's +55 credit for our own unique
+unit at the rules' `unique_to`. That credit read `civs.json`'s `unique_unit`
+field, which names one for only 14 of 105 civilizations — Gran Colombia's
+Llanero was never credited.
+
 ## 6. Every civilization's unique unit
 
 The rules carried 25 of the shipped game's unique units, so most
@@ -165,6 +170,12 @@ Immortal is flagged as melee *and* ranged so it can still take a city.
 divergent fields** (it compared 100 before). Because a civilization that owns
 one now trains it instead of the unit it replaces, the frozen `advanced_v1`
 anchor moved (v43 in `docs/ELO_REPINS.md`).
+
+The research scorer's one-step lookahead had always counted *other*
+civilizations' unique units as unlocks (the Pitati behind Archery for
+everyone); with the full roster Military Tactics alone would have carried the
+Impi, Berserker and Khevsureti, +24 on Mathematics for every civilization. It
+now counts only units the seat's own civilization can field.
 
 | Civilization | Unique unit | Replaces | Unlock | Path cost (std) | Strength (vs base) | Ranged/Bombard | Moves | |
 |---|---|---|---|---|---|---|---|---|

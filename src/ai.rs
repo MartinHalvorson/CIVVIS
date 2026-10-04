@@ -2492,7 +2492,9 @@ pub struct BasicAi {
     /// extra move, the Hoplite's pairing — so a Llanero (62) is trained over
     /// the Line Infantry (65) and the Cuirassier (64) it is unlocked beside.
     /// Live King Gran Colombia, 30 games 10-01..04: not one Llanero at any
-    /// checkpoint.
+    /// checkpoint. The same gene points `AdvancedAi::tech_value`'s +55
+    /// unique-unit research credit at `unique_to` instead of civs.json's
+    /// `unique_unit`, which names one for only 14 of 105 civilizations.
     ///
     /// Set from `AdvancedAi` by the opt-in gene `unique-unit-preference`.
     pub(crate) unique_unit_preference: bool,

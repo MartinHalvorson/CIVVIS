@@ -8299,9 +8299,10 @@ fn the_unit_glyphs_are_cut_from_the_installed_game() {
         }
     }
     assert_eq!(
-        borrowed, 1,
+        borrowed, 2,
         "Civilization VI defines a symbol icon for every unit of this \
-             ruleset but the Oromo Cavalry, which stands on the Courser's"
+             ruleset but the Oromo Cavalry, which stands on the Courser's, \
+             and the Hul'che, which stands on the Archer's"
     );
 }
 

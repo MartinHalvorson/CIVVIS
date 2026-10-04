@@ -2507,7 +2507,9 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "decisive-window", field: "decisive_window", kind: Kind::OptIn, enable: AdvancedAi::enable_decisive_window, disable: AdvancedAi::disable_decisive_window },
     // The build picker credits the civilization's own unique unit for the
     // abilities its strength column omits, so the Llanero is trained over the
-    // Line Infantry. See `BasicAi::unique_unit_preference`.
+    // Line Infantry, and the research scorer's +55 unique-unit credit reads
+    // `unique_to` (civs.json named one for 14 of 105 civilizations). See
+    // `BasicAi::unique_unit_preference`.
     Gene { tag: "unique-unit-preference", field: "unique_unit_preference", kind: Kind::OptIn, enable: AdvancedAi::enable_unique_unit_preference, disable: AdvancedAi::disable_unique_unit_preference },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
