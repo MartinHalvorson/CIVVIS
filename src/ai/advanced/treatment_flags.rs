@@ -5149,6 +5149,17 @@ impl AdvancedAi {
         self.breaker_before_the_war = false;
     }
 
+    /// Opt-in gene `culture-counter-declares`; see
+    /// [`Self::culture_counter_declares`].
+    pub fn enable_culture_counter_declares(&mut self) {
+        self.culture_counter_declares = true;
+    }
+
+    /// The twin of `enable_culture_counter_declares`.
+    pub fn disable_culture_counter_declares(&mut self) {
+        self.culture_counter_declares = false;
+    }
+
     /// Opt-in gene `breaker-supply-scales`; see
     /// [`Self::breaker_supply_scales`].
     pub fn enable_breaker_supply_scales(&mut self) {

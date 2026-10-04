@@ -126,6 +126,11 @@ pub(crate) const COUNTER_WAR_POWER_FLOOR: f64 = 0.7;
 /// `front_siege_live`. A siege past Stage counts while it is read and its
 /// city has fallen to a new low of health within this many standard turns.
 pub(crate) const FRONT_SIEGE_LIVE_TURNS: u32 = 10;
+
+/// `culture-counter-declares`: our power over a culture rival at match point
+/// at which the declaration does not wait for a staged siege. See
+/// `culture_counter_due`.
+pub(crate) const CULTURE_COUNTER_RATIO: f64 = 1.5;
 /// Standard turns the front may refuse the peace that would free the army
 /// before the second front opens beside it.
 pub(crate) const ONE_WAR_SECOND_FRONT_PATIENCE: u32 = 3;
@@ -760,6 +765,24 @@ impl AdvancedAi {
                 >= self.second_front_ratio(rival) * g.military_power(rival).max(1.0)
     }
 
+    /// `culture-counter-declares`: whether a Domination seat declares on
+    /// `rival`, whose culture clock is urgent, without a staged siege, at
+    /// [`CULTURE_COUNTER_RATIO`] times its power. The war itself works on the
+    /// clock: it ends the open borders and trade route that carry their
+    /// tourism to us, and opens their Theater Squares to our raiders, while
+    /// the army stages at war. Live King civvis-20261004T122037Z (game 56)
+    /// aimed at France from turn 163 and read "the army has not finished
+    /// staging" every turn to 181, at 2.0 to 3.9 times France's power; France
+    /// won on Culture at 181 with 102 foreign tourists against our 52
+    /// domestic, at peace with us all game.
+    pub(crate) fn culture_counter_due(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        self.culture_counter_declares
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.urgent_victory_threat(g, rival)
+            && self.rival_victory_pressure(g, rival).strategy == GrandStrategy::Culture
+            && g.military_power(pid) >= CULTURE_COUNTER_RATIO * g.military_power(rival).max(1.0)
+    }
+
     /// Whether a counter-war on `rival`'s religious clock falls under
     /// [`COUNTER_WAR_POWER_FLOOR`].
     pub(crate) fn counter_war_hopeless(&self, g: &Game, pid: usize, rival: usize) -> bool {
@@ -1127,5 +1150,7 @@ impl AdvancedAi {
 #[cfg(test)]
 mod capital_handoff_tests;
 
+#[cfg(test)]
+mod culture_counter_tests;
 #[cfg(test)]
 mod urgent_denial_tests;

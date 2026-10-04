@@ -2582,6 +2582,10 @@ pub const GENES: &[Gene] = &[
     // "damage ready" — two Archers shot it and the melee held the ring, so it
     // healed every turn and built walls. See `siege_train::breach_assault_blow`.
     Gene { tag: "breach-assault", field: "breach_assault", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_assault, disable: AdvancedAi::disable_breach_assault },
+    // Live King 122037Z held war on France "for staging" from turn 163 to its
+    // Culture win at 181, at 2 to 4 times its power. See
+    // `one_war::culture_counter_due`.
+    Gene { tag: "culture-counter-declares", field: "culture_counter_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_counter_declares, disable: AdvancedAi::disable_culture_counter_declares },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
