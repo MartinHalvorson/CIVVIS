@@ -2562,6 +2562,10 @@ pub const GENES: &[Gene] = &[
     // `unique_to` (civs.json named one for 14 of 105 civilizations). See
     // `BasicAi::unique_unit_preference`.
     Gene { tag: "unique-unit-preference", field: "unique_unit_preference", kind: Kind::OptIn, enable: AdvancedAi::enable_unique_unit_preference, disable: AdvancedAi::disable_unique_unit_preference },
+    // Live King 20261004T094143Z (game 51) started religious-defense Holy
+    // Sites in four cities by turn 98 as each one changed faith, and G49 made
+    // thirty starts across six. See `AdvancedAi::adopted_faith_sanctuary_choice`.
+    Gene { tag: "one-sanctuary", field: "one_sanctuary", kind: Kind::OptIn, enable: AdvancedAi::enable_one_sanctuary, disable: AdvancedAi::disable_one_sanctuary },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

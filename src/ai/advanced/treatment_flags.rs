@@ -5086,6 +5086,16 @@ impl AdvancedAi {
         self.opening_force_keeps_its_members = false;
     }
 
+    /// Opt-in gene `one-sanctuary`; see [`Self::one_sanctuary`].
+    pub fn enable_one_sanctuary(&mut self) {
+        self.one_sanctuary = true;
+    }
+
+    /// The twin of `enable_one_sanctuary`.
+    pub fn disable_one_sanctuary(&mut self) {
+        self.one_sanctuary = false;
+    }
+
     /// Opt-in gene `runaway-expander-counter`; see
     /// [`Self::runaway_expander_counter`].
     pub fn enable_runaway_expander_counter(&mut self) {
