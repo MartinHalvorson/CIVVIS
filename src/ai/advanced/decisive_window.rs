@@ -532,6 +532,25 @@ impl AdvancedAi {
         best.map(|(_, window)| window)
     }
 
+    /// The research goal the window hands `advanced_research`: its next
+    /// technology, except while `found-against-a-rival-faith` wants Astrology
+    /// (`faith_veto_due`). Both arms sit in one forced-goal match and the
+    /// faith arm is meant to be the higher one, but a merge can reorder
+    /// them; one Ancient node toward a religion of our own outranks the
+    /// window either way. Live King G69-G71 were three straight Religious
+    /// losses on faithless cities, while a pending window held research from
+    /// t69 to t99 in G52.
+    pub(super) fn decisive_window_research_goal(
+        &self,
+        g: &Game,
+        pid: usize,
+        window: Option<&DecisiveWindow>,
+    ) -> Option<Name> {
+        window
+            .and_then(|window| window.tech_goal)
+            .filter(|_| !self.faith_veto_due(g, pid))
+    }
+
     /// The technology the decisive window needs next; `None` once it is open.
     pub(super) fn decisive_window_tech_goal(
         &self,

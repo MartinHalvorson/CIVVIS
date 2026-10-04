@@ -15907,7 +15907,8 @@ impl AdvancedAi {
             // breaker that beat the campaign target's defender and walls. See
             // `advanced/decisive_window.rs`.
             let decisive_window = self.decisive_window(g, pid, plan);
-            let decisive_window_goal = decisive_window.as_ref().and_then(|window| window.tech_goal);
+            let decisive_window_goal =
+                self.decisive_window_research_goal(g, pid, decisive_window.as_ref());
             // Say what the window reads when it does not take the slot, so a
             // live readout can tell "already armed" from "nothing in reach".
             if self.decisive_window
@@ -15915,6 +15916,12 @@ impl AdvancedAi {
                 && self.journal().wants(crate::reasoning::Level::Detail)
             {
                 match &decisive_window {
+                    Some(window) if window.tech_goal.is_some() => {
+                        think!(self.journal(), Research, Detail, "decisive-window: yields to the faith veto";
+                               "{} is owed for {}, but a rival faith is at the bar and Astrology comes first",
+                               plain(window.tech_goal.map_or("", Name::as_str)),
+                               plain(window.assault.as_str()))
+                    }
                     Some(window) => {
                         think!(self.journal(), Research, Detail, "decisive-window: open";
                                "{} beats {}'s best defender ({:.0}) by {:.0}{}",
