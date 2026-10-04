@@ -16065,8 +16065,23 @@ CivvisQueue.drain = function(player, pid, turn)
 						});
 					end
 				end
+				-- ★★★★ AN OPERATION THAT CANNOT LAND THIS TURN DOES NOT HOLD IT.
+				-- The active-operation guard protects a follow-up while its unit
+				-- can still arrive. Past the grace period a unit that has not
+				-- reached its expectation is refused below by name either way
+				-- (`queue_prior_not_arrived`), so waiting on its operation only
+				-- ran the turn into `OrderQueueMaxTicks` — a multi-turn walk, or a
+				-- leftover path from an earlier frame, never deactivates before
+				-- the turn ends. Measured on civvis-20261004T083931Z t84: a Scout
+				-- whose frame-2 MOVE_TO could not start kept its frame-0 path
+				-- active, and its queued PILLAGE held the turn 37 s. Over 2026-10-03
+				-- and 04, such stalls were 18 of 489 queues in one game and
+				-- 5-24% of every game's wall clock. An arrived unit is unchanged:
+				-- the landed-path cancel above still owns that case.
+				local stuck_operation = active_operation and entry.expect ~= nil
+					and not arrived and entry.wait >= grace;
 				local ready = (entry.ready or arrived or spent or moved_from_origin
-					or entry.wait >= grace) and not active_operation;
+					or entry.wait >= grace) and (not active_operation or stuck_operation);
 				-- A path can report its destination before Civ VI has finished
 				-- deactivating the asynchronous MOVE_TO. On the live host the
 				-- activity read can briefly say "awake" in that window, so an

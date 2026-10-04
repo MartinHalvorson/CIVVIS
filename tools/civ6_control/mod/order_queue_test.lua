@@ -329,6 +329,26 @@ check("follow-up runs after cancellation settles", ops(143),
 	"UNITOPERATION_MOVE_TO,UNITOPERATION_FORTIFY")
 check("asynchronous cancellation queue drains", queue.pendingCount(), 0)
 
+-- 2c. A path that cannot land this turn holds its follow-up only for the
+-- grace period. The host keeps a multi-turn (or leftover) MOVE_TO active until
+-- the next turn; the follow-up would be refused as not arrived anyway, so
+-- waiting longer only ran the turn into the stall cap (civvis-20261004T083931Z
+-- t84: a Scout's queued PILLAGE held the turn 37 s).
+reset()
+host.units[144] = {
+	id = 144, kind = "UNIT_SCOUT", x = 1, y = 1, moves = 2,
+	active_operation = true,
+}
+applyOrders(player, PID, 7, { row(144, "MOVE_TO", 9, 1), row(144, "PILLAGE") })
+local graceTicks = 30 -- the agent's OrderQueueGraceTicks default; no config is installed here
+for _ = 1, graceTicks - 1 do queue.drain(player, PID, 7) end
+check("en-route operation still holds within the grace", queue.pendingCount(), 1)
+queue.drain(player, PID, 7)
+check("past the grace an unlanded operation releases its follow-up", queue.pendingCount(), 0)
+check("released follow-up is never issued", ops(144), "UNITOPERATION_MOVE_TO")
+check("released follow-up is named not-arrived",
+	(lastEvent("orders_queue") or ""):find("queue_prior_not_arrived", 1, true) ~= nil, true)
+
 -- 3. A refused first order takes its follow-ups with it, by name.
 reset()
 host.units[11] = { id = 11, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2 }
