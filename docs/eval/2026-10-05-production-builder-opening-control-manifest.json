@@ -1,0 +1,35 @@
+{
+  "frozen_at": "2026-10-04T21:57:17.689605+00:00",
+  "purpose": "Control observer equivalence before fresh measurement",
+  "library_source": "0d59c32d145e5e1fb990fdf6b23c6ad0708e0315",
+  "source_difference_scope": "Later executor fixture is cfg(test) only; frozen repaired non-test library byte-identical to corrected build. New upstream host-orders modules are in bins, excluded from this standalone library comparison.",
+  "probe_sha256": "74ce6f3c89566c1722b7ccc3706cec193b7c0f5aebcd2f10399974e258da8ed8",
+  "binary_sha256": "4191d3bdf58328958ad18bb032c8ccbe0ce8c701214bebf5b00385b847aa2bb8",
+  "dependency_sha256": {
+    "libcc-306998902a309339.rlib": "78ab97890e958b744b3e729a3e57bde8648bdad7874a0e538f5ab338ff85c8df",
+    "libcivvis-e26cdcfa7a10e4e6.rlib": "0532f55a4f83dbe58b0d32253e1f59bb4ce84fb58caf8e4a33403cc038f93f18",
+    "libfind_msvc_tools-6ea7281740f42015.rlib": "47bf306f740c2612626613b603188d3edc78182bdc2500741010227e536c9daf",
+    "libitoa-e05d252acce1b140.rlib": "a6646b819797de97bb0c378b156845db0afc2a6063b593e8f63b9832b1f2514d",
+    "liblibm-5ee0467b56344aa1.rlib": "f8b977db76e23af41c4fa0413dd9837b5ae61b9fded1beb696328e326bac7e37",
+    "liblibmimalloc_sys-2c7708222b09358b.rlib": "d12b0c57f47077340cfde03f8431ca3457cf321b625d31fd1c859b08345b8768",
+    "libmemchr-64cfcd45a0ce2bd7.rlib": "4ebb83a2bcee2de068fb28e3789337db50ae064fb859e4fb8dd6dda2f883bb72",
+    "libmimalloc-4b1d0a8b44717daa.rlib": "4a6f3058d8007eaf87e4f45092ce4c4d1973f997ad78d2eef70d15a4b82733bf",
+    "libmimalloc.a": "68256f372c2d9c12a9cfa1cf8931e4eefc913eaff8aa0ed68f31187e5ba6d04d",
+    "libproc_macro2-b1baaf8ea9e1f1c6.rlib": "ed525c0441a4b562466f32e95b8bb5d0e3346af66dd811b2436f72366f66a927",
+    "libquote-e94315914580abd1.rlib": "49d266cb0b426141a382464dca58ffca0a9a07bf9263bcc46c30a650836a6f43",
+    "libserde-99734557989d9f5b.rlib": "b66058f29271381950435460765662b2e706019e4538ba59eca5adf7ed093b7b",
+    "libserde_core-d8b9cb9d7eda75e3.rlib": "2a21a8b455064c13f30edd2e16a18e39047e14bb592c1157bfdbdda5657a93f9",
+    "libserde_derive-15fd15435ae91cdd.dylib": "f338910590c4bc20110a7d1236a77f434b61f0450546672664380871f290d37c",
+    "libserde_json-5d92e8a1d79db490.rlib": "900293838fb339a3ae803b7871dc9eaa19cf570224f759cc0eba579c74d54064",
+    "libshlex-2ad7c2fa1558f084.rlib": "e415292c6f4f3bac21b7b2157507dbbb4850f64096b3041c37ea9062ea549639",
+    "libsyn-3854ff36265737a1.rlib": "a66fd194dc2f4a26ba9db90898a01c0d735d7dea6d3d0261bb6331fa6c9cbb75",
+    "libunicode_ident-00ff4f24fa63cdb3.rlib": "213612d4f31af086ad59b78928decf6df7085d84281f675bf6f082d95eae6f04",
+    "libzmij-db1726fcbad03e10.rlib": "087ecf77c66cc9d9f6a71ef4c393bf87194fd96ce7c57921adea7f9d598086d7"
+  },
+  "consumed_seeds": [
+    61007901
+  ],
+  "difficulty": "deity",
+  "fresh_strength_samples": 0,
+  "actual_Firaxis_verification": false
+}
