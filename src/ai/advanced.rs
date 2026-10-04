@@ -5234,6 +5234,11 @@ pub struct AdvancedAi {
     /// `builder-before-the-army-3`: version 2's first Builder, then one per
     /// three unimproved worked tiles. See `BasicAi::builder_before_the_army_3`.
     builder_before_the_army_3: bool,
+    /// A Great Person activation path does not resume over a queued district
+    /// that already holds production. HostOnly gene `activation-resume-waits`
+    /// (the activation needs come only from the live host); see
+    /// `BasicAi::activation_resume_waits`.
+    activation_resume_waits: bool,
     // ---- append: c-d ------------------------------------------------
     /// `decisive-window`: research and civics aimed at the cheapest
     /// assault-plus-breaker package that beats the campaign target's
@@ -8776,6 +8781,7 @@ impl AdvancedAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             builder_before_the_army_3: false,
+            activation_resume_waits: false,
             // ---- append: c-d ----------------------------------------
             decisive_window: false,
             culture_counter_declares: false,

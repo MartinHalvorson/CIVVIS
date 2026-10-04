@@ -2605,6 +2605,18 @@ pub struct BasicAi {
     /// The campaign's target city, set by `AdvancedAi` for
     /// `front_weighted_floor`; `None` with the gene off or no target.
     pub(crate) front_objective: Option<Pos>,
+    /// `live_great_person_activation_resume_item` does not take a city whose
+    /// queue head is a district already holding production: the district
+    /// finishes, then the path resumes. Stock lets any queued district yield,
+    /// and another rule that also overrides a queued district then thrashes
+    /// with it. Live King 2026-10-04T205431Z: from t251 Bogota alternated
+    /// the religious-defense Holy Site ("conversion threatens recruitment")
+    /// and the activation path's Theater Square ("Resuming an activation
+    /// path for a live Great Person") within each turn's frames, so both
+    /// finished about twice as late.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `activation-resume-waits`.
+    pub(crate) activation_resume_waits: bool,
     /// `granary_before_the_army`, behind the Campus step and the Builder
     /// backlog instead of ahead of them, so the housing reserve displaces
     /// only the military floor. Version 1 stood ahead of
@@ -5446,6 +5458,7 @@ impl BasicAi {
             granary_before_the_army: false,
             front_weighted_floor: false,
             front_objective: None,
+            activation_resume_waits: false,
             granary_before_the_army_2: false,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
@@ -5933,6 +5946,7 @@ impl BasicAi {
             granary_before_the_army: false,
             front_weighted_floor: false,
             front_objective: None,
+            activation_resume_waits: false,
             granary_before_the_army_2: false,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
@@ -12207,6 +12221,13 @@ impl BasicAi {
                     Self::live_great_person_district(need)
                         .is_some_and(|family| g.district_family(*district) == family)))
         }) {
+            return None;
+        }
+        // `activation-resume-waits`: a district already under way finishes first.
+        if self.activation_resume_waits
+            && matches!(queued, Some(Item::District { .. }))
+            && g.cities[&cid].production > 0.0
+        {
             return None;
         }
         let queue_can_yield = match queued {
@@ -21082,6 +21103,65 @@ mod tests {
             Some(Item::District { district, .. })
                 if game.district_family(*district) == "campus"
         ));
+    }
+
+    /// See `activation_resume_waits`: a paused Holy Site foundation does not
+    /// resume over a Campus that already holds production.
+    #[test]
+    fn an_activation_path_waits_for_a_district_under_way() {
+        let mut game = Game::new_full(1, 20, 14, 41_109, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().pop = 5;
+        for position in game.cities[&city].owned_tiles.clone() {
+            if position == game.cities[&city].pos {
+                continue;
+            }
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+        }
+        grant_tech_with_prerequisites(&mut game, 0, "astrology");
+        grant_tech_with_prerequisites(&mut game, 0, "writing");
+        for family in ["holy_site", "campus"] {
+            let pos = game.district_sites(city, Name::new(family)).into_iter().next().unwrap();
+            game.apply(0, &Action::Produce { city, item: Item::District { district: Name::new(family), pos } })
+                .unwrap();
+        }
+        game.cities.get_mut(&city).unwrap().production = 17.0;
+        game.players[0].live_great_person_activation_needs.push(
+            crate::game::LiveGreatPersonActivationNeed {
+                kind: "scientist".to_string(),
+                individual: Some("hildegard_of_bingen".to_string()),
+                required_district: Some("holy_site".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
+            },
+        );
+        assert!(
+            BasicAi::new().live_great_person_activation_resume_item(&game, 0, city).is_some(),
+            "stock resumes the Holy Site over the Campus"
+        );
+        let mut waits = BasicAi::new();
+        waits.activation_resume_waits = true;
+        assert_eq!(waits.live_great_person_activation_resume_item(&game, 0, city), None);
+        assert!(!waits.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(game.cities[&city].queue.first(),
+            Some(Item::District { district, .. }) if *district == "campus"));
+        game.cities.get_mut(&city).unwrap().production = 0.0;
+        assert!(
+            waits.live_great_person_activation_resume_item(&game, 0, city).is_some(),
+            "a queued district with nothing invested still yields"
+        );
     }
 
     #[test]

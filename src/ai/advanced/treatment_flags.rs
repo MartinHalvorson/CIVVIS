@@ -3137,6 +3137,19 @@ impl AdvancedAi {
         self.base.front_objective = None;
     }
 
+    /// See `BasicAi::activation_resume_waits`: an activation path waits for a
+    /// queued district that already holds production.
+    pub fn enable_activation_resume_waits(&mut self) {
+        self.activation_resume_waits = true;
+        self.base.activation_resume_waits = true;
+    }
+
+    /// The twin of `enable_activation_resume_waits`.
+    pub fn disable_activation_resume_waits(&mut self) {
+        self.activation_resume_waits = false;
+        self.base.activation_resume_waits = false;
+    }
+
     /// The working reserve, and the first Builder or a missing Monument
     /// bought ahead of the purchase argmax. See `treasury_at_work_2`.
     pub fn enable_treasury_at_work_2(&mut self) {
