@@ -1729,6 +1729,18 @@ impl AdvancedAi {
         let previous = record.stage;
         let previous_taker = record.taker;
         let mut stage = previous;
+        // A Hold over a city still the enemy's is a capture that never
+        // landed: the board applied it, the host did not. The live seat
+        // rebuilds its board each turn, so the next reading finds the city
+        // theirs again, and nothing below moves a record out of Hold. Live
+        // King civvis-20261004T070716Z (game 49) logged "Siege of Kyoto: taken
+        // by the giant_death_robot" at turn 213 with the robot seven tiles off;
+        // Kyoto stood at 0 HP from 214 while the siege read "hold" and its
+        // force held. Resume the assault where it stood.
+        if city.owner != pid && stage == SiegeStage::Hold {
+            stage = SiegeStage::Reduce;
+            record.entered = turn;
+        }
         if city.owner == pid {
             stage = SiegeStage::Hold;
         } else {
