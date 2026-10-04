@@ -2128,30 +2128,68 @@ def _leader_intro_button_ocr(path: Path,
 def advance_leader_intro(bounds: tuple[int, int, int, int],
                          leader: str | None, run_dir: Path, attempt: int,
                          *, retries: int = 4, poll_s: float = 1.0,
-                         board_ready=None) -> bool:
+                         board_ready=None, relay_s: float | None = None) -> bool:
     """Click the leader card's Begin Game control after visual confirmation.
 
-    ``board_ready`` is checked only after the screen has failed the exact intro
+    ``board_ready`` decides only after the screen has failed the exact intro
     proof.  It therefore cannot bypass a rendered leader card just because the
     in-game agent loaded behind it, but it can end the remaining probe budget
     when a direct host transition has already opened the board.
+
+    ★ THE FIRST BOARD WAITED FOR THE CAPTURE. ``board_ready`` drains the log
+    and relays what it holds, but it ran only between probes, and a probe is a
+    screenshot: with the host refusing captures (systemstatusd) each one spent
+    ~7 s on two failed attempts while the game sat on turn 1 with its board
+    already exported. The first `state` reached the brain a median ~10 s after
+    the mod wrote it (0.6-17 s over the last twelve games of 2026-10-04), and
+    in 92 play logs of October the card was clicked 0 times. With ``relay_s``
+    the log is drained on that cadence by a helper thread for the whole probe,
+    so the brain starts at once; the decision to stop probing still waits for
+    the screen to fail the intro proof.
     """
     x, y, w, h = bounds
-    for retry in range(retries):
-        shot = run_dir / f"leader-intro-attempt{attempt}-{retry}.png"
-        screenshot(shot)
-        if _leader_intro_visible(shot, bounds, leader):
-            click_at(int(x + w * LEADER_INTRO_BEGIN[0]),
-                     int(y + h * LEADER_INTRO_BEGIN[1]))
-            print(f"[setup] verified {leader_display_name(leader or '')} intro; "
-                  "clicked Begin Game", flush=True)
-            return True
-        if board_ready is not None and board_ready():
-            print("[setup] live board arrived before a leader intro was visible; "
-                  "stopping redundant intro probes", flush=True)
-            return False
-        time.sleep(poll_s)
-    return False
+    lock = threading.Lock()
+    seen = [False]
+    stop = threading.Event()
+
+    def ready_now() -> bool:
+        with lock:
+            if board_ready():
+                seen[0] = True
+            return seen[0]
+
+    pump = None
+    if board_ready is not None and relay_s:
+        def relay() -> None:
+            while not stop.is_set():
+                try:
+                    ready_now()
+                except Exception:  # noqa: BLE001 -- the probe's own check reports it
+                    pass
+                stop.wait(relay_s)
+
+        pump = threading.Thread(target=relay, name="intro-relay", daemon=True)
+        pump.start()
+    try:
+        for retry in range(retries):
+            shot = run_dir / f"leader-intro-attempt{attempt}-{retry}.png"
+            screenshot(shot)
+            if _leader_intro_visible(shot, bounds, leader):
+                click_at(int(x + w * LEADER_INTRO_BEGIN[0]),
+                         int(y + h * LEADER_INTRO_BEGIN[1]))
+                print(f"[setup] verified {leader_display_name(leader or '')} intro; "
+                      "clicked Begin Game", flush=True)
+                return True
+            if board_ready is not None and ready_now():
+                print("[setup] live board arrived before a leader intro was visible; "
+                      "stopping redundant intro probes", flush=True)
+                return False
+            time.sleep(poll_s)
+        return False
+    finally:
+        if pump is not None:
+            stop.set()
+            pump.join(timeout=2.0)
 
 
 def read_leader_hint(hint_dir: Path | None, leader: str | None) -> int:
@@ -3427,7 +3465,7 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         intro_retries = max(4, min(60, int(verify_s / 2)))
         advance_leader_intro(bounds, args.leader, run_dir, attempt,
                              retries=intro_retries, poll_s=2.0,
-                             board_ready=board_is_ready)
+                             board_ready=board_is_ready, relay_s=0.05)
         if board_seen["value"]:
             # A direct host transition can open the board without ever drawing
             # the leader card.  Its state has already been relayed above, so do
