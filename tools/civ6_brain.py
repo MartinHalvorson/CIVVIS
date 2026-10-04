@@ -1286,7 +1286,10 @@ def main() -> int:
                   f"{time.time() - started:.2f}s at {answered:%H:%M:%S.%f}"[:-3] + "Z"
                   + (f", board received {age:.1f}s earlier" if age is not None else ""),
                   flush=True)
-        time.sleep(0.1)
+        # The journal is read incrementally, so an idle pass is one open and
+        # one seek. At 0.1 s this wait was a quarter of the board-to-orders
+        # time once the decider answered in 0.17 s (G61, t170-215).
+        time.sleep(0.025)
     if decider is not None:
         decider.stop()
     if updater is not None:

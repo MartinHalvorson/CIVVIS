@@ -4946,6 +4946,10 @@ def _play(args: argparse.Namespace) -> int:
     # of 10 turns of run `smoke-20260730T105241Z` — the brain had written every one
     # of them in 0.00 s. Polling is cheap; a stalled decision loop is not.
     poll_s = 0.25 if args.civvis_decides else 2.0
+    # The board itself is relayed every 50 ms in between (`watch.follow`'s
+    # `read_s`): the upkeep above runs `ps` and `ioreg` and the focus keeper,
+    # which stretched each 0.25 s pass to 0.32 s of board-to-brain latency.
+    read_s = 0.05 if args.civvis_decides else None
     # ⚠ A STALLED RUN IS DEAD, AND WAITING TEN MINUTES FOR IT COSTS A WHOLE ATTEMPT.
     # Run civvis-20260730T140023Z wedged at turn 87 and burned the full 600 s before the
     # ladder could start the next game. The mod emits at least one event per turn and a
@@ -4964,6 +4968,7 @@ def _play(args: argparse.Namespace) -> int:
     reason = "stopped" if refused_at_seat else watch.follow(
         tail, args.timeout, record, stop_when=finished,
         each_poll=keep_foreground, poll_s=poll_s,
+        read_s=read_s,
         stall_s=args.stall_seconds,
         frozen_s=args.frozen_seconds,
         pause_when=console_locked,
@@ -5016,6 +5021,7 @@ def _play(args: argparse.Namespace) -> int:
         dismiss_leader_dialogue()
         reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                               each_poll=keep_foreground, poll_s=poll_s,
+                              read_s=read_s,
                               stall_s=args.stall_seconds,
                               frozen_s=args.frozen_seconds,
                               pause_when=console_locked,
