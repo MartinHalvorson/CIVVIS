@@ -66,6 +66,95 @@ class EventLogBridgeTest(unittest.TestCase):
             )
 
 
+class HeldLastRecordTest(unittest.TestCase):
+    """`Automation.Log` writes a record's newline only when the next record comes.
+
+    The last record logged -- a replan frame's `state` -- used to wait as an
+    unterminated tail until something else was logged (~0.2 s). A prefixed tail
+    that parses whole is the complete record: relay it now, once.
+    """
+
+    def _tail(self, root: Path) -> "tuple[watch.LogTail, Path]":
+        log = root / "Automation.log"
+        log.write_text("")
+        return watch.LogTail(log), log
+
+    def _append(self, log: Path, text: str) -> None:
+        with log.open("a") as output:
+            output.write(text)
+
+    def test_a_complete_record_without_its_newline_is_relayed_at_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tail, log = self._tail(Path(temporary))
+            state = {"kind": "state", "turn": 7, "frame": 1}
+            self._append(log, line({"kind": "replan_frame", "turn": 7}) + PREFIX + json.dumps(state))
+            self.assertEqual([e["kind"] for e in tail.poll()], ["replan_frame", "state"])
+            self.assertEqual(tail.poll(), [], "nothing new, nothing relayed")
+            self._append(log, "\n")
+            self.assertEqual(tail.poll(), [], "its newline does not relay it twice")
+            self._append(log, line({"kind": "await", "polls": 1}))
+            self.assertEqual([e["kind"] for e in tail.poll()], ["await"])
+
+    def test_the_newline_and_the_next_record_together_relay_only_the_next(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tail, log = self._tail(Path(temporary))
+            self._append(log, PREFIX + json.dumps({"kind": "state", "turn": 1}))
+            self.assertEqual(len(tail.poll()), 1)
+            self._append(log, "\n" + PREFIX + json.dumps({"kind": "export_timing", "turn": 1}))
+            self.assertEqual([e["kind"] for e in tail.poll()], ["export_timing"],
+                             "the next held record is relayed whole too")
+
+    def test_a_half_written_record_still_waits(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tail, log = self._tail(Path(temporary))
+            payload = PREFIX + json.dumps({"kind": "state", "turn": 2, "units": [{"id": 1}]})
+            self._append(log, payload[:payload.index("}") + 1])   # a nested object closed
+            self.assertEqual(tail.poll(), [], "a nested brace is not the record's end")
+            self._append(log, payload[payload.index("}") + 1:])
+            self.assertEqual(len(tail.poll()), 1)
+            self._append(log, "\n")
+            self.assertEqual(tail.poll(), [])
+
+    def test_a_tail_that_grows_after_relay_is_never_relayed_twice(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tail, log = self._tail(Path(temporary))
+            self._append(log, PREFIX + json.dumps({"kind": "await", "polls": 1}))
+            self.assertEqual(len(tail.poll()), 1)
+            self._append(log, " trailing")
+            self.assertEqual(tail.poll(), [])
+            self._append(log, "\n")
+            self.assertEqual(tail.poll(), [])
+
+    def test_only_objects_are_relayed_from_the_tail(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tail, log = self._tail(Path(temporary))
+            self._append(log, PREFIX + "12")
+            self.assertEqual(tail.poll(), [])
+            self._append(log, "3\n")
+            self.assertEqual(tail.poll(), [], "a non-object record is not an event")
+
+    def test_a_truncated_log_forgets_what_it_relayed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tail, log = self._tail(Path(temporary))
+            record = PREFIX + json.dumps({"kind": "loaded", "version": 2})
+            self._append(log, line({"kind": "seat"}) + record)
+            self.assertEqual(len(tail.poll()), 2)
+            log.write_text(record)   # a new game rewrote the log from the start
+            self.assertEqual([e["kind"] for e in tail.poll()], ["loaded"])
+
+    def test_the_bridge_relays_a_held_record_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            log = root / "Automation.log"
+            event = {"kind": "state", "run": "live", "turn": 3}
+            log.write_text(PREFIX + json.dumps(event))
+            bridge = EventLogBridge(root / "run", tag="live", log_path=log)
+            self.assertEqual(bridge.pump(), 1)
+            with log.open("a") as output:
+                output.write("\n")
+            self.assertEqual(bridge.pump(), 0)
+
+
 class FollowTest(unittest.TestCase):
     def test_locked_interval_does_not_consume_timeout(self) -> None:
         class Tail:
