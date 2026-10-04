@@ -4958,6 +4958,17 @@ impl AdvancedAi {
         self.raids_cut_tourism = false;
     }
 
+    /// Opt-in gene `breaker-before-the-war`; see
+    /// [`Self::breaker_before_the_war`].
+    pub fn enable_breaker_before_the_war(&mut self) {
+        self.breaker_before_the_war = true;
+    }
+
+    /// The twin of `enable_breaker_before_the_war`.
+    pub fn disable_breaker_before_the_war(&mut self) {
+        self.breaker_before_the_war = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -20,6 +20,23 @@ pub(super) const HEAVY_WALL_HP: i32 = 300;
 pub(super) const HEAVY_WALL_SIEGE_CAP: usize = 5;
 
 impl AdvancedAi {
+    /// Whether the wall-breaker reservation reads `owner` as at war: a war
+    /// being fought, or, under `breaker-before-the-war`, the Conquest plan's
+    /// own target, the war the army is staging for.
+    ///
+    /// Live King civvis-20261004T070716Z (game 49) aimed its campaign at
+    /// Japan's walled Kyoto from turn 15 and held off its war for want of a
+    /// staged siege; the first Catapult was ordered at turn 70, after Japan
+    /// declared, and the siege read "nothing to open the walls, so the train
+    /// holds outside the city's reach" from turn 64 to 77 while the force
+    /// stood 83% ready.
+    fn breaker_war_with(&self, g: &Game, pid: usize, owner: usize, plan: &StrategicPlan) -> bool {
+        g.is_at_war(pid, owner)
+            || (self.breaker_before_the_war
+                && plan.strategy == GrandStrategy::Conquest
+                && plan.target_player == Some(owner))
+    }
+
     /// Remember wall breakers whose production would otherwise be lost when a
     /// later city governor writes over the queue. The target can complete
     /// walls while the gun is under construction, so an active assault keeps
@@ -138,7 +155,7 @@ impl AdvancedAi {
             .filter(|city| {
                 city.owner != pid
                     && !g.players[city.owner].is_minor
-                    && g.is_at_war(pid, city.owner)
+                    && self.breaker_war_with(g, pid, city.owner, plan)
                     && (city.wall_hp > 0
                         || (city.hp >= 160
                             && g.players[city.owner]
@@ -346,7 +363,7 @@ impl AdvancedAi {
             return g.cities.get(&target).is_some_and(|city| {
                 Some(city.owner) == plan.target_player
                     && city.wall_hp > 0
-                    && g.is_at_war(pid, city.owner)
+                    && self.breaker_war_with(g, pid, city.owner, plan)
             });
         }
 

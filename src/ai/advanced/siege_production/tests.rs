@@ -570,3 +570,36 @@ fn a_train_that_cannot_breach_heavy_walls_keeps_reserving_guns() {
         "the heavy-wall cap is spent too"
     );
 }
+
+/// See `breaker_war_with`: under `breaker-before-the-war` the first wall
+/// breaker is reserved for the planned walled target before the war opens.
+#[test]
+fn the_first_breaker_is_reserved_while_the_army_stages() {
+    for gene in [false, true] {
+        let (mut g, mut ai, plan, home, _) = siege_gap_case();
+        g.at_war.clear();
+        ai.enable_lane_delegates_production_2();
+        if gene {
+            ai.enable_breaker_before_the_war();
+        }
+        let reserved = ai.reserve_delegated_domination_siege(&mut g, 0, &plan);
+        assert_eq!(reserved.is_some(), gene, "gene {gene}");
+        if gene {
+            assert_eq!(
+                g.cities[&home].queue.first(),
+                Some(&Item::Unit {
+                    unit: crate::name!("catapult"),
+                })
+            );
+        }
+    }
+    // A rival the plan does not target gets no gun at peace.
+    let (mut g, mut ai, mut plan, _, _) = siege_gap_case();
+    g.at_war.clear();
+    ai.enable_lane_delegates_production_2();
+    ai.enable_breaker_before_the_war();
+    plan.strategy = GrandStrategy::Expansion;
+    assert!(ai
+        .reserve_delegated_domination_siege(&mut g, 0, &plan)
+        .is_none());
+}

@@ -189,6 +189,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `befriend-the-strongest` | off (unmeasured) | `befriend-the-strongest`: offer a friendship-only deal to the strongest neighbour at peace. | 1 \| 1 |
 | `boost-planner-builds` | off (unmeasured) | `boost-planner-builds`: the boost planner serves `building:` triggers. | 1 \| 1 |
 | `boosted-bargain-first-3` | off (unmeasured) | `boosted-bargain-first-3`: a one-turn boosted technology may interrupt a peaceful lane beeline that is not about to land its target; the other versions stand down. | 2 \| 3 |
+| `breaker-before-the-war` | off (unmeasured) | Opt-in gene `breaker-before-the-war`; see `Self::breaker_before_the_war`. | 1 \| 1 |
 | `builder-before-the-army` | off (unmeasured) | The delegated city governor's own Builder quota ahead of the Monument, the Settler and the military floor. | — \| 2 |
 | `builder-before-the-army-2` | off (unmeasured) | `builder-before-the-army-2`: the same step, only while the empire has no Builder standing or queued. | — \| 2 |
 | `builder-charge-window` | off (unmeasured) | Slot Serfdom while a queued Builder is close to completion. | 1 \| 1 |
