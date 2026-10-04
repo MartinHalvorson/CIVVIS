@@ -14900,12 +14900,14 @@ impl BasicAi {
             if let Some(factory) = Self::civ_building(g, pid, cid, "factory") {
                 return within(&factory).then_some(factory);
             }
-            return Self::INDUSTRIAL_HUB_PLANTS.iter().find_map(|(plant, fuel)| {
-                if g.strategic_stockpile(pid, Name::new(fuel)) < Self::INDUSTRIAL_HUB_MIN_FUEL {
-                    return None;
-                }
-                Self::civ_building(g, pid, cid, plant).filter(within)
-            });
+            return Self::INDUSTRIAL_HUB_PLANTS
+                .iter()
+                .find_map(|(plant, fuel)| {
+                    if g.strategic_stockpile(pid, Name::new(fuel)) < Self::INDUSTRIAL_HUB_MIN_FUEL {
+                        return None;
+                    }
+                    Self::civ_building(g, pid, cid, plant).filter(within)
+                });
         }
         // No hub yet: the city whose best site reaches the most opens one.
         let zone = Self::civ_district(g, pid, "industrial_zone");
@@ -23403,7 +23405,11 @@ mod tests {
             other => panic!("the capital opens the hub's zone: {other:?}"),
         };
         for city in &others {
-            assert_eq!(BasicAi::industrial_hub_item(&game, 0, *city), None, "one hub");
+            assert_eq!(
+                BasicAi::industrial_hub_item(&game, 0, *city),
+                None,
+                "one hub"
+            );
         }
         game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("industrial_zone"));
         game.cities
