@@ -39,14 +39,12 @@ pub(super) fn city_of(game: &Game, state: &StateSnapshot, uid: u32, pos: Pos) ->
         .find(|rival| rival.player == observed.player)
     {
         (&rival.cities, false)
-    } else if let Some(minor) = state
-        .minors
-        .iter()
-        .find(|minor| minor.player == observed.player)
-    {
-        (&minor.cities, true)
     } else {
-        return None;
+        let minor = state
+            .minors
+            .iter()
+            .find(|minor| minor.player == observed.player)?;
+        (&minor.cities, true)
     };
     let known = cities
         .iter()
