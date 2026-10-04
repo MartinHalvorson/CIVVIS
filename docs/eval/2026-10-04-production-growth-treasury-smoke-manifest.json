@@ -1,0 +1,51 @@
+{
+  "frozen_before_play_at": "2026-10-04T12:56:01.214276+00:00",
+  "source_sha256": "bb51093cb79c50fa7a1f8d2b11d7465f90248e6f1c922b85cd84d207b68432bf",
+  "binary_sha256": "d0536eac879fc80a83fcb77dba9a902a9a54ce5898ce8432533cd3dfa1001977",
+  "engine_source": "afba14116415131f730a462dff4e1d7811aced93",
+  "runtime_inputs_identical_to_current_main": "dd1f10d2b9c5594dbaf693ddf5926f60b39e9cb7",
+  "library_sha256": "6418026abe8e14ae7756c55d24d2f24162e810bc50caacda04c844a8878a21c4",
+  "seeds": {
+    "emperor": [
+      61006800,
+      61006801
+    ],
+    "deity": [
+      61006900,
+      61006901
+    ]
+  },
+  "treatment": "focal enable_treasury_at_work_2_2 after identical deployed ledger; existing policy only",
+  "kind": "exploratory smoke screen; no confirmation claim",
+  "compile_args": [
+    "rustc",
+    "--edition=2021",
+    "-O",
+    "-C",
+    "debug-assertions=on",
+    "-",
+    "--extern",
+    "civvis=/tmp/civvis-production-growth-ci-control-deps/libcivvis-b90f6ce0986a0c6d.rlib",
+    "-L",
+    "dependency=/tmp/civvis-production-growth-ci-control-deps",
+    "-L",
+    "native=/tmp/civvis-production-growth-ci-control-deps",
+    "-o",
+    "/tmp/civvis-production-growth-treasury-smoke-probe"
+  ],
+  "completed_at": "2026-10-04T13:00:05.022446+00:00",
+  "completed_games": 8,
+  "artifact_sha256": {
+    "civvis-production-growth-treasury-smoke-emperor-candidate.txt": "fa747b661770416aabf3108c4a9aca86934f03c934be7415cc2aaafca1ab246b",
+    "civvis-production-growth-treasury-smoke-emperor-control.txt": "10c5a8a986e4b5993e982520e16cdabba45b5a5e0b2a77936b21cda22b2a1d09",
+    "civvis-production-growth-treasury-smoke-probe.rs": "bb51093cb79c50fa7a1f8d2b11d7465f90248e6f1c922b85cd84d207b68432bf",
+    "civvis-production-growth-treasury-smoke-deity-candidate.txt": "dad9c438e896d9be5e0d3cefaf53e417c530bcad060c9231276dd32d9792f52c",
+    "civvis-production-growth-treasury-smoke-deity-control.txt": "dad9c438e896d9be5e0d3cefaf53e417c530bcad060c9231276dd32d9792f52c",
+    "civvis-production-growth-treasury-smoke-probe": "d0536eac879fc80a83fcb77dba9a902a9a54ce5898ce8432533cd3dfa1001977",
+    "civvis-production-growth-treasury-smoke-summary.json": "e93f9a6f0d665e608a8ad0525d4ce2f42458aa13e1196e3abf46f528a8c7fa25",
+    "civvis-production-growth-treasury-smoke-emperor-candidate.csv": "2d767b463cb1b3a9cf7cf6a618449f152dc242e37b0bb2e519c46aef8daf79a5",
+    "civvis-production-growth-treasury-smoke-emperor-control.csv": "1666068b59cbef696ea0c55de36884c118ccd969afd1116f366d053b45331893",
+    "civvis-production-growth-treasury-smoke-deity-control.csv": "b2ab52cb8dd55cd005cd6f1a60e7a2f48b27daa2a354b365dcbf815c04f894b5",
+    "civvis-production-growth-treasury-smoke-deity-candidate.csv": "b2ab52cb8dd55cd005cd6f1a60e7a2f48b27daa2a354b365dcbf815c04f894b5"
+  }
+}
