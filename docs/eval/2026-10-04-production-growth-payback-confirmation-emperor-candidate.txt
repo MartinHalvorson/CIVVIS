@@ -1,0 +1,12 @@
+61006200: turn 151, winner Some(1), alive true
+61006201: turn 151, winner Some(3), alive true
+61006202: turn 151, winner Some(2), alive true
+61006203: turn 151, winner Some(2), alive true
+61006204: turn 151, winner Some(2), alive true
+61006205: turn 151, winner Some(3), alive true
+61006206: turn 151, winner Some(3), alive true
+61006207: turn 151, winner Some(2), alive true
+61006208: turn 151, winner Some(3), alive true
+61006209: turn 151, winner Some(3), alive true
+61006210: turn 121, winner Some(1), alive false
+61006211: turn 125, winner Some(1), alive true
