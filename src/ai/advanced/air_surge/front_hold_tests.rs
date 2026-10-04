@@ -184,6 +184,59 @@ fn a_stalled_war_against_the_armed_surge_target_is_not_offered_peace() {
     assert!(!offers(true), "the surge's own front keeps its war");
 }
 
+/// Live King civvis-20261004T025448Z: the conquest opening declared on Spain
+/// at turn 51, and at 81 the fatigue clause offered "the war has stalled"
+/// peace with 9 bodies on Barcelona's ring. The opening's war is ended only by
+/// the opening's own peace rules.
+#[test]
+fn a_stalled_war_the_conquest_opening_declared_is_not_offered_peace() {
+    let offers = |opening: bool| {
+        let (mut g, mut ai, target) = fixture();
+        at_war(&mut g);
+        for pos in [(36, 20), (36, 21), (35, 20), (35, 21)] {
+            g.spawn_test_unit("cuirassier", 1, pos);
+        }
+        g.players[0].gold = 0.0;
+        g.players[0].gold_per_turn = -11.0;
+        ai.enable_peace_when_war_does_not_pay();
+        ai.major_war_since = Some(g.turn - 40);
+        ai.last_campaign_progress = g.turn - 40;
+        ai.air_surge_plan = None;
+        ai.air_surge_status = AirSurgeStatus::default();
+        if opening {
+            ai.early_conquest_opening = true;
+            ai.conquest_opening = Some(crate::ai::advanced::early_conquest::ConquestOpening {
+                target: 1,
+                city: target,
+                opened: g.turn - 45,
+                preparing_since: None,
+                grace_until: None,
+                rally: (30, 12),
+                force: Default::default(),
+                assembled: Some(g.turn - 42),
+                declared: Some(g.turn - 40),
+                kills_at_war: 0,
+                losses: 0,
+                taken: 0,
+            });
+            assert!(ai.conquest_opening_war(1));
+        }
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(target),
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: g.turn,
+            rush: false,
+        };
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        ai.peace_offers.contains(&1)
+    };
+    assert!(offers(false), "the control: this war is stalled and unpaid");
+    assert!(!offers(true), "the opening's war is not offered the stall peace");
+}
+
 /// A front whose original capital we hold securely is done for Domination
 /// even when it is the wing's front: peace is offered so the campaign can
 /// move to the rival that holds the next original capital.

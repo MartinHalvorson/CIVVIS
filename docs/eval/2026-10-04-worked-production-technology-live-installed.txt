@@ -1,0 +1,17 @@
+TURN 50: worked improvements=5
+apprenticeship gain=1 cost=150
+industrialization gain=1 cost=465
+replaceable_parts gain=1 cost=625
+smart_materials gain=1 cost=1150
+TURN 75: worked improvements=11
+industrialization gain=1 cost=465
+replaceable_parts gain=1 cost=625
+smart_materials gain=1 cost=1150
+TURN 100: worked improvements=13
+industrialization gain=2 cost=465
+replaceable_parts gain=1 cost=625
+smart_materials gain=2 cost=1150
+TURN 125: worked improvements=12
+cybernetics gain=1 cost=1100
+smart_materials gain=2 cost=1150
+steel gain=1 cost=625

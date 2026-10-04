@@ -1,0 +1,15 @@
+61004500: turn 151, winner Some(2), alive true
+61004501: turn 151, winner Some(2), alive true
+61004502: turn 113, winner Some(2), alive true
+61004503: turn 151, winner Some(3), alive true
+61004504: turn 151, winner Some(3), alive true
+61004505: turn 113, winner Some(3), alive true
+61004506: turn 151, winner Some(2), alive true
+61004507: turn 78, winner Some(3), alive true
+61004508: turn 151, winner Some(3), alive true
+61004509: turn 151, winner Some(2), alive true
+61004510: turn 151, winner Some(3), alive true
+61004511: turn 151, winner Some(1), alive true
+real 160.03
+user 153.15
+sys 0.64

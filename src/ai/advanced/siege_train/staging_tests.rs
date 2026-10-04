@@ -581,3 +581,96 @@ fn the_budget_counts_only_the_damage_that_fires() {
         "siege guns strike without the penalty"
     );
 }
+
+/// See `STAGING_ESCORT_BODIES`: with the gene, an escorted gun budgets one
+/// reply turn instead of three, so a single raider's reach no longer holds
+/// it at the edge; alone it still holds.
+#[test]
+fn an_escorted_staging_gun_marches_under_one_raider() {
+    for trusts in [false, true] {
+        let (mut g, cid) = walled_city();
+        let target = g.cities[&cid].pos;
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        g.at_war.insert((0, 1));
+        let start = (target.0 - 8, target.1);
+        let gun = g.spawn_unit("catapult", 0, start);
+        let next = march_step(&g, gun, target, STAGING_FAR).expect("a march step");
+        // A raider that reaches the next step but stands beyond the gun's own
+        // shot, so the gun's turn is the march.
+        let escort_tiles: Vec<Pos> = g
+            .nbrs(next)
+            .into_iter()
+            .filter(|pos| *pos != start && g.wdist(*pos, target) >= g.wdist(next, target))
+            .take(3)
+            .collect();
+        let lair = g
+            .wdisk(next, 2)
+            .into_iter()
+            .filter(|pos| {
+                g.wdist(*pos, next) == 2 && g.wdist(*pos, start) == 3 && !escort_tiles.contains(pos)
+            })
+            .min()
+            .expect("a tile in reach of the step, beyond the gun's shot");
+        g.spawn_unit("archer", 1, lair);
+        assert_eq!(escort_tiles.len(), 3, "fixture: three escort tiles");
+        for pos in escort_tiles {
+            g.spawn_unit("swordsman", 0, pos);
+        }
+        let mut field = super::super::battle_planner::DangerField::with_reach(&g, 0, true);
+        field.share(&g);
+        let risk = field.danger(next, gun);
+        let three_turns = (100.0 - STAGING_GUN_HP_RESERVE) / STAGING_GUN_REPLY_TURNS;
+        let one_turn = 100.0 - STAGING_GUN_HP_RESERVE;
+        assert!(
+            risk > three_turns && risk <= one_turn,
+            "fixture: one raider's blow ({risk}) is between the two budgets"
+        );
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        let mut ai = AdvancedAi::new();
+        ai.enable_siege_train();
+        ai.shared_danger = true;
+        if trusts {
+            ai.enable_staging_gun_trusts_its_escort();
+        }
+        ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+        let closer = g.wdist(g.units[&gun].pos, target) < g.wdist(start, target);
+        assert_eq!(closer, trusts, "the gun marches only under the gene");
+    }
+}
+
+/// See `siege_route_step`: a gun on land whose dry approach to its post is
+/// walled by its own soldiers does not embark onto the water beside it,
+/// where `disembark_step` would land it again next turn (Ray, game 52). It
+/// walks through its screen along the shore instead.
+#[test]
+fn a_posted_gun_never_embarks_around_its_own_screen() {
+    let (mut g, cid, gun, _, _) = crowded_approach();
+    g.players[0].techs.insert(crate::name!("shipbuilding"));
+    let target = g.cities[&cid].pos;
+    let start = g.units[&gun].pos;
+    for x in start.0..=target.0 {
+        let tile = g.map.tiles.get_mut(&(x, target.1 - 1)).unwrap();
+        tile.terrain = crate::name!("coast");
+    }
+    let post = (target.0 - 3, target.1);
+    let water = |g: &Game, pos: Pos| g.rules.is_water(g.map.get(pos).unwrap());
+    // Fixture: the plain route around the screen leads across the water.
+    let wet = g.route_step(gun, post, 0).expect("a route by water");
+    assert!(water(&g, wet), "fixture: the open route embarks at {wet:?}");
+    assert_eq!(
+        siege_route_step(&g, 0, gun, post, target),
+        None,
+        "on land, the post route keeps to land"
+    );
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.approach(&mut g, 0, gun, post, target);
+    let now = g.units[&gun].pos;
+    assert!(!water(&g, now), "the gun stands on dry ground: {now:?}");
+    assert!(!g.is_embarked(&g.units[&gun]));
+}

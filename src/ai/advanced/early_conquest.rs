@@ -1239,6 +1239,18 @@ impl AdvancedAi {
         opening.kills_per_loss_at(self.conquest_kills(g, pid, opening.target))
     }
 
+    /// A body of the undeclared opening's strike force, which
+    /// `opening-force-keeps-its-members` keeps out of distant skirmish rows.
+    /// Always `false` with either gene off.
+    pub(super) fn conquest_force_member(&self, uid: u32) -> bool {
+        self.opening_force_keeps_its_members
+            && self.early_conquest_opening
+            && self
+                .conquest_opening
+                .as_ref()
+                .is_some_and(|opening| opening.declared.is_none() && opening.force.contains(&uid))
+    }
+
     /// The war the declared conquest opening is fighting is against `other`.
     pub(crate) fn conquest_opening_war(&self, other: usize) -> bool {
         self.conquest_owns_the_campaign()

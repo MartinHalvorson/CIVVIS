@@ -47,6 +47,8 @@ use civvis::mirror;
 mod air_assault;
 #[path = "civvis_orders/air_assault_continuation.rs"]
 mod air_assault_continuation;
+#[path = "civvis_orders/formation_refusals.rs"]
+mod formation_refusals;
 
 fn arg_text(args: &[String], flag: &str) -> Option<String> {
     args.iter()
@@ -170,6 +172,36 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
         "rough_rider" => "AMERICAN_ROUGH_RIDER",
         "voi_chien" => "VIETNAMESE_VOI_CHIEN",
         "nihang" => "LAHORE_NIHANG",
+        "mamluk" => "ARABIAN_MAMLUK",
+        "sabum_kibittum" => "BABYLONIAN_SABUM_KIBITTUM",
+        "minas_geraes" => "BRAZILIAN_MINAS_GERAES",
+        "dromon" => "BYZANTINE_DROMON",
+        "mountie" => "CANADA_MOUNTIE",
+        "okihtcitaw" => "CREE_OKIHTCITAW",
+        "viking_longship" => "NORWEGIAN_LONGSHIP",
+        "sea_dog" => "ENGLISH_SEADOG",
+        "redcoat" => "ENGLISH_REDCOAT",
+        "garde_imperiale" => "FRENCH_GARDE_IMPERIALE",
+        "khevsureti" => "GEORGIAN_KHEVSURETI",
+        "u_boat" => "GERMAN_UBOAT",
+        "huszar" => "HUNGARY_HUSZAR",
+        "black_army" => "HUNGARY_BLACK_ARMY",
+        "warakaq" => "INCA_WARAKAQ",
+        "jong" => "INDONESIAN_JONG",
+        "domrey" => "KHMER_DOMREY",
+        "hwacha" => "KOREAN_HWACHA",
+        "hetairoi" => "MACEDONIAN_HETAIROI",
+        "malon_raider" => "MAPUCHE_MALON_RAIDER",
+        "hulche" => "MAYAN_HULCHE",
+        "berserker" => "NORWEGIAN_BERSERKER",
+        "barbary_corsair" => "OTTOMAN_BARBARY_CORSAIR",
+        "janissary" => "SULEIMAN_JANISSARY",
+        "immortal" => "PERSIAN_IMMORTAL",
+        "highlander" => "SCOTTISH_HIGHLANDER",
+        "conquistador" => "SPANISH_CONQUISTADOR",
+        "carolean" => "SWEDEN_CAROLEAN",
+        "impi" => "ZULU_IMPI",
+        "p51_mustang" => "AMERICAN_P51",
         "anti_air_gun" => "ANTIAIR_GUN",
         other => return format!("UNIT_{}", other.to_ascii_uppercase()),
     };
@@ -1412,6 +1444,9 @@ struct RefusalRecord {
 #[derive(Default)]
 struct HostOrderRefusals {
     seen: std::collections::BTreeMap<OrderIdentity, RefusalRecord>,
+    /// The turn of each order's latest failure, cleared when it is
+    /// verified. See `formation_refusals`.
+    failed_on: std::collections::BTreeMap<OrderIdentity, u32>,
     war_permissions: std::collections::BTreeMap<i64, bool>,
     typed_war_permissions: std::collections::BTreeMap<(i64, String), bool>,
 }
@@ -1473,8 +1508,10 @@ impl HostOrderRefusals {
                 // history: this order works.
                 Verdict::Verified => {
                     self.seen.remove(&identity);
+                    self.failed_on.remove(&identity);
                 }
                 Verdict::Failed(reason) => {
+                    self.failed_on.insert(identity.clone(), turn);
                     let record = self.seen.entry(identity).or_insert(RefusalRecord {
                         strikes: 0,
                         reason: reason.clone(),
@@ -1516,6 +1553,8 @@ impl HostOrderRefusals {
     fn sweep(&mut self, turn: u32) {
         self.seen
             .retain(|_, record| record.until.is_none_or(|until| turn < until));
+        self.failed_on
+            .retain(|_, failed| turn.saturating_sub(*failed) < ORDER_REFUSAL_COOLDOWN_TURNS);
     }
 }
 
@@ -1631,7 +1670,35 @@ fn defer_host_peace_retries(
 /// receiver lacks is how an accepted order becomes a silent no-op.
 #[cfg(test)]
 fn coalesce_unit_paths(orders: Vec<Order>, sequenced: bool) -> (Vec<Order>, usize, usize) {
-    coalesce_unit_paths_except(orders, sequenced, &Default::default())
+    coalesce_unit_paths_except(orders, sequenced, &Default::default(), &Default::default())
+}
+
+/// The centre tiles of every city we are at war with, in Civilization VI
+/// offset coordinates (the coordinates `Order::pos` carries).
+///
+/// ★★★★ A WALK THAT TAKES A CITY ENDS THERE. Live King 20261004T100903Z
+/// (G52), turn 191: the Siege of Mashhad left the city at 0 health behind
+/// fallen walls, CIVVIS moved its Helicopter in ("taken by the helicopter"),
+/// then the battle planner rotated the wounded Helicopter (77 hp) out to heal.
+/// `coalesce_unit_paths_except` folded the step INTO the city and the step OUT
+/// of it into one `MOVE_TO` to the healing tile, so the host flew the
+/// Helicopter past Mashhad and the city healed. Persia's capital stayed
+/// Persian.
+fn capture_tiles(state: &civvis::mirror::StateSnapshot) -> std::collections::BTreeSet<(i32, i32)> {
+    state
+        .rivals
+        .iter()
+        .filter(|rival| rival.at_war)
+        .flat_map(|rival| rival.cities.iter())
+        .chain(
+            state
+                .minors
+                .iter()
+                .filter(|minor| minor.at_war)
+                .flat_map(|minor| minor.cities.iter()),
+        )
+        .map(|city| (city.x, city.y))
+        .collect()
 }
 
 /// A wounded military unit near a known enemy must follow the planner's safe
@@ -1711,6 +1778,7 @@ fn coalesce_unit_paths_except(
     orders: Vec<Order>,
     sequenced: bool,
     local_routes: &std::collections::BTreeSet<i64>,
+    capture_tiles: &std::collections::BTreeSet<(i32, i32)>,
 ) -> (Vec<Order>, usize, usize) {
     // Per unit: where its kept order sits in `out`, and whether that order is still
     // an open walk (every order for the unit so far has been a MOVE_TO).
@@ -1739,9 +1807,12 @@ fn coalesce_unit_paths_except(
             continue;
         };
         let is_step = order.verb.as_deref() == Some("MOVE_TO") && order.pos.is_some();
+        // A step onto an enemy city takes it; whatever the unit does next
+        // must happen after the host has moved it in. See `capture_tiles`.
+        let takes_city = is_step && order.pos.is_some_and(|pos| capture_tiles.contains(&pos));
         match kept.get_mut(&subject) {
             None => {
-                kept.insert(subject, (out.len(), is_step));
+                kept.insert(subject, (out.len(), is_step && !takes_city));
                 out.push(order);
             }
             Some((index, open)) => {
@@ -1749,6 +1820,9 @@ fn coalesce_unit_paths_except(
                     // The walk continues: the host only needs its last hex.
                     out[*index].pos = order.pos;
                     coalesced += 1;
+                    if takes_city {
+                        *open = false;
+                    }
                 } else if sequenced {
                     // The mod queues this behind the unit's earlier orders and
                     // issues it once they have settled. A move after an act is
@@ -3863,6 +3937,11 @@ fn decide(
         host_order_refusals,
     );
     air_assault::observe(ai, snapshot, state);
+    ai.set_refused_combinations(formation_refusals::refused_pairs(
+        &mirror_state.civ6_of,
+        state.turn,
+        host_order_refusals,
+    ));
     let (war_finishers, ai_actions_begin, air_assault_resumed) =
         air_assault_continuation.plan_frame(ai, &mut planned_game, state, &mirror_state.civ6_of);
     // Finishing attacks are translated explicitly below, including the reserve
@@ -4396,7 +4475,7 @@ fn decide(
         note_bits.push(format!("wounded_local_routes={}", local_routes.len()));
     }
     let (causally_safe, deferred_unit_followups, coalesced_path_steps) =
-        coalesce_unit_paths_except(orders, sequenced, &local_routes);
+        coalesce_unit_paths_except(orders, sequenced, &local_routes, &capture_tiles(state));
     orders = causally_safe;
     if coalesced_path_steps > 0 {
         note_bits.push(format!("coalesced_path_steps={coalesced_path_steps}"));
@@ -5134,6 +5213,15 @@ fn translate(
             verb: Some(match improvement.as_str() {
                 "archaeological_dig" | "shipwreck_excavation" => "EXCAVATE".to_string(),
                 "national_park" => "DESIGNATE_PARK".to_string(),
+                // The engine's builder operations (`Game::builder_operations`)
+                // are native unit operations too, not Improvements rows:
+                // `IMPROVE:IMPROVEMENT_CHOP_WOODS` found no row and the host
+                // picked an improvement of its own. Base/Assets/Gameplay/Data/
+                // UnitOperations.xml:35 REMOVE_FEATURE, :23 HARVEST_RESOURCE,
+                // :32 PLANT_FOREST, none with an InterfaceMode.
+                "chop_woods" | "chop_rainforest" | "clear_marsh" => "REMOVE_FEATURE".to_string(),
+                "harvest_resource" => "HARVEST_RESOURCE".to_string(),
+                "plant_woods" => "PLANT_FOREST".to_string(),
                 _ => format!("IMPROVE:{}", civ6_improvement_type(improvement)),
             }),
             pos: None,
@@ -5911,17 +5999,28 @@ fn ledger_evidence_and_states(
     path: &Path,
     turns: &[u32],
 ) -> (Vec<serde_json::Value>, Vec<civvis::mirror::StateSnapshot>) {
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = civvis::mirror::read_events(path) else {
         return (Vec::new(), Vec::new());
     };
     let mut evidence = Vec::new();
     let mut states = Vec::new();
-    for line in raw.lines() {
-        if !line.contains("\"state\"")
-            && !EVIDENCE_KINDS
-                .iter()
-                .any(|kind| line.contains(&format!("\"{kind}\"")))
-        {
+    // ★★★★ ONLY THE LINES THAT NAME A KIND WE KEEP, AND ONLY THEIR TURNS.
+    // This ran on the first frame of every turn and built a full
+    // `serde_json::Value` of EVERY state record of the run (hundreds of
+    // 100-300 KB records by turn 200) to keep the one or two turns asked for:
+    // the largest single cost of a late decider frame (2,080 of ~7,700 samples
+    // on a growing-log replay of civvis-20261003T164758Z t230-245). The lines
+    // are the same ones the old `contains` test kept, in file order; a record
+    // that spells only other integer turns cannot pass the `as_u64` check below.
+    let mut lines = civvis::mirror::line_ranges_containing(&raw, "\"state\"");
+    for kind in EVIDENCE_KINDS {
+        lines.extend(civvis::mirror::line_ranges_containing(&raw, &format!("\"{kind}\"")));
+    }
+    lines.sort_unstable();
+    lines.dedup();
+    for (start, end) in lines {
+        let line = &raw[start..end];
+        if !civvis::mirror::turn_may_be_any(line, turns) {
             continue;
         }
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
@@ -6834,7 +6933,8 @@ fn verify_unit_order(
         // show is the park itself. `EXCAVATE` leaves no improvement at all —
         // it lifts the artifact and clears the site — so it rests on the
         // charge, the unit and the `improved` event.
-        "IMPROVE" | "REPAIR" | "DESIGNATE_PARK" | "EXCAVATE" => {
+        "IMPROVE" | "REPAIR" | "DESIGNATE_PARK" | "EXCAVATE" | "REMOVE_FEATURE"
+        | "HARVEST_RESOURCE" | "PLANT_FOREST" => {
             let charges_spent = match (
                 was.and_then(|u| u.build_charges),
                 now.and_then(|u| u.build_charges),
@@ -11055,7 +11155,7 @@ mod tests {
             unit_order(unit, "MOVE_TO", Some((6, 5))),
         ];
         let local = refusals.local_retry.keys().copied().collect();
-        let (orders, _, coalesced) = coalesce_unit_paths_except(retry_steps, true, &local);
+        let (orders, _, coalesced) = coalesce_unit_paths_except(retry_steps, true, &local, &Default::default());
         assert_eq!(coalesced, 0);
         assert_eq!(orders.len(), 2);
         state.frame = 1;
@@ -13806,6 +13906,11 @@ mod tests {
             ("UNIT_NATURALIST", Some("national_park"), "DESIGNATE_PARK"),
             ("UNIT_ROCK_BAND", None, "TOURISM_BOMB"),
             ("UNIT_BUILDER", Some("farm"), "IMPROVE:IMPROVEMENT_FARM"),
+            ("UNIT_BUILDER", Some("chop_woods"), "REMOVE_FEATURE"),
+            ("UNIT_BUILDER", Some("chop_rainforest"), "REMOVE_FEATURE"),
+            ("UNIT_BUILDER", Some("clear_marsh"), "REMOVE_FEATURE"),
+            ("UNIT_BUILDER", Some("harvest_resource"), "HARVEST_RESOURCE"),
+            ("UNIT_BUILDER", Some("plant_woods"), "PLANT_FOREST"),
         ] {
             let state = StateSnapshot {
                 turn: 156,
@@ -14387,13 +14492,13 @@ mod tests {
                 unit_order(8, "MOVE_TO", Some((21, 8))),
             ]
         };
-        let (orders, deferred, coalesced) = coalesce_unit_paths_except(planned(), true, &local);
+        let (orders, deferred, coalesced) = coalesce_unit_paths_except(planned(), true, &local, &Default::default());
         assert_eq!(deferred, 0);
         assert_eq!(coalesced, 1, "healthy travel still coalesces");
         assert_eq!(orders[0].pos, Some((10, 9)));
         assert_eq!(orders[1].pos, Some((11, 8)));
         assert_eq!(orders[2].verb.as_deref(), Some("FORTIFY"));
-        let (old_host, deferred, _) = coalesce_unit_paths_except(planned(), false, &local);
+        let (old_host, deferred, _) = coalesce_unit_paths_except(planned(), false, &local, &Default::default());
         assert_eq!(deferred, 2);
         assert_eq!(
             old_host

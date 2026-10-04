@@ -188,3 +188,117 @@ fn an_unassigned_soldier_can_still_pick_up_a_civilian() {
     assert_eq!(g.units[&builder].owner, 0);
     assert_eq!(g.cities[&cid].owner, 1);
 }
+
+/// Live King civvis-20261004T033533Z (game 46): full-health Archers reached
+/// Mari's range-2 posts during Reduce and the envelope evacuation in
+/// `healing_step` walked them back to 3-4 tiles every turn (4 shots in 9
+/// turns). A healthy member of an active siege keeps the turn for the siege;
+/// the same unit outside an active siege still evacuates.
+#[test]
+fn a_healthy_siege_shooter_is_not_evacuated_off_its_post() {
+    let turn = |stage: Option<SiegeStage>| {
+        let active = stage.is_some_and(|stage| stage != SiegeStage::Stage);
+        let (mut g, cid) = walled_city();
+        // A campaign board: an arena has no recovery to evacuate into.
+        g.map_script = crate::setup::MapScript::LandOnly;
+        g.at_war.insert((0, 1));
+        g.at_war.insert((1, 0));
+        let target = g.cities[&cid].pos;
+        let post = at_distance(&g, cid, 2)
+            .into_iter()
+            .find(|pos| g.line_of_sight_from(*pos, target))
+            .expect("a firing tile");
+        let archer = g.spawn_unit("archer", 0, post);
+        // Enemy shooters out of the Archer's reach whose summed envelope
+        // reads lethal on the post, as Mari's city strike and Trebuchet did.
+        let mut placed = 0;
+        for pos in g.wring(post, 3) {
+            if placed == 4 {
+                break;
+            }
+            if g.wdist(pos, target) >= 2
+                && g.city_at(pos).is_none()
+                && g.unit_ids_at(pos).is_empty()
+                && g.map
+                    .get(pos)
+                    .is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
+            {
+                g.spawn_unit("crossbowman", 1, pos);
+                placed += 1;
+            }
+        }
+        assert_eq!(placed, 4);
+        let mut ai = AdvancedAi::targeting(crate::ai::VictoryTarget::Domination);
+        ai.enable_siege_train();
+        ai.force_groups = vec![group(&g, archer, cid)];
+        if let Some(stage) = stage {
+            ai.sieges.insert(
+                cid,
+                Siege {
+                    stage,
+                    taker: None,
+                    entered: g.turn,
+                    assessed: g.turn,
+                    posts: BTreeMap::from([(archer, post)]),
+                    short_since: None,
+                },
+            );
+        }
+        assert_eq!(ai.active_siege_member(&g, 0, archer), active);
+        let plan = plan_against(&g, cid);
+        let _ = ai.advanced_military_step(&mut g, 0, archer, &plan);
+        (
+            ai.base.recovering_units.contains(&archer),
+            g.units[&archer].pos == post,
+            g.cities[&cid].wall_hp,
+        )
+    };
+    let (recovering, held, _) = turn(None);
+    assert!(
+        recovering && !held,
+        "the control: the summed envelope walks the archer off the post"
+    );
+    let (recovering, held, walls) = turn(Some(SiegeStage::Reduce));
+    assert!(!recovering && held, "an active siege keeps its healthy shooter on the post");
+    assert!(walls < 100, "and the shooter fires at the walls");
+    // A siege still in Stage owns the turn too: its own step may step the
+    // shooter back out of the city's reach, but the evacuation does not.
+    let (recovering, _, _) = turn(Some(SiegeStage::Stage));
+    assert!(!recovering, "a Stage siege's healthy member is not evacuated");
+}
+
+/// See `assess_siege`: a Hold over a city still the enemy's is a capture the
+/// host never carried out (live King civvis-20261004T070716Z, Kyoto at turn
+/// 213). The assault resumes and the taker walks in.
+#[test]
+fn a_held_siege_over_an_enemy_city_resumes_the_capture() {
+    let (mut g, city) = walled_city();
+    let ring = ring_of(&g, city)
+        .into_iter()
+        .find(|p| g.city_at(*p).is_none() && !g.rules.is_water(g.map.get(*p).unwrap()))
+        .unwrap();
+    let warrior = g.spawn_unit("warrior", 0, ring);
+    {
+        let target = g.cities.get_mut(&city).unwrap();
+        target.hp = 1;
+        target.wall_hp = 0;
+    }
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.force_groups = vec![group(&g, warrior, city)];
+    // The board's capture of an earlier frame that the host never made.
+    ai.sieges.insert(
+        city,
+        Siege {
+            stage: SiegeStage::Hold,
+            taker: None,
+            entered: g.turn.saturating_sub(1),
+            assessed: g.turn.saturating_sub(1),
+            posts: Default::default(),
+            short_since: None,
+        },
+    );
+    let plan = plan_against(&g, city);
+    let _ = ai.siege_doctrine_step(&mut g, 0, warrior, &plan);
+    assert_eq!(g.cities[&city].owner, 0, "the taker walks into the city");
+}

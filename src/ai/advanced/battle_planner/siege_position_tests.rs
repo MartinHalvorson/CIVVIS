@@ -99,3 +99,64 @@ fn nearby_city_campaign_fallback_also_owns_its_positions() {
     ai.plan_battle(&mut g, 0, &plan);
     assert!(!ai.battle_planner_claims(gun));
 }
+
+/// Live King civvis-20261004T033533Z (game 46), turn 140: the battle planner
+/// rotated four 100-hp catapults before Babylon "out to heal" at danger
+/// 96-100 while their siege stood in Stage, and Stage never invested. A
+/// healthy member of a Stage siege is the train's to move, as an active
+/// member already is; the same gun outside any siege still rotates. (A
+/// frame-0 replay of that turn now rotates one catapult, outside the siege
+/// force, instead of four.)
+#[test]
+fn a_healthy_stage_siege_gun_is_not_rotated_out() {
+    let rotated = |staged: bool| {
+        let (mut g, mut ai, _plan, gun, cid) = assault();
+        // A campaign board: an arena rotates nobody out to heal.
+        g.map_script = crate::setup::MapScript::LandOnly;
+        g.at_war.insert((0, 1));
+        g.at_war.insert((1, 0));
+        ai.victory_target = Some(crate::ai::VictoryTarget::Domination);
+        // At the rotation line but not wounded (ROTATE_HP).
+        g.units.get_mut(&gun).unwrap().hp = ROTATE_HP;
+        let here = g.units[&gun].pos;
+        let city = g.cities[&cid].pos;
+        let mut ring: Vec<Pos> = g
+            .wring(here, 3)
+            .into_iter()
+            .filter(|pos| {
+                g.city_at(*pos).is_none()
+                    && g.unit_ids_at(*pos).is_empty()
+                    && g.map.get(*pos).is_some()
+                    && g.wdist(*pos, city) > 1
+            })
+            .collect();
+        ring.sort_by_key(|pos| (g.wdist(*pos, city), *pos));
+        for pos in ring.iter().take(3) {
+            g.spawn_unit("crossbowman", 1, *pos);
+        }
+        if staged {
+            ai.sieges.insert(
+                cid,
+                crate::ai::advanced::siege_train::Siege {
+                    stage: crate::ai::advanced::siege_train::SiegeStage::Stage,
+                    taker: None,
+                    entered: g.turn,
+                    assessed: g.turn,
+                    posts: Default::default(),
+                    short_since: None,
+                },
+            );
+        }
+        assert_eq!(ai.staging_siege_member(&g, 0, gun), staged);
+        assert!(!ai.active_siege_member(&g, 0, gun));
+        let mut field = DangerField::with_reach(&g, 0, true);
+        assert!(
+            field.rotation_danger(here, gun) > f64::from(ROTATE_HP - ROTATE_DANGER_MARGIN),
+            "the gun reads exposed"
+        );
+        let _ = ai.rotate_wounded(&mut g, 0, &mut field, &BTreeSet::new(), &BTreeSet::new());
+        ai.battle_planner_ordered.contains(&gun) || g.units[&gun].pos != here
+    };
+    assert!(rotated(false), "the control: an exposed gun outside any siege rotates out");
+    assert!(!rotated(true), "a healthy gun of a Stage siege is left to the train");
+}

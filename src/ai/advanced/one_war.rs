@@ -98,6 +98,39 @@ pub(crate) const ONE_WAR_WINNING_RATIO: f64 = 2.0;
 /// The power margin over a second rival at which a Domination seat opens
 /// that war beside the one it is fighting. See `one_war_second_front`.
 pub(crate) const ONE_WAR_SECOND_FRONT_RATIO: f64 = 1.5;
+
+/// The power ratio that keeps a second front already named: the opening
+/// ratio, less a margin, so the pick does not flicker on the line. Live King
+/// civvis-20261004T025448Z (game 45) had 302-340 power against 1.5 times
+/// Nubia's 288-335; the pick switched between Nubia and the Spanish front
+/// nearly every turn, and the army left Barcelona's ring for a war that never
+/// opened (diagnosed by -60).
+pub(crate) const ONE_WAR_SECOND_FRONT_HOLD_RATIO: f64 = 1.3;
+
+/// The least power, against the rival's, at which a counter-war on a rival's
+/// RELIGIOUS clock is worth opening or freeing the army for. Urgency waives
+/// the ordinary war ratio, because a staged army at the border is the only
+/// answer to a terminal clock: a Spaceport or a culture city taken stops it
+/// whatever the empires' totals. A faith is not stopped that way. A
+/// faithless seat cannot win its converted cities back, and the war does not
+/// keep a third civilization unconverted, so at half the founder's strength
+/// it only loses the army. Live King civvis-20261004T055130Z (game 48) offered
+/// Kongo peace at turn 77, at 302 power against 182, "freeing the
+/// Domination army to counter a rival victory threat", and declared on
+/// Persia, whose faith already held five of our six cities, at turn 80 at
+/// 316 against 619. By 109 the army stood at 225 with nothing taken. The
+/// only other urgent declaration in forty live games opened at 0.99.
+pub(crate) const COUNTER_WAR_POWER_FLOOR: f64 = 0.7;
+
+/// Standard turns a front siege still in Stage counts as live for
+/// `front_siege_live`. A siege past Stage counts while it is read and its
+/// city has fallen to a new low of health within this many standard turns.
+pub(crate) const FRONT_SIEGE_LIVE_TURNS: u32 = 10;
+
+/// `culture-counter-declares`: our power over a culture rival at match point
+/// at which the declaration does not wait for a staged siege. See
+/// `culture_counter_due`.
+pub(crate) const CULTURE_COUNTER_RATIO: f64 = 1.5;
 /// Standard turns the front may refuse the peace that would free the army
 /// before the second front opens beside it.
 pub(crate) const ONE_WAR_SECOND_FRONT_PATIENCE: u32 = 3;
@@ -126,8 +159,11 @@ pub(crate) struct OneWarFront {
     /// The turn the tide turned against us, if it has and has not turned
     /// back since.
     pub(crate) tide_against_since: Option<u32>,
-    /// City and wall health of the front's cities at the last observation.
-    pub(crate) city_health: BTreeMap<u32, (i32, i32)>,
+    /// City and wall health of the front's cities at the last observation,
+    /// by city tile. The live seat renumbers its cities every turn, so an id
+    /// key compared each city with whichever city held its id the turn
+    /// before.
+    pub(crate) city_health: BTreeMap<Pos, (i32, i32)>,
     /// Cities of the front whose health fell at the last observation.
     pub(crate) sieges_advancing: usize,
     /// The first turn of the current run of observations in which the gene
@@ -469,16 +505,19 @@ impl AdvancedAi {
     pub(crate) fn one_war_observe(&mut self, g: &Game, pid: usize) {
         if !self.one_war_at_a_time {
             self.one_war = None;
+            self.one_war_second = None;
             return;
         }
         let enemies = self.one_war_enemies(g, pid);
         let Some(target) = self.one_war_choose_front(g, pid, &enemies) else {
             self.one_war = None;
+            self.one_war_second = None;
             return;
         };
         let mut front = match self.one_war.take() {
             Some(front) if front.target == target => front,
             _ => {
+                self.front_city_low.clear();
                 let mut fresh = OneWarFront::new(target, g.turn);
                 fresh.ledger = self.one_war_ledger(g, pid, target);
                 fresh
@@ -511,12 +550,22 @@ impl AdvancedAi {
             let health = (city.hp, city.wall_hp);
             if front
                 .city_health
-                .get(&cid)
+                .get(&city.pos)
                 .is_some_and(|before| health.0 < before.0 || health.1 < before.1)
             {
                 advancing += 1;
             }
-            health_now.insert(cid, health);
+            health_now.insert(city.pos, health);
+            // See `FRONT_SIEGE_LIVE_TURNS`: the lowest health each front city
+            // has shown, and when.
+            let total = city.hp.max(0) + city.wall_hp.max(0);
+            let low = self
+                .front_city_low
+                .entry(city.pos)
+                .or_insert((total, g.turn));
+            if total < low.0 {
+                *low = (total, g.turn);
+            }
         }
         front.city_health = health_now;
         front.sieges_advancing = advancing;
@@ -546,6 +595,17 @@ impl AdvancedAi {
             } else {
                 front.closure_wanted_since = None;
             }
+        }
+        self.one_war_second = self.one_war_second_front(g, pid);
+    }
+
+    /// The power ratio over `rival` a second front needs: the hold ratio for
+    /// the one named at the last observation, the opening ratio otherwise.
+    pub(crate) fn second_front_ratio(&self, rival: usize) -> f64 {
+        if self.one_war_second == Some(rival) {
+            ONE_WAR_SECOND_FRONT_HOLD_RATIO
+        } else {
+            ONE_WAR_SECOND_FRONT_RATIO
         }
     }
 
@@ -589,7 +649,7 @@ impl AdvancedAi {
             }
             let falling = front
                 .city_health
-                .get(&cid)
+                .get(&city.pos)
                 .is_some_and(|(hp, wall)| (city.hp, city.wall_hp) < (*hp, *wall))
                 || front.sieges_advancing > 0;
             let full = ONE_WAR_CITY_FULL_HP + g.city_max_wall_hp(city).max(0);
@@ -690,14 +750,116 @@ impl AdvancedAi {
                 || self.holds_bleeding_capital_of(g, pid, other))
     }
 
+    /// Whether a faithless Domination seat should declare on `rival` without
+    /// a staged siege: `rival`'s faith is taking our cities
+    /// (`domination_faithless_conversion_counter`) and we have
+    /// [`ONE_WAR_SECOND_FRONT_RATIO`] times its power. At war our units may
+    /// condemn its Missionaries and Apostles in our own land, which needs no
+    /// army at its cities. Live King civvis-20261003T155014Z (game 41): with
+    /// the Cree as the second front, a replay held the war from turn 89 to
+    /// 113 for "0 staged on its ring" while the army besieged America, at
+    /// 1.9 to 2.3 times their power; the Cree took our cities and won at 126.
+    pub(crate) fn faith_counter_due(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        self.faith_counter(g, pid, rival)
+            && g.military_power(pid)
+                >= self.second_front_ratio(rival) * g.military_power(rival).max(1.0)
+    }
+
+    /// `culture-counter-declares`: whether a Domination seat declares on
+    /// `rival`, whose culture clock is urgent, without a staged siege, at
+    /// [`CULTURE_COUNTER_RATIO`] times its power. The war itself works on the
+    /// clock: it ends the open borders and trade route that carry their
+    /// tourism to us, and opens their Theater Squares to our raiders, while
+    /// the army stages at war. Live King civvis-20261004T122037Z (game 56)
+    /// aimed at France from turn 163 and read "the army has not finished
+    /// staging" every turn to 181, at 2.0 to 3.9 times France's power; France
+    /// won on Culture at 181 with 102 foreign tourists against our 52
+    /// domestic, at peace with us all game.
+    pub(crate) fn culture_counter_due(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        self.culture_counter_declares
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.urgent_victory_threat(g, rival)
+            && self.rival_victory_pressure(g, rival).strategy == GrandStrategy::Culture
+            && g.military_power(pid) >= CULTURE_COUNTER_RATIO * g.military_power(rival).max(1.0)
+    }
+
+    /// Whether a counter-war on `rival`'s religious clock falls under
+    /// [`COUNTER_WAR_POWER_FLOOR`].
+    pub(crate) fn counter_war_hopeless(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        self.rival_victory_pressure(g, rival).strategy == GrandStrategy::Religion
+            && g.military_power(pid) < COUNTER_WAR_POWER_FLOOR * g.military_power(rival)
+    }
+
+    /// Whether a siege on one of the front's cities is live: not Hold, read
+    /// this turn or the last, past Stage or entered within
+    /// [`FRONT_SIEGE_LIVE_TURNS`] standard turns, and its city at a new low
+    /// of health within that window. A siege that only stands is not one the
+    /// army must finish first: live King civvis-20261004T111442Z (game 53)
+    /// besieged Madrid from turn 44 to 152, sixty-four turns of them in Invest
+    /// or Reduce, and never took it; Madrid's lowest health came at turn 62.
+    pub(crate) fn front_siege_live(&self, g: &Game) -> bool {
+        let Some(front) = self.one_war_front() else {
+            return false;
+        };
+        let window = g.standard_duration(FRONT_SIEGE_LIVE_TURNS);
+        self.sieges.iter().any(|(cid, siege)| {
+            g.cities.get(cid).is_some_and(|city| {
+                city.owner == front
+                    && self
+                        .front_city_low
+                        .get(&city.pos)
+                        .is_some_and(|(_, set)| g.turn.saturating_sub(*set) <= window)
+            }) && siege.stage != super::siege_train::SiegeStage::Hold
+                && g.turn.saturating_sub(siege.assessed) <= 1
+                && (siege.stage != super::siege_train::SiegeStage::Stage
+                    || g.turn.saturating_sub(siege.entered) <= window)
+        })
+    }
+
+    /// Whether the second front `rival` is declared on while the army stays
+    /// on the front: a faith counter that is not urgent, beside a live front
+    /// siege. The war on the faith condemns its spreaders in our own land,
+    /// and that needs no army at its cities; the plan hands over once the
+    /// front's siege ends. Live King civvis-20261004T040138Z (game 47) had
+    /// Quebec City in Invest at turn 90, at 536 power against Canada's 80;
+    /// at 92 the Ethiopian faith took the second front, the plan's target
+    /// moved twelve tiles to Popayán, and the Quebec army turned around.
+    /// Popayán stayed "0 of 10 staged", Quebec was never taken, and by 126
+    /// the empire held nothing new at 822 against 139 (diagnosed by -60).
+    pub(crate) fn second_front_waits_for_the_front(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> bool {
+        !self.urgent_victory_threat(g, rival)
+            && self.faith_counter(g, pid, rival)
+            && self.front_siege_live(g)
+    }
+
+    /// A faithless Domination seat whose cities `rival`'s faith is taking:
+    /// `domination_faithless_conversion_counter`. See `faith_counter_due`.
+    pub(crate) fn faith_counter(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.players[pid].religion.is_none()
+            && self.domination_faithless_conversion_counter(
+                g,
+                pid,
+                rival,
+                self.rival_victory_pressure(g, rival),
+            )
+    }
+
     /// Whether a war on `other`, beside the front, is one the Domination
-    /// counter wants kept: `other`'s clock is urgent, or it is a counter
-    /// target we outgun [`ONE_WAR_SECOND_FRONT_RATIO`] times over. See
-    /// `one_war_peace`.
+    /// counter wants kept: `other`'s clock is urgent, its land is the only
+    /// road to a target (`war_holds_the_road`), or it is a counter target we
+    /// outgun [`ONE_WAR_SECOND_FRONT_RATIO`] times over. See `one_war_peace`.
     pub(crate) fn second_front_war_kept(&self, g: &Game, pid: usize, other: usize) -> bool {
         self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && g.is_at_war(pid, other)
             && (self.urgent_victory_threat(g, other)
+                // See `war_holds_the_road`.
+                || self.war_holds_the_road(g, pid, other)
                 || (self.domination_counter_target(g, pid, other)
                     && g.military_power(pid)
                         >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(other).max(1.0)))
@@ -812,6 +974,8 @@ impl AdvancedAi {
                     rival != other
                         && counter == GrandStrategy::Conquest
                         && self.domination_counter_target(g, pid, rival)
+                        // See `COUNTER_WAR_POWER_FLOOR`.
+                        && !self.counter_war_hopeless(g, pid, rival)
                         && (self.urgent_victory_threat(g, rival)
                             || (!fresh_front && !self.one_war_front_crushed(g, pid, other)))
                 })
@@ -887,7 +1051,8 @@ impl AdvancedAi {
             return None;
         }
         let outguns = |rival: usize| {
-            g.military_power(pid) >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(rival).max(1.0)
+            g.military_power(pid)
+                >= self.second_front_ratio(rival) * g.military_power(rival).max(1.0)
         };
         let usable = |rival: usize| {
             rival != front
@@ -895,9 +1060,19 @@ impl AdvancedAi {
                 && self.campaign_target_legal(g, pid, rival)
                 && outguns(rival)
         };
+        // A faith taking our cities need not be urgent. Its front is never
+        // traded while it is capital prey, so waiting for urgency waits for
+        // the loss: live King civvis-20261003T155014Z (game 41) held the Cree
+        // as the faithless-conversion counter from turn 91, at 2.2 times their
+        // power by 110, while the army besieged a prey America. The Cree read
+        // urgent only at 116, at 1.07 times, and won on Religion at 126. The
+        // war itself counters a faith (`faith_counter_due`); any other counter
+        // still needs its siege staged, so it waits for urgency rather than
+        // pull the army off a live siege for a war that cannot open.
         self.actionable_victory_denial(g, pid)
             .filter(|(rival, counter)| {
-                *counter == GrandStrategy::Conquest && self.urgent_victory_threat(g, *rival)
+                *counter == GrandStrategy::Conquest
+                    && (self.urgent_victory_threat(g, *rival) || self.faith_counter(g, pid, *rival))
             })
             .map(|(rival, _)| rival)
             .filter(|rival| usable(*rival))
@@ -975,5 +1150,7 @@ impl AdvancedAi {
 #[cfg(test)]
 mod capital_handoff_tests;
 
+#[cfg(test)]
+mod culture_counter_tests;
 #[cfg(test)]
 mod urgent_denial_tests;

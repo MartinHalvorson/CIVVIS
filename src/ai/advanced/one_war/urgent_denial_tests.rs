@@ -408,12 +408,88 @@ fn an_urgent_rival_at_peace_opens_a_second_front() {
         "the plan aims at it"
     );
 
+    // A rival with no clock stays held by the one-war gate.
     let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    ai.one_war_observe(&g, 0);
+    assert!(!ai.domination_counter_target(&g, 0, 2));
+    assert_eq!(ai.one_war_second_front(&g, 0), None);
+    assert!(ai.one_war_holds_declaration(&g, 0, 2));
+}
+
+/// See `one_war_second_front`: beside a capital-prey front, a counter target
+/// we outgun opens a second front before its clock turns urgent. Live King
+/// civvis-20261003T155014Z (game 41) lost on Religion to a counter target it
+/// outgunned twice over while the army stayed on the prey front.
+#[test]
+fn a_counter_target_opens_a_second_front_beside_a_prey_front() {
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    // Our own cities follow the rival's faith: the faithless counter.
+    convert(&mut g, &[0, 2]);
+    ai.one_war_observe(&g, 0);
+    assert!(ai.domination_capital_prey(&g, 0, 1));
+    assert!(ai.domination_counter_target(&g, 0, 2));
+    assert!(!ai.urgent_victory_threat(&g, 2), "fixture: not yet urgent");
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2));
+    assert!(!ai.one_war_holds_declaration(&g, 0, 2));
+    assert_eq!(
+        ai.assess(&g, 0).target_player,
+        Some(2),
+        "the plan aims at it"
+    );
+
+    // A front that can still fight back first gets its peace offer.
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
     g.at_war.remove(&(0, 2));
     convert(&mut g, &[0, 2]);
     ai.one_war_observe(&g, 0);
+    assert!(!ai.domination_capital_prey(&g, 0, 1));
     assert_eq!(ai.one_war_second_front(&g, 0), None);
-    assert!(ai.one_war_holds_declaration(&g, 0, 2));
+}
+
+/// See `faith_counter_due`: the second front on a faith taking our cities is
+/// declared without a staged siege; the war itself is the counter.
+#[test]
+fn a_faith_taking_our_cities_is_declared_on_without_a_staged_siege() {
+    let (mut g, mut ai) = two_fronts();
+    // A declaration needs a second city of ours.
+    g.found_city_for(0, (6, 18), None);
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    ai.one_war_observe(&g, 0);
+    assert!(ai.faith_counter_due(&g, 0, 2));
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.target_player, Some(2));
+    // The coalition invitation holds a turn for answers; it is not the gate
+    // under test.
+    ai.coalition_before_war = false;
+    ai.coalition_before_war_2 = false;
+    ai.coalition_before_war_3 = false;
+    // No spreader stands in our land, so the opening is the denouncement
+    // and the Formal War follows its preparation period.
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!g.is_at_war(0, 2));
+    for _ in 0..12 {
+        if g.is_at_war(0, 2) {
+            break;
+        }
+        g.turn += 1;
+        let plan = ai.assess(&g, 0);
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+    }
+    assert!(g.is_at_war(0, 2), "declared beside the prey front");
+
+    // Without the power margin the war waits for its siege.
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    for y in [4, 5, 6, 7, 8, 9] {
+        g.spawn_test_unit("modern_armor", 2, (26, y));
+    }
+    ai.one_war_observe(&g, 0);
+    assert!(!ai.faith_counter_due(&g, 0, 2));
 }
 
 /// The conquest opening's declared war is not traded for another rival's
@@ -473,4 +549,207 @@ fn a_second_front_on_an_urgent_rival_is_kept() {
     assert!(ai.urgent_victory_threat(&g, 2));
     assert!(ai.second_front_war_kept(&g, 0, 2));
     assert_eq!(ai.one_war_peace(&g, 0, 2), None);
+}
+
+/// Live King civvis-20261004T025448Z (game 45): a counter the war cannot
+/// answer without a siege (a culture or science clock) takes no second front
+/// before it is urgent, so the army stays on the prey front's siege.
+#[test]
+fn a_slow_clock_takes_no_second_front_beside_a_prey_front() {
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    let stats = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats);
+    for pid in 0..4 {
+        stats.insert(
+            pid,
+            crate::game::ObservedPublicEmpireStats {
+                domestic_tourists: Some(100),
+                foreign_tourists: Some(if pid == 2 { 60 } else { 0 }),
+                ..Default::default()
+            },
+        );
+    }
+    ai.one_war_observe(&g, 0);
+    assert!(ai.domination_capital_prey(&g, 0, 1));
+    assert!(ai.domination_counter_target(&g, 0, 2));
+    assert!(!ai.urgent_victory_threat(&g, 2));
+    assert!(!ai.faith_counter(&g, 0, 2));
+    assert_eq!(ai.one_war_second_front(&g, 0), None);
+}
+
+/// See `ONE_WAR_SECOND_FRONT_HOLD_RATIO`: a second front once named holds
+/// below the opening ratio, so the pick does not flicker on the line.
+#[test]
+fn a_named_second_front_holds_below_the_opening_ratio() {
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2));
+    assert_eq!(ai.one_war_second, Some(2));
+    let mut row = 2;
+    while g.military_power(0) >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(2).max(1.0) {
+        g.spawn_test_unit("warrior", 2, (30, row));
+        row += 1;
+    }
+    assert!(
+        g.military_power(0) >= ONE_WAR_SECOND_FRONT_HOLD_RATIO * g.military_power(2),
+        "fixture: between the two ratios"
+    );
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2), "held");
+    assert!(ai.faith_counter_due(&g, 0, 2));
+    // Not named before: the opening ratio applies.
+    ai.one_war_second = None;
+    assert_eq!(ai.one_war_second_front(&g, 0), None);
+    assert!(!ai.faith_counter_due(&g, 0, 2));
+}
+
+/// See `second_front_waits_for_the_front`: beside a live front siege the
+/// faith counter is declared on, but the plan stays on the front.
+#[test]
+fn a_faith_counter_waits_for_the_front_siege_but_is_declared_on() {
+    let (mut g, mut ai) = two_fronts();
+    g.found_city_for(0, (6, 18), None);
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    let front_city = g.player_city_ids(1)[0];
+    ai.sieges.insert(
+        front_city,
+        crate::ai::advanced::siege_train::Siege {
+            stage: crate::ai::advanced::siege_train::SiegeStage::Invest,
+            taker: None,
+            entered: g.turn - 2,
+            assessed: g.turn,
+            posts: Default::default(),
+            short_since: None,
+        },
+    );
+    ai.coalition_before_war = false;
+    ai.coalition_before_war_2 = false;
+    ai.coalition_before_war_3 = false;
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2));
+    assert!(ai.second_front_waits_for_the_front(&g, 0, 2));
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.target_player, Some(1), "the army stays on the front");
+    for _ in 0..12 {
+        if g.is_at_war(0, 2) {
+            break;
+        }
+        g.turn += 1;
+        ai.sieges.get_mut(&front_city).unwrap().assessed = g.turn;
+        let plan = ai.assess(&g, 0);
+        assert_eq!(plan.target_player, Some(1));
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+    }
+    assert!(g.is_at_war(0, 2), "the faith counter is declared on");
+
+    // Without a live front siege the plan hands over at once.
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    ai.one_war_observe(&g, 0);
+    assert!(!ai.second_front_waits_for_the_front(&g, 0, 2));
+    assert_eq!(ai.assess(&g, 0).target_player, Some(2));
+}
+
+/// Whether rival 2 has grown past `COUNTER_WAR_POWER_FLOOR` of our power.
+fn ai_probe_hopeless(g: &Game) -> bool {
+    g.military_power(0) < COUNTER_WAR_POWER_FLOOR * g.military_power(2)
+}
+
+/// See `COUNTER_WAR_POWER_FLOOR`: an urgent faith too strong to fight is
+/// neither declared on nor freed for. (The fixture's clock is religious.)
+#[test]
+fn a_counter_war_below_the_power_floor_is_neither_opened_nor_freed_for() {
+    let strengthen = |g: &mut Game| {
+        let mut row = 2;
+        while !ai_probe_hopeless(g) {
+            g.spawn_test_unit("modern_armor", 2, (30, row));
+            row += 1;
+        }
+    };
+    // The declaration: at peace, the urgent rival is declared on only while
+    // the war is winnable.
+    for strong in [false, true] {
+        let (mut g, mut ai) = two_fronts();
+        g.found_city_for(0, (6, 18), None);
+        g.at_war.clear();
+        convert(&mut g, &[0, 1, 2]);
+        if strong {
+            strengthen(&mut g);
+        }
+        ai.coalition_before_war = false;
+        ai.coalition_before_war_2 = false;
+        ai.coalition_before_war_3 = false;
+        ai.one_war_observe(&g, 0);
+        assert!(ai.urgent_victory_threat(&g, 2));
+        let plan = ai.assess(&g, 0);
+        assert_eq!(plan.target_player, Some(2));
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        assert_eq!(g.is_at_war(0, 2), !strong, "strong rival: {strong}");
+    }
+    // The front is not traded for it either.
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 1, 2]);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
+    strengthen(&mut g);
+    ai.one_war_observe(&g, 0);
+    assert_ne!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
+}
+
+/// See `FRONT_SIEGE_LIVE_TURNS`: a front siege whose city has shown no new
+/// low of health for the window no longer holds the faith counter back
+/// (Madrid, game 53, besieged turns 44-152).
+#[test]
+fn a_stalled_front_siege_stops_holding_the_faith_counter() {
+    let (mut g, mut ai) = two_fronts();
+    g.found_city_for(0, (6, 18), None);
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    let front_city = g.player_city_ids(1)[0];
+    ai.sieges.insert(
+        front_city,
+        crate::ai::advanced::siege_train::Siege {
+            stage: crate::ai::advanced::siege_train::SiegeStage::Invest,
+            taker: None,
+            entered: g.turn - 2,
+            assessed: g.turn,
+            posts: Default::default(),
+            short_since: None,
+        },
+    );
+    ai.one_war_observe(&g, 0);
+    assert!(
+        ai.second_front_waits_for_the_front(&g, 0, 2),
+        "a fresh siege"
+    );
+    // The city stands at the health it showed: no new low.
+    g.turn += g.standard_duration(FRONT_SIEGE_LIVE_TURNS) + 1;
+    ai.sieges.get_mut(&front_city).unwrap().assessed = g.turn;
+    ai.one_war_observe(&g, 0);
+    assert!(!ai.front_siege_live(&g), "a siege that only stands");
+    assert!(!ai.second_front_waits_for_the_front(&g, 0, 2));
+    // A blow that sets a new low makes it live again.
+    g.cities.get_mut(&front_city).unwrap().hp -= 30;
+    ai.one_war_observe(&g, 0);
+    assert!(ai.second_front_waits_for_the_front(&g, 0, 2));
+}
+
+/// The live seat renumbers cities every turn; the front's health reading is
+/// keyed by tile, so a renumbered city still reads as itself.
+#[test]
+fn the_front_reads_city_health_by_tile() {
+    let (g, mut ai) = two_fronts();
+    ai.one_war_observe(&g, 0);
+    let front = ai.one_war.as_ref().expect("a front");
+    let city = &g.cities[&g.player_city_ids(front.target)[0]];
+    assert_eq!(
+        front.city_health.get(&city.pos),
+        Some(&(city.hp, city.wall_hp))
+    );
 }

@@ -1,0 +1,797 @@
+{
+  "emperor": {
+    "outcomes": {
+      "control": {
+        "games": 4,
+        "wins": 0,
+        "eliminated": 0,
+        "raw": [
+          {
+            "seed": 61005400,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005401,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005402,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005403,
+            "turn": 122,
+            "winner": "Some(1)",
+            "alive": true
+          }
+        ]
+      },
+      "candidate": {
+        "games": 4,
+        "wins": 0,
+        "eliminated": 0,
+        "raw": [
+          {
+            "seed": 61005400,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005401,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005402,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005403,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          }
+        ]
+      }
+    },
+    "checkpoints": [
+      {
+        "turn": 25,
+        "matched_games": 4,
+        "matched_seeds": [
+          61005400,
+          61005401,
+          61005402,
+          61005403
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 15.7,
+          "candidate": 15.7,
+          "change_pct": 0.0
+        },
+        "cumulative_production": {
+          "control": 210.275,
+          "candidate": 210.275,
+          "change_pct": 0.0
+        },
+        "science": {
+          "control": 5.075,
+          "candidate": 5.075,
+          "change_pct": 0.0
+        },
+        "culture": {
+          "control": 4.925,
+          "candidate": 4.925,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 2.0,
+          "candidate": 2.0,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 0,
+          "equal": 4
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.4136225020111949,
+            "games": 4
+          },
+          "candidate": {
+            "mean": 0.4136225020111949,
+            "games": 4
+          }
+        }
+      },
+      {
+        "turn": 50,
+        "matched_games": 4,
+        "matched_seeds": [
+          61005400,
+          61005401,
+          61005402,
+          61005403
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 36.225,
+          "candidate": 36.225,
+          "change_pct": 0.0
+        },
+        "cumulative_production": {
+          "control": 800.7,
+          "candidate": 800.7,
+          "change_pct": 0.0
+        },
+        "science": {
+          "control": 13.425,
+          "candidate": 13.425,
+          "change_pct": 0.0
+        },
+        "culture": {
+          "control": 14.695,
+          "candidate": 14.695,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 4.5,
+          "candidate": 4.5,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 0,
+          "equal": 4
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.5235904000981891,
+            "games": 4
+          },
+          "candidate": {
+            "mean": 0.5235904000981891,
+            "games": 4
+          }
+        }
+      },
+      {
+        "turn": 75,
+        "matched_games": 4,
+        "matched_seeds": [
+          61005400,
+          61005401,
+          61005402,
+          61005403
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 69.0,
+          "candidate": 69.0,
+          "change_pct": 0.0
+        },
+        "cumulative_production": {
+          "control": 2002.7,
+          "candidate": 2002.7,
+          "change_pct": 0.0
+        },
+        "science": {
+          "control": 29.475,
+          "candidate": 29.475,
+          "change_pct": 0.0
+        },
+        "culture": {
+          "control": 22.565,
+          "candidate": 22.565,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 6.25,
+          "candidate": 6.25,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 0,
+          "equal": 4
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.609004315900753,
+            "games": 4
+          },
+          "candidate": {
+            "mean": 0.609004315900753,
+            "games": 4
+          }
+        }
+      },
+      {
+        "turn": 100,
+        "matched_games": 4,
+        "matched_seeds": [
+          61005400,
+          61005401,
+          61005402,
+          61005403
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 97.4,
+          "candidate": 99.9,
+          "change_pct": 2.566735112936347
+        },
+        "cumulative_production": {
+          "control": 4093.2,
+          "candidate": 4121.8,
+          "change_pct": 0.6987198280074436
+        },
+        "science": {
+          "control": 56.6875,
+          "candidate": 55.9375,
+          "change_pct": -1.3230429988974612
+        },
+        "culture": {
+          "control": 27.747500000000002,
+          "candidate": 28.3975,
+          "change_pct": 2.3425533831876733
+        },
+        "cities": {
+          "control": 6.75,
+          "candidate": 7.25,
+          "change_pct": 7.407407407407418
+        },
+        "production_pairs": {
+          "higher": 1,
+          "lower": 0,
+          "equal": 3
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.5984545823960912,
+            "games": 4
+          },
+          "candidate": {
+            "mean": 0.6237215541733604,
+            "games": 4
+          }
+        }
+      },
+      {
+        "turn": 125,
+        "matched_games": 3,
+        "matched_seeds": [
+          61005400,
+          61005401,
+          61005402
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61005403
+          ],
+          "candidate": []
+        },
+        "production": {
+          "control": 130.5,
+          "candidate": 133.83333333333334,
+          "change_pct": 2.5542784163473886
+        },
+        "cumulative_production": {
+          "control": 6576.516666666666,
+          "candidate": 6603.883333333333,
+          "change_pct": 0.4161270784179161
+        },
+        "science": {
+          "control": 67.32666666666667,
+          "candidate": 67.29333333333334,
+          "change_pct": -0.04950985246063855
+        },
+        "culture": {
+          "control": 30.923333333333336,
+          "candidate": 30.706666666666667,
+          "change_pct": -0.7006575401530712
+        },
+        "cities": {
+          "control": 7.333333333333333,
+          "candidate": 7.333333333333333,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 2,
+          "lower": 0,
+          "equal": 1
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.5560851185508248,
+            "games": 3
+          },
+          "candidate": {
+            "mean": 0.5757753295830578,
+            "games": 3
+          }
+        }
+      },
+      {
+        "turn": 150,
+        "matched_games": 3,
+        "matched_seeds": [
+          61005400,
+          61005401,
+          61005402
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61005403
+          ],
+          "candidate": []
+        },
+        "production": {
+          "control": 173.6,
+          "candidate": 173.2,
+          "change_pct": -0.23041474654378336
+        },
+        "cumulative_production": {
+          "control": 10229.433333333332,
+          "candidate": 10345.383333333333,
+          "change_pct": 1.1334938722575183
+        },
+        "science": {
+          "control": 81.95,
+          "candidate": 81.7,
+          "change_pct": -0.3050640634533197
+        },
+        "culture": {
+          "control": 36.75,
+          "candidate": 35.946666666666665,
+          "change_pct": -2.1859410430839055
+        },
+        "cities": {
+          "control": 7.666666666666667,
+          "candidate": 7.666666666666667,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 1,
+          "lower": 2,
+          "equal": 0
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.4758844795334898,
+            "games": 3
+          },
+          "candidate": {
+            "mean": 0.4618013307320491,
+            "games": 3
+          }
+        }
+      }
+    ]
+  },
+  "deity": {
+    "outcomes": {
+      "control": {
+        "games": 4,
+        "wins": 0,
+        "eliminated": 1,
+        "raw": [
+          {
+            "seed": 61005500,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61005501,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005502,
+            "turn": 87,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005503,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": false
+          }
+        ]
+      },
+      "candidate": {
+        "games": 4,
+        "wins": 0,
+        "eliminated": 1,
+        "raw": [
+          {
+            "seed": 61005500,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61005501,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005502,
+            "turn": 87,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005503,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": false
+          }
+        ]
+      }
+    },
+    "checkpoints": [
+      {
+        "turn": 25,
+        "matched_games": 4,
+        "matched_seeds": [
+          61005500,
+          61005501,
+          61005502,
+          61005503
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 10.85,
+          "candidate": 10.85,
+          "change_pct": 0.0
+        },
+        "cumulative_production": {
+          "control": 166.45,
+          "candidate": 166.45,
+          "change_pct": 0.0
+        },
+        "science": {
+          "control": 4.1,
+          "candidate": 4.1,
+          "change_pct": 0.0
+        },
+        "culture": {
+          "control": 3.01,
+          "candidate": 3.01,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 1.75,
+          "candidate": 1.75,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 0,
+          "equal": 4
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.21544324273277798,
+            "games": 4
+          },
+          "candidate": {
+            "mean": 0.21544324273277798,
+            "games": 4
+          }
+        }
+      },
+      {
+        "turn": 50,
+        "matched_games": 4,
+        "matched_seeds": [
+          61005500,
+          61005501,
+          61005502,
+          61005503
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 26.475,
+          "candidate": 26.475,
+          "change_pct": 0.0
+        },
+        "cumulative_production": {
+          "control": 616.65,
+          "candidate": 616.65,
+          "change_pct": 0.0
+        },
+        "science": {
+          "control": 7.887499999999999,
+          "candidate": 7.887499999999999,
+          "change_pct": 0.0
+        },
+        "culture": {
+          "control": 9.3575,
+          "candidate": 9.3575,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 3.5,
+          "candidate": 3.5,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 0,
+          "equal": 4
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.22858322819403787,
+            "games": 4
+          },
+          "candidate": {
+            "mean": 0.22858322819403787,
+            "games": 4
+          }
+        }
+      },
+      {
+        "turn": 75,
+        "matched_games": 4,
+        "matched_seeds": [
+          61005500,
+          61005501,
+          61005502,
+          61005503
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 35.95,
+          "candidate": 35.95,
+          "change_pct": 0.0
+        },
+        "cumulative_production": {
+          "control": 1385.1375,
+          "candidate": 1385.1375,
+          "change_pct": 0.0
+        },
+        "science": {
+          "control": 18.5,
+          "candidate": 18.5,
+          "change_pct": 0.0
+        },
+        "culture": {
+          "control": 13.78,
+          "candidate": 13.78,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 3.75,
+          "candidate": 3.75,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 0,
+          "equal": 4
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.17299865157990582,
+            "games": 4
+          },
+          "candidate": {
+            "mean": 0.17299865157990582,
+            "games": 4
+          }
+        }
+      },
+      {
+        "turn": 100,
+        "matched_games": 3,
+        "matched_seeds": [
+          61005500,
+          61005501,
+          61005503
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61005502
+          ],
+          "candidate": [
+            61005502
+          ]
+        },
+        "production": {
+          "control": 42.833333333333336,
+          "candidate": 43.13333333333333,
+          "change_pct": 0.7003891050583633
+        },
+        "cumulative_production": {
+          "control": 2453.8,
+          "candidate": 2463.766666666667,
+          "change_pct": 0.4061727388811942
+        },
+        "science": {
+          "control": 20.716666666666665,
+          "candidate": 20.316666666666666,
+          "change_pct": -1.9308125502815687
+        },
+        "culture": {
+          "control": 11.53,
+          "candidate": 11.71,
+          "change_pct": 1.5611448395490113
+        },
+        "cities": {
+          "control": 4.666666666666667,
+          "candidate": 5.0,
+          "change_pct": 7.14285714285714
+        },
+        "production_pairs": {
+          "higher": 1,
+          "lower": 0,
+          "equal": 2
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.1203595682852395,
+            "games": 3
+          },
+          "candidate": {
+            "mean": 0.11860587380407828,
+            "games": 3
+          }
+        }
+      },
+      {
+        "turn": 125,
+        "matched_games": 3,
+        "matched_seeds": [
+          61005500,
+          61005501,
+          61005503
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61005502
+          ],
+          "candidate": [
+            61005502
+          ]
+        },
+        "production": {
+          "control": 53.1,
+          "candidate": 56.06666666666667,
+          "change_pct": 5.586942875078482
+        },
+        "cumulative_production": {
+          "control": 3653.7833333333333,
+          "candidate": 3724.733333333333,
+          "change_pct": 1.941822859410558
+        },
+        "science": {
+          "control": 33.855333333333334,
+          "candidate": 34.05766666666667,
+          "change_pct": 0.5976409428352092
+        },
+        "culture": {
+          "control": 16.14333333333333,
+          "candidate": 15.046666666666667,
+          "change_pct": -6.793309931860403
+        },
+        "cities": {
+          "control": 4.0,
+          "candidate": 4.0,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 1,
+          "lower": 1,
+          "equal": 1
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.09203659769084992,
+            "games": 3
+          },
+          "candidate": {
+            "mean": 0.09240595950974749,
+            "games": 3
+          }
+        }
+      },
+      {
+        "turn": 150,
+        "matched_games": 3,
+        "matched_seeds": [
+          61005500,
+          61005501,
+          61005503
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61005502
+          ],
+          "candidate": [
+            61005502
+          ]
+        },
+        "production": {
+          "control": 46.5,
+          "candidate": 44.6,
+          "change_pct": -4.086021505376336
+        },
+        "cumulative_production": {
+          "control": 4847.933333333333,
+          "candidate": 4975.483333333334,
+          "change_pct": 2.6310180283007245
+        },
+        "science": {
+          "control": 26.1,
+          "candidate": 18.866666666666667,
+          "change_pct": -27.713920817369097
+        },
+        "culture": {
+          "control": 13.693333333333333,
+          "candidate": 12.173333333333334,
+          "change_pct": -11.100292112950338
+        },
+        "cities": {
+          "control": 3.6666666666666665,
+          "candidate": 2.6666666666666665,
+          "change_pct": -27.27272727272727
+        },
+        "production_pairs": {
+          "higher": 1,
+          "lower": 1,
+          "equal": 1
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.05097437115667641,
+            "games": 3
+          },
+          "candidate": {
+            "mean": 0.048035377277305585,
+            "games": 3
+          }
+        }
+      }
+    ]
+  }
+}

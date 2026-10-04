@@ -91,6 +91,7 @@ impl Game {
                 for target in self.wdisk(origin, range) {
                     if target != origin
                         && u.attacks_left > 0
+                        && !self.strike_blocked(uid, target)
                         && self.enemy_air_strike_target_at(pid, target)
                     {
                         actions.push(Action::AirStrike { unit: uid, target });
@@ -98,6 +99,7 @@ impl Game {
                     if target != origin
                         && spec.promotion_class == "air_bomber"
                         && u.attacks_left > 0
+                        && !self.strike_blocked(uid, target)
                         && (u.hp >= 50
                             || self.promotion_effect(u, "air_pillage_at_low_health") > 0.0)
                         && self.air_pillageable_at(pid, target)
@@ -514,6 +516,7 @@ impl Game {
                     for target in self.wdisk(origin, range) {
                         if target != origin
                             && u.attacks_left > 0
+                            && !self.strike_blocked(uid, target)
                             && self.enemy_air_strike_target_at(pid, target)
                             && self.combat_target_visible_at(
                                 pid,
@@ -527,6 +530,7 @@ impl Game {
                         if target != origin
                             && spec.promotion_class == "air_bomber"
                             && u.attacks_left > 0
+                            && !self.strike_blocked(uid, target)
                             && (u.hp >= 50
                                 || self.promotion_effect(&u, "air_pillage_at_low_health") > 0.0)
                             && self.sees(&current_visibility, target)
@@ -5719,6 +5723,7 @@ impl Game {
         if spec.domain.as_deref() != Some("air")
             || attacker.moves_left <= 0.0
             || attacker.attacks_left <= 0
+            || self.strike_blocked(uid, target)
             || self.wdist(self.air_operation_origin(uid), target) > self.unit_attack_range(uid)
             || !self.enemy_air_strike_target_at(pid, target)
         {
@@ -5899,6 +5904,7 @@ impl Game {
             || spec.promotion_class != "air_bomber"
             || bomber.moves_left <= 0.0
             || bomber.attacks_left <= 0
+            || self.strike_blocked(uid, target)
             || (bomber.hp < 50
                 && self.promotion_effect(&bomber, "air_pillage_at_low_health") <= 0.0)
             || self.wdist(self.air_operation_origin(uid), target) > self.unit_attack_range(uid)
@@ -11666,3 +11672,7 @@ impl Game {
 
 #[cfg(test)]
 mod air_domain_tests;
+
+#[cfg(test)]
+#[path = "air_pillage_refusal_tests.rs"]
+mod air_pillage_refusal_tests;

@@ -1,0 +1,27 @@
+{
+  "phase": "research detour plus experimental Builder scoring/reservation",
+  "source_commit": "0b5bb4537",
+  "control_binary_sha256": "9d01241a3431780fdcd43aff3f2ce439178b6cbef93b0c802d097f0e6e5cec94",
+  "candidate_binary_sha256": "f264340aa352a2eab3d074a6bcaee75cecee667653fb001cc0c9c9d0ee60600e",
+  "seeds": {
+    "emperor": [
+      61004300,
+      61004311
+    ],
+    "deity": [
+      61004400,
+      61004407
+    ]
+  },
+  "profile": "same as reserve-manifest.json",
+  "artifact_sha256": {
+    "docs/eval/2026-10-03-productive-builder-foundation-unlock-candidate.csv": "c85b6419f965d199f352addfebb973c566fb902f31e1e564cf7f0958e88032a3",
+    "docs/eval/2026-10-03-productive-builder-foundation-unlock-candidate.txt": "0b5f1261f1a56024be18fb4d4779fce334bfca1e7ca249261265d0c200f02140",
+    "docs/eval/2026-10-03-productive-builder-foundation-unlock-control.csv": "3eff7d5dc1f472eb832546bbcafd753d86113a8346741c8e0492f5e28f6decb0",
+    "docs/eval/2026-10-03-productive-builder-foundation-unlock-control.txt": "76ea9618bb97e0377d84f378d33f4faaba67ed884c59d09f0588019348e063e0",
+    "docs/eval/2026-10-03-productive-builder-foundation-unlock-deity-candidate.csv": "720dd8a2f7cc6dbb8cbf93bcf1b6f7fcf1d7b1f123db251dd9a17af4a0bb1eb7",
+    "docs/eval/2026-10-03-productive-builder-foundation-unlock-deity-candidate.txt": "06d744ed4201b679914dcb23e4fdc4fb61680380d5123f1ff511412c90e955bf",
+    "docs/eval/2026-10-03-productive-builder-foundation-unlock-deity-control.csv": "8d63dff6e36a0f03150e851c8df10458733b527fe3df21e178e7f4d97fff9e6c",
+    "docs/eval/2026-10-03-productive-builder-foundation-unlock-deity-control.txt": "3c283bb8b8c187f0bbdf8df6763102bfc7a80e320e8e2bc3817542b64d07db3c"
+  }
+}

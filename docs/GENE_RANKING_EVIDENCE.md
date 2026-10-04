@@ -189,8 +189,12 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `befriend-the-strongest` | off (unmeasured) | `befriend-the-strongest`: offer a friendship-only deal to the strongest neighbour at peace. | 1 \| 1 |
 | `boost-planner-builds` | off (unmeasured) | `boost-planner-builds`: the boost planner serves `building:` triggers. | 1 \| 1 |
 | `boosted-bargain-first-3` | off (unmeasured) | `boosted-bargain-first-3`: a one-turn boosted technology may interrupt a peaceful lane beeline that is not about to land its target; the other versions stand down. | 2 \| 3 |
-| `builder-before-the-army` | off (unmeasured) | The delegated city governor's own Builder quota ahead of the Monument, the Settler and the military floor. | — \| 2 |
-| `builder-before-the-army-2` | off (unmeasured) | `builder-before-the-army-2`: the same step, only while the empire has no Builder standing or queued. | — \| 2 |
+| `breach-assault` | off (unmeasured) | Opt-in gene `breach-assault`; see `Self::breach_assault`. | 1 \| 1 |
+| `breaker-before-the-war` | off (unmeasured) | Opt-in gene `breaker-before-the-war`; see `Self::breaker_before_the_war`. | 1 \| 1 |
+| `breaker-supply-scales` | off (unmeasured) | Opt-in gene `breaker-supply-scales`; see `Self::breaker_supply_scales`. | 1 \| 1 |
+| `builder-before-the-army` | off (unmeasured) | The delegated city governor's own Builder quota ahead of the Monument, the Settler and the military floor. | — \| 3 |
+| `builder-before-the-army-2` | off (unmeasured) | `builder-before-the-army-2`: the same step, only while the empire has no Builder standing or queued. | — \| 3 |
+| `builder-before-the-army-3` | off (unmeasured) | `builder-before-the-army-3`: version 2's first Builder, then one per three unimproved worked tiles. | — \| 3 |
 | `builder-charge-window` | off (unmeasured) | Slot Serfdom while a queued Builder is close to completion. | 1 \| 1 |
 | `builder-workforce-recovery-3` | off (unmeasured) | Count local repair jobs as well as new improvements when replacing a lost Builder, retaining v2's three-job threshold. | 2 \| 3 |
 | `builders-work-through-raiders` | off (unmeasured) | `builders-work-through-raiders`: the live capture lessons' reach holds keep Settlers only. | 1 \| 1 |
@@ -201,14 +205,18 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-before-the-army-3` | off (unmeasured) | `campus-before-the-army-3`: version 2, on through the University and the Research Lab. | — \| 3 |
 | `capital-campaign-router` | off (unmeasured) | Enable `capital-campaign-router` for measurement. | 1 \| 1 |
 | `capture-hold-chain` | off (unmeasured) | Enable `capture-hold-chain` for measurement. | 1 \| 1 |
+| `colonization-earns-its-slot` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot`; see `Self::colonization_earns_its_slot`. | — \| 2 |
+| `colonization-earns-its-slot-2` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot-2`; see `Self::colonization_earns_its_slot_2`. | — \| 2 |
 | `connect-the-luxury-2` | off (unmeasured) | Research a first-copy luxury only when it can relieve an Amenity deficit after a legal, affordable unlock. | 1 \| 2 |
 | `conquest-takes-the-soft-city` | off (unmeasured) | `conquest-takes-the-soft-city`: rank the early conquest target by what can be taken before what is worth most. | 1 \| 1 |
 | `counter-culture-by-conquest` | off (unmeasured) | `counter-culture-by-conquest`: answer a culture leader with war aimed at its Great Works. | 1 \| 1 |
 | `culture-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 2 \| 3 |
+| `culture-counter-declares` | off (unmeasured) | Opt-in gene `culture-counter-declares`; see `Self::culture_counter_declares`. | 1 \| 1 |
 | `culture-defense-theater` | off (unmeasured) | A Theater Square while the empire's Culture trails the strongest rival's: claimed for one idle city ahead of the delegated governor (`reserve_culture_defense_theater`), and in the delegated governor ahead of the Harbor. | 1 \| 1 |
 | `culture-faith-reservation` | off (unmeasured) | Enable `culture-faith-reservation` for measurement. | 1 \| 1 |
 | `culture-lane-forecast-2` | off (unmeasured) | Version 2 of the Culture clock forecast: project secular and religious Tourism through each rival's current international modifiers. | 1 \| 2 |
 | `culture-tourism-payback` | off (unmeasured) | Enable `culture-tourism-payback` for measurement. | 1 \| 1 |
+| `decisive-window` | off (unmeasured) | Opt-in gene `decisive-window`; see `Self::decisive_window`. | 1 \| 1 |
 | `denial-nearest-finish` | off (unmeasured) | Opt-in gene `denial-nearest-finish`; see `Self::denial_nearest_finish`. | 1 \| 1 |
 | `denial-needs-a-road` | off (unmeasured) | Opt-in gene `denial-needs-a-road`; see `Self::denial_needs_a_road`. | 1 \| 1 |
 | `denial-outranks-expansion` | off (unmeasured) | A rival close to winning is answered before the lane's expansion rule. | 1 \| 1 |
@@ -223,36 +231,51 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |
 | `first-granary-reserve-2` | off (unmeasured) | Reserve a Granary only when its housing accelerates the next citizen within the construction and growth budget. | 1 \| 3 |
 | `first-granary-reserve-3` | off (unmeasured) | `first-granary-reserve-3`: version one's rule (population within one of housing, no Granary) reaches the delegated city governor too, and an Aqueduct follows the Granary while the city is still housing-bound. | 1 \| 3 |
+| `formations-heed-refusals` | off (unmeasured) | Opt-in gene `formations-heed-refusals`; see `Self::formations_heed_refusals`. | 1 \| 1 |
 | `government-ladder-3` | off (unmeasured) | Choose a government by its remaining civic cost per extra policy slot, reserving time to use the upgrade. | 2 \| 3 |
-| `granary-before-the-army` | off (unmeasured) | The delegated city governor's housing reserve (Granary, else Aqueduct) ahead of the military floor. | 1 \| 1 |
+| `granary-before-the-army` | off (unmeasured) | The delegated city governor's housing reserve (Granary, else Aqueduct) ahead of the military floor. | — \| 2 |
+| `granary-before-the-army-2` | off (unmeasured) | Version 2 of `granary-before-the-army`; see `BasicAi::granary_before_the_army_2`. | — \| 2 |
 | `great-work-completion-value` | off (unmeasured) | Enable `great-work-completion-value` for measurement. | 1 \| 1 |
 | `hostile-memory-3` | off (unmeasured) | Version three also revises stale sightings when their forecast area is fully visible, using only the unit facts recorded at observation. | 1 \| 3 |
 | `housing-research-2` | off (unmeasured) | Research housing that the capped cities can actually build. | 1 \| 2 |
+| `improvement-upgrades-count` | off (unmeasured) | Opt-in gene `improvement-upgrades-count`; see `Self::improvement_upgrades_count`. | 1 \| 1 |
+| `industrial-hub` | off (unmeasured) | One Industrial Zone where its Factory reaches the most cities, and its chain; see `BasicAi::industrial_hub`. | 1 \| 1 |
+| `industry-before-the-army` | off (unmeasured) | The delegated city governor's Industrial Zone, Workshop and Factory ahead of the military floor. | — \| 3 |
+| `industry-before-the-army-2` | off (unmeasured) | Version 2 of `industry-before-the-army`; see `BasicAi::industry_before_the_army_2`. | — \| 3 |
+| `industry-before-the-army-3` | off (unmeasured) | Version 3 of `industry-before-the-army`; see `BasicAi::industry_before_the_army_3`. | — \| 3 |
+| `industry-in-the-district-list` | off (unmeasured) | The Industrial Zone in the delegated governor's district list; see `BasicAi::industry_in_the_district_list`. | 1 \| 1 |
 | `lane-delegates-production` | off (unmeasured) | Until the development half ends, an assigned lane's cities take the unassigned seat's production dispatch. | — \| 2 |
 | `lane-delegates-production-2` | off (unmeasured) | Version two: an assigned lane's cities take the unassigned seat's production dispatch for the whole game. | — \| 2 |
 | `monument-first` | off (unmeasured) | A city's Monument ahead of the military floor and the Settler step in the delegated city governor. | 1 \| 1 |
+| `one-sanctuary` | off (unmeasured) | Opt-in gene `one-sanctuary`; see `Self::one_sanctuary`. | 1 \| 1 |
+| `opening-force-keeps-its-members` | off (unmeasured) | Opt-in gene `opening-force-keeps-its-members`; see `Self::opening_force_keeps_its_members`. | 1 \| 1 |
 | `policy-deck-hysteresis` | off (unmeasured) | The policy deck keeps the maintenance relief the host held at the turn's start and the Amenity repair card while it is what keeps a city content. | — \| 2 |
 | `policy-deck-hysteresis-2` | off (unmeasured) | `policy-deck-hysteresis-2`: version 1, and a held relief stays while the income does not cover its discount, and the emergency's relief may evict a lower-ranked wanted military card. | — \| 2 |
+| `raids-cut-tourism` | off (unmeasured) | Opt-in gene `raids-cut-tourism`; see `Self::raids_cut_tourism`. | 1 \| 1 |
 | `ranged-hp-reserve` | off (unmeasured) | A ranged unit keeps `RANGED_HP_RESERVE` in hand against the lethal pool. | 1 \| 1 |
 | `raze-a-doomed-capture` | off (unmeasured) | Opt-in gene `raze-a-doomed-capture`; see `Self::raze_doomed_capture`. | 1 \| 1 |
 | `reinforce-before-stall` | off (unmeasured) | Enable `reinforce-before-stall` for measurement. | 1 \| 1 |
 | `research-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 1 \| 3 |
+| `runaway-expander-counter` | off (unmeasured) | Opt-in gene `runaway-expander-counter`; see `Self::runaway_expander_counter`. | 1 \| 1 |
 | `settler-before-the-navy` | off (unmeasured) | The delegated city governor's navy step yields to a due Settler. | 1 \| 1 |
 | `settler-detour-stays-near` | off (unmeasured) | `settler-detour-stays-near`: a threat detour's fallback must lie about as close as the site it leaves. | 1 \| 1 |
 | `shared-danger` | off (unmeasured) | Opt-in gene `shared-danger`; see `Self::shared_danger`. | 1 \| 1 |
 | `siege-budget-counts-what-fires` | off (unmeasured) | Opt-in gene `siege-budget-counts-what-fires`; see `Self::siege_budget_counts_what_fires`. | 1 \| 1 |
+| `siege-force-keeps-its-members` | off (unmeasured) | Opt-in gene `siege-force-keeps-its-members`; see `Self::siege_force_keeps_its_members`. | 1 \| 1 |
 | `siege-holds-a-breach` | off (unmeasured) | Opt-in gene `siege-holds-a-breach`; see `Self::siege_holds_a_breach`. | 1 \| 1 |
 | `siege-needs-a-breaker` | off (unmeasured) | Opt-in gene `siege-needs-a-breaker`; see `Self::siege_needs_a_breaker`. | 1 \| 1 |
 | `siege-positive-damage-budget` | off (unmeasured) | Enable `siege-positive-damage-budget` for measurement. | 1 \| 1 |
 | `siege-rally-holds` | off (unmeasured) | Opt-in gene `siege-rally-holds`; see `Self::siege_rally_holds`. | 1 \| 1 |
 | `siege-ranged-floor` | off (unmeasured) | Opt-in gene `siege-ranged-floor`; see `Self::siege_ranged_floor`. | 1 \| 1 |
 | `siege-train-scales-with-walls` | off (unmeasured) | Opt-in gene `siege-train-scales-with-walls`; see `Self::siege_train_scales_with_walls`. | 1 \| 1 |
+| `staging-gun-trusts-its-escort` | off (unmeasured) | Opt-in gene `staging-gun-trusts-its-escort`; see `Self::staging_gun_trusts_its_escort`. | 1 \| 1 |
 | `strategic-deposit-prey` | off (unmeasured) | Opt-in gene `strategic-deposit-prey`; see `Self::strategic_deposit_prey`. | 1 \| 1 |
 | `threatened-city-reserve-2` | off (unmeasured) | V2 reserves the engine's local quote for an available defender in the threatened city. | 1 \| 2 |
 | `tourism-land-reservation` | off (unmeasured) | Enable `tourism-land-reservation` for measurement. | 1 \| 1 |
 | `trade-growth-to-district` | off (unmeasured) | Price route food by the next population-gated district slot. | 1 \| 1 |
 | `trade-production-to-launch` | off (unmeasured) | Price route production by time saved on an active space project. | 1 \| 1 |
 | `treasury-at-work-2-2` | off (unmeasured) | Keep the working reserve and buy the first Builder near local work. | 1 \| 2 |
+| `unique-unit-preference` | off (unmeasured) | Opt-in gene `unique-unit-preference`; see `BasicAi::unique_unit_preference`. | 1 \| 1 |
 | `upgrade-window-campaign` | off (unmeasured) | Enable `upgrade-window-campaign` for measurement. | 1 \| 1 |
 | `upkeep-reserve` | off (unmeasured) | Upgrade passes keep one and a half turns of the army's bill in the treasury instead of a flat 30 Gold at war. | 1 \| 1 |
 | `victory-deadline-budget` | off (unmeasured) | Enable `victory-deadline-budget` for measurement. | 1 \| 1 |

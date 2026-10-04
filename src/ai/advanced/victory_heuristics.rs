@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 /// The science reading at which a Domination army answers a rival's launch
 /// chain: the Moon Landing (`rival_victory_pressure`'s 45).
-const DOMINATION_SCIENCE_COUNTER: i32 = 45;
+pub(super) const DOMINATION_SCIENCE_COUNTER: i32 = 45;
 
 const SCIENCE_VICTORY_TECH_CHAIN: [&str; 5] = [
     "rocketry",
@@ -433,6 +433,10 @@ impl AdvancedAi {
             {
                 clocks.push((rival, launches));
             }
+            // `runaway-expander-counter`: see `advanced/runaway_expander.rs`.
+            if let Some(runaway) = self.runaway_expander_clock(g, pid, rival) {
+                clocks.push((rival, runaway));
+            }
             // `denial-nearest-finish`: a culture race near its finish, read
             // by how soon it ends. See `advanced/denial_nearest_finish.rs`.
             if let Some(culture) = self.nearest_finish_culture_clock(g, rival).filter(|clock| {
@@ -768,10 +772,14 @@ mod tests {
         let plan = science_plan(game.turn);
         ai.advanced_research(&mut game, 0, &plan);
 
-        assert_eq!(
-            game.players[0].research.as_deref(),
-            Some("bronze_working"),
-            "an explicit Science target must clear an unfinished Ancient era before its Rocketry beeline"
+        // Any unfinished Ancient node is the backfill. This used to name
+        // Bronze Working, which won the scorer only because its lookahead
+        // counted other civilizations' Iron Working uniques (the Kongo Shield
+        // Bearer, Hypaspist and Toa); counted honestly, Irrigation edges it.
+        let picked = game.players[0].research.clone().expect("a research pick");
+        assert!(
+            picked != "rocketry" && game.rules.techs[picked.as_str()].era == 0,
+            "an explicit Science target must clear an unfinished Ancient era before its Rocketry beeline, not {picked}"
         );
     }
 

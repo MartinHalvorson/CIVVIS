@@ -1022,6 +1022,35 @@ fn flooded_district_and_building_repairs_wait_for_dry_ground() {
 }
 
 #[test]
+fn a_pillaged_prerequisite_is_repaired_before_the_building_that_needs_it() {
+    let (mut game, city, position) = one_city(144_0205);
+    install_district(&mut game, city, position, "industrial_zone");
+    for building in ["workshop", "factory", "coal_power_plant"] {
+        let city = game.cities.get_mut(&city).unwrap();
+        city.buildings.push(Name::new(building));
+        city.pillaged_buildings.insert(Name::new(building));
+    }
+    let repair = |building: &str| Item::Repair {
+        repair: Name::new(building),
+        pos: position,
+    };
+    // The host walks the chain the same way: in G50 its buildable list held
+    // no Factory repair at turn 144 and offered one at 147, the turn after the
+    // Workshop was repaired.
+    let chain = ["workshop", "factory", "coal_power_plant"];
+    for step in 0..chain.len() {
+        game.query_memo.producible.borrow_mut().clear();
+        let menu = game.producible_items(0, city);
+        for (index, building) in chain.iter().enumerate().skip(step) {
+            let open = index == step;
+            assert_eq!(game.can_produce(0, city, &repair(building)), open, "{building} at step {step}");
+            assert_eq!(menu.contains(&repair(building)), open, "{building} at step {step}");
+        }
+        assert!(game.complete_item(0, city, &repair(chain[step])));
+    }
+}
+
+#[test]
 fn rock_bands_are_faith_bought_and_perform_at_local_venues() {
     let (mut game, city, position) = one_city(crate::rng::fixture_seed("ROCKBAND", 774_407));
     game.players[0].civics.insert(crate::name!("cold_war"));

@@ -520,8 +520,9 @@ pub fn snapshot_from_events_at(
     path: &std::path::Path,
     turn: Option<u32>,
 ) -> std::io::Result<Snapshot> {
-    let raw = std::fs::read_to_string(path)?;
-    let state_line = latest_state_line(&raw, turn);
+    let raw = read_events(path)?;
+    let selected = latest_state_range(&raw, turn);
+    let state_start = selected.map(|((start, _), _)| start);
     // ★★★★ THE MOD WRITES THE TURN'S STATE FIRST AND ITS TILES SECOND.
     //
     // `beginTurn` in the mod is `exportState` then `exportTiles`, so in
@@ -534,41 +535,104 @@ pub fn snapshot_from_events_at(
     // below the selected state still belongs to it when it is the same turn
     // and no later frame than the state's; a later frame's delta stays out
     // (`snapshot_stops_at_the_selected_state_before_a_later_mid_turn_delta`).
-    let board = state_line
-        .and_then(|limit| raw.lines().nth(limit))
-        .and_then(|line| state_from_json(line).ok())
-        .map(|state| (state.turn, state.frame));
+    let board = selected.map(|(_, board)| board);
     // In stream order, so a later chunk's plot wins whichever kind it is;
     // a delta (`CivvisTiles.sweep`) merges without standing for a sweep —
     // see `Snapshot::merge_delta`.
+    let ranges = line_ranges_containing(&raw, "\"tiles\"");
+    // Up to the selected state record every chunk counts (subject to the turn
+    // limit); after it, only the same board's. The first part is the same
+    // prefix for every later request of a growing log, so it is merged once
+    // and kept (`SnapshotPrefix`), and each request clones it and merges only
+    // what is new. Chunks merge in stream order either way.
+    let split = ranges.partition_point(|(start, _)| state_start.is_none_or(|limit| *start <= limit));
+    let (head, tail) = ranges.split_at(split);
+    let generation = events_generation(path, &raw);
     let mut snapshot = Snapshot::default();
-    for (line_number, line) in raw.lines().enumerate() {
-        if !line.contains("\"tiles\"") {
-            continue;
-        }
-        if state_line.is_some_and(|limit| line_number > limit) {
-            let same_board = board.is_some_and(|(board_turn, board_frame)| {
-                serde_json::from_str::<TilesBoardStamp>(line)
-                    .is_ok_and(|stamp| stamp.turn == board_turn && stamp.frame <= board_frame)
-            });
-            if !same_board {
-                continue;
+    let mut done = 0;
+    let mut max_turn = 0;
+    if let Some(generation) = generation {
+        SNAPSHOT_PREFIX.with(|cell| {
+            if let Some(kept) = cell.borrow().as_ref() {
+                let last_kept_start = kept.covered.checked_sub(1);
+                if kept.path == path
+                    && kept.generation == generation
+                    && turn.is_none_or(|limit| kept.max_turn <= limit)
+                    && last_kept_start.is_none_or(|last| state_start.is_none_or(|limit| last <= limit))
+                {
+                    done = head.partition_point(|(start, _)| *start < kept.covered);
+                    snapshot = kept.snapshot.clone();
+                    max_turn = kept.max_turn;
+                }
             }
-        }
-        if let Ok(chunk) = serde_json::from_str::<TilesChunk>(line) {
-            if !chunk.plots.is_empty() && turn.is_none_or(|limit| chunk.turn <= limit) {
-                let is_delta =
-                    serde_json::from_str::<TilesDeltaStamp>(line).is_ok_and(|stamp| stamp.delta);
-                if is_delta {
-                    snapshot.merge_delta(&chunk);
+        });
+    }
+    let mut keep = generation.is_some();
+    for &(start, end) in &head[done..] {
+        if let Ok(chunk) = serde_json::from_str::<TilesChunk>(&raw[start..end]) {
+            if !chunk.plots.is_empty() {
+                if turn.is_none_or(|limit| chunk.turn <= limit) {
+                    merge_chunk(&mut snapshot, &raw[start..end], &chunk);
+                    max_turn = max_turn.max(chunk.turn);
                 } else {
-                    snapshot.merge_sweep(&chunk);
+                    // A later request with a higher limit would merge this
+                    // chunk here; never keep a prefix that skipped it.
+                    keep = false;
                 }
             }
         }
     }
-    apply_finished_improvements(&raw, turn, state_line, &mut snapshot);
+    if keep {
+        if let (Some(generation), Some(&(last, _))) = (generation, head.last()) {
+            SNAPSHOT_PREFIX.with(|cell| {
+                *cell.borrow_mut() = Some(SnapshotPrefix {
+                    path: path.to_path_buf(),
+                    generation,
+                    covered: last + 1,
+                    max_turn,
+                    snapshot: snapshot.clone(),
+                })
+            });
+        }
+    }
+    for &(start, end) in tail {
+        let line = &raw[start..end];
+        let same_board = board.is_some_and(|(board_turn, board_frame)| {
+            serde_json::from_str::<TilesBoardStamp>(line)
+                .is_ok_and(|stamp| stamp.turn == board_turn && stamp.frame <= board_frame)
+        });
+        if !same_board {
+            continue;
+        }
+        if let Ok(chunk) = serde_json::from_str::<TilesChunk>(line) {
+            if !chunk.plots.is_empty() && turn.is_none_or(|limit| chunk.turn <= limit) {
+                merge_chunk(&mut snapshot, line, &chunk);
+            }
+        }
+    }
+    apply_finished_improvements(&raw, turn, state_start, &mut snapshot);
     Ok(snapshot)
+}
+
+/// The merged tiles up to some `tiles` line of the log `read_events` holds:
+/// every chunk starting before byte `covered` has been merged, in order.
+struct SnapshotPrefix {
+    path: std::path::PathBuf,
+    generation: u64,
+    covered: usize,
+    /// The highest chunk turn merged; a request limited below it cannot reuse it.
+    max_turn: u32,
+    snapshot: Snapshot,
+}
+
+/// Merge one parsed `tiles` chunk as a sweep, or as a delta when its line says so.
+fn merge_chunk(snapshot: &mut Snapshot, line: &str, chunk: &TilesChunk) {
+    let is_delta = serde_json::from_str::<TilesDeltaStamp>(line).is_ok_and(|stamp| stamp.delta);
+    if is_delta {
+        snapshot.merge_delta(chunk);
+    } else {
+        snapshot.merge_sweep(chunk);
+    }
 }
 
 // The live reader requests one turn, but late-game logs contain hundreds of
@@ -580,6 +644,21 @@ fn state_line_can_match_turn(line: &str, turn: Option<u32>) -> bool {
     let Some(want) = turn else {
         return true;
     };
+    // ★★★★ SKIP THE SERDE WALK FOR EVERY OTHER TURN'S BOARD.
+    //
+    // The typed header still has to step over the whole record to reach
+    // `turn` — keys are written sorted, so it sits behind `units`, `tiles`,
+    // `players` and the rest — and a live seat asks for one turn out of
+    // hundreds of 100-300 KB state records. Profiled on a t220 frame of
+    // civvis-20261003T164758Z (96 MB events.jsonl): this header walk was 18% of
+    // the decider's CPU, run twice per frame over all ~690 state records.
+    // A record that spells an integer `"turn"` member and never `"turn": <want>`
+    // is another turn's board and is rejected without the walk. Anything the
+    // scan cannot settle — no integer `turn` at all, as in the ambiguous
+    // headers below — still goes through the exact parse, as before.
+    if !turn_may_match(line, want) {
+        return false;
+    }
     #[derive(Deserialize)]
     struct TurnHeader {
         turn: Option<u32>,
@@ -590,15 +669,504 @@ fn state_line_can_match_turn(line: &str, turn: Option<u32>) -> bool {
         .is_none_or(|found| found == want)
 }
 
+/// False only when `line` spells at least one integer `"turn"` member and none
+/// of them is `want`: a record that cannot be turn `want`'s board. True when
+/// the scan cannot tell (no integer `turn` anywhere), so the exact parse still
+/// owns missing, null, string, escaped and duplicate keys. Nesting is ignored.
+fn turn_may_match(line: &str, want: u32) -> bool {
+    turn_may_be_any(line, &[want])
+}
+
+/// [`turn_may_match`] for a set of turns: false only when `line` spells at
+/// least one integer `"turn"` member and none of them is in `turns`. A record
+/// whose top-level `turn` reads as one of `turns` (`as_u64`, or a `u32` field)
+/// must spell it, so a reader that keeps only such records may skip the parse
+/// of everything this rejects.
+pub fn turn_may_be_any(line: &str, turns: &[u32]) -> bool {
+    let bytes = line.as_bytes();
+    let key = "\"turn\"";
+    let wanted: Vec<String> = turns.iter().map(|turn| turn.to_string()).collect();
+    let mut saw_integer = false;
+    // Every occurrence, overlapping included, as the `str::find` walk it
+    // replaces found them; memmem is the SIMD searcher (std's is scalar here).
+    let finder = memchr::memmem::Finder::new(key.as_bytes());
+    let mut from = 0;
+    while let Some(offset) = finder.find(&bytes[from..]) {
+        let found = from + offset;
+        from = found + 1;
+        let mut at = found + key.len();
+        while at < bytes.len() && matches!(bytes[at], b' ' | b'\t' | b'\n' | b'\r') {
+            at += 1;
+        }
+        if at >= bytes.len() || bytes[at] != b':' {
+            continue;
+        }
+        at += 1;
+        while at < bytes.len() && matches!(bytes[at], b' ' | b'\t' | b'\n' | b'\r') {
+            at += 1;
+        }
+        let digits = bytes[at..].iter().take_while(|b| b.is_ascii_digit()).count();
+        if digits == 0 {
+            continue;
+        }
+        let after = bytes.get(at + digits).copied();
+        if after.is_some_and(|b| matches!(b, b'.' | b'e' | b'E')) {
+            continue;
+        }
+        if wanted.iter().any(|want| &bytes[at..at + digits] == want.as_bytes()) {
+            return true;
+        }
+        saw_integer = true;
+    }
+    !saw_integer
+}
+
+// ★★★★ ONE READ PER CHANGE OF THE LOG, AND NO LINE-BY-LINE WALK FOR A RARE EVENT.
+//
+// A live decider frame ran a dozen refusal readers, and each re-read the whole
+// `events.jsonl` (100 MB by turn 200) and split it into lines to test each one
+// for its event name. After the prefilters above that was still ~35% of a
+// t220 frame: 80% of it the line walk, 20% the read. `read_events` keeps the
+// log per thread and, while the file only grows, reads just the appended
+// bytes; `lines_containing` hands each reader only the lines that mention its
+// event, found by testing 64 KB blocks at once. Both answer exactly what the
+// direct read and `raw.lines().filter(|l| l.contains(needle))` answered.
+thread_local! {
+    static EVENTS_READ: std::cell::RefCell<Option<EventsRead>> = const { std::cell::RefCell::new(None) };
+    static EVENTS_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static SNAPSHOT_PREFIX: std::cell::RefCell<Option<SnapshotPrefix>> = const { std::cell::RefCell::new(None) };
+}
+
+struct EventsRead {
+    path: std::path::PathBuf,
+    text: std::rc::Rc<String>,
+    /// Bumped on every full read; the same while the log only grows, so
+    /// anything derived from a prefix of the text stays valid under it.
+    generation: u64,
+    /// Per needle: the byte ranges of the lines that contain it, and how far
+    /// into `text` they were looked for. Kept while the log only grows.
+    hits: std::collections::HashMap<String, NeedleHits>,
+}
+
+struct NeedleHits {
+    scanned: usize,
+    lines: Vec<(usize, usize)>,
+}
+
+/// The run log at `path`, read whole — from a per-thread copy when the file has
+/// only grown since (its old tail is re-read and must match byte for byte), so
+/// a persistent reader pays for the appended bytes alone. A shrunk, replaced or
+/// unreadable file is read afresh. Bytes after the last newline are a line still
+/// being written; they are left for the next read on the incremental path.
+pub fn read_events(path: &std::path::Path) -> std::io::Result<std::rc::Rc<String>> {
+    use std::io::{Read, Seek, SeekFrom};
+    const TAIL: u64 = 4096;
+    let len = std::fs::metadata(path)?.len();
+    let cached = EVENTS_READ.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .filter(|read| read.path == path)
+            .map(|read| read.text.clone())
+    });
+    if let Some(text) = cached {
+        let have = text.len() as u64;
+        if len == have {
+            // Same size: unchanged only if the tail still matches.
+            let mut file = std::fs::File::open(path)?;
+            let from = have.saturating_sub(TAIL);
+            file.seek(SeekFrom::Start(from))?;
+            let mut tail = Vec::with_capacity((have - from) as usize);
+            file.by_ref().take(have - from).read_to_end(&mut tail)?;
+            if tail == text.as_bytes()[from as usize..] {
+                return Ok(text);
+            }
+        } else if len > have && text.ends_with('\n') {
+            let mut file = std::fs::File::open(path)?;
+            let from = have.saturating_sub(TAIL);
+            file.seek(SeekFrom::Start(from))?;
+            let mut bytes = Vec::with_capacity((len - from) as usize);
+            file.by_ref().take(len - from).read_to_end(&mut bytes)?;
+            let split = (have - from) as usize;
+            if bytes.len() >= split && bytes[..split] == text.as_bytes()[from as usize..] {
+                let added = &bytes[split..];
+                let keep = added.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
+                if let Ok(more) = std::str::from_utf8(&added[..keep]) {
+                    let mut grown = String::with_capacity(text.len() + more.len());
+                    grown.push_str(&text);
+                    grown.push_str(more);
+                    let grown = std::rc::Rc::new(grown);
+                    EVENTS_READ.with(|cell| {
+                        let mut slot = cell.borrow_mut();
+                        // The old text is a prefix of the new one, so every
+                        // line found in it is still where it was.
+                        let (hits, generation) = slot
+                            .take()
+                            .map(|read| (read.hits, read.generation))
+                            .unwrap_or_default();
+                        *slot = Some(EventsRead {
+                            path: path.to_path_buf(),
+                            text: grown.clone(),
+                            generation,
+                            hits,
+                        })
+                    });
+                    return Ok(grown);
+                }
+            }
+        }
+    }
+    let text = std::rc::Rc::new(std::fs::read_to_string(path)?);
+    let generation = EVENTS_GENERATION.with(|counter| {
+        counter.set(counter.get() + 1);
+        counter.get()
+    });
+    EVENTS_READ.with(|cell| {
+        *cell.borrow_mut() = Some(EventsRead {
+            path: path.to_path_buf(),
+            text: text.clone(),
+            generation,
+            hits: Default::default(),
+        })
+    });
+    Ok(text)
+}
+
+/// The generation of the log `read_events` holds for `path`, when `raw` is
+/// that very text; None otherwise.
+fn events_generation(path: &std::path::Path, raw: &str) -> Option<u64> {
+    EVENTS_READ.with(|cell| {
+        cell.borrow().as_ref().and_then(|read| {
+            (read.path == path
+                && std::ptr::eq(read.text.as_ptr(), raw.as_ptr())
+                && read.text.len() == raw.len())
+            .then_some(read.generation)
+        })
+    })
+}
+
+/// `raw.lines().filter(|line| line.contains(needle))`, in order, each line
+/// once. Found with `memchr::memmem` over the buffer, cutting the enclosing
+/// line around each hit; when `raw` is the log `read_events` is holding, the
+/// lines found are kept and only bytes appended since are searched again, so a
+/// persistent decider pays for each line once in the life of the run rather
+/// than once per reader per frame. `str::lines` strips a `\r` only before a
+/// `\n`; so does this.
+pub(crate) fn lines_containing<'a>(raw: &'a str, needle: &str) -> std::vec::IntoIter<&'a str> {
+    line_ranges_containing(raw, needle)
+        .into_iter()
+        .map(|(start, end)| &raw[start..end])
+        .collect::<Vec<_>>()
+        .into_iter()
+}
+
+/// [`lines_containing`] as byte ranges into `raw`, for readers that also need
+/// where a line sits (its order against a selected state record).
+pub fn line_ranges_containing(raw: &str, needle: &str) -> Vec<(usize, usize)> {
+    EVENTS_READ
+        .with(|cell| {
+            let mut slot = cell.borrow_mut();
+            let read = slot.as_mut()?;
+            if !std::ptr::eq(read.text.as_ptr(), raw.as_ptr()) || read.text.len() != raw.len() {
+                return None;
+            }
+            let found = read
+                .hits
+                .entry(needle.to_string())
+                .or_insert_with(|| NeedleHits { scanned: 0, lines: Vec::new() });
+            if found.scanned < raw.len() {
+                found.scanned = line_hits(raw, found.scanned, needle, &mut found.lines);
+            }
+            Some(found.lines.clone())
+        })
+        .unwrap_or_else(|| {
+            let mut lines = Vec::new();
+            line_hits(raw, 0, needle, &mut lines);
+            lines
+        })
+}
+
+/// Append to `out` the byte range of every line of `raw[from..]` containing
+/// `needle` (`from` is the start of a line); returns how far it looked.
+fn line_hits(raw: &str, from: usize, needle: &str, out: &mut Vec<(usize, usize)>) -> usize {
+    let bytes = raw.as_bytes();
+    if needle.is_empty() {
+        // Every line; `str::lines` yields no empty line after a final newline.
+        let mut start = from;
+        for line in raw[from..].split_inclusive('\n') {
+            let mut end = start + line.len();
+            if line.ends_with('\n') {
+                end -= 1;
+                if bytes[start..end].ends_with(b"\r") {
+                    end -= 1;
+                }
+            }
+            out.push((start, end));
+            start += line.len();
+        }
+        return bytes.len();
+    }
+    let finder = memchr::memmem::Finder::new(needle.as_bytes());
+    let mut at = from;
+    while at <= bytes.len() {
+        let Some(offset) = finder.find(&bytes[at..]) else { break };
+        let hit = at + offset;
+        let start = memchr::memrchr(b'\n', &bytes[..hit]).map_or(0, |i| i + 1);
+        let newline = memchr::memchr(b'\n', &bytes[hit..]).map(|i| hit + i);
+        let mut end = newline.unwrap_or(bytes.len());
+        at = end + 1;
+        if newline.is_some() && bytes[start..end].ends_with(b"\r") {
+            end -= 1;
+            if !raw[start..end].contains(needle) {
+                continue;
+            }
+        }
+        out.push((start, end));
+    }
+    bytes.len()
+}
+
+/// Whether `line` could hold `<key>: <literal>` as one JSON member.
+///
+/// A cheap NECESSARY condition for a serde check that follows it, never a
+/// replacement: every occurrence of `key` (quoted, e.g. `"\"kind\""`) is
+/// tested for optional JSON whitespace, a colon, optional whitespace and then
+/// `literal` (`"\"combat\""`, or a number's digits), and a numeric literal
+/// must not run on into more of a number. Nesting is ignored, so a nested
+/// member also passes — the caller's parse decides. What it buys: a substring
+/// such as `"combat"` also occurs in every state record (unit strength keys),
+/// and a 300 KB record is not parsed to learn that it is not a combat event.
+pub(crate) fn json_may_have_value(line: &str, key: &str, literal: &str) -> bool {
+    let bytes = line.as_bytes();
+    let numeric = literal.as_bytes().last().is_some_and(|b| b.is_ascii_digit());
+    // Every occurrence, overlapping included, as the `str::find` walk it
+    // replaces found them; memmem is the SIMD searcher (std's is scalar here).
+    let finder = memchr::memmem::Finder::new(key.as_bytes());
+    let mut from = 0;
+    while let Some(offset) = finder.find(&bytes[from..]) {
+        let found = from + offset;
+        from = found + 1;
+        let mut at = found + key.len();
+        while at < bytes.len() && matches!(bytes[at], b' ' | b'\t' | b'\n' | b'\r') {
+            at += 1;
+        }
+        if at >= bytes.len() || bytes[at] != b':' {
+            continue;
+        }
+        at += 1;
+        while at < bytes.len() && matches!(bytes[at], b' ' | b'\t' | b'\n' | b'\r') {
+            at += 1;
+        }
+        if !bytes[at..].starts_with(literal.as_bytes()) {
+            continue;
+        }
+        let after = bytes.get(at + literal.len()).copied();
+        if numeric && after.is_some_and(|b| b.is_ascii_digit() || matches!(b, b'.' | b'e' | b'E')) {
+            continue;
+        }
+        return true;
+    }
+    false
+}
+
+#[cfg(test)]
+mod log_scan_prefilter_tests {
+    use super::{json_may_have_value, state_line_can_match_turn, turn_may_match};
+
+    #[test]
+    fn a_kind_matches_with_or_without_spaces() {
+        assert!(json_may_have_value(r#"{"kind": "combat", "turn": 3}"#, "\"kind\"", "\"combat\""));
+        assert!(json_may_have_value(r#"{"kind":"combat"}"#, "\"kind\"", "\"combat\""));
+        assert!(json_may_have_value("{\"kind\" :\t\"combat\"}", "\"kind\"", "\"combat\""));
+    }
+
+    #[test]
+    fn the_word_alone_is_not_the_kind() {
+        // Every exported unit carries a `combat` strength; a state record must
+        // not look like a combat event to the prefilter.
+        let state = r#"{"kind": "state", "turn": 9, "units": [{"combat": 20, "kind": "UNIT_WARRIOR"}]}"#;
+        assert!(!json_may_have_value(state, "\"kind\"", "\"combat\""));
+        assert!(!json_may_have_value(r#"{"label": "kind", "x": "combat"}"#, "\"kind\"", "\"combat\""));
+    }
+
+    #[test]
+    fn a_turn_number_must_end_where_it_ends() {
+        let line = r#"{"kind": "state", "turn": 220, "utc": "x"}"#;
+        assert!(json_may_have_value(line, "\"turn\"", "220"));
+        assert!(!json_may_have_value(line, "\"turn\"", "22"));
+        assert!(!json_may_have_value(line, "\"turn\"", "2"));
+        assert!(!json_may_have_value(r#"{"turn": 2201}"#, "\"turn\"", "220"));
+        assert!(!json_may_have_value(r#"{"turn": 220.5}"#, "\"turn\"", "220"));
+        assert!(json_may_have_value(r#"{"turn":220}"#, "\"turn\"", "220"));
+        // A nested member passes: the exact parse behind the prefilter decides.
+        assert!(json_may_have_value(r#"{"turn": 5, "deal": {"turn": 220}}"#, "\"turn\"", "220"));
+    }
+
+    #[test]
+    fn the_turn_prefilter_only_rejects_what_the_header_would() {
+        let other = r#"{"kind": "state", "turn": 219, "units": []}"#;
+        let ours = r#"{"kind": "state", "turn": 220, "units": []}"#;
+        let nested = r#"{"kind": "state", "deals": [{"turn": 220}], "turn": 219}"#;
+        assert!(!state_line_can_match_turn(other, Some(220)));
+        assert!(state_line_can_match_turn(ours, Some(220)));
+        // Passes the prefilter, then the exact header rejects it.
+        assert!(!state_line_can_match_turn(nested, Some(220)));
+        assert!(state_line_can_match_turn(other, None));
+    }
+
+    #[test]
+    fn block_search_yields_exactly_the_filtered_lines() {
+        use super::lines_containing;
+        // Several 64 KB blocks, a needle at a block edge, CRLF endings, a long
+        // line spanning blocks, a repeated needle on one line, no final newline.
+        let mut raw = String::new();
+        for i in 0..6000 {
+            match i % 997 {
+                0 => raw.push_str(&format!("{{\"kind\": \"build_no_plot\", \"i\": {i}}}\r\n")),
+                1 => raw.push_str(&format!("{}build_no_plot build_no_plot\n", "x".repeat(70_000))),
+                _ => raw.push_str(&format!("{{\"kind\": \"await\", \"polls\": {i}}}\n")),
+            }
+        }
+        raw.push_str("tail build_no_plot");
+        for needle in ["build_no_plot", "await", "never there", "\"i\": 1994}"] {
+            let want: Vec<&str> = raw.lines().filter(|line| line.contains(needle)).collect();
+            let got: Vec<&str> = lines_containing(&raw, needle).collect();
+            assert_eq!(got, want, "{needle}");
+        }
+        assert_eq!(lines_containing("", "x").count(), 0);
+    }
+
+    #[test]
+    fn the_kept_lines_of_a_growing_log_match_a_fresh_filter() {
+        use super::{lines_containing, read_events};
+        let dir = std::env::temp_dir().join(format!("civvis-line-hits-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("events.jsonl");
+        let check = |needle: &str| {
+            let text = read_events(&path).unwrap();
+            let want: Vec<&str> = text.lines().filter(|l| l.contains(needle)).collect();
+            let got: Vec<&str> = lines_containing(&text, needle).collect();
+            assert_eq!(got, want, "{needle}");
+        };
+        std::fs::write(&path, "a build_no_plot\nb\nc build_no_plot\r\n").unwrap();
+        check("build_no_plot");
+        check("b");
+        // Appended lines are searched; kept ones are not searched again.
+        std::fs::write(&path, "a build_no_plot\nb\nc build_no_plot\r\nd\ne build_no_plot\n").unwrap();
+        check("build_no_plot");
+        check("b");
+        check("");
+        // A replaced file drops what was kept.
+        std::fs::write(&path, "zz build_no_plot\n").unwrap();
+        check("build_no_plot");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_kept_tile_prefix_answers_like_a_cold_read() {
+        use super::{snapshot_from_events_at, EVENTS_READ, SNAPSHOT_PREFIX};
+        let forget = || {
+            EVENTS_READ.with(|cell| *cell.borrow_mut() = None);
+            SNAPSHOT_PREFIX.with(|cell| *cell.borrow_mut() = None);
+        };
+        let dir = std::env::temp_dir().join(format!("civvis-tile-prefix-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("events.jsonl");
+        let tiles = |turn: u32, frame: u32, delta: bool, x: i32| {
+            format!(
+                r#"{{"kind": "tiles", "turn": {turn}, "frame": {frame}, "delta": {delta}, "width": 8, "height": 8, "plots": [{{"x": {x}, "y": 1, "t": "TERRAIN_GRASS"}}]}}"#
+            )
+        };
+        let state = |turn: u32, frame: u32| format!(r#"{{"kind": "state", "turn": {turn}, "frame": {frame}}}"#);
+        let mut log = vec![state(1, 0), tiles(1, 0, false, 1), state(2, 0), tiles(2, 0, true, 2)];
+        let check = |log: &Vec<String>, turn: u32| {
+            std::fs::write(&path, log.join("\n") + "\n").unwrap();
+            let warm = format!("{:?}", snapshot_from_events_at(&path, Some(turn)).unwrap());
+            forget();
+            let cold = format!("{:?}", snapshot_from_events_at(&path, Some(turn)).unwrap());
+            assert_eq!(warm, cold, "turn {turn} after {} lines", log.len());
+            // Warm the caches again the way a persistent decider holds them.
+            let _ = snapshot_from_events_at(&path, Some(turn));
+        };
+        check(&log, 2);
+        log.extend([state(2, 1), tiles(2, 1, true, 3)]);
+        check(&log, 2);
+        log.extend([state(3, 0), tiles(3, 0, false, 4), tiles(3, 0, true, 5)]);
+        check(&log, 3);
+        // A lower limit after a higher one must not reuse what it cannot see.
+        check(&log, 2);
+        check(&log, 3);
+        log.extend([state(4, 0), tiles(4, 0, true, 6), state(4, 1), tiles(4, 1, true, 7)]);
+        check(&log, 4);
+        forget();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_cached_log_reads_like_a_fresh_one() {
+        use super::read_events;
+        let dir = std::env::temp_dir().join(format!("civvis-read-events-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("events.jsonl");
+        let fresh = |p: &std::path::Path| std::fs::read_to_string(p).unwrap();
+        std::fs::write(&path, "a\n").unwrap();
+        assert_eq!(*read_events(&path).unwrap(), fresh(&path));
+        // Appended whole lines: only the new bytes are read, same answer.
+        std::fs::write(&path, "a\nb\nc\n").unwrap();
+        assert_eq!(*read_events(&path).unwrap(), fresh(&path));
+        // A line still being written stays out until its newline lands.
+        std::fs::write(&path, "a\nb\nc\nd").unwrap();
+        assert_eq!(*read_events(&path).unwrap(), "a\nb\nc\n");
+        std::fs::write(&path, "a\nb\nc\nd\n").unwrap();
+        assert_eq!(*read_events(&path).unwrap(), fresh(&path));
+        // Replaced at the same length, shrunk, or replaced longer: read afresh.
+        std::fs::write(&path, "A\nB\nC\nD\n").unwrap();
+        assert_eq!(*read_events(&path).unwrap(), fresh(&path));
+        std::fs::write(&path, "z\n").unwrap();
+        assert_eq!(*read_events(&path).unwrap(), fresh(&path));
+        std::fs::write(&path, "y\nlonger than before\n").unwrap();
+        assert_eq!(*read_events(&path).unwrap(), fresh(&path));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn what_the_scan_cannot_settle_still_reaches_the_parser() {
+        for line in [
+            r#"{"kind":"state"}"#,
+            r#"{"kind":"state","turn":null}"#,
+            r#"{"kind":"state","turn":"7"}"#,
+            r#"{"kind":"state","turn":7.0}"#,
+            r#"{"kind":"state","tu\u0072n":7}"#,
+        ] {
+            assert!(turn_may_match(line, 7), "{line}");
+        }
+        assert!(!turn_may_match(r#"{"kind":"state","turn":8}"#, 7));
+        assert!(!turn_may_match(r#"{"kind":"state","turn":70}"#, 7));
+        assert!(turn_may_match(r#"{"kind":"state","turn":8,"turn":7}"#, 7));
+        use super::turn_may_be_any;
+        assert!(turn_may_be_any(r#"{"kind":"combat","turn":12}"#, &[11, 12]));
+        assert!(!turn_may_be_any(r#"{"kind":"combat","turn":13}"#, &[11, 12]));
+        assert!(turn_may_be_any(r#"{"kind":"combat","turn":-3}"#, &[11, 12]));
+        assert!(!turn_may_be_any(r#"{"kind":"combat","turn":18446744073709551616}"#, &[11]));
+    }
+}
+
 /// The line at which [`state_from_events`] selects its state.
 ///
 /// State selection is newest-wins for a turn, and highest-turn-wins when no
 /// turn was requested. Keeping the same rule here makes a snapshot and a state
 /// share one exact point in the append-only event stream.
+#[cfg(test)]
 fn latest_state_line(raw: &str, turn: Option<u32>) -> Option<usize> {
-    let mut best: Option<(u32, usize)> = None;
-    for (line_number, line) in raw.lines().enumerate() {
-        if !line.contains("\"state\"") || !state_line_can_match_turn(line, turn) {
+    latest_state_range(raw, turn).map(|((start, _), _)| raw[..start].matches('\n').count())
+}
+
+/// The byte range of the state record [`state_from_events`] selects, and its
+/// `(turn, frame)`; found among the lines naming `"state"` only.
+fn latest_state_range(raw: &str, turn: Option<u32>) -> Option<((usize, usize), (u32, u32))> {
+    let mut best: Option<(u32, (usize, usize), u32)> = None;
+    for (start, end) in line_ranges_containing(raw, "\"state\"") {
+        let line = &raw[start..end];
+        if !state_line_can_match_turn(line, turn) {
             continue;
         }
         let Ok(state) = state_from_json(line) else {
@@ -609,13 +1177,13 @@ fn latest_state_line(raw: &str, turn: Option<u32>) -> Option<usize> {
         }
         if best
             .as_ref()
-            .map(|(best_turn, _)| state.turn >= *best_turn)
+            .map(|(best_turn, _, _)| state.turn >= *best_turn)
             .unwrap_or(true)
         {
-            best = Some((state.turn, line_number));
+            best = Some((state.turn, (start, end), state.frame));
         }
     }
-    best.map(|(_, line_number)| line_number)
+    best.map(|(turn, range, frame)| (range, (turn, frame)))
 }
 
 /// Fold `improved` events onto the assembled map, so a finished improvement is
@@ -648,16 +1216,14 @@ fn latest_state_line(raw: &str, turn: Option<u32>) -> Option<usize> {
 fn apply_finished_improvements(
     raw: &str,
     turn: Option<u32>,
-    state_line: Option<usize>,
+    state_start: Option<usize>,
     snapshot: &mut Snapshot,
 ) {
-    for (line_number, line) in raw.lines().enumerate() {
-        if state_line.is_some_and(|limit| line_number > limit) {
+    for (start, end) in line_ranges_containing(raw, "\"improved\"") {
+        if state_start.is_some_and(|limit| start > limit) {
             break;
         }
-        if !line.contains("\"improved\"") {
-            continue;
-        }
+        let line = &raw[start..end];
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -3841,11 +4407,12 @@ pub struct StateSnapshot {
     /// this field without the attribute took a replay from 4,339 orders to 0.
     #[serde(default)]
     pub refused_promotions: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
-    /// Strikes the host refused THIS TURN, as `(unit, x, y)` in Civilization VI
+    /// Non-air strikes the host refused THIS TURN, as `(unit, x, y)` in Civilization VI
     /// ids and offset plots, from `range_attack_refused` and `war_refused`.
     /// Per turn, not cumulative: a shot the host refused for line of sight last
     /// turn may be open after a move, and a war refusal is answered by the
     /// diplomacy arm, not by never striking that plot again.
+    /// Air missions use the orders bridge's repeated-refusal cooldown instead.
     /// See `Game::blocked_strikes`.
     ///
     /// ⚠ `#[serde(default)]` is load-bearing here for the same reason as above.
@@ -6350,23 +6917,38 @@ pub fn state_from_json(line: &str) -> serde_json::Result<StateSnapshot> {
 }
 
 pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<StateSnapshot> {
-    let raw = std::fs::read_to_string(path).ok()?;
+    let raw = read_events(path).ok()?;
     let mut best: Option<StateSnapshot> = None;
     let mut deaths = host_deaths::HostDeaths::default();
     // Identity rides in the `seat` event, which is emitted once at startup rather
     // than every turn, so it is collected separately and merged into whichever
     // state wins. Newest-wins here too: a run that reloads re-emits it.
     let mut seat: Option<Seat> = None;
-    for line in raw.lines() {
-        deaths.observe(line);
-        if line.contains("\"seat\"") {
+    // Only a line naming `"combat"`, `"seat"` or `"state"` can do anything in
+    // this loop (each branch below starts with that test), so walk just those
+    // lines, in file order, instead of every line of a 100 MB log per frame.
+    const COMBAT: u8 = 1;
+    const SEAT: u8 = 2;
+    const STATE: u8 = 4;
+    let mut marked: std::collections::BTreeMap<(usize, usize), u8> = Default::default();
+    for (needle, flag) in [("\"combat\"", COMBAT), ("\"seat\"", SEAT), ("\"state\"", STATE)] {
+        for range in line_ranges_containing(&raw, needle) {
+            *marked.entry(range).or_default() |= flag;
+        }
+    }
+    for ((start, end), flags) in marked {
+        let line = &raw[start..end];
+        if flags & COMBAT != 0 {
+            deaths.observe(line);
+        }
+        if flags & SEAT != 0 {
             if let Ok(found) = serde_json::from_str::<Seat>(line) {
                 if !found.civ.is_empty() {
                     seat = Some(found);
                 }
             }
         }
-        if !line.contains("\"state\"") || !state_line_can_match_turn(line, turn) {
+        if flags & STATE == 0 || !state_line_can_match_turn(line, turn) {
             continue;
         }
         let Ok(mut state) = state_from_json(line) else {
@@ -6612,6 +7194,36 @@ fn civvis_node_name<T>(
             "american_rough_rider" => Some("rough_rider"),
             "vietnamese_voi_chien" => Some("voi_chien"),
             "lahore_nihang" => Some("nihang"),
+            "arabian_mamluk" => Some("mamluk"),
+            "babylonian_sabum_kibittum" => Some("sabum_kibittum"),
+            "brazilian_minas_geraes" => Some("minas_geraes"),
+            "byzantine_dromon" => Some("dromon"),
+            "canada_mountie" => Some("mountie"),
+            "cree_okihtcitaw" => Some("okihtcitaw"),
+            "norwegian_longship" => Some("viking_longship"),
+            "english_seadog" => Some("sea_dog"),
+            "english_redcoat" => Some("redcoat"),
+            "french_garde_imperiale" => Some("garde_imperiale"),
+            "georgian_khevsureti" => Some("khevsureti"),
+            "german_uboat" => Some("u_boat"),
+            "hungary_huszar" => Some("huszar"),
+            "hungary_black_army" => Some("black_army"),
+            "inca_warakaq" => Some("warakaq"),
+            "indonesian_jong" => Some("jong"),
+            "khmer_domrey" => Some("domrey"),
+            "korean_hwacha" => Some("hwacha"),
+            "macedonian_hetairoi" => Some("hetairoi"),
+            "mapuche_malon_raider" => Some("malon_raider"),
+            "mayan_hulche" => Some("hulche"),
+            "norwegian_berserker" => Some("berserker"),
+            "ottoman_barbary_corsair" => Some("barbary_corsair"),
+            "suleiman_janissary" => Some("janissary"),
+            "persian_immortal" => Some("immortal"),
+            "scottish_highlander" => Some("highlander"),
+            "spanish_conquistador" => Some("conquistador"),
+            "sweden_carolean" => Some("carolean"),
+            "zulu_impi" => Some("impi"),
+            "american_p51" => Some("p51_mustang"),
             "antiair_gun" => Some("anti_air_gun"),
             _ => None,
         };
@@ -6752,16 +7364,18 @@ fn civvis_unit_name(civ6: &str) -> String {
         // Firaxis retained Poland's implementation id after the unit's display
         // name became Winged Hussar.
         "polish_hussar" => "winged_hussar".to_string(),
-        // These two unique unit specifications are still absent from CIVVIS.
-        // Firaxis's own UnitReplaces table names their exact stock role, which
-        // is preferable to deleting a visible hostile from the board entirely.
-        "scottish_highlander" => "ranger".to_string(),
-        "korean_hwacha" => "field_cannon".to_string(),
-        // Georgia's Khevsureti replaces Man-at-Arms. The live export does not
-        // include `base` or `class` for this rival unit, so the generic fallback
-        // cannot recover it; keep the hostile on the threat board as its stock
-        // role (the unique hill bonus is not modeled).
-        "georgian_khevsureti" => "man_at_arms".to_string(),
+        // Modeled since the unique-unit roster was completed from the shipped
+        // database (docs/DECISIVE_WINDOWS.md §6). These three used to stand in
+        // as their stock role; the Khevsureti's live export still carries no
+        // `base` or `class`, so its explicit spelling stays here.
+        "scottish_highlander" => "highlander".to_string(),
+        "korean_hwacha" => "hwacha".to_string(),
+        "georgian_khevsureti" => "khevsureti".to_string(),
+        // Firaxis runs these nouns together, CIVVIS spells them out, and the
+        // P-51 keeps its name: no qualifier-stripping can find them.
+        "english_seadog" => "sea_dog".to_string(),
+        "german_uboat" => "u_boat".to_string(),
+        "american_p51" => "p51_mustang".to_string(),
         _ => base,
     }
 }
@@ -7057,13 +7671,10 @@ fn refusals_of_kind_through(
     turn: Option<u32>,
 ) -> Vec<(crate::Pos, Option<String>)> {
     let mut refused = Vec::new();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return refused;
     };
-    for line in raw.lines() {
-        if !line.contains(kind) {
-            continue;
-        }
+    for line in lines_containing(&raw, kind) {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -7153,13 +7764,10 @@ fn refused_promotions_through(
 ) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
     let mut refused: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> =
         Default::default();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return refused;
     };
-    for line in raw.lines() {
-        if !line.contains("promotion_refused") {
-            continue;
-        }
+    for line in lines_containing(&raw, "promotion_refused") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -7189,7 +7797,7 @@ fn refused_promotions_through(
     refused
 }
 
-/// Strikes the host refused on exactly `turn`, keyed by Civilization VI unit id
+/// Non-air strikes the host refused on exactly `turn`, keyed by Civilization VI unit id
 /// and the offset plot they were aimed at.
 ///
 /// ★★★ READ FROM TWO EVENTS THE MOD HAS EMITTED FOR MONTHS AND NOTHING IN RUST
@@ -7206,7 +7814,7 @@ fn refused_strikes_on(
     turn: u32,
 ) -> std::collections::BTreeSet<(i64, i32, i32)> {
     let mut refused = std::collections::BTreeSet::new();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return refused;
     };
     for line in raw.lines() {
@@ -7220,6 +7828,13 @@ fn refused_strikes_on(
             event.get("kind").and_then(|k| k.as_str()),
             Some("range_attack_refused" | "war_refused")
         ) {
+            continue;
+        }
+        // A first AIR_ATTACK refusal can succeed later in the SAME turn:
+        // native 060034 t196 Bomber9306136 at33,16 was refused then hit.
+        // The orders bridge supplies exact repeated-refusal air cooldowns;
+        // do not turn this raw telemetry into a single-refusal blacklist.
+        if event.get("verb").and_then(|value| value.as_str()) == Some("AIR_ATTACK") {
             continue;
         }
         if event.get("turn").and_then(|value| value.as_u64()) != Some(u64::from(turn)) {
@@ -7253,13 +7868,10 @@ fn host_previews_on(
     turn: u32,
 ) -> std::collections::BTreeMap<(i64, i32, i32, String), crate::game::HostStrikePreview> {
     let mut previews = std::collections::BTreeMap::new();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return previews;
     };
-    for line in raw.lines() {
-        if !line.contains("\"preview\"") {
-            continue;
-        }
+    for line in lines_containing(&raw, "\"preview\"") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -7332,13 +7944,10 @@ fn refused_trade_routes_through(
     turn: Option<u32>,
 ) -> std::collections::BTreeSet<(crate::Pos, crate::Pos)> {
     let mut seen: std::collections::BTreeMap<(crate::Pos, crate::Pos), usize> = Default::default();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return Default::default();
     };
-    for line in raw
-        .lines()
-        .filter(|line| line.contains("trade_route_refused"))
-    {
+    for line in lines_containing(&raw, "trade_route_refused") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -8191,10 +8800,10 @@ fn host_unavailable_wonders_through(
     turn: Option<u32>,
 ) -> std::collections::BTreeSet<String> {
     let mut unavailable = std::collections::BTreeSet::new();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return unavailable;
     };
-    for line in raw.lines().filter(|line| line.contains("build_no_plot")) {
+    for line in lines_containing(&raw, "build_no_plot") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -8254,7 +8863,7 @@ fn host_sites_through(
     field: &str,
     prefix: &str,
 ) -> BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>> {
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return BTreeMap::new();
     };
     let oldest = current_turn.saturating_sub(PRODUCTION_REFUSAL_TTL);
@@ -8262,7 +8871,7 @@ fn host_sites_through(
     // plots it named, if it named any.
     type Newest = BTreeMap<(i64, String), (u64, Option<BTreeSet<crate::Pos>>)>;
     let mut newest: Newest = BTreeMap::new();
-    for line in raw.lines().filter(|line| line.contains("build_no_plot")) {
+    for line in lines_containing(&raw, "build_no_plot") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -8334,13 +8943,10 @@ fn refused_no_plot_through(
 ) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
     let mut refused: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> =
         Default::default();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return refused;
     };
-    for line in raw.lines() {
-        if !line.contains("build_no_plot") {
-            continue;
-        }
+    for line in lines_containing(&raw, "build_no_plot") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -8463,14 +9069,11 @@ fn recent_host_item_refusals(
 ) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
     let mut refused: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> =
         Default::default();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return refused;
     };
     let oldest = current_turn.saturating_sub(PRODUCTION_REFUSAL_TTL);
-    for line in raw.lines() {
-        if !line.contains(event_kind) {
-            continue;
-        }
+    for line in lines_containing(&raw, event_kind) {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -8844,13 +9447,10 @@ fn refused_policies_through(
     turn: Option<u32>,
 ) -> std::collections::BTreeSet<String> {
     let mut refused: std::collections::BTreeSet<String> = Default::default();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return refused;
     };
-    for line in raw.lines() {
-        if !line.contains("obsolete_") {
-            continue;
-        }
+    for line in lines_containing(&raw, "obsolete_") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -8892,13 +9492,10 @@ fn refused_pantheons_through(
     turn: Option<u32>,
 ) -> std::collections::BTreeSet<String> {
     let mut refused: std::collections::BTreeSet<String> = Default::default();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return refused;
     };
-    for line in raw.lines() {
-        if !line.contains("taken_BELIEF_") {
-            continue;
-        }
+    for line in lines_containing(&raw, "taken_BELIEF_") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -9056,7 +9653,7 @@ pub fn state_value_from_events(
     path: &std::path::Path,
     turn: Option<u32>,
 ) -> Option<serde_json::Value> {
-    let raw = std::fs::read_to_string(path).ok()?;
+    let raw = read_events(path).ok()?;
     let mut best: Option<serde_json::Value> = None;
     let mut seat: Option<serde_json::Value> = None;
     for line in raw.lines() {
@@ -14992,3 +15589,6 @@ mod war_type_permission_tests;
 
 #[cfg(test)]
 mod research_quote_tests;
+
+#[cfg(test)]
+mod air_refusal_tests;

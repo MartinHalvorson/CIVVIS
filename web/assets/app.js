@@ -324,23 +324,29 @@ function unitHasHealth(unit) {
 const CIV6_UNIT_ICON_TYPES = [
   "aircraft_carrier", "anti_air_gun", "apostle", "archaeologist", "archer",
   "artillery", "at_crew", "barbarian_horse_archer", "barbarian_horseman",
-  "battering_ram", "battleship", "biplane",
-  "bireme", "bombard", "bomber", "builder", "caravel", "catapult", "cavalry",
-  "cossack", "courser", "crossbowman", "crouching_tiger", "cuirassier", "destroyer",
-  "drone", "eagle_warrior", "field_cannon", "fighter", "frigate", "gaesatae", "galley",
-  "giant_death_robot", "guru", "heavy_chariot", "helicopter", "hoplite",
-  "horseman", "hypaspist", "infantry", "inquisitor", "ironclad", "jet_bomber",
-  "jet_fighter", "keshig", "knight", "kongo_shield_bearer", "legion",
-  "line_infantry", "llanero", "machine_gun", "man_at_arms", "mandekalu_cavalry",
-  "maryannu_chariot_archer", "mechanized_infantry", "medic", "military_engineer", "missile_cruiser",
-  "missionary", "mobile_sam", "modern_armor", "modern_at", "musketman",
-  "naturalist", "nau", "nihang", "nuclear_submarine", "observation_balloon",
-  "oromo_cavalry", "pike_and_shot", "pikeman", "pitati_archer", "privateer",
-  "quadrireme", "ranger", "rock_band", "rocket_artillery", "rough_rider",
-  "saka_horse_archer", "samurai", "scout", "settler", "siege_tower", "skirmisher",
-  "slinger", "spearman", "spec_ops", "spy", "submarine", "supply_convoy",
-  "swordsman", "tagma", "tank", "toa", "trader", "trebuchet", "varu", "voi_chien",
-  "war_cart", "warrior", "warrior_monk", "winged_hussar"
+  "barbary_corsair", "battering_ram", "battleship", "berserker", "biplane",
+  "bireme", "black_army", "bombard", "bomber", "builder", "caravel", "carolean",
+  "catapult", "cavalry", "conquistador", "cossack", "courser", "crossbowman",
+  "crouching_tiger", "cuirassier", "de_zeven_provincien", "destroyer", "digger",
+  "domrey", "dromon", "drone", "eagle_warrior", "field_cannon", "fighter",
+  "frigate", "gaesatae", "galley", "garde_imperiale", "giant_death_robot",
+  "guru", "heavy_chariot", "helicopter", "hetairoi", "highlander", "hoplite",
+  "horseman", "hulche", "huszar", "hwacha", "hypaspist", "immortal", "impi",
+  "infantry", "inquisitor", "ironclad", "janissary", "jet_bomber", "jet_fighter",
+  "jong", "keshig", "khevsureti", "knight", "kongo_shield_bearer", "legion",
+  "line_infantry", "llanero", "machine_gun", "malon_raider", "mamluk",
+  "man_at_arms", "mandekalu_cavalry", "maryannu_chariot_archer",
+  "mechanized_infantry", "medic", "military_engineer", "minas_geraes",
+  "missile_cruiser", "missionary", "mobile_sam", "modern_armor", "modern_at",
+  "mountie", "musketman", "naturalist", "nau", "nihang", "nuclear_submarine",
+  "observation_balloon", "okihtcitaw", "oromo_cavalry", "p51_mustang",
+  "pike_and_shot", "pikeman", "pitati_archer", "privateer", "quadrireme",
+  "ranger", "redcoat", "rock_band", "rocket_artillery", "rough_rider",
+  "sabum_kibittum", "saka_horse_archer", "samurai", "scout", "sea_dog",
+  "settler", "siege_tower", "skirmisher", "slinger", "spearman", "spec_ops",
+  "spy", "submarine", "supply_convoy", "swordsman", "tagma", "tank", "toa",
+  "trader", "trebuchet", "u_boat", "varu", "viking_longship", "voi_chien",
+  "war_cart", "warakaq", "warrior", "warrior_monk", "winged_hussar"
 ];
 const CIV6_UNIT_ICON_INDEX = new Map(
   CIV6_UNIT_ICON_TYPES.map((type, index) => [type, index]));
@@ -30141,6 +30147,108 @@ function observedPlayerAnchors() {
 const EMPIRE_RECON_UNITS = new Set(["scout", "skirmisher", "ranger", "spec_ops"]);
 const EMPIRE_STRATEGIC_UNITS = new Set(["settler", "aircraft_carrier"]);
 
+// The dedicated display is filmed beside Civilization VI, and there the
+// watched seat's whole empire is the whole map. It stays close on where that
+// civilization is acting instead, like the Civ VI camera beside it
+// (CivvisControlMapView.lua). Heat comes from each observation: our wounded
+// units, our units in contact with an enemy, enemy cities we stand beside (the
+// more so as their walls fall), our cities with an enemy at the gate. Plus
+// what changed since the last one: tiles our units arrived on (live unit ids
+// are not stable from turn to turn, so arrivals are counted per tile) and
+// cities that became ours. Changes halve in weight every turn. The frame is
+// the neighbourhood of the hottest area's hottest tile. It moves on only when
+// another area is clearly hotter and far enough away to be a different place,
+// at most once per hold: one front at a time, not a camera chasing each unit.
+const ACTIVE_AREA = {radius:3, frame:3, reaimTiles:4, reaimMargin:1.25, holdMs:4000, memoryTurns:4};
+let activeAreaTrack = null;
+function activeAreaTally(st, player) {
+  const units = new Map(), cities = new Map();
+  for (const unit of st.units || []) {
+    if (unit.owner !== player || !unit.pos) continue;
+    const k = key(unit.pos), prior = units.get(k);
+    units.set(k, {pos:unit.pos, w:(prior?.w || 0) + (militaryUnit(unit) ? .5 : .25)});
+  }
+  for (const city of st.cities || [])
+    if (city.owner === player && city.pos) cities.set(key(city.pos), city.pos);
+  return {units, cities};
+}
+function activeAreaRemember(track, st, player) {
+  const turn = Number(st.turn) || 0;
+  const tally = activeAreaTally(st, player);
+  const add = (pos, weight) => {
+    const k = key(pos), old = track.memory.get(k);
+    const kept = old ? old.w * .5 ** Math.max(0, turn - old.turn) : 0;
+    track.memory.set(k, {pos, w:kept + weight, turn});
+  };
+  if (track.tally) {
+    for (const [k, here] of tally.units) {
+      const gained = here.w - (track.tally.units.get(k)?.w || 0);
+      if (gained > 0) add(here.pos, gained);
+    }
+    for (const [k, pos] of tally.cities) if (!track.tally.cities.has(k)) add(pos, 8);
+  }
+  track.tally = tally;
+  for (const [k, spot] of track.memory)
+    if (turn - spot.turn > ACTIVE_AREA.memoryTurns || spot.turn > turn) track.memory.delete(k);
+}
+function activeAreaSpots(track, st, player) {
+  const turn = Number(st.turn) || 0;
+  const enemies = new Set((st.players || [])
+    .filter(other => other.id !== player && other.at_war_with_me).map(other => other.id));
+  const ours = (st.units || []).filter(unit => unit.owner === player && militaryUnit(unit));
+  const hostile = (st.units || []).filter(unit => enemies.has(unit.owner) && militaryUnit(unit));
+  const spots = [...track.memory.values()].map(spot =>
+    ({pos:spot.pos, heat:spot.w * .5 ** Math.max(0, turn - spot.turn)}));
+  for (const unit of ours) {
+    const hp = Number.isFinite(Number(unit.hp)) ? Number(unit.hp) : 100;
+    let heat = Math.max(0, 100 - hp) / 100 * 3;
+    if (hostile.some(enemy => whexDist(enemy.pos, unit.pos) <= 2)) heat += 1;
+    if (heat > 0) spots.push({pos:unit.pos, heat});
+  }
+  for (const city of st.cities || []) {
+    const hpLost = Math.max(0, 1 - (Number(city.hp) || 0) / 200);
+    const wallLost = Number(city.wall_max) > 0
+      ? Math.max(0, 1 - (Number(city.wall_hp) || 0) / Number(city.wall_max)) : 0;
+    if (enemies.has(city.owner) && ours.some(unit => whexDist(unit.pos, city.pos) <= 3))
+      spots.push({pos:city.pos, heat:4 + 4 * wallLost + 4 * hpLost});
+    else if (city.owner === player && hostile.some(enemy => whexDist(enemy.pos, city.pos) <= 3))
+      spots.push({pos:city.pos, heat:4 + 4 * hpLost});
+  }
+  return spots;
+}
+function activeAreaCenter(st, player, now = performance.now()) {
+  let track = activeAreaTrack;
+  if (!track || track.seed !== st.seed || track.player !== player || st.turn < track.turn)
+    track = activeAreaTrack = {seed:st.seed, player, turn:st.turn, center:null,
+                               aimedAt:-Infinity, memory:new Map(), tally:null, seen:null};
+  if (track.seen !== st) { activeAreaRemember(track, st, player); track.seen = st; }
+  track.turn = st.turn;
+  if (track.center && now - track.aimedAt < ACTIVE_AREA.holdMs) return track.center;
+  const spots = activeAreaSpots(track, st, player);
+  const areaHeat = pos => spots.reduce((sum, spot) =>
+    whexDist(spot.pos, pos) <= ACTIVE_AREA.radius ? sum + spot.heat : sum, 0);
+  let best = null, bestHeat = 0, bestOwn = 0;
+  for (const spot of spots) {
+    const heat = areaHeat(spot.pos);
+    if (heat > bestHeat || (heat === bestHeat && spot.heat > bestOwn))
+      [best, bestHeat, bestOwn] = [spot, heat, spot.heat];
+  }
+  if (!best) {
+    if (!track.center) track.center = statePlayerAnchor(st, player)?.pos || null;
+    return track.center;
+  }
+  if (track.center && (whexDist(best.pos, track.center) < ACTIVE_AREA.reaimTiles ||
+                       bestHeat < areaHeat(track.center) * ACTIVE_AREA.reaimMargin))
+    return track.center;
+  track.center = best.pos; track.aimedAt = now;
+  return track.center;
+}
+function activeAreaSubjects(st, player, now = performance.now()) {
+  const center = activeAreaCenter(st, player, now);
+  if (!center) return [];
+  return (st.map?.tiles || []).filter(tile => whexDist(tile.pos, center) <= ACTIVE_AREA.frame);
+}
+
 // Borders and cities are the empire's durable shape. A remote unit expands
 // that shape only when it carries strategic weight or belongs to meaningful
 // action: an escorted/formed/promoted force, a group, or an active war front.
@@ -30152,6 +30260,13 @@ function watchedEmpireSubjects(player) {
   if (watchedEmpireSubjectsCache.state === state &&
       watchedEmpireSubjectsCache.player === player)
     return watchedEmpireSubjectsCache.subjects;
+  if (DEDICATED_DISPLAY) {
+    const active = activeAreaSubjects(state, player);
+    if (active.length) {
+      watchedEmpireSubjectsCache = {state, player, subjects:active};
+      return active;
+    }
+  }
   const cities = state.cities.filter(city => city.owner === player);
   const territory = state.map.tiles.filter(tile => tile.owner === player);
   const units = state.units.filter(unit => unit.owner === player);
