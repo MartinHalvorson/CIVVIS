@@ -150,7 +150,11 @@ fn nonzero_host_seat_maps_founders_and_unknown_founder_gets_no_foreign_credit() 
     state.cities[1].original_owner = Some(999);
     let game = rebuild_from_state(&snapshot, &state, 3, 364003, 500, 0).game;
     assert!(game.cities[&named(&game, "London")].is_capital);
-    assert_eq!(game.cities[&named(&game, "London")].original_owner, 0);
+    let founder = game.cities[&named(&game, "London")].original_owner;
+    assert!(
+        game.players[founder].is_barbarian,
+        "an unmapped founder is nobody's seat, not the holder's: {founder}"
+    );
     assert_eq!(
         game.victory_races(0, 0).controlled_capitals,
         1,
@@ -237,3 +241,34 @@ fn palace_yields_and_loyalty_pressure_match_the_legacy_current_capital_board() {
         );
     }
 }
+
+/// Live King civvis-20261004T160213Z (game 65): Germany held Fez, a dead
+/// city-state's original capital, and the board credited Fez to Germany as
+/// its own original capital, so "does Germany still hold its capital" turned
+/// on which city a churning id order listed first.
+#[test]
+fn a_dead_city_states_capital_is_never_its_holders_original_capital() {
+    let (snapshot, mut state) = fixture();
+    // We hold London, rival 1's original capital; rival 1 holds "Fez", an
+    // original capital whose founder (host 7) is on no seat.
+    state.rivals[0]
+        .cities
+        .push(city(5, "Fez", 17, true, false, 7));
+    for seed in [364010_u64, 364011, 364012, 364013] {
+        let game = rebuild_from_state(&snapshot, &state, 3, seed, 500, 0).game;
+        let fez = &game.cities[&named(&game, "Fez")];
+        assert!(fez.is_capital, "Fez stays an original capital: no Raze");
+        assert_ne!(fez.original_owner, 1, "never rival 1's own capital");
+        assert!(game.players[fez.original_owner].is_barbarian);
+        let london = &game.cities[&named(&game, "London")];
+        assert_eq!((london.original_owner, london.owner), (1, 0));
+        assert!(
+            !game
+                .cities
+                .values()
+                .any(|c| c.is_capital && c.original_owner == 1 && c.owner == 1),
+            "rival 1 holds no original capital of its own"
+        );
+    }
+}
+
