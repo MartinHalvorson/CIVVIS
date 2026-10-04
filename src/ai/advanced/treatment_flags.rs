@@ -4948,6 +4948,16 @@ impl AdvancedAi {
         self.runaway_expander_counter = false;
     }
 
+    /// Opt-in gene `raids-cut-tourism`; see [`Self::raids_cut_tourism`].
+    pub fn enable_raids_cut_tourism(&mut self) {
+        self.raids_cut_tourism = true;
+    }
+
+    /// The twin of `enable_raids_cut_tourism`.
+    pub fn disable_raids_cut_tourism(&mut self) {
+        self.raids_cut_tourism = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

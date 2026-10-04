@@ -6548,6 +6548,10 @@ pub struct AdvancedAi {
     lane_delegates_production_2: bool,
 
     // ---- append: p-r ------------------------------------------------
+    /// `raids-cut-tourism`: a raid prices a Theater Square of the countered
+    /// culture rival at `air_surge::raids::RAID_TOURISM_DENIAL` more. Off by
+    /// default.
+    raids_cut_tourism: bool,
     /// `runaway-expander-counter`: a rival outgrowing us reads as a
     /// Domination counter clock. See `advanced/runaway_expander.rs`. Off by
     /// default.
@@ -8815,6 +8819,7 @@ impl AdvancedAi {
             lane_delegates_production_2: false,
 
             // ---- append: p-r ----------------------------------------
+            raids_cut_tourism: false,
             runaway_expander_counter: false,
             raze_doomed_capture: false,
             policy_deck_hysteresis: false,

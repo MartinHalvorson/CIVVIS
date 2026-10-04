@@ -2506,6 +2506,9 @@ pub const GENES: &[Gene] = &[
     // and twice our population that the campaign never touched. See
     // `advanced/runaway_expander.rs`.
     Gene { tag: "runaway-expander-counter", field: "runaway_expander_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_runaway_expander_counter, disable: AdvancedAi::disable_runaway_expander_counter },
+    // Live King 115745Z fought Hungary, the culture winner, for 133 turns and
+    // pillaged no Theater Square. See `air_surge::raids::RAID_TOURISM_DENIAL`.
+    Gene { tag: "raids-cut-tourism", field: "raids_cut_tourism", kind: Kind::OptIn, enable: AdvancedAi::enable_raids_cut_tourism, disable: AdvancedAi::disable_raids_cut_tourism },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
