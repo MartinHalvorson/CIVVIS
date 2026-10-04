@@ -6575,6 +6575,10 @@ pub struct AdvancedAi {
     /// `objective_board` and `conquest_force_member`.
     opening_force_keeps_its_members: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `runaway-expander-counter`: a rival outgrowing us reads as a
+    /// Domination counter clock. See `advanced/runaway_expander.rs`. Off by
+    /// default.
+    runaway_expander_counter: bool,
     /// `raze-a-doomed-capture`: a Conquest razes a small captured city that
     /// will revolt before any rescue can establish. See
     /// `DOOMED_CAPTURE_TURNS`. Off by default.
@@ -7573,6 +7577,7 @@ pub use air_city_assault::AirCityAssault;
 mod denial_nearest_finish;
 mod denial_needs_a_road;
 mod city_memory;
+mod runaway_expander;
 mod siege_resource_purchase;
 mod strategic_deposit_prey;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
@@ -8843,6 +8848,7 @@ impl AdvancedAi {
 
             opening_force_keeps_its_members: false,
             // ---- append: p-r ----------------------------------------
+            runaway_expander_counter: false,
             raze_doomed_capture: false,
             policy_deck_hysteresis: false,
             policy_deck_hysteresis_2: false,
@@ -21113,24 +21119,29 @@ impl AdvancedAi {
         if matches!(policy, Some(Err(_))) {
             self.census.war_policy_declarations_held += 1;
         }
-        let ready = urgent_denial
-            || faith_counter_due
-            || if let Some(verdict) = &policy {
-                verdict.is_ok()
-            } else if rushing {
-                plan.target_city
-                    .and_then(|city| g.cities.get(&city))
-                    .is_some_and(|city| self.early_rush_stack_ready(g, pid, target, city.id))
-            } else if let Some(campaign) = self.campaign_launch_ready(g, pid, target, plan) {
-                // `city_campaign`: the city's own bill on the staging ring,
-                // spare included, in place of the empire ratio. See
-                // `advanced/city_campaign.rs`.
-                campaign
-            } else if committed_domination {
-                my_power >= target_power * 0.85 && my_power >= 30.0
-            } else {
-                my_power > target_power * 1.32 + 12.0
-            };
+        // See `one_war::COUNTER_WAR_POWER_FLOOR`: against a faith, urgency
+        // waives the war ratio but not the floor under it, and a staged bill
+        // does not stand in for it either.
+        let below_counter_floor = urgent_denial && self.counter_war_hopeless(g, pid, target);
+        let ready = !below_counter_floor
+            && (urgent_denial
+                || faith_counter_due
+                || if let Some(verdict) = &policy {
+                    verdict.is_ok()
+                } else if rushing {
+                    plan.target_city
+                        .and_then(|city| g.cities.get(&city))
+                        .is_some_and(|city| self.early_rush_stack_ready(g, pid, target, city.id))
+                } else if let Some(campaign) = self.campaign_launch_ready(g, pid, target, plan) {
+                    // `city_campaign`: the city's own bill on the staging ring,
+                    // spare included, in place of the empire ratio. See
+                    // `advanced/city_campaign.rs`.
+                    campaign
+                } else if committed_domination {
+                    my_power >= target_power * 0.85 && my_power >= 30.0
+                } else {
+                    my_power > target_power * 1.32 + 12.0
+                });
         let staged = plan
             .target_city
             .and_then(|city| g.cities.get(&city))
@@ -21200,6 +21211,11 @@ impl AdvancedAi {
             // identical to one with no plan.
             let blocker = if !close_enough {
                 "no city of theirs is within 18 tiles of one of mine".to_string()
+            } else if below_counter_floor {
+                format!(
+                    "their faith is close to winning, but a war at under {:.0}% of their power cannot stop it",
+                    one_war::COUNTER_WAR_POWER_FLOOR * 100.0
+                )
             } else if !ready {
                 match &policy {
                     Some(Err(reason)) => reason.clone(),

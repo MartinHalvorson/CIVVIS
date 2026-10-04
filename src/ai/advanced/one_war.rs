@@ -107,6 +107,21 @@ pub(crate) const ONE_WAR_SECOND_FRONT_RATIO: f64 = 1.5;
 /// opened (diagnosed by -60).
 pub(crate) const ONE_WAR_SECOND_FRONT_HOLD_RATIO: f64 = 1.3;
 
+/// The least power, against the rival's, at which a counter-war on a rival's
+/// RELIGIOUS clock is worth opening or freeing the army for. Urgency waives
+/// the ordinary war ratio, because a staged army at the border is the only
+/// answer to a terminal clock: a Spaceport or a culture city taken stops it
+/// whatever the empires' totals. A faith is not stopped that way. A
+/// faithless seat cannot win its converted cities back, and the war does not
+/// keep a third civilization unconverted, so at half the founder's strength
+/// it only loses the army. Live King civvis-20261004T055130Z (game 48) offered
+/// Kongo peace at turn 77, at 302 power against 182, "freeing the
+/// Domination army to counter a rival victory threat", and declared on
+/// Persia, whose faith already held five of our six cities, at turn 80 at
+/// 316 against 619. By 109 the army stood at 225 with nothing taken. The
+/// only other urgent declaration in forty live games opened at 0.99.
+pub(crate) const COUNTER_WAR_POWER_FLOOR: f64 = 0.7;
+
 /// Standard turns a front siege still in Stage counts as live for
 /// `front_siege_live`. A siege past Stage counts while it is read.
 pub(crate) const FRONT_SIEGE_LIVE_TURNS: u32 = 10;
@@ -730,6 +745,13 @@ impl AdvancedAi {
                 >= self.second_front_ratio(rival) * g.military_power(rival).max(1.0)
     }
 
+    /// Whether a counter-war on `rival`'s religious clock falls under
+    /// [`COUNTER_WAR_POWER_FLOOR`].
+    pub(crate) fn counter_war_hopeless(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        self.rival_victory_pressure(g, rival).strategy == GrandStrategy::Religion
+            && g.military_power(pid) < COUNTER_WAR_POWER_FLOOR * g.military_power(rival)
+    }
+
     /// Whether a siege on one of the front's cities is live: not Hold, read
     /// this turn or the last, and past Stage or entered within
     /// [`FRONT_SIEGE_LIVE_TURNS`] standard turns.
@@ -905,6 +927,8 @@ impl AdvancedAi {
                     rival != other
                         && counter == GrandStrategy::Conquest
                         && self.domination_counter_target(g, pid, rival)
+                        // See `COUNTER_WAR_POWER_FLOOR`.
+                        && !self.counter_war_hopeless(g, pid, rival)
                         && (self.urgent_victory_threat(g, rival)
                             || (!fresh_front && !self.one_war_front_crushed(g, pid, other)))
                 })

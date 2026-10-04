@@ -2528,6 +2528,10 @@ pub const GENES: &[Gene] = &[
     // Destroy rows against raiders kept four of them home and it released
     // at turn 40. See `AdvancedAi::conquest_force_member`.
     Gene { tag: "opening-force-keeps-its-members", field: "opening_force_keeps_its_members", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_force_keeps_its_members, disable: AdvancedAi::disable_opening_force_keeps_its_members },
+    // Live King 131343Z lost on Technology to a rival with fourteen cities
+    // and twice our population that the campaign never touched. See
+    // `advanced/runaway_expander.rs`.
+    Gene { tag: "runaway-expander-counter", field: "runaway_expander_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_runaway_expander_counter, disable: AdvancedAi::disable_runaway_expander_counter },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

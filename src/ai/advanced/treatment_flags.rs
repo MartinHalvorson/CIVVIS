@@ -5017,6 +5017,17 @@ impl AdvancedAi {
         self.opening_force_keeps_its_members = false;
     }
 
+    /// Opt-in gene `runaway-expander-counter`; see
+    /// [`Self::runaway_expander_counter`].
+    pub fn enable_runaway_expander_counter(&mut self) {
+        self.runaway_expander_counter = true;
+    }
+
+    /// The twin of `enable_runaway_expander_counter`.
+    pub fn disable_runaway_expander_counter(&mut self) {
+        self.runaway_expander_counter = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
