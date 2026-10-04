@@ -180,8 +180,17 @@ class SharedDesktopRescueTests(unittest.TestCase):
         tree = ast.parse(Path(civ6_play.__file__).read_text())
         callback = next(n for n in ast.walk(tree)
                         if isinstance(n, ast.FunctionDef) and n.name == "record")
-        code = compile(ast.Module(body=[callback], type_ignores=[]),
+        # The relay queues rescues (`DesktopRescueQueue`); run them inline
+        # here so the rescue's own decisions stay under test.
+        rescue = next(n for n in ast.walk(tree)
+                      if isinstance(n, ast.FunctionDef) and n.name == "desktop_rescue")
+        code = compile(ast.Module(body=[rescue, callback], type_ignores=[]),
                        civ6_play.__file__, "exec")
+
+        class InlineRescues:
+            def submit(self, _screen, rescue_call):
+                rescue_call()
+                return True
         ledger = io.StringIO()
         with patch.object(civ6_play, "shared_desktop_in_use", return_value=True) as shared, \
              patch.object(civ6_play.popup_clear, "capture_pause_reason") as capture, \
@@ -191,7 +200,7 @@ class SharedDesktopRescueTests(unittest.TestCase):
              patch.object(civ6_play, "dismiss_world_congress_between_turns") as congress, \
              patch.object(civ6_play, "press_escape") as escape:
             namespace = dict(vars(civ6_play), events=ledger, state={"turn": 24},
-                             run_dir=Path("/unused"))
+                             run_dir=Path("/unused"), desktop_rescues=InlineRescues())
             exec(code, namespace)
             for kind in ("autoclose_desktop", "autoclose_stuck"):
                 for screen in ("DiplomacyActionView", "WorldCongressBetweenTurns",
@@ -4340,3 +4349,75 @@ class TheLegalSplashIsNotTheMenu(unittest.TestCase):
                         reader.index("vision.menu_rows(menushot, bounds)"))
         splash = reader.split("_legal_splash_visible(menushot, bounds):")[1].split("\n")[1]
         self.assertEqual(splash.strip(), "return None")
+
+
+class DesktopRescueRunsOffTheRelay(unittest.TestCase):
+    """A desktop rescue must never hold the event relay (`record`)."""
+
+    def test_submit_returns_while_a_rescue_is_still_running(self) -> None:
+        import threading as _threading
+        queue = civ6_play.DesktopRescueQueue()
+        release = _threading.Event()
+        started = _threading.Event()
+
+        def slow_rescue():
+            started.set()
+            release.wait(5.0)
+
+        before = time.monotonic()
+        self.assertTrue(queue.submit("DiplomacyActionView", slow_rescue))
+        self.assertLess(time.monotonic() - before, 0.5, "submit must not wait for the rescue")
+        self.assertTrue(started.wait(2.0))
+        # The shim re-asks while its screen is up; one rescue per screen is enough.
+        self.assertFalse(queue.submit("DiplomacyActionView", lambda: None))
+        ran = []
+        self.assertTrue(queue.submit("DiplomacyDealView", lambda: ran.append("deal")))
+        release.set()
+        self.assertTrue(queue.drain(5.0))
+        self.assertEqual(ran, ["deal"], "a different screen queues behind the running one")
+        self.assertTrue(queue.submit("DiplomacyActionView", lambda: ran.append("again")))
+        self.assertTrue(queue.drain(5.0))
+        self.assertEqual(ran, ["deal", "again"], "a finished screen can be rescued again")
+        queue.close(1.0)
+
+    def test_a_failing_rescue_does_not_stop_the_worker(self) -> None:
+        queue = civ6_play.DesktopRescueQueue()
+
+        def broken():
+            raise RuntimeError("capture helper exploded")
+
+        ran = []
+        with mock.patch("sys.stderr", new=io.StringIO()):
+            self.assertTrue(queue.submit("DiplomacyActionView", broken))
+            self.assertTrue(queue.drain(5.0))
+        self.assertTrue(queue.submit("DiplomacyActionView", lambda: ran.append(1)))
+        self.assertTrue(queue.drain(5.0))
+        self.assertEqual(ran, [1])
+        queue.close(1.0)
+
+    def test_drain_gives_up_at_its_bound(self) -> None:
+        import threading as _threading
+        queue = civ6_play.DesktopRescueQueue()
+        release = _threading.Event()
+        queue.submit("DiplomacyActionView", lambda: release.wait(5.0))
+        self.assertFalse(queue.drain(0.1))
+        release.set()
+        self.assertTrue(queue.drain(5.0))
+        queue.close(1.0)
+
+    def test_the_relay_only_queues_the_rescue(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play._play)
+        record = source.split("    def record(event: dict) -> None:")[1].split("    def finished(")[0]
+        branch = record.split('elif kind in ("autoclose_desktop", "autoclose_stuck"):')[1]
+        branch = branch.split("        elif kind == ")[0]
+        self.assertIn("desktop_rescues.submit(", branch)
+        for blocking in ("dismiss_visually_confirmed_popup", "screenshot(", "press_escape(",
+                         "capture_pause_reason"):
+            self.assertNotIn(blocking, branch)
+        rescue = source.split("    def desktop_rescue(")[1].split("    def record(")[0]
+        self.assertIn("dismiss_visually_confirmed_popup(diagnostic_path=shot)", rescue)
+        self.assertIn('run_dir / f"autoclose-stuck-turn-{turn}.png"', rescue)
+        # Nothing else drives the desktop while a rescue might be.
+        self.assertIn("desktop_rescues.drain(30.0)\n        dismiss_leader_dialogue()", source)
+        self.assertIn("desktop_rescues.close(30.0)\n    game_stopped = launcher.stop()", source)
