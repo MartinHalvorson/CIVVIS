@@ -54,16 +54,16 @@
   "probe_source_sha256": "945f55241793ec57cfae27fa9fd3fe34b3715438646f4f40f81d3e13fd2dd6ab",
   "source_formatting": "Tracked probe source is rustfmt output of the compiled source; formatting changes only.",
   "artifacts": {
-    "2026-10-03-production-worked-tiles-control.log": "a35ed5912684994e1dee09a3604eb6b6187807debe606e8dee552f175645954c",
+    "2026-10-03-production-worked-tiles-confirmation-control.txt": "ec4a97748d421178aef14840a130cb4ee2bf0f6a0cfc4b4de0ae817a528a35e1",
+    "2026-10-03-production-worked-tiles-candidate.txt": "a645a6b52a1e80feacbd4bd482b10e2dcc28ae9e133bf9e820ac873ceb0892ec",
     "2026-10-03-production-worked-tiles-control.csv": "30206a2e18ef4540e789a55b84b0aec7ed42764eb76db8d07189ab1b2fbf98c6",
-    "2026-10-03-production-worked-tiles-confirmation-candidate.log": "31b1a96722e24364cb6390b35738b434dc30d708481b3049f5ad7dcc409e4d75",
     "2026-10-03-production-worked-tiles-confirmation-candidate.csv": "4713d0df6467e7cc632ee5dcf2d79d1a350c57b4be04bb84686f25f2810e2cd6",
     "2026-10-03-production-worked-tiles-probe.rs": "945f55241793ec57cfae27fa9fd3fe34b3715438646f4f40f81d3e13fd2dd6ab",
     "2026-10-03-production-worked-tiles-live-baseline.json": "0dd24c85b55427858799e346fab13d39bd90530b2ed11799aa0c35e409274ae5",
     "2026-10-03-production-worked-tiles-confirmation-control.csv": "8dafa166fca3077a085e5b76ad8d55bb1ff61ff727cba3ef4e60013f3f3818d1",
-    "2026-10-03-production-worked-tiles-confirmation-control.log": "ec4a97748d421178aef14840a130cb4ee2bf0f6a0cfc4b4de0ae817a528a35e1",
     "2026-10-03-production-worked-tiles-candidate.csv": "53ad913cc7fbf1a1527db91ac92a9e6475eb21892d34a52305d5899c7b676139",
-    "2026-10-03-production-worked-tiles-candidate.log": "a645a6b52a1e80feacbd4bd482b10e2dcc28ae9e133bf9e820ac873ceb0892ec"
+    "2026-10-03-production-worked-tiles-control.txt": "a35ed5912684994e1dee09a3604eb6b6187807debe606e8dee552f175645954c",
+    "2026-10-03-production-worked-tiles-confirmation-candidate.txt": "31b1a96722e24364cb6390b35738b434dc30d708481b3049f5ad7dcc409e4d75"
   },
   "replay_prefixes": {
     "50": "849d520787e61187e97d50a6390829352e2bd2e9ca76e0b7f17ac8d7510b00c5",

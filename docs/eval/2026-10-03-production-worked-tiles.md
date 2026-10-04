@@ -21,7 +21,7 @@ In `civvis-20261004T033533Z`, turn 100 has nine cities and 79.01 production
 per turn, against Germany's nine cities and 173.14. Our 8.78 production per
 city is less than half Germany's 19.24. Thirty-one of our 52 worked noncenter
 tiles have production and no improvement; all 52 have plot records. The seat
-has one Builder carrying three charges. At turn 150, our production is 90.89
+has one Builder carrying three charges. At turn 150, our production is 90.91
 against the best observed rival's 366.69. Bare productive tiles are an audit
 lead: these counts do not establish that every tile is legal or safe to improve.
 

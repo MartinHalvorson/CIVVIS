@@ -1,0 +1,15 @@
+61003100: turn 93, winner Some(1), alive true
+61003101: turn 151, winner Some(2), alive true
+61003102: turn 151, winner Some(1), alive true
+61003103: turn 146, winner Some(3), alive true
+61003104: turn 151, winner Some(3), alive true
+61003105: turn 129, winner Some(2), alive true
+61003106: turn 125, winner Some(1), alive true
+61003107: turn 151, winner Some(3), alive true
+61003108: turn 115, winner Some(3), alive true
+61003109: turn 151, winner Some(2), alive true
+61003110: turn 106, winner Some(2), alive true
+61003111: turn 142, winner Some(1), alive true
+real 152.20
+user 144.57
+sys 0.66
