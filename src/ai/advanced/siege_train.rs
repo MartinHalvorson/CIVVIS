@@ -2017,16 +2017,19 @@ impl AdvancedAi {
         if city.owner == pid || siege.stage == SiegeStage::Hold {
             return None;
         }
+        // `breach-assault` runs before the Stage return: a siege whose counted
+        // members are still far off reads Stage however low the city is, and
+        // a unit already beside a breached city must not walk away from it.
+        if self.breach_assault && siege.taker != Some(uid) && arm_of(g, uid) == Arm::Melee {
+            if let Some(acted) = self.breach_assault_blow(g, pid, uid, &city, plan, group) {
+                return Some(acted);
+            }
+        }
         if siege.stage == SiegeStage::Stage {
             return Some(self.siege_stage_step(g, pid, uid, &city, plan));
         }
         if self.siege_spotter(g, pid, group, &city) == Some(uid) {
             if let Some(acted) = self.spotter_step(g, pid, uid, &city) {
-                return Some(acted);
-            }
-        }
-        if self.breach_assault && siege.taker != Some(uid) && arm_of(g, uid) == Arm::Melee {
-            if let Some(acted) = self.breach_assault_blow(g, pid, uid, &city, plan, group) {
                 return Some(acted);
             }
         }
@@ -2132,7 +2135,17 @@ impl AdvancedAi {
         city: &CityView,
         plan: &StrategicPlan,
     ) -> bool {
-        if let Some(acted) = self.siege_blow(g, pid, uid, city, plan, false) {
+        // ★★★ STAGE NEVER STRUCK THE CITY. `allow_city` was false here, so a
+        // unit beside a dying city could not finish it and the step below
+        // walked it back out of the city's reach. Live King
+        // civvis-20261004T114858Z (game 55): the Siege of Nicomedia read Stage
+        // in all 82 assessments from turn 77 to 225; at turn 200 the city
+        // stood at 41/200 behind 0/400 walls with a Llanero beside it, and
+        // the Llanero walked three tiles out and fortified (diagnosed by -9c).
+        // Under `breach-assault`, `siege_blow`'s own kill-or-paying-exchange
+        // test may take a city whose walls no longer shield it.
+        let allow_city = self.breach_assault && melee_wall_attack_allowed(g, pid, uid, city.id);
+        if let Some(acted) = self.siege_blow(g, pid, uid, city, plan, allow_city) {
             return acted;
         }
         let here = g.units[&uid].pos;

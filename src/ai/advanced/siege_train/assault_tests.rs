@@ -89,3 +89,36 @@ fn a_volley_short_of_the_city_or_a_wounded_unit_holds() {
     play(&mut ai, &mut g, 0, &plan);
     assert_eq!(g.cities[&cid].wall_hp, 100, "no melee blow on an unbreached wall");
 }
+
+/// Live King civvis-20261004T114858Z (game 55), Nicomedia at turn 200:
+/// 41/200 behind fallen walls, a Llanero beside it, the siege in Stage — and
+/// the Llanero walked away. Under the gene the Stage step strikes the city.
+#[test]
+fn a_stage_siege_finishes_a_dying_breached_city_beside_it() {
+    let mut outcome = Vec::new();
+    for gene in [false, true] {
+        let (mut g, cid) = walled_city();
+        {
+            let city = g.cities.get_mut(&cid).unwrap();
+            city.wall_hp = 0;
+            city.hp = 41;
+        }
+        let swordsman = g.spawn_unit("swordsman", 0, ring_of(&g, cid)[0]);
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_siege_train();
+        if gene {
+            ai.enable_breach_assault();
+        }
+        let plan = plan_against(&g, cid);
+        let city = CityView::of(&g, cid).unwrap();
+        ai.siege_stage_step(&mut g, 0, swordsman, &city, &plan);
+        let city = &g.cities[&cid];
+        outcome.push((city.owner, city.hp));
+    }
+    assert_eq!(outcome[0], (1, 41), "without the gene Stage leaves the city alone");
+    assert!(
+        outcome[1].0 == 0 || outcome[1].1 < 41,
+        "with the gene the blow lands: {:?}",
+        outcome[1]
+    );
+}
