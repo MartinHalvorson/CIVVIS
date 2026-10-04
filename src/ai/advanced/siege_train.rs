@@ -148,6 +148,15 @@ pub(super) const ABORT_PATIENCE: u32 = 2;
 /// Melee holds the ring rather than swinging at a wall above this fraction
 /// of its pool, unless a ram or tower stands beside the city.
 pub(super) const MELEE_WALL_FRACTION: f64 = 0.2;
+/// `breach-assault`: a melee unit joins the assault only from this health.
+pub(super) const ASSAULT_MIN_HP: i32 = 60;
+/// ... and only when it keeps at least this much after the city's reply.
+pub(super) const ASSAULT_SURVIVOR_HP: i32 = 25;
+/// `breach-assault`: the assault opens when the force's blows can take the
+/// walls and the city within this many turns ...
+pub(super) const ASSAULT_TURNS: f64 = 2.0;
+/// ... counting one turn of the city's heal.
+pub(super) const ASSAULT_HEAL: f64 = 20.0;
 /// A hostile this close to the city is a reliever at the ring.
 pub(super) const RELIEVER_RADIUS: i32 = 3;
 /// Expected damage over hit points before a shot is counted as a kill: the
@@ -1981,6 +1990,11 @@ impl AdvancedAi {
                 return Some(acted);
             }
         }
+        if self.breach_assault && siege.taker != Some(uid) && arm_of(g, uid) == Arm::Melee {
+            if let Some(acted) = self.breach_assault_blow(g, pid, uid, &city, plan, group) {
+                return Some(acted);
+            }
+        }
         if siege.taker == Some(uid) {
             return Some(self.taker_step(g, pid, uid, &city));
         }
@@ -2402,6 +2416,123 @@ impl AdvancedAi {
             return true;
         }
         self.base.fortify_or_stop(g, pid, uid)
+    }
+
+    /// `breach-assault`: a healthy melee unit beside a city whose walls no
+    /// longer shield it (down, or opened by a ram or siege tower beside the
+    /// attacker) strikes it once the whole force's blows can take the city
+    /// within [`ASSAULT_TURNS`], even though one blow alone trades badly.
+    ///
+    /// ★★★ ONE BLOW PRICED ALONE NEVER OPENS AN ASSAULT. `siege_blow` keeps a
+    /// melee attack only when its own exchange pays, and a Warrior against a
+    /// full capital never does, so the ring held while two Archers shot. Live
+    /// King 20261004T111442Z (game 53): Madrid stood without walls from turn
+    /// 44 to 66 at 186-200 health with five to eight units staged and the
+    /// siege reading "damage ready"; it healed every turn, built walls at 68,
+    /// and never fell. The same shape: Washington turns 40-58 (035351Z),
+    /// Tenochtitlan (110427Z-cont1). And with a ram: Live King
+    /// 20261004T113554Z (game 54) besieged the Cree's Wihkasko-Kiseyin from
+    /// turn 73, a Battering Ram riding with the train, and its walls stood at
+    /// 100/100 at turn 83 while the Cree won by religion at 90; their two
+    /// cities were the whole founder. Each melee unit here must start at
+    /// [`ASSAULT_MIN_HP`] and survive the reply at [`ASSAULT_SURVIVOR_HP`];
+    /// the reserved taker still finishes.
+    fn breach_assault_blow(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        city: &CityView,
+        plan: &StrategicPlan,
+        group: &ForceGroup,
+    ) -> Option<bool> {
+        if self.active_victory_target(g) != Some(super::VictoryTarget::Domination)
+            || city.hp <= 0
+            || (city.wall_hp > 0 && !melee_wall_attack_allowed(g, pid, uid, city.id))
+        {
+            return None;
+        }
+        let unit = g.units.get(&uid)?.clone();
+        if unit.attacks_left <= 0
+            || unit.moves_left <= 0.0
+            || unit.hp < ASSAULT_MIN_HP
+            || g.is_embarked(&unit)
+            || g.wdist(unit.pos, city.pos) > 1
+            || !g.melee_order_is_legal(pid, uid, city.pos)
+        {
+            return None;
+        }
+        let volley = self.assault_volley(g, pid, city, plan, group);
+        let to_take = f64::from(city.hp + city.wall_hp.max(0)) + ASSAULT_HEAL;
+        if volley * ASSAULT_TURNS < to_take {
+            return None;
+        }
+        let action = Action::Attack {
+            unit: uid,
+            target: city.pos,
+        };
+        let mut after = g.speculative_clone();
+        after.apply(pid, &action).ok()?;
+        if after.units.get(&uid).is_none_or(|survivor| survivor.hp < ASSAULT_SURVIVOR_HP) {
+            return None;
+        }
+        g.apply(pid, &action).ok()?;
+        self.force_groups_dirty = true;
+        let captured = g.cities.get(&city.id).is_some_and(|c| c.owner == pid);
+        if captured {
+            if let Some(siege) = self.sieges.get_mut(&city.id) {
+                if let Some(taker) = siege.taker.take() {
+                    self.reserved_units.remove(&taker);
+                }
+                siege.stage = SiegeStage::Hold;
+                siege.entered = g.turn;
+            }
+            self.census.siege_captures += 1;
+        }
+        let left = g.cities.get(&city.id).map_or(0, |c| if c.owner == pid { 0 } else { c.hp });
+        think!(self.journal(), Military, Decision,
+            "Siege of {}: the {} joins the assault", g.cities[&city.id].name, unit.kind;
+            "the force's blows this turn come to {volley:.0} against {} health behind {} of wall; {} left; captured {captured}",
+            city.hp, city.wall_hp, left;
+            city.pos);
+        Some(true)
+    }
+
+    /// The city damage the siege force can still deal this turn: ranged
+    /// members in range at the land ranged-against-districts penalty, and
+    /// healthy melee members already beside the city.
+    fn assault_volley(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &CityView,
+        plan: &StrategicPlan,
+        group: &ForceGroup,
+    ) -> f64 {
+        let defense = g.city_strength(city.id);
+        self.siege_force(g, pid, city, plan, group)
+            .into_iter()
+            .filter_map(|uid| g.units.get(&uid))
+            .filter(|unit| unit.attacks_left > 0 && unit.moves_left > 0.0 && !g.is_embarked(unit))
+            .map(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                let distance = g.wdist(unit.pos, city.pos);
+                if spec.has_ranged_attack() {
+                    if distance > g.unit_attack_range(unit.id).max(1) {
+                        return 0.0;
+                    }
+                    let mut attack = g.unit_ranged_attack_strength(unit);
+                    if spec.ranged_strength > 0.0 && spec.domain.as_deref() != Some("sea") {
+                        attack += g.promotion_effect(unit, "ranged_vs_district") - 17.0;
+                    }
+                    crate::game::expected_damage(attack, defense)
+                } else if spec.is_melee_capable() && distance <= 1 && unit.hp >= ASSAULT_MIN_HP {
+                    crate::game::expected_damage(g.unit_strength(unit, false), defense)
+                } else {
+                    0.0
+                }
+            })
+            .sum()
     }
 
     /// A healthy capture unit can contribute before the final blow when an
@@ -2946,6 +3077,9 @@ mod firing_tests;
 
 #[cfg(test)]
 mod staging_tests;
+
+#[cfg(test)]
+mod assault_tests;
 
 #[cfg(test)]
 mod tests {
