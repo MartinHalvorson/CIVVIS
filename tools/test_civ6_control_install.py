@@ -45,6 +45,10 @@ class InstalledScriptSizeTest(unittest.TestCase):
         source = "local s = [[\n-- inside a long string\n]]\n-- comment\n"
         self.assertEqual(install.installed_lua(source), source)
 
+    def test_a_file_with_a_backslash_continued_string_is_left_whole(self) -> None:
+        source = 'local s = "first\\\n-- part of the string"\n-- comment\n'
+        self.assertEqual(install.installed_lua(source), source)
+
     def test_the_installer_refuses_a_script_above_the_known_good_size(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             mod = Path(tmp) / "mod"
