@@ -42,7 +42,9 @@
           "winner": 1,
           "alive": true
         }
-      }
+      },
+      "identical_setup_except_arm": true,
+      "identical_city_snapshots": true
     },
     {
       "difficulty": "emperor",
@@ -78,7 +80,9 @@
           "winner": 2,
           "alive": true
         }
-      }
+      },
+      "identical_setup_except_arm": true,
+      "identical_city_snapshots": true
     },
     {
       "difficulty": "emperor",
@@ -114,7 +118,9 @@
           "winner": 2,
           "alive": true
         }
-      }
+      },
+      "identical_setup_except_arm": true,
+      "identical_city_snapshots": true
     },
     {
       "difficulty": "emperor",
@@ -150,7 +156,9 @@
           "winner": 3,
           "alive": true
         }
-      }
+      },
+      "identical_setup_except_arm": true,
+      "identical_city_snapshots": true
     },
     {
       "difficulty": "deity",
@@ -186,7 +194,9 @@
           "winner": 2,
           "alive": true
         }
-      }
+      },
+      "identical_setup_except_arm": true,
+      "identical_city_snapshots": true
     },
     {
       "difficulty": "deity",
@@ -222,7 +232,9 @@
           "winner": 3,
           "alive": true
         }
-      }
+      },
+      "identical_setup_except_arm": true,
+      "identical_city_snapshots": true
     },
     {
       "difficulty": "deity",
@@ -258,7 +270,9 @@
           "winner": 3,
           "alive": true
         }
-      }
+      },
+      "identical_setup_except_arm": true,
+      "identical_city_snapshots": true
     },
     {
       "difficulty": "deity",
@@ -294,7 +308,9 @@
           "winner": 1,
           "alive": true
         }
-      }
+      },
+      "identical_setup_except_arm": true,
+      "identical_city_snapshots": true
     }
   ],
   "durable_evidence": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/capacity/diagnostic",
@@ -364,5 +380,6 @@
     "civvis-production-growth-capacity-emperor-61007003-control-final.json": "9edb03c537153949711d90e1cc4e4f70fbb92843a8d7a399b6ab5915e382bdaa",
     "civvis-production-growth-capacity-emperor-61007003-control-setup.json": "2021469b985f89752783d9405ea4bd5e76376026e85186fb80ecf4561b77d185"
   },
-  "actual_Firaxis_verification": false
+  "actual_Firaxis_verification": false,
+  "identical_checkpoint_csvs": true
 }
