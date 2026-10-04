@@ -4885,6 +4885,7 @@ impl AdvancedAi {
     /// See `BasicAi::granary_before_the_army`: a housing-bound city's Granary,
     /// else its Aqueduct, ahead of the military floor.
     pub fn enable_granary_before_the_army(&mut self) {
+        self.disable_granary_before_the_army_2();
         self.granary_before_the_army = true;
         self.base.granary_before_the_army = true;
     }
@@ -4932,6 +4933,7 @@ impl AdvancedAi {
     /// Workshop and its Factory ahead of the military floor.
     pub fn enable_industry_before_the_army(&mut self) {
         self.disable_industry_before_the_army_2();
+        self.disable_industry_before_the_army_3();
         self.industry_before_the_army = true;
         self.base.industry_before_the_army = true;
     }
@@ -4946,6 +4948,7 @@ impl AdvancedAi {
     /// for the Theater and five Gold a turn. Exclusive with version 1.
     pub fn enable_industry_before_the_army_2(&mut self) {
         self.disable_industry_before_the_army();
+        self.disable_industry_before_the_army_3();
         self.industry_before_the_army_2 = true;
         self.base.industry_before_the_army_2 = true;
     }
@@ -4984,9 +4987,75 @@ impl AdvancedAi {
         self.base.builder_before_the_army_3 = false;
     }
 
+    /// Opt-in gene `improvement-upgrades-count`; see
+    /// [`Self::improvement_upgrades_count`].
+    pub fn enable_improvement_upgrades_count(&mut self) {
+        self.improvement_upgrades_count = true;
+    }
+
+    /// The twin of `enable_improvement_upgrades_count`.
+    pub fn disable_improvement_upgrades_count(&mut self) {
+        self.improvement_upgrades_count = false;
+    }
+
+    /// See `BasicAi::industry_before_the_army_3`: version 2 only while the
+    /// army meets its floor. Exclusive with versions 1 and 2.
+    pub fn enable_industry_before_the_army_3(&mut self) {
+        self.disable_industry_before_the_army();
+        self.disable_industry_before_the_army_2();
+        self.industry_before_the_army_3 = true;
+        self.base.industry_before_the_army_3 = true;
+    }
+
+    /// The twin of `enable_industry_before_the_army_3`.
+    pub fn disable_industry_before_the_army_3(&mut self) {
+        self.industry_before_the_army_3 = false;
+        self.base.industry_before_the_army_3 = false;
+    }
+
+    /// See `BasicAi::industrial_hub`.
+    pub fn enable_industrial_hub(&mut self) {
+        self.industrial_hub = true;
+        self.base.industrial_hub = true;
+    }
+
+    /// The twin of `enable_industrial_hub`.
+    pub fn disable_industrial_hub(&mut self) {
+        self.industrial_hub = false;
+        self.base.industrial_hub = false;
+    }
+
+    /// Opt-in gene `colonization-earns-its-slot-2`; see
+    /// [`Self::colonization_earns_its_slot_2`]. Exclusive with version 1.
+    pub fn enable_colonization_earns_its_slot_2(&mut self) {
+        self.disable_colonization_earns_its_slot();
+        self.colonization_earns_its_slot_2 = true;
+    }
+
+    /// The twin of `enable_colonization_earns_its_slot_2`.
+    pub fn disable_colonization_earns_its_slot_2(&mut self) {
+        self.colonization_earns_its_slot_2 = false;
+    }
+
+    /// See `BasicAi::granary_before_the_army_2`: version 1's housing reserve
+    /// behind the Campus step and the Builder backlog. Exclusive with
+    /// version 1.
+    pub fn enable_granary_before_the_army_2(&mut self) {
+        self.disable_granary_before_the_army();
+        self.granary_before_the_army_2 = true;
+        self.base.granary_before_the_army_2 = true;
+    }
+
+    /// The twin of `enable_granary_before_the_army_2`.
+    pub fn disable_granary_before_the_army_2(&mut self) {
+        self.granary_before_the_army_2 = false;
+        self.base.granary_before_the_army_2 = false;
+    }
+
     /// Opt-in gene `colonization-earns-its-slot`; see
     /// [`Self::colonization_earns_its_slot`].
     pub fn enable_colonization_earns_its_slot(&mut self) {
+        self.disable_colonization_earns_its_slot_2();
         self.colonization_earns_its_slot = true;
     }
 

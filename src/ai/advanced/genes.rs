@@ -2532,6 +2532,23 @@ pub const GENES: &[Gene] = &[
     // and twice our population that the campaign never touched. See
     // `advanced/runaway_expander.rs`.
     Gene { tag: "runaway-expander-counter", field: "runaway_expander_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_runaway_expander_counter, disable: AdvancedAi::disable_runaway_expander_counter },
+    // A Builder priced a Mine at its printed +1 Production after
+    // Apprenticeship made it +2. See `AdvancedAi::improvement_upgrades_count`.
+    Gene { tag: "improvement-upgrades-count", field: "improvement_upgrades_count", kind: Kind::OptIn, enable: AdvancedAi::enable_improvement_upgrades_count, disable: AdvancedAi::disable_improvement_upgrades_count },
+    // Version 2 still flipped 5 rival Science wins to Culture over 32 pairs.
+    // See `BasicAi::industry_before_the_army_3`.
+    Gene { tag: "industry-before-the-army-3", field: "industry_before_the_army_3", kind: Kind::OptIn, enable: AdvancedAi::enable_industry_before_the_army_3, disable: AdvancedAi::disable_industry_before_the_army_3 },
+    // One zone where its Factory reaches the most cities: 5.6 of 8.6 live
+    // cities at t130. See `BasicAi::industrial_hub`.
+    Gene { tag: "industrial-hub", field: "industrial_hub", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_hub, disable: AdvancedAi::disable_industrial_hub },
+    // Version 1's test for the Builder cards too: builder-before-the-army-3
+    // queues Builders often enough to hold Urban Planning out behind Ilkum.
+    // See `AdvancedAi::colonization_earns_its_slot_2`.
+    Gene { tag: "colonization-earns-its-slot-2", field: "colonization_earns_its_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_colonization_earns_its_slot_2, disable: AdvancedAi::disable_colonization_earns_its_slot_2 },
+    // Version 1's Granary/Aqueduct behind campus v2 and the Builder backlog:
+    // 3.9 of 8.4 live cities sat at their housing cap at t100. See
+    // `BasicAi::granary_before_the_army_2`.
+    Gene { tag: "granary-before-the-army-2", field: "granary_before_the_army_2", kind: Kind::OptIn, enable: AdvancedAi::enable_granary_before_the_army_2, disable: AdvancedAi::disable_granary_before_the_army_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -2262,6 +2262,15 @@
           "coastal-city-sites-2": null
         }
       },
+      "colonization-earns-its-slot": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "colonization-earns-its-slot": null,
+          "colonization-earns-its-slot-2": null
+        }
+      },
       "connect-the-luxury": {
         "rule_on": [
           "connect-the-luxury"
@@ -2440,6 +2449,15 @@
           "government-ladder-3": null
         }
       },
+      "granary-before-the-army": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "granary-before-the-army": null,
+          "granary-before-the-army-2": null
+        }
+      },
       "holy-site-where-the-threat-is": {
         "rule_on": [],
         "head": "holy-site-where-the-threat-is",
@@ -2474,7 +2492,8 @@
         "ships": null,
         "versions": {
           "industry-before-the-army": null,
-          "industry-before-the-army-2": null
+          "industry-before-the-army-2": null,
+          "industry-before-the-army-3": null
         }
       },
       "lane-delegates-production": {

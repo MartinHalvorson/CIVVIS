@@ -5670,6 +5670,13 @@ pub struct AdvancedAi {
     /// 11 of 26 live King games held it at t100. Policy swaps are free on
     /// the host, so the slot can follow the queue turn by turn.
     colonization_earns_its_slot: bool,
+    /// `colonization-earns-its-slot-2`: version 1, and the same test for the
+    /// Builder cards. A queued Builder commits the slot only to a card that
+    /// adds build charges (Serfdom, Public Works) or to an Ilkum whose +30%
+    /// on the queued Builders out-produces Urban Planning's +1 in every
+    /// city; `builder-before-the-army-3` queues Builders often enough that
+    /// the stock Ilkum commitment would hold Urban Planning out again.
+    colonization_earns_its_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// A district is worth the land-grab building it will host.
     ///
@@ -6226,6 +6233,9 @@ pub struct AdvancedAi {
     /// Aqueduct) ahead of the military floor. Opt-in gene
     /// `granary-before-the-army`; see `BasicAi::granary_before_the_army`.
     granary_before_the_army: bool,
+    /// Version 2 of `granary-before-the-army`; see
+    /// `BasicAi::granary_before_the_army_2`.
+    granary_before_the_army_2: bool,
     /// The delegated city governor's Industrial Zone, Workshop and Factory
     /// ahead of the military floor. Opt-in gene `industry-before-the-army`;
     /// see `BasicAi::industry_before_the_army`.
@@ -6233,9 +6243,24 @@ pub struct AdvancedAi {
     /// Version 2 of `industry-before-the-army`; see
     /// `BasicAi::industry_before_the_army_2`.
     industry_before_the_army_2: bool,
+    /// Version 3 of `industry-before-the-army`; see
+    /// `BasicAi::industry_before_the_army_3`.
+    industry_before_the_army_3: bool,
     /// The Industrial Zone in the delegated governor's district list; see
     /// `BasicAi::industry_in_the_district_list`.
     industry_in_the_district_list: bool,
+    /// One Industrial Zone where its Factory reaches the most cities, and its
+    /// chain; see `BasicAi::industrial_hub`.
+    industrial_hub: bool,
+    /// `improvement-upgrades-count`: a Builder prices an improvement with the
+    /// yields its owner's techs and civics already add to it (Apprenticeship's
+    /// and Industrialization's +1 Production on a Mine, Gunpowder's on a
+    /// Quarry, Feudalism's Food on a Plantation, …), as the engine pays them
+    /// (`player_tile_yields`). The stock price reads only the printed yield,
+    /// so after Apprenticeship a Mine (+2 Production) still priced as +1 and
+    /// tied a Farm; live King games since builder-before-the-army-2 worked
+    /// 10.0 unimproved hills at t100.
+    improvement_upgrades_count: bool,
     // ---- append: l-o ------------------------------------------------
     /// A city's Monument ahead of the military floor and the Settler step in
     /// the delegated city governor. Opt-in gene `monument-first`; see
@@ -8759,6 +8784,7 @@ impl AdvancedAi {
             campus_before_the_army_2: false,
             campus_before_the_army_3: false,
             colonization_earns_its_slot: false,
+            colonization_earns_its_slot_2: false,
             // ---- append: e-f ----------------------------------------
             expansion_hall_district: false,
             early_conquest_opening: false,
@@ -8812,9 +8838,13 @@ impl AdvancedAi {
 
             host_war_unit_losses: None,
             granary_before_the_army: false,
+            granary_before_the_army_2: false,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
+            industry_before_the_army_3: false,
             industry_in_the_district_list: false,
+            industrial_hub: false,
+            improvement_upgrades_count: false,
             // ---- append: l-o ----------------------------------------
             monument_first: false,
             magnus_follows_settlers: false,
@@ -17281,6 +17311,44 @@ impl AdvancedAi {
         planning_gain > settler_gain
     }
 
+    /// See `colonization_earns_its_slot_2`: whether Urban Planning, available
+    /// to this empire, adds more production than Ilkum's +30% adds to the
+    /// cities whose queue opens with a Builder, while no card adding build
+    /// charges (Serfdom, Public Works) is on the menu or slotted.
+    fn urban_planning_outearns_builder_cards(g: &Game, pid: usize, city_ids: &[u32]) -> bool {
+        let planning = Name::new("urban_planning");
+        let held_or_offered = |card: &Name| {
+            g.players[pid].policies.contains(card) || g.available_policies(pid).contains(card)
+        };
+        if !held_or_offered(&planning)
+            || ["serfdom", "public_works"]
+                .iter()
+                .any(|card| held_or_offered(&Name::new(card)))
+        {
+            return false;
+        }
+        let pct = |card: &str, effect: &str| {
+            g.rules
+                .policies
+                .get(&Name::new(card))
+                .and_then(|spec| spec.effects.get(effect).copied())
+                .unwrap_or(0.0)
+        };
+        let ilkum_gain: f64 = city_ids
+            .iter()
+            .filter(|city| {
+                matches!(
+                    g.cities[city].queue.first(),
+                    Some(Item::Unit { unit }) if unit == "builder"
+                )
+            })
+            .map(|city| {
+                g.city_yields(*city).production * pct("ilkum", "builder_production_pct") / 100.0
+            })
+            .sum();
+        pct("urban_planning", "city_production") * city_ids.len() as f64 > ilkum_gain
+    }
+
     fn strategic_policies(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
         let objective = self.decision_objective(strategy);
 
@@ -17511,8 +17579,13 @@ impl AdvancedAi {
             // Settler worth half Urban Planning's yield in production leaves
             // the slot to Urban Planning this turn.
             let expansion_active = expansion_active
-                && !(self.colonization_earns_its_slot
+                && !((self.colonization_earns_its_slot || self.colonization_earns_its_slot_2)
                     && Self::urban_planning_outearns_colonization(g, pid, &city_ids));
+            // Version 2: and a queued Builder only for a charge card or an
+            // Ilkum that out-produces Urban Planning.
+            let builder_queued = builder_queued
+                && !(self.colonization_earns_its_slot_2
+                    && Self::urban_planning_outearns_builder_cards(g, pid, &city_ids));
             if expansion_active || builder_queued {
                 const TIMED_ECONOMY: [&str; 6] = [
                     "expropriation",
@@ -36044,6 +36117,39 @@ impl AdvancedAi {
         self.improvement_value_with_appeal(g, pos, improvement, strategy, appeal)
     }
 
+    /// See `improvement_upgrades_count`: what `pid`'s researched techs and
+    /// civics add to `improvement`, the same tree effects
+    /// `Game::player_tile_yields` pays on a built one.
+    fn improvement_tree_yields(g: &Game, pid: usize, improvement: &str) -> Yields {
+        let tree = |effect: &str| g.tree_effect(pid, effect);
+        let mut yields = Yields::default();
+        match improvement {
+            "mine" => yields.production += tree("mine_production"),
+            "quarry" => yields.production += tree("quarry_production"),
+            "lumber_mill" => yields.production += tree("lumber_mill_production"),
+            "pasture" => {
+                yields.food += tree("pasture_food");
+                yields.production += tree("pasture_production");
+            }
+            "plantation" => {
+                yields.food += tree("plantation_food");
+                yields.gold += tree("plantation_gold");
+            }
+            "camp" => {
+                yields.food += tree("camp_food");
+                yields.production += tree("camp_production");
+                yields.gold += tree("camp_gold");
+            }
+            "fishing_boats" => {
+                yields.food += tree("fishing_boats_food");
+                yields.production += tree("fishing_boats_production");
+                yields.gold += tree("fishing_boats_gold");
+            }
+            _ => {}
+        }
+        yields
+    }
+
     fn improvement_value_with_appeal(
         &self,
         g: &Game,
@@ -36056,6 +36162,15 @@ impl AdvancedAi {
         let spec = &g.rules.improvements[improvement];
         let mut yields = spec.yields;
         yields.gold += spec.effects.get("appeal_gold").copied().unwrap_or(0.0) * appeal;
+        if self.improvement_upgrades_count {
+            if let Some(owner) = tile
+                .owner_city
+                .and_then(|city| g.cities.get(&city))
+                .map(|city| city.owner)
+            {
+                yields.add(Self::improvement_tree_yields(g, owner, improvement));
+            }
+        }
         let mut value = self.yield_value(yields, strategy);
         if strategy == GrandStrategy::Culture {
             // Tourism is cumulative: delaying a resort or national park by
