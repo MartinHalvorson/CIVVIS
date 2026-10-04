@@ -5160,6 +5160,39 @@ impl AdvancedAi {
         self.breaker_before_the_war = false;
     }
 
+    /// Opt-in gene `found-against-a-rival-faith`; see
+    /// [`Self::found_against_a_rival_faith`].
+    pub fn enable_found_against_a_rival_faith(&mut self) {
+        self.found_against_a_rival_faith = true;
+    }
+
+    /// The twin of `enable_found_against_a_rival_faith`.
+    pub fn disable_found_against_a_rival_faith(&mut self) {
+        self.found_against_a_rival_faith = false;
+    }
+
+    /// Opt-in gene `domination-strikes-when-staged`; see
+    /// [`Self::domination_strikes_when_staged`].
+    pub fn enable_domination_strikes_when_staged(&mut self) {
+        self.domination_strikes_when_staged = true;
+    }
+
+    /// The twin of `enable_domination_strikes_when_staged`.
+    pub fn disable_domination_strikes_when_staged(&mut self) {
+        self.domination_strikes_when_staged = false;
+    }
+
+    /// Opt-in gene `capture-waits-on-the-march`; see
+    /// [`Self::capture_waits_on_the_march`].
+    pub fn enable_capture_waits_on_the_march(&mut self) {
+        self.capture_waits_on_the_march = true;
+    }
+
+    /// The twin of `enable_capture_waits_on_the_march`.
+    pub fn disable_capture_waits_on_the_march(&mut self) {
+        self.capture_waits_on_the_march = false;
+    }
+
     /// Opt-in gene `one-war-swaps-a-stalled-front`; see
     /// [`Self::one_war_swaps_a_stalled_front`].
     pub fn enable_one_war_swaps_a_stalled_front(&mut self) {

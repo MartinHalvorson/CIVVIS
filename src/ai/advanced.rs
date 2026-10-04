@@ -540,6 +540,11 @@ pub(crate) const DENIAL_FAR_REACH_RATIO: f64 = 3.0;
 /// the capital march consumes the whole war. The diplomatic opening gate is
 /// wider; it does not mean an 18-tile capital is the best first siege.
 const DOMINATION_FIRST_CAPTURE_MARCH: i32 = 8;
+/// `domination-strikes-when-staged`: our power over the target at which a
+/// staged Domination army takes the surprise war instead of denouncing and
+/// waiting five turns for a Formal War. See `strike_when_staged`.
+const STRIKE_WHEN_STAGED_RATIO: f64 = 2.0;
+
 /// The capital whose capture completes Domination is a first objective out
 /// to this march when we hold [`FINISHING_CAPITAL_POWER`] times its owner's
 /// power. See `finishing_capital_in_reach`.
@@ -5244,6 +5249,17 @@ pub struct AdvancedAi {
     /// defender and opens its wall tier, the civilization's unique unit
     /// preferred. See `advanced/decisive_window.rs`.
     decisive_window: bool,
+    /// `domination-strikes-when-staged`: a staged Domination army at
+    /// `STRIKE_WHEN_STAGED_RATIO` times the target's power takes the surprise
+    /// war rather than denounce first. See `strike_when_staged`. Off by default.
+    domination_strikes_when_staged: bool,
+    /// `capture-waits-on-the-march`: a declared capture whose nearest land
+    /// soldier keeps closing in is not stood down as "nobody went". See
+    /// `advanced/capture_march.rs`. Off by default.
+    capture_waits_on_the_march: bool,
+    /// The objective tile, our nearest land soldier's best distance to it,
+    /// and the turn it was set. See `advanced/capture_march.rs`.
+    capture_march: Option<(crate::Pos, i32, u32)>,
     /// `culture-counter-declares`: an urgent culture rival is declared on at
     /// `one_war::CULTURE_COUNTER_RATIO` times its power without waiting for a
     /// staged siege. See `one_war::culture_counter_due`. Off by default.
@@ -5718,6 +5734,11 @@ pub struct AdvancedAi {
     /// the stock Ilkum commitment would hold Urban Planning out again.
     colonization_earns_its_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `found-against-a-rival-faith`: a faithless Domination seat enters
+    /// the Prophet race once a rival faith reaches the religious
+    /// early-warning bar while a slot is open. See `advanced/faith_veto.rs`.
+    /// Off by default.
+    found_against_a_rival_faith: bool,
     /// `formations-heed-refusals`: a pair of units the live host refused to
     /// combine is not combined again while the refusal stands. See
     /// `advanced/formation_refusals.rs`. Off by default.
@@ -7686,6 +7707,10 @@ mod denial_nearest_finish;
 mod denial_needs_a_road;
 mod city_memory;
 mod runaway_expander;
+// `found-against-a-rival-faith`. See `advanced/faith_veto.rs`.
+mod faith_veto;
+// `capture-waits-on-the-march`. See `advanced/capture_march.rs`.
+mod capture_march;
 // `formations-heed-refusals`. See `advanced/formation_refusals.rs`.
 mod formation_refusals;
 mod siege_resource_purchase;
@@ -8790,6 +8815,9 @@ impl AdvancedAi {
             builder_before_the_army_3: false,
             // ---- append: c-d ----------------------------------------
             decisive_window: false,
+            domination_strikes_when_staged: false,
+            capture_waits_on_the_march: false,
+            capture_march: None,
             culture_counter_declares: false,
             denial_needs_a_road: false,
             denial_nearest_finish: false,
@@ -8879,6 +8907,7 @@ impl AdvancedAi {
             colonization_earns_its_slot: false,
             colonization_earns_its_slot_2: false,
             // ---- append: e-f ----------------------------------------
+            found_against_a_rival_faith: false,
             formations_heed_refusals: false,
             front_city_low: BTreeMap::new(),
             expansion_hall_district: false,
@@ -15928,6 +15957,15 @@ impl AdvancedAi {
                 {
                     Some("astrology")
                 }
+                // `found-against-a-rival-faith`: one cheap Ancient node opens
+                // the Prophet race a rival faith has made worth running. See
+                // `advanced/faith_veto.rs`.
+                _ if self.faith_veto_due(g, pid)
+                    && self.prophet_race_enterable_for(g, pid, self.victory_target)
+                    && !g.players[pid].techs.contains(&crate::name!("astrology")) =>
+                {
+                    Some("astrology")
+                }
                 // The air surge's beeline. Behind the appointed timed war's
                 // breakthrough (that package is already half-built when it
                 // holds the research slot) and behind the Taxis religion
@@ -17077,7 +17115,7 @@ impl AdvancedAi {
         pid: usize,
         target: Option<VictoryTarget>,
     ) -> bool {
-        self.prophet_race_enabled_for(target)
+        (self.prophet_race_enabled_for(target) || self.faith_veto_due(g, pid))
             && self.prophet_race_open_for(g, pid)
             && self.religious_opening_viable(g, pid)
             && !self.skip_prophet_race_2_for(g, pid, target)
@@ -19826,6 +19864,36 @@ impl AdvancedAi {
         }
     }
 
+    /// `domination-strikes-when-staged`: the surprise war to open with in
+    /// place of `opening`, when `opening` is a denouncement, the army is
+    /// `staged`, the seat targets Domination and holds
+    /// [`STRIKE_WHEN_STAGED_RATIO`] times the target's power. Live King games
+    /// on 2026-10-04: 19 of 29 "Declaring war" lines sent only a
+    /// denouncement, and the Formal War followed 3 to 66 turns later (5 to
+    /// 16 typically). A staged army sat idle while the target reinforced.
+    /// The surprise war costs grievances and favor (game 63 drained its favor
+    /// to zero in ten turns of war), which is what the gene measures.
+    fn strike_when_staged(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+        opening: &Action,
+        staged: bool,
+    ) -> Option<Action> {
+        if !self.domination_strikes_when_staged
+            || !staged
+            || !matches!(opening, Action::Denounce { .. })
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || g.military_power(pid) < STRIKE_WHEN_STAGED_RATIO * g.military_power(target).max(1.0)
+        {
+            return None;
+        }
+        g.legal_actions_within(pid, ActionFamilies::DIPLOMACY)
+            .into_iter()
+            .find(|action| matches!(action, Action::DeclareWar { player } if *player == target))
+    }
+
     /// A peacetime tile from which a ground force can begin the selected
     /// campaign without trespassing through the target's borders. Keeping the
     /// ring several tiles outside the city leaves room for different combat
@@ -21505,8 +21573,20 @@ impl AdvancedAi {
             if self.coalition_invites_before_declaring(g, pid, target) {
                 return;
             }
-            if let Some(action) = self.preferred_war_opening(g, pid, target) {
-                if self.journal().wants(crate::reasoning::Level::Strategy) {
+            if let Some(mut action) = self.preferred_war_opening(g, pid, target) {
+                // See `STRIKE_WHEN_STAGED_RATIO`.
+                if let Some(surprise) = self.strike_when_staged(g, pid, target, &action, staged) {
+                    action = surprise;
+                }
+                let denounce_first = matches!(action, Action::Denounce { .. });
+                if denounce_first && self.journal().wants(crate::reasoning::Level::Strategy) {
+                    // The opening is a denouncement; the war is the Formal War
+                    // it licenses five turns on. Say so: the line used to read
+                    // "Declaring war" while only the denouncement was sent.
+                    think!(self.journal(), Military, Strategy,
+                    "Denouncing {} before the war", g.players[target].civ;
+                    "{my_power:.0} power against their {target_power:.0}; a Formal War opens once the denouncement's five turns have passed");
+                } else if self.journal().wants(crate::reasoning::Level::Strategy) {
                     let casus = match &action {
                         Action::DeclareWarWithCasusBelli { casus_belli, .. } => {
                             format!(" under a {} casus belli", plain(casus_belli))
@@ -43880,7 +43960,11 @@ impl AdvancedAi {
         // while a slot is still open for this seat — and the prize again once
         // it holds a religion. The closed case above still wins, because
         // `prophet_race_open_for` is false by then.
-        let prophet_race_enabled = self.prophet_race_enabled_for(active_victory_target);
+        // `found-against-a-rival-faith` keeps the prize once its race won a
+        // religion. See `advanced/faith_veto.rs`.
+        let prophet_race_enabled = self.prophet_race_enabled_for(active_victory_target)
+            || (self.found_against_a_rival_faith
+                && active_victory_target == Some(VictoryTarget::Domination));
         let prophet_race_open = self.prophet_race_enterable_for(g, pid, active_victory_target);
         self.base.enter_prophet_race = prophet_race_open;
         if prophet_race_open || (prophet_race_enabled && g.players[pid].religion.is_some()) {
