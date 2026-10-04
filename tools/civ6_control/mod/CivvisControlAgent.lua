@@ -24,7 +24,13 @@
 -- see CivvisControlSetup.lua for why they are prepended rather than included.
 
 local cfg = CivvisControlConfig or {};
-local PREFIX = "CIVVISJSON ";
+-- ★ Values that need no register of their own. Every top-level `local`
+-- holds a register for the whole main chunk, and Civ VI's Lua refuses a
+-- function past 200 registers (see register_budget_test.lua; pins 2ddcd5889
+-- and 66de612ed lost the whole agent at 212). Rarely used constants and
+-- per-run tables live here instead; add new ones here, not as top-level locals.
+CivvisK = {};
+CivvisK.PREFIX = "CIVVISJSON ";
 
 -- The major-civilization UI validates each action separately, then opens its
 -- named session (DiplomacyStatementSupport.lua:167; DiplomacyActionView.lua:
@@ -238,7 +244,7 @@ end;
 -- Per-city production names the engine has already rejected on this turn. This is
 -- deliberately turn-scoped: a strategic resource or prerequisite can change later,
 -- but retrying the same impossible choice in every blocker pass cannot help.
-local refusedByCity = {};
+CivvisK.refusedByCity = {};
 -- ⚠⚠ CITY LOSS IS NOT AN EVENT, AND IT IS THE CONSTRAINT ON EVERYTHING.
 --
 -- 36% of live runs reaching turn 150 end with ONE city, and **96% of those
@@ -338,7 +344,7 @@ local function emit(kind, payload)
 	-- written is the `state` the brain must answer, so the loop deadlocked waiting
 	-- for a line that was already on disk. Terminating it here fixes every reader
 	-- rather than relying on some later event to flush the earlier one.
-	local line = PREFIX .. encode(payload);
+	local line = CivvisK.PREFIX .. encode(payload);
 	pcall(function() print(line); end);
 	pcall(function() Automation.Log(line .. "\n"); end);
 	pcall(function() UI.DataError(line); end);
@@ -890,7 +896,7 @@ end
 -- This mod's own id, as written in CivvisControl.modinfo. Needed because
 -- resetting the game configuration also clears the enabled-mod list, and this
 -- mod is on it.
-local MOD_ID = "4d2c8b16-7e05-49af-a3c1-6b90d5f2e841";
+CivvisK.MOD_ID = "4d2c8b16-7e05-49af-a3c1-6b90d5f2e841";
 
 -- Put this mod back into the configuration after a reset. Skipping this
 -- produced the most confusing failure of the lot: a correctly configured
@@ -899,7 +905,7 @@ local MOD_ID = "4d2c8b16-7e05-49af-a3c1-6b90d5f2e841";
 -- thing that writes lines had been configured out of the game.
 local function reenableSelf()
 	return try(function()
-		local handle = Modding.GetModHandle(MOD_ID);
+		local handle = Modding.GetModHandle(CivvisK.MOD_ID);
 		if handle == nil then return "no handle"; end
 		Modding.EnableMod(handle, true);
 		return "enabled";
@@ -1381,9 +1387,9 @@ end
 -- Where each unit stood at the end of the last turn we looked, so "has this unit
 -- moved?" can be asked at all. Keyed by unit id, which is stable for the life of
 -- the unit.
-local lastSeenAt = {};
+CivvisK.lastSeenAt = {};
 -- How many consecutive turns a unit has held still while it still had movement.
-local idleTurns = {};
+CivvisK.idleTurns = {};
 
 -- ⚠⚠⚠ A SETTLER THAT HAS NOT MOVED IN N TURNS IS NOT "IN FLIGHT". This is the
 -- predicate behind that sentence, lifted out so it can be tested without a
@@ -1402,10 +1408,10 @@ local idleTurns = {};
 -- `counts.settler < SettlersInFlight`, and `SettlersInFlight` is 1. So ONE
 -- stranded settler stops the empire ordering another, forever. That run ordered
 -- no settler between turns 51 and 134 and finished four cities behind.
-local STRANDED_SETTLER_TURNS = 12;
+CivvisK.STRANDED_SETTLER_TURNS = 12;
 
 local function settlerIsStranded(idle)
-	return (idle or 0) >= STRANDED_SETTLER_TURNS;
+	return (idle or 0) >= CivvisK.STRANDED_SETTLER_TURNS;
 end
 
 -- Exposed for the offline test only. ⚠ A BARE GLOBAL, never `_G.` — Civ 6's UI
@@ -1425,22 +1431,22 @@ local function trackIdleUnits(player)
 		local x = try(function() return unit:GetX(); end, -1);
 		local y = try(function() return unit:GetY(); end, -1);
 		local moves = try(function() return unit:GetMovesRemaining(); end, 0) or 0;
-		local was = lastSeenAt[uid];
+		local was = CivvisK.lastSeenAt[uid];
 		-- Movement left AND the same tile as last turn is the signal. A unit that
 		-- spent its movement is working, however little it achieved; a unit
 		-- handed a full allowance it never spends is stuck.
 		if was ~= nil and was.x == x and was.y == y and moves > 0 then
-			idleTurns[uid] = (idleTurns[uid] or 0) + 1;
+			CivvisK.idleTurns[uid] = (CivvisK.idleTurns[uid] or 0) + 1;
 		else
-			idleTurns[uid] = 0;
+			CivvisK.idleTurns[uid] = 0;
 		end
-		lastSeenAt[uid] = { x = x, y = y };
+		CivvisK.lastSeenAt[uid] = { x = x, y = y };
 	end);
 	-- Dead units must not keep their streaks: Civilization VI reuses unit ids,
 	-- and inheriting a stranded streak would make a fresh settler read stranded
 	-- the moment it was trained.
-	for uid in pairs(lastSeenAt) do
-		if not seen[uid] then lastSeenAt[uid] = nil; idleTurns[uid] = nil; end
+	for uid in pairs(CivvisK.lastSeenAt) do
+		if not seen[uid] then CivvisK.lastSeenAt[uid] = nil; CivvisK.idleTurns[uid] = nil; end
 	end
 end
 
@@ -1462,7 +1468,7 @@ local function countUnits(player)
 			-- the expansion gate shut. See `settlerIsStranded`.
 			counts.settler = counts.settler + 1;
 			local uid = try(function() return unit:GetID(); end, -1);
-			if settlerIsStranded(idleTurns[uid]) then
+			if settlerIsStranded(CivvisK.idleTurns[uid]) then
 				counts.stranded_settler = counts.stranded_settler + 1;
 			end
 		elseif name == "UNIT_BUILDER" then
@@ -1816,7 +1822,7 @@ end
 -- playing.
 local siteMemo = { turn = -1, sites = {} };
 -- Where each settler decided to go, kept across turns. See findSettleSite.
-local committedSite = {};
+CivvisK.committedSite = {};
 -- Sites the engine refused to move a given settler to.
 --
 -- ⚠ Only visible once `operate` started checking CanStartOperation WITH the
@@ -1853,7 +1859,7 @@ findSettleSite = function(player, pid, unit, turn)
 	-- while the empire was still on two cities. A destination is only worth
 	-- having if it survives the walk, so a committed site is kept until it stops
 	-- being legal or the settler stands on it.
-	local held = committedSite[id];
+	local held = CivvisK.committedSite[id];
 	if held ~= nil then
 		local plot = try(function() return Map.GetPlot(held.x, held.y); end);
 		local ux0 = try(function() return unit:GetX(); end, -1);
@@ -1868,7 +1874,7 @@ findSettleSite = function(player, pid, unit, turn)
 			siteMemo.sites[id] = plot;
 			return plot;
 		end
-		committedSite[id] = nil;
+		CivvisK.committedSite[id] = nil;
 	end
 
 	local ux = try(function() return unit:GetX(); end, -1);
@@ -2020,7 +2026,7 @@ findSettleSite = function(player, pid, unit, turn)
 	end
 	siteMemo.sites[id] = best or false;
 	if best ~= nil then
-		committedSite[id] = { x = best:GetX(), y = best:GetY() };
+		CivvisK.committedSite[id] = { x = best:GetX(), y = best:GetY() };
 		-- Keep a per-site event for the settler trace and live diagnosis.
 		emit("settle_choice", {
 			source = "search",
@@ -2063,7 +2069,7 @@ local function orderSettler(player, pid, unit, turn)
 		-- rather than re-offering a site it has already declined.
 		refusedSite[id] = refusedSite[id] or {};
 		refusedSite[id][px .. ":" .. py] = true;
-		committedSite[id] = nil;
+		CivvisK.committedSite[id] = nil;
 		siteMemo.sites[id] = nil;
 		local retry = findSettleSite(player, pid, unit, turn);
 		if retry ~= nil then
@@ -2599,7 +2605,7 @@ local assaultReady = false;
 local probesOut = 0;
 -- What the last probe decision actually resolved to, for the fires-check.
 local probeDest, probeKind = nil, nil;
-local warDeclared = {};
+CivvisK.warDeclared = {};
 -- Last turn a peace deal was asked of each target, so a standing MakePeace
 -- intent does not rebuild the working deal and re-open a session every turn
 -- against a rival who just declined. See the `peace` arm of `applyOrder`.
@@ -2774,10 +2780,10 @@ local function declareWar(player, pid, counts, turn)
 	local diplomacy = try(function() return player:GetDiplomacy(); end);
 	if diplomacy == nil then return blocked("no_diplomacy"); end
 	if try(function() return diplomacy:IsAtWarWith(target.player); end, false) then
-		warDeclared[target.player] = true;
+		CivvisK.warDeclared[target.player] = true;
 		return blocked("already_at_war");
 	end
-	if warDeclared[target.player] then return blocked("already_declared"); end
+	if CivvisK.warDeclared[target.player] then return blocked("already_declared"); end
 	if not try(function() return diplomacy:CanDeclareWarOn(target.player); end, true) then
 		-- Records the player id, because "cannot declare on 62" (the Free Cities slot)
 		-- and "cannot declare on 1" (a major civ) are completely different problems.
@@ -2791,7 +2797,7 @@ local function declareWar(player, pid, counts, turn)
 		UI.RequestPlayerOperation(pid, PlayerOperations.DIPLOMACY_DECLARE_WAR, params);
 	end);
 	if ok then
-		warDeclared[target.player] = true;
+		CivvisK.warDeclared[target.player] = true;
 		emit("war", { turn = turn, target = target.player, x = target.x, y = target.y,
 		              capital = target.capital, army = counts.military });
 	end
@@ -3958,11 +3964,11 @@ end
 -- This emits what the engine offers, once per city+district per run, and changes
 -- no order. When live runs show the existing plot among `offered`, the mapping in
 -- the produce arm is one line; if they show only fresh sites, it never ships.
-local probedRepairs = {};
+CivvisK.probedRepairs = {};
 local function probeDistrictRepair(city, districtName, asked, turn)
 	local key = tostring(try(function() return city:GetID(); end, -1)) .. districtName;
-	if probedRepairs[key] then return; end
-	probedRepairs[key] = true;
+	if CivvisK.probedRepairs[key] then return; end
+	CivvisK.probedRepairs[key] = true;
 	local row = try(function() return GameInfo.Districts[districtName]; end);
 	if row == nil then return; end
 	local have, hx, hy, pillaged = false, -1, -1, false;
@@ -4210,7 +4216,7 @@ end
 -- same order every tick is how one game logged two hundred settler requests
 -- in fifty turns: the queue read comes back empty for a few frames after a
 -- request, so the "queue is empty" test fires again and again.
-local lastBuild = {};
+CivvisK.lastBuild = {};
 
 -- Items the host's start-now predicate rejected in a city on this turn.
 --
@@ -4234,12 +4240,12 @@ local function driveProduction(player, turn, force)
 			return queue and queue:GetCurrentProductionTypeHash() or 0;
 		end, 0);
 		local cityId = try(function() return city:GetID(); end, -1);
-		local refused = refusedByCity[cityId];
+		local refused = CivvisK.refusedByCity[cityId];
 		if refused == nil or refused.turn ~= turn then
 			refused = { turn = turn };
-			refusedByCity[cityId] = refused;
+			CivvisK.refusedByCity[cityId] = refused;
 		end
-		local remembered = lastBuild[cityId];
+		local remembered = CivvisK.lastBuild[cityId];
 		-- The memo stops per-tick spam, but when the game says it is *blocked*
 		-- on production the whole point is to try again: an order that was
 		-- refused once must not lock the city out for the rest of the turn.
@@ -4298,7 +4304,7 @@ local function driveProduction(player, turn, force)
 						end);
 						if ok then
 							issued = issued + 1;
-							lastBuild[cityId] = { turn = turn, item = name };
+							CivvisK.lastBuild[cityId] = { turn = turn, item = name };
 							if civvisBuild[tostring(cityId) .. ":next"] == name then
 								civvisBuild[tostring(cityId) .. ":next"] = nil;
 							end
@@ -4399,7 +4405,7 @@ end
 -- instead — which still beats declining, because era score is what decides
 -- whether the next age is Golden or Dark, and a Dark Age is a standing penalty.
 -- So the rule is: always take one; take the expansion one when there is a choice.
-local DEDICATION_ORDER = {
+CivvisK.DEDICATION_ORDER = {
 	"COMMEMORATION_INFRASTRUCTURE",
 	"COMMEMORATION_RELIGIOUS",
 	"COMMEMORATION_SCIENTIFIC",
@@ -4451,10 +4457,10 @@ local function chooseDedication(player, pid)
 	local golden = try(function()
 		return Game.GetEras():HasGoldenAge(pid) or Game.GetEras():HasHeroicGoldenAge(pid);
 	end, false);
-	local order = DEDICATION_ORDER;
+	local order = CivvisK.DEDICATION_ORDER;
 	if not golden then
 		order = { "COMMEMORATION_SCIENTIFIC" };
-		for _, name in ipairs(DEDICATION_ORDER) do
+		for _, name in ipairs(CivvisK.DEDICATION_ORDER) do
 			if name ~= "COMMEMORATION_SCIENTIFIC" then order[#order + 1] = name; end
 		end
 	end
@@ -4510,7 +4516,7 @@ end
 -- The two `AssignCityState` governors are skipped because they cannot be posted
 -- to one of our own cities, and the Secret Societies ones do not exist in a
 -- standard game.
-local GOVERNOR_ORDER = {
+CivvisK.GOVERNOR_ORDER = {
 	"GOVERNOR_THE_BUILDER",
 	"GOVERNOR_THE_DEFENDER",
 	"GOVERNOR_THE_EDUCATOR",
@@ -4580,7 +4586,7 @@ end
 -- has query methods for this but their names differ between builds, and guessing
 -- a Civilization VI API has cost this project three failed fixes today, so the
 -- assignment we made is the assignment we remember.
-local governorPost = {};
+CivvisK.governorPost = {};
 -- CIVVIS appoints and posts a Governor as one semantic action. Firaxis's stock UI
 -- first submits APPOINT_GOVERNOR and waits for GovernorAppointed before it opens the
 -- assignment flow, so retain that target across the asynchronous engine boundary.
@@ -4604,7 +4610,7 @@ local function chooseGovernor(player, pid)
 	-- 1. Spend a title if one is going spare.
 	local appointed = nil;
 	if cfg.GovernorAppoint and try(function() return governors:CanAppoint(); end, false) then
-		for _, wanted in ipairs(GOVERNOR_ORDER) do
+		for _, wanted in ipairs(CivvisK.GOVERNOR_ORDER) do
 			local row = GameInfo.Governors[wanted];
 			if row ~= nil then
 				local held = try(function()
@@ -4656,7 +4662,7 @@ local function chooseGovernor(player, pid)
 	-- one faults can be identified without re-running both.
 	if cfg.GovernorAssign and assignOp ~= nil and cityParam ~= nil and playerParam ~= nil then
 		local taken = {};
-		for _, where in pairs(governorPost) do taken[where] = true; end
+		for _, where in pairs(CivvisK.governorPost) do taken[where] = true; end
 		local target, targetRank = nil, nil;
 		eachCity(player, function(city)
 			local id = try(function() return city:GetID(); end, -1);
@@ -4686,9 +4692,9 @@ local function chooseGovernor(player, pid)
 			end
 		end);
 		if target ~= nil then
-			for _, wanted in ipairs(GOVERNOR_ORDER) do
+			for _, wanted in ipairs(CivvisK.GOVERNOR_ORDER) do
 				local row = GameInfo.Governors[wanted];
-				if row ~= nil and governorPost[wanted] == nil
+				if row ~= nil and CivvisK.governorPost[wanted] == nil
 						and try(function() return governors:HasGovernor(row.Hash); end, false) then
 					local params = {};
 					params[govParam] = row.Index;
@@ -4698,7 +4704,7 @@ local function chooseGovernor(player, pid)
 						UI.RequestPlayerOperation(pid, assignOp, params);
 					end);
 					if ok then
-						governorPost[wanted] = target;
+						CivvisK.governorPost[wanted] = target;
 						posted = wanted;
 						break;
 					end
@@ -4900,7 +4906,7 @@ end
 -- recalled: `GetTokensToGive`, `CanGiveInfluence`, `CanGiveTokensToPlayer`,
 -- `GetTokensReceived`, `GetMostTokensReceived`, `GetSuzerain`, `CanLevyMilitary`,
 -- `GetLevyMilitaryCost`, and one `GIVE_INFLUENCE_TOKEN` request PER TOKEN.
-local MIN_ENVOY_TOKENS_SUZERAIN = 3;
+CivvisK.MIN_ENVOY_TOKENS_SUZERAIN = 3;
 
 -- Base/Assets/UI/PartialScreens/CityStates.lua:1429,1499 reads these
 -- permissions separately from IsAtWarWith (:1508). Do not guess legality
@@ -4952,13 +4958,13 @@ local envoyTally = { placed = 0, suzerainties = 0, levies = 0, met_minors = 0 };
 -- So: once we have paid a flip's worth into a claim and are STILL behind, the
 -- rival wants it more than the price says, and the next envoy is better spent
 -- anywhere else. Conceding is the whole point — matching is what lost 46.
-local ENVOY_CONTEST_STAKE = 6;
-local ENVOY_CONTEST_DEFICIT = 3;
+CivvisK.ENVOY_CONTEST_STAKE = 6;
+CivvisK.ENVOY_CONTEST_DEFICIT = 3;
 
 local function envoyIsALostAuction(minor)
 	-- Only ever true for ground somebody else is actively holding above us.
-	return (minor.mine or 0) >= ENVOY_CONTEST_STAKE
-		and (minor.need or 0) >= ENVOY_CONTEST_DEFICIT;
+	return (minor.mine or 0) >= CivvisK.ENVOY_CONTEST_STAKE
+		and (minor.need or 0) >= CivvisK.ENVOY_CONTEST_DEFICIT;
 end
 
 -- Exposed for the offline test only. ⚠ A BARE GLOBAL, never `_G.` — the UI Lua
@@ -5068,7 +5074,7 @@ local function chooseEnvoy(player, pid, turn)
 				-- already counts ours, so this reads 1 when we lead 2-2.
 				local need = 0;
 				if holder ~= pid then
-					need = math.max(MIN_ENVOY_TOKENS_SUZERAIN, most + 1) - mine;
+					need = math.max(CivvisK.MIN_ENVOY_TOKENS_SUZERAIN, most + 1) - mine;
 					if need < 1 then need = 1; end
 				else
 					suzerainties = suzerainties + 1;
@@ -12469,7 +12475,7 @@ local function applyOrder(player, pid, row, turn)
 			end
 		end);
 		if ok then
-			warDeclared[subject] = true;
+			CivvisK.warDeclared[subject] = true;
 			-- RequestSession accepts an asynchronous request, not an acknowledged
 			-- war (DiplomacyActionView.lua:427). Dependent condemnation must read
 			-- IsAtWarWith before issuing its parameterless command.
@@ -13999,10 +14005,10 @@ local function applyOrder(player, pid, row, turn)
 			return queue:CanProduce(row2.Hash, false, true);
 		end);
 		if not canOk or canStart ~= true then
-			local refused = refusedByCity[cityId];
+			local refused = CivvisK.refusedByCity[cityId];
 			if refused == nil or refused.turn ~= turn then
 				refused = { turn = turn };
-				refusedByCity[cityId] = refused;
+				CivvisK.refusedByCity[cityId] = refused;
 			end
 			refused[verb] = true;
 			emit("civvis_build_unplayable", {
