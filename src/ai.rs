@@ -15008,8 +15008,7 @@ impl BasicAi {
                     .into_iter()
                     .filter(|pos| {
                         g.map.get(*pos).is_some_and(|tile| {
-                            tile.district.is_none()
-                                && (tile.improvement.is_none() || tile.pillaged)
+                            tile.district.is_none() && (tile.improvement.is_none() || tile.pillaged)
                         }) && g
                             .valid_improvements(pid, *pos)
                             .iter()
@@ -23246,11 +23245,21 @@ mod tests {
         };
         let is_builder =
             |item: &Option<Item>| matches!(item, Some(Item::Unit { unit }) if *unit == "builder");
-        assert!(!is_builder(&pick(2, 1, 1)), "version 2 leaves a second Builder to stock");
+        assert!(
+            !is_builder(&pick(2, 1, 1)),
+            "version 2 leaves a second Builder to stock"
+        );
         assert!(is_builder(&pick(3, 1, 1)), "{:?}", pick(3, 1, 1));
         assert!(is_builder(&pick(3, 1, 0)), "the first Builder as version 2");
-        assert_eq!(pick(3, 1, 2), pick(2, 1, 2), "the one-per-two-cities cap is met");
-        assert!(BasicAi::new().settler_due(&game, 0, cid, 3, 0), "the fixture is due a Settler");
+        assert_eq!(
+            pick(3, 1, 2),
+            pick(2, 1, 2),
+            "the one-per-two-cities cap is met"
+        );
+        assert!(
+            BasicAi::new().settler_due(&game, 0, cid, 3, 0),
+            "the fixture is due a Settler"
+        );
         assert!(!is_builder(&pick(3, 0, 1)), "a due Settler comes first");
     }
 

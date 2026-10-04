@@ -22074,13 +22074,19 @@ fn colonization_earns_its_slot_only_while_a_settler_is_building() {
     };
     let idle = setup(false);
     assert!(
-        idle.players[0].policies.contains(&crate::name!("urban_planning")),
+        idle.players[0]
+            .policies
+            .contains(&crate::name!("urban_planning")),
         "no Settler in production leaves the slot to Urban Planning"
     );
-    assert!(!idle.players[0].policies.contains(&crate::name!("colonization")));
+    assert!(!idle.players[0]
+        .policies
+        .contains(&crate::name!("colonization")));
     let building = setup(true);
     assert!(
-        building.players[0].policies.contains(&crate::name!("colonization")),
+        building.players[0]
+            .policies
+            .contains(&crate::name!("colonization")),
         "a Settler in production still takes the slot"
     );
 }
