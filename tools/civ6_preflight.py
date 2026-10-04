@@ -66,6 +66,9 @@ class Report:
     def __init__(self) -> None:
         self.failures: list[str] = []
         self.warnings: list[str] = []
+        # `check_bundle`'s `install.signature_report()`, kept so `check_host`
+        # can reuse that codesign verdict instead of running it again.
+        self.seal: dict | None = None
 
     def ok(self, what: str, detail: str = "") -> None:
         print(f"  PASS  {what}{(' — ' + detail) if detail else ''}")
@@ -208,6 +211,7 @@ def check_bundle(report: Report) -> None:
         report.warn("codesign", f"no Civilization VI install to check ({exc})")
         return
 
+    report.seal = seal
     if seal["state"] == "valid":
         report.ok("codesign", "valid on disk — the mod is not installed")
     elif seal["state"] in ("unknown", "no-bundle"):
@@ -228,6 +232,27 @@ def check_bundle(report: Report) -> None:
         )
     else:
         report.warn("codesign", f"{seal['detail']}; no offending file was named")
+
+
+def bundle_signature(report: Report, launcher) -> str | None:
+    """Why codesign rejects the game bundle, or None when it is valid.
+
+    ⚠ ONE CODESIGN PER PREFLIGHT. `check_bundle` and `check_host` both ran
+    `codesign -v` on the same Civ6.app, ~3.7 s each on the live host
+    (2026-10-04), and preflight runs at every game boundary. When
+    `check_bundle` already has a verdict for this very bundle, use it; when it
+    has none, or names another path, or could not run codesign, ask again.
+    """
+    seal = report.seal
+    if seal and seal.get("state") in ("valid", "broken") and seal.get("bundle"):
+        app = launcher.game_binary().parent.parent.parent
+        try:
+            same = Path(seal["bundle"]).resolve() == app.resolve()
+        except OSError:
+            same = False
+        if same:
+            return None if seal["state"] == "valid" else (seal.get("detail") or "codesign rejected the bundle")
+    return launcher.bundle_signature_error()
 
 
 def steam_account_id() -> int | None:
@@ -354,7 +379,7 @@ def check_host(report: Report) -> None:
     # still played whole games on hosts whose trust record predates the change, so
     # failing would refuse runs that would have worked. It is evidence, printed
     # before a batch instead of reconstructed after sixteen silent attempts.
-    signature = launcher.bundle_signature_error()
+    signature = bundle_signature(report, launcher)
     if signature is None:
         report.ok("bundle signature", "valid on disk")
     else:
