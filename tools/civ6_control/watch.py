@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections import Counter
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -191,6 +192,52 @@ def turns_left_seconds(first_turn: int | None, first_turn_at: float,
     return remaining * (elapsed / turns_done)
 
 
+class GameLiveness:
+    """Whether the game still runs, without a `ps` on every relay pass.
+
+    ★ THE RELAY READ NOTHING WHILE `ps` RAN. `follow` asked `env.game_pids()`
+    on every 0.25 s pass, and the tail is read only between passes. `ps`
+    lists every process on the host; at load ~100 it occasionally took
+    seconds (`[env] ps did not answer in 10s` once in each of G70 and G71),
+    and a `sample` of the relay found its main thread blocked in child-process
+    waits 40% of a 15 s window. Boards the brain was waiting for sat in the
+    log meanwhile: ~2% of `state` lines reached the relay over 1 s late,
+    30-40 s a game.
+
+    The pids the last listing returned are checked with `os.kill(pid, 0)`, a
+    syscall, and `ps` runs only when there is no listing, when every listed
+    pid has gone (the exit is confirmed by a real listing, exactly as
+    before), or every `relist_s` to pick up a new process.
+    """
+
+    def __init__(self, relist_s: float = 10.0, clock=time.monotonic):
+        self.relist_s = relist_s
+        self.clock = clock
+        self.known: list[int] = []
+        self.listed_at: float | None = None
+
+    @staticmethod
+    def _running(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except OSError:
+            return False
+        return True
+
+    def alive(self) -> bool:
+        now = self.clock()
+        fresh = self.listed_at is not None and now - self.listed_at < self.relist_s
+        if fresh and any(self._running(pid) for pid in self.known):
+            return True
+        self.known = list(env.game_pids())
+        self.listed_at = now
+        return bool(self.known)
+
+
 def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
            stop_when=None, each_poll=None, stall_s: float | None = 600.0,
            frozen_s: float | None = None, pause_when=None,
@@ -259,6 +306,7 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
     now = time.monotonic()
     deadline = now + timeout_s
     ceiling = now + (ceiling_s if ceiling_s is not None else timeout_s)
+    liveness = GameLiveness()
     last_event = now
     # Silence is not the only way a run dies. A wedged popup can keep emitting
     # state from one turn forever, so track actual turn progress separately.
@@ -327,7 +375,7 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
             deadline = ceiling if needed <= 0 else min(now + needed, ceiling)
         if consume():
             return "stopped"
-        if not env.game_pids():
+        if not liveness.alive():
             for event in tail.poll():
                 on_event(event)
             return "game exited"
