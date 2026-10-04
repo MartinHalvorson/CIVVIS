@@ -31,6 +31,11 @@ class InstalledSourceMatchesTest(unittest.TestCase):
 
         self.assertTrue(civ6_preflight.installed_source_matches(installed, source))
 
+    def test_an_installed_copy_without_comment_lines_matches(self) -> None:
+        source = b"-- why\nlocal a = 1\n\n-- more\nreturn a\n"
+        self.assertTrue(civ6_preflight.installed_source_matches(
+            b"-- prelude\nCivvisControlConfig = {}\n\nlocal a = 1\nreturn a\n", source))
+
     def test_different_installed_source_does_not_match(self) -> None:
         self.assertFalse(civ6_preflight.installed_source_matches(b"print('old')\n", b"print('new')\n"))
 
