@@ -2665,6 +2665,35 @@ def _main_menu_visible(path: Path) -> bool:
     )
 
 
+#: Lines only Civ VI's legal splash carries -- the copyright page that follows
+#: the logos, which the launcher's log-backed "main menu reached" can fire over.
+LEGAL_SPLASH_MARKERS = ("take-two interactive", "rad game tools", "audiokinetic")
+
+
+def _legal_splash_visible(path: Path, bounds: tuple[int, int, int, int]) -> bool:
+    """Whether a screenshot shows the copyright splash instead of the menu.
+
+    ★★ THE FIRST MENU READ OF ALMOST EVERY GAME WAS THE SPLASH. Its seven lines
+    of legal text and the middleware logos read as nine menu rows, so the
+    row fallback clicked "Single Player" on the copyright page, opened nothing,
+    and the submenu poll spent its whole twenty-second budget before attempt
+    two found the real menu: `attempt 1: menu read at 0.450 (pitch 0.051, 9
+    rows)` then `no submenu (0 rows)` in 10 of the 14 games of 2026-10-04,
+    ~30 s each (G64/G65 `menu-attempt1.png` are the splash). The words are
+    read from the enlarged menu crop -- inside the game window by construction,
+    so a terminal quoting them elsewhere on the desktop cannot stall a real
+    menu -- and the label search that just missed "Single Player" has already
+    paid for that crop: `_menu_crop_ocr` is cached per capture. The full-screen
+    pass does not read these small lines at all; the crop reads "Take-Two
+    Interactive" on both captures above and on neither real menu.
+    """
+    return any(
+        marker in str(observation.get("text", "")).lower()
+        for observation in _menu_crop_ocr(path, bounds)
+        for marker in LEGAL_SPLASH_MARKERS
+    )
+
+
 def _menu_ocr_observations(path: Path) -> list[dict]:
     """Return menu OCR observations, treating an unreadable capture as empty.
 
@@ -3079,6 +3108,10 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             if point is None and dismiss_connection_issue(menushot, bounds):
                 time.sleep(.5)
                 return None  # The polling reader takes a fresh menu frame.
+            # The copyright splash's text lines read as menu rows; wait it
+            # out on the poll rather than click its text (`_legal_splash_visible`).
+            if point is None and _legal_splash_visible(menushot, bounds):
+                return None
             rows = vision.menu_rows(menushot, bounds) if vision.available() else []
             return (point, rows) if point is not None or len(rows) >= 4 else None
 
