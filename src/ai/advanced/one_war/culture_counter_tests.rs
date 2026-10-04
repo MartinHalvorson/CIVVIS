@@ -78,3 +78,24 @@ fn the_culture_counter_needs_the_ratio() {
     ai.advanced_diplomacy(&mut g, 0, &plan);
     assert!(!g.is_at_war(0, 1));
 }
+
+/// See `culture_lane_threat`: a culture race behind a rival's higher
+/// Diplomacy lane still makes it a counter target under the gene, so the
+/// Recovery plan does not offer it peace (Norway, game 61).
+#[test]
+fn a_culture_race_behind_another_lane_is_still_countered() {
+    let (mut g, mut ai, _) = fixture(4);
+    let observed = Arc::make_mut(&mut g.observed_public_empire_stats);
+    observed.entry(1).or_default().foreign_tourists = Some(77);
+    g.players[1].dvp = 16;
+    let (lane, _) = ai.rival_pressure(&g, 1);
+    assert_ne!(lane, GrandStrategy::Culture, "fixture: another lane leads");
+    assert_eq!(ai.rival_culture_progress(&g, 1), 77);
+    assert!(
+        !ai.domination_counter_target(&g, 0, 1),
+        "masked without the gene"
+    );
+    ai.enable_culture_counter_declares();
+    assert!(ai.culture_lane_threat(&g, 1));
+    assert!(ai.domination_counter_target(&g, 0, 1));
+}

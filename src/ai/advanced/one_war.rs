@@ -777,10 +777,44 @@ impl AdvancedAi {
     /// domestic, at peace with us all game.
     pub(crate) fn culture_counter_due(&self, g: &Game, pid: usize, rival: usize) -> bool {
         self.culture_counter_declares
-            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && self.urgent_victory_threat(g, rival)
-            && self.rival_victory_pressure(g, rival).strategy == GrandStrategy::Culture
+            && self.culture_lane_threat(g, rival)
             && g.military_power(pid) >= CULTURE_COUNTER_RATIO * g.military_power(rival).max(1.0)
+    }
+
+    /// `rival`'s culture lane alone, as a percent of the bar: its foreign
+    /// tourists against the largest domestic count among the other living
+    /// majors, the comparison Firaxis makes. `rival_victory_pressure` keeps
+    /// only a rival's highest lane, so a score lead or Diplomatic Victory
+    /// points can stand in front of a culture race a war can still slow.
+    pub(crate) fn rival_culture_progress(&self, g: &Game, rival: usize) -> i32 {
+        let bar = g
+            .players
+            .iter()
+            .filter(|p| p.alive && !p.is_minor && !p.is_barbarian && p.id != rival)
+            .map(|p| g.domestic_tourists(p.id))
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        (100 * g.foreign_tourists(rival) / bar).clamp(0, 100) as i32
+    }
+
+    /// `culture-counter-declares`: whether a Domination seat counts `rival`'s
+    /// culture race on its own lane, at the culture threat bar, whatever the
+    /// rival's highest lane reads. Live King civvis-20261004T140744Z (game
+    /// 61) was at war with Norway, the culture leader, from turn 40. At 224,
+    /// with Norway's visitors at 124 against the largest staycation of 161
+    /// (77%), Norway's score lead (86) and Diplomatic Victory points (80)
+    /// stood in front of its culture lane, so it was no counter target. The
+    /// Recovery plan offered it "this is not the war the recovery plan is
+    /// fighting". Its Tourism rose from 266 to 404 within six turns of the
+    /// peace, and it won on Culture at 234.
+    pub(crate) fn culture_lane_threat(&self, g: &Game, rival: usize) -> bool {
+        self.culture_counter_declares
+            && self.deny_leaders
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && Self::victory_strategy_enabled(g, GrandStrategy::Culture)
+            && self.rival_culture_progress(g, rival) >= self.culture_threat_pressure()
     }
 
     /// Whether a counter-war on `rival`'s religious clock falls under
