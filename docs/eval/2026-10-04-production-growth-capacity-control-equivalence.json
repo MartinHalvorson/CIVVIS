@@ -1,0 +1,43 @@
+{
+  "verified_at": "2026-10-04T18:09:00.860727+00:00",
+  "current_control_source": "8ece0460541b09da9a09dba65b903183cb935e30",
+  "fresh_strength_samples": 0,
+  "purpose": "Consumed-seed replay verifies fresh current control library and observer reproduce prior properly enabled live configuration",
+  "rows": [
+    {
+      "difficulty": "emperor",
+      "seed": 61007001,
+      "actions": {
+        "byte_identical": true,
+        "sha256": "3297a9921aa9fb5ff844377f304bebc8ddd3a49e2b4618e5de6df0cdf4d350f2",
+        "previous_source": "84a64d8a3cf9769afec4940f4b611608ac0851d2",
+        "previous_path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/ledger/setup-audit/civvis-production-growth-ledger-v2-emperor-61007001-live-actions.json"
+      },
+      "action_count": 26195,
+      "final": {
+        "byte_identical": true,
+        "sha256": "f7d7761ba9bd279d3aafe354d5506eee56799f267ebdfcaffd0e5de3eed2bd43",
+        "previous_source": "84a64d8a3cf9769afec4940f4b611608ac0851d2",
+        "previous_path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/ledger/setup-audit/civvis-production-growth-ledger-v2-emperor-61007001-live-final.json"
+      }
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61007101,
+      "actions": {
+        "byte_identical": true,
+        "sha256": "96796d0d483e1e11a4a75fca58eb465024b914445b12cf957a310c325974c7a1",
+        "previous_source": "84a64d8a3cf9769afec4940f4b611608ac0851d2",
+        "previous_path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/ledger/setup-audit/civvis-production-growth-ledger-v2-deity-61007101-live-actions.json"
+      },
+      "action_count": 34454,
+      "final": {
+        "byte_identical": true,
+        "sha256": "395d697c4f8b9a1070df296b95a57ca083eea7893a6b0b3c8282535aa97f1fef",
+        "previous_source": "84a64d8a3cf9769afec4940f4b611608ac0851d2",
+        "previous_path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/ledger/setup-audit/civvis-production-growth-ledger-v2-deity-61007101-live-final.json"
+      }
+    }
+  ],
+  "actual_Firaxis_verification": false
+}
