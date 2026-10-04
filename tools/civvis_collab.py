@@ -2825,7 +2825,19 @@ def macos_freshness_plist(repo: Path, worker: Path) -> bytes:
     payload = {
         "EnvironmentVariables": {"CIVVIS_FRESHNESS_MARKER": FRESHNESS_MARKER},
         "Label": freshness_service_label(repo),
-        "ProcessType": "Background",
+        # ★★★★ NOT `Background`. On an Apple-silicon host that background
+        # band is a near-pause, not a yield: 12 `yes` burners under
+        # `taskpolicy -b` got 0.46 of one core with the host 39% idle
+        # (mbp-m5-max-128, 2026-10-04). Under a live game plus batch load the
+        # refresh's per-worktree `git` calls sat runnable at priority 4 for
+        # 12+ minutes over 89 worktrees, longer than StartInterval, so launchd
+        # started the next run straight after and the refresh lock was held
+        # almost continuously -- every `start` on the host failed with
+        # "another refresh is already running". `Standard` ran a launchd agent
+        # at priority 20 there and still starved at load ~100; `Interactive`
+        # schedules like an app. The refresh is a few git reads per worktree,
+        # so the cost of not being background is negligible.
+        "ProcessType": "Interactive",
         "ProgramArguments": macos_freshness_command(repo, worker),
         "RunAtLoad": True,
         "StartInterval": FRESHNESS_INTERVAL_SECONDS,
