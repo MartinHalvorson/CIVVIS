@@ -5820,17 +5820,31 @@ fn ledger_evidence_and_states(
     path: &Path,
     turns: &[u32],
 ) -> (Vec<serde_json::Value>, Vec<civvis::mirror::StateSnapshot>) {
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = civvis::mirror::read_events(path) else {
         return (Vec::new(), Vec::new());
     };
     let mut evidence = Vec::new();
     let mut states = Vec::new();
-    for line in raw.lines() {
-        if !line.contains("\"state\"")
-            && !EVIDENCE_KINDS
-                .iter()
-                .any(|kind| line.contains(&format!("\"{kind}\"")))
-        {
+    // ★★★★ ONLY THE LINES THAT NAME A KIND WE KEEP, AND ONLY THEIR TURNS.
+    // This ran on the first frame of every turn and built a full
+    // `serde_json::Value` of EVERY state record of the run (hundreds of
+    // 100-300 KB records by turn 200) to keep the one or two turns asked for:
+    // the largest single cost of a late decider frame (2,080 of ~7,700 samples
+    // on a growing-log replay of civvis-20261003T164758Z t230-245). The lines
+    // are the same ones the old `contains` test kept, in file order; a record
+    // that spells only other integer turns cannot pass the `as_u64` check below.
+    let mut lines = civvis::mirror::line_ranges_containing(&raw, "\"state\"");
+    for kind in EVIDENCE_KINDS {
+        lines.extend(civvis::mirror::line_ranges_containing(
+            &raw,
+            &format!("\"{kind}\""),
+        ));
+    }
+    lines.sort_unstable();
+    lines.dedup();
+    for (start, end) in lines {
+        let line = &raw[start..end];
+        if !civvis::mirror::turn_may_be_any(line, turns) {
             continue;
         }
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
