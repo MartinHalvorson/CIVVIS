@@ -106,6 +106,10 @@ pub(crate) const ONE_WAR_SECOND_FRONT_RATIO: f64 = 1.5;
 /// nearly every turn, and the army left Barcelona's ring for a war that never
 /// opened (diagnosed by -60).
 pub(crate) const ONE_WAR_SECOND_FRONT_HOLD_RATIO: f64 = 1.3;
+
+/// Standard turns a front siege still in Stage counts as live for
+/// `front_siege_live`. A siege past Stage counts while it is read.
+pub(crate) const FRONT_SIEGE_LIVE_TURNS: u32 = 10;
 /// Standard turns the front may refuse the peace that would free the army
 /// before the second front opens beside it.
 pub(crate) const ONE_WAR_SECOND_FRONT_PATIENCE: u32 = 3;
@@ -724,6 +728,44 @@ impl AdvancedAi {
         self.faith_counter(g, pid, rival)
             && g.military_power(pid)
                 >= self.second_front_ratio(rival) * g.military_power(rival).max(1.0)
+    }
+
+    /// Whether a siege on one of the front's cities is live: not Hold, read
+    /// this turn or the last, and past Stage or entered within
+    /// [`FRONT_SIEGE_LIVE_TURNS`] standard turns.
+    pub(crate) fn front_siege_live(&self, g: &Game) -> bool {
+        let Some(front) = self.one_war_front() else {
+            return false;
+        };
+        self.sieges.iter().any(|(cid, siege)| {
+            g.cities.get(cid).is_some_and(|city| city.owner == front)
+                && siege.stage != super::siege_train::SiegeStage::Hold
+                && g.turn.saturating_sub(siege.assessed) <= 1
+                && (siege.stage != super::siege_train::SiegeStage::Stage
+                    || g.turn.saturating_sub(siege.entered)
+                        <= g.standard_duration(FRONT_SIEGE_LIVE_TURNS))
+        })
+    }
+
+    /// Whether the second front `rival` is declared on while the army stays
+    /// on the front: a faith counter that is not urgent, beside a live front
+    /// siege. The war on the faith condemns its spreaders in our own land,
+    /// and that needs no army at its cities; the plan hands over once the
+    /// front's siege ends. Live King civvis-20261004T040138Z (game 47) had
+    /// Quebec City in Invest at turn 90, at 536 power against Canada's 80;
+    /// at 92 the Ethiopian faith took the second front, the plan's target
+    /// moved twelve tiles to Popayán, and the Quebec army turned around.
+    /// Popayán stayed "0 of 10 staged", Quebec was never taken, and by 126
+    /// the empire held nothing new at 822 against 139 (diagnosed by -60).
+    pub(crate) fn second_front_waits_for_the_front(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> bool {
+        !self.urgent_victory_threat(g, rival)
+            && self.faith_counter(g, pid, rival)
+            && self.front_siege_live(g)
     }
 
     /// A faithless Domination seat whose cities `rival`'s faith is taking:

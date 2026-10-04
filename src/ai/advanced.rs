@@ -6738,6 +6738,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-force-keeps-its-members`: a Siege force's member is not taken
+    /// by a Destroy, Escort or ClearCamp row unless its target is within
+    /// [`objective_board::SIEGE_MEMBER_STRIKE_REACH`]. Off by default.
+    siege_force_keeps_its_members: bool,
     /// `siege-needs-a-breaker`: a walled city is reduced only with a
     /// wall-breaker at hand — a siege gun fit to fire within the staging
     /// ring, a ram or tower that works on the walls, or shooters that can
@@ -8830,6 +8834,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_force_keeps_its_members: false,
             siege_needs_a_breaker: false,
             siege_budget_counts_what_fires: false,
             siege_holds_a_breach: false,
@@ -12954,6 +12959,8 @@ impl AdvancedAi {
             // A second front the Domination plan must open (the next
             // capital, an urgent clock) takes the plan's target first.
             self.one_war_second_front(g, pid)
+                // See `second_front_waits_for_the_front`.
+                .filter(|rival| !self.second_front_waits_for_the_front(g, pid, *rival))
                 .or_else(|| {
                     self.one_war_front()
                         .filter(|front| active_fronts.contains(front))
@@ -20721,7 +20728,10 @@ impl AdvancedAi {
                         && !air_front
                         && !(self.active_victory_target(g) == Some(VictoryTarget::Domination)
                             && (self.domination_counter_target(g, pid, *other)
-                                || self.domination_capital_prey(g, pid, *other))))
+                                || self.domination_capital_prey(g, pid, *other)))
+                        // Nor with the only land road to the target. See
+                        // `war_holds_the_road`.
+                        && !self.war_holds_the_road(g, pid, *other))
                     || (self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                         && !appointed_objective)
@@ -20907,8 +20917,13 @@ impl AdvancedAi {
         // fallback the Arm-phase denounce below was unreachable and the
         // declaration paid the whole Formal-War clock after the wing was
         // ready.
-        let Some(target) = plan
-            .target_player
+        // See `second_front_waits_for_the_front`: a faith counter is declared
+        // on while the plan, and the army, stay on the front's siege.
+        let waiting_second = self.one_war_second_front(g, pid).filter(|rival| {
+            !g.is_at_war(pid, *rival) && self.second_front_waits_for_the_front(g, pid, *rival)
+        });
+        let Some(target) = waiting_second
+            .or(plan.target_player)
             .or_else(|| self.air_surge_diplomacy_target())
         else {
             return;
@@ -20967,13 +20982,22 @@ impl AdvancedAi {
             return;
         }
         let target_power = g.military_power(target);
-        let close_enough = plan
-            .target_city
-            .and_then(|cid| g.cities.get(&cid))
-            .is_some_and(|target_city| {
-                Self::city_within_declaration_range(g, pid, target_city.pos)
-                    || self.denial_reaches_far(g, pid, target, target_city.pos)
-            });
+        let close_enough = if waiting_second == Some(target) {
+            // The plan's city is the front's; the waiting faith is in reach
+            // when any city of its is.
+            g.player_city_ids(target).into_iter().any(|cid| {
+                let pos = g.cities[&cid].pos;
+                Self::city_within_declaration_range(g, pid, pos)
+                    || self.denial_reaches_far(g, pid, target, pos)
+            })
+        } else {
+            plan.target_city
+                .and_then(|cid| g.cities.get(&cid))
+                .is_some_and(|target_city| {
+                    Self::city_within_declaration_range(g, pid, target_city.pos)
+                        || self.denial_reaches_far(g, pid, target, target_city.pos)
+                })
+        };
         let committed_domination = self.victory_target == Some(VictoryTarget::Domination);
         // An army that has reached the enemy border is the only practical
         // answer to a rival's terminal clock.  Keep the normal power margin

@@ -604,3 +604,52 @@ fn a_named_second_front_holds_below_the_opening_ratio() {
     assert_eq!(ai.one_war_second_front(&g, 0), None);
     assert!(!ai.faith_counter_due(&g, 0, 2));
 }
+
+/// See `second_front_waits_for_the_front`: beside a live front siege the
+/// faith counter is declared on, but the plan stays on the front.
+#[test]
+fn a_faith_counter_waits_for_the_front_siege_but_is_declared_on() {
+    let (mut g, mut ai) = two_fronts();
+    g.found_city_for(0, (6, 18), None);
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    let front_city = g.player_city_ids(1)[0];
+    ai.sieges.insert(
+        front_city,
+        crate::ai::advanced::siege_train::Siege {
+            stage: crate::ai::advanced::siege_train::SiegeStage::Invest,
+            taker: None,
+            entered: g.turn - 2,
+            assessed: g.turn,
+            posts: Default::default(),
+            short_since: None,
+        },
+    );
+    ai.coalition_before_war = false;
+    ai.coalition_before_war_2 = false;
+    ai.coalition_before_war_3 = false;
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2));
+    assert!(ai.second_front_waits_for_the_front(&g, 0, 2));
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.target_player, Some(1), "the army stays on the front");
+    for _ in 0..12 {
+        if g.is_at_war(0, 2) {
+            break;
+        }
+        g.turn += 1;
+        ai.sieges.get_mut(&front_city).unwrap().assessed = g.turn;
+        let plan = ai.assess(&g, 0);
+        assert_eq!(plan.target_player, Some(1));
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+    }
+    assert!(g.is_at_war(0, 2), "the faith counter is declared on");
+
+    // Without a live front siege the plan hands over at once.
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    ai.one_war_observe(&g, 0);
+    assert!(!ai.second_front_waits_for_the_front(&g, 0, 2));
+    assert_eq!(ai.assess(&g, 0).target_player, Some(2));
+}
