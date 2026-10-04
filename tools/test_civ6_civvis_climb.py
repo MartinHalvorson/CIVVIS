@@ -38,6 +38,34 @@ class CrashAlertCleanupTest(unittest.TestCase):
              mock.patch.object(climb.desktop_control, "dismiss_modals", side_effect=OSError("unavailable")):
             climb.dismiss_crash_dialogs()
 
+    def _sweep(self, running):
+        with mock.patch.object(climb, "run", return_value="") as run, \
+             mock.patch.object(climb.desktop_control, "running_process_names",
+                               **({"side_effect": running} if isinstance(running, Exception)
+                                  else {"return_value": running})), \
+             mock.patch.object(climb.desktop_control, "dismiss_modals", return_value=[]) as dismiss:
+            climb.dismiss_crash_dialogs()
+        dismiss.assert_called_once_with(civ6_crashes_only=True)
+        return [call.args[0] for call in run.call_args_list if call.args[0][0] == "osascript"]
+
+    def test_the_sweep_asks_only_for_owners_that_run(self):
+        # Measured: each absent owner costs System Events ~2-3.6 s to deny.
+        scripts = self._sweep({"steam_osx", "Steam", "Finder"})
+        self.assertEqual(len(scripts), 1)
+        self.assertIn('{"Steam"}', scripts[0][2])
+        for absent in ("Civilization VI", "Civ6", "ReportCrash", "Problem Reporter"):
+            self.assertNotIn(f'"{absent}"', scripts[0][2])
+
+    def test_no_running_owner_means_no_applescript_at_all(self):
+        self.assertEqual(self._sweep({"Finder"}), [])
+
+    def test_an_unknown_process_list_keeps_every_owner(self):
+        for unknown in (None, RuntimeError("System Events unavailable")):
+            scripts = self._sweep(unknown)
+            self.assertEqual(len(scripts), 1)
+            self.assertIn('{"Steam", "Civilization VI", "Civ6", "ReportCrash", '
+                          '"Problem Reporter"}', scripts[0][2])
+
 
 class BusyOnlyCountsARealGame(unittest.TestCase):
     """`pgrep -f` matches command lines, so anything that NAMES the harness hits.
