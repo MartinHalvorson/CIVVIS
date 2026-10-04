@@ -94,6 +94,10 @@ VERIFICATION_OPTIONS = {
     "GraphicsOptions.txt": {
         "EnableShadows": 0,
         "EnableCloudShadows": 0,
+        # Pinned at the shipped value so the in-game VSync A/B
+        # (`CivvisControlHeartbeat.lua`, `VSyncABTurns`) cannot carry a block's
+        # setting, which the game writes back on exit, into the next game.
+        "VSync": 1,
     },
 }
 
@@ -107,7 +111,7 @@ VERIFICATION_DEFAULTS = {
     },
     "UserOptions.txt": {"PlayHistoricMomentAnimation": 1,
                         "AutoSaveKeepCount": 10, "AutoSaveFrequency": 1},
-    "GraphicsOptions.txt": {"EnableShadows": 1, "EnableCloudShadows": 1},
+    "GraphicsOptions.txt": {"EnableShadows": 1, "EnableCloudShadows": 1, "VSync": 1},
 }
 
 # Shipped defaults, for --revert.
