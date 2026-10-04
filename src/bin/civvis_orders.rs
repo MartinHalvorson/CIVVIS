@@ -8042,12 +8042,26 @@ fn refuse_retired_strategy_flag(args: &[String]) {
     }
 }
 
+fn attach_input_capture(
+    reply: String,
+    capture: Option<mirror::input_capture::RequestCapture>,
+) -> String {
+    let Some(capture) = capture else {
+        return reply;
+    };
+    let mut payload: serde_json::Value =
+        serde_json::from_str(&reply).expect("decision reply is JSON");
+    payload["input_capture"] = capture.finish();
+    payload.to_string()
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(dir) = arg_text(&args, "--mirror") else {
         eprintln!(
             "usage: civvis-orders --mirror <run-dir> [--turn N] [--serve] \\
-             [--audit-orders <orders.jsonl>] [--audit-host-moves]"
+             [--audit-orders <orders.jsonl>] [--audit-host-moves] \\
+             [--capture-inputs <new-directory>]"
         );
         std::process::exit(2);
     };
@@ -8850,12 +8864,36 @@ fn main() {
         return;
     }
 
+    // Opt-in only: record the bytes each reader actually receives, rather than
+    // guessing one input frontier for a decision against a growing host log.
+    let input_capture = arg_text(&args, "--capture-inputs").map(|directory| {
+        mirror::input_capture::InputCapture::create(Path::new(&directory), &events).unwrap_or_else(
+            |error| {
+                eprintln!("civvis-orders: cannot create input capture: {error}");
+                std::process::exit(2);
+            },
+        )
+    });
+    if args.iter().any(|arg| arg == "--capture-inputs") && input_capture.is_none() {
+        eprintln!("civvis-orders: --capture-inputs requires a new directory");
+        std::process::exit(2);
+    }
+    let begin_capture = || {
+        input_capture
+            .as_ref()
+            .map(|capture| capture.begin().expect("one decision at a time"))
+    };
+
     if !serve {
+        let capture = begin_capture();
         let want_turn: Option<u32> = arg_text(&args, "--turn").and_then(|v| v.parse().ok());
         let Some((snapshot, state)) = load(want_turn) else {
-            println!(
-                "{{\"turn\":0,\"orders\":[],\"note\":\"no revealed terrain or no state yet\"}}"
+            let reply = attach_input_capture(
+                r#"{"turn":0,"orders":[],"note":"no revealed terrain or no state yet"}"#
+                    .to_string(),
+                capture,
             );
+            println!("{reply}");
             return;
         };
         let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
@@ -8896,6 +8934,7 @@ fn main() {
                 eprintln!("{}", explain_line(thought));
             }
         }
+        let reply = attach_input_capture(reply, capture);
         println!("{reply}");
         return;
     }
@@ -8939,6 +8978,7 @@ fn main() {
     let mut pending_orders: Vec<PendingOrders> = Vec::new();
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
+        let capture = begin_capture();
         let want: Option<u32> = line.trim().parse().ok();
         let reply = match load(want) {
             None => format!(
@@ -9186,6 +9226,7 @@ fn main() {
                 eprintln!("{}", explain_line(thought));
             }
         }
+        let reply = attach_input_capture(reply, capture);
         if writeln!(out, "{reply}").is_err() {
             break;
         }
@@ -19759,3 +19800,7 @@ mod air_sequence_tests;
 #[cfg(test)]
 #[path = "civvis_orders/air_receipt_tests.rs"]
 mod air_receipt_tests;
+
+#[cfg(test)]
+#[path = "civvis_orders/input_capture_tests.rs"]
+mod input_capture_tests;
