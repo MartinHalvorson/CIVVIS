@@ -1,0 +1,29 @@
+{
+  "control_source_commit": "37a27d5f05ca72ed548022d568228a4565fbf698",
+  "task_base_commit": "15385066768c105ac30eab410d733ace5d8e0a1f",
+  "control_binary_sha256": "b997f3bf99a30120e18adff5975cdf805f92e3ded0dce8096093fd152acb8f84",
+  "control_library_sha256": "5de95a5eb0399e55d53217b31d2e173ef9609e5fdbdedcb7817afacdff6abd4e",
+  "gene_ledger_sha256": "e86a761d3fc5d51f3d41b289c5b7275810fe5adbbe2a85581d32833ad3e05a45",
+  "probe_sha256": "945f55241793ec57cfae27fa9fd3fe34b3715438646f4f40f81d3e13fd2dd6ab",
+  "pilot_seeds": {
+    "emperor": [
+      61005400,
+      61005403
+    ],
+    "deity": [
+      61005500,
+      61005503
+    ]
+  },
+  "confirmation_seeds": {
+    "emperor": [
+      61005600,
+      61005611
+    ],
+    "deity": [
+      61005700,
+      61005707
+    ]
+  },
+  "protocol": "Freeze source before pilot. Seek early rate/cumulative gains at turn 50/75 on both difficulties, accounting for science/culture/cities and survival. Confirm a promising pilot on fresh seeds without in-block tuning. Later-only or harmful results are insufficient. Native simulations, not Firaxis games. All games and censoring retained."
+}

@@ -213,3 +213,103 @@ fn named_city_review_does_not_enable_adaptive_preemption() {
     assert_eq!(ai.production_review_margin(&g), 1.25);
     assert_eq!(AdvancedAi::new().production_review_margin(&g), 1.0);
 }
+
+#[test]
+fn researched_mine_output_changes_the_actual_builder_destination() {
+    let (mut g, _, city, old_builder) = fixture();
+    g.remove_unit(old_builder);
+    let mine = (4, 5);
+    let lumber = (6, 5);
+    g.map.tiles.get_mut(&mine).unwrap().hills = true;
+    let forest = g.map.tiles.get_mut(&lumber).unwrap();
+    forest.resource = None;
+    forest.feature = Some(crate::name!("forest"));
+    g.players[0]
+        .techs
+        .extend([crate::name!("construction"), crate::name!("apprenticeship")]);
+    assert!(g
+        .valid_improvements(0, mine)
+        .contains(&crate::name!("mine")));
+    assert!(g
+        .valid_improvements(0, lumber)
+        .contains(&crate::name!("lumber_mill")));
+    // Isolate the ordinary job value from the separate weak-city premium.
+    let production = g.city_yields(city).production;
+    std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
+        city,
+        Yields {
+            production: 20.0 - production,
+            ..Yields::default()
+        },
+    );
+    let builder = g.spawn_test_unit("builder", 0, g.cities[&city].pos);
+    let reserved: HashSet<_> = g.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|pos| *pos != mine && *pos != lumber)
+        .collect();
+    let science = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut domination = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert_eq!(
+        science
+            .builder_jobs_ranked(&g, 0, builder, GrandStrategy::Expansion, &reserved)
+            .first(),
+        Some(&lumber),
+        "the unchanged printed-yield policy prefers the two-production mill"
+    );
+    assert_eq!(
+        domination
+            .builder_jobs_ranked(&g, 0, builder, GrandStrategy::Expansion, &reserved)
+            .first(),
+        Some(&mine),
+        "the researched Mine matches the mill, so deterministic ties pick it"
+    );
+    // The real controller uses the same scorer and completes the chosen job.
+    assert!(domination.advanced_builder_step(&mut g, 0, builder, GrandStrategy::Expansion));
+    assert_eq!(g.units[&builder].pos, mine);
+    // Entering a Hill spends this Builder's movement; supply its next turn.
+    let unit = g.units.get_mut(&builder).unwrap();
+    unit.moves_left = 2.0;
+    unit.moved = false;
+    let before = g.modeled_tile_yields(mine).production;
+    assert!(domination.advanced_builder_step(&mut g, 0, builder, GrandStrategy::Expansion));
+    assert_eq!(g.map.tiles[&mine].improvement, Some(crate::name!("mine")));
+    assert!((g.modeled_tile_yields(mine).production - before - 2.0).abs() < 1e-9);
+}
+
+#[test]
+fn a_replacement_gives_up_the_researched_production_of_the_old_improvement() {
+    let (mut g, _, _, builder) = fixture();
+    let pos = g.units[&builder].pos;
+    let tile = g.map.tiles.get_mut(&pos).unwrap();
+    tile.hills = true;
+    tile.improvement = Some(crate::name!("mine"));
+    g.players[0].techs.insert(crate::name!("apprenticeship"));
+    g.players[0]
+        .civics
+        .insert(crate::name!("civil_engineering"));
+    assert!(g.valid_improvements(0, pos).contains(&crate::name!("farm")));
+    let domination = AdvancedAi::targeting(VictoryTarget::Domination);
+    let science = AdvancedAi::targeting(VictoryTarget::Science);
+    let score = |ai: &AdvancedAi, game: &Game| {
+        ai.marginal_improvement_value(game, 0, pos, "farm", GrandStrategy::Expansion)
+    };
+    assert!((score(&science, &g) + 0.2).abs() < 1e-9);
+    assert!((score(&domination, &g) + 2.4).abs() < 1e-9);
+    let before = g.modeled_tile_yields(pos).production;
+    g.apply(
+        0,
+        &Action::Improve {
+            unit: builder,
+            improvement: crate::name!("farm"),
+        },
+    )
+    .unwrap();
+    assert!((before - g.modeled_tile_yields(pos).production - 2.0).abs() < 1e-9);
+    // A pillaged Mine supplies none of the researched yield being priced.
+    let tile = g.map.tiles.get_mut(&pos).unwrap();
+    tile.improvement = Some(crate::name!("mine"));
+    tile.pillaged = true;
+    assert!((score(&domination, &g) - 2.0).abs() < 1e-9);
+}
