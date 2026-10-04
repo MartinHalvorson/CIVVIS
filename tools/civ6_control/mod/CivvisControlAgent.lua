@@ -19488,15 +19488,17 @@ function CivvisBoard.movementNotYetRestored(player, turn)
 	return true;
 end
 
--- ★★ WHAT DOES THE HOST WAIT FOR AFTER OUR LAST ORDER?
+-- ★★ DOES THE HOST MAKE OUR END TURN WAIT, AND IS QUICK MOVEMENT LIVE?
 --
--- On 149 of 184 turns of civvis-20261004T164910Z the end turn was requested
--- and refused until one of our units settled: last orders -> last
--- `turn_retry_settled` median 1.93 s, 288 s over the game. A UserForced
--- request waits just as long, and the late units are every kind -- builders
--- 3.3 s, catapults 2.3 s, archers 1.6 s after their move. Quick Movement
--- reads 1 in UserOptions.txt, but the stock Options.lua copies it into the
--- live UserConfiguration only on its own Confirm.
+-- `turn_retry_settled` cannot answer the first: it fires for any of our
+-- units settling while `Game.GetCurrentGameTurn()` still equals the retry
+-- turn, and that number does not change through the AI phase -- our units
+-- attacked or deactivated after our turn ended emit it too. Read against the
+-- engine's own `Player 0 set TurnActive 0` stamp, our turn ends within ~0.3 s
+-- of the last orders (G64-G67, 2026-10-04). Quick Movement reads 1 in
+-- UserOptions.txt, but the stock Options.lua copies it into the live
+-- UserConfiguration only on its own Confirm, and every queued order of
+-- ours waits on its unit's previous move settling.
 --
 -- This only RECORDS: per turn, how many requests the host refused and what
 -- the shipped predicates said at each (`UI.IsGameCoreBusy`, `UI.CanEndTurn`,
