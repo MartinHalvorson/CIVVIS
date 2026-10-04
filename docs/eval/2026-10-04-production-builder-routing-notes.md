@@ -36,7 +36,7 @@ truncated turns; no thought IDs are missing from the saved streams.
 A second observer ran a separately cloned first-frame plan on turns 60–100 of
 map 61007101 and replayed that frame on an authoritative clone, following the
 native executor's stopping rules. The original game still used the unchanged
-production executor. Its 34,454 action bytes and final save match the original
+production executor. Its 34,454 actions and their serialized bytes and final save match the original
 trace exactly. These 41 projections are not telemetry from later real replans.
 
 On each turn 63–69, the first-frame clone refused a zero-Gold peace proposal
@@ -44,11 +44,27 @@ to player 2 with `invalid diplomatic deal`, stopping before Builder 362's move
 to (29,7). The builder had a proposed move on every one of those seven tails.
 In `src/game/actions.rs`, `do_propose_deal` validates before creating a pending
 deal; every error returns before the state writes. A refused proposal changes
-neither diplomatic access nor the tactical map. The executor currently treats
+neither diplomatic access nor the tactical map. The frozen control-source executor at `8ece046` treats
 that refusal as a reason to stop all subsequent unit orders, unlike a refused
-financial trade. A narrow executor repair can therefore preserve independent
-Builder and military work after the refusal and refresh after the batch.
+financial trade. The executor repair integrated in #3932 preserves independent
+Builder and military work after the refusal, with the usual refresh after the batch.
 
 This finding applies to the native observed-player executor. The live Civ6
 bridge exports peace proposals as host peace orders through its own adapter;
 this diagnostic does not demonstrate that adapter has the same failure.
+
+## Archive integration validation
+
+The diagnostic remains pinned to control source `8ece046`. The executor repair
+was integrated separately in #3932. This archive changes only diagnostic files.
+The merged archive has the same library/Cargo/data and unchanged other bins as
+the completed #3932 full Cargo suite (4574 passed, 54 ignored). Three upstream
+`civvis_orders` files differ; its freshly compiled full suite passes all 239
+tests against the frozen corrected library. The byte-frozen library test
+executable also replays successfully: 4313 passed, 50 ignored. Together with
+the 35 unchanged other-bin passes and four ignored doc examples, the covered
+current targets total 4587 passes, zero failures, 54 ignored. This combines
+source-equivalent reused full Cargo evidence with direct current-target tests;
+it is not a new full Cargo invocation at this merge. Exact scope, source and
+executable hashes are recorded in the adjacent validation JSON. Incremental
+Rust quality passes for all three changed standalone probes.
