@@ -956,7 +956,16 @@ while true; do
   fi
   FOLLOW_REVISION=""
   [[ -f "$FOLLOW_REVISION_FILE" ]] && FOLLOW_REVISION=$(<"$FOLLOW_REVISION_FILE")
-  if [[ "$FOLLOW_CWD" != "$REPO" || "$FOLLOW_REVISION" != "$HEAD_SHA" ]]; then
+  # ★ The climb owns this now. `civ6_civvis_climb.ensure_mirror` retires every
+  # inherited follower/server pair and starts the current-build follower from
+  # this checkout before EVERY batch, so a refresh here only bought 9 s of
+  # fixed sleeps per boundary and a follower that lived ~10 s: -d0 measured it
+  # firing on 28 of 26 cycles on 2026-10-04 (display_follower_pid never sees
+  # the climb-started follower, hence cwd='absent'), each one followed by the
+  # climb's own "[mirror] retiring 3 inherited mirror helper(s)". Set
+  # CIVVIS_SUPERVISOR_REFRESHES_MIRROR=1 to restore the old refresh.
+  if [[ -n "${CIVVIS_SUPERVISOR_REFRESHES_MIRROR:-}" ]] \
+      && [[ "$FOLLOW_CWD" != "$REPO" || "$FOLLOW_REVISION" != "$HEAD_SHA" ]]; then
     say "display mirror is cwd='${FOLLOW_CWD:-absent}' revision='${FOLLOW_REVISION:-unknown}', want cwd='$REPO' revision='$HEAD_SHA'; refreshing exact mirror owners"
     if [[ -n "$FOLLOW_PID" ]] && kill -0 "$FOLLOW_PID" 2>/dev/null; then
       kill -TERM "$FOLLOW_PID" 2>/dev/null || true
