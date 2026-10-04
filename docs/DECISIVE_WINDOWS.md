@@ -143,6 +143,34 @@ with and without the gene, at turns where the seat chose research:
   no-harm check; the live replays above are the evidence that the research
   order changes.
 
+### Live results after arming (G51-G63, 11 games that reached t100)
+
+Both genes armed from G51 (pin d98ae2343, 2026-10-04). First turn each
+technology was held, median, armed games against the 26-game baseline above
+(continuation runs merged into their game):
+
+| Technology | Baseline | Armed |
+|---|---|---|
+| Military Engineering (Trebuchet) | 100 | **81** |
+| Metal Casting (Bombard) | 133 | **102** |
+| Siege Tactics | 169 (17/26) | **122** (10/11) |
+| Military Science (Llanero) | 171 (15/26) | **137** (9/11) |
+| Steel | 176 (12/26) | **153** (8/11) |
+| Advanced Flight | 156 | 165 |
+| techs held at t100 / t150 | 24.5 / 36 | 24 / 39 |
+
+**Llaneros were fielded in 7 of 11 armed games, against 0 of 26 before.**
+G64 took Canberra with a Llanero at t148, eliminating Australia. The breaker
+now arrives about when the rivals' walls do, and the tech count did not fall.
+The pin changed in other lanes at the same time, so this is a before/after
+reading, not an A/B.
+
+**Outcomes have not moved yet:** none of the 11 was a win. G52 led military
+1,524 to 177 and still lost at the turn limit; most losses were rival Culture
+(victory type 3) and Religious (type 4) wins. The binding constraint after
+this change is the rivals' non-military clocks: denial, which belongs to the
+denial and one-war lanes.
+
 ## 5. `unique-unit-preference` (opt-in gene)
 
 `BasicAi::best_military` credits our own unique unit +5 strength while it is
