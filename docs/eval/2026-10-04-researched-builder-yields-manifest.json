@@ -25,5 +25,55 @@
       61005707
     ]
   },
-  "protocol": "Freeze source before pilot. Seek early rate/cumulative gains at turn 50/75 on both difficulties, accounting for science/culture/cities and survival. Confirm a promising pilot on fresh seeds without in-block tuning. Later-only or harmful results are insufficient. Native simulations, not Firaxis games. All games and censoring retained."
+  "protocol": "Freeze source before pilot. Seek early rate/cumulative gains at turn 50/75 on both difficulties, accounting for science/culture/cities and survival. Confirm a promising pilot on fresh seeds without in-block tuning. Later-only or harmful results are insufficient. Native simulations, not Firaxis games. All games and censoring retained.",
+  "candidate_source_commit": "91e9f1cf5f021aa480384d580f2cec0aad0d8512",
+  "candidate_runtime_source_sha256": "cbd50efe62fb9adadc8243a7a25b8c0f4841a048ea426b3b10280d5f4a900e7e",
+  "candidate_fixture_sha256": "6a924ef99585931ff3ee189a03d988cc91ef25e7f9067cbcc889516097af8d3c",
+  "candidate_library_sha256": "ae4955ffec5b2a2883d417e8455fbfa0251fccdbf7347f06a6f7e77ddb16d08d",
+  "candidate_binary_sha256": "1289be4518534278275a0b40080d08470dcb60f7c27a55567e5b4bcf9a9d37fe",
+  "decision": "Reject: all paired checkpoints through turn 75 unchanged on both difficulties. Small later gains do not establish a faster ramp; Deity turn-150 science falls 27.71% on three matched games.",
+  "confirmation_run": false,
+  "profile": {
+    "players": 4,
+    "width": 60,
+    "height": 38,
+    "city_states": 6,
+    "map": "Pangaea",
+    "speed": "Online",
+    "turn_cap": 150,
+    "focal_civ": "Gran Colombia",
+    "randomized_rivals": true,
+    "focal_controller": "AdvancedAi::targeting(Domination) with gene ledger",
+    "focal_handicap_exempt": true,
+    "rivals": "AdvancedAi::fleet with Emperor/Deity difficulty bonuses",
+    "victories": "all"
+  },
+  "validation": {
+    "focused_tests": 11,
+    "experimental_full_passed": 4544,
+    "ignored": 53,
+    "experimental_quality": "local and GitHub changed-line quality passed on 91e9f1cf5",
+    "final_validation": {
+      "full_passed": 4542,
+      "ignored": 53,
+      "runtime_equals_main": true,
+      "changed_line_quality": "pending"
+    }
+  },
+  "final_base_commit": "15385066768c105ac30eab410d733ace5d8e0a1f",
+  "final_runtime_delta": "none; both scorer and tests restored to task base",
+  "artifacts_sha256": {
+    "docs/eval/2026-10-04-researched-builder-yields-pilot-deity-candidate.csv": "f5cae85954602c034c755ffbbafcf65a0e38d29fb69b1dde553fb7b7aef41762",
+    "docs/eval/2026-10-04-researched-builder-yields-pilot-deity-candidate.txt": "3f449b5daab1112fd97fd72ed48b3b0bbceec5a13a1ca7ba014e124c2f5cc5c4",
+    "docs/eval/2026-10-04-researched-builder-yields-pilot-deity-control.csv": "8b6ad88cf072ecf11e957e400c63e4b83cea4d42cf40fe5eb18a7c727ece5d93",
+    "docs/eval/2026-10-04-researched-builder-yields-pilot-deity-control.txt": "3f449b5daab1112fd97fd72ed48b3b0bbceec5a13a1ca7ba014e124c2f5cc5c4",
+    "docs/eval/2026-10-04-researched-builder-yields-pilot-emperor-candidate.csv": "7116a0bcba2f141d21d6930bccd2cb8ee05e2f608a7b3c0fd20be2e1207489bd",
+    "docs/eval/2026-10-04-researched-builder-yields-pilot-emperor-candidate.txt": "599c1abfc04debf3265dcb099c38287f59df31d9eceb90c694fcb9e468a0c76e",
+    "docs/eval/2026-10-04-researched-builder-yields-pilot-emperor-control.csv": "17c077637a0addd4158818f15eade10cc9a99734bc3de531453a9848be2b3b0f",
+    "docs/eval/2026-10-04-researched-builder-yields-pilot-emperor-control.txt": "8ae1e4c2022f5b46aaffad632500517b733a8ebe26daefc5655b4a9b3592e083",
+    "docs/eval/2026-10-04-researched-builder-yields-pilot-summary.json": "2f4beac4b50ce4fdb3a26a784a2a265b45c048f4c0e35098828de5c8d795bc6e",
+    "docs/eval/2026-10-04-researched-builder-yields-probe.rs": "945f55241793ec57cfae27fa9fd3fe34b3715438646f4f40f81d3e13fd2dd6ab",
+    "docs/eval/2026-10-04-researched-builder-yields-summarize.py": "6a16aaddddfa694c6066ea01082589b988ce3e56a374c56475a0e0480d89a0fb",
+    "docs/eval/2026-10-04-researched-builder-yields.md": "55a96af8d8e028a71b6243e78d5cac19e5fb9f61c9504e48ca2edbe9fd93a5e8"
+  }
 }

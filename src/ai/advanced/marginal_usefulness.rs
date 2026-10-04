@@ -55,30 +55,7 @@ impl AdvancedAi {
             .map_or(0.0, |old| {
                 self.improvement_value_for(g, pid, pos, &old, strategy)
             });
-        let marginal = value - existing;
-        if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
-            return marginal;
-        }
-        // The ordinary score prices printed yields. Reconcile its production
-        // component with the local change after researched bonuses and any
-        // feature loss, while retaining resource, boost and tourism premiums.
-        // A replacement gives up the researched yield of the standing job too.
-        let printed_before = standing
-            .improvement
-            .filter(|_| !standing.pillaged)
-            .map_or(0.0, |old| g.rules.improvements[old].yields.production);
-        let printed_gain = g.rules.improvements[improvement].yields.production - printed_before;
-        let actual_gain = g
-            .improvement_yield_change(pid, pos, Name::new(improvement))
-            .production;
-        marginal
-            + self.yield_value(
-                Yields {
-                    production: actual_gain - printed_gain,
-                    ..Yields::default()
-                },
-                strategy,
-            )
+        value - existing
     }
 
     /// Compare work here with the same ranked, travel-priced jobs used when
