@@ -131,6 +131,58 @@ class BundleSignatureTest(unittest.TestCase):
         self.assertEqual(len(report.warnings), 1)
 
 
+
+class OneCodesignPerPreflightTest(unittest.TestCase):
+    """`check_bundle` and `check_host` both ran codesign on the same Civ6.app,
+    ~3.7 s each, and preflight runs at every live game boundary."""
+
+    def _launcher(self, app="/Games/Civ6.app"):
+        launcher = mock.Mock()
+        launcher.game_binary.return_value = Path(app) / "Contents" / "MacOS" / "Civ6"
+        launcher.bundle_signature_error.return_value = "asked codesign"
+        return launcher
+
+    def _report(self, **seal):
+        report = civ6_preflight.Report()
+        if seal:
+            report.seal = {"bundle": "/Games/Civ6.app", "ours": [], "foreign": [],
+                           "detail": "", **seal}
+        return report
+
+    def test_a_valid_verdict_for_this_bundle_is_reused(self) -> None:
+        launcher = self._launcher()
+        self.assertIsNone(civ6_preflight.bundle_signature(self._report(state="valid"), launcher))
+        launcher.bundle_signature_error.assert_not_called()
+
+    def test_a_broken_verdict_for_this_bundle_is_reused_with_its_detail(self) -> None:
+        launcher = self._launcher()
+        why = civ6_preflight.bundle_signature(
+            self._report(state="broken", detail="a sealed resource is missing or invalid"),
+            launcher)
+        self.assertEqual(why, "a sealed resource is missing or invalid")
+        launcher.bundle_signature_error.assert_not_called()
+
+    def test_no_verdict_an_unknown_one_or_another_bundle_asks_again(self) -> None:
+        for report, app in ((self._report(), "/Games/Civ6.app"),
+                            (self._report(state="unknown", detail="could not run codesign"),
+                             "/Games/Civ6.app"),
+                            (self._report(state="valid"), "/Other/Civ6.app")):
+            launcher = self._launcher(app)
+            self.assertEqual(civ6_preflight.bundle_signature(report, launcher), "asked codesign")
+            launcher.bundle_signature_error.assert_called_once()
+
+    def test_check_bundle_records_its_verdict_and_check_host_reads_it(self) -> None:
+        report = civ6_preflight.Report()
+        seal = {"bundle": "/Games/Civ6.app", "state": "valid", "ours": [],
+                "foreign": [], "detail": "valid on disk"}
+        with mock.patch("civ6_control.install.signature_report", return_value=seal):
+            civ6_preflight.check_bundle(report)
+        self.assertIs(report.seal, seal)
+        source = Path(civ6_preflight.__file__).read_text(encoding="utf-8")
+        host = source[source.index("def check_host("):source.index("def check_engine(")]
+        self.assertIn("bundle_signature(report, launcher)", host)
+        self.assertNotIn("launcher.bundle_signature_error()", host)
+
 if __name__ == "__main__":
     unittest.main()
 
