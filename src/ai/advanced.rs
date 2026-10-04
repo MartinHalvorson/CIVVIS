@@ -5218,6 +5218,10 @@ pub struct AdvancedAi {
     /// no Builder standing or queued. See `BasicAi::builder_before_the_army_2`.
     builder_before_the_army_2: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-counter-declares`: an urgent culture rival is declared on at
+    /// `one_war::CULTURE_COUNTER_RATIO` times its power without waiting for a
+    /// staged siege. See `one_war::culture_counter_due`. Off by default.
+    culture_counter_declares: bool,
     /// `denial-needs-a-road`: a Conquest counter to a rival's victory clock
     /// is actionable only when a land path that respects closed borders
     /// reaches one of its cities. See `AdvancedAi::rival_reachable_by_land`.
@@ -8668,6 +8672,7 @@ impl AdvancedAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             // ---- append: c-d ----------------------------------------
+            culture_counter_declares: false,
             denial_needs_a_road: false,
             denial_nearest_finish: false,
             campus_before_harbor: false,
@@ -21131,7 +21136,12 @@ impl AdvancedAi {
             && self.rival_victory_pressure(g, target).strategy == GrandStrategy::Religion
             && my_power >= target_power)
             || faith_counter_due;
-        if close_enough && ready && (staged || air_ready || religion_counter_ready) {
+        // See `culture_counter_due`.
+        let culture_counter_ready = !staged && self.culture_counter_due(g, pid, target);
+        if close_enough
+            && ready
+            && (staged || air_ready || religion_counter_ready || culture_counter_ready)
+        {
             // `coalition_before_war`: invite the target's neighbours to a
             // joint war first, and hold while an answer is due. See
             // `advanced/coalition.rs`.
@@ -21148,6 +21158,8 @@ impl AdvancedAi {
                     };
                     let readiness = if air_ready {
                         "a ready aircraft can disrupt the rival's Theater Square immediately"
+                    } else if culture_counter_ready {
+                        "the war ends the open borders and trade route that carry their tourism to us while the army stages"
                     } else {
                         "the army is staged within reach of the first objective"
                     };
