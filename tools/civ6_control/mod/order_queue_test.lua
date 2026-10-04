@@ -447,6 +447,7 @@ local probesBefore = countEvents("stall_probe")
 for _ = 1, 8 do queue.drain(player, PID, 7) end
 check("both stalled operations are marked at the probe tick", countEvents("stall_probe") - probesBefore, 2)
 check("the mark names its tick", (lastEvent("stall_probe") or ""):find('"tick":8', 1, true) ~= nil, true)
+check("the mark says it was not released", (lastEvent("stall_probe") or ""):find('"released":false', 1, true) ~= nil, true)
 check("the probe changes nothing in the queue", queue.pendingCount(), 3)
 host.units[150].x = 2
 host.units[150].moves = 1
@@ -742,6 +743,48 @@ debug.setupvalue(queue.onUiPulse, pulseUpvalues.finished, false)
 Game.GetLocalPlayer = function() return -1 end
 queue.onUiPulse()
 check("no local seat cannot be woken", pulseCalls, 2)
+
+-- 11. `StalledOperationRelease` (off everywhere above). With the switch on,
+-- a leg the probe marks as a stalled operation takes the early no-op answer at
+-- the probe tick instead of waiting out the grace. A walk not in an operation
+-- is untouched. The agent binds `cfg` at load, so it is reloaded here.
+CivvisControlConfig = { StalledOperationRelease = true }
+local releaseChunk = assert(loadfile(here .. "/CivvisControlAgent.lua"))
+local releaseRan, releaseErr = pcall(releaseChunk)
+assert(releaseRan, "CivvisControlAgent.lua raised on reload: " .. tostring(releaseErr))
+local applyOn, queueOn = rawget(_G, "CivvisApplyOrders"), rawget(_G, "CivvisQueue")
+rawget(_G, "CivvisResolveActions")()
+host.units, host.ops, host.commands, host.refuse, host.contacts = {}, {}, {}, {}, {}
+host.governor_requests, host.cities = {}, {}
+Game.GetLocalPlayer = function() return PID end
+queueOn.reset(7)
+host.paths = { [160] = 2, [161] = 2 }
+Map.GetPlotIndex = function(x, y) return y * 100 + x end
+UnitManager.GetMoveToPathEx = function(unit)
+	local n = host.paths[unit.GetID()];
+	if n == nil then return nil end
+	local plots = {};
+	for i = 1, n do plots[i] = i end
+	return { plots = plots, turns = { 0, 1 } };
+end
+host.units[160] = { id = 160, kind = "UNIT_SKIRMISHER", x = 1, y = 1, moves = 2, active_operation = true }
+host.units[161] = { id = 161, kind = "UNIT_WARRIOR", x = 4, y = 4, moves = 2 }
+applyOn(player, PID, 7, { row(160, "MOVE_TO", 2, 1), row(161, "MOVE_TO", 5, 4) })
+for _ = 1, 7 do queueOn.drain(player, PID, 7) end
+check("release: nothing is answered before the probe tick", queueOn.pendingCount(), 2)
+queueOn.drain(player, PID, 7)
+check("release: the stalled operation is answered at the probe tick", queueOn.pendingCount(), 1)
+local released = lastEvent("move_noop") or ""
+check("release: the answer is the no-op for that unit, at tick 8",
+	released:find('"unit":160', 1, true) ~= nil and released:find('"ticks":8', 1, true) ~= nil, true)
+check("release: it carries its probe mark", released:find('"stall_probe":8', 1, true) ~= nil, true)
+check("release: the mark says it was released",
+	(lastEvent("stall_probe") or ""):find('"released":true', 1, true) ~= nil, true)
+for _ = 1, 20 do queueOn.drain(player, PID, 7) end
+check("release: a walk not in an operation still waits for the grace", queueOn.pendingCount(), 1)
+UnitManager.GetMoveToPathEx = nil
+Map.GetPlotIndex = nil
+host.paths = nil
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))

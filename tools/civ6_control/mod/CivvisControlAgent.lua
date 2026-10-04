@@ -16251,9 +16251,15 @@ CivvisQueue.drain = function(player, pid, turn)
 							and try(function() return UnitManager.GetActivityType(unit); end, nil)
 								== ActivityTypes.ACTIVITY_OPERATION then
 						entry.stall_probe = entry.wait;
+						-- `StalledOperationRelease` answers the marked leg now,
+						-- through the same early no-op as an unpathed walk: the
+						-- grace would only have delayed the identical answer.
+						local release = cfg.StalledOperationRelease == true;
+						if release then unpathed = true; end
 						emit("stall_probe", { turn = turn, unit = subject,
 							unit_kind = unitTypeName(unit), tick = entry.wait, moves = moves,
-							from = { ux, uy }, want = { entry.expect.x, entry.expect.y } });
+							from = { ux, uy }, want = { entry.expect.x, entry.expect.y },
+							released = release });
 					end
 				end
 				if entry.stall_probe ~= nil and not entry.stall_resolved and entry.origin ~= nil then

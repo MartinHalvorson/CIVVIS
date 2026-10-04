@@ -948,6 +948,12 @@ def build_config(args: argparse.Namespace) -> dict:
         # never walks is named and answered with a legal neighbour step in the
         # same pass. Off, the queue drops the watch in silence.
         "MoveFallback": args.move_fallback,
+        # See the stalled-operation probe in the mod's queue: an opening MOVE_TO
+        # the host accepted and left ACTIVE without a step (unit on its origin,
+        # movement intact) is answered at the probe tick instead of the 30-tick
+        # grace. The same no-op path, 22 ticks sooner. Off until the probe's
+        # record shows such legs never step late.
+        "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
         # ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. A MOVE_TO whose
         # host path outran the turn was queued, and the host walked the unit
         # along it at the start of the next turn before the brain could act. Now
@@ -4469,6 +4475,7 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "CombatFrames": getattr(args, "combat_frames", None),
             "StrikePreview": getattr(args, "strike_preview", None),
             "MoveFallback": args.move_fallback,
+            "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
             "ReplanFrames": getattr(args, "replan_frames", None),
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
@@ -5500,6 +5507,7 @@ def _play(args: argparse.Namespace) -> int:
             "CombatFrames": args.combat_frames,
             "StrikePreview": args.strike_preview,
             "MoveFallback": args.move_fallback,
+            "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
             "ReplanFrames": args.replan_frames,
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
@@ -5943,6 +5951,12 @@ def main(argv: list[str] | None = None) -> int:
                          "the mod then drops the watch in silence as it always did, "
                          "instead of naming the no-op (`move_noop`) and sending the "
                          "nearest legal neighbour step (`move_fallback`)")
+    ap.add_argument("--stalled-operation-release", dest="stalled_operation_release",
+                    action="store_true", default=False,
+                    help="answer an opening MOVE_TO the host accepted but left active "
+                         "without a step (`stall_probe`) at the probe tick instead of "
+                         "waiting out the 30-tick grace: the same `move_noop` answer, "
+                         "about 3 s sooner per stalled leg")
     ap.add_argument("--no-cap-moves-to-reach", dest="cap_moves_to_reach",
                     action="store_false", default=True,
                     help="send a MOVE_TO's whole destination even when the host's path "
