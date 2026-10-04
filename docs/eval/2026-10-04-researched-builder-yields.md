@@ -83,8 +83,7 @@ checkpoint, while the final diff preserves only evidence.
 The prototype passes all eleven focused tests and the full locked CI-profile
 suite: 4,544 tests, 53 ignored. Experimental changed-line Rust quality passes.
 The restored tree passes 4,542 tests (53 ignored). It matches main
-`153850667` in source, rules and gene ledger. Final changed-line quality is
-recorded in the PR and manifest.
+`153850667` in source, rules and gene ledger. Final changed-line quality also passes; the final diff contains only evidence.
 
 Compile the library on each frozen checkpoint with
 `cargo build --profile ci --locked --lib`, then use the archived probe:

@@ -57,7 +57,7 @@
       "full_passed": 4542,
       "ignored": 53,
       "runtime_equals_main": true,
-      "changed_line_quality": "pending"
+      "changed_line_quality": "passed"
     }
   },
   "final_base_commit": "15385066768c105ac30eab410d733ace5d8e0a1f",
@@ -74,6 +74,7 @@
     "docs/eval/2026-10-04-researched-builder-yields-pilot-summary.json": "2f4beac4b50ce4fdb3a26a784a2a265b45c048f4c0e35098828de5c8d795bc6e",
     "docs/eval/2026-10-04-researched-builder-yields-probe.rs": "945f55241793ec57cfae27fa9fd3fe34b3715438646f4f40f81d3e13fd2dd6ab",
     "docs/eval/2026-10-04-researched-builder-yields-summarize.py": "6a16aaddddfa694c6066ea01082589b988ce3e56a374c56475a0e0480d89a0fb",
-    "docs/eval/2026-10-04-researched-builder-yields.md": "55a96af8d8e028a71b6243e78d5cac19e5fb9f61c9504e48ca2edbe9fd93a5e8"
-  }
+    "docs/eval/2026-10-04-researched-builder-yields.md": "67cdb89ade4be79859fe110f634756fb916c420bf09552f3f9fbdcd03e2d12cd"
+  },
+  "build_profile": "ci, optimized, locked dependencies, Apple aarch64"
 }
