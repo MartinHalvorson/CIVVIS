@@ -1,0 +1,15 @@
+61003900: turn 92, winner Some(2), alive true
+61003901: turn 107, winner Some(3), alive true
+61003902: turn 151, winner Some(2), alive true
+61003903: turn 151, winner Some(2), alive true
+61003904: turn 151, winner Some(1), alive true
+61003905: turn 151, winner Some(3), alive true
+61003906: turn 111, winner Some(2), alive true
+61003907: turn 151, winner Some(2), alive true
+61003908: turn 151, winner Some(3), alive true
+61003909: turn 151, winner Some(1), alive true
+61003910: turn 151, winner Some(3), alive true
+61003911: turn 96, winner Some(3), alive true
+real 257.33
+user 146.46
+sys 0.77
