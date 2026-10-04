@@ -40704,12 +40704,25 @@ impl AdvancedAi {
                 return acted;
             }
         }
-        if !unwanted_settler_adjacent && !holding_threatened_city {
+        // A healthy member of an active Domination siege keeps its post: the
+        // train priced the assault as a whole, the battle planner already
+        // leaves such a unit on its post (`active_siege_member`), and the
+        // siege step below would otherwise never see it. The envelope
+        // evacuation in `healing_step`/`retreat_step` charges every enemy
+        // blow to the unit at once and remembers the danger for several
+        // turns. Live King civvis-20261004T033533Z (game 46): full-health
+        // Archers reached Mari's range-2 posts and were walked back to 3-4
+        // tiles every turn of Reduce (`move_to_evacuation_tile`); 4 shots in
+        // 9 turns, walls 100 -> 88. Only the wounded come out.
+        let siege_post_holds = spec.class == "military"
+            && unit.hp >= battle_planner::ROTATE_HP
+            && self.active_siege_member(g, pid, uid);
+        if !unwanted_settler_adjacent && !holding_threatened_city && !siege_post_holds {
             if let Some(acted) = self.base.healing_step(g, pid, uid) {
                 return acted;
             }
         }
-        if self.base.unit_objective_memory {
+        if self.base.unit_objective_memory && !siege_post_holds {
             if let Some(acted) = self.base.retreat_step(g, pid, uid) {
                 return acted;
             }
