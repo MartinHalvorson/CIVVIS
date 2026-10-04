@@ -43,8 +43,11 @@
     "prototype_ci_quality_and_paired_cost": "passed",
     "new_fixture_full_suite": "running",
     "prototype_full_suite": "4545 passed, 53 ignored",
-    "final_control_suite": "running",
-    "prototype_ci": "all checks passed at 086cb4dd2; all checks passed at 4318bb406"
+    "final_control_suite": "4542 passed, 53 ignored; cargo test --profile ci --locked",
+    "prototype_ci": "all checks passed at 086cb4dd2; all checks passed at 4318bb406",
+    "final_rust_quality": "passed: tools/rust_quality.py --base 2146d93a21ff595bbde3c636340b19552a214cc5 --head ad323cf60",
+    "summaries_and_artifact_hashes": "both summaries reproduced byte for byte and all 32 artifact hashes verified",
+    "final_runtime_delta": "empty against origin/main and control: src, data, docs/gene_ledger.json"
   },
   "artifacts_sha256": {
     "2026-10-04-production-city-payback-confirmation-deity-candidate.csv": "613965794e93b8fbc02ced238faef0c207000aeb6239f77f50f504ddb8a99289",
@@ -78,7 +81,7 @@
     "2026-10-04-production-city-payback-pilot-summary.json": "691c8c40c9004af23e25f3f39dd152614097e2a24bfd9a37ff1fb68fdbae49cf",
     "2026-10-04-production-city-payback-probe.rs": "5f0c044d52f487cdc685416c35cbaec0440e38edc66d151e289d727306d7553f",
     "2026-10-04-production-city-payback-summarize.py": "756f97397555a6bd7f56c153c334eea5e40f4c20d950bf19108d5ab7181da144",
-    "2026-10-04-production-city-payback.md": "2e6c4223b5d905eee9bc3032b09a4e78855a6e7f1b1b7ca5a9a1621f95164956"
+    "2026-10-04-production-city-payback.md": "28315b6b53d3759599bbf472e05e73c295f7da4ce43d9c4b68defb50beff3d44"
   },
   "fixture_commit": "4318bb40662b4f82f91e1e51cab41b7389c87bf7",
   "read_only_replay": {
@@ -95,5 +98,6 @@
       100
     ],
     "actuated": false
-  }
+  },
+  "latest_main_before_ready": "cbc4cf533ef3f22b71bd14d6f8175769411dd0be"
 }

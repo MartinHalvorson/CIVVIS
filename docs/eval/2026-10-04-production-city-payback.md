@@ -106,8 +106,8 @@ The mean own/strongest-rival production ratio at turn 100 moved only
 0.419→0.424 on Emperor and 0.182→0.191 on Deity. The policy is not a
 competitive early-production solution. It buys some additional industry,
 but changes too few early states, has a mixed later Emperor ramp, and
-leaves a large high-difficulty gap. Restore it rather than promote this
-small, uneven improvement as accomplishing the goal.
+leaves a large high-difficulty gap. We restored the control because this small, uneven improvement does not
+reliably accelerate the early ramp.
 
 ## Read-only host replay and opportunity check
 
@@ -137,7 +137,9 @@ quality and the paired-cost check. The prototype full local suite passes
 4,545 tests with 53 ignored, including three new tests for actual queue
 placement, the complete two-stage cost, and serial investment without
 blocking the owed Workshop. Runtime code and tests are restored afterward.
-Final control validation is recorded in the manifest once complete.
+The restored control passes all 4,542 tests with 53 ignored. Final
+changed-line Rust quality also passes; both summary reproductions and
+all artifact hashes are verified.
 
 Build the control at 2146d93a2 and candidate at 086cb4dd2 in separate
 checkouts with `cargo build --profile ci --locked --lib`, then link the
