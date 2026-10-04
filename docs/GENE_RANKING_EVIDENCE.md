@@ -204,6 +204,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-before-the-army-3` | off (unmeasured) | `campus-before-the-army-3`: version 2, on through the University and the Research Lab. | — \| 3 |
 | `capital-campaign-router` | off (unmeasured) | Enable `capital-campaign-router` for measurement. | 1 \| 1 |
 | `capture-hold-chain` | off (unmeasured) | Enable `capture-hold-chain` for measurement. | 1 \| 1 |
+| `capture-waits-on-the-march` | off (unmeasured) | Opt-in gene `capture-waits-on-the-march`; see `Self::capture_waits_on_the_march`. | 1 \| 1 |
 | `connect-the-luxury-2` | off (unmeasured) | Research a first-copy luxury only when it can relieve an Amenity deficit after a legal, affordable unlock. | 1 \| 2 |
 | `conquest-takes-the-soft-city` | off (unmeasured) | `conquest-takes-the-soft-city`: rank the early conquest target by what can be taken before what is worth most. | 1 \| 1 |
 | `counter-culture-by-conquest` | off (unmeasured) | `counter-culture-by-conquest`: answer a culture leader with war aimed at its Great Works. | 1 \| 1 |
@@ -224,10 +225,12 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `domination-siege-research` | off (unmeasured) | Unlock the first land siege capability for a walled Conquest objective. | — \| 2 |
 | `domination-siege-research-2` | off (unmeasured) | Version one, and the next stronger buildable land siege design once the target's walls reach the Medieval tier. | — \| 2 |
 | `domination-specializes-earlier` | off (unmeasured) | `domination-specializes-earlier`: an assigned Domination lane leaves its development half at 40% of the clock. | 1 \| 1 |
+| `domination-strikes-when-staged` | off (unmeasured) | Opt-in gene `domination-strikes-when-staged`; see `Self::domination_strikes_when_staged`. | 1 \| 1 |
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |
 | `first-granary-reserve-2` | off (unmeasured) | Reserve a Granary only when its housing accelerates the next citizen within the construction and growth budget. | 1 \| 3 |
 | `first-granary-reserve-3` | off (unmeasured) | `first-granary-reserve-3`: version one's rule (population within one of housing, no Granary) reaches the delegated city governor too, and an Aqueduct follows the Granary while the city is still housing-bound. | 1 \| 3 |
 | `formations-heed-refusals` | off (unmeasured) | Opt-in gene `formations-heed-refusals`; see `Self::formations_heed_refusals`. | 1 \| 1 |
+| `found-against-a-rival-faith` | off (unmeasured) | Opt-in gene `found-against-a-rival-faith`; see `Self::found_against_a_rival_faith`. | 1 \| 1 |
 | `government-ladder-3` | off (unmeasured) | Choose a government by its remaining civic cost per extra policy slot, reserving time to use the upgrade. | 2 \| 3 |
 | `granary-before-the-army` | off (unmeasured) | The delegated city governor's housing reserve (Granary, else Aqueduct) ahead of the military floor. | 1 \| 1 |
 | `great-work-completion-value` | off (unmeasured) | Enable `great-work-completion-value` for measurement. | 1 \| 1 |

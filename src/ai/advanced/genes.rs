@@ -2520,6 +2520,16 @@ pub const GENES: &[Gene] = &[
     // Version 1 measured -9.7 +/- 5.3 pp: only the capitals Domination
     // needs, no displaced building. See `siege_production::SUPPLY_STRENGTH_WINDOW`.
     Gene { tag: "breaker-supply-scales-2", field: "breaker_supply_scales_2", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales_2, disable: AdvancedAi::disable_breaker_supply_scales_2 },
+    // Live King 183907Z: our faithless cities were converted by passive
+    // pressure alone; game 70 left two religion slots open. See
+    // `advanced/faith_veto.rs`.
+    Gene { tag: "found-against-a-rival-faith", field: "found_against_a_rival_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_found_against_a_rival_faith, disable: AdvancedAi::disable_found_against_a_rival_faith },
+    // 19 of 29 live "Declaring war" lines on 2026-10-04 sent a denouncement;
+    // the staged army waited. See `strike_when_staged`.
+    Gene { tag: "domination-strikes-when-staged", field: "domination_strikes_when_staged", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_strikes_when_staged, disable: AdvancedAi::disable_domination_strikes_when_staged },
+    // Live King 174103Z stood down six Dutch objectives in 95 turns with the
+    // army still on the road. See `advanced/capture_march.rs`.
+    Gene { tag: "capture-waits-on-the-march", field: "capture_waits_on_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_waits_on_the_march, disable: AdvancedAi::disable_capture_waits_on_the_march },
     // Live King 160213Z fought Germany for 92 turns without a capture while
     // the at-war Maori held the capital it needed. See
     // `one_war::stalled_front_swap`.

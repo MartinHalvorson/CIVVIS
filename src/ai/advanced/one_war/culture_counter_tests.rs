@@ -119,3 +119,34 @@ fn an_unlocated_culture_rival_is_declared_on_under_the_gene() {
         assert_eq!(g.is_at_war(0, 1), gene, "gene {gene}");
     }
 }
+
+/// See `strike_when_staged`: a denouncement opening becomes the surprise war
+/// for a staged Domination army at twice the target's power, only with the
+/// gene, only when staged, and only over the ratio.
+#[test]
+fn a_staged_army_strikes_instead_of_denouncing_under_the_gene() {
+    let (g, mut ai, _) = fixture(4);
+    let denounce = crate::game::Action::Denounce { player: 1 };
+    assert!(g.military_power(0) >= 2.0 * g.military_power(1));
+    assert_eq!(
+        ai.strike_when_staged(&g, 0, 1, &denounce, true),
+        None,
+        "off"
+    );
+    ai.enable_domination_strikes_when_staged();
+    assert_eq!(
+        ai.strike_when_staged(&g, 0, 1, &denounce, true),
+        Some(crate::game::Action::DeclareWar { player: 1 })
+    );
+    assert_eq!(
+        ai.strike_when_staged(&g, 0, 1, &denounce, false),
+        None,
+        "not staged"
+    );
+    let (weak, _, _) = fixture(1);
+    assert_eq!(
+        ai.strike_when_staged(&weak, 0, 1, &denounce, true),
+        None,
+        "under the ratio"
+    );
+}
