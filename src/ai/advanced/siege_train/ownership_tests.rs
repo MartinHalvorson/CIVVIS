@@ -144,3 +144,111 @@ fn an_unreserved_soldier_can_still_pick_up_a_civilian() {
     assert_eq!(g.units[&builder].owner, 0);
     assert_eq!(g.cities[&cid].owner, 1);
 }
+
+fn remembered_hold() -> (Game, AdvancedAi, u32, u32) {
+    let (mut g, cid) = walled_city();
+    g.turn = 213;
+    let ring = ring_of(&g, cid)
+        .into_iter()
+        .find(|pos| g.city_at(*pos).is_none() && !g.rules.is_water(g.map.get(*pos).unwrap()))
+        .unwrap();
+    let warrior = g.spawn_unit("warrior", 0, ring);
+    let city = g.cities.get_mut(&cid).unwrap();
+    city.hp = 1;
+    city.wall_hp = 0;
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.force_groups = vec![group(&g, warrior, cid)];
+    ai.sieges.insert(
+        cid,
+        Siege {
+            stage: SiegeStage::Hold,
+            taker: None,
+            entered: g.turn - 1,
+            assessed: g.turn - 1,
+            posts: Default::default(),
+        },
+    );
+    (g, ai, cid, warrior)
+}
+
+#[test]
+fn an_observed_hostile_city_reopens_a_speculative_hold() {
+    for same_turn in [false, true] {
+        let (mut g, mut ai, cid, warrior) = remembered_hold();
+        if same_turn {
+            ai.sieges.get_mut(&cid).unwrap().assessed = g.turn;
+        }
+        let plan = plan_against(&g, cid);
+        let _ = ai.siege_doctrine_step(&mut g, 0, warrior, &plan);
+        assert_eq!(
+            g.cities[&cid].owner, 0,
+            "the available taker must resume the unlanded capture, same_turn={same_turn}"
+        );
+    }
+}
+
+#[test]
+fn a_confirmed_capture_or_peace_keeps_the_hold() {
+    for (own_city, same_turn) in [(false, false), (false, true), (true, false), (true, true)] {
+        let (mut g, mut ai, cid, warrior) = remembered_hold();
+        if same_turn {
+            ai.sieges.get_mut(&cid).unwrap().assessed = g.turn;
+        }
+        if own_city {
+            g.cities.get_mut(&cid).unwrap().owner = 0;
+        } else {
+            g.at_war.clear();
+        }
+        let plan = plan_against(&g, cid);
+        let force = group(&g, warrior, cid);
+        let entered = ai.sieges[&cid].entered;
+        ai.assess_siege(&g, 0, cid, &plan, &force);
+        assert_eq!(ai.sieges[&cid].stage, SiegeStage::Hold);
+        assert_eq!(ai.sieges[&cid].entered, entered);
+        assert!(ai.sieges[&cid].taker.is_none());
+        assert!(!ai.reserved_units.contains(&warrior));
+    }
+}
+
+#[test]
+fn reopening_a_hold_does_not_bypass_the_force_abort_gate() {
+    let (mut g, mut ai, cid, warrior) = remembered_hold();
+    g.map_script = crate::setup::MapScript::Pangaea;
+    let city = g.cities.get_mut(&cid).unwrap();
+    city.hp = 200;
+    city.wall_hp = 400;
+    let record = ai.sieges.get_mut(&cid).unwrap();
+    record.assessed = g.turn;
+    let plan = plan_against(&g, cid);
+    let force = group(&g, warrior, cid);
+    let city = CityView::of(&g, cid).unwrap();
+    assert!(unit_power(&g, warrior) < ABORT_SHARE * siege_bill(&g, 0, &city));
+    ai.assess_siege(&g, 0, cid, &plan, &force);
+    assert_eq!(ai.sieges[&cid].stage, SiegeStage::Stage);
+    assert_eq!(ai.sieges[&cid].entered, g.turn);
+    assert!(ai.sieges[&cid].taker.is_none());
+    assert!(!ai.reserved_units.contains(&warrior));
+    assert_eq!(g.cities[&cid].owner, 1);
+}
+
+#[test]
+fn ownership_reconciliation_does_not_reassess_other_cached_stages() {
+    for stage in [
+        SiegeStage::Stage,
+        SiegeStage::Invest,
+        SiegeStage::Reduce,
+        SiegeStage::Take,
+    ] {
+        let (g, mut ai, cid, warrior) = remembered_hold();
+        let record = ai.sieges.get_mut(&cid).unwrap();
+        record.stage = stage;
+        record.assessed = g.turn;
+        let plan = plan_against(&g, cid);
+        let force = group(&g, warrior, cid);
+        ai.assess_siege(&g, 0, cid, &plan, &force);
+        assert_eq!(ai.sieges[&cid].stage, stage);
+        assert_eq!(ai.sieges[&cid].entered, g.turn - 1);
+        assert!(ai.sieges[&cid].taker.is_none());
+    }
+}
