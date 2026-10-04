@@ -55,7 +55,33 @@ impl AdvancedAi {
             .map_or(0.0, |old| {
                 self.improvement_value_for(g, pid, pos, &old, strategy)
             });
-        value - existing
+        let mut marginal = value - existing;
+        // The old score includes catalogue yields even on tiles nobody works,
+        // and misses already-earned technology/civic bonuses. Replace that
+        // component with the modeled local change. Resource access, tourism,
+        // boost and quest premiums remain independent of citizen assignment.
+        let printed = |name: &str| {
+            let spec = &g.rules.improvements[name];
+            let mut yields = spec.yields;
+            yields.gold += spec.effects.get("appeal_gold").copied().unwrap_or(0.0)
+                * g.tile_appeal(pos).max(0) as f64;
+            yields
+        };
+        let mut old_yields = printed(improvement);
+        if let Some(old) = standing.improvement.filter(|_| !standing.pillaged) {
+            old_yields.add_scaled(printed(&old), -1.0);
+        }
+        let gain = g.improvement_yield_change(pid, pos, Name::new(improvement));
+        let worked = standing.owner_city.is_some_and(|cid| {
+            g.cities.get(&cid).is_some_and(|city| city.owner == pid)
+                && g.city_citizen_plan(cid).worked_tiles.contains(&pos)
+        });
+        // Unworked land can serve a later citizen or replace a weaker job, but
+        // does not collect a yield now. Retain bounded speculative credit.
+        let realization = if worked { 1.0 } else { 0.25 };
+        marginal +=
+            self.yield_value(gain, strategy) * realization - self.yield_value(old_yields, strategy);
+        marginal
     }
 
     /// Compare work here with the same ranked, travel-priced jobs used when

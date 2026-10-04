@@ -19,6 +19,9 @@ fn fixture() -> (Game, AdvancedAi, u32, u32) {
     let city = g.player_city_ids(0)[0];
     g.cities.get_mut(&city).unwrap().pop = 2;
     let builder = g.spawn_test_unit("builder", 0, (5, 4));
+    // The local farm is real, currently collected work. Resource alternatives
+    // remain useful independently of whether a citizen works their tile.
+    std::sync::Arc::make_mut(&mut g.observed_city_worked_tiles).insert(city, vec![(5, 4)]);
     g.players[0].techs.insert(crate::name!("mining"));
     g.players[0].techs.insert(crate::name!("bronze_working"));
     let job = (6, 5);
@@ -74,6 +77,8 @@ fn unreachable_better_work_falls_back_to_the_current_tile() {
 fn existing_improvement_value_is_not_credited_to_a_replacement() {
     let (mut g, ai, _, builder) = fixture();
     let pos = g.units[&builder].pos;
+    let cid = g.map.tiles[&pos].owner_city.unwrap();
+    std::sync::Arc::make_mut(&mut g.observed_city_worked_tiles).insert(cid, vec![pos]);
     let gross = ai.improvement_value_for(&g, 0, pos, "farm", GrandStrategy::Science);
     assert!(gross > 0.0);
     g.map.tiles.get_mut(&pos).unwrap().improvement = Some(crate::name!("farm"));
@@ -86,6 +91,135 @@ fn existing_improvement_value_is_not_credited_to_a_replacement() {
         ai.marginal_improvement_value(&g, 0, pos, "farm", GrandStrategy::Science),
         gross
     );
+}
+
+#[test]
+fn researched_mine_yields_are_priced_and_match_the_real_improvement() {
+    let (mut g, ai, city, builder) = fixture();
+    let pos = g.units[&builder].pos;
+    g.map.tiles.get_mut(&pos).unwrap().hills = true;
+    std::sync::Arc::make_mut(&mut g.observed_city_worked_tiles).insert(city, vec![pos]);
+    let early = ai.marginal_improvement_value(&g, 0, pos, "mine", GrandStrategy::Conquest);
+    g.players[0].techs.extend([
+        crate::name!("apprenticeship"),
+        crate::name!("industrialization"),
+    ]);
+    let late = ai.marginal_improvement_value(&g, 0, pos, "mine", GrandStrategy::Conquest);
+    let bonus = g.tree_effect(0, "mine_production");
+    assert!(bonus > 0.0);
+    let expected = ai.yield_value(
+        Yields {
+            production: bonus,
+            ..Default::default()
+        },
+        GrandStrategy::Conquest,
+    );
+    assert!((late - early - expected).abs() < 1e-9);
+    let forecast = g.improvement_yield_change(0, pos, crate::name!("mine"));
+    let before = g.modeled_tile_yields(pos);
+    g.apply(
+        0,
+        &Action::Improve {
+            unit: builder,
+            improvement: crate::name!("mine"),
+        },
+    )
+    .unwrap();
+    let mut actual = g.modeled_tile_yields(pos);
+    actual.add_scaled(before, -1.0);
+    assert_eq!(actual, forecast);
+}
+
+#[test]
+fn a_builder_routes_to_a_worked_mine_ahead_of_identical_unworked_ground() {
+    for reachable_fallback in [false, true] {
+        let (mut g, mut ai, city, builder) = fixture();
+        let worked = (6, 4);
+        let empty = (5, 4);
+        for pos in [worked, empty] {
+            let tile = g.map.tiles.get_mut(&pos).unwrap();
+            tile.hills = true;
+            tile.resource = None;
+        }
+        g.map.tiles.get_mut(&(6, 5)).unwrap().resource = None;
+        std::sync::Arc::make_mut(&mut g.observed_city_worked_tiles).insert(city, vec![worked]);
+        let jobs = [worked, empty].into_iter().collect::<HashSet<_>>();
+        let blocked = g.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .filter(|p| !jobs.contains(p))
+            .collect();
+        g.blocked_improvement_sites = std::sync::Arc::new(blocked);
+        if reachable_fallback {
+            ai.enable_builder_tries_the_next_tile();
+        }
+        let charges = g.units[&builder].charges;
+        assert!(ai.advanced_builder_step(&mut g, 0, builder, GrandStrategy::Conquest));
+        assert_eq!(ai.builder_targets[&builder], worked);
+        assert_eq!(
+            g.units[&builder].charges, charges,
+            "save the charge for the productive job"
+        );
+        assert!(g.map.tiles[&empty].improvement.is_none());
+    }
+}
+
+#[test]
+fn resource_access_is_still_valuable_on_unworked_land() {
+    let (mut g, ai, city, _) = fixture();
+    let iron = (6, 5);
+    std::sync::Arc::make_mut(&mut g.observed_city_worked_tiles).insert(city, vec![]);
+    let score = ai.marginal_improvement_value(&g, 0, iron, "mine", GrandStrategy::Conquest);
+    assert!(
+        score >= 30.0,
+        "connecting the deposit is independent of a citizen: {score}"
+    );
+}
+
+#[test]
+fn yield_forecast_accounts_for_feature_loss_and_never_mutates_host_facts() {
+    let (mut g, _, _, builder) = fixture();
+    let pos = g.units[&builder].pos;
+    g.map.tiles.get_mut(&pos).unwrap().feature = Some(crate::name!("floodplains"));
+    g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("desert");
+    std::sync::Arc::make_mut(&mut g.observed_tile_yield_adjustments).insert(
+        pos,
+        Yields {
+            production: 20.0,
+            ..Default::default()
+        },
+    );
+    let original = g.map.tiles[&pos].clone();
+    let forecast = {
+        let _memo = g.query_memo();
+        let before = g.modeled_tile_yields(pos);
+        let forecast = g.improvement_yield_change(0, pos, crate::name!("farm"));
+        assert_eq!(
+            g.modeled_tile_yields(pos),
+            before,
+            "forecast cannot pollute the live memo"
+        );
+        assert!(g.map.tiles[&pos] == original);
+        forecast
+    };
+    assert!(g.valid_improvements(0, pos).contains(&crate::name!("farm")));
+    let before = g.workable_tile_yields(pos);
+    g.apply(
+        0,
+        &Action::Improve {
+            unit: builder,
+            improvement: crate::name!("farm"),
+        },
+    )
+    .unwrap();
+    let mut actual = g.workable_tile_yields(pos);
+    actual.add_scaled(before, -1.0);
+    assert_eq!(
+        actual, forecast,
+        "host residual is not an improvement yield"
+    );
+    assert!(g.map.tiles[&pos].feature.is_none());
 }
 
 #[test]
