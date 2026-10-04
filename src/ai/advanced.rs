@@ -21310,6 +21310,11 @@ impl AdvancedAi {
         // the way the raid closes when it has paid. See
         // `advanced/city_campaign.rs`.
         self.city_campaign_diplomacy(g, pid);
+        // See `culture_embargo_target`: the turn's one declaration, on a
+        // culture race at match point whose cities we have not found.
+        if self.culture_embargo_war(g, pid) {
+            return;
+        }
         // See `air_surge_diplomacy_target` (`air-surge-2`): while the surge
         // beelines and arms, a lane seat assesses no rival, so without this
         // fallback the Arm-phase denounce below was unreachable and the

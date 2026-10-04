@@ -99,3 +99,23 @@ fn a_culture_race_behind_another_lane_is_still_countered() {
     assert!(ai.culture_lane_threat(&g, 1));
     assert!(ai.domination_counter_target(&g, 0, 1));
 }
+
+/// See `culture_embargo_target`: with the gene, a culture rival at match
+/// point whose cities we have not found is declared on anyway; without
+/// the gene it is not (Maya, game 64).
+#[test]
+fn an_unlocated_culture_rival_is_declared_on_under_the_gene() {
+    for gene in [false, true] {
+        let (mut g, mut ai, plan) = fixture(4);
+        for city in g.player_city_ids(1) {
+            g.cities.remove(&city);
+        }
+        assert!(g.player_city_ids(1).is_empty() && g.players[1].alive);
+        if gene {
+            ai.enable_culture_counter_declares();
+        }
+        assert_eq!(ai.culture_embargo_target(&g, 0).is_some(), gene);
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        assert_eq!(g.is_at_war(0, 1), gene, "gene {gene}");
+    }
+}

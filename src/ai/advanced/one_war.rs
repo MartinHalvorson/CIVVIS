@@ -65,6 +65,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use super::{AdvancedAi, GrandStrategy, VictoryTarget};
 use crate::game::{DiplomaticDeal, Game};
+use crate::think;
 use crate::Pos;
 
 /// The tide is read over this many standard turns of observations.
@@ -780,6 +781,56 @@ impl AdvancedAi {
             && self.urgent_victory_threat(g, rival)
             && self.culture_lane_threat(g, rival)
             && g.military_power(pid) >= CULTURE_COUNTER_RATIO * g.military_power(rival).max(1.0)
+    }
+
+    /// `culture-counter-declares`: a culture rival at match point, at peace
+    /// with us, whose cities we have not found. The ordinary declaration
+    /// needs a target city in reach. This war needs none: it ends the open
+    /// borders and trade route that carry their tourism to us. Live King
+    /// civvis-20261004T153748Z (game 64) never located a Maya city on a
+    /// four-player Pangaea in 175 turns. Maya's visitors went from 16 to 82
+    /// between turns 140 and 174 against our 45 to 89 domestic, and it won
+    /// on Culture at 175 at peace with us. In game 61 Norway's Tourism rose
+    /// from 266 to 404 within six turns of a peace.
+    pub(crate) fn culture_embargo_target(&self, g: &Game, pid: usize) -> Option<usize> {
+        if !self.culture_counter_declares {
+            return None;
+        }
+        g.players
+            .iter()
+            .filter(|rival| {
+                rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
+            })
+            .map(|rival| rival.id)
+            .filter(|rival| !g.is_at_war(pid, *rival) && g.player_city_ids(*rival).is_empty())
+            .filter(|rival| self.culture_counter_due(g, pid, *rival))
+            .max_by_key(|rival| {
+                (
+                    self.rival_culture_progress(g, *rival),
+                    std::cmp::Reverse(*rival),
+                )
+            })
+    }
+
+    /// Declare the war `culture_embargo_target` names, when the treasury can
+    /// carry it. Whether a declaration was made.
+    pub(crate) fn culture_embargo_war(&mut self, g: &mut Game, pid: usize) -> bool {
+        let Some(rival) = self.culture_embargo_target(g, pid) else {
+            return false;
+        };
+        if g.turn < self.peace_until || !self.war_is_affordable(g, pid) {
+            return false;
+        }
+        let Some(action) = self.preferred_war_opening(g, pid, rival) else {
+            return false;
+        };
+        let progress = self.rival_culture_progress(g, rival);
+        think!(self.journal(), Military, Strategy,
+            "Declaring war on {}", g.players[rival].civ;
+            "their culture race reads {progress}% and no city of theirs is located; \
+             the war ends the open borders and trade route that carry their tourism to us");
+        self.base.war_eve_liquidation(g, pid, &action);
+        g.apply(pid, &action).is_ok()
     }
 
     /// `rival`'s culture lane alone, as a percent of the bar: its foreign
