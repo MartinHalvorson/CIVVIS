@@ -2,7 +2,7 @@
   "created_before_native_play_at": "2026-10-04T10:42:25.145490+00:00",
   "engine_source": "afba14116415131f730a462dff4e1d7811aced93",
   "claim_commit": "56d7449569b1baf0dcc6b98420c2778bd1d85519",
-  "frozen_probe_commit": "757311019",
+  "frozen_probe_commit": "757311019d9cfe0b5778f0216dff4aa863f00ccc",
   "engine_source_matches_claim": true,
   "compiler": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: aarch64-apple-darwin\nrelease: 1.97.1\nLLVM version: 22.1.6\n",
   "library": {
@@ -20,6 +20,24 @@
       "lto=thin",
       "-C",
       "codegen-units=1"
+    ],
+    "compile_command": [
+      "rustc",
+      "--edition=2021",
+      "-O",
+      "-C",
+      "lto=thin",
+      "-C",
+      "codegen-units=1",
+      "docs/eval/2026-10-04-production-growth-payback-probe.rs",
+      "--extern",
+      "civvis=/tmp/libcivvis-production-growth-control.rlib",
+      "-L",
+      "dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps",
+      "-L",
+      "native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out",
+      "-o",
+      "/tmp/civvis-production-growth-granary2-probe"
     ]
   },
   "probe_sha256": "48c773f5cfb3fbb581d7700e4f3b33f56f6d4d52be2fad57b636de391de71d18",
@@ -82,16 +100,6 @@
       "count": 4
     }
   },
-  "confirmation_reserved_unrun": {
-    "emperor": {
-      "first_seed": 61006200,
-      "count": 12
-    },
-    "deity": {
-      "first_seed": 61006300,
-      "count": 8
-    }
-  },
   "replay": {
     "controller_source": "2146d93a21ff595bbde3c636340b19552a214cc5",
     "controller_sha256": "f51882e989a7fa54f777b9a1dfeb14b573ee764b988541466967c9672008ac4e",
@@ -110,14 +118,62 @@
     "counterfactual_proposals_only": true
   },
   "validation": {
-    "status": "native results and final validations pending"
+    "status": "complete",
+    "cargo_test_command": [
+      "cargo",
+      "test",
+      "--profile",
+      "ci",
+      "--locked"
+    ],
+    "passed": 4548,
+    "ignored": 54,
+    "test_source_head": "401be689e8b2ad8e2b1f1d56522cd928d098a0d4",
+    "quality_base": "56d7449569b1baf0dcc6b98420c2778bd1d85519",
+    "quality_head": "401be689e8b2ad8e2b1f1d56522cd928d098a0d4",
+    "quality_passed": true,
+    "probe_unchanged_since_frozen_commit": true,
+    "runtime_rules_ledger_cargo_unchanged": true,
+    "main_fetched_and_merge_current": "afba14116415131f730a462dff4e1d7811aced93"
   },
   "artifact_sha256": {
+    "2026-10-04-production-growth-payback-confirmation-deity-candidate.csv": "d43bd225aadcbd221e0c5b9e7c38daab54a911b08fda64b3bf5cb0d17a8e1cde",
+    "2026-10-04-production-growth-payback-confirmation-deity-candidate.txt": "507312173ddacfeea7f6042b0be76f5c7bdf5ba568e253de9f23c19769a8c845",
+    "2026-10-04-production-growth-payback-confirmation-deity-control.csv": "98964a199e4eca52b272595be4b8bc1ede228182160da8b3e3f9e8cfee1fea68",
+    "2026-10-04-production-growth-payback-confirmation-deity-control.txt": "228b6085a14c92db914d9371160b2911943e5b318480deebd3f0c73ba50997be",
+    "2026-10-04-production-growth-payback-confirmation-emperor-candidate.csv": "7b18d68fb63807cdd4f47492446619d6aa7d71e8a0ac926be122500611143c2a",
+    "2026-10-04-production-growth-payback-confirmation-emperor-candidate.txt": "fa72ba582a77b75d00a6581ea00dfbd7f58dfa45186841b1772b062d7d5a4021",
+    "2026-10-04-production-growth-payback-confirmation-emperor-control.csv": "85112cf7a328e1a49ccac8c7a53385e160ddba825a7b611ee7432b5bbd13d501",
+    "2026-10-04-production-growth-payback-confirmation-emperor-control.txt": "beef664e27037608c1ab71e3721a98eeb8af07c7faa76e8d22eac073e59ef078",
+    "2026-10-04-production-growth-payback-confirmation-summary.json": "7cab0c20449ef2c30a04e5fa11ed0c51351ba224caea96847994e7f537a252f3",
+    "2026-10-04-production-growth-payback-pilot-deity-candidate.csv": "f5db819918d4076019f525cd537b64f18a17bc4a401a1f6c3b5db847a85b3ebb",
+    "2026-10-04-production-growth-payback-pilot-deity-candidate.txt": "cde5b73c02f4287fc5233f90ba104017ca20ea9d8647cb079df7a3cf5e181bef",
+    "2026-10-04-production-growth-payback-pilot-deity-control.csv": "23ea904c347e8e6d24f72b033df35159b7a30b714338899912197ee9bd5a2f66",
+    "2026-10-04-production-growth-payback-pilot-deity-control.txt": "68dee783a4a09cd4d4e9bdf4a2853dbd7b801feb6953d29233502093badcfcfb",
+    "2026-10-04-production-growth-payback-pilot-emperor-candidate.csv": "da88cf466ec2e2d3e57fd8fe94f3c85241e877f060aeb310849594618b755e51",
+    "2026-10-04-production-growth-payback-pilot-emperor-candidate.txt": "294caec04f28ca74db5bfb87eb1bd1057481561d4e67639eec5cd48a950a3d84",
+    "2026-10-04-production-growth-payback-pilot-emperor-control.csv": "421af6b46ff63065dabc646f01f8b92031dfa8c3b6ae4c66f785c81e2a2a3765",
+    "2026-10-04-production-growth-payback-pilot-emperor-control.txt": "294caec04f28ca74db5bfb87eb1bd1057481561d4e67639eec5cd48a950a3d84",
+    "2026-10-04-production-growth-payback-pilot-summary.json": "46b667564806c0b9a6f8e875db10e8366e044d5f6d583aa80a67c29731c9d572",
     "2026-10-04-production-growth-payback-probe.rs": "48c773f5cfb3fbb581d7700e4f3b33f56f6d4d52be2fad57b636de391de71d18",
-    "2026-10-04-production-growth-payback-summarize.py": "55130fe2a76464dd51fb45f1a18a6c77cfebdb1ed15333a7b5fcc7b043fce40a",
+    "2026-10-04-production-growth-payback-summarize.py": "8d6b30fd93971e7c759a26338d038585cdd245796576f1f123d658228ea1fbed",
     "2026-10-04-production-growth-payback-warm-candidate.jsonl": "7f2ebe9b07dffbe85251339fc2a166a8c596866337a6abc6b2c87ed0a55450dc",
     "2026-10-04-production-growth-payback-warm-candidate.txt": "fe694d5ab3304a44735d23c345749790a93aad7043a666ca2219a8b0c31786a2",
     "2026-10-04-production-growth-payback-warm-control.jsonl": "8f46ded9d2ce28630263bebdd8554371750560dcb678969c4b44423ce046122b",
-    "2026-10-04-production-growth-payback-warm-control.txt": "dd059f80ba0c089b6130b79ade75b12970f74b386a8ea5a7f48303474befc00f"
-  }
+    "2026-10-04-production-growth-payback-warm-control.txt": "dd059f80ba0c089b6130b79ade75b12970f74b386a8ea5a7f48303474befc00f",
+    "2026-10-04-production-growth-payback.md": "f3d66cb21941f75f6510b6a760b8af9a61c4929ffdede0707bbe68c8e7ebe8fc"
+  },
+  "confirmation": {
+    "emperor": {
+      "first_seed": 61006200,
+      "count": 12
+    },
+    "deity": {
+      "first_seed": 61006300,
+      "count": 8
+    }
+  },
+  "native_completed_at": "2026-10-04T10:59:36.874038+00:00",
+  "decision": "withhold existing Granary policy; early Deity production declined in fresh confirmation",
+  "completed_games": 56
 }

@@ -1,6 +1,7 @@
 """Recompute paired checkpoints and retain every game's final outcome."""
 import csv
 import json
+import math
 from pathlib import Path
 import re
 import statistics
@@ -23,12 +24,17 @@ for difficulty, (first, count) in PROTOCOL[PHASE].items():
             raw = list(csv.DictReader(source))
         data[arm] = {(int(r["seed"]), int(r["turn"])): r for r in raw}
         assert len(data[arm]) == len(raw), "duplicate checkpoint"
+        assert all(int(r["turn"]) in [25, 50, 75, 100, 125, 150] for r in raw)
+        assert all(r["alive"] in ["true", "false"] and r["winner"] == "" for r in raw)
+        assert all(math.isfinite(float(v)) for r in raw for k, v in r.items() if k not in ["alive", "winner"])
         matches = re.findall(
             r"(\d+): turn (\d+), winner (Some\(\d+\)|None), alive (true|false)",
             stem.with_suffix(".txt").read_text(),
         )
         assert len(matches) == count and {int(s) for s, *_ in matches} == expected
         assert {s for s, _ in data[arm]} <= expected
+        final_turns = {int(s): int(t) for s, t, *_ in matches}
+        assert all(t <= final_turns[s] for s, t in data[arm])
         outcomes[arm] = {
             "games": count,
             "wins": sum(w == "Some(0)" for _, _, w, _ in matches),
