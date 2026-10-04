@@ -4926,6 +4926,17 @@ impl AdvancedAi {
         self.siege_force_keeps_its_members = false;
     }
 
+    /// Opt-in gene `staging-gun-trusts-its-escort`; see
+    /// [`Self::staging_gun_trusts_its_escort`].
+    pub fn enable_staging_gun_trusts_its_escort(&mut self) {
+        self.staging_gun_trusts_its_escort = true;
+    }
+
+    /// The twin of `enable_staging_gun_trusts_its_escort`.
+    pub fn disable_staging_gun_trusts_its_escort(&mut self) {
+        self.staging_gun_trusts_its_escort = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

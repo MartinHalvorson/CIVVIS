@@ -2498,6 +2498,10 @@ pub const GENES: &[Gene] = &[
     // seven to ten bodies reached its anchor in eighteen turns. See
     // `objective_board::SIEGE_MEMBER_STRIKE_REACH`.
     Gene { tag: "siege-force-keeps-its-members", field: "siege_force_keeps_its_members", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_force_keeps_its_members, disable: AdvancedAi::disable_siege_force_keeps_its_members },
+    // Live King civvis-20261004T033533Z: Babylon's catapults held six to ten
+    // tiles out for eighteen turns, each refusing any tile one archer could
+    // reach. See `siege_train::STAGING_ESCORT_BODIES`.
+    Gene { tag: "staging-gun-trusts-its-escort", field: "staging_gun_trusts_its_escort", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_trusts_its_escort, disable: AdvancedAi::disable_staging_gun_trusts_its_escort },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
