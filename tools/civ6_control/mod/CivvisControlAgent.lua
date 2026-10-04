@@ -10868,8 +10868,14 @@ CivvisTrade.abandon = function(subject, why)
 	trade.unanswered = trade.unanswered + 1;
 	pcall(function() LuaEvents.CivvisDealSession(subject, false, 0); end);
 	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	-- `queued` is whether a rival's session to us is waiting behind this one
+	-- (the shipped HasNextQueuedSession, DiplomacyActionView.lua:2469): the
+	-- state every observed pending-deal freeze was left in.
 	emit("deal_session", { turn = turn, target = subject, phase = "unanswered", why = why,
-		kind = session.kind, unanswered = trade.unanswered });
+		kind = session.kind, unanswered = trade.unanswered, sent = session.sent,
+		queued = try(function()
+			return DiplomacyManager.HasQueuedSession(Game.GetLocalPlayer());
+		end, nil) });
 	if not trade.disabled and trade.unanswered >= (cfg.DealSessionStandDown or 3) then
 		trade.disabled = true;
 		emit("deal_sessions_stood_down", { turn = turn, unanswered = trade.unanswered });
@@ -10903,11 +10909,31 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		-- The session is live: put the question. `sent` goes first so an
 		-- answer delivered from inside the send is read as the answer.
 		session.sent = true;
+		-- ★★★★ THE ANSWER IS WAITED FOR, NOT TIMED OUT. The rival evaluates
+		-- the question in the game core, behind every unit command this turn
+		-- already queued ("The AI will send, ACCEPT, REJECT, etc. as the
+		-- automatic evaluation of the deal occurs", DiplomacyActionView.lua:
+		-- 2582; the shipped screen has no timer and leaves the session open
+		-- until that statement lands). Late game that takes seconds: over 37
+		-- runs every one of 488 asks was answered, p99 4.9 s, max 14.7 s. The
+		-- 4-second opening hold closed the session first on exactly four of
+		-- them (G52 t216, t240 twice, G61 t216), and all four froze the game:
+		-- the rival's answer then opened its OWN `MAKE_DEAL` session to us,
+		-- which sat "Adding to pending" behind the closed one and was never
+		-- processed, so end turn waited until the wedge watchdog restarted
+		-- the game. The same t240 save survived when its answer beat the
+		-- ladder by a frame. Re-arm the hold for the answer window BEFORE the
+		-- send: an answer delivered inside the send closes the session, and
+		-- its release must be the last word the closer hears.
+		pcall(function()
+			LuaEvents.CivvisDealSession(other, true, cfg.DealAnswerHoldSeconds or 30);
+		end);
 		local ok = pcall(function()
 			DealManager.SendWorkingDeal(DealProposalAction[session.action], pid, other);
 		end);
 		emit("deal_session", { turn = turn, target = other, kind = session.kind,
-			action = session.action, session = sessionID or -1, phase = "asked", sent = ok });
+			action = session.action, session = sessionID or -1, phase = "asked", sent = ok,
+			hold = cfg.DealAnswerHoldSeconds or 30 });
 		if not ok then CivvisTrade.close(pid, other, "send_threw"); end
 		return;
 	end
@@ -16059,7 +16085,13 @@ CivvisQueue.drain = function(player, pid, turn)
 						and not entry.path_probed and not entry.ready
 						and ux == entry.origin.x and uy == entry.origin.y
 						and entry.wait >= (tonumber(cfg.OrderQueueNoopProbeTicks) or 8)
-						and entry.wait < grace then
+						and entry.wait < grace
+						-- WorldInput.lua:884 returns before its path read at :961
+						-- while the game core is busy. A request can still be queued
+						-- there even with an empty path; do not consume the one-shot
+						-- probe or label that transient read an early no-op. Arrival
+						-- and the existing grace/turn bounds remain authoritative.
+						and try(function() return UI.IsGameCoreBusy(); end, false) ~= true then
 					entry.path_probed = true;
 					local spentNow = moves ~= nil and moves <= 0;
 					local destination = try(function()
@@ -16497,6 +16529,7 @@ end;
 -- WorldInput.lua:961 reads GetMoveToPathEx; UnitPanel.lua:2147 reads activity.
 CivvisBoard.noopEvidence = function(unit, x, y)
 	local evidence = {};
+	evidence.core_busy = try(function() return UI.IsGameCoreBusy(); end, nil);
 	evidence.activity = tonumber(try(function() return UnitManager.GetActivityType(unit); end, nil));
 	local destination = try(function() return Map.GetPlotIndex(x, y); end, nil);
 	local path = try(function() return UnitManager.GetMoveToPathEx(unit, destination); end, nil);

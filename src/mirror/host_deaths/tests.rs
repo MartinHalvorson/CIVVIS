@@ -85,3 +85,28 @@ fn death_evidence_stops_at_the_selected_state_frame() {
     assert_eq!(selected.confirmed_unit_deaths[0].turn, 12);
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn a_state_record_naming_combat_is_not_read_as_a_death() {
+    // Every exported unit has a `combat` strength key; only the event kind counts.
+    let mut deaths = HostDeaths::default();
+    deaths.observe(
+        r#"{"kind": "state", "turn": 4, "units": [{"combat": 20, "id": 7, "player": 0}]}"#,
+    );
+    assert!(deaths.through(10).is_empty());
+}
+
+#[test]
+fn a_spaced_combat_event_still_records_its_death() {
+    // The harness writes `"kind": "combat"` (Python's default separators).
+    let mut deaths = HostDeaths::default();
+    deaths.observe(concat!(
+        r#"{"attacker": {"id": 5, "player": 1, "type": "unit"}, "attacker_killed": false, "#,
+        r#""defender": {"id": 7, "player": 0, "type": "unit"}, "defender_killed": true, "#,
+        r#""kind": "combat", "turn": 4}"#
+    ));
+    let found = deaths.through(10);
+    assert_eq!(found.len(), 1);
+    assert_eq!((found[0].player, found[0].unit, found[0].turn), (0, 7, 4));
+    assert_eq!(found[0].opponent, Some(1));
+}

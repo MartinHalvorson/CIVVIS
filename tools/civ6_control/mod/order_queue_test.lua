@@ -386,6 +386,52 @@ UnitManager.GetMoveToPathEx = nil
 Map.GetPlotIndex = nil
 host.paths = nil
 
+-- 2e. WorldInput.lua:884 does not ask for a movement path while the game
+-- core is busy. An accepted request can transiently have no queryable path
+-- before the host actually walks it; that is not an early no-op verdict.
+reset()
+host.units[148] = { id = 148, kind = "UNIT_BOMBARD", x = 1, y = 1, moves = 3 }
+host.busy, host.path_queries = false, 0
+UI.IsGameCoreBusy = function() return host.busy end
+Map.GetPlotIndex = function(x, y) return y * 100 + x end
+UnitManager.GetMoveToPathEx = function()
+	host.path_queries = host.path_queries + 1
+	local plots = host.busy and {} or { 101, 102, 103 }
+	return { plots = plots, turns = {} }
+end
+applyOrders(player, PID, 7, { row(148, "MOVE_TO", 3, 1) })
+host.busy = true
+local beforeProbe = host.path_queries
+local beforeNoop = lastEvent("move_noop")
+for _ = 1, 8 do queue.drain(player, PID, 7) end
+check("a busy core does not answer the early path probe", host.path_queries, beforeProbe)
+check("a busy core keeps the opening watch", queue.pendingCount(), 1)
+check("a busy core is not labelled an early no-op", lastEvent("move_noop"), beforeNoop)
+host.busy = false
+queue.drain(player, PID, 7)
+check("the probe is retried when the core is idle", host.path_queries > beforeProbe, true)
+check("a restored path keeps waiting for arrival", queue.pendingCount(), 1)
+host.arrive(148)
+queue.drain(player, PID, 7)
+check("the deferred opening watch releases on arrival", queue.pendingCount(), 0)
+
+-- A core that stays busy does not create an unbounded queue: the existing
+-- grace/turn cap still owns the terminal answer. Record busy in its evidence
+-- so the verdict is not mistaken for an idle host's authoritative no-path.
+reset()
+host.units[149] = { id = 149, kind = "UNIT_BOMBARD", x = 1, y = 1, moves = 3 }
+host.busy = false
+applyOrders(player, PID, 7, { row(149, "MOVE_TO", 3, 1) })
+host.busy = true
+for _ = 1, 30 do queue.drain(player, PID, 7) end
+check("a permanently busy opening watch remains bounded", queue.pendingCount(), 0)
+check("the bounded verdict records a busy game core",
+	(lastEvent("move_noop") or ""):find('"core_busy":true', 1, true) ~= nil, true)
+host.busy = false
+UnitManager.GetMoveToPathEx = nil
+Map.GetPlotIndex = nil
+UI.IsGameCoreBusy = nil
+
 -- 3. A refused first order takes its follow-ups with it, by name.
 reset()
 host.units[11] = { id = 11, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2 }

@@ -90,6 +90,70 @@ class FollowTest(unittest.TestCase):
         self.assertEqual(reason, "stopped")
         self.assertEqual(seen, [{"kind": "done"}])
         self.assertEqual(sleep.call_count, 2)
+class RelayCadenceTest(unittest.TestCase):
+    """`read_s` relays the board between upkeep passes without adding upkeep."""
+
+    def _run(self, tail, **kw):
+        now = {"t": 0.0}
+        pids = {"calls": 0}
+
+        def game_pids():
+            pids["calls"] += 1
+            return [1]
+
+        with patch.object(watch.time, "monotonic", lambda: now["t"]), \
+             patch.object(watch.time, "sleep",
+                          lambda s: now.__setitem__("t", now["t"] + s)), \
+             patch.object(watch.env, "game_pids", game_pids):
+            reason = watch.follow(tail, on_event=lambda _e: None, **kw)
+        return reason, now["t"], pids["calls"]
+
+    def test_a_board_written_mid_sleep_is_relayed_before_the_next_pass(self) -> None:
+        class Tail:
+            polls = 0
+
+            def poll(self):
+                Tail.polls += 1
+                return [{"kind": "state", "turn": 9}] if Tail.polls == 4 else []
+
+        reason, elapsed, upkeep = self._run(
+            Tail(), timeout_s=60.0, poll_s=1.0, read_s=0.05, stall_s=None,
+            stop_when=lambda event: event["kind"] == "state")
+        self.assertEqual(reason, "stopped")
+        # One upkeep pass, then the board three reads (0.15 s) into its sleep
+        # rather than at the second pass a whole second later.
+        self.assertEqual(upkeep, 1)
+        self.assertAlmostEqual(elapsed, 0.15, places=6)
+
+    def test_upkeep_keeps_its_cadence_while_the_tail_is_read_fast(self) -> None:
+        class Tail:
+            polls = 0
+
+            def poll(self):
+                Tail.polls += 1
+                return []
+
+        reason, elapsed, upkeep = self._run(
+            Tail(), timeout_s=2.0, poll_s=0.5, read_s=0.05, stall_s=None)
+        self.assertEqual(reason, "timeout")
+        self.assertEqual(upkeep, 4)
+        # Ten reads per half-second sleep plus one per pass.
+        self.assertGreaterEqual(Tail.polls, 40)
+
+    def test_without_read_s_the_loop_sleeps_once_per_pass(self) -> None:
+        class Tail:
+            polls = 0
+
+            def poll(self):
+                Tail.polls += 1
+                return []
+
+        reason, elapsed, upkeep = self._run(
+            Tail(), timeout_s=2.0, poll_s=0.5, stall_s=None)
+        self.assertEqual(reason, "timeout")
+        self.assertEqual((upkeep, Tail.polls), (4, 4))
+
+
 class FakeTail:
     """Emits whatever the test scripts, one batch per poll."""
 
