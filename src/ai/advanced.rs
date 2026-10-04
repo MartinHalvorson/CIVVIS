@@ -6782,6 +6782,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `staging-gun-trusts-its-escort`: an escorted gun in Stage budgets one
+    /// reply turn of danger on its march. See
+    /// `siege_train::STAGING_ESCORT_BODIES`. Off by default.
+    staging_gun_trusts_its_escort: bool,
     /// `siege-force-keeps-its-members`: a Siege force's member is not taken
     /// by a Destroy, Escort or ClearCamp row unless its target is within
     /// [`objective_board::SIEGE_MEMBER_STRIKE_REACH`]. Off by default.
@@ -8887,6 +8891,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            staging_gun_trusts_its_escort: false,
             siege_force_keeps_its_members: false,
             siege_needs_a_breaker: false,
             siege_budget_counts_what_fires: false,
