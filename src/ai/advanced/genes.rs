@@ -2577,6 +2577,11 @@ pub const GENES: &[Gene] = &[
     // waiting on one Bombard while Artillery was unlocked. See
     // `siege_production::SUPPLY_WALL_HP`.
     Gene { tag: "breaker-supply-scales", field: "breaker_supply_scales", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales, disable: AdvancedAi::disable_breaker_supply_scales },
+    // Live King 20261004T111442Z (game 53): Madrid stood without walls from
+    // turn 44 to 66, 186-200 health, with five to eight units staged and
+    // "damage ready" — two Archers shot it and the melee held the ring, so it
+    // healed every turn and built walls. See `siege_train::breach_assault_blow`.
+    Gene { tag: "breach-assault", field: "breach_assault", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_assault, disable: AdvancedAi::disable_breach_assault },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

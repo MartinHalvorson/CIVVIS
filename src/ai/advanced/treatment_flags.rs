@@ -5160,6 +5160,16 @@ impl AdvancedAi {
         self.breaker_supply_scales = false;
     }
 
+    /// Opt-in gene `breach-assault`; see [`Self::breach_assault`].
+    pub fn enable_breach_assault(&mut self) {
+        self.breach_assault = true;
+    }
+
+    /// The twin of `enable_breach_assault`.
+    pub fn disable_breach_assault(&mut self) {
+        self.breach_assault = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -5006,6 +5006,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `breach-assault`: the ring's melee joins the assault on a city whose
+    /// walls are down or opened by a ram or tower, once the siege's blows can
+    /// take it within two turns. See `siege_train::breach_assault_blow`.
+    breach_assault: bool,
     /// `breaker-supply-scales`: a high-walled Domination target is supplied
     /// with guns in parallel, the strongest first. See
     /// `siege_production::SUPPLY_WALL_HP`. Off by default.
@@ -8681,6 +8685,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            breach_assault: false,
             breaker_supply_scales: false,
             breaker_before_the_war: false,
             befriend_the_strongest: false,

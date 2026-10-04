@@ -642,3 +642,35 @@ fn an_escorted_staging_gun_marches_under_one_raider() {
         assert_eq!(closer, trusts, "the gun marches only under the gene");
     }
 }
+
+/// See `siege_route_step`: a gun on land whose dry approach to its post is
+/// walled by its own soldiers does not embark onto the water beside it,
+/// where `disembark_step` would land it again next turn (Ray, game 52). It
+/// walks through its screen along the shore instead.
+#[test]
+fn a_posted_gun_never_embarks_around_its_own_screen() {
+    let (mut g, cid, gun, _, _) = crowded_approach();
+    g.players[0].techs.insert(crate::name!("shipbuilding"));
+    let target = g.cities[&cid].pos;
+    let start = g.units[&gun].pos;
+    for x in start.0..=target.0 {
+        let tile = g.map.tiles.get_mut(&(x, target.1 - 1)).unwrap();
+        tile.terrain = crate::name!("coast");
+    }
+    let post = (target.0 - 3, target.1);
+    let water = |g: &Game, pos: Pos| g.rules.is_water(g.map.get(pos).unwrap());
+    // Fixture: the plain route around the screen leads across the water.
+    let wet = g.route_step(gun, post, 0).expect("a route by water");
+    assert!(water(&g, wet), "fixture: the open route embarks at {wet:?}");
+    assert_eq!(
+        siege_route_step(&g, 0, gun, post, target),
+        None,
+        "on land, the post route keeps to land"
+    );
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.approach(&mut g, 0, gun, post, target);
+    let now = g.units[&gun].pos;
+    assert!(!water(&g, now), "the gun stands on dry ground: {now:?}");
+    assert!(!g.is_embarked(&g.units[&gun]));
+}
