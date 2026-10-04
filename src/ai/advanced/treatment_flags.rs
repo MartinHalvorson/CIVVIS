@@ -5128,6 +5128,38 @@ impl AdvancedAi {
         self.base.unique_unit_preference = false;
     }
 
+    /// Opt-in gene `raids-cut-tourism`; see [`Self::raids_cut_tourism`].
+    pub fn enable_raids_cut_tourism(&mut self) {
+        self.raids_cut_tourism = true;
+    }
+
+    /// The twin of `enable_raids_cut_tourism`.
+    pub fn disable_raids_cut_tourism(&mut self) {
+        self.raids_cut_tourism = false;
+    }
+
+    /// Opt-in gene `breaker-before-the-war`; see
+    /// [`Self::breaker_before_the_war`].
+    pub fn enable_breaker_before_the_war(&mut self) {
+        self.breaker_before_the_war = true;
+    }
+
+    /// The twin of `enable_breaker_before_the_war`.
+    pub fn disable_breaker_before_the_war(&mut self) {
+        self.breaker_before_the_war = false;
+    }
+
+    /// Opt-in gene `breaker-supply-scales`; see
+    /// [`Self::breaker_supply_scales`].
+    pub fn enable_breaker_supply_scales(&mut self) {
+        self.breaker_supply_scales = true;
+    }
+
+    /// The twin of `enable_breaker_supply_scales`.
+    pub fn disable_breaker_supply_scales(&mut self) {
+        self.breaker_supply_scales = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

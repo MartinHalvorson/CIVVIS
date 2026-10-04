@@ -2566,6 +2566,17 @@ pub const GENES: &[Gene] = &[
     // Sites in four cities by turn 98 as each one changed faith, and G49 made
     // thirty starts across six. See `AdvancedAi::adopted_faith_sanctuary_choice`.
     Gene { tag: "one-sanctuary", field: "one_sanctuary", kind: Kind::OptIn, enable: AdvancedAi::enable_one_sanctuary, disable: AdvancedAi::disable_one_sanctuary },
+    // Live King 115745Z fought Hungary, the culture winner, for 133 turns and
+    // pillaged no Theater Square. See `air_surge::raids::RAID_TOURISM_DENIAL`.
+    Gene { tag: "raids-cut-tourism", field: "raids_cut_tourism", kind: Kind::OptIn, enable: AdvancedAi::enable_raids_cut_tourism, disable: AdvancedAi::disable_raids_cut_tourism },
+    // Live King 070716Z staged for walled Kyoto from turn 15 and ordered its
+    // first Catapult at 70, after the war began. See
+    // `siege_production::breaker_war_with`.
+    Gene { tag: "breaker-before-the-war", field: "breaker_before_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_before_the_war, disable: AdvancedAi::disable_breaker_before_the_war },
+    // Live King 083931Z stood down Lisbon's 300 walls after fifteen turns
+    // waiting on one Bombard while Artillery was unlocked. See
+    // `siege_production::SUPPLY_WALL_HP`.
+    Gene { tag: "breaker-supply-scales", field: "breaker_supply_scales", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales, disable: AdvancedAi::disable_breaker_supply_scales },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
