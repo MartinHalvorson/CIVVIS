@@ -203,3 +203,264 @@ fn inspect_native_breach_approach_cost() {
     let read = strike_danger(&g, 0, target, ours);
     eprintln!("NATIVE_BREACH_APPROACH flood={flood} strike={strike} danger={read}");
 }
+
+// Frozen pre-memo oracle from 5a11088. Keep its semantics unchanged: this
+// comparison isolates memo lifetime, not the original affordability policy.
+fn uncached_strike_reach(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos> {
+    let Some(saved) = probe.units.get(&uid).cloned() else {
+        return Vec::new();
+    };
+    let spec = &probe.rules.units[saved.kind];
+    if spec.class != "military" || !(spec.is_melee_capable() || spec.has_ranged_attack()) {
+        return Vec::new();
+    }
+    if spec.domain.as_deref() == Some("air") {
+        return probe.attack_reach(uid);
+    }
+    let max_moves = probe.unit_max_moves(uid);
+    if max_moves <= 0.0 {
+        return Vec::new();
+    }
+    let melee = spec.is_melee_capable();
+    let ranged = spec.has_ranged_attack();
+    let siege = spec.siege;
+    let sea = spec.domain.as_deref() == Some("sea");
+    if let Some(live) = probe.units.get_mut(&uid) {
+        live.moves_left = max_moves;
+        live.moved = false;
+        live.acted = false;
+        live.zoc_stopped = false;
+        live.started_turn_in_zoc = false;
+    }
+    let mut stands: Vec<(Pos, f64)> = vec![(saved.pos, max_moves)];
+    stands.extend(
+        probe
+            .approach_reach(uid)
+            .into_iter()
+            .map(|(pos, (kept, _path))| (pos, kept)),
+    );
+    if let Some(live) = probe.units.get_mut(&uid) {
+        *live = saved.clone();
+    }
+    let range = if ranged {
+        probe.unit_attack_range(uid).max(1)
+    } else {
+        0
+    };
+    let after_move = probe.promotion_effect(&saved, "attack_after_move") > 0.0;
+    let host_sight = mirrored_board(probe, pid);
+    let mut targets: Vec<Pos> = Vec::new();
+    for (from, kept) in stands {
+        if kept <= 0.0 {
+            continue;
+        }
+        // A land unit standing on water is embarked there and strikes nothing.
+        let embarked = !sea
+            && probe
+                .map
+                .get(from)
+                .is_some_and(|tile| probe.rules.is_water(tile));
+        if embarked {
+            continue;
+        }
+        if melee {
+            // A stand with movement left is not enough: entering the target
+            // can still cost more than the approach left in hand. Ask the
+            // executor's exact preflight from this stand, including cliffs
+            // and its full-movement exception, rather than price a phantom
+            // blow across a river or into rough terrain.
+            for target in probe.nbrs(from) {
+                if probe.map.tiles.contains_key(&target)
+                    && probe.unit_can_melee_target_domain(uid, target)
+                    && probe.can_pay_melee_entry_from(uid, from, kept, target)
+                {
+                    targets.push(target);
+                }
+            }
+        }
+        if ranged && (!siege || from == saved.pos || after_move) {
+            for target in probe.wdisk(from, range) {
+                if target != from
+                    && probe.map.tiles.contains_key(&target)
+                    && (host_sight || probe.unit_has_line_of_sight_from(uid, from, target))
+                {
+                    targets.push(target);
+                }
+            }
+        }
+    }
+    targets.sort_unstable();
+    targets.dedup();
+    targets
+}
+
+fn fixed_reach_boards() -> Vec<(&'static str, Game, u32)> {
+    let mut boards = Vec::new();
+    for label in [
+        "flat",
+        "rough",
+        "river",
+        "formation-aura",
+        "host-allowance",
+        "war-cart",
+    ] {
+        let mut g = field();
+        let (_, mut enemy) = closing_enemy(&mut g);
+        match label {
+            "rough" => {
+                let tile = g.map.tiles.get_mut(&at(10, 6)).unwrap();
+                tile.hills = true;
+                tile.feature = Some(crate::name!("forest"));
+            }
+            "river" => {
+                assert!(g.map.set_river_edge(at(11, 6), at(10, 6), true));
+            }
+            "formation-aura" => {
+                let peer = g.spawn_unit("builder", 1, at(12, 6));
+                g.units.get_mut(&enemy).unwrap().linked_to = Some(peer);
+                g.units.get_mut(&peer).unwrap().linked_to = Some(enemy);
+                g.spawn_unit("supply_convoy", 1, at(12, 7));
+            }
+            "host-allowance" => {
+                g.host_unit_facts.entry(enemy).or_default().max_moves = Some(4.0);
+            }
+            "war-cart" => {
+                g.remove_unit(enemy);
+                enemy = g.spawn_unit("war_cart", 1, at(12, 6));
+                for (pos, tile) in g.map.tiles.iter_mut() {
+                    tile.hills = (pos.0 + pos.1).rem_euclid(3) == 0;
+                }
+            }
+            _ => {}
+        }
+        boards.push((label, g, enemy));
+    }
+    let mut g = field();
+    g.spawn_unit("warrior", 0, at(10, 6));
+    let enemy = g.spawn_unit("warrior", 1, at(11, 6));
+    let tile = g.map.tiles.get_mut(&at(10, 6)).unwrap();
+    tile.hills = true;
+    tile.feature = Some(crate::name!("forest"));
+    boards.push(("adjacent-full", g, enemy));
+    let mut g = field();
+    g.spawn_unit("warrior", 0, at(10, 6));
+    let enemy = g.spawn_unit("archer", 1, at(12, 6));
+    g.map.tiles.get_mut(&at(10, 6)).unwrap().hills = true;
+    boards.push(("ranged", g, enemy));
+    let mut g = field();
+    for (pos, tile) in g.map.tiles.iter_mut() {
+        if crate::hex::axial_to_offset(pos.0, pos.1).0 >= 11 {
+            tile.terrain = crate::name!("coast");
+        }
+    }
+    let enemy = g.spawn_unit("galley", 1, at(12, 6));
+    boards.push(("sea", g, enemy));
+    boards
+}
+
+fn verify_reach_pair(g: &mut Game, enemy: u32) -> Vec<Pos> {
+    let before = serde_json::to_value(&*g).unwrap();
+    let positions: Vec<_> = g.map.tiles.keys().copied().collect();
+    let occupancy: Vec<_> = positions
+        .iter()
+        .map(|pos| g.unit_ids_at(*pos).to_vec())
+        .collect();
+    let reference = uncached_strike_reach(g, 0, enemy);
+    assert!(
+        serde_json::to_value(&*g).unwrap() == before,
+        "oracle mutated the board"
+    );
+    let actual = strike_reach_of(g, 0, enemy);
+    assert_eq!(actual, reference, "memo changed the reachable targets");
+    assert!(
+        serde_json::to_value(&*g).unwrap() == before,
+        "memo query mutated the board"
+    );
+    for (pos, ids) in positions.iter().zip(occupancy) {
+        assert_eq!(g.unit_ids_at(*pos), ids);
+    }
+    actual
+}
+
+#[test]
+fn restored_target_memo_matches_uncached_reach_on_fixed_boards() {
+    for (label, mut g, enemy) in fixed_reach_boards() {
+        assert!(
+            !verify_reach_pair(&mut g, enemy).is_empty(),
+            "{label} must exercise a reach"
+        );
+    }
+}
+
+#[test]
+#[ignore = "manual fixed-board paired timing, requires frozen native prefix and output path"]
+fn measure_fixed_board_reach_memo() {
+    let phase = std::env::var("CIVVIS_REACH_PHASE").expect("aa or memo phase");
+    let compiled_memo = include_str!("../battle_planner.rs")
+        .contains("let _restored_target_memo = probe.query_memo();");
+    assert_eq!(compiled_memo, phase == "memo", "wrong compiled arm");
+    assert!(matches!(phase.as_str(), "aa" | "memo"));
+    let prefix = std::env::var("CIVVIS_BREACH_PREFIX").expect("frozen native prefix");
+    let prefix = std::path::Path::new(&prefix);
+    let snapshot = crate::mirror::snapshot_from_events(prefix).unwrap();
+    let state = crate::mirror::state_from_events(prefix, Some(190)).unwrap();
+    assert_eq!((state.turn, state.frame), (190, 2));
+    let live = crate::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 650, 6);
+    let ours = live.uid_of[&9568265];
+    let enemy = live.foreign_uid_of[&14483458];
+    let mut g = live.game;
+    g.apply(
+        0,
+        &Action::MoveTo {
+            unit: ours,
+            to: at(30, 17),
+        },
+    )
+    .unwrap();
+    let mut boards = fixed_reach_boards();
+    boards.push(("actual-native190f2-prefix", g, enemy));
+    fn elapsed(g: &mut Game, enemy: u32, query: fn(&mut Game, usize, u32) -> Vec<Pos>) -> u128 {
+        let start = std::time::Instant::now();
+        for _ in 0..128 {
+            std::hint::black_box(query(g, 0, enemy));
+        }
+        start.elapsed().as_nanos()
+    }
+    let mut rows = Vec::new();
+    for (label, mut g, enemy) in boards {
+        let targets = verify_reach_pair(&mut g, enemy);
+        let before = serde_json::to_value(&g).unwrap();
+        for _ in 0..4 {
+            std::hint::black_box(uncached_strike_reach(&mut g, 0, enemy));
+            std::hint::black_box(strike_reach_of(&mut g, 0, enemy));
+        }
+        let mut batches = Vec::new();
+        for pair in 0..15 {
+            let (reference_ns, actual_ns) = if pair % 2 == 0 {
+                let reference = elapsed(&mut g, enemy, uncached_strike_reach);
+                (reference, elapsed(&mut g, enemy, strike_reach_of))
+            } else {
+                let actual = elapsed(&mut g, enemy, strike_reach_of);
+                (elapsed(&mut g, enemy, uncached_strike_reach), actual)
+            };
+            batches.push(
+                serde_json::json!({"pair":pair,"reference_ns":reference_ns,"actual_ns":actual_ns}),
+            );
+        }
+        assert!(
+            serde_json::to_value(&g).unwrap() == before,
+            "timed queries mutated {label}"
+        );
+        verify_reach_pair(&mut g, enemy);
+        rows.push(serde_json::json!({"fixture":label,"enemy":enemy,"targets":targets,"calls_per_batch":128,"batches":batches}));
+    }
+    let output = std::env::var("CIVVIS_REACH_OUTPUT").expect("external result path");
+    std::fs::write(
+        output,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "phase":phase,"compiled_memo":compiled_memo,"profile":"ci","fixtures":rows
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+}
