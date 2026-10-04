@@ -74,7 +74,18 @@
   },
   "acceptance": "Require an early production improvement at turns 75 and 100 on both difficulties in fresh confirmation, improved production relative to strongest rival, and no material science/culture/expansion/survival regression. No AI-parity claim from a Granary forecast or conditional late checkpoints. Reject runtime if evidence is negative; retain all outcomes and missing checkpoints.",
   "validation": {
-    "status": "in progress"
+    "status": "in progress",
+    "focused_unoptimized": {
+      "passed": 4,
+      "failed": 0,
+      "command": "CARGO_TARGET_DIR=target/growth-check CARGO_PROFILE_CI_OPT_LEVEL=0 cargo test --profile ci --locked --lib production_growth_",
+      "source": "50594d440"
+    },
+    "quality": {
+      "passed": true,
+      "base": "c351dca598cbe30abef98ed4b3405e8b3cf7aba9",
+      "head": "f9975f48d"
+    }
   },
   "notes": [
     "Both arms use the same harness and CI profile libraries. Treatment is runtime change only; no opt-in Granary policy is enabled.",
@@ -103,5 +114,33 @@
     "confirmation_eliminations_no_more_than_control": true,
     "confirmation_wins_no_fewer_than_control": true,
     "pilot_stop": "Stop if every paired recorded checkpoint is identical, or Deity mean Production falls at least 5% at both turns 75 and 100. Otherwise run the fixed confirmation batch without changing the policy."
-  }
+  },
+  "frozen_runtime_source": "50594d440ca93dd9ddf926698a87456ea5ba2781",
+  "candidate_library_sha256": "2b41c3c4508045d5ec42f447c8d591c25f96de340ebda5920b94dfc9530f7f77",
+  "candidate_dependency_sha256": {
+    "libquote-e94315914580abd1.rlib": "49d266cb0b426141a382464dca58ffca0a9a07bf9263bcc46c30a650836a6f43",
+    "liblibm-5ee0467b56344aa1.rlib": "f8b977db76e23af41c4fa0413dd9837b5ae61b9fded1beb696328e326bac7e37",
+    "libserde_core-d8b9cb9d7eda75e3.rlib": "1480d09f0b0f8a9f76cb7fbd740c1a87a030d641d8b4a8347f9a6b23d394e963",
+    "libsyn-3854ff36265737a1.rlib": "a66fd194dc2f4a26ba9db90898a01c0d735d7dea6d3d0261bb6331fa6c9cbb75",
+    "libcc-306998902a309339.rlib": "78ab97890e958b744b3e729a3e57bde8648bdad7874a0e538f5ab338ff85c8df",
+    "libzmij-db1726fcbad03e10.rlib": "087ecf77c66cc9d9f6a71ef4c393bf87194fd96ce7c57921adea7f9d598086d7",
+    "libserde_json-133b453207d4c7d8.rlib": "8b58ca647cacc953a7e27f1a6f9c58ee4cacea6f497fc62079f730e3278b434f",
+    "libproc_macro2-b1baaf8ea9e1f1c6.rlib": "ed525c0441a4b562466f32e95b8bb5d0e3346af66dd811b2436f72366f66a927",
+    "libshlex-2ad7c2fa1558f084.rlib": "e415292c6f4f3bac21b7b2157507dbbb4850f64096b3041c37ea9062ea549639",
+    "libfind_msvc_tools-6ea7281740f42015.rlib": "47bf306f740c2612626613b603188d3edc78182bdc2500741010227e536c9daf",
+    "libmimalloc-4b1d0a8b44717daa.rlib": "4a6f3058d8007eaf87e4f45092ce4c4d1973f997ad78d2eef70d15a4b82733bf",
+    "libitoa-e05d252acce1b140.rlib": "a6646b819797de97bb0c378b156845db0afc2a6063b593e8f63b9832b1f2514d",
+    "libcivvis-b90f6ce0986a0c6d.rlib": "2b41c3c4508045d5ec42f447c8d591c25f96de340ebda5920b94dfc9530f7f77",
+    "libserde-99734557989d9f5b.rlib": "69b95a788025e7176baca572ef64d06cd1e5efc9afe1d7dcc28256b4fcb27915",
+    "libmemchr-2c696892a3f93ce4.rlib": "368df0dfa2b64ec29c8262593b4b92847a63910dc8f8dcdadaf32121ba2627ce",
+    "liblibmimalloc_sys-2c7708222b09358b.rlib": "a15c99f910b4128197ff3754f0215bb74ac597751c797495f86233a3f636ff98",
+    "libunicode_ident-00ff4f24fa63cdb3.rlib": "213612d4f31af086ad59b78928decf6df7085d84281f675bf6f082d95eae6f04",
+    "libserde_derive-15fd15435ae91cdd.dylib": "52aeecbfdf5ad80c68c8f33dd49779e9a7db68db0064c2e64d3ba1e34c218c8f",
+    "libmimalloc.a": "b487d87ba491d654abedd660322b18d5f0732dc246e189e651e9fbdd9c7ec1b8"
+  },
+  "frozen_before_candidate_play_at": "2026-10-04T12:02:11.295783+00:00",
+  "candidate_build_note": "CI-profile library built from this task worktree using a dedicated native target directory. Runtime src inputs match frozen_runtime_source; build started before the checkpoint commit, so embedded Git metadata can name the preceding head.",
+  "candidate_binary_sha256": "61f6a3c237797aeb29bb9eced08585f1dfaed06441be74f106dba0bd01cdf90f",
+  "pilot_completed_at": "2026-10-04T12:06:57.392295+00:00",
+  "decision": "Unfavorable pilot; completing preregistered confirmation without modifying the frozen policy. Runtime remains withheld."
 }
