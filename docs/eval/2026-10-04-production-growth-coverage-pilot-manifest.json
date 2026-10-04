@@ -49,5 +49,100 @@
     "src/ai/advanced/gold_and_cards.rs": "ed8cfaffda8b21b3a9116807540f15bd3067e2319bd412abc5215f6c3f3ee687",
     "src/ai/advanced/production_compounding.rs": "a745a6bd28d18b8e01796146cc023fb67a54d0a139e4e18ea241cd9f729dea21"
   },
-  "trace_equivalence": "Four consumed-seed worlds, 120977 identical executed actions; diagnostics are not fresh strength samples"
+  "trace_equivalence": "Four consumed-seed worlds, 120977 identical executed actions; diagnostics are not fresh strength samples",
+  "probe_sha256": "4730a1a0d0e91a021a90f9c77b097a680443adc27ba109a183661a594a70cc16",
+  "candidate_compile_arguments": [
+    "rustc",
+    "--edition=2021",
+    "-O",
+    "-C",
+    "debug-assertions=on",
+    "docs/eval/2026-10-04-production-growth-coverage-pilot-probe.rs",
+    "--extern",
+    "civvis=/tmp/civvis-production-growth-coverage-candidate-deps/libcivvis-b90f6ce0986a0c6d.rlib",
+    "--extern",
+    "serde_json=/tmp/civvis-production-growth-coverage-candidate-deps/libserde_json-133b453207d4c7d8.rlib",
+    "-Ldependency=/tmp/civvis-production-growth-coverage-candidate-deps",
+    "-Lnative=/tmp/civvis-production-growth-coverage-candidate-deps",
+    "-o",
+    "/tmp/civvis-production-growth-coverage-pilot-candidate-probe"
+  ],
+  "candidate_dependencies_sha256": {
+    "libcc-306998902a309339.rlib": "78ab97890e958b744b3e729a3e57bde8648bdad7874a0e538f5ab338ff85c8df",
+    "libcivvis-b90f6ce0986a0c6d.rlib": "0d2823a4c84a33a43cede64aa51cfa59b2ccb9dfa72ba69c74e0434ff81fa255",
+    "libfind_msvc_tools-6ea7281740f42015.rlib": "47bf306f740c2612626613b603188d3edc78182bdc2500741010227e536c9daf",
+    "libitoa-e05d252acce1b140.rlib": "a6646b819797de97bb0c378b156845db0afc2a6063b593e8f63b9832b1f2514d",
+    "liblibm-5ee0467b56344aa1.rlib": "f8b977db76e23af41c4fa0413dd9837b5ae61b9fded1beb696328e326bac7e37",
+    "liblibmimalloc_sys-2c7708222b09358b.rlib": "7d82999b8fb2a5e739d491080d784e3372290bd535813fcddadb192881eba135",
+    "libmemchr-2c696892a3f93ce4.rlib": "368df0dfa2b64ec29c8262593b4b92847a63910dc8f8dcdadaf32121ba2627ce",
+    "libmimalloc-4b1d0a8b44717daa.rlib": "4a6f3058d8007eaf87e4f45092ce4c4d1973f997ad78d2eef70d15a4b82733bf",
+    "libmimalloc.a": "5f17b765a3a5cad82e2d9bfbf348e8b44de8ba7158f835511864c94cb355bd53",
+    "libproc_macro2-b1baaf8ea9e1f1c6.rlib": "ed525c0441a4b562466f32e95b8bb5d0e3346af66dd811b2436f72366f66a927",
+    "libquote-e94315914580abd1.rlib": "49d266cb0b426141a382464dca58ffca0a9a07bf9263bcc46c30a650836a6f43",
+    "libserde-99734557989d9f5b.rlib": "b51a418a3ae6a3d406ea21e3d8fa6acddd0535e02e95e2e7b5568bc87c164301",
+    "libserde_core-d8b9cb9d7eda75e3.rlib": "43df596392bd3d7347a30d9cb4f4c3af8efac500ab7ac4bf8430c9ad2602f00b",
+    "libserde_derive-15fd15435ae91cdd.dylib": "ee075d43a92cd2ec8640e3c87e1c8fe8aa0d847c58eaf2225c5909fff9d55ccd",
+    "libserde_json-133b453207d4c7d8.rlib": "a25de44b47681bfd80459374785d0731d57e60d6e42e39047119abbe512b04a3",
+    "libshlex-2ad7c2fa1558f084.rlib": "e415292c6f4f3bac21b7b2157507dbbb4850f64096b3041c37ea9062ea549639",
+    "libsyn-3854ff36265737a1.rlib": "a66fd194dc2f4a26ba9db90898a01c0d735d7dea6d3d0261bb6331fa6c9cbb75",
+    "libunicode_ident-00ff4f24fa63cdb3.rlib": "213612d4f31af086ad59b78928decf6df7085d84281f675bf6f082d95eae6f04",
+    "libzmij-db1726fcbad03e10.rlib": "087ecf77c66cc9d9f6a71ef4c393bf87194fd96ce7c57921adea7f9d598086d7"
+  },
+  "candidate_probe_sha256": "76a883fb33bb9571be009ef548e8943294c85b683ef3b7d6df266c4c567c2734",
+  "control_probe_sha256": "99320c87fcd2b6f3fbe47bd9e320712183fbd81b587bb0a3d96e198d7754ea94",
+  "candidate_build_note": "Immutable source archive built before fixture amenity correction; runtime file hashes match. cfg(test) fixture is excluded from this library. Focused positive/negative tests must pass before first fresh pilot.",
+  "runtime_frozen_checkpoint": "12c38a53f",
+  "pilot_started_at": "2026-10-04T15:16:01.923690+00:00",
+  "focused_tests": "4 passed, 0 failed; actual purchase/reserve/queue preservation, field and queued charge credits, eight rejection cases and actual worked Mine completion",
+  "pilot_executions": [
+    {
+      "difficulty": "emperor",
+      "arm": "control",
+      "arguments": [
+        "/tmp/civvis-production-growth-coverage-pilot-control-probe",
+        "61007000",
+        "4",
+        "emperor",
+        "control"
+      ]
+    },
+    {
+      "difficulty": "emperor",
+      "arm": "candidate",
+      "arguments": [
+        "/tmp/civvis-production-growth-coverage-pilot-candidate-probe",
+        "61007000",
+        "4",
+        "emperor",
+        "candidate"
+      ]
+    },
+    {
+      "difficulty": "deity",
+      "arm": "control",
+      "arguments": [
+        "/tmp/civvis-production-growth-coverage-pilot-control-probe",
+        "61007100",
+        "4",
+        "deity",
+        "control"
+      ]
+    },
+    {
+      "difficulty": "deity",
+      "arm": "candidate",
+      "arguments": [
+        "/tmp/civvis-production-growth-coverage-pilot-candidate-probe",
+        "61007100",
+        "4",
+        "deity",
+        "candidate"
+      ]
+    }
+  ],
+  "pilot_completed_at": "2026-10-04T15:20:45.061229+00:00",
+  "confirmation_played": false,
+  "rustc_version": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: aarch64-apple-darwin\nrelease: 1.97.1\nLLVM version: 22.1.6\n",
+  "full_prototype_checkpoint": "ab5066a9f",
+  "runtime_changed_after_pilot_started": false
 }

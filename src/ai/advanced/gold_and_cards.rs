@@ -413,9 +413,6 @@ impl AdvancedAi {
     /// leaving `reserve` in the bank. At most one purchase a turn; false when
     /// nothing qualifies or clears the reserve.
     pub(super) fn young_empire_purchase(&self, g: &mut Game, pid: usize, reserve: f64) -> bool {
-        if self.productive_builder_purchase(g, pid, reserve) {
-            return true;
-        }
         let counts = self.counts(g, pid);
         // Cities by Production, least first. Each yield is read once, under
         // one memo, rather than twice per comparison.
