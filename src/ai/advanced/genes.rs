@@ -2502,6 +2502,10 @@ pub const GENES: &[Gene] = &[
     // tiles out for eighteen turns, each refusing any tile one archer could
     // reach. See `siege_train::STAGING_ESCORT_BODIES`.
     Gene { tag: "staging-gun-trusts-its-escort", field: "staging_gun_trusts_its_escort", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_trusts_its_escort, disable: AdvancedAi::disable_staging_gun_trusts_its_escort },
+    // Live King 131343Z lost on Technology to a rival with fourteen cities
+    // and twice our population that the campaign never touched. See
+    // `advanced/runaway_expander.rs`.
+    Gene { tag: "runaway-expander-counter", field: "runaway_expander_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_runaway_expander_counter, disable: AdvancedAi::disable_runaway_expander_counter },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -6548,6 +6548,10 @@ pub struct AdvancedAi {
     lane_delegates_production_2: bool,
 
     // ---- append: p-r ------------------------------------------------
+    /// `runaway-expander-counter`: a rival outgrowing us reads as a
+    /// Domination counter clock. See `advanced/runaway_expander.rs`. Off by
+    /// default.
+    runaway_expander_counter: bool,
     /// `raze-a-doomed-capture`: a Conquest razes a small captured city that
     /// will revolt before any rescue can establish. See
     /// `DOOMED_CAPTURE_TURNS`. Off by default.
@@ -7546,6 +7550,7 @@ pub use air_city_assault::AirCityAssault;
 mod denial_nearest_finish;
 mod denial_needs_a_road;
 mod city_memory;
+mod runaway_expander;
 mod siege_resource_purchase;
 mod strategic_deposit_prey;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
@@ -8810,6 +8815,7 @@ impl AdvancedAi {
             lane_delegates_production_2: false,
 
             // ---- append: p-r ----------------------------------------
+            runaway_expander_counter: false,
             raze_doomed_capture: false,
             policy_deck_hysteresis: false,
             policy_deck_hysteresis_2: false,
