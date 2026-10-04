@@ -3380,33 +3380,6 @@ impl Game {
         yields
     }
 
-    /// Local yield change from placing an improvement, including researched
-    /// bonuses and the loss of any feature the operation removes. Compare
-    /// modeled yields on both sides so host corrections cancel rather than
-    /// becoming an invented improvement bonus. This is a read-only forecast;
-    /// callers still check legality and resource/adjacency effects separately.
-    pub(crate) fn improvement_yield_change(
-        &self,
-        pid: usize,
-        pos: Pos,
-        improvement: Name,
-    ) -> Yields {
-        let tile = &self.map.tiles[&pos];
-        let mut before = tile.clone();
-        if before.pillaged {
-            before.improvement = None;
-        }
-        let mut after = tile.clone();
-        after.improvement = Some(improvement);
-        after.pillaged = false;
-        if self.rules.improvements[improvement].removes_feature {
-            after.feature = None;
-        }
-        let mut gain = self.player_tile_yields(pid, pos, &after);
-        gain.add_scaled(self.player_tile_yields(pid, pos, &before), -1.0);
-        gain
-    }
-
     /// CIVVIS's own tile model, before any host correction: what
     /// [`Self::workable_tile_yields`] pays on a native game, and the number the
     /// mirror measures the host's per-plot export against.
