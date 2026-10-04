@@ -4536,3 +4536,26 @@ class DesktopRescueRunsOffTheRelay(unittest.TestCase):
         # Nothing else drives the desktop while a rescue might be.
         self.assertIn("desktop_rescues.drain(30.0)\n        dismiss_leader_dialogue()", source)
         self.assertIn("desktop_rescues.close(30.0)\n    game_stopped = launcher.stop()", source)
+
+
+class TheFinalScreenHoldIsForTheWinClip(unittest.TestCase):
+    """A loss's recording is deleted, so its final screen is held only briefly."""
+
+    def test_a_win_keeps_the_full_hold(self) -> None:
+        self.assertEqual(civ6_play.end_game_hold_seconds(
+            {"kind": "victory", "won": True}, 10.0), 10.0)
+
+    def test_a_loss_or_elimination_is_a_short_look(self) -> None:
+        for outcome in ({"kind": "victory", "won": False}, {"kind": "defeat"}, {}):
+            self.assertEqual(civ6_play.end_game_hold_seconds(outcome, 10.0),
+                             civ6_play.LOSS_SCREEN_HOLD_S)
+
+    def test_a_shorter_request_is_never_lengthened(self) -> None:
+        self.assertEqual(civ6_play.end_game_hold_seconds({"won": False}, 1.0), 1.0)
+
+    def test_the_run_uses_it(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play._play)
+        self.assertIn('hold = end_game_hold_seconds(state["outcome"], args.end_game_seconds)',
+                      source)
+        self.assertIn("time.sleep(hold)", source)

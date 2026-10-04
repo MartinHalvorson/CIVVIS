@@ -4251,6 +4251,20 @@ def seat_matches_requested(
     )
 
 
+#: How long a game we did NOT win keeps its final screen. The full
+#: `--end-game-seconds` is for the win clip, and the clip keeper deletes a
+#: loss's recording, so a loss's hold only serves someone watching live: a
+#: short look at the result, not ten seconds the next game waits for.
+LOSS_SCREEN_HOLD_S = 3.0
+
+
+def end_game_hold_seconds(outcome: dict, requested: float) -> float:
+    """The final-screen hold: all of ``requested`` for our win, a short look otherwise."""
+    if isinstance(outcome, dict) and outcome.get("won") is True:
+        return requested
+    return min(requested, LOSS_SCREEN_HOLD_S)
+
+
 def summary_reason(state: dict, reason: str) -> str:
     """How the run ended: a refusal outranks the loop's own reason.
 
@@ -5244,9 +5258,9 @@ def _play(args: argparse.Namespace) -> int:
     # refusal has nothing on screen worth looking at, and holding there would add
     # ten seconds to every failure in a batch.
     if state["outcome"] and args.end_game_seconds > 0:
-        print(f"holding the final screen for {args.end_game_seconds:.0f}s",
-              flush=True)
-        time.sleep(args.end_game_seconds)
+        hold = end_game_hold_seconds(state["outcome"], args.end_game_seconds)
+        print(f"holding the final screen for {hold:.0f}s", flush=True)
+        time.sleep(hold)
     elif state.get("operator_retire_event"):
         # ``UI.RequestAction`` crosses from the control mod into the game core
         # asynchronously.  Leave it a small frame window to commit the native
