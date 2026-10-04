@@ -85,6 +85,38 @@
       "passed": true,
       "base": "c351dca598cbe30abef98ed4b3405e8b3cf7aba9",
       "head": "f9975f48d"
+    },
+    "prototype_full_optimized": {
+      "passed": 4552,
+      "ignored": 54,
+      "source": "50594d440",
+      "command": "cargo test --profile ci --locked",
+      "suite_rows": [
+        [
+          4300,
+          50
+        ],
+        [
+          14,
+          0
+        ],
+        [
+          217,
+          0
+        ],
+        [
+          17,
+          0
+        ],
+        [
+          4,
+          0
+        ],
+        [
+          0,
+          4
+        ]
+      ]
     }
   },
   "notes": [
@@ -142,5 +174,11 @@
   "candidate_build_note": "CI-profile library built from this task worktree using a dedicated native target directory. Runtime src inputs match frozen_runtime_source; build started before the checkpoint commit, so embedded Git metadata can name the preceding head.",
   "candidate_binary_sha256": "61f6a3c237797aeb29bb9eced08585f1dfaed06441be74f106dba0bd01cdf90f",
   "pilot_completed_at": "2026-10-04T12:06:57.392295+00:00",
-  "decision": "Unfavorable pilot; completing preregistered confirmation without modifying the frozen policy. Runtime remains withheld."
+  "decision": "Reject runtime prototype: confirmation lowers early Production at both primary checkpoints on both difficulties.",
+  "native_completed_at": "2026-10-04T12:16:18.743189+00:00",
+  "completed_games": 56,
+  "confirmation_runtime_unchanged": true,
+  "ci_prototype_source": "50594d440",
+  "ci_prototype_all_checks_success": true,
+  "runtime_prototype_removed": true
 }
