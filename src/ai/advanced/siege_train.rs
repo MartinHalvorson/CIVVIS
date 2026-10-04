@@ -105,6 +105,17 @@ pub(super) const CITY_STRIKE_RANGE: i32 = 2;
 /// One-turn lethal checks let a hostile city wear it down before it arrives.
 const STAGING_GUN_REPLY_TURNS: f64 = 3.0;
 const STAGING_GUN_HP_RESERVE: f64 = 20.0;
+/// `staging-gun-trusts-its-escort`: a gun with at least this many of our
+/// land soldiers on or beside its next marching step budgets one reply turn
+/// of danger there, not [`STAGING_GUN_REPLY_TURNS`]. A raider that strikes
+/// the gun meets the escort the next turn. Budgeting three replies, a
+/// catapult refuses any tile one enemy archer reaches (a single blow near
+/// 60 against a limit near 27), so near a defended capital the breakers never
+/// reach the staging ring: live King civvis-20261004T033533Z (game 46) held
+/// Babylon's catapults six to ten tiles out from turn 135 to 153 with
+/// "damage ready false"; civvis-20261004T040138Z (game 47) held Quebec
+/// City's at ten.
+pub(super) const STAGING_ESCORT_BODIES: usize = 2;
 /// The bill is the defence within [`DEFENDER_RADIUS`] plus the city and its
 /// walls at [`WALL_STRENGTH_PER_100_HP`] a hundred, times this.
 pub(super) const BILL_MARGIN: f64 = 1.25;
@@ -1156,6 +1167,31 @@ impl AdvancedAi {
             })
     }
 
+    /// Whether this unit belongs to a Domination siege still in Stage. The
+    /// train's own Stage step prices its approach (`siege_stage_step`: a gun
+    /// holds back on its own risk limit; the rest march to the staging
+    /// ring), so the battle planner does not rotate a healthy member out "to
+    /// heal". Live King civvis-20261004T033533Z (game 46), turn 140: all four
+    /// 100-hp catapults before Babylon were rotated out at danger 96-100 and
+    /// fortified; Stage never invested in 18 turns.
+    pub(super) fn staging_siege_member(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        self.siege_train
+            && self.active_victory_target(g) == Some(super::VictoryTarget::Domination)
+            && self.force_groups.iter().any(|group| {
+                group.domain == ForceDomain::Land
+                    && group.units.contains(&uid)
+                    && g.city_at(group.objective).is_some_and(|cid| {
+                        let owner = g.cities[&cid].owner;
+                        owner != pid
+                            && g.is_at_war(pid, owner)
+                            && self
+                                .sieges
+                                .get(&cid)
+                                .is_some_and(|siege| siege.stage == SiegeStage::Stage)
+                    })
+            })
+    }
+
     /// Whether this unit is a member of an active Domination siege (see
     /// `active_siege_member`) whose city stands without walls: its shot
     /// is the city's health, and the battle planner leaves it to the train.
@@ -2005,13 +2041,49 @@ impl AdvancedAi {
         }
         let here = g.units[&uid].pos;
         let distance = g.wdist(here, city.pos);
-        let mut gun_danger = (arm_of(g, uid) == Arm::Siege)
-            .then(|| super::battle_planner::DangerField::with_reach(g, pid, true));
+        // `shared-danger`, as the battle planner and the reinforcement step
+        // read it: a hostile's one blow a turn is split among the units of
+        // ours in its reach. Unshared, a gun inside its own army read every
+        // ranger's blow as its alone and held at the edge: live King
+        // civvis-20261004T033533Z (game 46) kept Babylon's catapults six to
+        // ten tiles out from turn 135 to 153 ("damage ready false"), and
+        // civvis-20261004T040138Z (game 47) held Quebec City's at ten.
+        let mut gun_danger = (arm_of(g, uid) == Arm::Siege).then(|| {
+            let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
+            if self.shared_danger {
+                field.share(g);
+            }
+            field
+        });
         let gun_risk_limit = (f64::from(g.units[&uid].hp) - STAGING_GUN_HP_RESERVE).max(0.0)
             / STAGING_GUN_REPLY_TURNS;
+        // `staging-gun-trusts-its-escort`: see `STAGING_ESCORT_BODIES`.
+        let escorted_limit = |pos: Pos| -> f64 {
+            let escorts = g
+                .nbrs(pos)
+                .into_iter()
+                .chain(std::iter::once(pos))
+                .flat_map(|n| g.unit_ids_at(n).iter().copied())
+                .filter(|id| {
+                    *id != uid
+                        && g.units.get(id).is_some_and(|unit| {
+                            let spec = &g.rules.units[unit.kind];
+                            unit.owner == pid
+                                && spec.class == "military"
+                                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                                && arm_of(g, *id) != Arm::Siege
+                        })
+                })
+                .count();
+            if self.staging_gun_trusts_its_escort && escorts >= STAGING_ESCORT_BODIES {
+                (f64::from(g.units[&uid].hp) - STAGING_GUN_HP_RESERVE).max(0.0)
+            } else {
+                gun_risk_limit
+            }
+        };
         if let Some(field) = gun_danger.as_mut() {
             let risk_here = field.danger(here, uid);
-            if risk_here > gun_risk_limit {
+            if risk_here > escorted_limit(here) {
                 let safer = g
                     .nbrs(here)
                     .into_iter()
@@ -2059,7 +2131,7 @@ impl AdvancedAi {
                 .filter(|pos| g.can_move(uid, *pos) && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE)
             {
                 if let Some(field) = gun_danger.as_mut() {
-                    if field.danger(next, uid) > gun_risk_limit {
+                    if field.danger(next, uid) > escorted_limit(next) {
                         let safe = g
                             .nbrs(here)
                             .into_iter()

@@ -1,0 +1,7 @@
+61003800: turn 124, winner Some(3), alive true
+61003801: turn 112, winner Some(2), alive true
+61003802: turn 151, winner Some(2), alive true
+61003803: turn 151, winner Some(2), alive true
+real 51.73
+user 46.59
+sys 0.15

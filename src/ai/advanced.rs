@@ -5204,6 +5204,9 @@ pub struct AdvancedAi {
     /// `builder-before-the-army-2`: the same step, only while the empire has
     /// no Builder standing or queued. See `BasicAi::builder_before_the_army_2`.
     builder_before_the_army_2: bool,
+    /// `builder-before-the-army-3`: version 2's first Builder, then one per
+    /// three unimproved worked tiles. See `BasicAi::builder_before_the_army_3`.
+    builder_before_the_army_3: bool,
     // ---- append: c-d ------------------------------------------------
     /// `decisive-window`: research and civics aimed at the cheapest
     /// assault-plus-breaker package that beats the campaign target's
@@ -5663,6 +5666,22 @@ pub struct AdvancedAi {
     /// `campus-before-the-army-3`: version 2, on through the University and
     /// the Research Lab. See `BasicAi::campus_before_the_army_3`.
     campus_before_the_army_3: bool,
+    /// `colonization-earns-its-slot`: the timed economy commits an economic
+    /// slot to Colonization only while the Settlers actually in production
+    /// would gain more from it than every city gains from Urban Planning.
+    /// The stock timing commits the slot for the whole expansion phase, so a
+    /// one-slot government held Colonization with no Settler queued and
+    /// Urban Planning (+1 Production in every city) never reached the deck:
+    /// 11 of 26 live King games held it at t100. Policy swaps are free on
+    /// the host, so the slot can follow the queue turn by turn.
+    colonization_earns_its_slot: bool,
+    /// `colonization-earns-its-slot-2`: version 1, and the same test for the
+    /// Builder cards. A queued Builder commits the slot only to a card that
+    /// adds build charges (Serfdom, Public Works) or to an Ilkum whose +30%
+    /// on the queued Builders out-produces Urban Planning's +1 in every
+    /// city; `builder-before-the-army-3` queues Builders often enough that
+    /// the stock Ilkum commitment would hold Urban Planning out again.
+    colonization_earns_its_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// A district is worth the land-grab building it will host.
     ///
@@ -6219,6 +6238,34 @@ pub struct AdvancedAi {
     /// Aqueduct) ahead of the military floor. Opt-in gene
     /// `granary-before-the-army`; see `BasicAi::granary_before_the_army`.
     granary_before_the_army: bool,
+    /// Version 2 of `granary-before-the-army`; see
+    /// `BasicAi::granary_before_the_army_2`.
+    granary_before_the_army_2: bool,
+    /// The delegated city governor's Industrial Zone, Workshop and Factory
+    /// ahead of the military floor. Opt-in gene `industry-before-the-army`;
+    /// see `BasicAi::industry_before_the_army`.
+    industry_before_the_army: bool,
+    /// Version 2 of `industry-before-the-army`; see
+    /// `BasicAi::industry_before_the_army_2`.
+    industry_before_the_army_2: bool,
+    /// Version 3 of `industry-before-the-army`; see
+    /// `BasicAi::industry_before_the_army_3`.
+    industry_before_the_army_3: bool,
+    /// The Industrial Zone in the delegated governor's district list; see
+    /// `BasicAi::industry_in_the_district_list`.
+    industry_in_the_district_list: bool,
+    /// One Industrial Zone where its Factory reaches the most cities, and its
+    /// chain; see `BasicAi::industrial_hub`.
+    industrial_hub: bool,
+    /// `improvement-upgrades-count`: a Builder prices an improvement with the
+    /// yields its owner's techs and civics already add to it (Apprenticeship's
+    /// and Industrialization's +1 Production on a Mine, Gunpowder's on a
+    /// Quarry, Feudalism's Food on a Plantation, …), as the engine pays them
+    /// (`player_tile_yields`). The stock price reads only the printed yield,
+    /// so after Apprenticeship a Mine (+2 Production) still priced as +1 and
+    /// tied a Farm; live King games since builder-before-the-army-2 worked
+    /// 10.0 unimproved hills at t100.
+    improvement_upgrades_count: bool,
     // ---- append: l-o ------------------------------------------------
     /// A city's Monument ahead of the military floor and the Settler step in
     /// the delegated city governor. Opt-in gene `monument-first`; see
@@ -6552,7 +6599,16 @@ pub struct AdvancedAi {
     /// `advanced/lane_delegates_production.rs`.
     lane_delegates_production_2: bool,
 
+    /// `opening-force-keeps-its-members`: the undeclared early-conquest
+    /// opening's strike force is not drafted into non-urgent Destroy, Escort
+    /// or ClearCamp rows beyond `SIEGE_MEMBER_STRIKE_REACH`; see
+    /// `objective_board` and `conquest_force_member`.
+    opening_force_keeps_its_members: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `runaway-expander-counter`: a rival outgrowing us reads as a
+    /// Domination counter clock. See `advanced/runaway_expander.rs`. Off by
+    /// default.
+    runaway_expander_counter: bool,
     /// `raze-a-doomed-capture`: a Conquest razes a small captured city that
     /// will revolt before any rescue can establish. See
     /// `DOOMED_CAPTURE_TURNS`. Off by default.
@@ -6743,6 +6799,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `staging-gun-trusts-its-escort`: an escorted gun in Stage budgets one
+    /// reply turn of danger on its march. See
+    /// `siege_train::STAGING_ESCORT_BODIES`. Off by default.
+    staging_gun_trusts_its_escort: bool,
     /// `siege-force-keeps-its-members`: a Siege force's member is not taken
     /// by a Destroy, Escort or ClearCamp row unless its target is within
     /// [`objective_board::SIEGE_MEMBER_STRIKE_REACH`]. Off by default.
@@ -7547,6 +7607,7 @@ pub use air_city_assault::AirCityAssault;
 mod denial_nearest_finish;
 mod denial_needs_a_road;
 mod city_memory;
+mod runaway_expander;
 mod siege_resource_purchase;
 mod strategic_deposit_prey;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
@@ -8641,6 +8702,7 @@ impl AdvancedAi {
             air_resource_colony_target: None,
             builder_before_the_army: false,
             builder_before_the_army_2: false,
+            builder_before_the_army_3: false,
             // ---- append: c-d ----------------------------------------
             decisive_window: false,
             denial_needs_a_road: false,
@@ -8728,6 +8790,8 @@ impl AdvancedAi {
             campus_before_the_army: false,
             campus_before_the_army_2: false,
             campus_before_the_army_3: false,
+            colonization_earns_its_slot: false,
+            colonization_earns_its_slot_2: false,
             // ---- append: e-f ----------------------------------------
             expansion_hall_district: false,
             early_conquest_opening: false,
@@ -8781,6 +8845,13 @@ impl AdvancedAi {
 
             host_war_unit_losses: None,
             granary_before_the_army: false,
+            granary_before_the_army_2: false,
+            industry_before_the_army: false,
+            industry_before_the_army_2: false,
+            industry_before_the_army_3: false,
+            industry_in_the_district_list: false,
+            industrial_hub: false,
+            improvement_upgrades_count: false,
             // ---- append: l-o ----------------------------------------
             monument_first: false,
             magnus_follows_settlers: false,
@@ -8812,7 +8883,9 @@ impl AdvancedAi {
             lane_delegates_production: false,
             lane_delegates_production_2: false,
 
+            opening_force_keeps_its_members: false,
             // ---- append: p-r ----------------------------------------
+            runaway_expander_counter: false,
             raze_doomed_capture: false,
             policy_deck_hysteresis: false,
             policy_deck_hysteresis_2: false,
@@ -8841,6 +8914,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            staging_gun_trusts_its_escort: false,
             siege_force_keeps_its_members: false,
             siege_needs_a_breaker: false,
             siege_budget_counts_what_fires: false,
@@ -15651,6 +15725,7 @@ impl AdvancedAi {
             let defensive_walls_goal = self.defensive_walls_research_goal(g, pid, plan);
             let standing_army_fuel_goal = self.standing_army_fuel_goal(g, pid);
             let wartime_modernization_goal = self.wartime_modernization_tech(g, pid);
+            let production_technology_goal = self.named_production_technology_goal(g, pid, plan);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
             let domination_campus_goal = self.domination_campus_unlock_goal(g, pid);
             let endgame_goal = self.science_endgame_research_goal(g, pid);
@@ -15734,6 +15809,9 @@ impl AdvancedAi {
                 // strand the expedition without its next launch or laser tech.
                 _ if endgame_research_preempts_wartime => endgame_goal,
                 _ if standing_army_fuel_goal.is_some() => standing_army_fuel_goal.as_deref(),
+                _ if production_technology_goal.is_some() => production_technology_goal
+                    .as_ref()
+                    .map(|tech| tech.as_str()),
                 _ if wartime_modernization_goal.is_some() => wartime_modernization_goal.as_deref(),
                 _ if domination_siege_goal.is_some() => domination_siege_goal.as_deref(),
                 // Once the late launch chain is committed, finish its remaining
@@ -15878,7 +15956,10 @@ impl AdvancedAi {
                     }
                 }
             }
-            let goal_pick = science_milestone_pick.or_else(|| {
+            let production_step_pick = production_technology_goal
+                .filter(|goal| forced_goal == Some(goal.as_str()))
+                .and_then(|goal| self.named_production_technology_step(g, pid, goal));
+            let goal_pick = science_milestone_pick.or(production_step_pick).or_else(|| {
                 forced_goal.and_then(|goal| {
                     if self.beeline_orders_by_value {
                         let steps: Vec<Name> = available
@@ -15994,6 +16075,11 @@ impl AdvancedAi {
                                 format!("domination-siege-research: unlock {} to supply the missing wall-breaking capability for the campaign", plain(goal))
                             } else if standing_army_fuel_goal.as_deref() == Some(goal) {
                                 format!("the {step} step toward {}, needed to reveal fuel for the standing army with no reserve", plain(goal))
+                            } else if production_technology_goal == Some(Name::new(goal)) {
+                                format!(
+                                    "the {step} step toward {}, needed to unlock production on currently worked tiles",
+                                    plain(goal)
+                                )
                             } else if wartime_modernization_goal.as_deref() == Some(goal) {
                                 format!(
                                     "the {step} step toward {}, needed to modernize the standing army at war",
@@ -17247,6 +17333,79 @@ impl AdvancedAi {
         }
     }
 
+    /// See `colonization_earns_its_slot`: whether Urban Planning, available
+    /// to this empire, adds more production than Colonization's +50% adds to
+    /// the cities whose queue opens with a Settler.
+    fn urban_planning_outearns_colonization(g: &Game, pid: usize, city_ids: &[u32]) -> bool {
+        let planning = Name::new("urban_planning");
+        let colonization = Name::new("colonization");
+        if !g.available_policies(pid).contains(&planning)
+            && !g.players[pid].policies.contains(&planning)
+        {
+            return false;
+        }
+        let pct = |card: &Name, effect: &str| {
+            g.rules
+                .policies
+                .get(card)
+                .and_then(|spec| spec.effects.get(effect).copied())
+                .unwrap_or(0.0)
+        };
+        let settler_gain: f64 = city_ids
+            .iter()
+            .filter(|city| {
+                matches!(
+                    g.cities[city].queue.first(),
+                    Some(Item::Unit { unit }) if unit == "settler"
+                )
+            })
+            .map(|city| {
+                g.city_yields(*city).production * pct(&colonization, "settler_production_pct")
+                    / 100.0
+            })
+            .sum();
+        let planning_gain = pct(&planning, "city_production") * city_ids.len() as f64;
+        planning_gain > settler_gain
+    }
+
+    /// See `colonization_earns_its_slot_2`: whether Urban Planning, available
+    /// to this empire, adds more production than Ilkum's +30% adds to the
+    /// cities whose queue opens with a Builder, while no card adding build
+    /// charges (Serfdom, Public Works) is on the menu or slotted.
+    fn urban_planning_outearns_builder_cards(g: &Game, pid: usize, city_ids: &[u32]) -> bool {
+        let planning = Name::new("urban_planning");
+        let held_or_offered = |card: &Name| {
+            g.players[pid].policies.contains(card) || g.available_policies(pid).contains(card)
+        };
+        if !held_or_offered(&planning)
+            || ["serfdom", "public_works"]
+                .iter()
+                .any(|card| held_or_offered(&Name::new(card)))
+        {
+            return false;
+        }
+        let pct = |card: &str, effect: &str| {
+            g.rules
+                .policies
+                .get(&Name::new(card))
+                .and_then(|spec| spec.effects.get(effect).copied())
+                .unwrap_or(0.0)
+        };
+        let ilkum_gain: f64 = city_ids
+            .iter()
+            .filter(|city| {
+                matches!(
+                    g.cities[city].queue.first(),
+                    Some(Item::Unit { unit }) if unit == "builder"
+                )
+            })
+            .map(|city| {
+                g.city_yields(*city).production * pct("ilkum", "builder_production_pct") / 100.0
+            })
+            .sum();
+        pct("urban_planning", "city_production") * city_ids.len() as f64 > ilkum_gain
+    }
+
     fn strategic_policies(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
         let objective = self.decision_objective(strategy);
 
@@ -17473,6 +17632,17 @@ impl AdvancedAi {
                 )
             });
             let expansion_active = settler_queued || city_ids.len() + settlers < city_goal;
+            // `colonization-earns-its-slot`: an expansion phase with no
+            // Settler worth half Urban Planning's yield in production leaves
+            // the slot to Urban Planning this turn.
+            let expansion_active = expansion_active
+                && !((self.colonization_earns_its_slot || self.colonization_earns_its_slot_2)
+                    && Self::urban_planning_outearns_colonization(g, pid, &city_ids));
+            // Version 2: and a queued Builder only for a charge card or an
+            // Ilkum that out-produces Urban Planning.
+            let builder_queued = builder_queued
+                && !(self.colonization_earns_its_slot_2
+                    && Self::urban_planning_outearns_builder_cards(g, pid, &city_ids));
             if expansion_active || builder_queued {
                 const TIMED_ECONOMY: [&str; 6] = [
                     "expropriation",
@@ -21095,24 +21265,29 @@ impl AdvancedAi {
         if matches!(policy, Some(Err(_))) {
             self.census.war_policy_declarations_held += 1;
         }
-        let ready = urgent_denial
-            || faith_counter_due
-            || if let Some(verdict) = &policy {
-                verdict.is_ok()
-            } else if rushing {
-                plan.target_city
-                    .and_then(|city| g.cities.get(&city))
-                    .is_some_and(|city| self.early_rush_stack_ready(g, pid, target, city.id))
-            } else if let Some(campaign) = self.campaign_launch_ready(g, pid, target, plan) {
-                // `city_campaign`: the city's own bill on the staging ring,
-                // spare included, in place of the empire ratio. See
-                // `advanced/city_campaign.rs`.
-                campaign
-            } else if committed_domination {
-                my_power >= target_power * 0.85 && my_power >= 30.0
-            } else {
-                my_power > target_power * 1.32 + 12.0
-            };
+        // See `one_war::COUNTER_WAR_POWER_FLOOR`: against a faith, urgency
+        // waives the war ratio but not the floor under it, and a staged bill
+        // does not stand in for it either.
+        let below_counter_floor = urgent_denial && self.counter_war_hopeless(g, pid, target);
+        let ready = !below_counter_floor
+            && (urgent_denial
+                || faith_counter_due
+                || if let Some(verdict) = &policy {
+                    verdict.is_ok()
+                } else if rushing {
+                    plan.target_city
+                        .and_then(|city| g.cities.get(&city))
+                        .is_some_and(|city| self.early_rush_stack_ready(g, pid, target, city.id))
+                } else if let Some(campaign) = self.campaign_launch_ready(g, pid, target, plan) {
+                    // `city_campaign`: the city's own bill on the staging ring,
+                    // spare included, in place of the empire ratio. See
+                    // `advanced/city_campaign.rs`.
+                    campaign
+                } else if committed_domination {
+                    my_power >= target_power * 0.85 && my_power >= 30.0
+                } else {
+                    my_power > target_power * 1.32 + 12.0
+                });
         let staged = plan
             .target_city
             .and_then(|city| g.cities.get(&city))
@@ -21182,6 +21357,11 @@ impl AdvancedAi {
             // identical to one with no plan.
             let blocker = if !close_enough {
                 "no city of theirs is within 18 tiles of one of mine".to_string()
+            } else if below_counter_floor {
+                format!(
+                    "their faith is close to winning, but a war at under {:.0}% of their power cannot stop it",
+                    one_war::COUNTER_WAR_POWER_FLOOR * 100.0
+                )
             } else if !ready {
                 match &policy {
                     Some(Err(reason)) => reason.clone(),
@@ -36010,6 +36190,39 @@ impl AdvancedAi {
         self.improvement_value_with_appeal(g, pos, improvement, strategy, appeal)
     }
 
+    /// See `improvement_upgrades_count`: what `pid`'s researched techs and
+    /// civics add to `improvement`, the same tree effects
+    /// `Game::player_tile_yields` pays on a built one.
+    fn improvement_tree_yields(g: &Game, pid: usize, improvement: &str) -> Yields {
+        let tree = |effect: &str| g.tree_effect(pid, effect);
+        let mut yields = Yields::default();
+        match improvement {
+            "mine" => yields.production += tree("mine_production"),
+            "quarry" => yields.production += tree("quarry_production"),
+            "lumber_mill" => yields.production += tree("lumber_mill_production"),
+            "pasture" => {
+                yields.food += tree("pasture_food");
+                yields.production += tree("pasture_production");
+            }
+            "plantation" => {
+                yields.food += tree("plantation_food");
+                yields.gold += tree("plantation_gold");
+            }
+            "camp" => {
+                yields.food += tree("camp_food");
+                yields.production += tree("camp_production");
+                yields.gold += tree("camp_gold");
+            }
+            "fishing_boats" => {
+                yields.food += tree("fishing_boats_food");
+                yields.production += tree("fishing_boats_production");
+                yields.gold += tree("fishing_boats_gold");
+            }
+            _ => {}
+        }
+        yields
+    }
+
     fn improvement_value_with_appeal(
         &self,
         g: &Game,
@@ -36022,6 +36235,15 @@ impl AdvancedAi {
         let spec = &g.rules.improvements[improvement];
         let mut yields = spec.yields;
         yields.gold += spec.effects.get("appeal_gold").copied().unwrap_or(0.0) * appeal;
+        if self.improvement_upgrades_count {
+            if let Some(owner) = tile
+                .owner_city
+                .and_then(|city| g.cities.get(&city))
+                .map(|city| city.owner)
+            {
+                yields.add(Self::improvement_tree_yields(g, owner, improvement));
+            }
+        }
         let mut value = self.yield_value(yields, strategy);
         if strategy == GrandStrategy::Culture {
             // Tourism is cumulative: delaying a resort or national park by
@@ -40811,9 +41033,14 @@ impl AdvancedAi {
         // Archers reached Mari's range-2 posts and were walked back to 3-4
         // tiles every turn of Reduce (`move_to_evacuation_tile`); 4 shots in
         // 9 turns, walls 100 -> 88. Only the wounded come out.
+        // A siege still in Stage too: its Stage step holds a gun back on the
+        // gun's own risk limit. Frame-0 replay of game 46 turn 140, after the
+        // rotation exemption freed the Babylon force: two 100-hp catapults
+        // were still held by this evacuation at 7-8 tiles and never reached
+        // the siege step.
         let siege_post_holds = spec.class == "military"
             && unit.hp >= battle_planner::ROTATE_HP
-            && self.active_siege_member(g, pid, uid);
+            && (self.active_siege_member(g, pid, uid) || self.staging_siege_member(g, pid, uid));
         if !unwanted_settler_adjacent && !holding_threatened_city && !siege_post_holds {
             if let Some(acted) = self.base.healing_step(g, pid, uid) {
                 return acted;

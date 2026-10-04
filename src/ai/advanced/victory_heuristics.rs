@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 /// The science reading at which a Domination army answers a rival's launch
 /// chain: the Moon Landing (`rival_victory_pressure`'s 45).
-const DOMINATION_SCIENCE_COUNTER: i32 = 45;
+pub(super) const DOMINATION_SCIENCE_COUNTER: i32 = 45;
 
 const SCIENCE_VICTORY_TECH_CHAIN: [&str; 5] = [
     "rocketry",
@@ -432,6 +432,10 @@ impl AdvancedAi {
                 && self.domination_counter_pressure(g, launches)
             {
                 clocks.push((rival, launches));
+            }
+            // `runaway-expander-counter`: see `advanced/runaway_expander.rs`.
+            if let Some(runaway) = self.runaway_expander_clock(g, pid, rival) {
+                clocks.push((rival, runaway));
             }
             // `denial-nearest-finish`: a culture race near its finish, read
             // by how soon it ends. See `advanced/denial_nearest_finish.rs`.

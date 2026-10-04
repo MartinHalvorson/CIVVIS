@@ -653,3 +653,51 @@ fn a_faith_counter_waits_for_the_front_siege_but_is_declared_on() {
     assert!(!ai.second_front_waits_for_the_front(&g, 0, 2));
     assert_eq!(ai.assess(&g, 0).target_player, Some(2));
 }
+
+/// Whether rival 2 has grown past `COUNTER_WAR_POWER_FLOOR` of our power.
+fn ai_probe_hopeless(g: &Game) -> bool {
+    g.military_power(0) < COUNTER_WAR_POWER_FLOOR * g.military_power(2)
+}
+
+/// See `COUNTER_WAR_POWER_FLOOR`: an urgent faith too strong to fight is
+/// neither declared on nor freed for. (The fixture's clock is religious.)
+#[test]
+fn a_counter_war_below_the_power_floor_is_neither_opened_nor_freed_for() {
+    let strengthen = |g: &mut Game| {
+        let mut row = 2;
+        while !ai_probe_hopeless(g) {
+            g.spawn_test_unit("modern_armor", 2, (30, row));
+            row += 1;
+        }
+    };
+    // The declaration: at peace, the urgent rival is declared on only while
+    // the war is winnable.
+    for strong in [false, true] {
+        let (mut g, mut ai) = two_fronts();
+        g.found_city_for(0, (6, 18), None);
+        g.at_war.clear();
+        convert(&mut g, &[0, 1, 2]);
+        if strong {
+            strengthen(&mut g);
+        }
+        ai.coalition_before_war = false;
+        ai.coalition_before_war_2 = false;
+        ai.coalition_before_war_3 = false;
+        ai.one_war_observe(&g, 0);
+        assert!(ai.urgent_victory_threat(&g, 2));
+        let plan = ai.assess(&g, 0);
+        assert_eq!(plan.target_player, Some(2));
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        assert_eq!(g.is_at_war(0, 2), !strong, "strong rival: {strong}");
+    }
+    // The front is not traded for it either.
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 1, 2]);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
+    strengthen(&mut g);
+    ai.one_war_observe(&g, 0);
+    assert_ne!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
+}
