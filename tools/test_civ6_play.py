@@ -3689,6 +3689,71 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         self.assertEqual(third, [{"text": "Settler"}])
         self.assertEqual(fourth, [{"text": "Settler"}])
 
+    def _window_shot(self, folder: Path) -> Path:
+        from PIL import Image
+        shot = folder / "setup.png"
+        Image.new("RGB", (3456, 2234), (10, 10, 10)).save(shot)
+        return shot
+
+    def test_a_window_read_maps_its_boxes_back_to_the_full_capture(self) -> None:
+        seen = {}
+
+        def recognize(path):
+            from PIL import Image
+            seen["path"] = Path(path)
+            seen["size"] = Image.open(path).size
+            return [{"text": "Single Player", "x": 0.5, "y": 0.5, "width": 0.1, "height": 0.1}]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = self._window_shot(Path(temporary))
+            with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+                 patch.object(civ6_play.macos_ocr, "recognize", side_effect=recognize):
+                observations = civ6_play.recognize_once(shot, (0, 33, 864, 542))
+        # Window +8 pt each side at 2x: x 0..1744, y 50..1166 of 3456x2234.
+        self.assertEqual(seen["size"], (1744, 1116))
+        self.assertNotEqual(seen["path"], shot)
+        self.assertFalse(seen["path"].exists(), "the temporary crop is removed")
+        box = observations[0]
+        self.assertEqual(box["text"], "Single Player")
+        self.assertAlmostEqual(box["x"], (0.5 * 1744 + 0) / 3456)
+        self.assertAlmostEqual(box["y"], (0.5 * 1116 + 50) / 2234)
+        self.assertAlmostEqual(box["width"], 0.1 * 1744 / 3456)
+        self.assertAlmostEqual(box["height"], 0.1 * 1116 / 2234)
+
+    def test_window_and_full_reads_are_cached_apart(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = self._window_shot(Path(temporary))
+            with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+                 patch.object(civ6_play.macos_ocr, "recognize",
+                              return_value=[{"text": "x", "x": 0, "y": 0, "width": 0, "height": 0}]
+                              ) as recognize:
+                civ6_play.recognize_once(shot)
+                civ6_play.recognize_once(shot, (0, 33, 864, 542))
+                civ6_play.recognize_once(shot)
+                civ6_play.recognize_once(shot, (0, 33, 864, 542))
+        self.assertEqual(recognize.call_count, 2)
+
+    def test_an_unreadable_image_falls_back_to_the_full_capture(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = Path(temporary) / "broken.png"
+            shot.write_bytes(b"not a png")
+            with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+                 patch.object(civ6_play.macos_ocr, "recognize",
+                              return_value=[{"text": "Create Game"}]) as recognize:
+                observations = civ6_play.recognize_once(shot, (0, 33, 864, 542))
+        recognize.assert_called_once_with(shot)
+        self.assertEqual(observations, [{"text": "Create Game"}])
+
+    def test_the_setup_readers_read_the_window_only(self) -> None:
+        import inspect
+        for fn, call in ((civ6_play._setup_current_value, "recognize_once(path, bounds)"),
+                         (civ6_play._setup_current_leader, "recognize_once(path, bounds)"),
+                         (civ6_play._map_picker_labels, "_menu_ocr_observations(path, bounds)"),
+                         (civ6_play._observed_label_points, "_menu_ocr_observations(path, bounds)")):
+            self.assertIn(call, inspect.getsource(fn), fn.__name__)
+        # Recovery's menu check keeps the whole desktop (no window bounds there).
+        self.assertIn("_menu_ocr_observations(path)", inspect.getsource(civ6_play._main_menu_visible))
+
     def test_a_missing_capture_is_not_cached_and_still_raises(self) -> None:
         with patch.object(civ6_play.macos_ocr, "recognize",
                           side_effect=OSError("no such file")):
