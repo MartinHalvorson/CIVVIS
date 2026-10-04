@@ -2480,6 +2480,9 @@ pub const GENES: &[Gene] = &[
     // Live King 155014Z: 5 of 6 cities at their housing, no Granary, at t100;
     // see `BasicAi::granary_before_the_army`.
     Gene { tag: "granary-before-the-army", field: "granary_before_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_granary_before_the_army, disable: AdvancedAi::disable_granary_before_the_army },
+    // Live King 124613Z: 79 Settler-turns afloat waiting on one Galley; see
+    // `AdvancedAi::naval_escort_patience`.
+    Gene { tag: "naval-escort-patience", field: "naval_escort_patience", kind: Kind::HostOnly, enable: AdvancedAi::enable_naval_escort_patience, disable: AdvancedAi::disable_naval_escort_patience },
     // Live King 113755Z: Galleys and Quadriremes ahead of the walkers at
     // three cities; see `BasicAi::settler_before_the_navy`.
     Gene { tag: "settler-before-the-navy", field: "settler_before_the_navy", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_before_the_navy, disable: AdvancedAi::disable_settler_before_the_navy },

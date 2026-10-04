@@ -697,6 +697,11 @@ const STACKED_ESCORT_PATIENCE: u8 = 2;
 /// already spent a third of the window on a guard that, across the 46 live
 /// games of 2026-08-26, arrived for only 458 of 1,083 waits.
 const ESCORT_PATIENCE_CEILING: u8 = 5;
+/// Turns an embarked Settler holds for a naval escort before
+/// `naval_escort_patience` lets it cross alone on a quiet sea.
+const NAVAL_ESCORT_PATIENCE: u8 = 2;
+/// How far a visible hostile ship keeps an unescorted crossing on hold.
+const NAVAL_THREAT_RADIUS: i32 = 6;
 /// A guard this close behind a settler on quiet ground is one the settler
 /// marches ahead of rather than waits for. See `stacked_escort_pace`.
 const ADJACENT_GUARD_MARCH_DISTANCE: i32 = 1;
@@ -2461,6 +2466,11 @@ pub struct AdvancedAi {
     /// quo) while the guard keeps chasing; a livelocked guard must never
     /// freeze expansion, which is this empire's binding constraint.
     guard_wait: BTreeMap<u32, (u32, u8)>,
+    /// Turns an embarked Settler has held for a naval escort, keyed by the
+    /// water tile it holds on (live unit ids do not reliably survive a turn,
+    /// while a holding Settler does not move): (last turn counted, turns).
+    /// See `naval_escort_patience`.
+    naval_escort_waits: BTreeMap<Pos, (u32, u8)>,
     /// Every visible hostile military unit as it stood BEFORE anything of
     /// ours acted this turn, under `settler_stack_discipline`. The live
     /// bridge's finishing volley (`civvis_orders::finish_live_war_units`)
@@ -6637,6 +6647,19 @@ pub struct AdvancedAi {
     /// Holy Site district for the empire. See
     /// `advanced/adopted_faith_sanctuary.rs`.
     one_sanctuary: bool,
+    /// An embarked Settler that has held [`NAVAL_ESCORT_PATIENCE`] turns for
+    /// a naval escort crosses alone while no hostile ship is visible within
+    /// [`NAVAL_THREAT_RADIUS`]. `live_water_step_needs_naval_guard` holds a
+    /// long expedition's water-to-water steps until a sea guard is bound, and
+    /// lets the first embark through, so with no ship to bind the Settler
+    /// waits on the water itself. Live King 2026-10-04T124613Z had one Galley
+    /// from t40 to t68 against two to four expeditions: 72 "holds for a naval
+    /// escort" lines to t75, 79 Settler-turns embarked (30 standing still,
+    /// one Settler 23 turns afloat) and 6 cities at t75. Across the day's
+    /// games the slow pipelines spent 13-79 Settler-turns at sea; the one
+    /// Domination win (083931Z, 10 cities at t75) spent none. Opt-in gene
+    /// `naval-escort-patience`.
+    naval_escort_patience: bool,
     // ---- append: p-r ------------------------------------------------
     /// The live bridge's refused Corps and Army pairs for this board. See
     /// `advanced/formation_refusals.rs`.
@@ -8550,6 +8573,7 @@ impl AdvancedAi {
             settler_sea_guards: BTreeMap::new(),
             settler_escort_journeys: BTreeMap::new(),
             guard_wait: BTreeMap::new(),
+            naval_escort_waits: BTreeMap::new(),
             turn_start_hostiles: Vec::new(),
             turn_start_hostiles_turn: None,
             religion_sues_peace: false,
@@ -8933,6 +8957,7 @@ impl AdvancedAi {
 
             opening_force_keeps_its_members: false,
             one_sanctuary: false,
+            naval_escort_patience: false,
             // ---- append: p-r ----------------------------------------
             refused_combinations: BTreeSet::new(),
             raids_cut_tourism: false,
