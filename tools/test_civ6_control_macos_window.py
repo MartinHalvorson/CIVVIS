@@ -411,6 +411,19 @@ class BoundedHostProbeTests(unittest.TestCase):
         ):
             self.assertIsNone(macos_window.game_window(self.PROCESS))
 
+    def test_the_largest_window_is_the_game_not_window_one(self) -> None:
+        # 2026-10-04: Civ6_Exe_Child listed a 66x20 "Window" first and the
+        # 1634x1084 game second; reading window 1 alone found no game.
+        with patch.object(macos_window.subprocess, "run") as run:
+            run.return_value = mock.Mock(
+                stdout="0, 33, 66, 20;47, 33, 1634, 1084;\n")
+            self.assertEqual(macos_window.game_window(self.PROCESS),
+                             (47, 33, 1634, 1084))
+            run.return_value = mock.Mock(stdout="0, 33, 66, 20;")
+            self.assertIsNone(macos_window.game_window(self.PROCESS))
+            run.return_value = mock.Mock(stdout="")
+            self.assertIsNone(macos_window.game_window(self.PROCESS))
+
     def test_timeout_in_lock_probe_keeps_the_game_playing(self) -> None:
         with patch.object(
             macos_window.subprocess,

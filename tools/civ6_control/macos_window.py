@@ -82,10 +82,25 @@ def capture_looks_unavailable() -> bool:
 
 
 def game_window(game_process: str) -> tuple[int, int, int, int] | None:
-    """Position and size of the game window in points, or ``None``."""
+    """Position and size of the game window in points, or ``None``.
+
+    Every window of the process is read and the largest one big enough to be
+    the game is returned. ``window 1`` alone is not the game: on 2026-10-04
+    Civ6_Exe_Child also owned a 66x20 window named "Window" at (0, 33) that
+    System Events listed first, so two setups in a row waited out "no game
+    window yet" beside a visible 1634x1084 "Civilization VI" window and
+    played no turns.
+    """
     script = ('tell application "System Events" to tell '
-              f'process "{game_process}" to '
-              'get {position, size} of window 1')
+              f'process "{game_process}"\n'
+              'set out to ""\n'
+              'repeat with w in windows\n'
+              'set {px, py} to position of w\n'
+              'set {sx, sy} to size of w\n'
+              'set out to out & px & ", " & py & ", " & sx & ", " & sy & ";"\n'
+              'end repeat\n'
+              'return out\n'
+              'end tell')
     try:
         out = subprocess.run(["osascript", "-e", script], capture_output=True,
                              text=True, timeout=HOST_PROBE_TIMEOUT_S)
@@ -94,11 +109,17 @@ def game_window(game_process: str) -> tuple[int, int, int, int] | None:
               f"{HOST_PROBE_TIMEOUT_S:g}s; treating the geometry as unknown",
               flush=True)
         return None
-    parts = [part.strip() for part in out.stdout.split(",") if part.strip()]
-    if len(parts) != 4 or not all(part.lstrip("-").isdigit() for part in parts):
-        return None
-    x, y, width, height = (int(part) for part in parts)
-    return (x, y, width, height) if width > 400 and height > 300 else None
+    best: tuple[int, int, int, int] | None = None
+    for record in (out.stdout or "").split(";"):
+        parts = [part.strip() for part in record.split(",") if part.strip()]
+        if len(parts) != 4 or not all(part.lstrip("-").isdigit() for part in parts):
+            continue
+        x, y, width, height = (int(part) for part in parts)
+        if width <= 400 or height <= 300:
+            continue
+        if best is None or width * height > best[2] * best[3]:
+            best = (x, y, width, height)
+    return best
 
 
 def screen_locked() -> bool:
