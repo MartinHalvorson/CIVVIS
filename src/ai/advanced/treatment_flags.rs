@@ -3112,6 +3112,17 @@ impl AdvancedAi {
         self.escort_patience_runs_out = false;
     }
 
+    /// See `naval_escort_patience`: an embarked Settler crosses alone on a
+    /// quiet sea after [`NAVAL_ESCORT_PATIENCE`] turns held for its escort.
+    pub fn enable_naval_escort_patience(&mut self) {
+        self.naval_escort_patience = true;
+    }
+
+    /// The twin of `enable_naval_escort_patience`.
+    pub fn disable_naval_escort_patience(&mut self) {
+        self.naval_escort_patience = false;
+    }
+
     /// The working reserve, and the first Builder or a missing Monument
     /// bought ahead of the purchase argmax. See `treasury_at_work_2`.
     pub fn enable_treasury_at_work_2(&mut self) {

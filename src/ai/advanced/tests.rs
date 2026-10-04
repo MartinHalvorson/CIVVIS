@@ -24433,6 +24433,71 @@ fn a_live_embarked_settler_holds_without_a_naval_guard() {
     assert_ne!(native_game.units[&settler].pos, first_water);
 }
 
+/// See `naval_escort_patience`: an embarked Settler holds for its naval
+/// escort two turns, then crosses alone on a quiet sea, and keeps holding
+/// while a hostile ship is in reach.
+#[test]
+fn an_embarked_settler_crosses_alone_after_waiting_on_a_quiet_sea() {
+    let (mut game, source, target) = island_colony_game();
+    game.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    for uid in game.player_unit_ids(0) {
+        game.remove_unit(uid);
+    }
+    let probe = game.spawn_test_unit("settler", 0, source);
+    let first_water = game
+        .route_step(probe, target, 0)
+        .expect("the overseas route has a first water tile");
+    game.remove_unit(probe);
+    let settler = game.spawn_test_unit("settler", 0, first_water);
+    let land_guard = game.spawn_test_unit("warrior", 0, first_water);
+    let journey = |ai: &mut AdvancedAi| {
+        ai.enable_live_formationless_settler_shadow();
+        ai.enable_live_settler_capture_lessons();
+        ai.settler_targets.insert(settler, target);
+        ai.settler_escort_journeys.insert(settler, SettlerEscortJourney { home: source, target });
+        ai.settler_guards.insert(settler, land_guard);
+    };
+    let mut live = AdvancedAi::new();
+    journey(&mut live);
+    live.enable_naval_escort_patience();
+    let mut threatened = game.clone();
+    let mut wary = AdvancedAi::new();
+    journey(&mut wary);
+    wary.enable_naval_escort_patience();
+    let barbarian = threatened.players.iter().position(|p| p.is_barbarian).expect("a barbarian seat");
+    let raider_tile = threatened
+        .wdisk(first_water, 3)
+        .into_iter()
+        .find(|pos| *pos != first_water
+            && threatened.map.get(*pos).is_some_and(|tile| threatened.rules.is_water(tile))
+            && threatened.unit_ids_at(*pos).is_empty())
+        .expect("open water near the crossing");
+    threatened.spawn_test_unit("galley", barbarian, raider_tile);
+    assert!(AdvancedAi::hostile_ship_near(&threatened, 0, first_water, 6));
+    assert!(!AdvancedAi::hostile_ship_near(&game, 0, first_water, 6));
+
+    for turn in 0..2 {
+        assert!(
+            !live.settler_step_out_of_reach(&mut game, 0, settler, target),
+            "held on turn {turn} of its patience"
+        );
+        assert_eq!(game.units[&settler].pos, first_water);
+        game.turn += 1;
+    }
+    for _ in 0..3 {
+        assert!(!wary.settler_step_out_of_reach(&mut threatened, 0, settler, target));
+        threatened.turn += 1;
+    }
+    assert_eq!(threatened.units[&settler].pos, first_water, "a hostile ship in reach keeps the hold");
+    assert!(
+        live.settler_step_out_of_reach(&mut game, 0, settler, target),
+        "the third turn crosses alone on a quiet sea"
+    );
+    assert_ne!(game.units[&settler].pos, first_water);
+}
+
 /// Once a naval unit occupies the water layer and can mirror the next step,
 /// the live floor permits the embarked expedition to advance.
 #[test]
