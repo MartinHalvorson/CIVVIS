@@ -2591,6 +2591,10 @@ pub const GENES: &[Gene] = &[
     // Version 1 measured -9.7 +/- 5.3 pp: only the capitals Domination
     // needs, no displaced building. See `siege_production::SUPPLY_STRENGTH_WINDOW`.
     Gene { tag: "breaker-supply-scales-2", field: "breaker_supply_scales_2", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales_2, disable: AdvancedAi::disable_breaker_supply_scales_2 },
+    // Live King 213648Z took Babylon's only known city at turn 81, at six
+    // times its power, and offered peace; Babylon held six cities at 207.
+    // See `one_war::unseen_prey`.
+    Gene { tag: "peace-waits-for-unseen-prey", field: "peace_waits_for_unseen_prey", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_unseen_prey, disable: AdvancedAi::disable_peace_waits_for_unseen_prey },
     // Live King 212049Z left unwalled Viseu in Invest, damage ready in 3.2
     // turns, for an urgent counter sixteen tiles away. See
     // `one_war::front_siege_to_finish`.

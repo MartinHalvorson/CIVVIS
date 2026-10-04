@@ -6699,6 +6699,10 @@ pub struct AdvancedAi {
     /// `naval-escort-patience`.
     naval_escort_patience: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `peace-waits-for-unseen-prey`: a beaten rival whose cities are all in
+    /// the fog is not offered peace. See `one_war::unseen_prey`. Off by
+    /// default.
+    peace_waits_for_unseen_prey: bool,
     /// `peace-waits-for-the-foothold`: the victory-threat peace waits while
     /// an unwalled city of the front is in a taker's reach. See
     /// `one_war::one_war_foothold_at_hand`. Off by default.
@@ -9028,6 +9032,7 @@ impl AdvancedAi {
             one_sanctuary: false,
             naval_escort_patience: false,
             // ---- append: p-r ----------------------------------------
+            peace_waits_for_unseen_prey: false,
             peace_waits_for_the_foothold: false,
             prophet_race_takes_a_district_slot: false,
             refused_combinations: BTreeSet::new(),
@@ -21254,7 +21259,10 @@ impl AdvancedAi {
                                 || self.domination_capital_prey(g, pid, *other)))
                         // Nor with the only land road to the target. See
                         // `war_holds_the_road`.
-                        && !self.war_holds_the_road(g, pid, *other))
+                        && !self.war_holds_the_road(g, pid, *other)
+                        // Nor with a beaten rival in the fog. See
+                        // `unseen_prey`.
+                        && !self.unseen_prey(g, pid, *other))
                     || (self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                         && !appointed_objective)

@@ -764,6 +764,29 @@ impl AdvancedAi {
         })
     }
 
+    /// `peace-waits-for-unseen-prey`: a living major at war with a
+    /// Domination seat, with no city the seat can see, and outgunned
+    /// [`ONE_WAR_WINNING_RATIO`] times over. Its cities are in the fog, not
+    /// gone, and `one_war_enemies` drops a rival without a known city, so
+    /// the front's guards against peace lapse with the last city we saw.
+    /// Live King civvis-20261004T213648Z (game 81) declared on Babylon at
+    /// turn 78 at 396 power against 65 and took Mashkan-shapir, the only
+    /// Babylonian city it knew, at 81. The campaign then offered "has taken
+    /// its 1 city" peace, and the Recovery plan "this is not the war the
+    /// recovery plan is fighting" at 381 against 114. Babylon still held six
+    /// cities at turn 207.
+    pub(crate) fn unseen_prey(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.peace_waits_for_unseen_prey
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.is_at_war(pid, other)
+            && g.players[other].alive
+            && !g.players[other].is_minor
+            && !g.players[other].is_barbarian
+            && g.player_city_ids(other).is_empty()
+            && g.military_power(pid)
+                >= ONE_WAR_WINNING_RATIO * g.military_power(other).max(1.0)
+    }
+
     /// A front we outgun [`ONE_WAR_CRUSHED_RATIO`] times over. Peace there
     /// hands a beaten rival the turns to rebuild: on King
     /// `civvis-20260929T020236Z` the seat offered Norway peace at 812

@@ -889,7 +889,10 @@ impl AdvancedAi {
             && (self.one_war_front() == Some(campaign.target)
                 // Nor while the capital it took bleeds Loyalty: peace hands
                 // it back. See `holds_bleeding_capital_of`.
-                || self.holds_bleeding_capital_of(g, pid, campaign.target))
+                || self.holds_bleeding_capital_of(g, pid, campaign.target)
+                // Nor while the rest of the rival is in the fog. See
+                // `unseen_prey`.
+                || self.unseen_prey(g, pid, campaign.target))
         {
             return;
         }

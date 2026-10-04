@@ -5174,6 +5174,17 @@ impl AdvancedAi {
         self.breaker_before_the_war = false;
     }
 
+    /// Opt-in gene `peace-waits-for-unseen-prey`; see
+    /// [`Self::peace_waits_for_unseen_prey`].
+    pub fn enable_peace_waits_for_unseen_prey(&mut self) {
+        self.peace_waits_for_unseen_prey = true;
+    }
+
+    /// The twin of `enable_peace_waits_for_unseen_prey`.
+    pub fn disable_peace_waits_for_unseen_prey(&mut self) {
+        self.peace_waits_for_unseen_prey = false;
+    }
+
     /// Opt-in gene `front-finishes-its-siege`; see
     /// [`Self::front_finishes_its_siege`].
     pub fn enable_front_finishes_its_siege(&mut self) {
