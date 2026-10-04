@@ -4021,6 +4021,44 @@ def _attach_running_game(args: argparse.Namespace) -> int:
     return 0
 
 
+#: (default majors, default city-states) per map size, as the shipped Create
+#: Game sets them when the size is chosen: `Base/Assets/Configuration/Data/
+#: MapSizes.xml` (`DefaultPlayers`, `DefaultCityStates`), applied by
+#: `MapSize_ValueChanged` (`Base/Assets/UI/FrontEnd/GameSetupLogic.lua`).
+#: Nothing here asks for any other count, so the seat must report these.
+MAP_SIZE_DEFAULTS = {
+    "MAPSIZE_DUEL": (2, 3),
+    "MAPSIZE_TINY": (4, 6),
+    "MAPSIZE_SMALL": (6, 9),
+    "MAPSIZE_STANDARD": (8, 12),
+    "MAPSIZE_LARGE": (10, 15),
+    "MAPSIZE_HUGE": (12, 18),
+}
+
+
+def setup_drift(event: dict, args: argparse.Namespace) -> list[str]:
+    """How the game's majors and city-states differ from the size's defaults.
+
+    ★★★ A SIZE CAN READ BACK RIGHT WHILE THE GAME AROUND IT IS WRONG. The map
+    script and size can be made static Create Game defaults
+    (`CivvisControlConfig.xml`), which skips the picker but no longer goes
+    through the UI handler that resets the player and city-state counts for
+    the chosen size; a Tiny map left holding Small's counts would read
+    `MAPSIZE_TINY` everywhere and be a different game. Each count is checked
+    only when the seat reported an integer: an older mod that reports nothing
+    is unverified, not wrong, the same rule `ruleset_match` follows.
+    """
+    expected = MAP_SIZE_DEFAULTS.get(str(event.get("size") or args.map_size))
+    if expected is None:
+        return []
+    drift = []
+    for field, want in (("players", expected[0]), ("city_states", expected[1])):
+        have = event.get(field)
+        if isinstance(have, int) and not isinstance(have, bool) and have != want:
+            drift.append(f"{field} {have} != {want}")
+    return drift
+
+
 def seat_matches_requested(
     event: dict, args: argparse.Namespace
 ) -> tuple[bool, bool, bool | None]:
@@ -4072,6 +4110,7 @@ def seat_matches_requested(
         and event.get("size") == args.map_size
         and event.get("speed") == args.speed
         and event.get("map") == args.map
+        and not setup_drift(event, args)
         and (args.leader is None or event.get("leader") == args.leader)
         and modes_match
         and (not getattr(args, "action_transitions", False) or event.get("action_transitions") is True)
@@ -4704,6 +4743,11 @@ def _play(args: argparse.Namespace) -> int:
             state["configured"] = configured
             if not state["configured"]:
                 print("[agent] the game does not match what was asked for",
+                      file=sys.stderr)
+            drift = setup_drift(event, args)
+            if drift:
+                print(f"[agent] setup drift: {'; '.join(drift)} for "
+                      f"{event.get('size')} -- refusing to play a different game",
                       file=sys.stderr)
             if ruleset_match is False:
                 print(f"[agent] ruleset is {event.get('ruleset')}, "
