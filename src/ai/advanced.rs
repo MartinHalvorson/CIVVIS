@@ -12650,10 +12650,13 @@ impl AdvancedAi {
         let rival_culture_pressures = self.rival_culture_pressures(g);
         let actionable_denial =
             self.actionable_victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures);
-        let domination_finish = actionable_denial.and_then(|(rival, _)| {
-            self.domination_finishing_capital_for(g, pid, rival)
-                .map(|city| (rival, city))
-        });
+        let domination_finish = actionable_denial
+            .and_then(|(rival, _)| {
+                self.domination_finishing_capital_for(g, pid, rival)
+                    .map(|city| (rival, city))
+            })
+            // See `domination_finish_at_war`.
+            .or_else(|| self.domination_finish_at_war(g, pid));
         let emergency_objective = g.emergency_objective(pid).cloned();
         // Each arm carries the reason it fired. The strings are static and
         // cost nothing to build; they exist so the spectator's reasoning log
@@ -13187,6 +13190,13 @@ impl AdvancedAi {
             .or_else(|| {
                 rush_victim
                     .filter(|(target, _)| target_player == Some(*target))
+                    .map(|(_, capital)| capital)
+            })
+            // The capital that ends the game, against an owner we are already
+            // fighting, is the objective. See `domination_finish_at_war`.
+            .or_else(|| {
+                domination_finish
+                    .filter(|(rival, _)| target_player == Some(*rival) && g.is_at_war(pid, *rival))
                     .map(|(_, capital)| capital)
             })
             .or_else(|| {

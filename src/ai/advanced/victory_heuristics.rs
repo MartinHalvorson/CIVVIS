@@ -497,6 +497,27 @@ impl AdvancedAi {
             .map(|city| city.id)
     }
 
+    /// The rival we are at war with, and its capital, when taking that
+    /// capital completes Domination. `domination_finish` otherwise looks only
+    /// at the rival the denial layer names. Live King
+    /// civvis-20261004T160213Z (game 65) took Aachen at turn 218, leaving
+    /// the Maori capital as the last one Domination needed. The Maori, at war
+    /// with us, held 3 cities at 59 to 125 power against our 2,800, and 16
+    /// Diplomatic Victory points. The denial layer still named Germany, so
+    /// the campaign stayed on Frankfurt and Cologne.
+    pub(super) fn domination_finish_at_war(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+        g.players
+            .iter()
+            .filter(|rival| {
+                rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
+            })
+            .filter(|rival| g.is_at_war(pid, rival.id))
+            .find_map(|rival| {
+                self.domination_finishing_capital_for(g, pid, rival.id)
+                    .map(|city| (rival.id, city))
+            })
+    }
+
     /// Rank required capitals inside the selected front as well as globally.
     /// A different rival owning the cheapest capital must not erase this
     /// front's capital objective and send the army after an ordinary city.

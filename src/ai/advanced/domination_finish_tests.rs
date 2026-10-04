@@ -252,3 +252,22 @@ fn the_finishing_capital_is_the_first_objective_when_we_outgun_its_owner() {
         );
     }
 }
+
+/// See `domination_finish_at_war`: at war with both the owner of the last
+/// capital Domination needs and an old front, the campaign goes for that
+/// capital, whoever the denial layer names (Maori, game 65).
+#[test]
+fn the_last_capital_is_the_objective_when_its_owner_is_already_at_war() {
+    let (mut g, _, capital) = board();
+    let old_front_town = g.found_city_for(2, at(10, 8), None);
+    g.cities.get_mut(&old_front_town).unwrap().is_capital = false;
+    g.at_war.insert((0, 2));
+    assert!(g.is_at_war(0, 1));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_one_war_at_a_time();
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.domination_finish_at_war(&g, 0), Some((1, capital)));
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.target_player, Some(1));
+    assert_eq!(plan.target_city, Some(capital));
+}
