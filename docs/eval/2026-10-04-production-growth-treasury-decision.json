@@ -1,0 +1,10 @@
+{
+  "decision": "keep existing opt-in treasury-at-work-2-2 disabled",
+  "kind": "exploratory screen, no confirmation",
+  "games": 8,
+  "paired_seeds_per_difficulty": 2,
+  "diagnostic_control_reruns": 4,
+  "runtime_changes": false,
+  "reason": "Emperor early production and cumulative production decline; Deity unchanged; no proof of faster high-level AI production parity",
+  "next_hypothesis": "effective local worker coverage and spending opportunity costs; fresh paired validation required"
+}
