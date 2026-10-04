@@ -15,5 +15,15 @@
     "exit_code": 130,
     "scope": "Interrupted own Cargo run after CI identified fixture precondition failure, before running tests. Linked candidate library was frozen and preserved."
   },
-  "corrected_local_full_suite": "running; no result yet"
+  "corrected_local_full_suite": "still running; no completed local result yet",
+  "corrected_ci": {
+    "source": "5f1dd30da",
+    "run": 37232279412,
+    "job": 111524345575,
+    "conclusion": "SUCCESS",
+    "new_regressions": "both passed",
+    "rust_tests_passed": 4574,
+    "rust_tests_skipped": 50,
+    "documentation_tests_ignored": 4
+  }
 }
