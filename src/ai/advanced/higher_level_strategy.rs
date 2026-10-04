@@ -104,6 +104,131 @@ impl Debt {
 }
 
 impl AdvancedAi {
+    /// Unlock production on tiles citizens already work. A counterfactual
+    /// technology goes on a disposable world so legality and researched tile
+    /// yields come from the engine rather than a second terrain rule table.
+    pub(super) fn named_production_technology_goal(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<crate::name::Name> {
+        self.active_victory_target(g)?;
+        if self.base.minor
+            || self.base.barb
+            || plan.strategy == GrandStrategy::Recovery
+            || plan.threatened_city.is_some()
+            || g.turn > g.standard_duration(160)
+        {
+            return None;
+        }
+        let _memo = g.query_memo();
+        let cities = g.player_city_ids(pid);
+        if cities.len() < 2 {
+            return None;
+        }
+        let science: f64 = cities.iter().map(|cid| g.city_yields(*cid).science).sum();
+        if science <= 0.0 {
+            return None;
+        }
+        let worked: Vec<_> = cities
+            .iter()
+            .flat_map(|cid| {
+                g.city_citizen_plan(*cid)
+                    .worked_tiles
+                    .into_iter()
+                    .filter_map(|pos| {
+                        let t = g.map.get(pos)?;
+                        (pos != g.cities[cid].pos
+                            && t.owner_city == Some(*cid)
+                            && t.improvement.is_none()
+                            && t.district.is_none()
+                            && g.wdist(g.cities[cid].pos, pos) <= 3)
+                            .then_some(pos)
+                    })
+            })
+            .collect();
+        if worked.is_empty() {
+            return None;
+        }
+        let baseline: Vec<_> = worked
+            .iter()
+            .map(|pos| {
+                g.valid_improvements(pid, *pos)
+                    .into_iter()
+                    .filter(|name| {
+                        let spec = &g.rules.improvements[name];
+                        spec.builder_buildable && !spec.removes_feature
+                    })
+                    .map(|name| g.improvement_yield_change(pid, *pos, name).production)
+                    .fold(0.0, f64::max)
+            })
+            .collect();
+        let goals: std::collections::BTreeSet<_> = g
+            .rules
+            .improvements
+            .values()
+            .filter(|spec| {
+                spec.builder_buildable && !spec.removes_feature && spec.yields.production > 0.0
+            })
+            .filter_map(|spec| spec.tech.as_deref())
+            .map(crate::name::Name::new)
+            .filter(|tech| !g.players[pid].techs.contains(tech))
+            .collect();
+        let mut best: Option<(f64, crate::name::Name)> = None;
+        for tech in goals {
+            let ancestors = g.rules.tech_ancestors.get(tech.as_str());
+            let cost: f64 = std::iter::once(tech)
+                .chain(
+                    ancestors
+                        .into_iter()
+                        .flat_map(|names| names.iter().map(|name| crate::name::Name::new(name))),
+                )
+                .filter(|node| !g.players[pid].techs.contains(node))
+                .map(|node| {
+                    g.host_remaining_research_cost(pid, node)
+                        .unwrap_or_else(|| g.tech_cost(node.as_str()))
+                })
+                .sum();
+            let turns = cost / science;
+            // Keep the entire prerequisite detour within twenty Online turns
+            // (forty Standard), and before the actual game's remaining clock.
+            let window = g.game_speed.scale(40.0).min(
+                g.turn_limit()
+                    .map_or(f64::INFINITY, |limit| limit.saturating_sub(g.turn) as f64),
+            );
+            if turns > window {
+                continue;
+            }
+            let mut branch = g.speculative_clone();
+            branch.players[pid].techs.insert(tech);
+            let gain: f64 = worked
+                .iter()
+                .zip(&baseline)
+                .map(|(pos, before)| {
+                    let after = branch
+                        .valid_improvements(pid, *pos)
+                        .into_iter()
+                        .filter(|name| {
+                            let spec = &branch.rules.improvements[name];
+                            spec.builder_buildable && !spec.removes_feature
+                        })
+                        .map(|name| branch.improvement_yield_change(pid, *pos, name).production)
+                        .fold(0.0, f64::max);
+                    (after - before).max(0.0)
+                })
+                .sum();
+            if gain < 4.0 {
+                continue;
+            }
+            let value = gain / (turns + 1.0);
+            if best.is_none_or(|(old, old_tech)| value > old || (value == old && tech < old_tech)) {
+                best = Some((value, tech));
+            }
+        }
+        best.map(|(_, tech)| tech)
+    }
+
     /// Price the production a new worker can add to currently worked tiles.
     /// Use the same yield price as buildings, after checking repayment and
     /// subtracting work that nearby charged Builders can already service.

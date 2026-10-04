@@ -14991,6 +14991,7 @@ impl AdvancedAi {
             let defensive_walls_goal = self.defensive_walls_research_goal(g, pid, plan);
             let standing_army_fuel_goal = self.standing_army_fuel_goal(g, pid);
             let wartime_modernization_goal = self.wartime_modernization_tech(g, pid);
+            let production_technology_goal = self.named_production_technology_goal(g, pid, plan);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
             let domination_campus_goal = self.domination_campus_unlock_goal(g, pid);
             let endgame_goal = self.science_endgame_research_goal(g, pid);
@@ -15061,6 +15062,9 @@ impl AdvancedAi {
                 // strand the expedition without its next launch or laser tech.
                 _ if endgame_research_preempts_wartime => endgame_goal,
                 _ if standing_army_fuel_goal.is_some() => standing_army_fuel_goal.as_deref(),
+                _ if production_technology_goal.is_some() => {
+                    production_technology_goal.as_ref().map(|tech| tech.as_str())
+                }
                 _ if wartime_modernization_goal.is_some() => wartime_modernization_goal.as_deref(),
                 _ if domination_siege_goal.is_some() => domination_siege_goal.as_deref(),
                 // Once the late launch chain is committed, finish its remaining

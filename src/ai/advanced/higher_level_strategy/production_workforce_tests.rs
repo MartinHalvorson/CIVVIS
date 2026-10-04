@@ -171,7 +171,7 @@ fn adaptive_genomes_and_science_launch_cities_keep_their_contracts() {
     assert!(ai.named_productive_workforce_target(&g, 0, &plan).is_none());
     assert!(g.cities[&city]
         .districts
-        .contains_key(&Name::new("spaceport")));
+        .contains_key(Name::new("spaceport")));
 }
 
 #[test]
@@ -248,4 +248,69 @@ fn productive_work_competes_during_review_of_an_occupied_queue() {
         "worked production must reach the actual scorer"
     );
     assert!(ai.named_productive_workforce_target(&g, 0, &plan).is_none());
+}
+
+#[test]
+fn production_research_unlocks_worked_forests_without_mutating_the_parent() {
+    let (mut g, ai, plan, _, _) = board();
+    for pos in g
+        .observed_city_worked_tiles
+        .values()
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>()
+    {
+        let tile = g.map.tiles.get_mut(&pos).unwrap();
+        tile.hills = false;
+        tile.feature = Some(crate::name!("forest"));
+    }
+    g.players[0]
+        .techs
+        .extend([crate::name!("masonry"), crate::name!("horseback_riding")]);
+    let _memo = g.query_memo();
+    assert_eq!(
+        ai.named_production_technology_goal(&g, 0, &plan),
+        Some(crate::name!("construction"))
+    );
+    assert!(!g.players[0].techs.contains(&crate::name!("construction")));
+    for pos in g.observed_city_worked_tiles.values().flatten() {
+        assert!(!g
+            .valid_improvements(0, *pos)
+            .contains(&crate::name!("lumber_mill")));
+    }
+    let mut threatened = plan.clone();
+    threatened.threatened_city = Some(g.player_city_ids(0)[0]);
+    assert!(ai
+        .named_production_technology_goal(&g, 0, &threatened)
+        .is_none());
+    assert!(AdvancedAi::new()
+        .named_production_technology_goal(&g, 0, &plan)
+        .is_none());
+}
+
+#[test]
+fn production_research_requires_worked_jobs_and_time_for_the_prerequisites() {
+    let (mut g, ai, plan, _, _) = board();
+    for pos in g
+        .observed_city_worked_tiles
+        .values()
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>()
+    {
+        g.map.tiles.get_mut(&pos).unwrap().feature = Some(crate::name!("forest"));
+    }
+    g.players[0]
+        .techs
+        .extend([crate::name!("masonry"), crate::name!("horseback_riding")]);
+    g.turn = 248;
+    assert!(ai.named_production_technology_goal(&g, 0, &plan).is_none());
+    g.turn = 40;
+    Arc::make_mut(&mut g.observed_city_worked_tiles).clear();
+    // The native governor must also have no forest jobs to work.
+    for tile in g.map.tiles.values_mut() {
+        tile.feature = None;
+        tile.hills = false;
+    }
+    assert!(ai.named_production_technology_goal(&g, 0, &plan).is_none());
 }
