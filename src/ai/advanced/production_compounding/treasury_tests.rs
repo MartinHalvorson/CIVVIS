@@ -193,6 +193,7 @@ fn purchased_builder_completes_a_real_worked_mine() {
         let pid = g.current;
         g.apply(pid, &Action::EndTurn).unwrap();
     }
+    let city_before = g.city_yields_model(city).production;
     g.apply(
         0,
         &Action::Improve {
@@ -202,4 +203,5 @@ fn purchased_builder_completes_a_real_worked_mine() {
     )
     .unwrap();
     assert!((g.modeled_tile_yields(pos).production - before - gain).abs() < 1e-9);
+    assert!((g.city_yields_model(city).production - city_before - gain).abs() < 1e-9);
 }

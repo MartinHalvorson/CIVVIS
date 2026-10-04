@@ -199,10 +199,10 @@ index 224b2d77d..0d2e312de 100644
 +mod treasury_tests;
 diff --git a/src/ai/advanced/production_compounding/treasury_tests.rs b/src/ai/advanced/production_compounding/treasury_tests.rs
 new file mode 100644
-index 000000000..6325ca7d5
+index 000000000..8e119d531
 --- /dev/null
 +++ b/src/ai/advanced/production_compounding/treasury_tests.rs
-@@ -0,0 +1,205 @@
+@@ -0,0 +1,207 @@
 +use super::*;
 +use crate::setup::GameSpeed;
 +use std::sync::Arc;
@@ -398,6 +398,7 @@ index 000000000..6325ca7d5
 +        let pid = g.current;
 +        g.apply(pid, &Action::EndTurn).unwrap();
 +    }
++    let city_before = g.city_yields_model(city).production;
 +    g.apply(
 +        0,
 +        &Action::Improve {
@@ -407,4 +408,5 @@ index 000000000..6325ca7d5
 +    )
 +    .unwrap();
 +    assert!((g.modeled_tile_yields(pos).production - before - gain).abs() < 1e-9);
++    assert!((g.city_yields_model(city).production - city_before - gain).abs() < 1e-9);
 +}
