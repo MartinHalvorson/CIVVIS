@@ -45,6 +45,12 @@ fn board() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
         g.map.tiles.get_mut(pos).unwrap().feature = Some(crate::name!("forest"));
     }
     Arc::make_mut(&mut g.observed_city_worked_tiles).insert(weak, jobs);
+    let current = g.city_yields(weak).production;
+    Arc::make_mut(&mut g.observed_city_yield_adjustments)
+        .get_mut(&weak)
+        .unwrap()
+        .production += 2.0 - current;
+    assert!((g.city_yields(weak).production - 2.0).abs() < 1e-9);
     g.players[0].techs.insert(crate::name!("construction"));
     g.players[0].gold_per_turn = 10.0;
     g.players[0].gold = 500.0;
@@ -125,7 +131,7 @@ fn slow_or_committed_cities_and_recovery_keep_their_existing_work() {
     assert!(AdvancedAi::new()
         .productive_builder_dispatch_city(&g, 0, &plan, &ai.counts(&g, 0))
         .is_none());
-    g.turn = 100;
+    g.turn = g.standard_duration(160) + 1;
     assert!(ai
         .productive_builder_dispatch_city(&g, 0, &plan, &ai.counts(&g, 0))
         .is_none());
