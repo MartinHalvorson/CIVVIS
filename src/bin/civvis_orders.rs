@@ -47,6 +47,10 @@ use civvis::mirror;
 mod air_assault;
 #[path = "civvis_orders/air_assault_continuation.rs"]
 mod air_assault_continuation;
+#[path = "civvis_orders/host_move_postconditions.rs"]
+mod host_move_postconditions;
+#[path = "civvis_orders/host_ranged_history.rs"]
+mod host_ranged_history;
 
 fn arg_text(args: &[String], flag: &str) -> Option<String> {
     args.iter()
@@ -5825,6 +5829,7 @@ fn ledger_evidence_and_states(
     };
     let mut evidence = Vec::new();
     let mut states = Vec::new();
+    let mut seat: Option<civvis::mirror::Seat> = None;
     // ★★★★ ONLY THE LINES THAT NAME A KIND WE KEEP, AND ONLY THEIR TURNS.
     // This ran on the first frame of every turn and built a full
     // `serde_json::Value` of EVERY state record of the run (hundreds of
@@ -5834,6 +5839,9 @@ fn ledger_evidence_and_states(
     // are the same ones the old `contains` test kept, in file order; a record
     // that spells only other integer turns cannot pass the `as_u64` check below.
     let mut lines = civvis::mirror::line_ranges_containing(&raw, "\"state\"");
+    // State events omit identity; retain the preceding seat even though its
+    // metadata event has no requested turn. Do not parse unrelated state rows.
+    lines.extend(civvis::mirror::line_ranges_containing(&raw, "\"seat\""));
     for kind in EVIDENCE_KINDS {
         lines.extend(civvis::mirror::line_ranges_containing(
             &raw,
@@ -5844,19 +5852,26 @@ fn ledger_evidence_and_states(
     lines.dedup();
     for (start, end) in lines {
         let line = &raw[start..end];
-        if !civvis::mirror::turn_may_be_any(line, turns) {
+        if !civvis::mirror::turn_may_be_any(line, turns) && !line.contains("\"seat\"") {
             continue;
         }
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
+        if event.get("kind").and_then(|kind| kind.as_str()) == Some("seat") {
+            seat = serde_json::from_value(event).ok();
+            continue;
+        }
         let turn = event.get("turn").and_then(|turn| turn.as_u64());
         if !turn.is_some_and(|turn| turns.iter().any(|want| u64::from(*want) == turn)) {
             continue;
         }
         let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
         if kind == "state" {
-            if let Ok(state) = serde_json::from_value(event) {
+            if let Ok(mut state) = serde_json::from_value::<civvis::mirror::StateSnapshot>(event) {
+                if let Some(seat) = &seat {
+                    state.seat = seat.clone();
+                }
                 states.push(state);
             }
         } else if EVIDENCE_KINDS.contains(&kind) {
@@ -6531,6 +6546,8 @@ struct LaterFrames {
     fortified: bool,
     /// The decider moved it on a later frame, overriding its own FORTIFY.
     moved: bool,
+    /// The actor actually occupied this MOVE_TO's endpoint on a later frame.
+    move_reached: bool,
 }
 
 fn verify_unit_order(
@@ -6558,6 +6575,12 @@ fn verify_unit_order(
             let Some(want) = order.pos else {
                 return Verdict::Failed("no_destination".to_string());
             };
+            // A completed move is not a refusal merely because a subsequent
+            // replan moved the actor away, or combat later removed it. Survival
+            // and operation causality are separate from this postcondition.
+            if was.is_some() && later.move_reached {
+                return Verdict::Verified;
+            }
             match (was, now) {
                 (_, Some(now)) if (now.x, now.y) == want => Verdict::Verified,
                 // A unit first seen on a combat frame has no baseline to move from.
@@ -6905,6 +6928,7 @@ struct VerificationContext<'a> {
     /// The decider moved this unit in a later frame of the same turn, so any
     /// FORTIFY it issued earlier was overridden by its own next decision.
     later_moved: bool,
+    later_move_reached: bool,
     /// A later policy-deck replacement in this turn matches the final state,
     /// so this order was superseded by the decider's own re-plan.
     later_policy_deck: bool,
@@ -6947,6 +6971,7 @@ fn verify_order_with_context(
             LaterFrames {
                 fortified: context.later_fortified,
                 moved: context.later_moved,
+                move_reached: context.later_move_reached,
             },
         ),
         "produce" => {
@@ -7205,6 +7230,7 @@ fn verify_order(
             same_turn_orders: &[],
             later_fortified: false,
             later_moved: false,
+            later_move_reached: false,
             later_policy_deck: false,
         },
     )
@@ -7279,6 +7305,11 @@ fn verify_orders_with_later_fortifications(
                         .subject
                         .is_some_and(|id| later.fortified.contains(&id)),
                     later_moved: order.subject.is_some_and(|id| later.moved.contains(&id)),
+                    later_move_reached: host_move_postconditions::observed_endpoint(
+                        pending,
+                        order,
+                        later.states,
+                    ),
                     later_policy_deck: later.policy_deck,
                 },
             ),
@@ -7475,15 +7506,21 @@ fn audit_orders(events: &Path, orders_path: &Path) {
     let mut all_states: Vec<civvis::mirror::StateSnapshot> = Vec::new();
     let mut reported: std::collections::BTreeMap<u32, (i64, i64)> = Default::default();
     let mut evidence: Vec<serde_json::Value> = Vec::new();
+    let mut seat: Option<civvis::mirror::Seat> = None;
     for line in raw.lines() {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
         let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
-        if kind == "state" {
+        if kind == "seat" {
+            seat = serde_json::from_value(event).ok();
+        } else if kind == "state" {
             // The opening board of each turn: the one the orders were decided on.
             match serde_json::from_value::<civvis::mirror::StateSnapshot>(event) {
-                Ok(state) => {
+                Ok(mut state) => {
+                    if let Some(seat) = &seat {
+                        state.seat = seat.clone();
+                    }
                     frame_states
                         .entry((state.turn, state.frame))
                         .or_insert_with(|| state.clone());
@@ -8895,6 +8932,7 @@ fn main() {
     // A city's strike is once per host turn and the export never says it was
     // spent; the decider's own earlier frames do. See `HostCityStrikes`.
     let mut host_city_strikes = HostCityStrikes::default();
+    let mut host_ranged_history = host_ranged_history::History::default();
     let mut explain_cursor: u64 = 0;
     // What left for the host on each frame, until the next turn's frame answers
     // for it. See "order postconditions" above.
@@ -9025,6 +9063,7 @@ fn main() {
                         None => ai.forget_unit_memory(),
                     }
                     board.carry_treasury_baseline(carried_treasury);
+                    host_ranged_history.observe_and_apply(&mut board, &state);
                     host_city_attack_cooldowns.apply(&mut board);
                     host_city_strikes.apply(&mut board, state.turn);
                     host_move_refusals.apply(&mut board);
@@ -9055,6 +9094,7 @@ fn main() {
                                 mirror_turns,
                                 frontier,
                             );
+                            host_ranged_history.observe_and_apply(&mut fresh, &state);
                             host_city_attack_cooldowns.apply(&mut fresh);
                             host_city_strikes.apply(&mut fresh, state.turn);
                             host_move_refusals.apply(&mut fresh);
@@ -9077,6 +9117,7 @@ fn main() {
                         }
                         Some(existing) => {
                             existing.sync(&snapshot, &state, frontier);
+                            host_ranged_history.observe_and_apply(existing, &state);
                             host_city_attack_cooldowns.apply(existing);
                             host_city_strikes.apply(existing, state.turn);
                             host_move_refusals.apply(existing);

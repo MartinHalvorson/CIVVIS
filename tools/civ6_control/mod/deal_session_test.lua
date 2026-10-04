@@ -36,7 +36,8 @@ local events = {}
 local realPrint = print
 print = function(line)
 	if type(line) == "string" and (line:find('"kind":"deal_', 1, true)
-			or line:find('"kind":"peace_', 1, true)) then
+			or line:find('"kind":"peace_', 1, true)
+			or line:find('"kind":"orphan_', 1, true)) then
 		events[#events + 1] = line
 	end
 end
@@ -399,6 +400,192 @@ check("a stood-down lane asks directly", direct.sends[1] and direct.sends[1][1],
 check("a stood-down lane opens no session", #sessions.requested, requestedBefore)
 
 -- ── The auto-closer honours the hold, and only for the diplomacy views ──
+-- ── A sent ask closed unanswered holds the end turn (G72 t126 wedge) ──
+-- The rival's verdict still arrives, as its own session to us; ending the
+-- turn under it is the wedge. Hold until the rival speaks or the window ends.
+local queue = rawget(_G, "CivvisQueue")
+local clock, endTurns = 1000.0, 0
+UI = setmetatable({ GetElapsedTime = function() return clock end,
+       HasSentTurnComplete = function() return false end,
+       RequestAction = function() endTurns = endTurns + 1 end },
+       { __index = function() return stub() end })
+ActionTypes = { ACTION_ENDTURN = "end_turn" }
+CivvisControlConfig.DealAnswerHoldSeconds = 30
+-- A fresh lane: the earlier sections' unanswered asks left holds and sessions.
+trade.disabled, trade.unanswered, trade.turnHold = false, 0, nil
+trade.sessions, trade.pending, trade.asked = {}, {}, {}
+local function holdPhase() return eventField(lastEvent("deal_turn_hold"), "phase") end
+
+TURN = 200
+local held, heldPlayer = fixture()
+check("a held-turn ask goes out",
+	applyOrder(heldPlayer, 7, { kind = "sell", subject = "3", verb = "RESOURCE_DYES=1", x = 60 }, TURN), true)
+onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 960 })
+onClosed(960)
+check("a sent ask closed unanswered holds the turn", holdPhase(), "held")
+queue.requestEndTurn(TURN)
+check("…the end turn is not requested", endTurns, 0)
+check("…and the hold says so once", holdPhase(), "holding")
+clock = clock + 10
+queue.requestEndTurn(TURN, { REASON = "UserForced" })
+check("…a forced end turn is held too", endTurns, 0)
+onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 961 })
+check("the rival speaking releases the hold", holdPhase(), "released")
+check("…naming why", eventField(lastEvent("deal_turn_hold"), "why"), "rival_spoke")
+clock = clock + 1
+queue.requestEndTurn(TURN)
+check("…and the turn ends", endTurns, 1)
+
+TURN = 210
+local quiet2, quiet2Player = fixture()
+applyOrder(quiet2Player, 7, { kind = "sell", subject = "3", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
+onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 962 })
+onClosed(962)
+clock = clock + 29
+queue.requestEndTurn(TURN)
+check("inside the window the turn is held", endTurns, 1)
+clock = clock + 2
+queue.requestEndTurn(TURN)
+check("after DealAnswerHoldSeconds the turn ends", endTurns, 2)
+check("…the hold expired", eventField(lastEvent("deal_turn_hold"), "why"), "expired")
+
+TURN = 220
+local stale, stalePlayer = fixture()
+applyOrder(stalePlayer, 7, { kind = "sell", subject = "3", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
+onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 964 })
+onClosed(964)
+TURN = 221
+clock = clock + 1
+queue.requestEndTurn(TURN)
+check("a hold from an earlier turn does not hold this one", endTurns, 3)
+check("…it is dropped as over", eventField(lastEvent("deal_turn_hold"), "why"), "turn_over")
+
+-- An ask that never went out (no opening statement) leaves no hold.
+TURN = 230
+local unsent, unsentPlayer = fixture()
+applyOrder(unsentPlayer, 7, { kind = "sell", subject = "3", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
+local before = #events
+for subject, session in pairs(trade.sessions) do
+	if subject == 3 then session.sent = false end
+end
+trade.abandon(3, "session_closed")
+check("an unsent ask closed unanswered holds nothing", trade.turnHold, nil)
+clock = clock + 1
+queue.requestEndTurn(TURN)
+check("…the turn ends at once", endTurns, 4)
+
+-- ── A rival's session queued behind a dismissed screen is answered (G75 t133) ──
+-- Our peace asks made 2 and 3 open their own sessions to us; 2's was refused,
+-- 3's queued and opened behind a view the closer had already dismissed, so
+-- nothing answered it and Civ un-readied every end turn for 3.5 minutes.
+local realDiplomacy = DiplomacyManager
+local open, answers = {}, {}
+local stuck = false
+local function closeIt(id)
+	answers[#answers + 1] = "close:" .. id
+	if not stuck then open[id] = nil end
+end
+DiplomacyManager = setmetatable({
+	FindOpenSessionID = function(pid, other)
+		for id, s in pairs(open) do
+			if s.with == other and pid == 7 then return id end
+		end
+		return nil
+	end,
+	GetSessionInfo = function(id)
+		local s = open[id]
+		return s and { FromPlayer = s.from, ToPlayer = 7 } or nil
+	end,
+	IsSessionIDOpen = function(id) return open[id] ~= nil end,
+	CloseSession = closeIt,
+	AddResponse = function(id, pid, answer)
+		answers[#answers + 1] = "respond:" .. id .. ":" .. answer
+	end,
+	HasQueuedSession = function() return false end,
+}, { __index = realDiplomacy })
+PlayerManager = { GetAliveMajorIDs = function() return { 7, 2, 3 } end }
+local rejected = {}
+local realDeals = DealManager
+DealManager = setmetatable({
+	SendWorkingDeal = function(action, pid, other) rejected[#rejected + 1] = action .. ":" .. other end,
+}, { __index = realDeals })
+CivvisControlConfig.OrphanSessionSeconds = 10
+local function orphan() return lastEvent("orphan_session_answered") end
+
+TURN = 240
+trade.sessions, trade.turnHold = {}, nil
+open[971] = { with = 3, from = 3 }
+queue.requestEndTurn(TURN)
+check("the first end turn goes out", endTurns, 5)
+clock = clock + 5
+queue.requestEndTurn(TURN)
+check("a session open 5 s into the end turn is left to the closer", #answers, 0)
+clock = clock + 5.5
+queue.requestEndTurn(TURN)
+check("after OrphanSessionSeconds the rival's session is refused", rejected[1], "rejected:3")
+check("…then closed, as OnRefuseDeal(true) does", answers[1], "close:971")
+check("…and the session is gone", open[971], nil)
+check("the event names the rival", eventField(orphan(), "target"), "3")
+check("…how it was answered", eventField(orphan(), "how"), "refused")
+check("…that we did not own it", eventField(orphan(), "owned"), "false")
+check("…and that it closed", eventField(orphan(), "still_open"), "false")
+clock = clock + 1
+queue.requestEndTurn(TURN)
+check("with nothing open, the end turn goes out again", #answers, 1)
+
+-- A session that will not close escalates once per second, then gives up.
+TURN = 250
+stuck = true
+open[972] = { with = 2, from = 2 }
+queue.requestEndTurn(TURN)
+clock = clock + 10.5
+queue.requestEndTurn(TURN)
+clock = clock + 0.5
+queue.requestEndTurn(TURN)
+check("the net checks at most once a second", #answers, 2)
+clock = clock + 0.6
+queue.requestEndTurn(TURN)
+check("a session still open is answered NEGATIVE", answers[3], "respond:972:NEGATIVE")
+clock = clock + 1.1
+queue.requestEndTurn(TURN)
+check("…then closed bare", answers[4], "close:972")
+clock = clock + 1.1
+queue.requestEndTurn(TURN)
+check("…then given up on", #answers, 4)
+check("…and said so", eventField(lastEvent("orphan_session_stuck"), "session"), "972")
+clock = clock + 1.1
+queue.requestEndTurn(TURN)
+check("…once", #answers, 4)
+stuck, open = false, {}
+
+-- A session we opened is closed (not refused) and our ledger is closed with it.
+TURN = 260
+trade.sessions = { [3] = { kind = "sell", action = "EQUALIZE", turn = TURN, sent = true } }
+open[973] = { with = 3, from = 7 }
+local rejectedBefore = #rejected
+queue.requestEndTurn(TURN)
+clock = clock + 10.5
+queue.requestEndTurn(TURN)
+check("our own session is not refused", #rejected, rejectedBefore)
+check("…it is closed", answers[#answers], "close:973")
+check("…the event says we owned it", eventField(orphan(), "owned"), "true")
+check("…and the ledger closes it as orphaned", eventField(lastEvent("deal_session"), "why"), "orphaned")
+check("…leaving no session behind", trade.sessions[3], nil)
+
+-- The deliberate unanswered-deal hold is not second-guessed.
+TURN = 270
+open[974] = { with = 3, from = 3 }
+trade.turnHold = { turn = TURN, target = 3, at = clock }
+local answersBefore = #answers
+queue.requestEndTurn(TURN)
+clock = clock + 12
+CivvisTrade.answerOrphanSessions(TURN)
+check("inside a deal hold the session is left alone", #answers, answersBefore)
+trade.turnHold, open = nil, {}
+
+DiplomacyManager, DealManager, PlayerManager = realDiplomacy, realDeals, nil
+UI = nil  -- back to the stub for the sections below
+
 local closerSrc = assert(io.open(here .. "/CivvisControlAutoClose.lua")):read("*a")
 check("the closer listens for the session hold",
 	closerSrc:find("LuaEvents.CivvisDealSession.Add(", 1, true) ~= nil, true)
