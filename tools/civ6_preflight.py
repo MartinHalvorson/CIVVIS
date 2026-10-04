@@ -144,7 +144,12 @@ def installed_source_matches(live: bytes, source: bytes) -> bool:
     appends the worktree file byte-for-byte. Comparing whole files therefore
     reported a stale installed module even immediately after a correct sync.
     """
-    return live == source or live.endswith(source)
+    if live == source or live.endswith(source):
+        return True
+    # The installer also drops comment-only lines (`install.installed_lua`).
+    from civ6_control import install
+    stripped = install.installed_lua(source.decode("utf-8", "replace")).encode("utf-8")
+    return live.endswith(stripped)
 
 
 def check_installed(report: Report) -> None:
