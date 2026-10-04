@@ -5549,6 +5549,48 @@ def status() -> int:
     return 0
 
 
+# Mod switches the PLAYED TREE arms, beside the supervisor's
+# `deploy/live-force-on.txt` (decider genes). The climb forwards a fixed
+# flag list to this script, so a default-off switch had no way to reach the
+# live lane except a supervisor edit. A pin carries this file instead:
+# comma- or whitespace-separated names, `#` comments. Only names listed in
+# TREE_MOD_ARMS take effect; anything else is reported and ignored, so a typo
+# cannot stop a game. An arm can only switch ON what its flag switches on.
+TREE_MOD_ARMS_FILE = REPO_ROOT / "deploy" / "live-mod-arms.txt"
+TREE_MOD_ARMS = {
+    # #3939: answer a probe-marked stalled MOVE_TO operation at the probe tick.
+    "stalled-operation-release": "stalled_operation_release",
+}
+
+
+def read_tree_mod_arms(path: Path = TREE_MOD_ARMS_FILE) -> list[str]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    names: list[str] = []
+    for line in text.splitlines():
+        line = line.split("#", 1)[0]
+        names.extend(line.replace(",", " ").split())
+    return names
+
+
+def apply_tree_mod_arms(args, path: Path = TREE_MOD_ARMS_FILE) -> list[str]:
+    """Switch on each known arm the played tree lists; return the names applied."""
+    applied: list[str] = []
+    for name in read_tree_mod_arms(path):
+        dest = TREE_MOD_ARMS.get(name)
+        if dest is None:
+            print(f"[mod-arms] {path.name}: unknown arm {name!r} ignored "
+                  f"(known: {', '.join(sorted(TREE_MOD_ARMS))})", file=sys.stderr)
+            continue
+        setattr(args, dest, True)
+        applied.append(name)
+    if applied:
+        print(f"[mod-arms] {path.name} arms: {', '.join(applied)}", flush=True)
+    return applied
+
+
 def main(argv: list[str] | None = None) -> int:
     raw_argv = sys.argv[1:] if argv is None else argv
     # `--war-from-plan` is still available on the lower-level replay tools, where
@@ -5914,6 +5956,7 @@ def main(argv: list[str] | None = None) -> int:
                          "and placement live; setup/recovery may still use the GUI")
     ap.add_argument("--status", action="store_true")
     args = ap.parse_args(raw_argv)
+    apply_tree_mod_arms(args)
     global GAME_SIDE, GAME_FRACTION, GAME_VFRACTION
     GAME_SIDE, GAME_FRACTION = args.window_side, args.window_frac
     GAME_VFRACTION = args.window_vfrac
