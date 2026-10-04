@@ -3,35 +3,44 @@ use civvis::ai::{AdvancedAi, AirCityAssault};
 use civvis::mirror::{Snapshot, StateSnapshot};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// A sortie the export layer would withhold cannot support a planned capture.
+/// A mission the export layer would withhold cannot spend a planned sortie.
 pub(super) fn apply_cooldowns(
     g: &mut civvis::game::Game,
     mapped: &BTreeMap<u32, i64>,
     turn: u32,
     refusals: &super::HostOrderRefusals,
 ) {
+    let aircraft: BTreeMap<i64, u32> = mapped
+        .iter()
+        .filter(|(uid, _)| {
+            g.units.get(uid).is_some_and(|unit| {
+                unit.owner == 0 && g.rules.units[unit.kind].domain.as_deref() == Some("air")
+            })
+        })
+        .map(|(uid, host)| (*host, *uid))
+        .collect();
     let mut blocked = Vec::new();
-    for (uid, host) in mapped {
-        let Some(unit) = g.units.get(uid).filter(|unit| unit.owner == 0) else {
-            continue;
-        };
-        if g.rules.units[unit.kind].domain.as_deref() != Some("air") {
+    // AIR_ATTACK also strikes units and pillages terrain/districts. Iterate
+    // exact known orders rather than only city plots or whole aircraft.
+    for (kind, verb, subject, pos) in refusals.seen.keys() {
+        if kind != "unit" || verb.as_deref() != Some("AIR_ATTACK") {
             continue;
         }
-        for city in g
-            .cities
-            .values()
-            .filter(|city| city.owner != 0 && g.is_at_war(0, city.owner))
-        {
-            let request = Order {
-                kind: "unit",
-                subject: Some(*host),
-                verb: Some("AIR_ATTACK".into()),
-                pos: Some(civvis::hex::axial_to_offset(city.pos.0, city.pos.1)),
-            };
-            if refusals.withheld(&request, turn).is_some() {
-                blocked.push((*uid, city.pos));
-            }
+        let (Some(host), Some(offset)) = (subject, pos) else {
+            continue;
+        };
+        let Some(uid) = aircraft.get(host) else {
+            continue;
+        };
+        let target = civvis::hex::offset_to_axial(offset.0, offset.1);
+        let request = Order {
+            kind: "unit",
+            subject: Some(*host),
+            verb: verb.clone(),
+            pos: Some(*offset),
+        };
+        if g.map.get(target).is_some() && refusals.withheld(&request, turn).is_some() {
+            blocked.push((*uid, target));
         }
     }
     std::sync::Arc::make_mut(&mut g.blocked_strikes).extend(blocked);

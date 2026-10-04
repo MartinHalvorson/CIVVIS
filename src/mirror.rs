@@ -3841,11 +3841,12 @@ pub struct StateSnapshot {
     /// this field without the attribute took a replay from 4,339 orders to 0.
     #[serde(default)]
     pub refused_promotions: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
-    /// Strikes the host refused THIS TURN, as `(unit, x, y)` in Civilization VI
+    /// Non-air strikes the host refused THIS TURN, as `(unit, x, y)` in Civilization VI
     /// ids and offset plots, from `range_attack_refused` and `war_refused`.
     /// Per turn, not cumulative: a shot the host refused for line of sight last
     /// turn may be open after a move, and a war refusal is answered by the
     /// diplomacy arm, not by never striking that plot again.
+    /// Air missions use the orders bridge's repeated-refusal cooldown instead.
     /// See `Game::blocked_strikes`.
     ///
     /// ⚠ `#[serde(default)]` is load-bearing here for the same reason as above.
@@ -7189,7 +7190,7 @@ fn refused_promotions_through(
     refused
 }
 
-/// Strikes the host refused on exactly `turn`, keyed by Civilization VI unit id
+/// Non-air strikes the host refused on exactly `turn`, keyed by Civilization VI unit id
 /// and the offset plot they were aimed at.
 ///
 /// ★★★ READ FROM TWO EVENTS THE MOD HAS EMITTED FOR MONTHS AND NOTHING IN RUST
@@ -7220,6 +7221,13 @@ fn refused_strikes_on(
             event.get("kind").and_then(|k| k.as_str()),
             Some("range_attack_refused" | "war_refused")
         ) {
+            continue;
+        }
+        // A first AIR_ATTACK refusal can succeed later in the SAME turn:
+        // native 060034 t196 Bomber9306136 at33,16 was refused then hit.
+        // The orders bridge supplies exact repeated-refusal air cooldowns;
+        // do not turn this raw telemetry into a single-refusal blacklist.
+        if event.get("verb").and_then(|value| value.as_str()) == Some("AIR_ATTACK") {
             continue;
         }
         if event.get("turn").and_then(|value| value.as_u64()) != Some(u64::from(turn)) {
@@ -14992,3 +15000,6 @@ mod war_type_permission_tests;
 
 #[cfg(test)]
 mod research_quote_tests;
+
+#[cfg(test)]
+mod air_refusal_tests;
