@@ -133,6 +133,8 @@ impl AdvancedAi {
         let pressure = self.rival_victory_pressure(g, rival);
         self.domination_counter_pressure(g, pressure)
             || self.domination_faithless_conversion_counter(g, pid, rival, pressure)
+            // See `one_war::culture_lane_threat`.
+            || self.culture_lane_threat(g, rival)
     }
     /// The next irreducible Science milestone. An explicit or adaptive
     /// Science plan can still honour a declared rush or a war breakthrough,
