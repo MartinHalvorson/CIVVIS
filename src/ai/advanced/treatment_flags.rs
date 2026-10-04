@@ -4980,6 +4980,17 @@ impl AdvancedAi {
         self.culture_counter_declares = false;
     }
 
+    /// Opt-in gene `formations-heed-refusals`; see
+    /// [`Self::formations_heed_refusals`].
+    pub fn enable_formations_heed_refusals(&mut self) {
+        self.formations_heed_refusals = true;
+    }
+
+    /// The twin of `enable_formations_heed_refusals`.
+    pub fn disable_formations_heed_refusals(&mut self) {
+        self.formations_heed_refusals = false;
+    }
+
     /// Opt-in gene `breaker-supply-scales`; see
     /// [`Self::breaker_supply_scales`].
     pub fn enable_breaker_supply_scales(&mut self) {

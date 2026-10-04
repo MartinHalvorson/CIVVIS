@@ -47,6 +47,8 @@ use civvis::mirror;
 mod air_assault;
 #[path = "civvis_orders/air_assault_continuation.rs"]
 mod air_assault_continuation;
+#[path = "civvis_orders/formation_refusals.rs"]
+mod formation_refusals;
 
 fn arg_text(args: &[String], flag: &str) -> Option<String> {
     args.iter()
@@ -1412,6 +1414,9 @@ struct RefusalRecord {
 #[derive(Default)]
 struct HostOrderRefusals {
     seen: std::collections::BTreeMap<OrderIdentity, RefusalRecord>,
+    /// The turn of each order's latest failure, cleared when it is
+    /// verified. See `formation_refusals`.
+    failed_on: std::collections::BTreeMap<OrderIdentity, u32>,
     war_permissions: std::collections::BTreeMap<i64, bool>,
     typed_war_permissions: std::collections::BTreeMap<(i64, String), bool>,
 }
@@ -1473,8 +1478,10 @@ impl HostOrderRefusals {
                 // history: this order works.
                 Verdict::Verified => {
                     self.seen.remove(&identity);
+                    self.failed_on.remove(&identity);
                 }
                 Verdict::Failed(reason) => {
+                    self.failed_on.insert(identity.clone(), turn);
                     let record = self.seen.entry(identity).or_insert(RefusalRecord {
                         strikes: 0,
                         reason: reason.clone(),
@@ -1516,6 +1523,8 @@ impl HostOrderRefusals {
     fn sweep(&mut self, turn: u32) {
         self.seen
             .retain(|_, record| record.until.is_none_or(|until| turn < until));
+        self.failed_on
+            .retain(|_, failed| turn.saturating_sub(*failed) < ORDER_REFUSAL_COOLDOWN_TURNS);
     }
 }
 
@@ -3863,6 +3872,11 @@ fn decide(
         host_order_refusals,
     );
     air_assault::observe(ai, snapshot, state);
+    ai.set_refused_combinations(formation_refusals::refused_pairs(
+        &mirror_state.civ6_of,
+        state.turn,
+        host_order_refusals,
+    ));
     let (war_finishers, ai_actions_begin, air_assault_resumed) =
         air_assault_continuation.plan_frame(ai, &mut planned_game, state, &mirror_state.civ6_of);
     // Finishing attacks are translated explicitly below, including the reserve
