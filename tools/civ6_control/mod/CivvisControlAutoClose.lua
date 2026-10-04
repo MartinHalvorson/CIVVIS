@@ -140,6 +140,77 @@ local function report(kind, fields)
 	pcall(function() Automation.Log(PREFIX .. line); end);
 end
 
+-- ★★ WHO HOLDS THE GAME? AN EVENT-LOCK LEDGER. G84 t117 froze twice with the
+-- Game Core thread idle in pthread_cond_wait and WinMain still rendering: the
+-- app stopped dispatching the game, which is what a UI context does while it
+-- holds an event lock (`UI.ReferenceCurrentEvent`, released by
+-- `UI.ReleaseEventID`; DiplomacyActionView.lua:2116/:2175). This build writes
+-- no Lua.log, so nothing could say which context held one. Every context this
+-- shim runs in wraps the pair once per UI table and keeps the held set in
+-- `ExposedMembers.CivvisEventLocks`, which the agent's `ai_phase_stall` and
+-- `end_turn_wait` read back.
+-- ⚠ FAIL-OPEN: the original is called first and its exact results returned;
+-- all recording is inside pcall, so the ledger cannot change or block a lock.
+-- Bounded: released entries are dropped and at most EVENT_LOCK_CAP are held.
+local EVENT_LOCK_CAP = 32;
+local function eventLedger()
+	if type(ExposedMembers) ~= "table" then return nil; end
+	local ledger = ExposedMembers.CivvisEventLocks;
+	if type(ledger) ~= "table" then
+		ledger = { held = {}, count = 0, overflow = 0 };
+		ExposedMembers.CivvisEventLocks = ledger;
+	end
+	return ledger;
+end
+local function noteEventLock(op, id)
+	local ledger = eventLedger();
+	local key = tonumber(id);
+	if ledger == nil or key == nil then return; end
+	if op == "ref" then
+		if ledger.held[key] == nil then
+			if ledger.count >= EVENT_LOCK_CAP then
+				ledger.overflow = ledger.overflow + 1;
+			else
+				local turn = -1;
+				pcall(function() turn = Game.GetCurrentGameTurn(); end);
+				local at = -1;
+				pcall(function() at = UI.GetElapsedTime(); end);
+				ledger.held[key] = { ctx = NAME, turn = turn, at = at };
+				ledger.count = ledger.count + 1;
+			end
+		end
+	elseif ledger.held[key] ~= nil then
+		ledger.held[key] = nil;
+		ledger.count = ledger.count - 1;
+	end
+	report("event_lock", string.format(',"op":"%s","id":%d,"held":%d', op, key, ledger.count));
+end
+local function packResults(...)
+	return { n = select("#", ...), ... };
+end
+local function installEventLedger(ui)
+	if type(ui) ~= "table" then return false; end
+	local installed = false;
+	pcall(function() installed = rawget(ui, "CivvisEventLedger") == true; end);
+	if installed then return false; end
+	local reference, release = ui.ReferenceCurrentEvent, ui.ReleaseEventID;
+	if type(reference) ~= "function" or type(release) ~= "function" then return false; end
+	return pcall(function()
+		ui.ReferenceCurrentEvent = function(...)
+			local results = packResults(reference(...));
+			pcall(noteEventLock, "ref", results[1]);
+			return unpack(results, 1, results.n);
+		end;
+		ui.ReleaseEventID = function(id, ...)
+			local results = packResults(release(id, ...));
+			pcall(noteEventLock, "release", id);
+			return unpack(results, 1, results.n);
+		end;
+		ui.CivvisEventLedger = true;
+	end) == true;
+end
+pcall(installEventLedger, UI);
+
 -- One screen is already replaced by a DLC, on a criterion true of every run
 -- here: GranColombia_Maya swaps NaturalDisasterPopup for fourteen lines that
 -- add a comet-strike label. Two ReplaceUIScript actions on one context is a

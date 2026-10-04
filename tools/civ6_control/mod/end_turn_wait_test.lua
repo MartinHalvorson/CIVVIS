@@ -302,6 +302,8 @@ local liveContext = rawget(_G, "ContextPtr")
 ContextPtr = { LookUpControl = function(_, path)
 	return { IsHidden = function() return path ~= "/InGame/DiplomacyActionView" end }
 end }
+ExposedMembers = { CivvisEventLocks = { held = { [7] = { ctx = "WonderBuiltPopup", turn = 8, at = 20.4 } },
+                                         count = 1, overflow = 0 } }
 now = 40.0
 check("not before AiPhaseStallSeconds", queue.checkAiPhaseStall(), false)
 now = 50.6
@@ -311,6 +313,7 @@ check("…for our turn", has(stall, '"turn":8'), true)
 check("…with how long since our turn ended", has(stall, '"waited":30.1'), true)
 check("…and which views were up", has(stall, '"visible":["DiplomacyActionView"]'), true)
 check("…and the core's own busy flag", has(stall, '"core_busy":false'), true)
+check("…and every UI event lock still held, by context", has(stall, '"ctx":"WonderBuiltPopup","id":7'), true)
 now = 70.0
 check("once per turn", queue.checkAiPhaseStall(), false)
 check("…one event", #events("ai_phase_stall"), 1)
