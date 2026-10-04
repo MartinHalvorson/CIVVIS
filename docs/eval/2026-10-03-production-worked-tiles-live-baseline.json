@@ -1,0 +1,494 @@
+[
+  {
+    "run": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261004T033533Z",
+    "checkpoints": [
+      {
+        "turn": 50,
+        "cities": 4,
+        "production": 30,
+        "production_per_city": 7.5,
+        "rivals": [
+          {
+            "player": 1,
+            "leader": "LEADER_HAMMURABI",
+            "production": 47.5938,
+            "cities": 3,
+            "production_per_city": 15.864600000000001
+          },
+          {
+            "player": 2,
+            "leader": "LEADER_BARBAROSSA",
+            "production": 57.6914,
+            "cities": 5,
+            "production_per_city": 11.53828
+          }
+        ],
+        "ratio_to_best_observed_rival": 0.520008181462055,
+        "science": 11.5,
+        "culture": 17.0938,
+        "gold_per_turn": 10,
+        "builders": 1,
+        "builder_charges": 1,
+        "worked_noncenter_tiles": 17,
+        "worked_tiles_with_plot_records": 17,
+        "worked_unimproved_tiles": 12,
+        "worked_unimproved_productive_tiles": 11,
+        "observed_production_rate_sum": 762.25382,
+        "first_observed_turn": 1,
+        "observed_turn_count": 50,
+        "missing_turn_count": 0
+      },
+      {
+        "turn": 75,
+        "cities": 8,
+        "production": 65,
+        "production_per_city": 8.125,
+        "rivals": [
+          {
+            "player": 1,
+            "leader": "LEADER_HAMMURABI",
+            "production": 76.9961,
+            "cities": 5,
+            "production_per_city": 15.39922
+          },
+          {
+            "player": 2,
+            "leader": "LEADER_BARBAROSSA",
+            "production": 104.992,
+            "cities": 6,
+            "production_per_city": 17.49866666666667
+          },
+          {
+            "player": 3,
+            "leader": "LEADER_VICTORIA_ALT",
+            "production": 74.0938,
+            "cities": 5,
+            "production_per_city": 14.818760000000001
+          }
+        ],
+        "ratio_to_best_observed_rival": 0.619094788174337,
+        "science": 44,
+        "culture": 32.3906,
+        "gold_per_turn": 30,
+        "builders": 1,
+        "builder_charges": 1,
+        "worked_noncenter_tiles": 38,
+        "worked_tiles_with_plot_records": 38,
+        "worked_unimproved_tiles": 27,
+        "worked_unimproved_productive_tiles": 24,
+        "observed_production_rate_sum": 1831.9569399999998,
+        "first_observed_turn": 1,
+        "observed_turn_count": 75,
+        "missing_turn_count": 0
+      },
+      {
+        "turn": 100,
+        "cities": 9,
+        "production": 79.01166,
+        "production_per_city": 8.779073333333335,
+        "rivals": [
+          {
+            "player": 1,
+            "leader": "LEADER_HAMMURABI",
+            "production": 103.594,
+            "cities": 5,
+            "production_per_city": 20.718799999999998
+          },
+          {
+            "player": 2,
+            "leader": "LEADER_BARBAROSSA",
+            "production": 173.141,
+            "cities": 9,
+            "production_per_city": 19.23788888888889
+          },
+          {
+            "player": 3,
+            "leader": "LEADER_VICTORIA_ALT",
+            "production": 96.1875,
+            "cities": 6,
+            "production_per_city": 16.03125
+          }
+        ],
+        "ratio_to_best_observed_rival": 0.4563428650637342,
+        "science": 71.457,
+        "culture": 42.3711,
+        "gold_per_turn": 18.5039,
+        "builders": 1,
+        "builder_charges": 3,
+        "worked_noncenter_tiles": 52,
+        "worked_tiles_with_plot_records": 52,
+        "worked_unimproved_tiles": 39,
+        "worked_unimproved_productive_tiles": 31,
+        "observed_production_rate_sum": 3661.8122199999993,
+        "first_observed_turn": 1,
+        "observed_turn_count": 100,
+        "missing_turn_count": 0
+      },
+      {
+        "turn": 150,
+        "cities": 7,
+        "production": 90.90624,
+        "production_per_city": 12.986605714285714,
+        "rivals": [
+          {
+            "player": 1,
+            "leader": "LEADER_HAMMURABI",
+            "production": 137.391,
+            "cities": 7,
+            "production_per_city": 19.627285714285712
+          },
+          {
+            "player": 2,
+            "leader": "LEADER_BARBAROSSA",
+            "production": 366.688,
+            "cities": 11,
+            "production_per_city": 33.335272727272724
+          },
+          {
+            "player": 3,
+            "leader": "LEADER_VICTORIA_ALT",
+            "production": 197.785,
+            "cities": 8,
+            "production_per_city": 24.723125
+          }
+        ],
+        "ratio_to_best_observed_rival": 0.24791168513831924,
+        "science": 69.2344,
+        "culture": 41.8906,
+        "gold_per_turn": 4.60547,
+        "builders": 0,
+        "builder_charges": 0,
+        "worked_noncenter_tiles": 60,
+        "worked_tiles_with_plot_records": 60,
+        "worked_unimproved_tiles": 44,
+        "worked_unimproved_productive_tiles": 39,
+        "observed_production_rate_sum": 8047.691019999995,
+        "first_observed_turn": 1,
+        "observed_turn_count": 150,
+        "missing_turn_count": 0
+      }
+    ],
+    "missing_checkpoints": []
+  },
+  {
+    "run": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261004T025448Z",
+    "checkpoints": [
+      {
+        "turn": 50,
+        "cities": 6,
+        "production": 41,
+        "production_per_city": 6.833333333333333,
+        "rivals": [
+          {
+            "player": 1,
+            "leader": "LEADER_PHILIP_II",
+            "production": 43.3945,
+            "cities": 3,
+            "production_per_city": 14.464833333333333
+          },
+          {
+            "player": 2,
+            "leader": "LEADER_AMANITORE",
+            "production": 27.2969,
+            "cities": 2,
+            "production_per_city": 13.64845
+          }
+        ],
+        "ratio_to_best_observed_rival": 0.9448201961078017,
+        "science": 14.5,
+        "culture": 14.6875,
+        "gold_per_turn": 1,
+        "builders": 1,
+        "builder_charges": 3,
+        "worked_noncenter_tiles": 19,
+        "worked_tiles_with_plot_records": 19,
+        "worked_unimproved_tiles": 11,
+        "worked_unimproved_productive_tiles": 11,
+        "observed_production_rate_sum": 994.5116199999999,
+        "first_observed_turn": 1,
+        "observed_turn_count": 50,
+        "missing_turn_count": 0
+      },
+      {
+        "turn": 75,
+        "cities": 8,
+        "production": 64,
+        "production_per_city": 8.0,
+        "rivals": [
+          {
+            "player": 1,
+            "leader": "LEADER_PHILIP_II",
+            "production": 79.793,
+            "cities": 5,
+            "production_per_city": 15.9586
+          },
+          {
+            "player": 2,
+            "leader": "LEADER_AMANITORE",
+            "production": 52.3945,
+            "cities": 3,
+            "production_per_city": 17.464833333333335
+          },
+          {
+            "player": 3,
+            "leader": "LEADER_DIDO",
+            "production": 25.9961,
+            "cities": 2,
+            "production_per_city": 12.99805
+          }
+        ],
+        "ratio_to_best_observed_rival": 0.8020753700199265,
+        "science": 37,
+        "culture": 22.5898,
+        "gold_per_turn": 14,
+        "builders": 1,
+        "builder_charges": 2,
+        "worked_noncenter_tiles": 32,
+        "worked_tiles_with_plot_records": 32,
+        "worked_unimproved_tiles": 21,
+        "worked_unimproved_productive_tiles": 18,
+        "observed_production_rate_sum": 2248.4293999999995,
+        "first_observed_turn": 1,
+        "observed_turn_count": 75,
+        "missing_turn_count": 0
+      },
+      {
+        "turn": 100,
+        "cities": 8,
+        "production": 67.70706,
+        "production_per_city": 8.4633825,
+        "rivals": [
+          {
+            "player": 1,
+            "leader": "LEADER_PHILIP_II",
+            "production": 103.594,
+            "cities": 6,
+            "production_per_city": 17.265666666666664
+          },
+          {
+            "player": 2,
+            "leader": "LEADER_AMANITORE",
+            "production": 72.3945,
+            "cities": 4,
+            "production_per_city": 18.098625
+          },
+          {
+            "player": 3,
+            "leader": "LEADER_DIDO",
+            "production": 35.5977,
+            "cities": 3,
+            "production_per_city": 11.865900000000002
+          }
+        ],
+        "ratio_to_best_observed_rival": 0.6535809023688631,
+        "science": 58.5547,
+        "culture": 28.6758,
+        "gold_per_turn": -4.69531,
+        "builders": 1,
+        "builder_charges": 5,
+        "worked_noncenter_tiles": 42,
+        "worked_tiles_with_plot_records": 42,
+        "worked_unimproved_tiles": 28,
+        "worked_unimproved_productive_tiles": 24,
+        "observed_production_rate_sum": 3888.7691600000007,
+        "first_observed_turn": 1,
+        "observed_turn_count": 100,
+        "missing_turn_count": 0
+      },
+      {
+        "turn": 150,
+        "cities": 9,
+        "production": 126.90627999999998,
+        "production_per_city": 14.100697777777775,
+        "rivals": [
+          {
+            "player": 1,
+            "leader": "LEADER_PHILIP_II",
+            "production": 153.484,
+            "cities": 9,
+            "production_per_city": 17.05377777777778
+          },
+          {
+            "player": 2,
+            "leader": "LEADER_AMANITORE",
+            "production": 161.398,
+            "cities": 6,
+            "production_per_city": 26.899666666666665
+          },
+          {
+            "player": 3,
+            "leader": "LEADER_DIDO",
+            "production": 76.1914,
+            "cities": 7,
+            "production_per_city": 10.884485714285715
+          }
+        ],
+        "ratio_to_best_observed_rival": 0.7862940061215132,
+        "science": 129.504,
+        "culture": 81.957,
+        "gold_per_turn": 66.707,
+        "builders": 4,
+        "builder_charges": 16,
+        "worked_noncenter_tiles": 78,
+        "worked_tiles_with_plot_records": 78,
+        "worked_unimproved_tiles": 25,
+        "worked_unimproved_productive_tiles": 23,
+        "observed_production_rate_sum": 9384.776619999997,
+        "first_observed_turn": 1,
+        "observed_turn_count": 150,
+        "missing_turn_count": 0
+      }
+    ],
+    "missing_checkpoints": []
+  },
+  {
+    "run": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261003T164758Z",
+    "checkpoints": [
+      {
+        "turn": 50,
+        "cities": 3,
+        "production": 19.20312,
+        "production_per_city": 6.401039999999999,
+        "rivals": [
+          {
+            "player": 2,
+            "leader": "LEADER_MONTEZUMA",
+            "production": 56.7891,
+            "cities": 5,
+            "production_per_city": 11.35782
+          }
+        ],
+        "ratio_to_best_observed_rival": 0.33814798966703113,
+        "science": 8.25,
+        "culture": 6.94922,
+        "gold_per_turn": 11.5,
+        "builders": 1,
+        "builder_charges": 1,
+        "worked_noncenter_tiles": 11,
+        "worked_tiles_with_plot_records": 11,
+        "worked_unimproved_tiles": 7,
+        "worked_unimproved_productive_tiles": 6,
+        "observed_production_rate_sum": 392.331984,
+        "first_observed_turn": 1,
+        "observed_turn_count": 50,
+        "missing_turn_count": 0
+      },
+      {
+        "turn": 75,
+        "cities": 5,
+        "production": 42,
+        "production_per_city": 8.4,
+        "rivals": [
+          {
+            "player": 1,
+            "leader": "LEADER_RAMSES",
+            "production": 37.7969,
+            "cities": 3,
+            "production_per_city": 12.598966666666668
+          },
+          {
+            "player": 2,
+            "leader": "LEADER_MONTEZUMA",
+            "production": 90.75,
+            "cities": 6,
+            "production_per_city": 15.125
+          }
+        ],
+        "ratio_to_best_observed_rival": 0.4628099173553719,
+        "science": 14,
+        "culture": 15.9922,
+        "gold_per_turn": 18,
+        "builders": 0,
+        "builder_charges": 0,
+        "worked_noncenter_tiles": 20,
+        "worked_tiles_with_plot_records": 20,
+        "worked_unimproved_tiles": 9,
+        "worked_unimproved_productive_tiles": 9,
+        "observed_production_rate_sum": 1154.2149439999998,
+        "first_observed_turn": 1,
+        "observed_turn_count": 75,
+        "missing_turn_count": 0
+      },
+      {
+        "turn": 100,
+        "cities": 9,
+        "production": 65,
+        "production_per_city": 7.222222222222222,
+        "rivals": [
+          {
+            "player": 1,
+            "leader": "LEADER_RAMSES",
+            "production": 63.4961,
+            "cities": 4,
+            "production_per_city": 15.874025
+          },
+          {
+            "player": 2,
+            "leader": "LEADER_MONTEZUMA",
+            "production": 142.789,
+            "cities": 7,
+            "production_per_city": 20.39842857142857
+          }
+        ],
+        "ratio_to_best_observed_rival": 0.4552171385751004,
+        "science": 34.5,
+        "culture": 31.0859,
+        "gold_per_turn": 28,
+        "builders": 1,
+        "builder_charges": 5,
+        "worked_noncenter_tiles": 37,
+        "worked_tiles_with_plot_records": 37,
+        "worked_unimproved_tiles": 22,
+        "worked_unimproved_productive_tiles": 19,
+        "observed_production_rate_sum": 2414.320404,
+        "first_observed_turn": 1,
+        "observed_turn_count": 100,
+        "missing_turn_count": 0
+      },
+      {
+        "turn": 150,
+        "cities": 10,
+        "production": 170,
+        "production_per_city": 17.0,
+        "rivals": [
+          {
+            "player": 1,
+            "leader": "LEADER_RAMSES",
+            "production": 55.293,
+            "cities": 5,
+            "production_per_city": 11.0586
+          },
+          {
+            "player": 2,
+            "leader": "LEADER_MONTEZUMA",
+            "production": 303.586,
+            "cities": 10,
+            "production_per_city": 30.358600000000003
+          },
+          {
+            "player": 3,
+            "leader": "LEADER_THEODORA",
+            "production": 198.289,
+            "cities": 8,
+            "production_per_city": 24.786125
+          }
+        ],
+        "ratio_to_best_observed_rival": 0.5599731212901781,
+        "science": 95,
+        "culture": 47.1875,
+        "gold_per_turn": 12,
+        "builders": 1,
+        "builder_charges": 1,
+        "worked_noncenter_tiles": 64,
+        "worked_tiles_with_plot_records": 64,
+        "worked_unimproved_tiles": 15,
+        "worked_unimproved_productive_tiles": 12,
+        "observed_production_rate_sum": 7722.362584000001,
+        "first_observed_turn": 1,
+        "observed_turn_count": 150,
+        "missing_turn_count": 0
+      }
+    ],
+    "missing_checkpoints": []
+  }
+]
