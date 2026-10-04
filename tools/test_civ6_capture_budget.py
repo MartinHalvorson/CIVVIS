@@ -162,8 +162,10 @@ class OnlyThePixelPathIsRationed(unittest.TestCase):
         """Time capture as part of the rescue, not just the click."""
         source = self._source()
         # Scope to the handler: `screenshot(` is called from the setup code too.
-        block = source[source.index('elif kind in ("autoclose_desktop", "autoclose_stuck"):'):
-                       source.index('elif kind == "retired":')]
+        # The rescue body runs on `DesktopRescueQueue`'s worker, not in the
+        # relay's `record` branch, which now only queues it.
+        start = source.index("def desktop_rescue(")
+        block = source[start:source.index("def record(", start)]
         self.assertIn("attempt_started = time.monotonic()", block)
         self.assertLess(block.index("attempt_started = time.monotonic()"),
                         block.index("screenshot(shot)"))
@@ -193,7 +195,7 @@ class OnlyThePixelPathIsRationed(unittest.TestCase):
         """A capture the host cannot take is 11 s either way; do not spend it
         just because the screen has a capture-free dismissal."""
         source = self._source()
-        self.assertIn("if allowed and not needs_pixels:\n                screenshot(shot)", source)
+        self.assertIn("if allowed and not needs_pixels:\n            screenshot(shot)", source)
         self.assertIn("dismiss_visually_confirmed_popup(diagnostic_path=shot)", source)
         self.assertIn("not photographed ({budget_note})", source)
 
