@@ -47,3 +47,11 @@ policy forecast traces and complete outcomes remain under
 `civvis-production-evidence/2026-10-04/citizen-growth`. No fresh pilot or
 confirmation was played. Every assigned map, early ending and exit is reported.
 No production gain or high-level Firaxis parity is established.
+
+
+Final verification: both standalone probes compiled against the normal
+optimized immutable library; all 32 actual game executions exited zero.
+Incremental Rust quality passed for both probes. `git diff --check` passed.
+The final native source, Cargo files and data equal merged main. No new full
+Cargo run is needed for this documentation-only patch; the same native baseline
+passed the full 4,591-test suite in #3943. No runtime setting is promoted.
