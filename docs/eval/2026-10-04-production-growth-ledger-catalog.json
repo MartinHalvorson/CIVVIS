@@ -1,0 +1,29 @@
+{
+  "scope": "Original consumed-seed city ledgers plus deployment-setup audit; zero fresh strength samples and no runtime change. Validation has its own receipt.",
+  "payload_files": 23,
+  "sha256": {
+    "2026-10-04-production-growth-ledger-deity.csv": "dd00777223ee52a24e0fd4b1a665d56e2b2cffb142f804cdba075fa62c8683d4",
+    "2026-10-04-production-growth-ledger-deity.txt": "82f9a9e4215656a074828e50ede57d3df840baae961365b83319357b12e98a5a",
+    "2026-10-04-production-growth-ledger-emperor.csv": "999424298975c84803f50c9132b1cc2ac6e2302977d98c756ab71b561855957d",
+    "2026-10-04-production-growth-ledger-emperor.txt": "1371c2da4edcdf84fd1c2774f6b11f935e6d696049804aba41768e6f756e4a9c",
+    "2026-10-04-production-growth-ledger-equivalence.json": "58b86552a8dcab756155e12f4410280a434f3687eb531c4803818ef2f856f03e",
+    "2026-10-04-production-growth-ledger-manifest.json": "b0c4d3b94750e071eccb479dfd98cb93887cd38b457dbcf857f84190baf1c772",
+    "2026-10-04-production-growth-ledger-probe-v2.rs": "694b655b654aeb06985a666ad913fe8f536faf5f1e5c2c35a26ac76d98d63463",
+    "2026-10-04-production-growth-ledger-probe.rs": "f3a0c22197ae0da1253e6d1cb7895533666026aeda87dce963c0b5946565c588",
+    "2026-10-04-production-growth-ledger-report.md": "4aaa39d625c43ca49d15ca090adbadfe47e19e670d0cac1dc806ca2fa4883bd4",
+    "2026-10-04-production-growth-ledger-summarize.py": "854c7373efb0656dda6c9e009dcd42690c8263c37ad46f5c6d4fda4d7f2ccb83",
+    "2026-10-04-production-growth-ledger-v2-live-deity.csv": "0ecec77614fb1d7dd9c41860bc123a624e39bed52358700e74193a88c60798c9",
+    "2026-10-04-production-growth-ledger-v2-live-deity.txt": "ae8df3badfd016a0b039fd9b72550f168aaa37385684564d6db28a648edf2151",
+    "2026-10-04-production-growth-ledger-v2-live-emperor.csv": "2267d80bc20b2d767c99da6adaabd5689ea78263020f340162cb9b1dcb66e345",
+    "2026-10-04-production-growth-ledger-v2-live-emperor.txt": "82286435992360fa7aca5c664ecb2d527e8330628090dd8ea4594efd1e7cd6af",
+    "2026-10-04-production-growth-ledger-v2-manifest.json": "fe7d421f47a1da9e16e049a5438c85222aa38f0e966bc9d4089926eaa96ef187",
+    "2026-10-04-production-growth-ledger-v2-native-deity.csv": "82cd7d7fa0076457951eb8ade0fb7abbe65811c65f0c9ea933b5dae9315c963b",
+    "2026-10-04-production-growth-ledger-v2-native-deity.txt": "beac63e3dda7a2e4fa3b1e9ac4ffb616a6e55829a41d2362a5e5e8376fc5eb40",
+    "2026-10-04-production-growth-ledger-v2-native-emperor.csv": "d5a3fe3862a0dc399829191197418d810cb403662311417e76a7f3a9fc6a238f",
+    "2026-10-04-production-growth-ledger-v2-native-emperor.txt": "5b21825e93fdcb84b80ec1e8c26936e3d798b195b644534c9e995ec6e7b66371",
+    "2026-10-04-production-growth-ledger-v2-stock-deity.csv": "4f1a8ad32634ed3102c465d596ae4c1ee9556144e40d4c6f6bfe28342d47f5c3",
+    "2026-10-04-production-growth-ledger-v2-stock-deity.txt": "1983274890dbd590bfb9282a57c505db687dc80252f8ceff13438c18097fdb0f",
+    "2026-10-04-production-growth-ledger-v2-stock-equivalence.json": "9e0169eaedad77cdae63189b9bcee2d17c94a1124171736fe270b579c2f569ea",
+    "2026-10-04-production-growth-ledger-v2-summary.json": "0806f42153cb85d8de2494bb6009ef2ebb81d4610dd83880384b84289b18b88e"
+  }
+}
