@@ -520,7 +520,7 @@ pub fn snapshot_from_events_at(
     path: &std::path::Path,
     turn: Option<u32>,
 ) -> std::io::Result<Snapshot> {
-    let raw = std::fs::read_to_string(path)?;
+    let raw = read_events(path)?;
     let state_line = latest_state_line(&raw, turn);
     // ★★★★ THE MOD WRITES THE TURN'S STATE FIRST AND ITS TILES SECOND.
     //
@@ -644,6 +644,119 @@ fn turn_may_match(line: &str, want: u32) -> bool {
     !saw_integer
 }
 
+// ★★★★ ONE READ PER CHANGE OF THE LOG, AND NO LINE-BY-LINE WALK FOR A RARE EVENT.
+//
+// A live decider frame ran a dozen refusal readers, and each re-read the whole
+// `events.jsonl` (100 MB by turn 200) and split it into lines to test each one
+// for its event name. After the prefilters above that was still ~35% of a
+// t220 frame: 80% of it the line walk, 20% the read. `read_events` keeps the
+// log per thread and, while the file only grows, reads just the appended
+// bytes; `lines_containing` hands each reader only the lines that mention its
+// event, found by testing 64 KB blocks at once. Both answer exactly what the
+// direct read and `raw.lines().filter(|l| l.contains(needle))` answered.
+thread_local! {
+    static EVENTS_READ: std::cell::RefCell<Option<EventsRead>> = const { std::cell::RefCell::new(None) };
+}
+
+struct EventsRead {
+    path: std::path::PathBuf,
+    text: std::rc::Rc<String>,
+}
+
+/// The run log at `path`, read whole — from a per-thread copy when the file has
+/// only grown since (its old tail is re-read and must match byte for byte), so
+/// a persistent reader pays for the appended bytes alone. A shrunk, replaced or
+/// unreadable file is read afresh. Bytes after the last newline are a line still
+/// being written; they are left for the next read on the incremental path.
+pub(crate) fn read_events(path: &std::path::Path) -> std::io::Result<std::rc::Rc<String>> {
+    use std::io::{Read, Seek, SeekFrom};
+    const TAIL: u64 = 4096;
+    let len = std::fs::metadata(path)?.len();
+    let cached = EVENTS_READ.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .filter(|read| read.path == path)
+            .map(|read| read.text.clone())
+    });
+    if let Some(text) = cached {
+        let have = text.len() as u64;
+        if len == have {
+            // Same size: unchanged only if the tail still matches.
+            let mut file = std::fs::File::open(path)?;
+            let from = have.saturating_sub(TAIL);
+            file.seek(SeekFrom::Start(from))?;
+            let mut tail = Vec::with_capacity((have - from) as usize);
+            file.by_ref().take(have - from).read_to_end(&mut tail)?;
+            if tail == text.as_bytes()[from as usize..] {
+                return Ok(text);
+            }
+        } else if len > have && text.ends_with('\n') {
+            let mut file = std::fs::File::open(path)?;
+            let from = have.saturating_sub(TAIL);
+            file.seek(SeekFrom::Start(from))?;
+            let mut bytes = Vec::with_capacity((len - from) as usize);
+            file.by_ref().take(len - from).read_to_end(&mut bytes)?;
+            let split = (have - from) as usize;
+            if bytes.len() >= split && bytes[..split] == text.as_bytes()[from as usize..] {
+                let added = &bytes[split..];
+                let keep = added.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
+                if let Ok(more) = std::str::from_utf8(&added[..keep]) {
+                    let mut grown = String::with_capacity(text.len() + more.len());
+                    grown.push_str(&text);
+                    grown.push_str(more);
+                    let grown = std::rc::Rc::new(grown);
+                    EVENTS_READ.with(|cell| {
+                        *cell.borrow_mut() = Some(EventsRead {
+                            path: path.to_path_buf(),
+                            text: grown.clone(),
+                        })
+                    });
+                    return Ok(grown);
+                }
+            }
+        }
+    }
+    let text = std::rc::Rc::new(std::fs::read_to_string(path)?);
+    EVENTS_READ.with(|cell| {
+        *cell.borrow_mut() = Some(EventsRead {
+            path: path.to_path_buf(),
+            text: text.clone(),
+        })
+    });
+    Ok(text)
+}
+
+/// `raw.lines().filter(|line| line.contains(needle))`, in order, each line
+/// once, found by searching the whole buffer with `memchr::memmem` and cutting
+/// the enclosing line around each hit, so a needle that occurs a few hundred
+/// times in 100 MB never splits the rest into lines. `str::lines` strips a `\r`
+/// only before a `\n`; so does this.
+pub(crate) fn lines_containing<'a>(raw: &'a str, needle: &'a str) -> impl Iterator<Item = &'a str> + 'a {
+    let bytes = raw.as_bytes();
+    let finder = memchr::memmem::Finder::new(needle.as_bytes());
+    let mut from = 0;
+    std::iter::from_fn(move || loop {
+        if from > bytes.len() {
+            return None;
+        }
+        let hit = from + finder.find(&bytes[from..])?;
+        let start = memchr::memrchr(b'\n', &bytes[..hit]).map_or(0, |i| i + 1);
+        let newline = memchr::memchr(b'\n', &bytes[hit..]).map(|i| hit + i);
+        let end = newline.unwrap_or(bytes.len());
+        from = end + 1;
+        let mut line = &raw[start..end];
+        if newline.is_some() {
+            if let Some(stripped) = line.strip_suffix('\r') {
+                line = stripped;
+                if !line.contains(needle) {
+                    continue;
+                }
+            }
+        }
+        return Some(line);
+    })
+}
+
 /// Whether `line` could hold `<key>: <literal>` as one JSON member.
 ///
 /// A cheap NECESSARY condition for a serde check that follows it, never a
@@ -726,6 +839,55 @@ mod log_scan_prefilter_tests {
         // Passes the prefilter, then the exact header rejects it.
         assert!(!state_line_can_match_turn(nested, Some(220)));
         assert!(state_line_can_match_turn(other, None));
+    }
+
+    #[test]
+    fn block_search_yields_exactly_the_filtered_lines() {
+        use super::lines_containing;
+        // Several 64 KB blocks, a needle at a block edge, CRLF endings, a long
+        // line spanning blocks, a repeated needle on one line, no final newline.
+        let mut raw = String::new();
+        for i in 0..6000 {
+            match i % 997 {
+                0 => raw.push_str(&format!("{{\"kind\": \"build_no_plot\", \"i\": {i}}}\r\n")),
+                1 => raw.push_str(&format!("{}build_no_plot build_no_plot\n", "x".repeat(70_000))),
+                _ => raw.push_str(&format!("{{\"kind\": \"await\", \"polls\": {i}}}\n")),
+            }
+        }
+        raw.push_str("tail build_no_plot");
+        for needle in ["build_no_plot", "await", "never there", "\"i\": 1994}"] {
+            let want: Vec<&str> = raw.lines().filter(|line| line.contains(needle)).collect();
+            let got: Vec<&str> = lines_containing(&raw, needle).collect();
+            assert_eq!(got, want, "{needle}");
+        }
+        assert_eq!(lines_containing("", "x").count(), 0);
+    }
+
+    #[test]
+    fn the_cached_log_reads_like_a_fresh_one() {
+        use super::read_events;
+        let dir = std::env::temp_dir().join(format!("civvis-read-events-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("events.jsonl");
+        let fresh = |p: &std::path::Path| std::fs::read_to_string(p).unwrap();
+        std::fs::write(&path, "a\n").unwrap();
+        assert_eq!(*read_events(&path).unwrap(), fresh(&path));
+        // Appended whole lines: only the new bytes are read, same answer.
+        std::fs::write(&path, "a\nb\nc\n").unwrap();
+        assert_eq!(*read_events(&path).unwrap(), fresh(&path));
+        // A line still being written stays out until its newline lands.
+        std::fs::write(&path, "a\nb\nc\nd").unwrap();
+        assert_eq!(*read_events(&path).unwrap(), "a\nb\nc\n");
+        std::fs::write(&path, "a\nb\nc\nd\n").unwrap();
+        assert_eq!(*read_events(&path).unwrap(), fresh(&path));
+        // Replaced at the same length, shrunk, or replaced longer: read afresh.
+        std::fs::write(&path, "A\nB\nC\nD\n").unwrap();
+        assert_eq!(*read_events(&path).unwrap(), fresh(&path));
+        std::fs::write(&path, "z\n").unwrap();
+        assert_eq!(*read_events(&path).unwrap(), fresh(&path));
+        std::fs::write(&path, "y\nlonger than before\n").unwrap();
+        assert_eq!(*read_events(&path).unwrap(), fresh(&path));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -6506,7 +6668,7 @@ pub fn state_from_json(line: &str) -> serde_json::Result<StateSnapshot> {
 }
 
 pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<StateSnapshot> {
-    let raw = std::fs::read_to_string(path).ok()?;
+    let raw = read_events(path).ok()?;
     let mut best: Option<StateSnapshot> = None;
     let mut deaths = host_deaths::HostDeaths::default();
     // Identity rides in the `seat` event, which is emitted once at startup rather
@@ -7245,13 +7407,10 @@ fn refusals_of_kind_through(
     turn: Option<u32>,
 ) -> Vec<(crate::Pos, Option<String>)> {
     let mut refused = Vec::new();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return refused;
     };
-    for line in raw.lines() {
-        if !line.contains(kind) {
-            continue;
-        }
+    for line in lines_containing(&raw, kind) {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -7341,13 +7500,10 @@ fn refused_promotions_through(
 ) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
     let mut refused: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> =
         Default::default();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return refused;
     };
-    for line in raw.lines() {
-        if !line.contains("promotion_refused") {
-            continue;
-        }
+    for line in lines_containing(&raw, "promotion_refused") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -7394,7 +7550,7 @@ fn refused_strikes_on(
     turn: u32,
 ) -> std::collections::BTreeSet<(i64, i32, i32)> {
     let mut refused = std::collections::BTreeSet::new();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return refused;
     };
     for line in raw.lines() {
@@ -7448,13 +7604,10 @@ fn host_previews_on(
     turn: u32,
 ) -> std::collections::BTreeMap<(i64, i32, i32, String), crate::game::HostStrikePreview> {
     let mut previews = std::collections::BTreeMap::new();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return previews;
     };
-    for line in raw.lines() {
-        if !line.contains("\"preview\"") {
-            continue;
-        }
+    for line in lines_containing(&raw, "\"preview\"") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -7527,13 +7680,10 @@ fn refused_trade_routes_through(
     turn: Option<u32>,
 ) -> std::collections::BTreeSet<(crate::Pos, crate::Pos)> {
     let mut seen: std::collections::BTreeMap<(crate::Pos, crate::Pos), usize> = Default::default();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return Default::default();
     };
-    for line in raw
-        .lines()
-        .filter(|line| line.contains("trade_route_refused"))
-    {
+    for line in lines_containing(&raw, "trade_route_refused") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -8386,10 +8536,10 @@ fn host_unavailable_wonders_through(
     turn: Option<u32>,
 ) -> std::collections::BTreeSet<String> {
     let mut unavailable = std::collections::BTreeSet::new();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return unavailable;
     };
-    for line in raw.lines().filter(|line| line.contains("build_no_plot")) {
+    for line in lines_containing(&raw, "build_no_plot") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -8449,7 +8599,7 @@ fn host_sites_through(
     field: &str,
     prefix: &str,
 ) -> BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>> {
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return BTreeMap::new();
     };
     let oldest = current_turn.saturating_sub(PRODUCTION_REFUSAL_TTL);
@@ -8457,7 +8607,7 @@ fn host_sites_through(
     // plots it named, if it named any.
     type Newest = BTreeMap<(i64, String), (u64, Option<BTreeSet<crate::Pos>>)>;
     let mut newest: Newest = BTreeMap::new();
-    for line in raw.lines().filter(|line| line.contains("build_no_plot")) {
+    for line in lines_containing(&raw, "build_no_plot") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -8529,13 +8679,10 @@ fn refused_no_plot_through(
 ) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
     let mut refused: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> =
         Default::default();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return refused;
     };
-    for line in raw.lines() {
-        if !line.contains("build_no_plot") {
-            continue;
-        }
+    for line in lines_containing(&raw, "build_no_plot") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -8658,14 +8805,11 @@ fn recent_host_item_refusals(
 ) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
     let mut refused: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> =
         Default::default();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return refused;
     };
     let oldest = current_turn.saturating_sub(PRODUCTION_REFUSAL_TTL);
-    for line in raw.lines() {
-        if !line.contains(event_kind) {
-            continue;
-        }
+    for line in lines_containing(&raw, event_kind) {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -9039,13 +9183,10 @@ fn refused_policies_through(
     turn: Option<u32>,
 ) -> std::collections::BTreeSet<String> {
     let mut refused: std::collections::BTreeSet<String> = Default::default();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return refused;
     };
-    for line in raw.lines() {
-        if !line.contains("obsolete_") {
-            continue;
-        }
+    for line in lines_containing(&raw, "obsolete_") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -9087,13 +9228,10 @@ fn refused_pantheons_through(
     turn: Option<u32>,
 ) -> std::collections::BTreeSet<String> {
     let mut refused: std::collections::BTreeSet<String> = Default::default();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = read_events(path) else {
         return refused;
     };
-    for line in raw.lines() {
-        if !line.contains("taken_BELIEF_") {
-            continue;
-        }
+    for line in lines_containing(&raw, "taken_BELIEF_") {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -9251,7 +9389,7 @@ pub fn state_value_from_events(
     path: &std::path::Path,
     turn: Option<u32>,
 ) -> Option<serde_json::Value> {
-    let raw = std::fs::read_to_string(path).ok()?;
+    let raw = read_events(path).ok()?;
     let mut best: Option<serde_json::Value> = None;
     let mut seat: Option<serde_json::Value> = None;
     for line in raw.lines() {
