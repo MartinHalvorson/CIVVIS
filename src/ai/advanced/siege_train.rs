@@ -955,7 +955,42 @@ fn siege_route_step(g: &Game, pid: usize, uid: u32, goal: Pos, city: Pos) -> Opt
             .map(|other| other.pos),
     );
     avoid.remove(&unit.pos);
+    // A land unit on land keeps to land on its way to a post. Embarking
+    // spends its moves, and the next turn `disembark_step` lands it again
+    // before the train moves it, so a wet first step is a turn lost and the
+    // next one too. Live King civvis-20261004T100903Z (game 52): with our
+    // own soldiers walling the land approach, four Trebuchets before Ray
+    // shuttled between (31,27) and the water at (32,27), five and four tiles
+    // out, every other turn from turn 109 to 145, and none fired; the siege
+    // ran seventy turns and Ray never fell.
+    if keeps_to_land(g, uid) {
+        avoid.extend(
+            g.map
+                .tiles
+                .iter()
+                .filter(|(pos, tile)| **pos != goal && g.rules.is_water(tile))
+                .map(|(pos, _)| *pos),
+        );
+    }
     g.route_step_avoiding_tiles(uid, goal, &avoid)
+}
+
+/// A land unit standing on land: the train's steps never embark it. See
+/// [`siege_route_step`].
+fn keeps_to_land(g: &Game, uid: u32) -> bool {
+    g.units.get(&uid).is_some_and(|unit| {
+        !g.is_embarked(unit)
+            && g.rules.units[unit.kind]
+                .domain
+                .as_deref()
+                .is_none_or(|domain| domain == "land")
+    })
+}
+
+/// Whether `uid` may end a train step on `pos`: anywhere for a unit at sea
+/// or not on land, dry ground for one on land.
+fn dry_stand(g: &Game, uid: u32, pos: Pos) -> bool {
+    !keeps_to_land(g, uid) || g.map.get(pos).is_some_and(|tile| !g.rules.is_water(tile))
 }
 
 /// The train's posts for the turn. Melee already on the ring keep their
@@ -2059,6 +2094,7 @@ impl AdvancedAi {
             .filter(|pos| {
                 *pos != unit.pos
                     && g.city_at(*pos).is_none()
+                    && dry_stand(g, uid, *pos)
                     && g.wdist(*pos, city.pos) <= sight
                     && g.line_of_sight_from(*pos, city.pos)
             })
@@ -2635,8 +2671,9 @@ impl AdvancedAi {
                     .then(|| g.pass_through_destination(uid, goal, 0))
                     .flatten()
                     .filter(|dest| {
-                        g.wdist(*dest, city_pos) > CITY_STRIKE_RANGE
-                            || hp > self.approach_danger(g, pid, *dest, uid) + 20.0
+                        dry_stand(g, uid, *dest)
+                            && (g.wdist(*dest, city_pos) > CITY_STRIKE_RANGE
+                                || hp > self.approach_danger(g, pid, *dest, uid) + 20.0)
                     })
                 {
                     moved = self.base.path_walk_to(g, pid, uid, dest);
