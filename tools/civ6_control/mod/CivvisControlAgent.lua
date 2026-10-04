@@ -16037,6 +16037,43 @@ CivvisQueue.drain = function(player, pid, turn)
 				local moved_from_origin = #entry.rows == 0
 					and entry.origin ~= nil
 					and (ux ~= entry.origin.x or uy ~= entry.origin.y);
+				-- ★★★★ A WALK THE HOST CANNOT PATH IS A NO-OP NOW, NOT AFTER THE
+				-- GRACE. An opening MOVE_TO the host accepted with no path leaves
+				-- the unit on its origin, movement intact, with no completion event,
+				-- so the watch held the frame for the whole grace before `moveNoop`
+				-- named it `cannot_start` with `native.path_count` 0. Measured on
+				-- civvis-20261004T083931Z: 2,307 move_noop events, 564 of them caught
+				-- only at the 30-tick grace and 632 more at 11-29 ticks; queues that
+				-- ran the full grace were 12% of the game's wall clock. Ask the host's
+				-- own path (WorldInput.lua:961 `UnitManager.GetMoveToPathEx`, the same
+				-- read `noopEvidence` reports) once, eight ticks in (walks that do
+				-- start have left their origin by then; most queues settle within
+				-- five): one plot or none means the leg will not happen, and the
+				-- existing no-op answer (named `move_noop`, fallback step, re-armed
+				-- watch) runs at once. `capToTurn` already refuses a leg with no path
+				-- at issue; these had one then and lost it. A path the host cannot
+				-- be asked for (nil) decides nothing.
+				local unpathed = false;
+				if #entry.rows == 0 and entry.origin ~= nil and entry.expect ~= nil
+						and tostring(entry.opening_verb or "") == "MOVE_TO"
+						and not entry.path_probed and not entry.ready
+						and ux == entry.origin.x and uy == entry.origin.y
+						and entry.wait >= (tonumber(cfg.OrderQueueNoopProbeTicks) or 8)
+						and entry.wait < grace then
+					entry.path_probed = true;
+					local spentNow = moves ~= nil and moves <= 0;
+					local destination = try(function()
+						return Map.GetPlotIndex(entry.expect.x, entry.expect.y);
+					end, nil);
+					local path = destination ~= nil and try(function()
+						return UnitManager.GetMoveToPathEx(unit, destination);
+					end, nil) or nil;
+					if not spentNow and type(path) == "table" and type(path.plots) == "table" then
+						local n = 0;
+						for _ in pairs(path.plots) do n = n + 1; end
+						unpathed = n <= 1;
+					end
+				end
 				-- Arrival is not the same as settlement on the live host. Civ VI can
 				-- place a unit on the requested plot while its MOVE_TO operation is
 				-- still active; a follow-up RequestOperation then returns successfully
@@ -16084,8 +16121,23 @@ CivvisQueue.drain = function(player, pid, turn)
 						});
 					end
 				end
+				-- ★★★★ AN OPERATION THAT CANNOT LAND THIS TURN DOES NOT HOLD IT.
+				-- The active-operation guard protects a follow-up while its unit
+				-- can still arrive. Past the grace period a unit that has not
+				-- reached its expectation is refused below by name either way
+				-- (`queue_prior_not_arrived`), so waiting on its operation only
+				-- ran the turn into `OrderQueueMaxTicks` — a multi-turn walk, or a
+				-- leftover path from an earlier frame, never deactivates before
+				-- the turn ends. Measured on civvis-20261004T083931Z t84: a Scout
+				-- whose frame-2 MOVE_TO could not start kept its frame-0 path
+				-- active, and its queued PILLAGE held the turn 37 s. Over 2026-10-03
+				-- and 04, such stalls were 18 of 489 queues in one game and
+				-- 5-24% of every game's wall clock. An arrived unit is unchanged:
+				-- the landed-path cancel above still owns that case.
+				local stuck_operation = active_operation and entry.expect ~= nil
+					and not arrived and entry.wait >= grace;
 				local ready = (entry.ready or arrived or spent or moved_from_origin
-					or entry.wait >= grace) and not active_operation;
+					or unpathed or entry.wait >= grace) and (not active_operation or stuck_operation);
 				-- A path can report its destination before Civ VI has finished
 				-- deactivating the asynchronous MOVE_TO. On the live host the
 				-- activity read can briefly say "awake" in that window, so an
@@ -16558,6 +16610,7 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 	entry.origin = { x = ux, y = uy };
 	entry.ready = false;
 	entry.wait = 0;
+	entry.path_probed = nil;
 	return true;
 end;
 
