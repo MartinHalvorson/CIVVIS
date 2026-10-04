@@ -198,7 +198,12 @@ fn a_confirmed_capture_or_peace_keeps_the_hold() {
         if own_city {
             g.cities.get_mut(&cid).unwrap().owner = 0;
         } else {
+            // Battlefields are permanently hostile regardless of `at_war`.
+            g.map_script = crate::setup::MapScript::Pangaea;
             g.at_war.clear();
+            assert!(!g.is_at_war(0, 1));
+            let city = CityView::of(&g, cid).unwrap();
+            assert!(unit_power(&g, warrior) >= ABORT_SHARE * siege_bill(&g, 0, &city));
         }
         let plan = plan_against(&g, cid);
         let force = group(&g, warrior, cid);
@@ -215,6 +220,8 @@ fn a_confirmed_capture_or_peace_keeps_the_hold() {
 fn reopening_a_hold_does_not_bypass_the_force_abort_gate() {
     let (mut g, mut ai, cid, warrior) = remembered_hold();
     g.map_script = crate::setup::MapScript::Pangaea;
+    g.at_war.insert((0, 1));
+    assert!(g.is_at_war(0, 1));
     let city = g.cities.get_mut(&cid).unwrap();
     city.hp = 200;
     city.wall_hp = 400;
