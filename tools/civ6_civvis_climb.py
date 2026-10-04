@@ -219,9 +219,19 @@ def dismiss_crash_dialogs() -> None:
     Best effort by design: it must never raise, and it must never click anything
     that is not a dialog button it can name.
     """
+    # Only the owners that run: asking System Events for an absent process
+    # costs ~2-3.6 s each (`computer_control.running_process_names`), which
+    # was ~12-25 s of this sweep in every teardown with only Steam up.
+    owners = ("Steam", "Civilization VI", "Civ6", "ReportCrash", "Problem Reporter")
+    try:
+        running = desktop_control.running_process_names()
+    except Exception:  # noqa: BLE001 — best effort, see above
+        running = None
+    if running is not None:
+        owners = tuple(owner for owner in owners if owner in running)
     script = """
     tell application "System Events"
-        repeat with procName in {"Steam", "Civilization VI", "Civ6", "ReportCrash", "Problem Reporter"}
+        repeat with procName in {%s}
             try
                 if exists (process procName) then
                     tell process procName
@@ -239,8 +249,9 @@ def dismiss_crash_dialogs() -> None:
             end try
         end repeat
     end tell
-    """
-    run(["osascript", "-e", script], timeout=25.0)
+    """ % ", ".join(f'"{owner}"' for owner in owners)
+    if owners:
+        run(["osascript", "-e", script], timeout=25.0)
     # Newer macOS crash alerts belong to UserNotificationCenter. Its other
     # windows may be permission prompts, so use the text-gated crash-only path.
     try:

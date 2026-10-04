@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections import Counter
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -39,6 +40,20 @@ class LogTail:
         self.path = path or (env.logs_dir() / "Automation.log")
         self.offset = 0
         self.partial = ""
+        # The unterminated tail already relayed whole, so the newline that
+        # completes it later does not relay it twice. See `poll`.
+        self.delivered: str | None = None
+
+    @staticmethod
+    def _decode(line: str) -> dict | None:
+        index = line.find(PREFIX)
+        if index < 0:
+            return None
+        try:
+            event = json.loads(line[index + len(PREFIX):])
+        except json.JSONDecodeError:
+            return None
+        return event if isinstance(event, dict) else None
 
     def poll(self) -> list[dict]:
         if not self.path.is_file():
@@ -50,6 +65,7 @@ class LogTail:
             # offset, which would skip the whole of the new run.
             self.offset = 0
             self.partial = ""
+            self.delivered = None
         if size == self.offset:
             return []
         with self.path.open("r", errors="replace") as handle:
@@ -61,13 +77,33 @@ class LogTail:
         self.partial = lines.pop()  # keep any half-written trailing line
         events = []
         for line in lines:
-            index = line.find(PREFIX)
-            if index < 0:
-                continue
-            try:
-                events.append(json.loads(line[index + len(PREFIX):]))
-            except json.JSONDecodeError:
-                continue
+            if self.delivered is not None:
+                held, self.delivered = self.delivered, None
+                if line == held:
+                    continue  # relayed whole while it waited for this newline
+            event = self._decode(line)
+            if event is not None:
+                events.append(event)
+        # ★ A COMPLETE RECORD LEFT WITHOUT ITS NEWLINE IS RELAYED NOW.
+        # Some records sit in the file unterminated until something else is
+        # logged (the AutoClose context's lines, up to 1.4 s measured
+        # 2026-10-04). A JSON object cannot parse until its final brace is
+        # written, so a prefixed tail that parses whole IS the complete record:
+        # relay it now and drop it when its newline arrives. A half-written tail
+        # still fails to parse and waits, exactly as before.
+        #
+        # ⚠ This does NOT release the agent's last record. The game holds that
+        # record in memory and writes it -- newline and all -- only when the
+        # next record is logged (in-file, G72: `export_timing` lands with the
+        # record after it 73% of the time), so it never reaches this file as a
+        # partial. What releases a board is the agent logging a record right
+        # behind it: see `CivvisExportClock.report` in CivvisControlAgent.lua.
+        if self.partial and self.partial != self.delivered \
+                and self.partial.rstrip().endswith("}"):
+            event = self._decode(self.partial)
+            if event is not None:
+                events.append(event)
+                self.delivered = self.partial
         return events
 
 
@@ -158,6 +194,52 @@ def turns_left_seconds(first_turn: int | None, first_turn_at: float,
     return remaining * (elapsed / turns_done)
 
 
+class GameLiveness:
+    """Whether the game still runs, without a `ps` on every relay pass.
+
+    ★ THE RELAY READ NOTHING WHILE `ps` RAN. `follow` asked `env.game_pids()`
+    on every 0.25 s pass, and the tail is read only between passes. `ps`
+    lists every process on the host; at load ~100 it occasionally took
+    seconds (`[env] ps did not answer in 10s` once in each of G70 and G71),
+    and a `sample` of the relay found its main thread blocked in child-process
+    waits 40% of a 15 s window. Boards the brain was waiting for sat in the
+    log meanwhile: ~2% of `state` lines reached the relay over 1 s late,
+    30-40 s a game.
+
+    The pids the last listing returned are checked with `os.kill(pid, 0)`, a
+    syscall, and `ps` runs only when there is no listing, when every listed
+    pid has gone (the exit is confirmed by a real listing, exactly as
+    before), or every `relist_s` to pick up a new process.
+    """
+
+    def __init__(self, relist_s: float = 10.0, clock=time.monotonic):
+        self.relist_s = relist_s
+        self.clock = clock
+        self.known: list[int] = []
+        self.listed_at: float | None = None
+
+    @staticmethod
+    def _running(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except OSError:
+            return False
+        return True
+
+    def alive(self) -> bool:
+        now = self.clock()
+        fresh = self.listed_at is not None and now - self.listed_at < self.relist_s
+        if fresh and any(self._running(pid) for pid in self.known):
+            return True
+        self.known = list(env.game_pids())
+        self.listed_at = now
+        return bool(self.known)
+
+
 def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
            stop_when=None, each_poll=None, stall_s: float | None = 600.0,
            frozen_s: float | None = None, pause_when=None,
@@ -226,6 +308,7 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
     now = time.monotonic()
     deadline = now + timeout_s
     ceiling = now + (ceiling_s if ceiling_s is not None else timeout_s)
+    liveness = GameLiveness()
     last_event = now
     # Silence is not the only way a run dies. A wedged popup can keep emitting
     # state from one turn forever, so track actual turn progress separately.
@@ -294,7 +377,7 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
             deadline = ceiling if needed <= 0 else min(now + needed, ceiling)
         if consume():
             return "stopped"
-        if not env.game_pids():
+        if not liveness.alive():
             for event in tail.poll():
                 on_event(event)
             return "game exited"
