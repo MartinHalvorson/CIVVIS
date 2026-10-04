@@ -56,7 +56,7 @@ fn the_reserved_builder_survives_review_and_another_uninvested_frame() {
 
     let mut control = g.clone();
     let mut ordinary = ai.clone();
-    ordinary.higher_level_builder_reservation.replace(None);
+    ordinary.builder_workforce_reservation.replace(None);
     ordinary.advanced_production(&mut control, 0, &plan, false);
     assert_ne!(control.cities[&cid].queue.first(), Some(&builder));
 

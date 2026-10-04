@@ -1,0 +1,35 @@
+{
+  "recorded_at": "2026-10-04T21:47:48.292555+00:00",
+  "compile_check": {
+    "source": "3a30ec6e9",
+    "command": "CARGO_TARGET_DIR=/tmp/civvis-production-builder-opening-check-target CARGO_BUILD_JOBS=4 cargo check --tests --locked",
+    "exit_code": 0,
+    "scope": "Initial candidate before prerequisite/main merges; inherited warning in untouched civilian_safety.rs"
+  },
+  "initial_full_attempts": [
+    {
+      "session": 87181,
+      "exit_code": 130,
+      "reason": "Stopped own build before changing source to merge the three newly integrated host-orders files; no tests executed"
+    },
+    {
+      "session": 85656,
+      "exit_code": 130,
+      "reason": "Stopped own build after policy CI identified the new receipt name as filed under the wrong alphabetical append range; no tests executed"
+    }
+  ],
+  "policy_failure": {
+    "run": 37237137141,
+    "source": "a0810dedc",
+    "failure": "Two append-range assertions for higher_level_builder_reservation under a-b. Renamed the receipt to builder_workforce_reservation; admission and execution logic unchanged.",
+    "local_regression_command": "python3 -m unittest discover -s tools -p 'test_treatment_append_points.py'",
+    "local_regression_result": {
+      "passed": 14,
+      "failed": 0,
+      "exit_code": 0
+    }
+  },
+  "current_full_suite": "running at corrected source; no pass claim",
+  "fresh_strength_samples_played": 0,
+  "actual_Firaxis_verification": false
+}

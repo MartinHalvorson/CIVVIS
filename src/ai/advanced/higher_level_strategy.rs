@@ -826,7 +826,7 @@ impl AdvancedAi {
         .is_ok()
         {
             if debt == Debt::Builder {
-                self.higher_level_builder_reservation
+                self.builder_workforce_reservation
                     .replace(Some((g.turn, city)));
             }
             if self.journal().wants(Level::Decision) {
@@ -846,7 +846,7 @@ impl AdvancedAi {
         (self.builder_workforce_recovery
             || self.builder_workforce_recovery_2
             || self.builder_workforce_recovery_3)
-            && *self.higher_level_builder_reservation.borrow() == Some((g.turn, cid))
+            && *self.builder_workforce_reservation.borrow() == Some((g.turn, cid))
             && g.cities[&cid].queue.first().is_some_and(|item| {
                 matches!(item, Item::Unit { unit } if unit == "builder")
                     && Self::production_commitment_is_legal(g, pid, cid, item)

@@ -5003,7 +5003,7 @@ pub struct AdvancedAi {
     builder_workforce_recovery_3: bool,
     /// Accepted replacement Builder reservation, retained through replanning
     /// in its starting turn before any production has been invested.
-    higher_level_builder_reservation: RefCell<Option<(u32, u32)>>,
+    builder_workforce_reservation: RefCell<Option<(u32, u32)>>,
     /// `anvil`: the land group nearest a threatened city of ours holds it
     /// as a formation — a shooter on the centre, melee on the front tiles,
     /// the rest within two — instead of the relief hold point. Opt-in gene;
@@ -8410,7 +8410,7 @@ impl AdvancedAi {
             builder_workforce_recovery: false,
             builder_workforce_recovery_2: false,
             builder_workforce_recovery_3: false,
-            higher_level_builder_reservation: RefCell::new(None),
+            builder_workforce_reservation: RefCell::new(None),
             anvil: false,
             anvil_orders: BTreeMap::new(),
             anvil_orders_turn: None,
