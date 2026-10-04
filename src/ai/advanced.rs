@@ -540,6 +540,11 @@ pub(crate) const DENIAL_FAR_REACH_RATIO: f64 = 3.0;
 /// the capital march consumes the whole war. The diplomatic opening gate is
 /// wider; it does not mean an 18-tile capital is the best first siege.
 const DOMINATION_FIRST_CAPTURE_MARCH: i32 = 8;
+/// The capital whose capture completes Domination is a first objective out
+/// to this march when we hold [`FINISHING_CAPITAL_POWER`] times its owner's
+/// power. See `finishing_capital_in_reach`.
+const FINISHING_CAPITAL_MARCH: i32 = 2 * DOMINATION_FIRST_CAPTURE_MARCH;
+const FINISHING_CAPITAL_POWER: f64 = 2.0;
 /// Population pressure on a captured city at or below this many Loyalty a
 /// turn makes a forecast revolt within four turns hopeless however developed
 /// the city is. See `city_disposition_value`.
@@ -13034,6 +13039,7 @@ impl AdvancedAi {
                             .map(|(_, city)| city)
                             .filter(|city| {
                                 Self::city_within_first_capture_march(g, pid, g.cities[city].pos)
+                                    || Self::finishing_capital_in_reach(g, pid, target, *city)
                             });
                         // A capital at the edge of the first march is not the
                         // shortest first capture when it has walls and an open
@@ -13664,6 +13670,26 @@ impl AdvancedAi {
             && g.player_city_ids(pid)
                 .iter()
                 .any(|city| g.wdist(g.cities[city].pos, objective) <= DENIAL_FAR_REACH_TILES)
+    }
+
+    /// Whether `city` is the capital whose capture completes Domination,
+    /// within [`FINISHING_CAPITAL_MARCH`] of a city of ours, while we hold
+    /// [`FINISHING_CAPITAL_POWER`] times `owner`'s power. A border town first
+    /// is a forward base for a long war; for the last capital, against an
+    /// owner already outgunned, it is only turns lost. Live King
+    /// civvis-20261004T083931Z (game 50) held two of three capitals at turn
+    /// 201 and declared on Hungary at 218, at 3,889 power against 1,563, with
+    /// Eger, four tiles from Porto, as its first objective; Buda, the last
+    /// capital, stood nine tiles out.
+    fn finishing_capital_in_reach(g: &Game, pid: usize, owner: usize, city: u32) -> bool {
+        let Some(capital) = g.cities.get(&city) else {
+            return false;
+        };
+        Self::capture_completes_domination(g, pid, city)
+            && g.military_power(pid) >= FINISHING_CAPITAL_POWER * g.military_power(owner).max(1.0)
+            && g.player_city_ids(pid)
+                .iter()
+                .any(|ours| g.wdist(g.cities[ours].pos, capital.pos) <= FINISHING_CAPITAL_MARCH)
     }
 
     fn city_within_first_capture_march(g: &Game, pid: usize, objective: Pos) -> bool {
