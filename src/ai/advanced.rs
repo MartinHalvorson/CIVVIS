@@ -15190,7 +15190,10 @@ impl AdvancedAi {
                     }
                 }
             }
-            let goal_pick = science_milestone_pick.or_else(|| {
+            let production_step_pick = production_technology_goal
+                .filter(|goal| forced_goal == Some(goal.as_str()))
+                .and_then(|goal| self.named_production_technology_step(g, pid, goal));
+            let goal_pick = science_milestone_pick.or(production_step_pick).or_else(|| {
                 forced_goal.and_then(|goal| {
                     if self.beeline_orders_by_value {
                         let steps: Vec<Name> = available
@@ -15284,6 +15287,11 @@ impl AdvancedAi {
                                 format!("domination-siege-research: unlock {} to supply the missing wall-breaking capability for the campaign", plain(goal))
                             } else if standing_army_fuel_goal.as_deref() == Some(goal) {
                                 format!("the {step} step toward {}, needed to reveal fuel for the standing army with no reserve", plain(goal))
+                            } else if production_technology_goal == Some(Name::new(goal)) {
+                                format!(
+                                    "the {step} step toward {}, needed to unlock production on currently worked tiles",
+                                    plain(goal)
+                                )
                             } else if wartime_modernization_goal.as_deref() == Some(goal) {
                                 format!(
                                     "the {step} step toward {}, needed to modernize the standing army at war",
@@ -28767,7 +28775,6 @@ impl AdvancedAi {
                 };
                 if counts.builders < desired {
                     base + 35.0 * (desired - counts.builders) as f64
-                        + self.named_productive_builder_value(g, pid, cid, plan, counts)
                 } else {
                     25.0
                 }

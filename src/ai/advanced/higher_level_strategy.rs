@@ -104,6 +104,38 @@ impl Debt {
 }
 
 impl AdvancedAi {
+    pub(super) fn named_production_technology_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        goal: crate::name::Name,
+    ) -> Option<crate::name::Name> {
+        let mut required = std::collections::BTreeSet::new();
+        let mut pending = vec![goal];
+        while let Some(node) = pending.pop() {
+            if g.players[pid].techs.contains(&node) || !required.insert(node) {
+                continue;
+            }
+            pending.extend(g.rules.techs[node].requires.iter().copied());
+        }
+        // A legal target finishes the detour immediately. Known parents can
+        // have been granted directly; their ancestors need no backfill.
+        let available = g.available_techs(pid);
+        if available.contains(&goal) {
+            return Some(goal);
+        }
+        available
+            .into_iter()
+            .filter(|node| required.contains(node))
+            .min_by(|a, b| {
+                let cost = |node: crate::name::Name| {
+                    g.host_remaining_research_cost(pid, node)
+                        .unwrap_or_else(|| self.beeline_step_cost(g, pid, node.as_str(), true))
+                };
+                cost(*a).total_cmp(&cost(*b)).then(a.cmp(b))
+            })
+    }
+
     /// Unlock production on tiles citizens already work. A counterfactual
     /// technology goes on a disposable world so legality and researched tile
     /// yields come from the engine rather than a second terrain rule table.
@@ -177,14 +209,16 @@ impl AdvancedAi {
             .collect();
         let mut best: Option<(f64, crate::name::Name)> = None;
         for tech in goals {
-            let ancestors = g.rules.tech_ancestors.get(tech.as_str());
-            let cost: f64 = std::iter::once(tech)
-                .chain(
-                    ancestors
-                        .into_iter()
-                        .flat_map(|names| names.iter().map(|name| crate::name::Name::new(name))),
-                )
-                .filter(|node| !g.players[pid].techs.contains(node))
+            let mut required = std::collections::BTreeSet::new();
+            let mut pending = vec![tech];
+            while let Some(node) = pending.pop() {
+                if g.players[pid].techs.contains(&node) || !required.insert(node) {
+                    continue;
+                }
+                pending.extend(g.rules.techs[node].requires.iter().copied());
+            }
+            let cost: f64 = required
+                .into_iter()
                 .map(|node| {
                     g.host_remaining_research_cost(pid, node)
                         .unwrap_or_else(|| g.tech_cost(node.as_str()))
@@ -227,163 +261,6 @@ impl AdvancedAi {
             }
         }
         best.map(|(_, tech)| tech)
-    }
-
-    /// Price the production a new worker can add to currently worked tiles.
-    /// Use the same yield price as buildings, after checking repayment and
-    /// subtracting work that nearby charged Builders can already service.
-    pub(super) fn named_productive_builder_value(
-        &self,
-        g: &Game,
-        pid: usize,
-        cid: u32,
-        plan: &StrategicPlan,
-        counts: &super::EmpireCounts,
-    ) -> f64 {
-        self.productive_builder_investment(g, pid, cid, plan, counts)
-            .map_or(0.0, |(gain, _)| {
-                self.yield_value(
-                    crate::rules::Yields {
-                        production: gain,
-                        ..Default::default()
-                    },
-                    plan.strategy,
-                ) * 42.0
-            })
-    }
-
-    /// A named victory's productive tiles must not wait for the empire's last
-    /// Builder to disappear. Existing development debts retain first claim.
-    fn named_productive_workforce_target(
-        &self,
-        g: &Game,
-        pid: usize,
-        plan: &StrategicPlan,
-    ) -> Option<(u32, Item)> {
-        self.active_victory_target(g)?;
-        let _memo = g.query_memo();
-        let counts = self.counts(g, pid);
-        let mut best: Option<(f64, u32)> = None;
-        for cid in g.player_city_ids(pid) {
-            if !g.cities[&cid].queue.is_empty() {
-                continue;
-            }
-            let Some((_, payback)) = self.productive_builder_investment(g, pid, cid, plan, &counts)
-            else {
-                continue;
-            };
-            if best
-                .is_none_or(|(old, old_city)| payback < old || (payback == old && cid < old_city))
-            {
-                best = Some((payback, cid));
-            }
-        }
-        best.map(|(_, cid)| {
-            (
-                cid,
-                Item::Unit {
-                    unit: crate::name!("builder"),
-                },
-            )
-        })
-    }
-
-    fn productive_builder_investment(
-        &self,
-        g: &Game,
-        pid: usize,
-        cid: u32,
-        plan: &StrategicPlan,
-        counts: &super::EmpireCounts,
-    ) -> Option<(f64, f64)> {
-        let target = self.active_victory_target(g)?;
-        if self.base.minor || self.base.barb || plan.strategy == GrandStrategy::Recovery {
-            return None;
-        }
-        let _memo = g.query_memo();
-        let cities = g.player_city_ids(pid);
-        let ceiling = (super::PRODUCTION_BUILDERS_PER_CITY * cities.len() as f64).ceil() as usize;
-        if cities.len() < 2
-            || counts.builders >= ceiling
-            || counts.military < cities.len()
-            || self.live_war_economy_requires_recovery(g, pid, counts)
-        {
-            return None;
-        }
-        let builder = Item::Unit {
-            unit: crate::name!("builder"),
-        };
-        let city = &g.cities[&cid];
-        if city.loyalty < 76.0
-            || plan.threatened_city == Some(cid)
-            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
-            || self.base.barbarian_local_alarm_for_controller(g, pid, cid)
-            || (target == super::VictoryTarget::Science && Self::city_has_spaceport(g, cid))
-            || !g.can_produce(pid, cid, &builder)
-            || (counts.traders == 0
-                && self
-                    .base
-                    .should_add_trader_in_city_for_controller(g, pid, cid, 0))
-        {
-            return None;
-        }
-        // Forecast only local, currently worked gains. Research bonuses
-        // count; resource access, future citizens and repairs do not.
-        let mut gains: Vec<f64> = g
-            .city_citizen_plan(cid)
-            .worked_tiles
-            .into_iter()
-            .filter_map(|pos| {
-                let tile = g.map.get(pos)?;
-                if pos == city.pos
-                    || tile.owner_city != Some(cid)
-                    || tile.improvement.is_some()
-                    || tile.district.is_some()
-                    || g.wdist(city.pos, pos) > 3
-                {
-                    return None;
-                }
-                g.valid_improvements(pid, pos)
-                    .into_iter()
-                    .filter_map(|name| {
-                        let spec = &g.rules.improvements[name];
-                        (spec.builder_buildable && !spec.removes_feature)
-                            .then(|| g.improvement_yield_change(pid, pos, name).production)
-                            .filter(|gain| *gain > 0.0)
-                    })
-                    .max_by(f64::total_cmp)
-            })
-            .collect();
-        gains.sort_by(|a, b| b.total_cmp(a));
-        // Give existing local charges the best jobs first. A one-charge
-        // worker cannot cover the whole city's productive backlog forever.
-        let covered: usize = g
-            .units
-            .values()
-            .filter(|unit| {
-                unit.owner == pid && unit.kind == "builder" && g.wdist(unit.pos, city.pos) <= 3
-            })
-            .map(|unit| unit.charges.max(0) as usize)
-            .sum();
-        let charges = g.builder_charges(pid).max(0) as usize;
-        let gains: Vec<f64> = gains.into_iter().skip(covered).take(charges).collect();
-        if gains.is_empty() {
-            return None;
-        }
-        let gain: f64 = gains.iter().sum();
-        let build = self
-            .production_build_turns(g, pid, cid, &builder)
-            .ceil()
-            .max(1.0);
-        // Three tiles from the center and six between later jobs, at stock
-        // two movement, plus an operation per job. Terrain/safety may delay it.
-        let service = ((3 + 6 * (gains.len() - 1)) as f64 / 2.0).ceil() + gains.len() as f64;
-        let payback = build + service + g.item_remaining_cost_for_city(pid, cid, &builder) / gain;
-        let window = g.game_speed.scale(80.0).min(
-            g.turn_limit()
-                .map_or(f64::INFINITY, |limit| limit.saturating_sub(g.turn) as f64),
-        );
-        (payback <= window).then_some((gain, payback))
     }
 
     /// Enable the independently screenable disciplined variant.
@@ -936,13 +813,7 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        let (city, item, reason) = if let Some((city, item, debt)) =
-            self.higher_level_investment_target(g, pid, plan)
-        {
-            (city, item, debt.tag(self))
-        } else if let Some((city, item)) = self.named_productive_workforce_target(g, pid, plan) {
-            (city, item, "named productive workforce")
-        } else {
+        let Some((city, item, debt)) = self.higher_level_investment_target(g, pid, plan) else {
             return;
         };
         if g.apply(
@@ -956,7 +827,7 @@ impl AdvancedAi {
             && self.journal().wants(Level::Decision)
         {
             think!(self.journal(), Economy, Decision,
-                "{} starts {} for {}", g.cities[&city].name, Self::plain_item(&item), reason;
+                "{} starts {} for {}", g.cities[&city].name, Self::plain_item(&item), debt.tag(self);
                 "one safe idle queue services the development shortfall");
         }
     }
@@ -975,4 +846,4 @@ mod queued_yield_tests;
 mod campus_foundation_tests;
 
 #[cfg(test)]
-mod production_workforce_tests;
+mod production_unlock_tests;
