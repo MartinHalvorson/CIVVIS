@@ -1,0 +1,86 @@
+{
+  "task": "production-builder-payback",
+  "frozen_before_fresh_play": true,
+  "native_only": true,
+  "actual_Firaxis_verification": false,
+  "configuration": {
+    "players": 4,
+    "width": 60,
+    "height": 38,
+    "map": "pangaea",
+    "speed": "online",
+    "max_turns": 150,
+    "focal_civ": "Gran Colombia",
+    "focal_target": "domination",
+    "focal_handicap_exempt": true,
+    "focal_controller": "public targeting + live bridge",
+    "rivals": "stock adaptive native AI",
+    "comparison": "same frozen O3 CI library and probe; only candidate calls enable_builder_payback_reserve"
+  },
+  "pilot": {
+    "emperor": [
+      61008600,
+      61008601,
+      61008602,
+      61008603
+    ],
+    "deity": [
+      61008700,
+      61008701,
+      61008702,
+      61008703
+    ]
+  },
+  "confirmation": {
+    "emperor": [
+      61008800,
+      61008801,
+      61008802,
+      61008803,
+      61008804,
+      61008805,
+      61008806,
+      61008807,
+      61008808,
+      61008809,
+      61008810,
+      61008811,
+      61008812,
+      61008813,
+      61008814,
+      61008815
+    ],
+    "deity": [
+      61008900,
+      61008901,
+      61008902,
+      61008903,
+      61008904,
+      61008905,
+      61008906,
+      61008907,
+      61008908,
+      61008909,
+      61008910,
+      61008911,
+      61008912,
+      61008913,
+      61008914,
+      61008915
+    ]
+  },
+  "primary": "paired mean total production at turn 75, separately for Emperor and Deity; early endings/deaths counted as zero",
+  "secondary": [
+    "turn25 and turn50 production",
+    "cumulative production to75",
+    "production / strongest stock rival production at75",
+    "science at75",
+    "survival at75",
+    "productive improvement orders",
+    "Builder investment journal coverage"
+  ],
+  "pilot_gate": "positive mean production lift at75 in both difficulties, no lower survival, science >=90% baseline at75; otherwise leave confirmation unplayed",
+  "confirmation_gate": "at least5% mean production lift at75 in both difficulties, no lower survival, science >=90% baseline; report paired bootstrap intervals and sample limitations",
+  "stopping": "no seed exclusion, no rerun to replace a loss, no tuning on confirmation; failed pilot consumes its seeds for diagnostics only",
+  "already_played": 0
+}

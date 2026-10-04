@@ -10,7 +10,168 @@ use super::{AdvancedAi, ChainRung, GrandStrategy, StrategicPlan, VictoryTarget};
 use crate::game::{Game, Item};
 use crate::rules::{BuildingSpec, Yields};
 
+pub(super) struct BuilderInvestment {
+    pub(super) jobs: usize,
+    pub(super) returned: f64,
+    pub(super) cost: f64,
+    pub(super) build_turns: f64,
+}
+
 impl AdvancedAi {
+    /// Independent opt-in while the production experiment is evaluated.
+    pub fn enable_builder_payback_reserve(&mut self) {
+        self.builder_payback_reserve = true;
+    }
+
+    pub(super) fn production_builder_commitment(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+        plan: &StrategicPlan,
+    ) -> bool {
+        matches!(item, Item::Unit { unit } if unit == "builder")
+            && self
+                .production_builder_investment(g, pid, cid, plan)
+                .is_some()
+    }
+
+    /// Count unlocked, currently worked land jobs using the improvement the
+    /// ordinary Builder router prefers. Standing yields and removed features
+    /// are deducted by the engine forecast. This is a bounded estimate, not
+    /// a promise that the future route or citizen assignment stays unchanged.
+    pub(super) fn production_builder_investment(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> Option<BuilderInvestment> {
+        if !self.builder_payback_reserve
+            || self.active_victory_target(g).is_none()
+            || self.base.minor
+            || self.base.barb
+            || plan.strategy == GrandStrategy::Recovery
+            || g.turn > g.standard_duration(160)
+            || plan.threatened_city == Some(cid)
+        {
+            return None;
+        }
+        let city = g.cities.get(&cid)?;
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        if city.owner != pid
+            || self.city_production_foundation_shortfall(g, pid, cid) <= 0.0
+            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+            || self.base.barbarian_local_alarm_for_controller(g, pid, cid)
+            || !Self::production_commitment_is_legal(g, pid, cid, &builder)
+        {
+            return None;
+        }
+        let cities = g.player_city_ids(pid);
+        let counts = self.counts_without_city_queue(g, pid, cid);
+        let quota = (super::PRODUCTION_BUILDERS_PER_CITY * cities.len() as f64).ceil() as usize;
+        if counts.builders >= quota
+            || self.live_war_economy_requires_recovery(g, pid, &counts)
+            || cities
+                .iter()
+                .any(|other| *other != cid && g.cities[other].queue.first() == Some(&builder))
+        {
+            return None;
+        }
+        let local_charges: usize = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|uid| {
+                let unit = &g.units[&uid];
+                (unit.kind == "builder" && g.wdist(unit.pos, city.pos) <= 6)
+                    .then_some(unit.charges.max(0) as usize)
+            })
+            .sum();
+        let _memo = g.query_memo();
+        let shortfall = self.city_production_foundation_shortfall(g, pid, cid);
+        let mut jobs: Vec<(f64, f64)> = g
+            .city_citizen_plan(cid)
+            .worked_tiles
+            .into_iter()
+            .filter_map(|pos| {
+                let tile = g.map.get(pos)?;
+                if pos == city.pos
+                    || tile.owner_city != Some(cid)
+                    || g.rules.is_water(tile)
+                    || tile.pillaged
+                    || g.wdist(city.pos, pos) > 3
+                {
+                    return None;
+                }
+                let improvement = self
+                    .worthwhile_improvements(g, pid, pos, plan.strategy)
+                    .into_iter()
+                    .max_by(|a, b| {
+                        self.production_foundation_improvement_value(
+                            g,
+                            pid,
+                            pos,
+                            a,
+                            plan.strategy,
+                            shortfall,
+                        )
+                        .total_cmp(&self.production_foundation_improvement_value(
+                            g,
+                            pid,
+                            pos,
+                            b,
+                            plan.strategy,
+                            shortfall,
+                        ))
+                        .then_with(|| b.cmp(a))
+                    })?;
+                let gain =
+                    g.improvement_yield_change(pid, pos, crate::name::Name::new(&improvement));
+                (gain.production > 0.0 && gain.food >= 0.0)
+                    .then_some((gain.production, g.wdist(city.pos, pos) as f64))
+            })
+            .collect();
+        // Credit existing nearby charges first. One new Builder needs two
+        // distinct productive jobs and never increases the existing quota.
+        jobs.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.total_cmp(&b.1)));
+        let jobs: Vec<_> = jobs
+            .into_iter()
+            .skip(local_charges)
+            .take(g.builder_charges(pid).max(0) as usize)
+            .collect();
+        if jobs.len() < 2 {
+            return None;
+        }
+        let build_turns = self.production_build_turns(g, pid, cid, &builder);
+        let window = g.standard_duration(80) as f64;
+        let remaining = g.turn_limit().map_or(window, |limit| {
+            window.min(limit.saturating_sub(g.turn) as f64)
+        });
+        // Allow a turn per operation and local travel at two hexes/turn.
+        // Discount the yield by 25% for route and assignment uncertainty.
+        let returned: f64 = jobs
+            .iter()
+            .enumerate()
+            .map(|(index, (gain, distance))| {
+                (remaining - build_turns - distance / 2.0 - (index + 1) as f64).max(0.0)
+                    * gain
+                    * 0.75
+            })
+            .sum();
+        let cost = g.item_remaining_cost_for_city(pid, cid, &builder);
+        (returned >= cost && cost.is_finite() && returned.is_finite()).then_some(
+            BuilderInvestment {
+                jobs: jobs.len(),
+                returned,
+                cost,
+                build_turns,
+            },
+        )
+    }
+
     /// The Science reservation must compare its owed research building with
     /// the production foundation using the same scorer as the normal queue.
     /// Otherwise a higher industrial bid can never affect the actual choice.
@@ -150,3 +311,6 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod builder_tests;
