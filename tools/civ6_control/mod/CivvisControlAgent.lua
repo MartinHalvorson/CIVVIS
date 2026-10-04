@@ -9683,6 +9683,17 @@ local function exportState(player, pid, turn, frame, eventKind)
 		end, nil),
 	});
 	CivvisExportClock.mark("state_table_and_emit");
+	-- ★★★ LOAD-BEARING, NOT DIAGNOSTICS: THIS RECORD RELEASES THE STATE.
+	-- The game holds the latest `Automation.Log` record in memory and writes
+	-- it to the file only when the next record is logged. A replan or combat
+	-- frame's `state` is the last line of its export, so before this report
+	-- existed it waited for the next poll's `await`: `replan_frame` -> `state`
+	-- reached the relay a median 0.22-0.24 s apart in G67-G69, 0.000 in G70,
+	-- the first game with this record behind it (drained -> next board 0.000
+	-- vs 0.22-0.26 s, ~0.27 s a turn). Its clocks read whole seconds, so it
+	-- looks like a useless probe; removing it, or emitting anything between
+	-- the state and the end of this function conditionally, brings the delay
+	-- back. `export_timing_test.lua` holds it unconditional.
 	CivvisExportClock.report(turn, frame);
 end
 
