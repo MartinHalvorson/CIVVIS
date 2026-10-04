@@ -6618,7 +6618,8 @@ pub struct Game {
     /// Civilization VI stacks one civilian per plot and a Great Person is a
     /// civilian, so a Builder or Settler cannot end a move on one — exactly as
     /// this engine treats a plot holding a friendly unit of the same class — and
-    /// a foreign Great Person blocks everything short of a capture. On
+    /// a foreign Great Person blocks every unit, at war or not (Firaxis
+    /// captures no Great Person; live King civvis-20261004T160213Z). On
     /// run `civvis-20260816T003229Z` the founded, zero-charge Prophet stood on
     /// (7,25) beside the capital from turn 73 to the end; a Builder with two
     /// charges left was ordered `MOVE_TO (7,25)` on 25 consecutive turns
@@ -27075,15 +27076,17 @@ impl Game {
         // One of our own on the layer we would finish on: the step is legal
         // and the arrival is not.
         let mut stacked = false;
-        // A Great Person the host has on this plot but CIVVIS has no unit for:
-        // the same stacking rules as the units below, read from the plot map. A
-        // foreign one blocks every layer short of a capture; one of ours holds
-        // the civilian layer against arrival. See `great_person_plots`.
+        // A Great Person the host has on this plot but CIVVIS has no unit for,
+        // read from the plot map. A foreign one blocks every unit, at war or
+        // not: Firaxis captures no Great Person. Live King
+        // civvis-20261004T160213Z (game 65) ordered a helicopter MOVE_TO
+        // (44,20), a Babylonian Great Scientist's plot beside Kar-Shamash, on
+        // turns 193-195 at war with Babylon: the host left it where it stood
+        // each turn and its ATTACK on the city struck nothing. One of ours
+        // holds the civilian layer against arrival. See `great_person_plots`.
         if let Some(owner) = self.great_person_plots.get(&pos) {
             if *owner != u.owner {
-                if spec.class != "military" || !self.is_at_war(u.owner, *owner) {
-                    return Entry::Blocked;
-                }
+                return Entry::Blocked;
             } else if spec.class == "civilian" {
                 stacked = true;
             }
