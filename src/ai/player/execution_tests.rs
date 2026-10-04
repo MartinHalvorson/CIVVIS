@@ -153,6 +153,11 @@ fn rejected_peace_offer_preserves_builder_work_and_the_armys_shot() {
 #[test]
 fn rejected_access_proposal_creates_no_access_and_keeps_the_armys_shot() {
     let (mut g, _, target, gun) = battle();
+    // Early Empire closes the recipient's borders. The proposer still
+    // lacks the civic needed for a bilateral access proposal.
+    g.players[2].civics.insert(crate::name!("early_empire"));
+    g.players[0].civics.remove(&crate::name!("early_empire"));
+    assert!(g.enforces_borders(2));
     assert!(!g.has_open_borders(0, 2));
     let rejected = Action::ProposeDeal {
         player: 2,
