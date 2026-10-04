@@ -753,3 +753,22 @@ fn the_front_reads_city_health_by_tile() {
         Some(&(city.hp, city.wall_hp))
     );
 }
+
+/// See `stalled_front_swap`: a front whose cities have shown no new low of
+/// health for the stall window yields, under the gene, to a weak enemy
+/// holding a capital Domination needs (the Maori, game 65).
+#[test]
+fn a_stalled_front_yields_to_a_weak_enemy_holding_a_needed_capital() {
+    for gene in [false, true] {
+        let (mut g, mut ai) = two_fronts();
+        if gene {
+            ai.enable_one_war_swaps_a_stalled_front();
+        }
+        // Rival 1, the front, is strong enough to stall us; rival 2 is weak.
+        arm_the_front(&mut g);
+        g.turn += g.standard_duration(FRONT_STALL_TURNS) + 1;
+        ai.one_war_observe(&g, 0);
+        let expected = if gene { Some(2) } else { Some(1) };
+        assert_eq!(ai.one_war_front(), expected, "gene {gene}");
+    }
+}

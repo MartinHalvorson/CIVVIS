@@ -6310,6 +6310,11 @@ pub struct AdvancedAi {
     /// 10.0 unimproved hills at t100.
     improvement_upgrades_count: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `one-war-swaps-a-stalled-front`: a front with no city at a new low of
+    /// health for `one_war::FRONT_STALL_TURNS` yields to another enemy that
+    /// holds a capital Domination needs. See `one_war::stalled_front_swap`.
+    /// Off by default.
+    one_war_swaps_a_stalled_front: bool,
     /// A city's Monument ahead of the military floor and the Settler step in
     /// the delegated city governor. Opt-in gene `monument-first`; see
     /// `BasicAi::monument_first`.
@@ -8936,6 +8941,7 @@ impl AdvancedAi {
             industrial_hub: false,
             improvement_upgrades_count: false,
             // ---- append: l-o ----------------------------------------
+            one_war_swaps_a_stalled_front: false,
             monument_first: false,
             magnus_follows_settlers: false,
             liang_follows_builders: false,
