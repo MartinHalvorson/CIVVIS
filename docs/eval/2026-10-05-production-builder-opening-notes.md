@@ -1,7 +1,7 @@
 # Preserve a replacement Builder's opening reservation
 
-The production goal remains active. This candidate is under validation and has
-no measured early-production gain or Firaxis verification yet.
+The production goal remains active. This is a validated reservation-handoff correction. The fresh pilot shows
+no early-production gain, and there is no Firaxis verification.
 
 The frozen public targeted Domination player with `enable_live_bridge()` and
 stock adaptive rivals completed consumed Deity diagnostics 61007901 and
@@ -52,3 +52,31 @@ focused regressions pass in a fast opt-level-zero build, and incremental Rust
 quality passes. The normal optimized full suite and prospective paired
 production evaluation remain outstanding. No validation or strength claim is inferred from an
 accepted reservation alone.
+
+## Completed measurements and integration scope
+
+Both executables and all dependencies were frozen before treatment play. On
+the diagnosed consumed Deity map 61007901, T75 production rises from 24.95 to
+43.0 and city count from four to six. The other consumed map, 61007903, remains
+byte-identical. These maps are diagnostic, not a fresh strength estimate.
+
+All eight prospectively assigned fresh pairs complete, with every action and
+final-state byte identical between arms. Emperor mean T75 production is
+43.75 in both arms (four pairs, all alive); Deity is 29.725 in both arms
+(four pairs, three alive at T75; the dead seat counts zero). The pilot fails
+its positive-production gate and the confirmation maps remain unplayed.
+
+Retain the correction because an accepted Builder reservation should survive
+the same routine review and observed replanning, while explicit defense and
+illegal-continuation responses retain their priority. This is a correctness
+integration, not a production-strength promotion. Broader early-production
+prioritization remains outstanding.
+
+The corrected full optimized Cargo suite passes 4591 tests, zero failures,
+54 ignored. All four focused regressions pass in both the fast fixture build
+and the optimized executable. Incremental quality passes all five changed
+Rust files. Corrected CI passes 4591 Rust tests, skips 50 and ignores four
+documentation examples. The frozen comparison library is byte-identical to
+the library used by the completed optimized suite. Earlier stopped builds,
+the off-map test fixture and the receipt append-range correction are recorded
+in the validation JSON; no failed attempt is counted as a pass.
