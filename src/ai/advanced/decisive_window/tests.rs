@@ -397,4 +397,22 @@ fn a_pending_window_yields_astrology_to_the_faith_veto() {
         Some("astrology"),
         "a pending window still lets the faith Astrology win"
     );
+
+    // Once Astrology is known the veto has nothing left to research, and the
+    // window takes the slot back although `faith_veto_due` still holds (live
+    // G80 yielded four more times after its t35 Astrology).
+    let mut known = g.clone();
+    known.players[0].techs.insert(name!("astrology"));
+    assert!(ai.faith_veto_due(&known, 0), "the veto itself stays due");
+    let window = ai.decisive_window(&known, 0, &plan).expect("still pending");
+    assert_eq!(
+        ai.decisive_window_research_goal(&known, 0, Some(&window)),
+        window.tech_goal,
+        "the window resumes once Astrology is known"
+    );
+    known.players[0].research = None;
+    ai.advanced_research(&mut known, 0, &plan);
+    let picked = known.players[0].research.clone().expect("a pick");
+    let goal = window.tech_goal.expect("a goal");
+    assert!(ai.tech_leads_to(&known, &picked, goal.as_str()), "{picked}");
 }
