@@ -141,6 +141,17 @@ class MoveFallbackConfigTests(unittest.TestCase):
         self.assertIs(self._config(move_fallback=True)["MoveFallback"], True)
         self.assertIs(self._config(move_fallback=False)["MoveFallback"], False)
 
+    def test_stalled_operation_release_is_off_unless_asked(self) -> None:
+        self.assertIn(self._config()["StalledOperationRelease"], (None, False))
+        self.assertIs(self._config(stalled_operation_release=True)["StalledOperationRelease"], True)
+        source = pathlib.Path(civ6_play.__file__).read_text(encoding="utf-8")
+        flag = source[source.index('ap.add_argument("--stalled-operation-release"'):]
+        flag = flag[: flag.index(")\n")]
+        self.assertIn('action="store_true", default=False', flag)
+        arms = source[source.index('"mod_arms": {'):]
+        arms = arms[: arms.index("},")]
+        self.assertIn('"StalledOperationRelease": getattr(args, "stalled_operation_release", False),', arms)
+
     def test_the_switch_is_on_by_default_and_withholdable(self) -> None:
         parser = argparse.ArgumentParser()
         source = pathlib.Path(civ6_play.__file__).read_text(encoding="utf-8")
