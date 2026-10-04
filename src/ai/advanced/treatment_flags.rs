@@ -4969,6 +4969,17 @@ impl AdvancedAi {
         self.breaker_before_the_war = false;
     }
 
+    /// Opt-in gene `one-war-swaps-a-stalled-front`; see
+    /// [`Self::one_war_swaps_a_stalled_front`].
+    pub fn enable_one_war_swaps_a_stalled_front(&mut self) {
+        self.one_war_swaps_a_stalled_front = true;
+    }
+
+    /// The twin of `enable_one_war_swaps_a_stalled_front`.
+    pub fn disable_one_war_swaps_a_stalled_front(&mut self) {
+        self.one_war_swaps_a_stalled_front = false;
+    }
+
     /// Opt-in gene `culture-counter-declares`; see
     /// [`Self::culture_counter_declares`].
     pub fn enable_culture_counter_declares(&mut self) {

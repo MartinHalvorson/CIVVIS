@@ -128,6 +128,14 @@ pub(crate) const COUNTER_WAR_POWER_FLOOR: f64 = 0.7;
 /// city has fallen to a new low of health within this many standard turns.
 pub(crate) const FRONT_SIEGE_LIVE_TURNS: u32 = 10;
 
+/// `one-war-swaps-a-stalled-front`: standard turns without a new low of
+/// health in any front city after which the front counts as stalled.
+pub(crate) const FRONT_STALL_TURNS: u32 = 20;
+
+/// `one-war-swaps-a-stalled-front`: our power over a second enemy at which
+/// its required capital is worth moving the front to.
+pub(crate) const STALLED_FRONT_SWAP_RATIO: f64 = 3.0;
+
 /// `culture-counter-declares`: our power over a culture rival at match point
 /// at which the declaration does not wait for a staged siege. See
 /// `culture_counter_due`.
@@ -412,6 +420,12 @@ impl AdvancedAi {
         // war no longer advances Domination. If its new owner is already at
         // war with us, move the army there and offer the old front peace.
         if let Some(next) = capital_handoff {
+            return Some(next);
+        }
+        // See `stalled_front_swap`.
+        if let Some(next) =
+            current.and_then(|front| self.stalled_front_swap(g, pid, front, enemies))
+        {
             return Some(next);
         }
         if let Some(current) = current {
@@ -831,6 +845,62 @@ impl AdvancedAi {
              the war ends the open borders and trade route that carry their tourism to us");
         self.base.war_eve_liquidation(g, pid, &action);
         g.apply(pid, &action).is_ok()
+    }
+
+    /// `one-war-swaps-a-stalled-front`: another enemy to move the front to,
+    /// when the current `front` has stalled. Stalled means: chosen at least
+    /// [`FRONT_STALL_TURNS`] standard turns ago, with no front city at a new
+    /// low of health in that time. The enemy must hold an original capital
+    /// Domination needs, within declaration range, and we must hold
+    /// [`STALLED_FRONT_SWAP_RATIO`] times its power. The front choice
+    /// otherwise sticks while its war lasts. Live King
+    /// civvis-20261004T160213Z (game 65) fought Germany from turn 37 to 129
+    /// without taking Hamburg. The Maori were at war with us all that time
+    /// at 122 to 199 power against our 384 to 695, their capital reachable by
+    /// land (a Cuirassier stood beside it at turn 121). The seat offered them
+    /// peace as "not the one". That capital was the last one taken, at
+    /// turn 255.
+    pub(crate) fn stalled_front_swap(
+        &self,
+        g: &Game,
+        pid: usize,
+        front: usize,
+        enemies: &[usize],
+    ) -> Option<usize> {
+        if !self.one_war_swaps_a_stalled_front
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        {
+            return None;
+        }
+        let state = self
+            .one_war
+            .as_ref()
+            .filter(|state| state.target == front)?;
+        let window = g.standard_duration(FRONT_STALL_TURNS);
+        if g.turn.saturating_sub(state.since) < window {
+            return None;
+        }
+        let progressing = g.player_city_ids(front).iter().any(|cid| {
+            self.front_city_low
+                .get(&g.cities[cid].pos)
+                .is_some_and(|(_, set)| g.turn.saturating_sub(*set) < window)
+        });
+        if progressing {
+            return None;
+        }
+        let power = g.military_power(pid);
+        enemies
+            .iter()
+            .copied()
+            .filter(|rival| *rival != front)
+            .filter(|rival| power >= STALLED_FRONT_SWAP_RATIO * g.military_power(*rival).max(1.0))
+            .filter_map(|rival| {
+                let (_, capital) = self.domination_capital_target_for(g, pid, Some(rival))?;
+                Self::city_within_declaration_range(g, pid, g.cities[&capital].pos)
+                    .then(|| (g.military_power(rival), rival))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+            .map(|(_, rival)| rival)
     }
 
     /// `rival`'s culture lane alone, as a percent of the bar: its foreign

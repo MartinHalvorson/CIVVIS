@@ -6244,6 +6244,11 @@ pub struct AdvancedAi {
     /// `granary-before-the-army`; see `BasicAi::granary_before_the_army`.
     granary_before_the_army: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `one-war-swaps-a-stalled-front`: a front with no city at a new low of
+    /// health for `one_war::FRONT_STALL_TURNS` yields to another enemy that
+    /// holds a capital Domination needs. See `one_war::stalled_front_swap`.
+    /// Off by default.
+    one_war_swaps_a_stalled_front: bool,
     /// A city's Monument ahead of the military floor and the Settler step in
     /// the delegated city governor. Opt-in gene `monument-first`; see
     /// `BasicAi::monument_first`.
@@ -8828,6 +8833,7 @@ impl AdvancedAi {
             host_war_unit_losses: None,
             granary_before_the_army: false,
             // ---- append: l-o ----------------------------------------
+            one_war_swaps_a_stalled_front: false,
             monument_first: false,
             magnus_follows_settlers: false,
             liang_follows_builders: false,
