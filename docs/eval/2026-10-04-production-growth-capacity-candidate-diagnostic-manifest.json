@@ -1,0 +1,61 @@
+{
+  "frozen_at": "2026-10-04T18:22:37.378082+00:00",
+  "source": "256b2c4e2a76203917017f8178494c475ca518c4",
+  "configuration": "public targeted live bridge plus stock adaptive rivals; native simulation; startup asserts the wide-map repair is on in the focal seat and off in stock rivals",
+  "fresh_strength_samples": 0,
+  "purpose": "Candidate consumed-seed diagnostic; runtime unchanged since source checkpoint, later commits correct a cfg(test) fixture and add evaluation tools only",
+  "consumed_seeds": [
+    {
+      "difficulty": "emperor",
+      "seed": 61007001
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61007101
+    }
+  ],
+  "probe_sha256": "694e2fae3e29ff74ebd8246be3a4f0207e20fd317b9dd5265e39dfbdebc30ef1",
+  "compile_arguments": [
+    "rustc",
+    "--edition=2021",
+    "-O",
+    "-C",
+    "debug-assertions=on",
+    "/Users/martbot-mbp-m5-max-128/civvis-production-growth-capacity-8b86/docs/eval/2026-10-04-production-growth-capacity-probe.rs",
+    "--extern",
+    "civvis=/tmp/civvis-production-growth-capacity-candidate-deps/libcivvis-e26cdcfa7a10e4e6.rlib",
+    "--extern",
+    "serde_json=/tmp/civvis-production-growth-capacity-candidate-deps/libserde_json-5d92e8a1d79db490.rlib",
+    "-Ldependency=/tmp/civvis-production-growth-capacity-candidate-deps",
+    "-Lnative=/tmp/civvis-production-growth-capacity-candidate-deps",
+    "-o",
+    "/tmp/civvis-production-growth-capacity-candidate"
+  ],
+  "binary_sha256": "11783b873983c7147b737b941e5738099332090694fe4517a561ea667e37b687",
+  "dependency_sha256": {
+    "libcc-306998902a309339.rlib": "78ab97890e958b744b3e729a3e57bde8648bdad7874a0e538f5ab338ff85c8df",
+    "libcivvis-e26cdcfa7a10e4e6.rlib": "2451a779a9517a1bf54d40d6c19153e2c18f6d229d046de34e0428af2fbfeb3b",
+    "libfind_msvc_tools-6ea7281740f42015.rlib": "47bf306f740c2612626613b603188d3edc78182bdc2500741010227e536c9daf",
+    "libitoa-e05d252acce1b140.rlib": "a6646b819797de97bb0c378b156845db0afc2a6063b593e8f63b9832b1f2514d",
+    "liblibm-5ee0467b56344aa1.rlib": "f8b977db76e23af41c4fa0413dd9837b5ae61b9fded1beb696328e326bac7e37",
+    "liblibmimalloc_sys-2c7708222b09358b.rlib": "f68f9453a12992908efdb3b948787917efe8d0f6c005be46fa362c196a7544d1",
+    "libmemchr-64cfcd45a0ce2bd7.rlib": "4ebb83a2bcee2de068fb28e3789337db50ae064fb859e4fb8dd6dda2f883bb72",
+    "libmimalloc-4b1d0a8b44717daa.rlib": "4a6f3058d8007eaf87e4f45092ce4c4d1973f997ad78d2eef70d15a4b82733bf",
+    "libmimalloc.a": "3a98054b90bb760aaa17eda15014ef544adc90629dcf5ee82dc0eede41ab6256",
+    "libproc_macro2-b1baaf8ea9e1f1c6.rlib": "ed525c0441a4b562466f32e95b8bb5d0e3346af66dd811b2436f72366f66a927",
+    "libquote-e94315914580abd1.rlib": "49d266cb0b426141a382464dca58ffca0a9a07bf9263bcc46c30a650836a6f43",
+    "libserde-99734557989d9f5b.rlib": "1012f41baa58bba3c4b914504efd9d051716e1cbf09f7c07f8c8dc1ae1cd23bd",
+    "libserde_core-d8b9cb9d7eda75e3.rlib": "0839a449733d332cc9a2bce97458e911a1a3db42c538d3e11e35d6ea0e98e0ec",
+    "libserde_derive-15fd15435ae91cdd.dylib": "dd65b33cdc25fff18079b1fbdad3ab0e9647ef85a8090ab8f6168d0baa8e7b7c",
+    "libserde_json-5d92e8a1d79db490.rlib": "3fb4ec6aea1a72592ef27440f87559a57b0fef9a9d29352efc60c7072cb54beb",
+    "libshlex-2ad7c2fa1558f084.rlib": "e415292c6f4f3bac21b7b2157507dbbb4850f64096b3041c37ea9062ea549639",
+    "libsyn-3854ff36265737a1.rlib": "a66fd194dc2f4a26ba9db90898a01c0d735d7dea6d3d0261bb6331fa6c9cbb75",
+    "libunicode_ident-00ff4f24fa63cdb3.rlib": "213612d4f31af086ad59b78928decf6df7085d84281f675bf6f082d95eae6f04",
+    "libzmij-db1726fcbad03e10.rlib": "087ecf77c66cc9d9f6a71ef4c393bf87194fd96ce7c57921adea7f9d598086d7"
+  },
+  "build_command": "cargo build --profile ci --locked --lib",
+  "compiler": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "actual_Firaxis_verification": false,
+  "fixture_correction": "8149df668",
+  "evaluation_tool_commit": "2fdc5f04c"
+}
