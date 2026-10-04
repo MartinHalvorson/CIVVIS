@@ -104,6 +104,288 @@ impl Debt {
 }
 
 impl AdvancedAi {
+    /// Unlock production on tiles citizens already work. A counterfactual
+    /// technology goes on a disposable world so legality and researched tile
+    /// yields come from the engine rather than a second terrain rule table.
+    pub(super) fn named_production_technology_goal(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<crate::name::Name> {
+        self.active_victory_target(g)?;
+        if self.base.minor
+            || self.base.barb
+            || plan.strategy == GrandStrategy::Recovery
+            || plan.threatened_city.is_some()
+            || g.turn > g.standard_duration(160)
+        {
+            return None;
+        }
+        let _memo = g.query_memo();
+        let cities = g.player_city_ids(pid);
+        if cities.len() < 2 {
+            return None;
+        }
+        let science: f64 = cities.iter().map(|cid| g.city_yields(*cid).science).sum();
+        if science <= 0.0 {
+            return None;
+        }
+        let worked: Vec<_> = cities
+            .iter()
+            .flat_map(|cid| {
+                g.city_citizen_plan(*cid)
+                    .worked_tiles
+                    .into_iter()
+                    .filter_map(|pos| {
+                        let t = g.map.get(pos)?;
+                        (pos != g.cities[cid].pos
+                            && t.owner_city == Some(*cid)
+                            && t.improvement.is_none()
+                            && t.district.is_none()
+                            && g.wdist(g.cities[cid].pos, pos) <= 3)
+                            .then_some(pos)
+                    })
+            })
+            .collect();
+        if worked.is_empty() {
+            return None;
+        }
+        let baseline: Vec<_> = worked
+            .iter()
+            .map(|pos| {
+                g.valid_improvements(pid, *pos)
+                    .into_iter()
+                    .filter(|name| {
+                        let spec = &g.rules.improvements[name];
+                        spec.builder_buildable && !spec.removes_feature
+                    })
+                    .map(|name| g.improvement_yield_change(pid, *pos, name).production)
+                    .fold(0.0, f64::max)
+            })
+            .collect();
+        let goals: std::collections::BTreeSet<_> = g
+            .rules
+            .improvements
+            .values()
+            .filter(|spec| {
+                spec.builder_buildable && !spec.removes_feature && spec.yields.production > 0.0
+            })
+            .filter_map(|spec| spec.tech.as_deref())
+            .map(crate::name::Name::new)
+            .filter(|tech| !g.players[pid].techs.contains(tech))
+            .collect();
+        let mut best: Option<(f64, crate::name::Name)> = None;
+        for tech in goals {
+            let ancestors = g.rules.tech_ancestors.get(tech.as_str());
+            let cost: f64 = std::iter::once(tech)
+                .chain(
+                    ancestors
+                        .into_iter()
+                        .flat_map(|names| names.iter().map(|name| crate::name::Name::new(name))),
+                )
+                .filter(|node| !g.players[pid].techs.contains(node))
+                .map(|node| {
+                    g.host_remaining_research_cost(pid, node)
+                        .unwrap_or_else(|| g.tech_cost(node.as_str()))
+                })
+                .sum();
+            let turns = cost / science;
+            // Keep the entire prerequisite detour within twenty Online turns
+            // (forty Standard), and before the actual game's remaining clock.
+            let window = g.game_speed.scale(40.0).min(
+                g.turn_limit()
+                    .map_or(f64::INFINITY, |limit| limit.saturating_sub(g.turn) as f64),
+            );
+            if turns > window {
+                continue;
+            }
+            let mut branch = g.speculative_clone();
+            branch.players[pid].techs.insert(tech);
+            let gain: f64 = worked
+                .iter()
+                .zip(&baseline)
+                .map(|(pos, before)| {
+                    let after = branch
+                        .valid_improvements(pid, *pos)
+                        .into_iter()
+                        .filter(|name| {
+                            let spec = &branch.rules.improvements[name];
+                            spec.builder_buildable && !spec.removes_feature
+                        })
+                        .map(|name| branch.improvement_yield_change(pid, *pos, name).production)
+                        .fold(0.0, f64::max);
+                    (after - before).max(0.0)
+                })
+                .sum();
+            if gain < 4.0 {
+                continue;
+            }
+            let value = gain / (turns + 1.0);
+            if best.is_none_or(|(old, old_tech)| value > old || (value == old && tech < old_tech)) {
+                best = Some((value, tech));
+            }
+        }
+        best.map(|(_, tech)| tech)
+    }
+
+    /// Price the production a new worker can add to currently worked tiles.
+    /// Use the same yield price as buildings, after checking repayment and
+    /// subtracting work that nearby charged Builders can already service.
+    pub(super) fn named_productive_builder_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        counts: &super::EmpireCounts,
+    ) -> f64 {
+        self.productive_builder_investment(g, pid, cid, plan, counts)
+            .map_or(0.0, |(gain, _)| {
+                self.yield_value(
+                    crate::rules::Yields {
+                        production: gain,
+                        ..Default::default()
+                    },
+                    plan.strategy,
+                ) * 42.0
+            })
+    }
+
+    /// A named victory's productive tiles must not wait for the empire's last
+    /// Builder to disappear. Existing development debts retain first claim.
+    fn named_productive_workforce_target(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<(u32, Item)> {
+        self.active_victory_target(g)?;
+        let _memo = g.query_memo();
+        let counts = self.counts(g, pid);
+        let mut best: Option<(f64, u32)> = None;
+        for cid in g.player_city_ids(pid) {
+            if !g.cities[&cid].queue.is_empty() {
+                continue;
+            }
+            let Some((_, payback)) = self.productive_builder_investment(g, pid, cid, plan, &counts)
+            else {
+                continue;
+            };
+            if best
+                .is_none_or(|(old, old_city)| payback < old || (payback == old && cid < old_city))
+            {
+                best = Some((payback, cid));
+            }
+        }
+        best.map(|(_, cid)| {
+            (
+                cid,
+                Item::Unit {
+                    unit: crate::name!("builder"),
+                },
+            )
+        })
+    }
+
+    fn productive_builder_investment(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        counts: &super::EmpireCounts,
+    ) -> Option<(f64, f64)> {
+        let target = self.active_victory_target(g)?;
+        if self.base.minor || self.base.barb || plan.strategy == GrandStrategy::Recovery {
+            return None;
+        }
+        let _memo = g.query_memo();
+        let cities = g.player_city_ids(pid);
+        let ceiling = (super::PRODUCTION_BUILDERS_PER_CITY * cities.len() as f64).ceil() as usize;
+        if cities.len() < 2
+            || counts.builders >= ceiling
+            || counts.military < cities.len()
+            || self.live_war_economy_requires_recovery(g, pid, counts)
+        {
+            return None;
+        }
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        let city = &g.cities[&cid];
+        if city.loyalty < 76.0
+            || plan.threatened_city == Some(cid)
+            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+            || self.base.barbarian_local_alarm_for_controller(g, pid, cid)
+            || (target == super::VictoryTarget::Science && Self::city_has_spaceport(g, cid))
+            || !g.can_produce(pid, cid, &builder)
+            || (counts.traders == 0
+                && self
+                    .base
+                    .should_add_trader_in_city_for_controller(g, pid, cid, 0))
+        {
+            return None;
+        }
+        // Forecast only local, currently worked gains. Research bonuses
+        // count; resource access, future citizens and repairs do not.
+        let mut gains: Vec<f64> = g
+            .city_citizen_plan(cid)
+            .worked_tiles
+            .into_iter()
+            .filter_map(|pos| {
+                let tile = g.map.get(pos)?;
+                if pos == city.pos
+                    || tile.owner_city != Some(cid)
+                    || tile.improvement.is_some()
+                    || tile.district.is_some()
+                    || g.wdist(city.pos, pos) > 3
+                {
+                    return None;
+                }
+                g.valid_improvements(pid, pos)
+                    .into_iter()
+                    .filter_map(|name| {
+                        let spec = &g.rules.improvements[name];
+                        (spec.builder_buildable && !spec.removes_feature)
+                            .then(|| g.improvement_yield_change(pid, pos, name).production)
+                            .filter(|gain| *gain > 0.0)
+                    })
+                    .max_by(f64::total_cmp)
+            })
+            .collect();
+        gains.sort_by(|a, b| b.total_cmp(a));
+        // Give existing local charges the best jobs first. A one-charge
+        // worker cannot cover the whole city's productive backlog forever.
+        let covered: usize = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid && unit.kind == "builder" && g.wdist(unit.pos, city.pos) <= 3
+            })
+            .map(|unit| unit.charges.max(0) as usize)
+            .sum();
+        let charges = g.builder_charges(pid).max(0) as usize;
+        let gains: Vec<f64> = gains.into_iter().skip(covered).take(charges).collect();
+        if gains.is_empty() {
+            return None;
+        }
+        let gain: f64 = gains.iter().sum();
+        let build = self
+            .production_build_turns(g, pid, cid, &builder)
+            .ceil()
+            .max(1.0);
+        // Three tiles from the center and six between later jobs, at stock
+        // two movement, plus an operation per job. Terrain/safety may delay it.
+        let service = ((3 + 6 * (gains.len() - 1)) as f64 / 2.0).ceil() + gains.len() as f64;
+        let payback = build + service + g.item_remaining_cost_for_city(pid, cid, &builder) / gain;
+        let window = g.game_speed.scale(80.0).min(
+            g.turn_limit()
+                .map_or(f64::INFINITY, |limit| limit.saturating_sub(g.turn) as f64),
+        );
+        (payback <= window).then_some((gain, payback))
+    }
+
     /// Enable the independently screenable disciplined variant.
     pub fn enable_trade_building_before_bankruptcy_2(&mut self) {
         self.trade_building_before_bankruptcy_2 = true;
@@ -654,7 +936,13 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        let Some((city, item, debt)) = self.higher_level_investment_target(g, pid, plan) else {
+        let (city, item, reason) = if let Some((city, item, debt)) =
+            self.higher_level_investment_target(g, pid, plan)
+        {
+            (city, item, debt.tag(self))
+        } else if let Some((city, item)) = self.named_productive_workforce_target(g, pid, plan) {
+            (city, item, "named productive workforce")
+        } else {
             return;
         };
         if g.apply(
@@ -668,7 +956,7 @@ impl AdvancedAi {
             && self.journal().wants(Level::Decision)
         {
             think!(self.journal(), Economy, Decision,
-                "{} starts {} for {}", g.cities[&city].name, Self::plain_item(&item), debt.tag(self);
+                "{} starts {} for {}", g.cities[&city].name, Self::plain_item(&item), reason;
                 "one safe idle queue services the development shortfall");
         }
     }
@@ -685,3 +973,6 @@ mod queued_yield_tests;
 
 #[cfg(test)]
 mod campus_foundation_tests;
+
+#[cfg(test)]
+mod production_workforce_tests;
