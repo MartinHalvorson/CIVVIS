@@ -483,6 +483,12 @@ local function resolveActions()
 		-- seat. Parameterless, like FORTIFY: the unit pillages the tile it is on.
 		"UNITOPERATION_PILLAGE",
 		"UNITOPERATION_HARVEST_RESOURCE", "UNITOPERATION_REST_REPAIR",
+		-- A chop (`chop_woods`, `chop_rainforest`, `clear_marsh`) and a forest
+		-- planting cross as these, parameterless like HARVEST_RESOURCE:
+		-- Base/Assets/Gameplay/Data/UnitOperations.xml:35 and :32 carry no
+		-- InterfaceMode. Before these rows civvis_orders sent a chop as an
+		-- Improvements row the host does not have (`IMPROVEMENT_CHOP_WOODS`).
+		"UNITOPERATION_REMOVE_FEATURE", "UNITOPERATION_PLANT_FOREST",
 		"UNITOPERATION_MAKE_TRADE_ROUTE", "UNITOPERATION_SPREAD_RELIGION",
 		-- This begins the Apostle's native belief-selection prompt. The order
 		-- handler keeps CIVVIS's selected belief and completes that prompt with

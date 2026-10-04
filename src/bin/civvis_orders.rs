@@ -5134,6 +5134,15 @@ fn translate(
             verb: Some(match improvement.as_str() {
                 "archaeological_dig" | "shipwreck_excavation" => "EXCAVATE".to_string(),
                 "national_park" => "DESIGNATE_PARK".to_string(),
+                // The engine's builder operations (`Game::builder_operations`)
+                // are native unit operations too, not Improvements rows:
+                // `IMPROVE:IMPROVEMENT_CHOP_WOODS` found no row and the host
+                // picked an improvement of its own. Base/Assets/Gameplay/Data/
+                // UnitOperations.xml:35 REMOVE_FEATURE, :23 HARVEST_RESOURCE,
+                // :32 PLANT_FOREST, none with an InterfaceMode.
+                "chop_woods" | "chop_rainforest" | "clear_marsh" => "REMOVE_FEATURE".to_string(),
+                "harvest_resource" => "HARVEST_RESOURCE".to_string(),
+                "plant_woods" => "PLANT_FOREST".to_string(),
                 _ => format!("IMPROVE:{}", civ6_improvement_type(improvement)),
             }),
             pos: None,
@@ -6834,7 +6843,8 @@ fn verify_unit_order(
         // show is the park itself. `EXCAVATE` leaves no improvement at all —
         // it lifts the artifact and clears the site — so it rests on the
         // charge, the unit and the `improved` event.
-        "IMPROVE" | "REPAIR" | "DESIGNATE_PARK" | "EXCAVATE" => {
+        "IMPROVE" | "REPAIR" | "DESIGNATE_PARK" | "EXCAVATE" | "REMOVE_FEATURE"
+        | "HARVEST_RESOURCE" | "PLANT_FOREST" => {
             let charges_spent = match (
                 was.and_then(|u| u.build_charges),
                 now.and_then(|u| u.build_charges),
@@ -13806,6 +13816,11 @@ mod tests {
             ("UNIT_NATURALIST", Some("national_park"), "DESIGNATE_PARK"),
             ("UNIT_ROCK_BAND", None, "TOURISM_BOMB"),
             ("UNIT_BUILDER", Some("farm"), "IMPROVE:IMPROVEMENT_FARM"),
+            ("UNIT_BUILDER", Some("chop_woods"), "REMOVE_FEATURE"),
+            ("UNIT_BUILDER", Some("chop_rainforest"), "REMOVE_FEATURE"),
+            ("UNIT_BUILDER", Some("clear_marsh"), "REMOVE_FEATURE"),
+            ("UNIT_BUILDER", Some("harvest_resource"), "HARVEST_RESOURCE"),
+            ("UNIT_BUILDER", Some("plant_woods"), "PLANT_FOREST"),
         ] {
             let state = StateSnapshot {
                 turn: 156,
