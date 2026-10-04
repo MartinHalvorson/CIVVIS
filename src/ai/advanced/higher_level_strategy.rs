@@ -136,7 +136,7 @@ impl AdvancedAi {
             })
     }
 
-    /// Unlock production on tiles citizens already work. A counterfactual
+    /// Unlock or upgrade production on tiles citizens already work. A counterfactual
     /// technology goes on a disposable world so legality and researched tile
     /// yields come from the engine rather than a second terrain rule table.
     pub(super) fn named_production_technology_goal(
@@ -173,7 +173,6 @@ impl AdvancedAi {
                         let t = g.map.get(pos)?;
                         (pos != g.cities[cid].pos
                             && t.owner_city == Some(*cid)
-                            && t.improvement.is_none()
                             && t.district.is_none()
                             && g.wdist(g.cities[cid].pos, pos) <= 3)
                             .then_some(pos)
@@ -183,19 +182,26 @@ impl AdvancedAi {
         if worked.is_empty() {
             return None;
         }
-        let baseline: Vec<_> = worked
-            .iter()
-            .map(|pos| {
-                g.valid_improvements(pid, *pos)
+        // Installed improvements pay as soon as the technology completes.
+        // Bare tiles retain the existing Builder opportunity forecast; do not
+        // invent a replacement operation on an already improved tile.
+        let potential = |world: &Game, pos: Pos| {
+            let current = world.modeled_tile_yields(pos).production;
+            if world.map.tiles[&pos].improvement.is_some() {
+                return current;
+            }
+            current
+                + world
+                    .valid_improvements(pid, pos)
                     .into_iter()
                     .filter(|name| {
-                        let spec = &g.rules.improvements[name];
+                        let spec = &world.rules.improvements[name];
                         spec.builder_buildable && !spec.removes_feature
                     })
-                    .map(|name| g.improvement_yield_change(pid, *pos, name).production)
+                    .map(|name| world.improvement_yield_change(pid, pos, name).production)
                     .fold(0.0, f64::max)
-            })
-            .collect();
+        };
+        let baseline: Vec<_> = worked.iter().map(|pos| potential(g, *pos)).collect();
         let goals: std::collections::BTreeSet<_> = g
             .rules
             .improvements
@@ -205,6 +211,12 @@ impl AdvancedAi {
             })
             .filter_map(|spec| spec.tech.as_deref())
             .map(crate::name::Name::new)
+            .chain(g.rules.techs.iter().filter_map(|(name, spec)| {
+                spec.effects
+                    .iter()
+                    .any(|(effect, value)| effect.ends_with("_production") && *value > 0.0)
+                    .then_some(*name)
+            }))
             .filter(|tech| !g.players[pid].techs.contains(tech))
             .collect();
         let mut best: Option<(f64, crate::name::Name)> = None;
@@ -240,15 +252,7 @@ impl AdvancedAi {
                 .iter()
                 .zip(&baseline)
                 .map(|(pos, before)| {
-                    let after = branch
-                        .valid_improvements(pid, *pos)
-                        .into_iter()
-                        .filter(|name| {
-                            let spec = &branch.rules.improvements[name];
-                            spec.builder_buildable && !spec.removes_feature
-                        })
-                        .map(|name| branch.improvement_yield_change(pid, *pos, name).production)
-                        .fold(0.0, f64::max);
+                    let after = potential(&branch, *pos);
                     (after - before).max(0.0)
                 })
                 .sum();
