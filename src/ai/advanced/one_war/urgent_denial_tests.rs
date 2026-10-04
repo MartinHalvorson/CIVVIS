@@ -550,3 +550,57 @@ fn a_second_front_on_an_urgent_rival_is_kept() {
     assert!(ai.second_front_war_kept(&g, 0, 2));
     assert_eq!(ai.one_war_peace(&g, 0, 2), None);
 }
+
+/// Live King civvis-20261004T025448Z (game 45): a counter the war cannot
+/// answer without a siege (a culture or science clock) takes no second front
+/// before it is urgent, so the army stays on the prey front's siege.
+#[test]
+fn a_slow_clock_takes_no_second_front_beside_a_prey_front() {
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    let stats = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats);
+    for pid in 0..4 {
+        stats.insert(
+            pid,
+            crate::game::ObservedPublicEmpireStats {
+                domestic_tourists: Some(100),
+                foreign_tourists: Some(if pid == 2 { 60 } else { 0 }),
+                ..Default::default()
+            },
+        );
+    }
+    ai.one_war_observe(&g, 0);
+    assert!(ai.domination_capital_prey(&g, 0, 1));
+    assert!(ai.domination_counter_target(&g, 0, 2));
+    assert!(!ai.urgent_victory_threat(&g, 2));
+    assert!(!ai.faith_counter(&g, 0, 2));
+    assert_eq!(ai.one_war_second_front(&g, 0), None);
+}
+
+/// See `ONE_WAR_SECOND_FRONT_HOLD_RATIO`: a second front once named holds
+/// below the opening ratio, so the pick does not flicker on the line.
+#[test]
+fn a_named_second_front_holds_below_the_opening_ratio() {
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2));
+    assert_eq!(ai.one_war_second, Some(2));
+    let mut row = 2;
+    while g.military_power(0) >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(2).max(1.0) {
+        g.spawn_test_unit("warrior", 2, (30, row));
+        row += 1;
+    }
+    assert!(
+        g.military_power(0) >= ONE_WAR_SECOND_FRONT_HOLD_RATIO * g.military_power(2),
+        "fixture: between the two ratios"
+    );
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2), "held");
+    assert!(ai.faith_counter_due(&g, 0, 2));
+    // Not named before: the opening ratio applies.
+    ai.one_war_second = None;
+    assert_eq!(ai.one_war_second_front(&g, 0), None);
+    assert!(!ai.faith_counter_due(&g, 0, 2));
+}

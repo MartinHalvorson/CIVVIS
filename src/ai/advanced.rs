@@ -6533,6 +6533,9 @@ pub struct AdvancedAi {
     /// The gene's chosen front and its tide clock; `None` at peace or with
     /// the gene off.
     one_war: Option<one_war::OneWarFront>,
+    /// The second front `one_war_second_front` named at the last
+    /// observation, held to [`one_war::ONE_WAR_SECOND_FRONT_HOLD_RATIO`].
+    one_war_second: Option<usize>,
     /// `lane-delegates-production`: until the development half ends, an
     /// assigned lane's cities take the unassigned seat's production dispatch
     /// — the strategic scorer only where that seat would run it, then
@@ -8794,6 +8797,7 @@ impl AdvancedAi {
             missionary_evades_raiders: false,
             one_war_at_a_time: false,
             one_war: None,
+            one_war_second: None,
             lane_delegates_production: false,
             lane_delegates_production_2: false,
 

@@ -98,6 +98,14 @@ pub(crate) const ONE_WAR_WINNING_RATIO: f64 = 2.0;
 /// The power margin over a second rival at which a Domination seat opens
 /// that war beside the one it is fighting. See `one_war_second_front`.
 pub(crate) const ONE_WAR_SECOND_FRONT_RATIO: f64 = 1.5;
+
+/// The power ratio that keeps a second front already named: the opening
+/// ratio, less a margin, so the pick does not flicker on the line. Live King
+/// civvis-20261004T025448Z (game 45) had 302-340 power against 1.5 times
+/// Nubia's 288-335; the pick switched between Nubia and the Spanish front
+/// nearly every turn, and the army left Barcelona's ring for a war that never
+/// opened (diagnosed by -60).
+pub(crate) const ONE_WAR_SECOND_FRONT_HOLD_RATIO: f64 = 1.3;
 /// Standard turns the front may refuse the peace that would free the army
 /// before the second front opens beside it.
 pub(crate) const ONE_WAR_SECOND_FRONT_PATIENCE: u32 = 3;
@@ -469,11 +477,13 @@ impl AdvancedAi {
     pub(crate) fn one_war_observe(&mut self, g: &Game, pid: usize) {
         if !self.one_war_at_a_time {
             self.one_war = None;
+            self.one_war_second = None;
             return;
         }
         let enemies = self.one_war_enemies(g, pid);
         let Some(target) = self.one_war_choose_front(g, pid, &enemies) else {
             self.one_war = None;
+            self.one_war_second = None;
             return;
         };
         let mut front = match self.one_war.take() {
@@ -546,6 +556,17 @@ impl AdvancedAi {
             } else {
                 front.closure_wanted_since = None;
             }
+        }
+        self.one_war_second = self.one_war_second_front(g, pid);
+    }
+
+    /// The power ratio over `rival` a second front needs: the hold ratio for
+    /// the one named at the last observation, the opening ratio otherwise.
+    pub(crate) fn second_front_ratio(&self, rival: usize) -> f64 {
+        if self.one_war_second == Some(rival) {
+            ONE_WAR_SECOND_FRONT_HOLD_RATIO
+        } else {
+            ONE_WAR_SECOND_FRONT_RATIO
         }
     }
 
@@ -700,6 +721,14 @@ impl AdvancedAi {
     /// 113 for "0 staged on its ring" while the army besieged America, at
     /// 1.9 to 2.3 times their power; the Cree took our cities and won at 126.
     pub(crate) fn faith_counter_due(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        self.faith_counter(g, pid, rival)
+            && g.military_power(pid)
+                >= self.second_front_ratio(rival) * g.military_power(rival).max(1.0)
+    }
+
+    /// A faithless Domination seat whose cities `rival`'s faith is taking:
+    /// `domination_faithless_conversion_counter`. See `faith_counter_due`.
+    pub(crate) fn faith_counter(&self, g: &Game, pid: usize, rival: usize) -> bool {
         self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && g.players[pid].religion.is_none()
             && self.domination_faithless_conversion_counter(
@@ -708,8 +737,6 @@ impl AdvancedAi {
                 rival,
                 self.rival_victory_pressure(g, rival),
             )
-            && g.military_power(pid)
-                >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(rival).max(1.0)
     }
 
     /// Whether a war on `other`, beside the front, is one the Domination
@@ -911,7 +938,8 @@ impl AdvancedAi {
             return None;
         }
         let outguns = |rival: usize| {
-            g.military_power(pid) >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(rival).max(1.0)
+            g.military_power(pid)
+                >= self.second_front_ratio(rival) * g.military_power(rival).max(1.0)
         };
         let usable = |rival: usize| {
             rival != front
@@ -919,17 +947,19 @@ impl AdvancedAi {
                 && self.campaign_target_legal(g, pid, rival)
                 && outguns(rival)
         };
-        // A counter target need not be urgent. Its front is never traded
-        // while it is capital prey, so waiting for urgency waits for the loss:
-        // live King civvis-20261003T155014Z (game 41) held the Cree as the
-        // faithless-conversion counter from turn 91, at 2.2 times their power
-        // by 110, while the army besieged a prey America. The Cree read urgent
-        // only at 116, at 1.07 times, and won on Religion at 126.
+        // A faith taking our cities need not be urgent. Its front is never
+        // traded while it is capital prey, so waiting for urgency waits for
+        // the loss: live King civvis-20261003T155014Z (game 41) held the Cree
+        // as the faithless-conversion counter from turn 91, at 2.2 times their
+        // power by 110, while the army besieged a prey America. The Cree read
+        // urgent only at 116, at 1.07 times, and won on Religion at 126. The
+        // war itself counters a faith (`faith_counter_due`); any other counter
+        // still needs its siege staged, so it waits for urgency rather than
+        // pull the army off a live siege for a war that cannot open.
         self.actionable_victory_denial(g, pid)
             .filter(|(rival, counter)| {
                 *counter == GrandStrategy::Conquest
-                    && (self.urgent_victory_threat(g, *rival)
-                        || self.domination_counter_target(g, pid, *rival))
+                    && (self.urgent_victory_threat(g, *rival) || self.faith_counter(g, pid, *rival))
             })
             .map(|(rival, _)| rival)
             .filter(|rival| usable(*rival))
