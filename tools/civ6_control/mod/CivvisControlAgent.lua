@@ -12368,6 +12368,10 @@ local function applyOrder(player, pid, row, turn)
 		end);
 		if ok then
 			warDeclared[subject] = true;
+			-- RequestSession accepts an asynchronous request, not an acknowledged
+			-- war (DiplomacyActionView.lua:427). Dependent condemnation must read
+			-- IsAtWarWith before issuing its parameterless command.
+			CivvisQueue.warRequests[subject] = turn;
 			-- ⚠ THE FIRES-CHECK FOR THE DECISION THAT DECIDES THE GAME. `declareWar`
 			-- emits this on the built-in path; without it here, a CIVVIS-declared war
 			-- appeared only as an anonymous `by.war = 1` count and the run's `war`
@@ -15283,6 +15287,9 @@ local function applyOrder(player, pid, row, turn)
 		if verb == "CONDEMN_HERETIC" then
 			local hash = CMD["UNITCOMMAND_CONDEMN_HERETIC"];
 			if hash == nil then return false, "unknown_cmd_" .. verb; end
+			if CivvisQueue.condemnWarPending(player, pid, row, turn) ~= nil then
+				return false, "condemn_war_pending";
+			end
 			CivvisLedger.expectCondemn(player, pid, unit, turn);
 			local ok, why = commandUnit(unit, hash, true);
 			if not ok then CivvisLedger.cancelCondemn(unit:GetID()); end
@@ -15882,6 +15889,7 @@ end
 -- One bare global table: the main chunk sits two slots under Lua 5.1's
 -- 200-local ceiling (see the CI headroom check), so nothing here is a `local`.
 CivvisQueue = {
+	warRequests = {}, -- target -> turn of an accepted request, NOT acknowledgement
 	pending = {},   -- host unit id -> { rows, next, expect, ready, wait, settle_passes }
 	order = {},     -- unit ids in the order they were first queued
 	count = 0,
@@ -15906,8 +15914,49 @@ CivvisQueue.reset = function(turn)
 		CivvisQueue.report(q.turn, "turn_over");
 	end
 	q.pending = {}; q.order = {}; q.count = 0; q.watching = 0; q.turn = turn; q.ticks = 0;
+	q.warRequests = {};
 	q.stats = { applied = 0, refused = 0, refusals = {}, strikes_landed = 0,
 	            strikes_planned = 0, queued = 0 };
+end;
+
+-- UnitCommands.xml:47 makes condemnation parameterless and tile-local.
+-- The shipped CityStates.lua:1508 reads IsAtWarWith for the actual relation;
+-- RequestSession's return is not that readback. Only wait for a requested war
+-- when its religious target is on our actor's visible plot. A different target
+-- already at war makes an immediate condemnation useful, so do not delay it.
+CivvisQueue.condemnWarPending = function(player, pid, row, turn)
+	if tostring(row.kind or "") ~= "unit"
+			or tostring(row.verb or "") ~= "CONDEMN_HERETIC" then return nil; end
+	local requested = false;
+	for _, requestTurn in pairs(CivvisQueue.warRequests) do
+		if requestTurn == turn then requested = true; break; end
+	end
+	if not requested then return nil; end
+	local unit = liveUnit(pid, tonumber(row.subject) or -1);
+	if unit == nil then return nil; end
+	return try(function()
+		local x, y = unit:GetX(), unit:GetY();
+		if PlayersVisibility[pid]:IsVisible(x, y) ~= true then return nil; end
+		local diplomacy = player:GetDiplomacy();
+		local pending;
+		for _, otherId in ipairs(PlayerManager.GetAliveMajorIDs()) do
+			if otherId ~= pid then
+				local atWar = diplomacy:IsAtWarWith(otherId);
+				if atWar == true or CivvisQueue.warRequests[otherId] == turn then
+					for _, target in Players[otherId]:GetUnits():Members() do
+						if target:GetX() == x and target:GetY() == y then
+							local info = GameInfo.Units[target:GetUnitType()];
+							if info ~= nil and (tonumber(info.ReligiousStrength) or 0) > 0 then
+								if atWar == true then return nil; end
+								pending = otherId;
+							end
+						end
+					end
+				end
+			end
+		end
+		return pending;
+	end, nil);
 end;
 
 -- The position an order should leave its unit at, when the next order must
@@ -16170,6 +16219,25 @@ CivvisQueue.drain = function(player, pid, turn)
 					and not arrived and entry.wait >= grace;
 				local ready = (entry.ready or arrived or spent or moved_from_origin
 					or unpathed or entry.wait >= grace) and (not active_operation or stuck_operation);
+				if ready and #entry.rows > 0 then
+					local target = CivvisQueue.condemnWarPending(player, pid, entry.rows[entry.next], turn);
+					if target ~= nil then
+						entry.war_wait = (entry.war_wait or 0) + 1;
+						if entry.war_wait == 1 then
+							emit("queue_war_wait", { turn = turn, unit = subject, target = target });
+						end
+						if entry.war_wait >= grace then
+							CivvisQueue.refuseRest(subject, entry, "queue_war_not_acknowledged");
+						end
+						ready = false;
+					elseif (entry.war_wait or 0) > 0 then
+						-- No acknowledgement claim: the target could also have moved
+						-- or vanished. The normal native command gate still decides.
+						emit("queue_war_wait_released", { turn = turn, unit = subject,
+							waited = entry.war_wait });
+						entry.war_wait = nil;
+					end
+				end
 				-- A path can report its destination before Civ VI has finished
 				-- deactivating the asynchronous MOVE_TO. On the live host the
 				-- activity read can briefly say "awake" in that window, so an
@@ -16236,6 +16304,7 @@ CivvisQueue.drain = function(player, pid, turn)
 								entry.expect = ok and CivvisQueue.expectFor(row) or nil;
 								entry.ready = false;
 								entry.wait = 0;
+								entry.war_wait = nil;
 								entry.settle_passes = ok
 									and verb == "MOVE_TO"
 									and tostring(entry.rows[entry.next].verb or "") == "FORTIFY"
@@ -18415,6 +18484,14 @@ local function applyOrders(player, pid, turn, rows)
 				else
 					CivvisQueue.push(subject, row, firstRun[subject].expect);
 				end
+			elseif queueOn and isUnit
+					and CivvisQueue.condemnWarPending(player, pid, row, turn) ~= nil then
+				-- No earlier unit order is needed for this dependency: the war
+				-- request itself is still in flight. Queue it without reporting
+				-- a failed command or poisoning this unit's later orders.
+				ordered[index] = true;
+				CivvisQueue.push(subject, row, nil);
+				firstRun[subject] = { expect = nil };
 			else
 				local ok = runOrder(index, row);
 				if isUnit then
