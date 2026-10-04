@@ -23016,7 +23016,7 @@ mod tests {
         game.players[0].techs.insert(crate::name!("apprenticeship"));
         // Mines on the second ring give every first-ring site adjacency.
         let center = game.cities[&cid].pos;
-        let owned: Vec<Pos> = game.cities[&cid].owned_tiles.iter().copied().collect();
+        let owned: Vec<Pos> = game.cities[&cid].owned_tiles.to_vec();
         for position in owned {
             if game.wdist(center, position) == 2 && game.map.tiles[&position].district.is_none() {
                 let tile = game.map.tiles.get_mut(&position).unwrap();
@@ -23031,19 +23031,34 @@ mod tests {
             ai.industry_before_the_army = on;
             ai.pick_item(game, 0, cid, n_cities, settlers, 3, 1, 0, 0, 0, 0)
         };
-        let is_zone = |item: &Option<Item>| {
-            matches!(item, Some(Item::District { district, .. }) if *district == "industrial_zone")
-        };
+        let is_zone = |item: &Option<Item>| matches!(item, Some(Item::District { district, .. }) if *district == "industrial_zone");
         let stock = pick(&game, false, 3, 1);
-        assert!(!is_zone(&stock), "the fixture's stock pick is not the zone: {stock:?}");
+        assert!(
+            !is_zone(&stock),
+            "the fixture's stock pick is not the zone: {stock:?}"
+        );
         let zone = pick(&game, true, 3, 1);
         assert!(is_zone(&zone), "the zone comes first: {zone:?}");
-        assert_eq!(pick(&game, true, 2, 1), pick(&game, false, 2, 1), "two cities keep the stock choice");
-        assert!(BasicAi::new().settler_due(&game, 0, cid, 3, 0), "the fixture is due a Settler");
-        assert!(!is_zone(&pick(&game, true, 3, 0)), "a due Settler comes first");
+        assert_eq!(
+            pick(&game, true, 2, 1),
+            pick(&game, false, 2, 1),
+            "two cities keep the stock choice"
+        );
+        assert!(
+            BasicAi::new().settler_due(&game, 0, cid, 3, 0),
+            "the fixture is due a Settler"
+        );
+        assert!(
+            !is_zone(&pick(&game, true, 3, 0)),
+            "a due Settler comes first"
+        );
         // One city in three already on the chain leaves this one to stock.
         let mut busy = game.clone();
-        busy.cities.get_mut(&cid).unwrap().queue.insert(0, zone.clone().unwrap());
+        busy.cities
+            .get_mut(&cid)
+            .unwrap()
+            .queue
+            .insert(0, zone.clone().unwrap());
         assert!(BasicAi::industry_before_the_army_item(&busy, 0, cid, 3, false).is_none());
         // With the zone standing, its Workshop, then its Factory.
         let site = match zone {
@@ -23051,14 +23066,24 @@ mod tests {
             other => panic!("{other:?}"),
         };
         game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("industrial_zone"));
-        game.cities.get_mut(&cid).unwrap().districts.insert(crate::name!("industrial_zone"), site);
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .districts
+            .insert(crate::name!("industrial_zone"), site);
         let workshop = pick(&game, true, 3, 1);
         assert!(
             matches!(&workshop, Some(Item::Building { building }) if *building == "workshop"),
             "{workshop:?}"
         );
-        game.cities.get_mut(&cid).unwrap().buildings.push(crate::name!("workshop"));
-        game.players[0].techs.insert(crate::name!("industrialization"));
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .push(crate::name!("workshop"));
+        game.players[0]
+            .techs
+            .insert(crate::name!("industrialization"));
         let factory = pick(&game, true, 3, 1);
         assert!(
             matches!(&factory, Some(Item::Building { building }) if *building == "factory"),

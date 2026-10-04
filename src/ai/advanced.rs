@@ -17212,7 +17212,9 @@ impl AdvancedAi {
     fn urban_planning_outearns_colonization(g: &Game, pid: usize, city_ids: &[u32]) -> bool {
         let planning = Name::new("urban_planning");
         let colonization = Name::new("colonization");
-        if !g.available_policies(pid).contains(&planning) && !g.players[pid].policies.contains(&planning) {
+        if !g.available_policies(pid).contains(&planning)
+            && !g.players[pid].policies.contains(&planning)
+        {
             return false;
         }
         let pct = |card: &Name, effect: &str| {
@@ -17230,7 +17232,10 @@ impl AdvancedAi {
                     Some(Item::Unit { unit }) if unit == "settler"
                 )
             })
-            .map(|city| g.city_yields(*city).production * pct(&colonization, "settler_production_pct") / 100.0)
+            .map(|city| {
+                g.city_yields(*city).production * pct(&colonization, "settler_production_pct")
+                    / 100.0
+            })
             .sum();
         let planning_gain = pct(&planning, "city_production") * city_ids.len() as f64;
         planning_gain > settler_gain
