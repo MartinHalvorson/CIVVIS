@@ -1,0 +1,47 @@
+{
+  "control_commit": "2146d93a21ff595bbde3c636340b19552a214cc5",
+  "candidate_runtime_commit": "086cb4dd24c9032eb6206bbec92ff9bfe6fc261a",
+  "base_main": "cbc4cf533ef3f22b71bd14d6f8175769411dd0be",
+  "control_binary_sha256": "39b58598ebb0d7ecb6fef3ea95b4dd86d9e73553cb6a7943e7c0c585bae8fadb",
+  "candidate_binary_sha256": "f6e3d3d13217678d8a68227ef440695c5268fff77ceddefe2494ec9a2dfff779",
+  "control_library_sha256": "a7ce7a19956e57451d7ec1a84cdd0ca3b66d1a64d0b6d7ef85ae0aa39e230cff",
+  "candidate_library_sha256": "4d7d41cab8ad7e4a43267e89e58447185f011d35e4c50580b59f6b0d1c4a2feb",
+  "source_sha256": {
+    "control": {
+      "src/ai/advanced/production_compounding.rs": "03a6e300f7c62a7dbf7943aba11bbedc52a30d5b384e99fa5c4bb495290e6408",
+      "docs/gene_ledger.json": "e86a761d3fc5d51f3d41b289c5b7275810fe5adbbe2a85581d32833ad3e05a45"
+    },
+    "candidate": {
+      "src/ai/advanced/production_compounding.rs": "a828444fd82afc2e154f6a937315730173cdefc58e0cf445637e159b18b09084",
+      "docs/gene_ledger.json": "e86a761d3fc5d51f3d41b289c5b7275810fe5adbbe2a85581d32833ad3e05a45"
+    }
+  },
+  "pilot": {
+    "emperor": {
+      "seed_start": 61005800,
+      "games": 4
+    },
+    "deity": {
+      "seed_start": 61005900,
+      "games": 4
+    }
+  },
+  "reserved_confirmation": {
+    "emperor": {
+      "seed_start": 61005600,
+      "games": 12
+    },
+    "deity": {
+      "seed_start": 61005700,
+      "games": 8
+    }
+  },
+  "confirmation_run": false,
+  "decision": "pending pilot",
+  "validation": {
+    "existing_production_compounding_tests": "8 passed",
+    "prototype_ci_quality_and_paired_cost": "passed",
+    "new_fixture_full_suite": "running"
+  },
+  "artifacts_sha256": {}
+}

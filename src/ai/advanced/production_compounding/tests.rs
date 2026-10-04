@@ -283,3 +283,154 @@ fn every_named_lane_reserves_only_a_safe_repayable_idle_investment() {
         "a launch city's project priority is preserved"
     );
 }
+
+fn district_fixture() -> (Game, u32, u32, AdvancedAi, StrategicPlan) {
+    let (mut game, cid, _) = workshop_fixture();
+    game.turn = 50;
+    game.max_turns = 150;
+    let old = game
+        .cities
+        .get_mut(&cid)
+        .unwrap()
+        .districts
+        .remove(crate::name!("industrial_zone"))
+        .unwrap()[0];
+    game.map.tiles.get_mut(&old).unwrap().district = None;
+    game.players[0].techs.insert(crate::name!("mining"));
+    game.players[0].gold_per_turn = 20.0;
+    std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments).insert(cid, 10);
+    let center = game.cities[&cid].pos;
+    let site = game.district_sites(cid, crate::name!("industrial_zone"))[0];
+    let tile = game.map.tiles.get_mut(&site).unwrap();
+    tile.terrain = crate::name!("grassland");
+    tile.hills = false;
+    tile.feature = None;
+    tile.resource = None;
+    tile.improvement = None;
+    for pos in game.nbrs(site) {
+        if pos == center {
+            continue;
+        }
+        let tile = game.map.tiles.get_mut(&pos).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.hills = false;
+        tile.feature = None;
+        tile.resource = Some(crate::name!("stone"));
+        tile.improvement = Some(crate::name!("quarry"));
+    }
+    let second_pos = game
+        .map
+        .tiles
+        .values()
+        .find(|tile| {
+            !game.rules.is_water(tile)
+                && tile.owner_city.is_none()
+                && game.wdist(center, tile.pos) >= 6
+                && game.unit_ids_at(tile.pos).is_empty()
+        })
+        .unwrap()
+        .pos;
+    let settler = game.spawn_unit("settler", 0, second_pos);
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let second = game
+        .player_city_ids(0)
+        .into_iter()
+        .find(|id| *id != cid)
+        .unwrap();
+    game.spawn_unit("warrior", 0, second_pos);
+    game.spawn_unit("builder", 0, center);
+    game.spawn_unit("trader", 0, center);
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    assert!(ai
+        .profitable_industrial_foundation(&game, 0, cid, &plan)
+        .is_some());
+    (game, cid, second, ai, plan)
+}
+
+#[test]
+fn domination_opens_repayable_industry_in_the_real_queue() {
+    let (mut game, cid, _, mut ai, plan) = district_fixture();
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert!(matches!(game.cities[&cid].queue.first(),
+        Some(Item::District { district, .. }) if game.district_family(*district) == "industrial_zone"));
+}
+
+#[test]
+fn industrial_district_prices_the_workshop_and_protects_other_priorities() {
+    let (mut game, cid, _, ai, mut plan) = district_fixture();
+    let item = ai
+        .profitable_industrial_foundation(&game, 0, cid, &plan)
+        .unwrap();
+    let Item::District { district, pos } = item else {
+        panic!("fixture must open a district");
+    };
+    let adjacency = game
+        .district_adjacency_assuming(district, pos, None, None)
+        .production;
+    let worked = game.city_citizen_plan(cid).worked_tiles.contains(&pos);
+    let displaced = if worked {
+        game.workable_tile_yields(pos).production
+    } else {
+        0.0
+    };
+    let gain = adjacency - displaced;
+    let district_cost = game.item_remaining_cost_for_city(0, cid, &item);
+    let build = ai.production_build_turns(&game, 0, cid, &item);
+    game.max_turns = game.turn + (build + district_cost / gain).ceil() as u32 + 1;
+    assert!((game.max_turns - game.turn) as f64 >= build + district_cost / gain);
+    assert!(
+        ai.profitable_industrial_foundation(&game, 0, cid, &plan)
+            .is_none(),
+        "district-only payback must not hide the cost of the Workshop"
+    );
+    game.max_turns = 150;
+    plan.threatened_city = Some(cid);
+    assert!(ai
+        .profitable_industrial_foundation(&game, 0, cid, &plan)
+        .is_none());
+    plan.threatened_city = None;
+    for target in [VictoryTarget::Science, VictoryTarget::Culture] {
+        assert!(AdvancedAi::targeting(target)
+            .profitable_industrial_foundation(&game, 0, cid, &plan)
+            .is_none());
+    }
+    game.players[0].gold_per_turn = 0.0;
+    assert!(ai
+        .profitable_industrial_foundation(&game, 0, cid, &plan)
+        .is_none());
+}
+
+#[test]
+fn pending_workshop_closes_new_chain_but_owed_building_still_reserves() {
+    let (mut game, cid, second, ai, plan) = district_fixture();
+    install_test_district(&mut game, second, "industrial_zone");
+    let workshop = Item::Building {
+        building: crate::name!("workshop"),
+    };
+    assert!(game.can_produce(0, second, &workshop));
+    game.apply(
+        0,
+        &Action::Produce {
+            city: second,
+            item: workshop.clone(),
+        },
+    )
+    .unwrap();
+    assert!(ai
+        .profitable_industrial_foundation(&game, 0, cid, &plan)
+        .is_none());
+    game.cities.get_mut(&second).unwrap().queue.clear();
+    assert_eq!(
+        ai.profitable_industrial_foundation(&game, 0, second, &plan),
+        Some(workshop)
+    );
+}

@@ -1,6 +1,6 @@
 # Early city production payback
 
-Status: fixed prototype planned; not a strength claim.
+Status: frozen runtime prototype 086cb4dd2; pilot in progress, not a strength claim.
 
 ## Hypothesis and frozen protocol
 
@@ -44,3 +44,20 @@ six cities. Own city sources contained Palace production, worked plots,
 a domestic route, and amenity penalties, but no industrial contribution.
 This establishes an unbuilt opportunity, not that building industry
 causes a better result. Growth and terrain also limit the ramp.
+
+At turn 150, Civvis had nine cities, 53 population and 115.406 production;
+Scotland had seven cities, 63 population and 230.188 production. There
+were still no Industrial Zones or Workshops in the recorded Civvis cities.
+At turn 100, own production per citizen was 2.61, Scotland 3.39, Japan
+2.48 and Brazil 1.83. The early per-city gap therefore also reflects
+population density; industry alone is not established as the cause.
+
+The prototype requires nonnegative city amenities, net district production
+of at least one, and no pending industrial district or building elsewhere.
+It credits production only after both stages finish, uses the current
+district quote when available, models future Workshop cost, and does not
+spend city overflow twice. Population relocation, future modifiers and
+food lost from district placement are not fully forecast; paired games
+measure the consequences instead of treating this estimate as realized
+production. Existing profitable industrial buildings retain priority and
+other named lanes keep their previous district behavior.
