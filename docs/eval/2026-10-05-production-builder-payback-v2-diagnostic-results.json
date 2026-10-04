@@ -1,0 +1,280 @@
+{
+  "recorded_at": "2026-10-04T23:14:26.416098+00:00",
+  "runtime_source": "68782f32268c7584582b3a7ba9e5f88f91e3c0ea",
+  "native_only": true,
+  "fresh_strength_samples": 0,
+  "all_executions_exit_zero": true,
+  "pairs": [
+    {
+      "difficulty": "emperor",
+      "seed": 61008600,
+      "reserves": [],
+      "rejection_buckets": {
+        "city output, recent attack, local alarm, or production legality": 84,
+        "existing workforce, another queued Builder, or insolvency": 12,
+        "fewer than two uncovered worked production jobs": 3,
+        "inactive lane, recovery, age, or strategic threat": 113
+      },
+      "actions_byte_identical": true,
+      "world_byte_identical": true,
+      "final_turns": [
+        151,
+        151
+      ]
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008601,
+      "reserves": [],
+      "rejection_buckets": {
+        "city output, recent attack, local alarm, or production legality": 31,
+        "fewer than two uncovered worked production jobs": 2,
+        "existing workforce, another queued Builder, or insolvency": 8,
+        "inactive lane, recovery, age, or strategic threat": 29
+      },
+      "actions_byte_identical": true,
+      "world_byte_identical": true,
+      "final_turns": [
+        96,
+        96
+      ]
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008602,
+      "reserves": [],
+      "rejection_buckets": {
+        "city output, recent attack, local alarm, or production legality": 60,
+        "fewer than two uncovered worked production jobs": 8,
+        "existing workforce, another queued Builder, or insolvency": 1
+      },
+      "actions_byte_identical": true,
+      "world_byte_identical": true,
+      "final_turns": [
+        94,
+        94
+      ]
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008603,
+      "reserves": [],
+      "rejection_buckets": {
+        "city output, recent attack, local alarm, or production legality": 85,
+        "inactive lane, recovery, age, or strategic threat": 137,
+        "fewer than two uncovered worked production jobs": 7,
+        "existing workforce, another queued Builder, or insolvency": 11
+      },
+      "actions_byte_identical": true,
+      "world_byte_identical": true,
+      "final_turns": [
+        151,
+        151
+      ]
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008700,
+      "reserves": [],
+      "rejection_buckets": {
+        "city output, recent attack, local alarm, or production legality": 23,
+        "existing workforce, another queued Builder, or insolvency": 6,
+        "inactive lane, recovery, age, or strategic threat": 18
+      },
+      "actions_byte_identical": true,
+      "world_byte_identical": true,
+      "final_turns": [
+        151,
+        151
+      ]
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008701,
+      "reserves": [],
+      "rejection_buckets": {
+        "city output, recent attack, local alarm, or production legality": 53,
+        "existing workforce, another queued Builder, or insolvency": 9,
+        "inactive lane, recovery, age, or strategic threat": 16
+      },
+      "actions_byte_identical": true,
+      "world_byte_identical": true,
+      "final_turns": [
+        110,
+        110
+      ]
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008702,
+      "reserves": [],
+      "rejection_buckets": {
+        "city output, recent attack, local alarm, or production legality": 33,
+        "fewer than two uncovered worked production jobs": 1,
+        "inactive lane, recovery, age, or strategic threat": 13
+      },
+      "actions_byte_identical": true,
+      "world_byte_identical": true,
+      "final_turns": [
+        97,
+        97
+      ]
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008703,
+      "reserves": [],
+      "rejection_buckets": {
+        "city output, recent attack, local alarm, or production legality": 24,
+        "inactive lane, recovery, age, or strategic threat": 36,
+        "fewer than two uncovered worked production jobs": 1
+      },
+      "actions_byte_identical": true,
+      "world_byte_identical": true,
+      "final_turns": [
+        146,
+        146
+      ]
+    }
+  ],
+  "raw_sha256": {
+    "civvis-production-builder-payback-diagnostic-v2-deity-candidate.csv": "661ea94a1d26535a55a78635227807bedca47777997f929e8da0d9f2d386d454",
+    "civvis-production-builder-payback-diagnostic-v2-deity-candidate.log": "ccd30af10d1ebe7472c5b782e78f997676353501deca5d60572f78cd28e2db69",
+    "civvis-production-builder-payback-diagnostic-v2-deity-control.csv": "661ea94a1d26535a55a78635227807bedca47777997f929e8da0d9f2d386d454",
+    "civvis-production-builder-payback-diagnostic-v2-deity-control.log": "ccd30af10d1ebe7472c5b782e78f997676353501deca5d60572f78cd28e2db69",
+    "civvis-production-builder-payback-diagnostic-v2-emperor-candidate.csv": "61b676cff6a40ce33da5deec530b654bbc2660ff85d98a74b8026dfb86b9aac8",
+    "civvis-production-builder-payback-diagnostic-v2-emperor-candidate.log": "55fe21b3d31f44496537208f3af03bac66ac4c6dd3a3ef1eafd8f166d7eb6e58",
+    "civvis-production-builder-payback-diagnostic-v2-emperor-control.csv": "61b676cff6a40ce33da5deec530b654bbc2660ff85d98a74b8026dfb86b9aac8",
+    "civvis-production-builder-payback-diagnostic-v2-emperor-control.log": "55fe21b3d31f44496537208f3af03bac66ac4c6dd3a3ef1eafd8f166d7eb6e58",
+    "civvis-production-builder-payback-paired-deity-61008700-candidate-actions.json": "3edc4a61b80444b8182c3480ac08dfcbe0486f7f7f77d3aa7c222170ccef3c36",
+    "civvis-production-builder-payback-paired-deity-61008700-candidate-cities.jsonl": "a92dfc432dff2ee453ae2b3f524066c817a5ac3df397885d3c36fba4d5a3912f",
+    "civvis-production-builder-payback-paired-deity-61008700-candidate-final.json": "17f68b9272eda525c616ed2a12c0b3d34b59e927cf615a6a40b8aeec00ad64d4",
+    "civvis-production-builder-payback-paired-deity-61008700-candidate-setup.json": "c045903edcec8be16541fe5f4a17a80e91d121ae866471214634776817aa11ed",
+    "civvis-production-builder-payback-paired-deity-61008700-candidate-thoughts.jsonl": "694076a5f9f31a8c8299539d8abed8d4d4e12d9030540effc15cd345f03272bd",
+    "civvis-production-builder-payback-paired-deity-61008700-candidate-view-t25.json": "b1266cdec89739c05a51e8c9d13aa3e58848512973b36603584b25919e812083",
+    "civvis-production-builder-payback-paired-deity-61008700-candidate-view-t50.json": "a0e5ca32c45b2bec56bfafd6059a9402351da8725b7bd1ab8eb7ab1504b1e4d9",
+    "civvis-production-builder-payback-paired-deity-61008700-candidate-view-t75.json": "3900ad819e1eb2f731590d4de55e7c8da0ba1bd753fc03f15c007d4484558ca9",
+    "civvis-production-builder-payback-paired-deity-61008700-control-actions.json": "3edc4a61b80444b8182c3480ac08dfcbe0486f7f7f77d3aa7c222170ccef3c36",
+    "civvis-production-builder-payback-paired-deity-61008700-control-cities.jsonl": "a92dfc432dff2ee453ae2b3f524066c817a5ac3df397885d3c36fba4d5a3912f",
+    "civvis-production-builder-payback-paired-deity-61008700-control-final.json": "17f68b9272eda525c616ed2a12c0b3d34b59e927cf615a6a40b8aeec00ad64d4",
+    "civvis-production-builder-payback-paired-deity-61008700-control-setup.json": "2f97b56ba617b03fc0b5ce8c1ab0d8bc4d2ecdf23195032fdf7c8f1b2b004c6d",
+    "civvis-production-builder-payback-paired-deity-61008700-control-thoughts.jsonl": "12194ec890db41021dfca0e3475939f0d0b3333986f25c73ed70b925a1937e65",
+    "civvis-production-builder-payback-paired-deity-61008700-control-view-t25.json": "b1266cdec89739c05a51e8c9d13aa3e58848512973b36603584b25919e812083",
+    "civvis-production-builder-payback-paired-deity-61008700-control-view-t50.json": "a0e5ca32c45b2bec56bfafd6059a9402351da8725b7bd1ab8eb7ab1504b1e4d9",
+    "civvis-production-builder-payback-paired-deity-61008700-control-view-t75.json": "3900ad819e1eb2f731590d4de55e7c8da0ba1bd753fc03f15c007d4484558ca9",
+    "civvis-production-builder-payback-paired-deity-61008701-candidate-actions.json": "500245cbbd3b1b6f0653d7685616b49d8a3d4be1a17a4f5bf5e419b11a3da6bf",
+    "civvis-production-builder-payback-paired-deity-61008701-candidate-cities.jsonl": "de8675e99f8a0c6754ef635550cc42a04598c10bce6d8ad8959965d85e350570",
+    "civvis-production-builder-payback-paired-deity-61008701-candidate-final.json": "304f67696bc248694ef71949015e136109f0215ca8a1f039bf596d1596f1aa64",
+    "civvis-production-builder-payback-paired-deity-61008701-candidate-setup.json": "40cdde19987c0cc1ec06f56de8f787e5fcf25f0eb2e944cf799ff9f34ac88aae",
+    "civvis-production-builder-payback-paired-deity-61008701-candidate-thoughts.jsonl": "76c4a1414d596c876afed54549a5a8bfc0a838104d6ef143bd3b66d7ca3ccdb8",
+    "civvis-production-builder-payback-paired-deity-61008701-candidate-view-t25.json": "0bc35872c0965191f47809ff9c73a67ab284826d0fc1f763638fa20b21922c70",
+    "civvis-production-builder-payback-paired-deity-61008701-candidate-view-t50.json": "f042eb4a844a6fbef1ff4bd6c398acb05e291fcd6e796730c72af86a983144e2",
+    "civvis-production-builder-payback-paired-deity-61008701-candidate-view-t75.json": "4914b9a45ba7651332e3ecba7b38647677718a926a83214cd902a6e979979c80",
+    "civvis-production-builder-payback-paired-deity-61008701-control-actions.json": "500245cbbd3b1b6f0653d7685616b49d8a3d4be1a17a4f5bf5e419b11a3da6bf",
+    "civvis-production-builder-payback-paired-deity-61008701-control-cities.jsonl": "de8675e99f8a0c6754ef635550cc42a04598c10bce6d8ad8959965d85e350570",
+    "civvis-production-builder-payback-paired-deity-61008701-control-final.json": "304f67696bc248694ef71949015e136109f0215ca8a1f039bf596d1596f1aa64",
+    "civvis-production-builder-payback-paired-deity-61008701-control-setup.json": "1d942fd72f109a8994e9fe2956b306f9e316db0ecc7af1129023772de197babf",
+    "civvis-production-builder-payback-paired-deity-61008701-control-thoughts.jsonl": "2f4294d34c086451c8cb92c1bf774bfb177583be057b4c1d8ac105ce51a5fe1e",
+    "civvis-production-builder-payback-paired-deity-61008701-control-view-t25.json": "0bc35872c0965191f47809ff9c73a67ab284826d0fc1f763638fa20b21922c70",
+    "civvis-production-builder-payback-paired-deity-61008701-control-view-t50.json": "f042eb4a844a6fbef1ff4bd6c398acb05e291fcd6e796730c72af86a983144e2",
+    "civvis-production-builder-payback-paired-deity-61008701-control-view-t75.json": "4914b9a45ba7651332e3ecba7b38647677718a926a83214cd902a6e979979c80",
+    "civvis-production-builder-payback-paired-deity-61008702-candidate-actions.json": "beab4f701149a5eeb3d1a3e240e533cd438d57fab78ef0bccbadc15d73cb512c",
+    "civvis-production-builder-payback-paired-deity-61008702-candidate-cities.jsonl": "b16bfd80b4e47779c4c455058c585d3ad3f495d71d0e32904d9f345985e6e41e",
+    "civvis-production-builder-payback-paired-deity-61008702-candidate-final.json": "88427db2938c181af86b3e1ba6d484bd0eca73be70d256c8829ab5c2a594f970",
+    "civvis-production-builder-payback-paired-deity-61008702-candidate-setup.json": "d2325d3f02c09b3e13d4b913a41a1c3903e60bd12f132d89970bcb24569895ac",
+    "civvis-production-builder-payback-paired-deity-61008702-candidate-thoughts.jsonl": "7138b643b017767baed7a8e0926f201ca85a139ec5195d521a22aa3fb9830d96",
+    "civvis-production-builder-payback-paired-deity-61008702-candidate-view-t25.json": "4da5d77ee6b199af40fea20d85d067c3336575e12d8b09cbfa19584f6b14737d",
+    "civvis-production-builder-payback-paired-deity-61008702-candidate-view-t50.json": "100cfe630068feb1c88fb873ef5ab2943cd9f2321c91d9a9e2b65f5735577110",
+    "civvis-production-builder-payback-paired-deity-61008702-candidate-view-t75.json": "c758b69df99d364075529022e847ea4645b779618882a47e3e06cb3e10470022",
+    "civvis-production-builder-payback-paired-deity-61008702-control-actions.json": "beab4f701149a5eeb3d1a3e240e533cd438d57fab78ef0bccbadc15d73cb512c",
+    "civvis-production-builder-payback-paired-deity-61008702-control-cities.jsonl": "b16bfd80b4e47779c4c455058c585d3ad3f495d71d0e32904d9f345985e6e41e",
+    "civvis-production-builder-payback-paired-deity-61008702-control-final.json": "88427db2938c181af86b3e1ba6d484bd0eca73be70d256c8829ab5c2a594f970",
+    "civvis-production-builder-payback-paired-deity-61008702-control-setup.json": "0acc4577726be41d9da01b391989d6b0439864f7f6b38c2b67f48930068eb57e",
+    "civvis-production-builder-payback-paired-deity-61008702-control-thoughts.jsonl": "d1a6e05a1bc41a118349fc7a39a76443dff00d5d1b0ad4d413ca19bb1542da17",
+    "civvis-production-builder-payback-paired-deity-61008702-control-view-t25.json": "4da5d77ee6b199af40fea20d85d067c3336575e12d8b09cbfa19584f6b14737d",
+    "civvis-production-builder-payback-paired-deity-61008702-control-view-t50.json": "100cfe630068feb1c88fb873ef5ab2943cd9f2321c91d9a9e2b65f5735577110",
+    "civvis-production-builder-payback-paired-deity-61008702-control-view-t75.json": "c758b69df99d364075529022e847ea4645b779618882a47e3e06cb3e10470022",
+    "civvis-production-builder-payback-paired-deity-61008703-candidate-actions.json": "ef645029791e3dcfb56996f494fb570e9984714c17c9e9335052ca2540d9d8e2",
+    "civvis-production-builder-payback-paired-deity-61008703-candidate-cities.jsonl": "867505080983318666f8c0272c9db6b9330e9ac781f989a99cb2e5966738fd2c",
+    "civvis-production-builder-payback-paired-deity-61008703-candidate-final.json": "60c84ee40699952f5983995118b201b605db4c9cca916125d45edb34bc03de83",
+    "civvis-production-builder-payback-paired-deity-61008703-candidate-setup.json": "92737e0de54422599b5d3d08fd0617ba7c5af27b5343a52d303ea2de29a68524",
+    "civvis-production-builder-payback-paired-deity-61008703-candidate-thoughts.jsonl": "7e54ba9bb5ed6b6d07501fe8de7748e7e54fb569e603b288b66e732cfa4b0bd9",
+    "civvis-production-builder-payback-paired-deity-61008703-candidate-view-t25.json": "a74850c22df44e6d0011284bebd26d2e64b4f1904be055c701ad5fe4d318f2de",
+    "civvis-production-builder-payback-paired-deity-61008703-candidate-view-t50.json": "bbb6c5636ae1eab2006424f84fe903e14ed1cf8a1343d6d4e55e73d25ef9cb7d",
+    "civvis-production-builder-payback-paired-deity-61008703-candidate-view-t75.json": "bdd2573369b7ca69bd60676f7dff2ac82d00a591eadf7b19e4a8cdbbe92f01c4",
+    "civvis-production-builder-payback-paired-deity-61008703-control-actions.json": "ef645029791e3dcfb56996f494fb570e9984714c17c9e9335052ca2540d9d8e2",
+    "civvis-production-builder-payback-paired-deity-61008703-control-cities.jsonl": "867505080983318666f8c0272c9db6b9330e9ac781f989a99cb2e5966738fd2c",
+    "civvis-production-builder-payback-paired-deity-61008703-control-final.json": "60c84ee40699952f5983995118b201b605db4c9cca916125d45edb34bc03de83",
+    "civvis-production-builder-payback-paired-deity-61008703-control-setup.json": "ced1719c3e355b9bf46e921903c5faa76a98dce0358efac3b2a3c2b53028c463",
+    "civvis-production-builder-payback-paired-deity-61008703-control-thoughts.jsonl": "c2acb51de5caa7c862d57855198704e41ab1d7e5a30176cfbf6bfb7964ed6f9a",
+    "civvis-production-builder-payback-paired-deity-61008703-control-view-t25.json": "a74850c22df44e6d0011284bebd26d2e64b4f1904be055c701ad5fe4d318f2de",
+    "civvis-production-builder-payback-paired-deity-61008703-control-view-t50.json": "bbb6c5636ae1eab2006424f84fe903e14ed1cf8a1343d6d4e55e73d25ef9cb7d",
+    "civvis-production-builder-payback-paired-deity-61008703-control-view-t75.json": "bdd2573369b7ca69bd60676f7dff2ac82d00a591eadf7b19e4a8cdbbe92f01c4",
+    "civvis-production-builder-payback-paired-emperor-61008600-candidate-actions.json": "96a9c973f0c9e7e11d8aeea3ce7172d2618c95defd34e7a286635eec57d83e2c",
+    "civvis-production-builder-payback-paired-emperor-61008600-candidate-cities.jsonl": "cc22f80ac58bd3357c3971f9ef707fa008663b2c865f6815e5e994d78712cd3d",
+    "civvis-production-builder-payback-paired-emperor-61008600-candidate-final.json": "ef480d63184affad41c4460fecd98087232ee4692c354c3f5d3cc1019ec4fea0",
+    "civvis-production-builder-payback-paired-emperor-61008600-candidate-setup.json": "4eee616319548b6498fe0a7bf693e114e9c8c6ade075b5f3e34a01ad1ea540fd",
+    "civvis-production-builder-payback-paired-emperor-61008600-candidate-thoughts.jsonl": "a7681153b5dc3fa2e4bcba3c0c5d6a110ec0f7c01f4af3399faa176ed3466f89",
+    "civvis-production-builder-payback-paired-emperor-61008600-candidate-view-t25.json": "41c1b53685bae4d6abb162d8a0fe5fc625e0fd407d18ffd8da7aac4d9b8348b6",
+    "civvis-production-builder-payback-paired-emperor-61008600-candidate-view-t50.json": "bed3207f94bd131467f795f00555b56d221410f4a3388f0f59e9b973dbdbcc63",
+    "civvis-production-builder-payback-paired-emperor-61008600-candidate-view-t75.json": "270c166897ed6c076ca6b190a7819a50689796c57706e5d4cd39de94f311626a",
+    "civvis-production-builder-payback-paired-emperor-61008600-control-actions.json": "96a9c973f0c9e7e11d8aeea3ce7172d2618c95defd34e7a286635eec57d83e2c",
+    "civvis-production-builder-payback-paired-emperor-61008600-control-cities.jsonl": "cc22f80ac58bd3357c3971f9ef707fa008663b2c865f6815e5e994d78712cd3d",
+    "civvis-production-builder-payback-paired-emperor-61008600-control-final.json": "ef480d63184affad41c4460fecd98087232ee4692c354c3f5d3cc1019ec4fea0",
+    "civvis-production-builder-payback-paired-emperor-61008600-control-setup.json": "7cd66c3951737a6987b9b6cc7d6c9ff30ea18faf235a36b42f8f415ef61981b4",
+    "civvis-production-builder-payback-paired-emperor-61008600-control-thoughts.jsonl": "98e0cd8aea13a487aacec2b6e57307a5c66f6c179d8e0d9b80e5c2e782df7dfe",
+    "civvis-production-builder-payback-paired-emperor-61008600-control-view-t25.json": "41c1b53685bae4d6abb162d8a0fe5fc625e0fd407d18ffd8da7aac4d9b8348b6",
+    "civvis-production-builder-payback-paired-emperor-61008600-control-view-t50.json": "bed3207f94bd131467f795f00555b56d221410f4a3388f0f59e9b973dbdbcc63",
+    "civvis-production-builder-payback-paired-emperor-61008600-control-view-t75.json": "270c166897ed6c076ca6b190a7819a50689796c57706e5d4cd39de94f311626a",
+    "civvis-production-builder-payback-paired-emperor-61008601-candidate-actions.json": "53c9bf6017a9f2663f049248efacb74050727662084d13a4b14a0ce074c98bf1",
+    "civvis-production-builder-payback-paired-emperor-61008601-candidate-cities.jsonl": "96c24d60061268c2b0fcf324a828bbd34665b340e79c3b792b4108630158b6f6",
+    "civvis-production-builder-payback-paired-emperor-61008601-candidate-final.json": "478d28fd9d91b2fd9f09ee17753b8be6ea382d4fa5f8f1567bc49867f314dcbb",
+    "civvis-production-builder-payback-paired-emperor-61008601-candidate-setup.json": "035b6a21b98cb62ae38165dd85db9c956df508c2fd338b3863d7f6dc2895698f",
+    "civvis-production-builder-payback-paired-emperor-61008601-candidate-thoughts.jsonl": "dbaddaf3594f1e22e1f5b82c79063e68c5a8e04c7510a8ea226ae6afac3bf5c3",
+    "civvis-production-builder-payback-paired-emperor-61008601-candidate-view-t25.json": "a4a2c4bbbc17d5eb7b2c615078d9d53cdfd050f43bcef10acda38ffdcb12c4fe",
+    "civvis-production-builder-payback-paired-emperor-61008601-candidate-view-t50.json": "acb0fa91649d43376a2beaf8cabe5dac58056322b8d547ae245cc13ddb391210",
+    "civvis-production-builder-payback-paired-emperor-61008601-candidate-view-t75.json": "7043aab2ee8a7632c18d38ac3f5f1a7f8df4a8799e3eda70eed6617fcbb5e2a1",
+    "civvis-production-builder-payback-paired-emperor-61008601-control-actions.json": "53c9bf6017a9f2663f049248efacb74050727662084d13a4b14a0ce074c98bf1",
+    "civvis-production-builder-payback-paired-emperor-61008601-control-cities.jsonl": "96c24d60061268c2b0fcf324a828bbd34665b340e79c3b792b4108630158b6f6",
+    "civvis-production-builder-payback-paired-emperor-61008601-control-final.json": "478d28fd9d91b2fd9f09ee17753b8be6ea382d4fa5f8f1567bc49867f314dcbb",
+    "civvis-production-builder-payback-paired-emperor-61008601-control-setup.json": "f91069eba77ccef13fdbe8968e8c2893324357d3dd0a5a6935d1400e650a6767",
+    "civvis-production-builder-payback-paired-emperor-61008601-control-thoughts.jsonl": "6ef4b9b27236d3e2c4275c0102d7c7a6658d7e40cde5af10a0197985e337b84e",
+    "civvis-production-builder-payback-paired-emperor-61008601-control-view-t25.json": "a4a2c4bbbc17d5eb7b2c615078d9d53cdfd050f43bcef10acda38ffdcb12c4fe",
+    "civvis-production-builder-payback-paired-emperor-61008601-control-view-t50.json": "acb0fa91649d43376a2beaf8cabe5dac58056322b8d547ae245cc13ddb391210",
+    "civvis-production-builder-payback-paired-emperor-61008601-control-view-t75.json": "7043aab2ee8a7632c18d38ac3f5f1a7f8df4a8799e3eda70eed6617fcbb5e2a1",
+    "civvis-production-builder-payback-paired-emperor-61008602-candidate-actions.json": "ee677d69f46bb09769f7475240dfd41919597bbe64cd3496ba323d3cb3efb42b",
+    "civvis-production-builder-payback-paired-emperor-61008602-candidate-cities.jsonl": "d17e003ea1311d304a173773f03097d6baac7ed15d8614e82c06c0f12df6fbc0",
+    "civvis-production-builder-payback-paired-emperor-61008602-candidate-final.json": "0c77863d8ae06923124d81de0bc3231458f9644ff7bb88c270cba312784cdbcc",
+    "civvis-production-builder-payback-paired-emperor-61008602-candidate-setup.json": "5c9053a515bfe068384446561ef658375f00a324e98fd6f3a75919c96aba7379",
+    "civvis-production-builder-payback-paired-emperor-61008602-candidate-thoughts.jsonl": "aef590471060169c713b63d4b954377a188852b5831f94c5d345416f5dc2b04b",
+    "civvis-production-builder-payback-paired-emperor-61008602-candidate-view-t25.json": "bf85209cdb52ae1c2128641b130b5c94eaee34ef921caf3ac68dce7bbbb1b0fa",
+    "civvis-production-builder-payback-paired-emperor-61008602-candidate-view-t50.json": "07148dc6db48e7329e537930bcf777e17f76bcb80caff9576289c4f5275856b0",
+    "civvis-production-builder-payback-paired-emperor-61008602-candidate-view-t75.json": "a413cd8874ad26ee16b0ecf85318d490e9c22c447873691578fe61f8121160fe",
+    "civvis-production-builder-payback-paired-emperor-61008602-control-actions.json": "ee677d69f46bb09769f7475240dfd41919597bbe64cd3496ba323d3cb3efb42b",
+    "civvis-production-builder-payback-paired-emperor-61008602-control-cities.jsonl": "d17e003ea1311d304a173773f03097d6baac7ed15d8614e82c06c0f12df6fbc0",
+    "civvis-production-builder-payback-paired-emperor-61008602-control-final.json": "0c77863d8ae06923124d81de0bc3231458f9644ff7bb88c270cba312784cdbcc",
+    "civvis-production-builder-payback-paired-emperor-61008602-control-setup.json": "719c400c9b555ebafee0e591a5b1efea0c51a550bd0a4528397aebc061a1fde2",
+    "civvis-production-builder-payback-paired-emperor-61008602-control-thoughts.jsonl": "b9f2fadeae906e1c9526d55f9135a5410a21c63891776961038e792df709d3b5",
+    "civvis-production-builder-payback-paired-emperor-61008602-control-view-t25.json": "bf85209cdb52ae1c2128641b130b5c94eaee34ef921caf3ac68dce7bbbb1b0fa",
+    "civvis-production-builder-payback-paired-emperor-61008602-control-view-t50.json": "07148dc6db48e7329e537930bcf777e17f76bcb80caff9576289c4f5275856b0",
+    "civvis-production-builder-payback-paired-emperor-61008602-control-view-t75.json": "a413cd8874ad26ee16b0ecf85318d490e9c22c447873691578fe61f8121160fe",
+    "civvis-production-builder-payback-paired-emperor-61008603-candidate-actions.json": "decaa637a26a51d18ed83d1adb02ad9e60d456ac679aff041254e89071459921",
+    "civvis-production-builder-payback-paired-emperor-61008603-candidate-cities.jsonl": "bd59373627d9f6afd881713dbfc19230b857cf3b29bd05d00b58a63e08124c94",
+    "civvis-production-builder-payback-paired-emperor-61008603-candidate-final.json": "9eff62fb2d51ca01b8c6c6e3b469749bfa8ddb29b0a7f3ee35741c028d2f0334",
+    "civvis-production-builder-payback-paired-emperor-61008603-candidate-setup.json": "492347ca8f78d2dcef9610bc512b2247ab8ca0b9039998f244eb38c9a0475f47",
+    "civvis-production-builder-payback-paired-emperor-61008603-candidate-thoughts.jsonl": "d03afacda92b3853e9eccbe20f79689051a5ef9c5c674e11173e1c9790a03a47",
+    "civvis-production-builder-payback-paired-emperor-61008603-candidate-view-t25.json": "4493115b12f6f15233da39d80f0643068e7179a4f52a1c9310432b26c7d87b9c",
+    "civvis-production-builder-payback-paired-emperor-61008603-candidate-view-t50.json": "e6d8a48521e55bbdb42f928eebc192f5cb3ca4c4c910044783b57824e643de38",
+    "civvis-production-builder-payback-paired-emperor-61008603-candidate-view-t75.json": "8658aea03ebfc89be131dbc74c431e6dead413f6122a4dd67b97276c5d4751a0",
+    "civvis-production-builder-payback-paired-emperor-61008603-control-actions.json": "decaa637a26a51d18ed83d1adb02ad9e60d456ac679aff041254e89071459921",
+    "civvis-production-builder-payback-paired-emperor-61008603-control-cities.jsonl": "bd59373627d9f6afd881713dbfc19230b857cf3b29bd05d00b58a63e08124c94",
+    "civvis-production-builder-payback-paired-emperor-61008603-control-final.json": "9eff62fb2d51ca01b8c6c6e3b469749bfa8ddb29b0a7f3ee35741c028d2f0334",
+    "civvis-production-builder-payback-paired-emperor-61008603-control-setup.json": "441038fecb211b950832ce63db979ddfc50269482be38fbf5fe2899b0776b5b8",
+    "civvis-production-builder-payback-paired-emperor-61008603-control-thoughts.jsonl": "650ac26d814c51c7da6dcce5172f3b6fc2a1bb93c29566917a6dde406dae90ab",
+    "civvis-production-builder-payback-paired-emperor-61008603-control-view-t25.json": "4493115b12f6f15233da39d80f0643068e7179a4f52a1c9310432b26c7d87b9c",
+    "civvis-production-builder-payback-paired-emperor-61008603-control-view-t50.json": "e6d8a48521e55bbdb42f928eebc192f5cb3ca4c4c910044783b57824e643de38",
+    "civvis-production-builder-payback-paired-emperor-61008603-control-view-t75.json": "8658aea03ebfc89be131dbc74c431e6dead413f6122a4dd67b97276c5d4751a0"
+  },
+  "all_pairs_byte_identical": true,
+  "coverage_gate_pass": false
+}
