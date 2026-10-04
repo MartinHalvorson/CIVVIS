@@ -1,0 +1,1559 @@
+{
+  "emperor": {
+    "outcomes": {
+      "control": {
+        "games": 12,
+        "wins": 0,
+        "eliminated": 1,
+        "raw": [
+          {
+            "seed": 61006200,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61006201,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61006202,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61006203,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61006204,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61006205,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61006206,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61006207,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61006208,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61006209,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61006210,
+            "turn": 121,
+            "winner": "Some(1)",
+            "alive": false
+          },
+          {
+            "seed": 61006211,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": true
+          }
+        ]
+      },
+      "candidate": {
+        "games": 12,
+        "wins": 0,
+        "eliminated": 1,
+        "raw": [
+          {
+            "seed": 61006200,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61006201,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61006202,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61006203,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61006204,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61006205,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61006206,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61006207,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61006208,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61006209,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61006210,
+            "turn": 121,
+            "winner": "Some(1)",
+            "alive": false
+          },
+          {
+            "seed": 61006211,
+            "turn": 125,
+            "winner": "Some(1)",
+            "alive": true
+          }
+        ]
+      }
+    },
+    "checkpoints": [
+      {
+        "turn": 25,
+        "matched_games": 12,
+        "matched_seeds": [
+          61006200,
+          61006201,
+          61006202,
+          61006203,
+          61006204,
+          61006205,
+          61006206,
+          61006207,
+          61006208,
+          61006209,
+          61006210,
+          61006211
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 14.208333333333334,
+          "candidate": 14.208333333333334,
+          "change_pct": 0.0
+        },
+        "cumulative_production": {
+          "control": 215.64166666666665,
+          "candidate": 215.64166666666665,
+          "change_pct": 0.0
+        },
+        "science": {
+          "control": 4.975,
+          "candidate": 4.975,
+          "change_pct": 0.0
+        },
+        "culture": {
+          "control": 4.256666666666667,
+          "candidate": 4.256666666666667,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 1.8333333333333333,
+          "candidate": 1.8333333333333333,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 4.833333333333333,
+          "candidate": 4.833333333333333,
+          "change_pct": 0.0
+        },
+        "granaries": {
+          "control": 0.25,
+          "candidate": 0.25,
+          "change_pct": 0.0
+        },
+        "housing_bound": {
+          "control": 0.16666666666666666,
+          "candidate": 0.16666666666666666,
+          "change_pct": 0.0
+        },
+        "housing_bound_without_granary": {
+          "control": 0.16666666666666666,
+          "candidate": 0.16666666666666666,
+          "change_pct": 0.0
+        },
+        "amenity_short_cities": {
+          "control": 0.6666666666666666,
+          "candidate": 0.6666666666666666,
+          "change_pct": 0.0
+        },
+        "builders": {
+          "control": 0.4166666666666667,
+          "candidate": 0.4166666666666667,
+          "change_pct": 0.0
+        },
+        "military_power": {
+          "control": 54.625,
+          "candidate": 54.625,
+          "change_pct": 0.0
+        },
+        "rival_cities": {
+          "control": 3.0,
+          "candidate": 3.0,
+          "change_pct": 0.0
+        },
+        "rival_population": {
+          "control": 9.0,
+          "candidate": 9.0,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 0,
+          "equal": 12
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.36021240189030196,
+            "games": 12
+          },
+          "candidate": {
+            "mean": 0.36021240189030196,
+            "games": 12
+          }
+        }
+      },
+      {
+        "turn": 50,
+        "matched_games": 12,
+        "matched_seeds": [
+          61006200,
+          61006201,
+          61006202,
+          61006203,
+          61006204,
+          61006205,
+          61006206,
+          61006207,
+          61006208,
+          61006209,
+          61006210,
+          61006211
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 28.716666666666665,
+          "candidate": 28.9,
+          "change_pct": 0.6384213580963527
+        },
+        "cumulative_production": {
+          "control": 730.2458333333334,
+          "candidate": 730.8375,
+          "change_pct": 0.08102294318692582
+        },
+        "science": {
+          "control": 11.495833333333334,
+          "candidate": 11.491666666666667,
+          "change_pct": -0.03624501631025456
+        },
+        "culture": {
+          "control": 11.610833333333334,
+          "candidate": 11.603333333333333,
+          "change_pct": -0.0645948467666746
+        },
+        "cities": {
+          "control": 3.8333333333333335,
+          "candidate": 3.8333333333333335,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 12.916666666666666,
+          "candidate": 13.0,
+          "change_pct": 0.6451612903225934
+        },
+        "granaries": {
+          "control": 1.25,
+          "candidate": 1.3333333333333333,
+          "change_pct": 6.666666666666665
+        },
+        "housing_bound": {
+          "control": 1.8333333333333333,
+          "candidate": 1.6666666666666667,
+          "change_pct": -9.090909090909083
+        },
+        "housing_bound_without_granary": {
+          "control": 1.5,
+          "candidate": 1.3333333333333333,
+          "change_pct": -11.111111111111116
+        },
+        "amenity_short_cities": {
+          "control": 0.6666666666666666,
+          "candidate": 0.6666666666666666,
+          "change_pct": 0.0
+        },
+        "builders": {
+          "control": 1.1666666666666667,
+          "candidate": 1.0833333333333333,
+          "change_pct": -7.142857142857151
+        },
+        "military_power": {
+          "control": 184.07916666666665,
+          "candidate": 184.30416666666667,
+          "change_pct": 0.12223001878721718
+        },
+        "rival_cities": {
+          "control": 4.0,
+          "candidate": 4.0,
+          "change_pct": 0.0
+        },
+        "rival_population": {
+          "control": 21.416666666666668,
+          "candidate": 21.416666666666668,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 1,
+          "lower": 0,
+          "equal": 11
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.3681220522978802,
+            "games": 12
+          },
+          "candidate": {
+            "mean": 0.37018894444369005,
+            "games": 12
+          }
+        }
+      },
+      {
+        "turn": 75,
+        "matched_games": 12,
+        "matched_seeds": [
+          61006200,
+          61006201,
+          61006202,
+          61006203,
+          61006204,
+          61006205,
+          61006206,
+          61006207,
+          61006208,
+          61006209,
+          61006210,
+          61006211
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 50.458333333333336,
+          "candidate": 51.3875,
+          "change_pct": 1.8414533443435133
+        },
+        "cumulative_production": {
+          "control": 1706.7458333333334,
+          "candidate": 1707.6875,
+          "change_pct": 0.05517322194525942
+        },
+        "science": {
+          "control": 24.83125,
+          "candidate": 24.460416666666667,
+          "change_pct": -1.4934138770031025
+        },
+        "culture": {
+          "control": 19.3975,
+          "candidate": 19.265,
+          "change_pct": -0.6830777162005419
+        },
+        "cities": {
+          "control": 5.25,
+          "candidate": 5.083333333333333,
+          "change_pct": -3.1746031746031855
+        },
+        "population": {
+          "control": 22.333333333333332,
+          "candidate": 22.083333333333332,
+          "change_pct": -1.1194029850746245
+        },
+        "granaries": {
+          "control": 2.5,
+          "candidate": 3.0,
+          "change_pct": 19.999999999999996
+        },
+        "housing_bound": {
+          "control": 2.8333333333333335,
+          "candidate": 2.1666666666666665,
+          "change_pct": -23.529411764705888
+        },
+        "housing_bound_without_granary": {
+          "control": 1.75,
+          "candidate": 1.25,
+          "change_pct": -28.57142857142857
+        },
+        "amenity_short_cities": {
+          "control": 0.5833333333333334,
+          "candidate": 0.5,
+          "change_pct": -14.28571428571429
+        },
+        "builders": {
+          "control": 2.5833333333333335,
+          "candidate": 2.5833333333333335,
+          "change_pct": 0.0
+        },
+        "military_power": {
+          "control": 368.1141666666667,
+          "candidate": 376.605,
+          "change_pct": 2.3065760848649752
+        },
+        "rival_cities": {
+          "control": 4.75,
+          "candidate": 4.666666666666667,
+          "change_pct": -1.754385964912275
+        },
+        "rival_population": {
+          "control": 34.666666666666664,
+          "candidate": 33.5,
+          "change_pct": -3.3653846153846034
+        },
+        "production_pairs": {
+          "higher": 4,
+          "lower": 2,
+          "equal": 6
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.4180996903346098,
+            "games": 12
+          },
+          "candidate": {
+            "mean": 0.42721109745850666,
+            "games": 12
+          }
+        }
+      },
+      {
+        "turn": 100,
+        "matched_games": 12,
+        "matched_seeds": [
+          61006200,
+          61006201,
+          61006202,
+          61006203,
+          61006204,
+          61006205,
+          61006206,
+          61006207,
+          61006208,
+          61006209,
+          61006210,
+          61006211
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 84.86666666666666,
+          "candidate": 87.10833333333333,
+          "change_pct": 2.6413982717989004
+        },
+        "cumulative_production": {
+          "control": 3401.9791666666665,
+          "candidate": 3414.170833333333,
+          "change_pct": 0.3583698214887132
+        },
+        "science": {
+          "control": 47.90208333333333,
+          "candidate": 49.25,
+          "change_pct": 2.8138998825729677
+        },
+        "culture": {
+          "control": 24.99041666666667,
+          "candidate": 25.401666666666667,
+          "change_pct": 1.6456308251496354
+        },
+        "cities": {
+          "control": 6.0,
+          "candidate": 5.916666666666667,
+          "change_pct": -1.388888888888884
+        },
+        "population": {
+          "control": 31.166666666666668,
+          "candidate": 32.083333333333336,
+          "change_pct": 2.941176470588247
+        },
+        "granaries": {
+          "control": 3.1666666666666665,
+          "candidate": 4.0,
+          "change_pct": 26.315789473684227
+        },
+        "housing_bound": {
+          "control": 3.0,
+          "candidate": 2.6666666666666665,
+          "change_pct": -11.111111111111116
+        },
+        "housing_bound_without_granary": {
+          "control": 1.6666666666666667,
+          "candidate": 1.0,
+          "change_pct": -40.0
+        },
+        "amenity_short_cities": {
+          "control": 0.8333333333333334,
+          "candidate": 0.9166666666666666,
+          "change_pct": 9.999999999999986
+        },
+        "builders": {
+          "control": 3.5,
+          "candidate": 3.5,
+          "change_pct": 0.0
+        },
+        "military_power": {
+          "control": 628.9483333333333,
+          "candidate": 581.2225,
+          "change_pct": -7.588196168736694
+        },
+        "rival_cities": {
+          "control": 5.0,
+          "candidate": 5.083333333333333,
+          "change_pct": 1.6666666666666607
+        },
+        "rival_population": {
+          "control": 46.25,
+          "candidate": 46.166666666666664,
+          "change_pct": -0.18018018018018944
+        },
+        "production_pairs": {
+          "higher": 4,
+          "lower": 5,
+          "equal": 3
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.4472607238997075,
+            "games": 12
+          },
+          "candidate": {
+            "mean": 0.4513690804280411,
+            "games": 12
+          }
+        }
+      },
+      {
+        "turn": 125,
+        "matched_games": 11,
+        "matched_seeds": [
+          61006200,
+          61006201,
+          61006202,
+          61006203,
+          61006204,
+          61006205,
+          61006206,
+          61006207,
+          61006208,
+          61006209,
+          61006211
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61006210
+          ],
+          "candidate": [
+            61006210
+          ]
+        },
+        "production": {
+          "control": 139.36363636363637,
+          "candidate": 142.95,
+          "change_pct": 2.573385518590987
+        },
+        "cumulative_production": {
+          "control": 6557.390909090909,
+          "candidate": 6707.668181818181,
+          "change_pct": 2.291723565220649
+        },
+        "science": {
+          "control": 75.35477272727273,
+          "candidate": 77.17092045454545,
+          "change_pct": 2.4101296593990185
+        },
+        "culture": {
+          "control": 31.755,
+          "candidate": 32.145,
+          "change_pct": 1.2281530467643131
+        },
+        "cities": {
+          "control": 7.181818181818182,
+          "candidate": 6.909090909090909,
+          "change_pct": -3.797468354430378
+        },
+        "population": {
+          "control": 44.63636363636363,
+          "candidate": 46.0,
+          "change_pct": 3.054989816700626
+        },
+        "granaries": {
+          "control": 5.0,
+          "candidate": 6.0,
+          "change_pct": 19.999999999999996
+        },
+        "housing_bound": {
+          "control": 2.6363636363636362,
+          "candidate": 3.0,
+          "change_pct": 13.793103448275868
+        },
+        "housing_bound_without_granary": {
+          "control": 1.0909090909090908,
+          "candidate": 0.5454545454545454,
+          "change_pct": -50.0
+        },
+        "amenity_short_cities": {
+          "control": 2.909090909090909,
+          "candidate": 2.272727272727273,
+          "change_pct": -21.875
+        },
+        "builders": {
+          "control": 4.2727272727272725,
+          "candidate": 4.7272727272727275,
+          "change_pct": 10.63829787234043
+        },
+        "military_power": {
+          "control": 1020.7718181818182,
+          "candidate": 953.4509090909091,
+          "change_pct": -6.595098717637004
+        },
+        "rival_cities": {
+          "control": 5.636363636363637,
+          "candidate": 5.7272727272727275,
+          "change_pct": 1.6129032258064502
+        },
+        "rival_population": {
+          "control": 64.0909090909091,
+          "candidate": 63.36363636363637,
+          "change_pct": -1.134751773049647
+        },
+        "production_pairs": {
+          "higher": 5,
+          "lower": 5,
+          "equal": 1
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.47990783507907037,
+            "games": 11
+          },
+          "candidate": {
+            "mean": 0.46391626667358826,
+            "games": 11
+          }
+        }
+      },
+      {
+        "turn": 150,
+        "matched_games": 10,
+        "matched_seeds": [
+          61006200,
+          61006201,
+          61006202,
+          61006203,
+          61006204,
+          61006205,
+          61006206,
+          61006207,
+          61006208,
+          61006209
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61006210
+          ],
+          "candidate": [
+            61006210,
+            61006211
+          ]
+        },
+        "production": {
+          "control": 181.555,
+          "candidate": 181.345,
+          "change_pct": -0.1156674286029058
+        },
+        "cumulative_production": {
+          "control": 10500.17,
+          "candidate": 10862.720000000001,
+          "change_pct": 3.45280124036087
+        },
+        "science": {
+          "control": 88.74,
+          "candidate": 88.8137,
+          "change_pct": 0.08305161144916973
+        },
+        "culture": {
+          "control": 42.842999999999996,
+          "candidate": 41.9898,
+          "change_pct": -1.9914571808696713
+        },
+        "cities": {
+          "control": 7.7,
+          "candidate": 7.5,
+          "change_pct": -2.5974025974025983
+        },
+        "population": {
+          "control": 56.5,
+          "candidate": 57.0,
+          "change_pct": 0.8849557522123908
+        },
+        "granaries": {
+          "control": 6.7,
+          "candidate": 6.6,
+          "change_pct": -1.4925373134328401
+        },
+        "housing_bound": {
+          "control": 2.7,
+          "candidate": 4.0,
+          "change_pct": 48.14814814814814
+        },
+        "housing_bound_without_granary": {
+          "control": 0.2,
+          "candidate": 0.3,
+          "change_pct": 49.99999999999998
+        },
+        "amenity_short_cities": {
+          "control": 3.3,
+          "candidate": 2.8,
+          "change_pct": -15.151515151515149
+        },
+        "builders": {
+          "control": 6.0,
+          "candidate": 5.9,
+          "change_pct": -1.6666666666666607
+        },
+        "military_power": {
+          "control": 1269.333,
+          "candidate": 1247.079,
+          "change_pct": -1.7532042419128868
+        },
+        "rival_cities": {
+          "control": 6.3,
+          "candidate": 6.7,
+          "change_pct": 6.349206349206349
+        },
+        "rival_population": {
+          "control": 85.8,
+          "candidate": 85.8,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 3,
+          "lower": 6,
+          "equal": 1
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.41132782802360845,
+            "games": 10
+          },
+          "candidate": {
+            "mean": 0.41429251345633056,
+            "games": 10
+          }
+        }
+      }
+    ]
+  },
+  "deity": {
+    "outcomes": {
+      "control": {
+        "games": 8,
+        "wins": 0,
+        "eliminated": 4,
+        "raw": [
+          {
+            "seed": 61006300,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61006301,
+            "turn": 149,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61006302,
+            "turn": 93,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61006303,
+            "turn": 144,
+            "winner": "Some(1)",
+            "alive": false
+          },
+          {
+            "seed": 61006304,
+            "turn": 131,
+            "winner": "Some(2)",
+            "alive": false
+          },
+          {
+            "seed": 61006305,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": false
+          },
+          {
+            "seed": 61006306,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": false
+          },
+          {
+            "seed": 61006307,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          }
+        ]
+      },
+      "candidate": {
+        "games": 8,
+        "wins": 0,
+        "eliminated": 4,
+        "raw": [
+          {
+            "seed": 61006300,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61006301,
+            "turn": 150,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61006302,
+            "turn": 91,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61006303,
+            "turn": 144,
+            "winner": "Some(1)",
+            "alive": false
+          },
+          {
+            "seed": 61006304,
+            "turn": 131,
+            "winner": "Some(2)",
+            "alive": false
+          },
+          {
+            "seed": 61006305,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": false
+          },
+          {
+            "seed": 61006306,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": false
+          },
+          {
+            "seed": 61006307,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          }
+        ]
+      }
+    },
+    "checkpoints": [
+      {
+        "turn": 25,
+        "matched_games": 8,
+        "matched_seeds": [
+          61006300,
+          61006301,
+          61006302,
+          61006303,
+          61006304,
+          61006305,
+          61006306,
+          61006307
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 15.3125,
+          "candidate": 15.3125,
+          "change_pct": 0.0
+        },
+        "cumulative_production": {
+          "control": 199.8375,
+          "candidate": 199.8375,
+          "change_pct": 0.0
+        },
+        "science": {
+          "control": 5.73125,
+          "candidate": 5.73125,
+          "change_pct": 0.0
+        },
+        "culture": {
+          "control": 3.85875,
+          "candidate": 3.85875,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 2.0,
+          "candidate": 2.0,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 5.125,
+          "candidate": 5.125,
+          "change_pct": 0.0
+        },
+        "granaries": {
+          "control": 0.0,
+          "candidate": 0.0,
+          "change_pct": null
+        },
+        "housing_bound": {
+          "control": 0.125,
+          "candidate": 0.125,
+          "change_pct": 0.0
+        },
+        "housing_bound_without_granary": {
+          "control": 0.125,
+          "candidate": 0.125,
+          "change_pct": 0.0
+        },
+        "amenity_short_cities": {
+          "control": 1.125,
+          "candidate": 1.125,
+          "change_pct": 0.0
+        },
+        "builders": {
+          "control": 0.625,
+          "candidate": 0.625,
+          "change_pct": 0.0
+        },
+        "military_power": {
+          "control": 50.6625,
+          "candidate": 50.6625,
+          "change_pct": 0.0
+        },
+        "rival_cities": {
+          "control": 3.875,
+          "candidate": 3.875,
+          "change_pct": 0.0
+        },
+        "rival_population": {
+          "control": 14.5,
+          "candidate": 14.5,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 0,
+          "equal": 8
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.22068692358589911,
+            "games": 8
+          },
+          "candidate": {
+            "mean": 0.22068692358589911,
+            "games": 8
+          }
+        }
+      },
+      {
+        "turn": 50,
+        "matched_games": 8,
+        "matched_seeds": [
+          61006300,
+          61006301,
+          61006302,
+          61006303,
+          61006304,
+          61006305,
+          61006306,
+          61006307
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 27.28125,
+          "candidate": 27.28125,
+          "change_pct": 0.0
+        },
+        "cumulative_production": {
+          "control": 709.2875,
+          "candidate": 709.2875,
+          "change_pct": 0.0
+        },
+        "science": {
+          "control": 11.509375,
+          "candidate": 11.509375,
+          "change_pct": 0.0
+        },
+        "culture": {
+          "control": 10.939375,
+          "candidate": 10.939375,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 3.125,
+          "candidate": 3.125,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 12.0,
+          "candidate": 12.0,
+          "change_pct": 0.0
+        },
+        "granaries": {
+          "control": 1.25,
+          "candidate": 1.25,
+          "change_pct": 0.0
+        },
+        "housing_bound": {
+          "control": 1.0,
+          "candidate": 1.0,
+          "change_pct": 0.0
+        },
+        "housing_bound_without_granary": {
+          "control": 1.0,
+          "candidate": 1.0,
+          "change_pct": 0.0
+        },
+        "amenity_short_cities": {
+          "control": 0.75,
+          "candidate": 0.75,
+          "change_pct": 0.0
+        },
+        "builders": {
+          "control": 0.875,
+          "candidate": 0.875,
+          "change_pct": 0.0
+        },
+        "military_power": {
+          "control": 172.73,
+          "candidate": 172.73,
+          "change_pct": 0.0
+        },
+        "rival_cities": {
+          "control": 4.75,
+          "candidate": 4.75,
+          "change_pct": 0.0
+        },
+        "rival_population": {
+          "control": 31.625,
+          "candidate": 31.625,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 0,
+          "equal": 8
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.22810572602996174,
+            "games": 8
+          },
+          "candidate": {
+            "mean": 0.22810572602996174,
+            "games": 8
+          }
+        }
+      },
+      {
+        "turn": 75,
+        "matched_games": 8,
+        "matched_seeds": [
+          61006300,
+          61006301,
+          61006302,
+          61006303,
+          61006304,
+          61006305,
+          61006306,
+          61006307
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 32.63125,
+          "candidate": 31.49375,
+          "change_pct": -3.485922237119332
+        },
+        "cumulative_production": {
+          "control": 1481.1625,
+          "candidate": 1477.3375,
+          "change_pct": -0.25824310296809205
+        },
+        "science": {
+          "control": 23.046875,
+          "candidate": 22.921875,
+          "change_pct": -0.5423728813559348
+        },
+        "culture": {
+          "control": 12.325625,
+          "candidate": 12.090625000000001,
+          "change_pct": -1.9065970285482403
+        },
+        "cities": {
+          "control": 3.0,
+          "candidate": 3.0,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 14.875,
+          "candidate": 14.875,
+          "change_pct": 0.0
+        },
+        "granaries": {
+          "control": 1.625,
+          "candidate": 2.0,
+          "change_pct": 23.076923076923084
+        },
+        "housing_bound": {
+          "control": 1.625,
+          "candidate": 1.375,
+          "change_pct": -15.384615384615385
+        },
+        "housing_bound_without_granary": {
+          "control": 0.875,
+          "candidate": 0.5,
+          "change_pct": -42.85714285714286
+        },
+        "amenity_short_cities": {
+          "control": 0.875,
+          "candidate": 0.75,
+          "change_pct": -14.28571428571429
+        },
+        "builders": {
+          "control": 0.75,
+          "candidate": 0.625,
+          "change_pct": -16.666666666666664
+        },
+        "military_power": {
+          "control": 299.26375,
+          "candidate": 287.295,
+          "change_pct": -3.999398523877351
+        },
+        "rival_cities": {
+          "control": 5.125,
+          "candidate": 5.125,
+          "change_pct": 0.0
+        },
+        "rival_population": {
+          "control": 46.875,
+          "candidate": 46.875,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 1,
+          "lower": 1,
+          "equal": 6
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.1538068003502837,
+            "games": 8
+          },
+          "candidate": {
+            "mean": 0.1489059869893943,
+            "games": 8
+          }
+        }
+      },
+      {
+        "turn": 100,
+        "matched_games": 7,
+        "matched_seeds": [
+          61006300,
+          61006301,
+          61006303,
+          61006304,
+          61006305,
+          61006306,
+          61006307
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61006302
+          ],
+          "candidate": [
+            61006302
+          ]
+        },
+        "production": {
+          "control": 43.41428571428571,
+          "candidate": 41.84285714285714,
+          "change_pct": -3.6196117143797224
+        },
+        "cumulative_production": {
+          "control": 2321.05,
+          "candidate": 2269.9785714285713,
+          "change_pct": -2.2003588277473063
+        },
+        "science": {
+          "control": 27.45714285714286,
+          "candidate": 28.6,
+          "change_pct": 4.162330905306977
+        },
+        "culture": {
+          "control": 11.022857142857143,
+          "candidate": 10.594285714285714,
+          "change_pct": -3.8880248833592534
+        },
+        "cities": {
+          "control": 2.7142857142857144,
+          "candidate": 2.7142857142857144,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 15.714285714285714,
+          "candidate": 15.714285714285714,
+          "change_pct": 0.0
+        },
+        "granaries": {
+          "control": 1.2857142857142858,
+          "candidate": 1.5714285714285714,
+          "change_pct": 22.22222222222221
+        },
+        "housing_bound": {
+          "control": 0.7142857142857143,
+          "candidate": 0.7142857142857143,
+          "change_pct": 0.0
+        },
+        "housing_bound_without_granary": {
+          "control": 0.42857142857142855,
+          "candidate": 0.42857142857142855,
+          "change_pct": 0.0
+        },
+        "amenity_short_cities": {
+          "control": 0.14285714285714285,
+          "candidate": 0.14285714285714285,
+          "change_pct": 0.0
+        },
+        "builders": {
+          "control": 1.4285714285714286,
+          "candidate": 1.2857142857142858,
+          "change_pct": -9.999999999999998
+        },
+        "military_power": {
+          "control": 474.49571428571426,
+          "candidate": 417.8957142857143,
+          "change_pct": -11.928453365527902
+        },
+        "rival_cities": {
+          "control": 6.142857142857143,
+          "candidate": 6.285714285714286,
+          "change_pct": 2.325581395348819
+        },
+        "rival_population": {
+          "control": 63.714285714285715,
+          "candidate": 62.714285714285715,
+          "change_pct": -1.5695067264574036
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 2,
+          "equal": 5
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.137955541176029,
+            "games": 7
+          },
+          "candidate": {
+            "mean": 0.13506535106124412,
+            "games": 7
+          }
+        }
+      },
+      {
+        "turn": 125,
+        "matched_games": 7,
+        "matched_seeds": [
+          61006300,
+          61006301,
+          61006303,
+          61006304,
+          61006305,
+          61006306,
+          61006307
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61006302
+          ],
+          "candidate": [
+            61006302
+          ]
+        },
+        "production": {
+          "control": 51.05714285714286,
+          "candidate": 49.51428571428571,
+          "change_pct": -3.021824286513708
+        },
+        "cumulative_production": {
+          "control": 3490.3714285714286,
+          "candidate": 3416.3,
+          "change_pct": -2.1221646488707724
+        },
+        "science": {
+          "control": 33.59285714285714,
+          "candidate": 36.163357142857144,
+          "change_pct": 7.651924303635993
+        },
+        "culture": {
+          "control": 16.115714285714287,
+          "candidate": 14.254285714285714,
+          "change_pct": -11.550394468575487
+        },
+        "cities": {
+          "control": 2.7142857142857144,
+          "candidate": 2.7142857142857144,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 19.571428571428573,
+          "candidate": 19.285714285714285,
+          "change_pct": -1.4598540145985495
+        },
+        "granaries": {
+          "control": 1.1428571428571428,
+          "candidate": 1.5714285714285714,
+          "change_pct": 37.5
+        },
+        "housing_bound": {
+          "control": 1.4285714285714286,
+          "candidate": 0.8571428571428571,
+          "change_pct": -40.0
+        },
+        "housing_bound_without_granary": {
+          "control": 0.7142857142857143,
+          "candidate": 0.42857142857142855,
+          "change_pct": -40.0
+        },
+        "amenity_short_cities": {
+          "control": 0.7142857142857143,
+          "candidate": 0.5714285714285714,
+          "change_pct": -20.000000000000007
+        },
+        "builders": {
+          "control": 2.2857142857142856,
+          "candidate": 2.142857142857143,
+          "change_pct": -6.25
+        },
+        "military_power": {
+          "control": 564.0085714285715,
+          "candidate": 551.4871428571429,
+          "change_pct": -2.2200777090520485
+        },
+        "rival_cities": {
+          "control": 7.0,
+          "candidate": 7.142857142857143,
+          "change_pct": 2.0408163265306145
+        },
+        "rival_population": {
+          "control": 83.57142857142857,
+          "candidate": 83.42857142857143,
+          "change_pct": -0.17094017094017033
+        },
+        "production_pairs": {
+          "higher": 1,
+          "lower": 1,
+          "equal": 5
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.11722446422852172,
+            "games": 7
+          },
+          "candidate": {
+            "mean": 0.10689438908569597,
+            "games": 7
+          }
+        }
+      },
+      {
+        "turn": 150,
+        "matched_games": 4,
+        "matched_seeds": [
+          61006300,
+          61006305,
+          61006306,
+          61006307
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61006301,
+            61006302,
+            61006303,
+            61006304
+          ],
+          "candidate": [
+            61006302,
+            61006303,
+            61006304
+          ]
+        },
+        "production": {
+          "control": 75.825,
+          "candidate": 70.875,
+          "change_pct": -6.528189910979232
+        },
+        "cumulative_production": {
+          "control": 5456.799999999999,
+          "candidate": 5414.6,
+          "change_pct": -0.7733470165664613
+        },
+        "science": {
+          "control": 46.80625,
+          "candidate": 45.1875,
+          "change_pct": -3.458405661637065
+        },
+        "culture": {
+          "control": 21.596249999999998,
+          "candidate": 21.2575,
+          "change_pct": -1.5685593563697253
+        },
+        "cities": {
+          "control": 3.75,
+          "candidate": 3.75,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 26.25,
+          "candidate": 27.5,
+          "change_pct": 4.761904761904767
+        },
+        "granaries": {
+          "control": 1.75,
+          "candidate": 2.5,
+          "change_pct": 42.85714285714286
+        },
+        "housing_bound": {
+          "control": 0.5,
+          "candidate": 1.0,
+          "change_pct": 100.0
+        },
+        "housing_bound_without_granary": {
+          "control": 0.5,
+          "candidate": 0.5,
+          "change_pct": 0.0
+        },
+        "amenity_short_cities": {
+          "control": 0.25,
+          "candidate": 2.0,
+          "change_pct": 700.0
+        },
+        "builders": {
+          "control": 2.75,
+          "candidate": 2.5,
+          "change_pct": -9.090909090909093
+        },
+        "military_power": {
+          "control": 735.0625,
+          "candidate": 731.9125,
+          "change_pct": -0.4285349885213785
+        },
+        "rival_cities": {
+          "control": 7.25,
+          "candidate": 7.25,
+          "change_pct": 0.0
+        },
+        "rival_population": {
+          "control": 100.75,
+          "candidate": 101.0,
+          "change_pct": 0.2481389578163684
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 2,
+          "equal": 2
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.12427941164075795,
+            "games": 4
+          },
+          "candidate": {
+            "mean": 0.11221851278376893,
+            "games": 4
+          }
+        }
+      }
+    ]
+  }
+}
