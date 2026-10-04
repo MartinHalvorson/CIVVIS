@@ -7554,7 +7554,6 @@ mod yield_floors;
 mod marginal_usefulness;
 mod production_commitment;
 mod production_compounding;
-mod production_service;
 
 /// `opening-warrior-recon-2` gives the Settler's escorting Warrior the first
 /// move before the capital is founded. One opt-in gene; see
@@ -26521,14 +26520,6 @@ impl AdvancedAi {
         } else {
             None
         };
-        let productive_builder_city = (!economic_recovery)
-            .then(|| self.productive_builder_dispatch_city(g, pid, plan, &counts))
-            .flatten()
-            .filter(|city| {
-                baseline_amenity_target
-                    .as_ref()
-                    .is_none_or(|(protected, _, _)| protected != city)
-            });
         for cid in city_ids {
             // Every governor compares against the empire without this queue:
             // a Settler cannot fill its own demand and thereby veto itself.
@@ -26558,18 +26549,6 @@ impl AdvancedAi {
                 .is_ok()
                 {
                     self.clear_idle_production_streak(cid);
-                    continue;
-                }
-            }
-            if productive_builder_city == Some(cid) {
-                let item = Item::Unit {
-                    unit: crate::name!("builder"),
-                };
-                if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
-                    self.clear_idle_production_streak(cid);
-                    think!(self.journal(), Expansion, Decision,
-                        "A fast city supplies productive Builder work";
-                        "nearby worked jobs exceed local charges; one bounded queue can deliver the next Builder sooner");
                     continue;
                 }
             }
