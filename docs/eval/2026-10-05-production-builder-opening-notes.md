@@ -46,7 +46,9 @@ The claimed child and new test file have no open competing patches.
 ## Validation status
 
 The standalone diagnostic probe compiles successfully and both consumed games
-exit zero with exact reference equality. Candidate compile checks, focused
-regressions, full suite, quality and prospective paired production evaluation
-remain outstanding. No validation or strength claim is inferred from an
+exit zero with exact reference equality. The initial test fixture used an off-map rival-city coordinate, so CI failed
+before exercising the reservation. After correcting that fixture, all four
+focused regressions pass in a fast opt-level-zero build, and incremental Rust
+quality passes. The normal optimized full suite and prospective paired
+production evaluation remain outstanding. No validation or strength claim is inferred from an
 accepted reservation alone.

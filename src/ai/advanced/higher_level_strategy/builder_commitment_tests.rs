@@ -20,7 +20,8 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, Item) {
     g.players[0].gold_per_turn = 20.0;
     let cid = g.found_city_for(0, (8, 10), None);
     let other = g.found_city_for(0, (20, 10), None);
-    g.found_city_for(1, (27, 10), None);
+    assert!(g.map.get((23, 10)).is_some());
+    g.found_city_for(1, (23, 10), None);
     g.cities.get_mut(&cid).unwrap().pop = 4;
     g.cities.get_mut(&other).unwrap().pop = 4;
     g.cities.get_mut(&other).unwrap().queue = vec![Item::Unit {

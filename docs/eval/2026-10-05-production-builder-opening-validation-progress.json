@@ -16,6 +16,11 @@
       "session": 85656,
       "exit_code": 130,
       "reason": "Stopped own build after policy CI identified the new receipt name as filed under the wrong alphabetical append range; no tests executed"
+    },
+    {
+      "session": 39239,
+      "exit_code": 130,
+      "reason": "Stopped own build before fixture repair after CI showed all four new fixtures fail during founding, before exercising reservation behavior"
     }
   ],
   "policy_failure": {
@@ -29,7 +34,28 @@
       "exit_code": 0
     }
   },
-  "current_full_suite": "running at corrected source; no pass claim",
+  "current_full_suite": "Optimized non-test library build running; normal opt-level 3 full Cargo suite still outstanding",
   "fresh_strength_samples_played": 0,
-  "actual_Firaxis_verification": false
+  "actual_Firaxis_verification": false,
+  "initial_ci": {
+    "run": 37237137175,
+    "source": "a0810dedc",
+    "passed": 698,
+    "failed": 4,
+    "skipped": 50,
+    "not_run": 3889,
+    "failure": "Fixture rival city (27,10) is outside the axial map. Correct to verified on-map (23,10). No runtime behavior edit."
+  },
+  "fast_focused": {
+    "command": "CARGO_PROFILE_CI_OPT_LEVEL=0 CARGO_PROFILE_CI_DEBUG=0 CARGO_TARGET_DIR=/tmp/civvis-production-builder-opening-focused-target CARGO_BUILD_JOBS=2 cargo test --profile ci --locked --lib higher_level_strategy::builder_commitment_tests -- --test-threads=4",
+    "passed": 4,
+    "failed": 0,
+    "exit_code": 0,
+    "scope": "Fast fixture/behavior regression feedback; opt-level 0, not the optimized comparison build or full native suite"
+  },
+  "quality": {
+    "command": "CARGO_TARGET_DIR=/tmp/civvis-production-builder-opening-check-target CARGO_BUILD_JOBS=4 python3 tools/rust_quality.py --base origin/main --head HEAD",
+    "exit_code": 0,
+    "result": "Five changed Rust files formatted and warning-free"
+  }
 }
