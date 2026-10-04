@@ -268,6 +268,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `research-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 1 \| 3 |
 | `runaway-expander-counter` | off (unmeasured) | Opt-in gene `runaway-expander-counter`; see `Self::runaway_expander_counter`. | 1 \| 1 |
 | `sanctuary-yields-a-held-queue` | off (unmeasured) | Opt-in gene `sanctuary-yields-a-held-queue`; see `Self::sanctuary_yields_a_held_queue`. | 1 \| 1 |
+| `second-front-kept-when-winning` | off (unmeasured) | Opt-in gene `second-front-kept-when-winning`; see `Self::second_front_kept_when_winning`. | 1 \| 1 |
 | `settler-before-the-navy` | off (unmeasured) | The delegated city governor's navy step yields to a due Settler. | 1 \| 1 |
 | `settler-detour-stays-near` | off (unmeasured) | `settler-detour-stays-near`: a threat detour's fallback must lie about as close as the site it leaves. | 1 \| 1 |
 | `shared-danger` | off (unmeasured) | Opt-in gene `shared-danger`; see `Self::shared_danger`. | 1 \| 1 |

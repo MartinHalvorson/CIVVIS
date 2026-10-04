@@ -5187,6 +5187,17 @@ impl AdvancedAi {
         self.breaker_before_the_war = false;
     }
 
+    /// Opt-in gene `second-front-kept-when-winning`; see
+    /// [`Self::second_front_kept_when_winning`].
+    pub fn enable_second_front_kept_when_winning(&mut self) {
+        self.second_front_kept_when_winning = true;
+    }
+
+    /// The twin of `enable_second_front_kept_when_winning`.
+    pub fn disable_second_front_kept_when_winning(&mut self) {
+        self.second_front_kept_when_winning = false;
+    }
+
     /// Opt-in gene `peace-waits-for-unseen-prey`; see
     /// [`Self::peace_waits_for_unseen_prey`].
     pub fn enable_peace_waits_for_unseen_prey(&mut self) {

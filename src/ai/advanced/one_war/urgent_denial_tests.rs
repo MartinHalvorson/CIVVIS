@@ -578,6 +578,32 @@ fn a_second_front_on_an_urgent_rival_is_kept() {
     assert_eq!(ai.one_war_peace(&g, 0, 2), None);
 }
 
+/// See `second_front_kept_when_winning`: under the gene, a second war on a
+/// rival we crush is kept, and one we are winning while we hold a city of
+/// theirs; one we merely outgun is still closed.
+#[test]
+fn a_beaten_second_front_is_kept_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(1));
+    assert!(g.military_power(0) >= ONE_WAR_CRUSHED_RATIO * g.military_power(2));
+    let second = Some(OneWarPeace::SecondFront);
+    assert_eq!(ai.one_war_peace(&g, 0, 2), second, "off");
+    ai.enable_second_front_kept_when_winning();
+    assert_eq!(ai.one_war_peace(&g, 0, 2), None, "crushed");
+    let mut row = 2;
+    while g.military_power(0) >= ONE_WAR_CRUSHED_RATIO * g.military_power(2) {
+        g.spawn_test_unit("modern_armor", 2, (30, row));
+        row += 1;
+    }
+    assert!(g.military_power(0) >= ONE_WAR_WINNING_RATIO * g.military_power(2));
+    assert_eq!(ai.one_war_peace(&g, 0, 2), second, "winning, nothing taken");
+    let taken = g.found_city_for(2, (27, 16), None);
+    g.cities.get_mut(&taken).unwrap().owner = 0;
+    assert_eq!(ai.one_war_peace(&g, 0, 2), None, "winning, a city taken");
+}
+
 /// Live King civvis-20261004T025448Z (game 45): a counter the war cannot
 /// answer without a siege (a culture or science clock) takes no second front
 /// before it is urgent, so the army stays on the prey front's siege.

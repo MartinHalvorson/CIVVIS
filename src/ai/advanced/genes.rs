@@ -2594,6 +2594,11 @@ pub const GENES: &[Gene] = &[
     // Version 1 measured -9.7 +/- 5.3 pp: only the capitals Domination
     // needs, no displaced building. See `siege_production::SUPPLY_STRENGTH_WINDOW`.
     Gene { tag: "breaker-supply-scales-2", field: "breaker_supply_scales_2", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales_2, disable: AdvancedAi::disable_breaker_supply_scales_2 },
+    // Live King 201619Z offered Gaul "one war at a time" peace at 843 power
+    // against 140; Gaul rebuilt to 911 and won on Religion. 223225Z offered
+    // it to Canada at 407 against 138 after taking Brantford. See
+    // `AdvancedAi::second_front_kept_when_winning`.
+    Gene { tag: "second-front-kept-when-winning", field: "second_front_kept_when_winning", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_kept_when_winning, disable: AdvancedAi::disable_second_front_kept_when_winning },
     // Live King 213648Z took Babylon's only known city at turn 81, at six
     // times its power, and offered peace; Babylon held six cities at 207.
     // See `one_war::unseen_prey`.

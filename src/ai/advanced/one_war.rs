@@ -783,8 +783,7 @@ impl AdvancedAi {
             && !g.players[other].is_minor
             && !g.players[other].is_barbarian
             && g.player_city_ids(other).is_empty()
-            && g.military_power(pid)
-                >= ONE_WAR_WINNING_RATIO * g.military_power(other).max(1.0)
+            && g.military_power(pid) >= ONE_WAR_WINNING_RATIO * g.military_power(other).max(1.0)
     }
 
     /// A front we outgun [`ONE_WAR_CRUSHED_RATIO`] times over. Peace there
@@ -1132,7 +1131,14 @@ impl AdvancedAi {
                 || self.war_holds_the_road(g, pid, other)
                 || (self.domination_counter_target(g, pid, other)
                     && g.military_power(pid)
-                        >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(other).max(1.0)))
+                        >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(other).max(1.0))
+                // See `second_front_kept_when_winning`.
+                || (self.second_front_kept_when_winning
+                    && (self.one_war_front_crushed(g, pid, other)
+                        || (self.one_war_still_winning(g, pid, other)
+                            && g.cities
+                                .values()
+                                .any(|city| city.owner == pid && city.original_owner == other)))))
     }
 
     /// Whether a Domination seat holds `rival`'s original capital while the

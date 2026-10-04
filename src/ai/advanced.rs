@@ -6918,6 +6918,18 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `second-front-kept-when-winning`: a second war on a rival we outgun
+    /// `one_war::ONE_WAR_CRUSHED_RATIO` times over, or are winning
+    /// (`one_war_still_winning`) and hold a city of, is not offered "one war
+    /// at a time" peace. Peace is what lets a beaten rival rebuild: live King
+    /// civvis-20261004T201619Z offered Gaul that peace at turn 140 at 843
+    /// power against 140, while the army fought the Netherlands; Gaul stood
+    /// at 911 by turn 199 and won on Religion at 236. T223225Z took Canada's
+    /// Brantford at turn 90 and offered Canada the peace at 93, at 407
+    /// against 138, with Ottawa its next objective. The army stays on the
+    /// front; the war is only kept, so the next front opens without a
+    /// declaration. See `one_war::second_front_war_kept`. Off by default.
+    second_front_kept_when_winning: bool,
     /// `siege-counts-posted-shooters`: the siege's wall forecast counts a
     /// shooter only where it can actually fire on the walls: from a firing
     /// post `siege_posts` can give it, with no hostile unit in its reach to
@@ -9072,6 +9084,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            second_front_kept_when_winning: false,
             siege_counts_posted_shooters: false,
             sanctuary_yields_a_held_queue: false,
             staging_gun_trusts_its_escort: false,
