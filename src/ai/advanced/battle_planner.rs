@@ -329,8 +329,8 @@ fn mirrored_board(g: &Game, pid: usize) -> bool {
 /// it has just ended — `approach_reach` gives the tiles it can end on with
 /// the movement it keeps there (a zone-of-control stop keeps it; `flow_past`
 /// zeroes it), and from its own tile and every stand with movement left it
-/// strikes each affordable neighbour (melee) or each tile in range (ranged; a siege unit
-/// only from its own tile unless it may attack after moving). Ranged blows
+/// strikes each affordable neighbour (melee) or each tile in range (ranged;
+/// a siege unit only from its own tile unless it may attack after moving). Ranged blows
 /// keep the engine's line-of-sight test on a native board and drop it on the
 /// mirrored one, where the host's rule is the player's visibility. Ascending
 /// and distinct, like `attack_reach`. The probe is left as it was found.
@@ -397,18 +397,14 @@ pub(crate) fn strike_reach_of(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos
             // executor's exact preflight from this stand, including cliffs
             // and its full-movement exception, rather than price a phantom
             // blow across a river or into rough terrain.
-            probe.relocate(uid, from);
-            probe.units.get_mut(&uid).expect("saved hostile").moves_left = kept;
             for target in probe.nbrs(from) {
                 if probe.map.tiles.contains_key(&target)
                     && probe.unit_can_melee_target_domain(uid, target)
-                    && probe.can_pay_melee_entry(uid, target)
+                    && probe.can_pay_melee_entry_from(uid, from, kept, target)
                 {
                     targets.push(target);
                 }
             }
-            probe.relocate(uid, saved.pos);
-            *probe.units.get_mut(&uid).expect("saved hostile") = saved.clone();
         }
         if ranged && (!siege || from == saved.pos || after_move) {
             for target in probe.wdisk(from, range) {

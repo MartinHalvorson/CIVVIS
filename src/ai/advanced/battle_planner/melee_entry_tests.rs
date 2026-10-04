@@ -147,6 +147,7 @@ fn ranged_reach_does_not_pay_melee_terrain_entry() {
 fn a_reach_query_restores_unit_state_spatial_indexes_and_action_log() {
     let mut g = field();
     let (_, enemy) = closing_enemy(&mut g);
+    g.arena_flags.insert(0, at(11, 6));
     let unit = g.units.get_mut(&enemy).unwrap();
     unit.moves_left = 0.5;
     unit.moved = true;
@@ -154,6 +155,7 @@ fn a_reach_query_restores_unit_state_spatial_indexes_and_action_log() {
     unit.zoc_stopped = true;
     unit.started_turn_in_zoc = true;
     let before = serde_json::to_value(g.units.values().collect::<Vec<_>>()).unwrap();
+    let game_before = serde_json::to_value(&g).unwrap();
     let positions: Vec<_> = g.map.tiles.keys().copied().collect();
     let index: Vec<_> = positions
         .iter()
@@ -161,6 +163,10 @@ fn a_reach_query_restores_unit_state_spatial_indexes_and_action_log() {
         .collect();
     let log = g.log.len();
     let _ = strike_reach_of(&mut g, 0, enemy);
+    assert!(
+        serde_json::to_value(&g).unwrap() == game_before,
+        "a hypothetical stand changed serialized game state"
+    );
     assert_eq!(
         serde_json::to_value(g.units.values().collect::<Vec<_>>()).unwrap(),
         before
