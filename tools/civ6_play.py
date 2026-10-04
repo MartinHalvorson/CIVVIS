@@ -635,6 +635,35 @@ def supervised_brain_command(args: argparse.Namespace, run_dir: Path,
     return command
 
 
+#: The operator's switch for the in-game VSync A/B (`CivvisControlHeartbeat.lua`):
+#: a file holding a positive block length in turns. Read per game, like
+#: `civ6_civvis_climb.TURN_CAP_FILE`, so a lane can run one A/B game without a
+#: flag threaded through the supervisor; absent means no A/B.
+VSYNC_AB_FILE = Path(
+    os.environ.get("CIVVIS_VSYNC_AB_FILE", "")
+    or Path.home() / ".civvis-vsync-ab"
+)
+
+
+def vsync_ab_turns(path: Path | None = None) -> int | None:
+    """The A/B block length from ``VSYNC_AB_FILE``, else None (no A/B)."""
+    path = VSYNC_AB_FILE if path is None else path
+    try:
+        raw = path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return None
+    try:
+        turns = int(raw)
+    except ValueError:
+        print(f"[vsync-ab] {path} names {raw!r}, not a positive integer; no A/B",
+              flush=True)
+        return None
+    if turns <= 0:
+        return None
+    print(f"[vsync-ab] alternating VSync every {turns} turns ({path})", flush=True)
+    return turns
+
+
 def build_config(args: argparse.Namespace) -> dict:
     dialogue_seconds = getattr(args, "dialogue_seconds", 0.25)
     if dialogue_seconds is None:
@@ -833,6 +862,7 @@ def build_config(args: argparse.Namespace) -> dict:
         "GovernorAppoint": args.governor_appoint,
         "GovernorAssign": args.governor_assign,
         "OrdersPollTicks": args.orders_poll_ticks,
+        "VSyncABTurns": vsync_ab_turns(),
         "OrdersWaitPolls": args.orders_wait_polls,
         "OrdersFallbackPolls": args.orders_fallback_polls,
         "OrdersMaxStale": args.orders_max_stale,

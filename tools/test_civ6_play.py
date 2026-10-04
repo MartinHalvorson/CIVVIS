@@ -4339,3 +4339,44 @@ class StallMainMenuTests(unittest.TestCase):
             self.assertFalse(civ6_play.stall_screen_is_main_menu(shot))
         with mock.patch.object(civ6_play, "_menu_ocr_observations", return_value=[]):
             self.assertFalse(civ6_play.stall_screen_is_main_menu(shot))
+
+
+class VSyncABSwitchTest(unittest.TestCase):
+    """The in-game VSync A/B is off unless the operator's file names a block."""
+
+    def _turns(self, text: str | None) -> int | None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / ".civvis-vsync-ab"
+            if text is not None:
+                path.write_text(text)
+            with mock.patch("sys.stdout", new=io.StringIO()):
+                return civ6_play.vsync_ab_turns(path)
+
+    def test_no_file_means_no_ab(self) -> None:
+        self.assertIsNone(self._turns(None))
+
+    def test_a_positive_block_length_is_read(self) -> None:
+        self.assertEqual(self._turns("5\n"), 5)
+
+    def test_a_malformed_or_non_positive_value_means_no_ab(self) -> None:
+        for text in ("", "five", "0", "-3"):
+            self.assertIsNone(self._turns(text), text)
+
+    def test_the_block_length_reaches_the_baked_config(self) -> None:
+        class Defaults(SimpleNamespace):
+            def __getattr__(self, name):
+                return None
+
+        args = Defaults(tag="t", game_mode=[], dialogue_seconds=0.25,
+                        difficulty="DIFFICULTY_SETTLER", map_size="MAPSIZE_SMALL",
+                        speed="GAMESPEED_ONLINE", map="Continents.lua",
+                        leader="LEADER_TRAJAN")
+        with mock.patch.object(civ6_play, "vsync_ab_turns", return_value=4):
+            self.assertEqual(civ6_play.build_config(args)["VSyncABTurns"], 4)
+        with mock.patch.object(civ6_play, "vsync_ab_turns", return_value=None):
+            self.assertIsNone(civ6_play.build_config(args)["VSyncABTurns"])
+
+    def test_the_hud_reads_the_same_key(self) -> None:
+        lua = (Path(civ6_play.__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlHeartbeat.lua").read_text()
+        self.assertIn("tonumber(cfg.VSyncABTurns)", lua)
