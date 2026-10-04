@@ -485,6 +485,65 @@ trap 'exit 0' HUP INT TERM
 
 consecutive_failures=0
 
+# ★★ A CIV VI OPENED OUTSIDE CIVVIS IS THE OPERATOR'S. Operator rule
+# 2026-10-04: a Civ VI opened by hand (Spotlight → the Steam shortcut, as at
+# 15:00:09Z and 15:00:47Z that day, each one closed by an agent that took it
+# for a leftover) holds the seat; the lane waits for it to close and never
+# quits or kills it. The lane tells its own games apart by pid: every Civ VI
+# still running when one of our climbs returns was launched by that climb
+# (nobody can open a second Civ while ours runs), so it is remembered in
+# lane_civ_pids. A running Civ the lane never saw is an outside one. Match the
+# process NAME (-x), never the command line: a shell that merely mentions the
+# binary must not read as a running game (see RUNNING_GAME_PATTERN in
+# tools/civ6_civvis_climb.py for the 2026-08-18/19 losses to exactly that).
+lane_civ_pids=""
+civ_pids() { pgrep -x "Civ6_Exe(_Child)?" 2>/dev/null | tr '\n' ' ' }
+# The pid memory is lost when the supervisor restarts, so a second test needs
+# no memory at all: a Civ that was already running when a CIVVIS play log was
+# last written ran under a CIVVIS game (nobody can open a second Civ beside
+# ours), while one opened by hand starts after the lane's last write. The
+# climb's own refusal writes no play log, so it cannot launder an outside Civ.
+civ_started_epoch() {
+  local started
+  started=$(ps -p "$1" -o lstart= 2>/dev/null | sed 's/  */ /g; s/^ //; s/ *$//')
+  [[ -n "$started" ]] || { print 0; return }
+  date -j -f "%a %b %d %T %Y" "$started" +%s 2>/dev/null || print 0
+}
+newest_play_log_epoch() {
+  local -a logs=("$LOGS"/civvis-*-play.log(N.om[1]))
+  (( ${#logs} )) && stat -f %m "${logs[1]}" 2>/dev/null || print 0
+}
+outside_civ_running() {
+  local p started last_play
+  last_play=$(newest_play_log_epoch)
+  for p in $(civ_pids); do
+    [[ " $lane_civ_pids " == *" $p "* ]] && continue
+    started=$(civ_started_epoch "$p")
+    (( started > 0 && started < last_play )) && continue
+    return 0
+  done
+  return 1
+}
+# Wait for an outside Civ VI to close; 0 when it has. Only a Civ left open
+# for ten minutes with nobody at the keyboard (HID idle >= 10 min) is adopted
+# as a leftover (1), so the ordinary graceful-stop path can recycle it.
+wait_for_outside_civ() {
+  local waited=0 idle
+  say "a Civ VI opened outside CIVVIS is holding the seat; the lane waits until it closes"
+  while outside_civ_running; do
+    idle=$(ioreg -c IOHIDSystem 2>/dev/null | awk '/HIDIdleTime/ {print int($NF / 1000000000); exit}')
+    if (( waited >= 600 && ${idle:-0} >= 600 )); then
+      say "the outside Civ VI is still open after ${waited}s with nobody at the keyboard; treating it as a leftover"
+      lane_civ_pids="$lane_civ_pids $(civ_pids)"
+      return 1
+    fi
+    sleep 60
+    waited=$((waited + 60))
+  done
+  say "the outside Civ VI has closed after ${waited}s; resuming the lane"
+  return 0
+}
+
 # The installation lock establishes exclusive access to Civilization VI, but it
 # does not identify which supervisor owns that access. A newly started
 # supervisor can find a healthy harness inherited from an older supervisor (or
@@ -635,6 +694,9 @@ while true; do
     if [[ -z "$OWNED_PID" ]]; then
       UNOWNED_PID=$(unowned_harness_pid || true)
       if [[ -n "$UNOWNED_PID" ]]; then
+        # A Civ running beside a CIVVIS harness is a CIVVIS game (an older
+        # supervisor's, or an operator's recovery run), not a hand-opened one.
+        lane_civ_pids="$lane_civ_pids $(civ_pids)"
         say "an unowned Civ VI harness is present (pid $UNOWNED_PID); leaving it alone and retrying in 60s"
         sleep 60
         continue
@@ -648,6 +710,7 @@ while true; do
       AGE=999
     fi
     if (( AGE < 120 )); then
+      lane_civ_pids="$lane_civ_pids $(civ_pids)"
       say "a live game is still playing (log touched ${AGE}s ago); waiting for it"
       sleep 60
     else
@@ -681,6 +744,13 @@ while true; do
     # authority to SIGKILL Civ VI — that can leave its saves half-written. The
     # environment helper sends one ordinary TERM and reports failure; preserve
     # a game that does not exit and retry the verified boundary later.
+    if outside_civ_running && ! pgrep -f "/civ6_play\.py" >/dev/null 2>&1; then
+      if wait_for_outside_civ; then
+        consecutive_failures=0
+        sleep 10
+        continue
+      fi
+    fi
     say "previous attempt started no game; requesting a graceful Civ 6 stop before the next owned launch"
     if ! PYTHONPATH="$HEAD_REPO/tools${PYTHONPATH:+:$PYTHONPATH}" \
         python3 -c 'import civ6_env, sys; sys.exit(0 if civ6_env.quit_game(timeout_s=45.0) else 1)' \
@@ -1001,6 +1071,11 @@ while true; do
         --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
   fi
 
+  if ! grep -q "something already holds the game; refusing to stop an unowned run" \
+      "$LOGS/climb-$TAG.log" 2>/dev/null; then
+    lane_civ_pids="$(civ_pids)"
+  fi
+
   # "Played a turn" is the only honest success test: a run can reach the map,
   # emit autoclose events and still never seat the agent. Count every play log
   # this cycle wrote, not the newest one: in a batch the last attempt can fail
@@ -1014,6 +1089,19 @@ while true; do
   if (( played_games > 0 )); then
     consecutive_failures=0
     say "cycle on $HEAD_SHA played $played_games game(s) with turns"
+  elif grep -q "something already holds the game; refusing to stop an unowned run" \
+      "$LOGS/climb-$TAG.log" 2>/dev/null \
+      && outside_civ_running \
+      && ! pgrep -f "/civ6_play\.py" >/dev/null 2>&1; then
+    # The climb refused before launching anything because an outside Civ VI
+    # holds the seat (see lane_civ_pids). That is not a failed start: wait for
+    # it, count nothing, and skip the graceful-stop rung.
+    if wait_for_outside_civ; then
+      sleep 10
+      continue
+    fi
+    consecutive_failures=$((consecutive_failures + 1))
+    say "game on $HEAD_SHA PLAYED NO TURNS (failure $consecutive_failures)"
   else
     consecutive_failures=$((consecutive_failures + 1))
     say "game on $HEAD_SHA PLAYED NO TURNS (failure $consecutive_failures)"
