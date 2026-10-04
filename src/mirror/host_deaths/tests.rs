@@ -90,7 +90,9 @@ fn death_evidence_stops_at_the_selected_state_frame() {
 fn a_state_record_naming_combat_is_not_read_as_a_death() {
     // Every exported unit has a `combat` strength key; only the event kind counts.
     let mut deaths = HostDeaths::default();
-    deaths.observe(r#"{"kind": "state", "turn": 4, "units": [{"combat": 20, "id": 7, "player": 0}]}"#);
+    deaths.observe(
+        r#"{"kind": "state", "turn": 4, "units": [{"combat": 20, "id": 7, "player": 0}]}"#,
+    );
     assert!(deaths.through(10).is_empty());
 }
 

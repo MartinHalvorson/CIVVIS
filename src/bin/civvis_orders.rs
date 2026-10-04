@@ -5835,7 +5835,10 @@ fn ledger_evidence_and_states(
     // that spells only other integer turns cannot pass the `as_u64` check below.
     let mut lines = civvis::mirror::line_ranges_containing(&raw, "\"state\"");
     for kind in EVIDENCE_KINDS {
-        lines.extend(civvis::mirror::line_ranges_containing(&raw, &format!("\"{kind}\"")));
+        lines.extend(civvis::mirror::line_ranges_containing(
+            &raw,
+            &format!("\"{kind}\""),
+        ));
     }
     lines.sort_unstable();
     lines.dedup();

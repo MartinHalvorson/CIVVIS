@@ -545,7 +545,8 @@ pub fn snapshot_from_events_at(
     // prefix for every later request of a growing log, so it is merged once
     // and kept (`SnapshotPrefix`), and each request clones it and merges only
     // what is new. Chunks merge in stream order either way.
-    let split = ranges.partition_point(|(start, _)| state_start.is_none_or(|limit| *start <= limit));
+    let split =
+        ranges.partition_point(|(start, _)| state_start.is_none_or(|limit| *start <= limit));
     let (head, tail) = ranges.split_at(split);
     let generation = events_generation(path, &raw);
     let mut snapshot = Snapshot::default();
@@ -558,7 +559,8 @@ pub fn snapshot_from_events_at(
                 if kept.path == path
                     && kept.generation == generation
                     && turn.is_none_or(|limit| kept.max_turn <= limit)
-                    && last_kept_start.is_none_or(|last| state_start.is_none_or(|limit| last <= limit))
+                    && last_kept_start
+                        .is_none_or(|last| state_start.is_none_or(|limit| last <= limit))
                 {
                     done = head.partition_point(|(start, _)| *start < kept.covered);
                     snapshot = kept.snapshot.clone();
@@ -705,7 +707,10 @@ pub fn turn_may_be_any(line: &str, turns: &[u32]) -> bool {
         while at < bytes.len() && matches!(bytes[at], b' ' | b'\t' | b'\n' | b'\r') {
             at += 1;
         }
-        let digits = bytes[at..].iter().take_while(|b| b.is_ascii_digit()).count();
+        let digits = bytes[at..]
+            .iter()
+            .take_while(|b| b.is_ascii_digit())
+            .count();
         if digits == 0 {
             continue;
         }
@@ -713,7 +718,10 @@ pub fn turn_may_be_any(line: &str, turns: &[u32]) -> bool {
         if after.is_some_and(|b| matches!(b, b'.' | b'e' | b'E')) {
             continue;
         }
-        if wanted.iter().any(|want| &bytes[at..at + digits] == want.as_bytes()) {
+        if wanted
+            .iter()
+            .any(|want| &bytes[at..at + digits] == want.as_bytes())
+        {
             return true;
         }
         saw_integer = true;
@@ -872,7 +880,10 @@ pub fn line_ranges_containing(raw: &str, needle: &str) -> Vec<(usize, usize)> {
             let found = read
                 .hits
                 .entry(needle.to_string())
-                .or_insert_with(|| NeedleHits { scanned: 0, lines: Vec::new() });
+                .or_insert_with(|| NeedleHits {
+                    scanned: 0,
+                    lines: Vec::new(),
+                });
             if found.scanned < raw.len() {
                 found.scanned = line_hits(raw, found.scanned, needle, &mut found.lines);
             }
@@ -908,7 +919,9 @@ fn line_hits(raw: &str, from: usize, needle: &str, out: &mut Vec<(usize, usize)>
     let finder = memchr::memmem::Finder::new(needle.as_bytes());
     let mut at = from;
     while at <= bytes.len() {
-        let Some(offset) = finder.find(&bytes[at..]) else { break };
+        let Some(offset) = finder.find(&bytes[at..]) else {
+            break;
+        };
         let hit = at + offset;
         let start = memchr::memrchr(b'\n', &bytes[..hit]).map_or(0, |i| i + 1);
         let newline = memchr::memchr(b'\n', &bytes[hit..]).map(|i| hit + i);
@@ -937,7 +950,10 @@ fn line_hits(raw: &str, from: usize, needle: &str, out: &mut Vec<(usize, usize)>
 /// and a 300 KB record is not parsed to learn that it is not a combat event.
 pub(crate) fn json_may_have_value(line: &str, key: &str, literal: &str) -> bool {
     let bytes = line.as_bytes();
-    let numeric = literal.as_bytes().last().is_some_and(|b| b.is_ascii_digit());
+    let numeric = literal
+        .as_bytes()
+        .last()
+        .is_some_and(|b| b.is_ascii_digit());
     // Every occurrence, overlapping included, as the `str::find` walk it
     // replaces found them; memmem is the SIMD searcher (std's is scalar here).
     let finder = memchr::memmem::Finder::new(key.as_bytes());
@@ -974,18 +990,35 @@ mod log_scan_prefilter_tests {
 
     #[test]
     fn a_kind_matches_with_or_without_spaces() {
-        assert!(json_may_have_value(r#"{"kind": "combat", "turn": 3}"#, "\"kind\"", "\"combat\""));
-        assert!(json_may_have_value(r#"{"kind":"combat"}"#, "\"kind\"", "\"combat\""));
-        assert!(json_may_have_value("{\"kind\" :\t\"combat\"}", "\"kind\"", "\"combat\""));
+        assert!(json_may_have_value(
+            r#"{"kind": "combat", "turn": 3}"#,
+            "\"kind\"",
+            "\"combat\""
+        ));
+        assert!(json_may_have_value(
+            r#"{"kind":"combat"}"#,
+            "\"kind\"",
+            "\"combat\""
+        ));
+        assert!(json_may_have_value(
+            "{\"kind\" :\t\"combat\"}",
+            "\"kind\"",
+            "\"combat\""
+        ));
     }
 
     #[test]
     fn the_word_alone_is_not_the_kind() {
         // Every exported unit carries a `combat` strength; a state record must
         // not look like a combat event to the prefilter.
-        let state = r#"{"kind": "state", "turn": 9, "units": [{"combat": 20, "kind": "UNIT_WARRIOR"}]}"#;
+        let state =
+            r#"{"kind": "state", "turn": 9, "units": [{"combat": 20, "kind": "UNIT_WARRIOR"}]}"#;
         assert!(!json_may_have_value(state, "\"kind\"", "\"combat\""));
-        assert!(!json_may_have_value(r#"{"label": "kind", "x": "combat"}"#, "\"kind\"", "\"combat\""));
+        assert!(!json_may_have_value(
+            r#"{"label": "kind", "x": "combat"}"#,
+            "\"kind\"",
+            "\"combat\""
+        ));
     }
 
     #[test]
@@ -995,10 +1028,18 @@ mod log_scan_prefilter_tests {
         assert!(!json_may_have_value(line, "\"turn\"", "22"));
         assert!(!json_may_have_value(line, "\"turn\"", "2"));
         assert!(!json_may_have_value(r#"{"turn": 2201}"#, "\"turn\"", "220"));
-        assert!(!json_may_have_value(r#"{"turn": 220.5}"#, "\"turn\"", "220"));
+        assert!(!json_may_have_value(
+            r#"{"turn": 220.5}"#,
+            "\"turn\"",
+            "220"
+        ));
         assert!(json_may_have_value(r#"{"turn":220}"#, "\"turn\"", "220"));
         // A nested member passes: the exact parse behind the prefilter decides.
-        assert!(json_may_have_value(r#"{"turn": 5, "deal": {"turn": 220}}"#, "\"turn\"", "220"));
+        assert!(json_may_have_value(
+            r#"{"turn": 5, "deal": {"turn": 220}}"#,
+            "\"turn\"",
+            "220"
+        ));
     }
 
     #[test]
@@ -1022,7 +1063,10 @@ mod log_scan_prefilter_tests {
         for i in 0..6000 {
             match i % 997 {
                 0 => raw.push_str(&format!("{{\"kind\": \"build_no_plot\", \"i\": {i}}}\r\n")),
-                1 => raw.push_str(&format!("{}build_no_plot build_no_plot\n", "x".repeat(70_000))),
+                1 => raw.push_str(&format!(
+                    "{}build_no_plot build_no_plot\n",
+                    "x".repeat(70_000)
+                )),
                 _ => raw.push_str(&format!("{{\"kind\": \"await\", \"polls\": {i}}}\n")),
             }
         }
@@ -1051,7 +1095,11 @@ mod log_scan_prefilter_tests {
         check("build_no_plot");
         check("b");
         // Appended lines are searched; kept ones are not searched again.
-        std::fs::write(&path, "a build_no_plot\nb\nc build_no_plot\r\nd\ne build_no_plot\n").unwrap();
+        std::fs::write(
+            &path,
+            "a build_no_plot\nb\nc build_no_plot\r\nd\ne build_no_plot\n",
+        )
+        .unwrap();
         check("build_no_plot");
         check("b");
         check("");
@@ -1076,8 +1124,15 @@ mod log_scan_prefilter_tests {
                 r#"{{"kind": "tiles", "turn": {turn}, "frame": {frame}, "delta": {delta}, "width": 8, "height": 8, "plots": [{{"x": {x}, "y": 1, "t": "TERRAIN_GRASS"}}]}}"#
             )
         };
-        let state = |turn: u32, frame: u32| format!(r#"{{"kind": "state", "turn": {turn}, "frame": {frame}}}"#);
-        let mut log = vec![state(1, 0), tiles(1, 0, false, 1), state(2, 0), tiles(2, 0, true, 2)];
+        let state = |turn: u32, frame: u32| {
+            format!(r#"{{"kind": "state", "turn": {turn}, "frame": {frame}}}"#)
+        };
+        let mut log = vec![
+            state(1, 0),
+            tiles(1, 0, false, 1),
+            state(2, 0),
+            tiles(2, 0, true, 2),
+        ];
         let check = |log: &Vec<String>, turn: u32| {
             std::fs::write(&path, log.join("\n") + "\n").unwrap();
             let warm = format!("{:?}", snapshot_from_events_at(&path, Some(turn)).unwrap());
@@ -1095,7 +1150,12 @@ mod log_scan_prefilter_tests {
         // A lower limit after a higher one must not reuse what it cannot see.
         check(&log, 2);
         check(&log, 3);
-        log.extend([state(4, 0), tiles(4, 0, true, 6), state(4, 1), tiles(4, 1, true, 7)]);
+        log.extend([
+            state(4, 0),
+            tiles(4, 0, true, 6),
+            state(4, 1),
+            tiles(4, 1, true, 7),
+        ]);
         check(&log, 4);
         forget();
         let _ = std::fs::remove_dir_all(&dir);
@@ -1144,9 +1204,15 @@ mod log_scan_prefilter_tests {
         assert!(turn_may_match(r#"{"kind":"state","turn":8,"turn":7}"#, 7));
         use super::turn_may_be_any;
         assert!(turn_may_be_any(r#"{"kind":"combat","turn":12}"#, &[11, 12]));
-        assert!(!turn_may_be_any(r#"{"kind":"combat","turn":13}"#, &[11, 12]));
+        assert!(!turn_may_be_any(
+            r#"{"kind":"combat","turn":13}"#,
+            &[11, 12]
+        ));
         assert!(turn_may_be_any(r#"{"kind":"combat","turn":-3}"#, &[11, 12]));
-        assert!(!turn_may_be_any(r#"{"kind":"combat","turn":18446744073709551616}"#, &[11]));
+        assert!(!turn_may_be_any(
+            r#"{"kind":"combat","turn":18446744073709551616}"#,
+            &[11]
+        ));
     }
 }
 
@@ -6922,7 +6988,11 @@ pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<St
     const SEAT: u8 = 2;
     const STATE: u8 = 4;
     let mut marked: std::collections::BTreeMap<(usize, usize), u8> = Default::default();
-    for (needle, flag) in [("\"combat\"", COMBAT), ("\"seat\"", SEAT), ("\"state\"", STATE)] {
+    for (needle, flag) in [
+        ("\"combat\"", COMBAT),
+        ("\"seat\"", SEAT),
+        ("\"state\"", STATE),
+    ] {
         for range in line_ranges_containing(&raw, needle) {
             *marked.entry(range).or_default() |= flag;
         }
