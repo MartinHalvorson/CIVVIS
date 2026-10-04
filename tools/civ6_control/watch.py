@@ -39,6 +39,20 @@ class LogTail:
         self.path = path or (env.logs_dir() / "Automation.log")
         self.offset = 0
         self.partial = ""
+        # The unterminated tail already relayed whole, so the newline that
+        # completes it later does not relay it twice. See `poll`.
+        self.delivered: str | None = None
+
+    @staticmethod
+    def _decode(line: str) -> dict | None:
+        index = line.find(PREFIX)
+        if index < 0:
+            return None
+        try:
+            event = json.loads(line[index + len(PREFIX):])
+        except json.JSONDecodeError:
+            return None
+        return event if isinstance(event, dict) else None
 
     def poll(self) -> list[dict]:
         if not self.path.is_file():
@@ -50,6 +64,7 @@ class LogTail:
             # offset, which would skip the whole of the new run.
             self.offset = 0
             self.partial = ""
+            self.delivered = None
         if size == self.offset:
             return []
         with self.path.open("r", errors="replace") as handle:
@@ -61,13 +76,31 @@ class LogTail:
         self.partial = lines.pop()  # keep any half-written trailing line
         events = []
         for line in lines:
-            index = line.find(PREFIX)
-            if index < 0:
-                continue
-            try:
-                events.append(json.loads(line[index + len(PREFIX):]))
-            except json.JSONDecodeError:
-                continue
+            if self.delivered is not None:
+                held, self.delivered = self.delivered, None
+                if line == held:
+                    continue  # relayed whole while it waited for this newline
+            event = self._decode(line)
+            if event is not None:
+                events.append(event)
+        # ★★ THE GAME HOLDS ITS LAST RECORD'S NEWLINE UNTIL THE NEXT RECORD.
+        # `Automation.Log` writes each record's line break only when the next
+        # record arrives, so whatever was logged last waits as `partial` until
+        # something else is logged: two `await` polls reach this process in the
+        # same instant, and a replan frame's `state` -- the last line of its
+        # export -- reached the brain ~0.2 s after it was written (median 0.219 s
+        # after its `replan_frame` over 409 frames of civvis-20261004T171152Z,
+        # 0.000 once #3921 happened to log `export_timing` right behind it). A
+        # JSON object cannot parse until its final brace is written, so a
+        # prefixed tail that parses whole IS the complete record: relay it now
+        # and drop it when its newline arrives. A half-written tail still fails
+        # to parse and waits, exactly as before.
+        if self.partial and self.partial != self.delivered \
+                and self.partial.rstrip().endswith("}"):
+            event = self._decode(self.partial)
+            if event is not None:
+                events.append(event)
+                self.delivered = self.partial
         return events
 
 
