@@ -105,3 +105,37 @@ fn a_wounded_scout_recovers_before_returning_to_exploration() {
     assert_eq!(g.units[&scout].pos, home);
     assert_eq!(g.players[0].explored.len(), known);
 }
+
+/// See `rival_lead_goal`: met-major ground with no known city draws the lead
+/// scout to the fog beside it.
+#[test]
+fn the_lead_scout_looks_for_an_unseen_rival_city() {
+    let (mut g, mut ai, scout, home) = board();
+    // A strip of a rival's ground, seen once, seven tiles west of home.
+    let border: Vec<Pos> = (7..=11)
+        .map(|row| crate::hex::offset_to_axial(9, row))
+        .collect();
+    g.players[0].explored.extend(border.iter().copied());
+    assert_eq!(ai.rival_lead_goal(&g, 0, scout), None, "no lead yet");
+    g.unseen_major_borders.extend(border.iter().copied());
+    let goal = ai.rival_lead_goal(&g, 0, scout).expect("a lead");
+    assert!(!g.players[0].explored.contains(&goal));
+    assert!(border.iter().any(|pos| g.wdist(*pos, goal) <= 3));
+    let start = g.wdist(g.units[&scout].pos, goal);
+    for _ in 0..3 {
+        g.turn += 1;
+        let moves = g.unit_max_moves(scout);
+        let unit = g.units.get_mut(&scout).unwrap();
+        unit.moves_left = moves;
+        unit.moved = false;
+        unit.acted = false;
+        ai.distance_scout_step(&mut g, 0, scout);
+    }
+    assert!(
+        g.wdist(g.units[&scout].pos, goal) < start,
+        "the scout heads for the rival's ground"
+    );
+    // A second scout keeps the ordinary sweep.
+    let second = g.spawn_test_unit("scout", 0, g.nbrs(home)[1]);
+    assert_eq!(ai.rival_lead_goal(&g, 0, second), None);
+}
