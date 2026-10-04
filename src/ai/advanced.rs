@@ -2467,8 +2467,8 @@ pub struct AdvancedAi {
     /// freeze expansion, which is this empire's binding constraint.
     guard_wait: BTreeMap<u32, (u32, u8)>,
     /// Turns an embarked Settler has held for a naval escort, keyed by the
-    /// water tile it holds on (live unit ids do not reliably survive a turn,
-    /// while a holding Settler does not move): (last turn counted, turns).
+    /// water tile it holds on: a holding Settler does not move, so the key
+    /// needs no entry in `remap_unit_memory`. (last turn counted, turns).
     /// See `naval_escort_patience`.
     naval_escort_waits: BTreeMap<Pos, (u32, u8)>,
     /// Every visible hostile military unit as it stood BEFORE anything of

@@ -635,6 +635,35 @@ def supervised_brain_command(args: argparse.Namespace, run_dir: Path,
     return command
 
 
+#: The operator's switch for the in-game VSync A/B (`CivvisControlHeartbeat.lua`):
+#: a file holding a positive block length in turns. Read per game, like
+#: `civ6_civvis_climb.TURN_CAP_FILE`, so a lane can run one A/B game without a
+#: flag threaded through the supervisor; absent means no A/B.
+VSYNC_AB_FILE = Path(
+    os.environ.get("CIVVIS_VSYNC_AB_FILE", "")
+    or Path.home() / ".civvis-vsync-ab"
+)
+
+
+def vsync_ab_turns(path: Path | None = None) -> int | None:
+    """The A/B block length from ``VSYNC_AB_FILE``, else None (no A/B)."""
+    path = VSYNC_AB_FILE if path is None else path
+    try:
+        raw = path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return None
+    try:
+        turns = int(raw)
+    except ValueError:
+        print(f"[vsync-ab] {path} names {raw!r}, not a positive integer; no A/B",
+              flush=True)
+        return None
+    if turns <= 0:
+        return None
+    print(f"[vsync-ab] alternating VSync every {turns} turns ({path})", flush=True)
+    return turns
+
+
 def build_config(args: argparse.Namespace) -> dict:
     dialogue_seconds = getattr(args, "dialogue_seconds", 0.25)
     if dialogue_seconds is None:
@@ -833,6 +862,7 @@ def build_config(args: argparse.Namespace) -> dict:
         "GovernorAppoint": args.governor_appoint,
         "GovernorAssign": args.governor_assign,
         "OrdersPollTicks": args.orders_poll_ticks,
+        "VSyncABTurns": vsync_ab_turns(),
         "OrdersWaitPolls": args.orders_wait_polls,
         "OrdersFallbackPolls": args.orders_fallback_polls,
         "OrdersMaxStale": args.orders_max_stale,
@@ -2737,6 +2767,35 @@ def stall_screen_is_main_menu(shot: Path) -> bool:
     return _main_menu_visible(shot)
 
 
+#: Lines only Civ VI's legal splash carries -- the copyright page that follows
+#: the logos, which the launcher's log-backed "main menu reached" can fire over.
+LEGAL_SPLASH_MARKERS = ("take-two interactive", "rad game tools", "audiokinetic")
+
+
+def _legal_splash_visible(path: Path, bounds: tuple[int, int, int, int]) -> bool:
+    """Whether a screenshot shows the copyright splash instead of the menu.
+
+    ★★ THE FIRST MENU READ OF ALMOST EVERY GAME WAS THE SPLASH. Its seven lines
+    of legal text and the middleware logos read as nine menu rows, so the
+    row fallback clicked "Single Player" on the copyright page, opened nothing,
+    and the submenu poll spent its whole twenty-second budget before attempt
+    two found the real menu: `attempt 1: menu read at 0.450 (pitch 0.051, 9
+    rows)` then `no submenu (0 rows)` in 10 of the 14 games of 2026-10-04,
+    ~30 s each (G64/G65 `menu-attempt1.png` are the splash). The words are
+    read from the enlarged menu crop -- inside the game window by construction,
+    so a terminal quoting them elsewhere on the desktop cannot stall a real
+    menu -- and the label search that just missed "Single Player" has already
+    paid for that crop: `_menu_crop_ocr` is cached per capture. The full-screen
+    pass does not read these small lines at all; the crop reads "Take-Two
+    Interactive" on both captures above and on neither real menu.
+    """
+    return any(
+        marker in str(observation.get("text", "")).lower()
+        for observation in _menu_crop_ocr(path, bounds)
+        for marker in LEGAL_SPLASH_MARKERS
+    )
+
+
 def _menu_ocr_observations(path: Path) -> list[dict]:
     """Return menu OCR observations, treating an unreadable capture as empty.
 
@@ -3154,6 +3213,10 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             if point is None and dismiss_connection_issue(menushot, bounds):
                 time.sleep(.5)
                 return None  # The polling reader takes a fresh menu frame.
+            # The copyright splash's text lines read as menu rows; wait it
+            # out on the poll rather than click its text (`_legal_splash_visible`).
+            if point is None and _legal_splash_visible(menushot, bounds):
+                return None
             rows = vision.menu_rows(menushot, bounds) if vision.available() else []
             return (point, rows) if point is not None or len(rows) >= 4 else None
 

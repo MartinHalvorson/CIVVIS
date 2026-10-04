@@ -4339,3 +4339,86 @@ class StallMainMenuTests(unittest.TestCase):
             self.assertFalse(civ6_play.stall_screen_is_main_menu(shot))
         with mock.patch.object(civ6_play, "_menu_ocr_observations", return_value=[]):
             self.assertFalse(civ6_play.stall_screen_is_main_menu(shot))
+
+
+class VSyncABSwitchTest(unittest.TestCase):
+    """The in-game VSync A/B is off unless the operator's file names a block."""
+
+    def _turns(self, text: str | None) -> int | None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / ".civvis-vsync-ab"
+            if text is not None:
+                path.write_text(text)
+            with mock.patch("sys.stdout", new=io.StringIO()):
+                return civ6_play.vsync_ab_turns(path)
+
+    def test_no_file_means_no_ab(self) -> None:
+        self.assertIsNone(self._turns(None))
+
+    def test_a_positive_block_length_is_read(self) -> None:
+        self.assertEqual(self._turns("5\n"), 5)
+
+    def test_a_malformed_or_non_positive_value_means_no_ab(self) -> None:
+        for text in ("", "five", "0", "-3"):
+            self.assertIsNone(self._turns(text), text)
+
+    def test_the_block_length_reaches_the_baked_config(self) -> None:
+        class Defaults(SimpleNamespace):
+            def __getattr__(self, name):
+                return None
+
+        args = Defaults(tag="t", game_mode=[], dialogue_seconds=0.25,
+                        difficulty="DIFFICULTY_SETTLER", map_size="MAPSIZE_SMALL",
+                        speed="GAMESPEED_ONLINE", map="Continents.lua",
+                        leader="LEADER_TRAJAN")
+        with mock.patch.object(civ6_play, "vsync_ab_turns", return_value=4):
+            self.assertEqual(civ6_play.build_config(args)["VSyncABTurns"], 4)
+        with mock.patch.object(civ6_play, "vsync_ab_turns", return_value=None):
+            self.assertIsNone(civ6_play.build_config(args)["VSyncABTurns"])
+
+    def test_the_hud_reads_the_same_key(self) -> None:
+        lua = (Path(civ6_play.__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlHeartbeat.lua").read_text()
+        self.assertIn("tonumber(cfg.VSyncABTurns)", lua)
+
+
+class TheLegalSplashIsNotTheMenu(unittest.TestCase):
+    """The copyright splash's text lines must not be clicked as menu rows."""
+
+    SPLASH = [
+        {"text": "SID MEIER'S"}, {"text": "CIVILIZATION VI"},
+        {"text": "© 1991 – 2023 Take-Two Interactive Software, Inc. Developed by Firaxis Games."},
+        {"text": "© 1997 – 2020 by RAD Game Tools, Inc. Uses Granny Animation."},
+        {"text": "2006- 2020 Audiokinetic Inc. All rights reserved."},
+    ]
+    MENU = [
+        {"text": "Single Player"}, {"text": "Multiplayer"}, {"text": "Game Options"},
+        {"text": "Additional Content"}, {"text": "Tutorial"}, {"text": "Exit to Desktop"},
+    ]
+
+    def _visible(self, observations) -> bool:
+        with mock.patch.object(civ6_play, "_menu_crop_ocr",
+                               lambda _path, _bounds: observations):
+            return civ6_play._legal_splash_visible(Path("menu-attempt1.png"),
+                                                   (0, 33, 864, 542))
+
+    def test_the_splash_is_recognised_by_its_own_words(self) -> None:
+        self.assertTrue(self._visible(self.SPLASH))
+
+    def test_the_main_menu_is_not_the_splash(self) -> None:
+        self.assertFalse(self._visible(self.MENU))
+
+    def test_an_unreadable_frame_is_not_the_splash(self) -> None:
+        self.assertFalse(self._visible([]))
+
+    def test_the_menu_read_waits_out_the_splash_before_trusting_rows(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play.bootstrap_game)
+        reader = source.split("def read_top_menu():")[1].split("top = _poll_screen(read_top_menu)")[0]
+        self.assertIn("if point is None and _legal_splash_visible(menushot, bounds):", reader)
+        # Checked only when the label read failed, and before the row
+        # fallback that mistook the copyright lines for nine menu rows.
+        self.assertLess(reader.index("_legal_splash_visible(menushot, bounds)"),
+                        reader.index("vision.menu_rows(menushot, bounds)"))
+        splash = reader.split("_legal_splash_visible(menushot, bounds):")[1].split("\n")[1]
+        self.assertEqual(splash.strip(), "return None")
