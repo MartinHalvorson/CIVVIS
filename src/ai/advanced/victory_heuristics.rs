@@ -772,10 +772,14 @@ mod tests {
         let plan = science_plan(game.turn);
         ai.advanced_research(&mut game, 0, &plan);
 
-        assert_eq!(
-            game.players[0].research.as_deref(),
-            Some("bronze_working"),
-            "an explicit Science target must clear an unfinished Ancient era before its Rocketry beeline"
+        // Any unfinished Ancient node is the backfill. This used to name
+        // Bronze Working, which won the scorer only because its lookahead
+        // counted other civilizations' Iron Working uniques (the Kongo Shield
+        // Bearer, Hypaspist and Toa); counted honestly, Irrigation edges it.
+        let picked = game.players[0].research.clone().expect("a research pick");
+        assert!(
+            picked != "rocketry" && game.rules.techs[picked.as_str()].era == 0,
+            "an explicit Science target must clear an unfinished Ancient era before its Rocketry beeline, not {picked}"
         );
     }
 

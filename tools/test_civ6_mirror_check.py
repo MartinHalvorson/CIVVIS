@@ -631,25 +631,25 @@ class MirrorCheckTest(unittest.TestCase):
 
         self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
 
-    def test_unmodelled_unique_unit_uses_firaxis_replacement_role(self) -> None:
+    def test_modelled_unique_unit_matches_its_own_spec(self) -> None:
         state = {"rivals": [{"units": [{
             "kind": "UNIT_SCOTTISH_HIGHLANDER", "x": 3, "y": 5,
             "hp": 72, "fortified": False, "fortify_turns": 0,
         }]}]}
         board = {"view_player": 0, "units": [{
-            "owner": 1, "type": "ranger", "pos": [1, 5],
+            "owner": 1, "type": "highlander", "pos": [1, 5],
             "hp": 72, "fortified": False, "fortify_turns": 0,
         }]}
 
         self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
 
-    def test_georgian_khevsureti_uses_man_at_arms_replacement_role(self) -> None:
+    def test_georgian_khevsureti_matches_its_own_spec(self) -> None:
         state = {"rivals": [{"units": [{
             "kind": "UNIT_GEORGIAN_KHEVSURETI", "x": 3, "y": 5,
             "hp": 88, "fortified": False, "fortify_turns": 0,
         }]}]}
         board = {"view_player": 0, "units": [{
-            "owner": 1, "type": "man_at_arms", "pos": [1, 5],
+            "owner": 1, "type": "khevsureti", "pos": [1, 5],
             "hp": 88, "fortified": False, "fortify_turns": 0,
         }]}
 

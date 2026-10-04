@@ -5097,6 +5097,27 @@ impl AdvancedAi {
         self.runaway_expander_counter = false;
     }
 
+    /// Opt-in gene `decisive-window`; see [`Self::decisive_window`].
+    pub fn enable_decisive_window(&mut self) {
+        self.decisive_window = true;
+    }
+
+    /// The twin of `enable_decisive_window`.
+    pub fn disable_decisive_window(&mut self) {
+        self.decisive_window = false;
+    }
+
+    /// Opt-in gene `unique-unit-preference`; see
+    /// `BasicAi::unique_unit_preference`.
+    pub fn enable_unique_unit_preference(&mut self) {
+        self.base.unique_unit_preference = true;
+    }
+
+    /// The twin of `enable_unique_unit_preference`.
+    pub fn disable_unique_unit_preference(&mut self) {
+        self.base.unique_unit_preference = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

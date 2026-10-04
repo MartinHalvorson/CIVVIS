@@ -5208,6 +5208,11 @@ pub struct AdvancedAi {
     /// three unimproved worked tiles. See `BasicAi::builder_before_the_army_3`.
     builder_before_the_army_3: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `decisive-window`: research and civics aimed at the cheapest
+    /// assault-plus-breaker package that beats the campaign target's
+    /// defender and opens its wall tier, the civilization's unique unit
+    /// preferred. See `advanced/decisive_window.rs`.
+    decisive_window: bool,
     /// `denial-needs-a-road`: a Conquest counter to a rival's victory clock
     /// is actionable only when a land path that respects closed borders
     /// reaches one of its cities. See `AdvancedAi::rival_reachable_by_land`.
@@ -7837,6 +7842,7 @@ mod settler_departure;
 pub use science_victory_drive::ScienceDrive;
 
 mod domination_research;
+mod decisive_window;
 mod culture_defense;
 mod standing_army_supply;
 /// Victory lanes are target contracts: their beelines and campaign objectives
@@ -8698,6 +8704,7 @@ impl AdvancedAi {
             builder_before_the_army_2: false,
             builder_before_the_army_3: false,
             // ---- append: c-d ----------------------------------------
+            decisive_window: false,
             denial_needs_a_road: false,
             denial_nearest_finish: false,
             campus_before_harbor: false,
@@ -15727,6 +15734,11 @@ impl AdvancedAi {
             let conversion_upgrade_goal = self
                 .conversion_upgrade_research()
                 .filter(|goal| !g.players[pid].techs.contains(&Name::new(goal)));
+            // `decisive-window`: the cheapest research toward an assault and a
+            // breaker that beat the campaign target's defender and walls. See
+            // `advanced/decisive_window.rs`.
+            let decisive_window = self.decisive_window(g, pid, plan);
+            let decisive_window_goal = decisive_window.as_ref().and_then(|window| window.tech_goal);
             let forced_goal = match objective {
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
@@ -15752,6 +15764,14 @@ impl AdvancedAi {
                 // the whole appointment, and a lane goal that displaces one
                 // of them turns the surge into a research plan that never
                 // launches. See `advanced/air_surge.rs`.
+                // `decisive-window`, ahead of the air surge: a package whose
+                // assault and breaker already beat the target needs no
+                // research and yields the slot, and once the target reaches
+                // Urban Defenses the Bomber is itself a priced breaker, so the
+                // two goals converge rather than compete. Live King: every
+                // breaker arrived one wall tier late while the surge and the
+                // one-step modernization owned research.
+                _ if decisive_window_goal.is_some() => decisive_window_goal.map(Name::as_str),
                 _ if self.air_surge_research_goal(g, pid).is_some() => {
                     self.air_surge_research_goal(g, pid)
                 }
@@ -15913,6 +15933,16 @@ impl AdvancedAi {
                     }
                 }
             }
+            // The window's chain crosses eras the rolling window does not
+            // offer yet (Military Science behind a Medieval backlog): admit
+            // every legal step toward it while it owns the forced goal.
+            if let Some(goal) = decisive_window_goal.filter(|goal| forced_goal == Some(goal.as_str())) {
+                for tech in g.available_techs(pid) {
+                    if self.tech_leads_to(g, &tech, goal.as_str()) && !available.contains(&tech) {
+                        available.push(tech);
+                    }
+                }
+            }
             // An army already consuming an unrevealed fuel cannot be supplied
             // by unrelated era backfill. Admit only legal steps on its selected
             // supply path, and only when no earlier commitment owns research.
@@ -16019,6 +16049,28 @@ impl AdvancedAi {
                                     "the {step} step toward {}, needed to catch a nearby barbarian army",
                                     plain(goal)
                                 )
+                            } else if let Some(window) = decisive_window
+                                .as_ref()
+                                .filter(|window| window.tech_goal.map(Name::as_str) == Some(goal))
+                            {
+                                format!(
+                                    "decisive-window: the {step} step toward {}; {}{} beats {}'s best defender ({:.0}) by {:.0}{} in {:.0} turns",
+                                    plain(goal),
+                                    plain(window.assault.as_str()),
+                                    if window.unique { " (our unique unit)" } else { "" },
+                                    g.players[window.target].civ,
+                                    window.defender,
+                                    window.margin,
+                                    window
+                                        .breaker
+                                        .map(|breaker| format!(
+                                            " and {} opens tier-{} walls",
+                                            plain(breaker.as_str()),
+                                            window.wall_tier
+                                        ))
+                                        .unwrap_or_default(),
+                                    window.turns,
+                                )
                             } else if domination_siege_goal.as_deref() == Some(goal) {
                                 format!("domination-siege-research: unlock {} to supply the missing wall-breaking capability for the campaign", plain(goal))
                             } else if standing_army_fuel_goal.as_deref() == Some(goal) {
@@ -16092,6 +16144,10 @@ impl AdvancedAi {
                     .civics
                     .contains(&crate::name!("political_philosophy"));
             let great_person_goal = BasicAi::live_great_person_civic_goal(g, pid);
+            // `decisive-window`: a civic-gated window unit (the Samurai's
+            // Feudalism, the Tagma's Divine Right, the Winged Hussar's
+            // Mercantilism). See `advanced/decisive_window.rs`.
+            let decisive_civic_goal = self.decisive_window_civic_goal(g, pid, plan);
             let forced_goal = match objective {
                 _ if g.has_ability(pid, "taxis")
                     && !g.players[pid]
@@ -16125,6 +16181,7 @@ impl AdvancedAi {
                 {
                     self.culture_civic_goal(g, pid)
                 }
+                _ if decisive_civic_goal.is_some() => decisive_civic_goal.map(Name::as_str),
                 _ if self.domination_upgrade_civic_goal(g, pid).is_some() => {
                     self.domination_upgrade_civic_goal(g, pid)
                 }
@@ -18168,9 +18225,17 @@ impl AdvancedAi {
                 } else {
                     power * 1.1
                 };
-                if !self.civ_blind
-                    && g.rules.civs[&g.players[pid].civ].unique_unit.as_deref() == Some(name)
-                {
+                // `unique-unit-preference`: the credit reads the rules' own
+                // `unique_to`, which every unique unit carries. The civs.json
+                // `unique_unit` field names one for 14 of 105 civilizations
+                // (Gran Colombia's Llanero is not among them), so the credit
+                // never reached most of the roster.
+                let ours = if self.base.unique_unit_preference {
+                    unit.unique_to.as_deref() == Some(g.players[pid].civ.as_str())
+                } else {
+                    g.rules.civs[&g.players[pid].civ].unique_unit.as_deref() == Some(name)
+                };
+                if !self.civ_blind && ours {
                     value += 55.0;
                 }
             }
@@ -18346,13 +18411,21 @@ impl AdvancedAi {
             }
         }
         // One-step lookahead prevents cheap prerequisites from being ignored.
+        // Only units this civilization can field count: another
+        // civilization's unique unit is no unlock here, and with the whole
+        // shipped roster Military Tactics alone carries the Impi, the
+        // Berserker and the Khevsureti — +24 on Mathematics for everyone.
+        let civ = g.players[pid].civ.as_str();
         for (future, child) in &g.rules.techs {
             if child.requires.iter().any(|r| r == tech) {
                 let unlocks = g
                     .rules
                     .units
                     .values()
-                    .filter(|u| u.tech.as_deref() == Some(future))
+                    .filter(|u| {
+                        u.tech.as_deref() == Some(future)
+                            && u.unique_to.as_deref().is_none_or(|owner| owner == civ)
+                    })
                     .count()
                     + g.rules
                         .buildings

@@ -2549,6 +2549,19 @@ pub const GENES: &[Gene] = &[
     // 3.9 of 8.4 live cities sat at their housing cap at t100. See
     // `BasicAi::granary_before_the_army_2`.
     Gene { tag: "granary-before-the-army-2", field: "granary_before_the_army_2", kind: Kind::OptIn, enable: AdvancedAi::enable_granary_before_the_army_2, disable: AdvancedAi::disable_granary_before_the_army_2 },
+    // Research and civics aimed at the cheapest assault-plus-breaker package
+    // that beats the campaign target's defender and opens its wall tier, the
+    // civilization's unique unit preferred. Live King: our breaker arrived one
+    // wall tier late every tier (Trebuchet t105 vs Castles t76-88, Bombard
+    // t139 vs Siege Tactics t96-106) and no Llanero was ever trained. See
+    // `advanced/decisive_window.rs`.
+    Gene { tag: "decisive-window", field: "decisive_window", kind: Kind::OptIn, enable: AdvancedAi::enable_decisive_window, disable: AdvancedAi::disable_decisive_window },
+    // The build picker credits the civilization's own unique unit for the
+    // abilities its strength column omits, so the Llanero is trained over the
+    // Line Infantry, and the research scorer's +55 unique-unit credit reads
+    // `unique_to` (civs.json named one for 14 of 105 civilizations). See
+    // `BasicAi::unique_unit_preference`.
+    Gene { tag: "unique-unit-preference", field: "unique_unit_preference", kind: Kind::OptIn, enable: AdvancedAi::enable_unique_unit_preference, disable: AdvancedAi::disable_unique_unit_preference },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

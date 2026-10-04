@@ -46,6 +46,11 @@ const LIVELOCK_FOOTPRINT: usize = 3;
 /// redirects a stuck unit without ever ordering it to its death.
 pub(crate) const LIVELOCK_ESCAPE_VALUE: f64 = 8.0;
 
+/// `unique-unit-preference`: the strength `best_military` credits our own
+/// unique unit for the abilities its strength column omits. Five is the same
+/// credit `decisive-window` gives it (`decisive_window::UNIQUE_MARGIN`).
+pub(crate) const UNIQUE_UNIT_POWER_CREDIT: f64 = 5.0;
+
 /// See `BasicAi::lent_military_floor_base`: the most standard turns a city may
 /// spend training toward a lent war target above the genome's own floor.
 const LENT_FLOOR_MAX_BUILD_TURNS: u32 = 16;
@@ -2496,6 +2501,18 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `builder-before-the-army-3`.
     pub(crate) builder_before_the_army_3: bool,
+    /// `best_military` credits the civilization's own unique unit with
+    /// `UNIQUE_UNIT_POWER_CREDIT` strength for the abilities its strength
+    /// column omits — the Llanero's adjacency bonus and Gran Colombia's
+    /// extra move, the Hoplite's pairing — so a Llanero (62) is trained over
+    /// the Line Infantry (65) and the Cuirassier (64) it is unlocked beside.
+    /// Live King Gran Colombia, 30 games 10-01..04: not one Llanero at any
+    /// checkpoint. The same gene points `AdvancedAi::tech_value`'s +55
+    /// unique-unit research credit at `unique_to` instead of civs.json's
+    /// `unique_unit`, which names one for only 14 of 105 civilizations.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `unique-unit-preference`.
+    pub(crate) unique_unit_preference: bool,
     /// A city's first Campus, then its Library (`first_campus_item`,
     /// `campus_library_item`: each buildable here within
     /// `FIRST_CAMPUS_MAX_TURNS`), ahead of the Monument, the capital Settler
@@ -5392,6 +5409,7 @@ impl BasicAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             builder_before_the_army_3: false,
+            unique_unit_preference: false,
             campus_before_the_army: false,
             campus_before_the_army_2: false,
             campus_before_the_army_3: false,
@@ -5876,6 +5894,7 @@ impl BasicAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             builder_before_the_army_3: false,
+            unique_unit_preference: false,
             campus_before_the_army: false,
             campus_before_the_army_2: false,
             campus_before_the_army_3: false,
@@ -10459,12 +10478,53 @@ impl BasicAi {
             if !g.can_produce(pid, cid, &Item::Unit { unit: *name }) {
                 continue;
             }
-            let power = spec.strength.max(spec.ranged_attack_strength());
+            let mut power = spec.strength.max(spec.ranged_attack_strength());
+            if self.unique_unit_preference && self.unique_unit_wanted(g, pid, *name, spec) {
+                power += UNIQUE_UNIT_POWER_CREDIT;
+            }
             if best.as_ref().map(|(b, _)| power > *b).unwrap_or(true) {
                 best = Some((power, name.to_string()));
             }
         }
         best.map(|(_, n)| n)
+    }
+
+    /// `unique-unit-preference`: whether `best_military` should credit this
+    /// design as our own unique unit. Only while it is under half of the
+    /// land army in its melee-or-ranged role (fielded plus each city's
+    /// current build): the unique unit leads the army, it does not become
+    /// all of it — a Llanero column still wants Line Infantry beside it
+    /// against Pike and Shot.
+    fn unique_unit_wanted(&self, g: &Game, pid: usize, kind: Name, spec: &crate::rules::UnitSpec) -> bool {
+        if spec.unique_to.as_deref() != Some(g.players[pid].civ.as_str()) {
+            return false;
+        }
+        let ranged = spec.has_ranged_attack();
+        let same_role = |unit: Name| {
+            let other = &g.rules.units[unit];
+            other.class == "military"
+                && !matches!(other.domain.as_deref(), Some("sea" | "air"))
+                && other.has_ranged_attack() == ranged
+        };
+        let mut role = 0usize;
+        let mut unique = 0usize;
+        let fielded = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid)
+            .map(|unit| unit.kind);
+        let building = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter_map(|cid| match g.cities[&cid].queue.first() {
+                Some(Item::Unit { unit }) => Some(*unit),
+                _ => None,
+            });
+        for unit in fielded.chain(building).filter(|unit| same_role(*unit)) {
+            role += 1;
+            unique += usize::from(unit == kind);
+        }
+        unique * 2 < role.max(2)
     }
 
     /// The strongest land recon unit this city can build right now.
