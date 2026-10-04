@@ -2586,6 +2586,10 @@ pub const GENES: &[Gene] = &[
     // Culture win at 181, at 2 to 4 times its power. See
     // `one_war::culture_counter_due`.
     Gene { tag: "culture-counter-declares", field: "culture_counter_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_counter_declares, disable: AdvancedAi::disable_culture_counter_declares },
+    // Live King 100903Z: two Rocket Artillery stood in Loja through the war
+    // on India, their Corps refused and re-planned every turn. Live-only: the
+    // refused set is empty off the bridge. See `advanced/formation_refusals.rs`.
+    Gene { tag: "formations-heed-refusals", field: "formations_heed_refusals", kind: Kind::OptIn, enable: AdvancedAi::enable_formations_heed_refusals, disable: AdvancedAi::disable_formations_heed_refusals },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -5704,6 +5704,10 @@ pub struct AdvancedAi {
     /// the stock Ilkum commitment would hold Urban Planning out again.
     colonization_earns_its_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `formations-heed-refusals`: a pair of units the live host refused to
+    /// combine is not combined again while the refusal stands. See
+    /// `advanced/formation_refusals.rs`. Off by default.
+    formations_heed_refusals: bool,
     /// The lowest city-plus-wall health each city of the one-war front has
     /// shown, by tile, and the turn it was set; cleared with a new front.
     /// See `one_war::FRONT_SIEGE_LIVE_TURNS`.
@@ -6634,6 +6638,9 @@ pub struct AdvancedAi {
     /// `advanced/adopted_faith_sanctuary.rs`.
     one_sanctuary: bool,
     // ---- append: p-r ------------------------------------------------
+    /// The live bridge's refused Corps and Army pairs for this board. See
+    /// `advanced/formation_refusals.rs`.
+    refused_combinations: BTreeSet<(u32, u32)>,
     /// `raids-cut-tourism`: a raid prices a Theater Square of the countered
     /// culture rival at `air_surge::raids::RAID_TOURISM_DENIAL` more. Off by
     /// default.
@@ -7641,6 +7648,8 @@ mod denial_nearest_finish;
 mod denial_needs_a_road;
 mod city_memory;
 mod runaway_expander;
+// `formations-heed-refusals`. See `advanced/formation_refusals.rs`.
+mod formation_refusals;
 mod siege_resource_purchase;
 mod strategic_deposit_prey;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
@@ -8830,6 +8839,7 @@ impl AdvancedAi {
             colonization_earns_its_slot: false,
             colonization_earns_its_slot_2: false,
             // ---- append: e-f ----------------------------------------
+            formations_heed_refusals: false,
             front_city_low: BTreeMap::new(),
             expansion_hall_district: false,
             early_conquest_opening: false,
@@ -8924,6 +8934,7 @@ impl AdvancedAi {
             opening_force_keeps_its_members: false,
             one_sanctuary: false,
             // ---- append: p-r ----------------------------------------
+            refused_combinations: BTreeSet::new(),
             raids_cut_tourism: false,
             runaway_expander_counter: false,
             raze_doomed_capture: false,
@@ -42206,6 +42217,7 @@ impl AdvancedAi {
                     _ => false,
                 };
                 if a.kind != b.kind
+                    || self.combination_refused(*unit, *with)
                     || a.linked_to.is_some()
                     || b.linked_to.is_some()
                     || a.moves_left <= 0.0
