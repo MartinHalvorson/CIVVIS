@@ -506,3 +506,102 @@ fn inspect_recorded_native_melee_permissions() {
     let output = std::env::var("CIVVIS_NATIVE_ENTRY_OUTPUT").unwrap();
     std::fs::write(output, serde_json::to_vec_pretty(&rows).unwrap()).unwrap();
 }
+
+#[test]
+#[ignore = "report-only exact lane failure trace supplied by external output path"]
+fn inspect_exact_lane_dispatch_failure() {
+    use crate::ai::{run_game, AdvancedAi, Ai};
+    use crate::game::GameOptions;
+    fn queues(g: &Game, pid: usize) -> serde_json::Value {
+        serde_json::to_value(
+            g.player_city_ids(pid)
+                .into_iter()
+                .map(|cid| {
+                    let city = &g.cities[&cid];
+                    serde_json::json!({"city":cid,"queue":city.queue,
+                        "production":city.production,"progress":city.production_progress})
+                })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
+    }
+    fn players(g: &Game, gene: bool) -> Vec<AdvancedAi> {
+        g.players
+            .iter()
+            .map(|_| {
+                let mut ai = AdvancedAi::targeting(crate::ai::VictoryTarget::Science);
+                if gene {
+                    ai.enable_lane_delegates_production();
+                }
+                assert!(!ai.uses_player_observation());
+                ai
+            })
+            .collect()
+    }
+    let mut arms = Vec::new();
+    for gene in [false, true] {
+        let mut silent = Game::new_with(GameOptions::new(3, 32, 20, 92_409, 40, 1));
+        let mut ais = players(&silent, gene);
+        run_game(&mut silent, &mut ais);
+        let silent_log = serde_json::to_value(&silent.log).unwrap();
+        let mut g = Game::new_with(GameOptions::new(3, 32, 20, 92_409, 40, 1));
+        let mut ais = players(&g, gene);
+        let journal = crate::reasoning::Journal::recording();
+        journal.set_ceiling(crate::reasoning::Level::Strategy);
+        for ai in &mut ais {
+            ai.attach_journal(journal.handle());
+        }
+        g.set_fog_memory(false);
+        g.set_war_ledger(false);
+        let mut cursor = 0;
+        let mut steps = Vec::new();
+        while g.winner.is_none() && g.turn <= g.max_turns {
+            let pid = g.current;
+            let turn = g.turn;
+            let before_book = ais[pid].base.book_pos;
+            let specialization = ais[pid].phase_specialization_active(&g);
+            let target = ais[pid].active_victory_target(&g);
+            let delegates = ais[pid].lane_delegates_now(target, specialization);
+            let war_before = ais[pid].war_plan.is_some();
+            let queues_before = queues(&g, pid);
+            ais[pid].take_turn(&mut g, pid);
+            let delta = journal.since(cursor);
+            cursor = delta.cursor;
+            if pid < 3 {
+                let plans: Vec<_> = delta.thoughts.iter()
+                    .filter(|thought| thought.headline.starts_with("Grand strategy:"))
+                    .map(|thought| serde_json::json!({"headline":thought.headline,"detail":thought.detail}))
+                    .collect();
+                steps.push(serde_json::json!({
+                    "turn":turn,"pid":pid,"book_before":before_book,
+                    "book_after":ais[pid].base.book_pos,"specialization":specialization,
+                    "target":target,"delegates":delegates,
+                    "war_before":war_before,"war_after":ais[pid].war_plan.is_some(),
+                    "recovery_governor":ais[pid].governor_in_recovery,
+                    "expansion_dispatch":ais[pid].expansion_dispatch,"plans":plans,
+                    "queues_before":queues_before,"queues_after":queues(&g,pid),
+                    "strategy_thoughts":delta.thoughts.iter().map(|thought|
+                        serde_json::json!({"headline":thought.headline,"detail":thought.detail})
+                    ).collect::<Vec<_>>(),
+                    "truncated_turns":delta.truncated_turns
+                }));
+            }
+            if g.winner.is_none() && g.current == pid {
+                g.apply(pid, &Action::EndTurn).unwrap();
+            }
+        }
+        g.finish_at_turn_limit();
+        let log = serde_json::to_value(&g.log).unwrap();
+        assert!(
+            log == silent_log,
+            "journal or diagnostic driver changed the action stream"
+        );
+        assert!(
+            serde_json::to_value(&g).unwrap() == serde_json::to_value(&silent).unwrap(),
+            "diagnostic driver changed the complete serialized game"
+        );
+        arms.push(serde_json::json!({"gene":gene,"steps":steps,"log":log}));
+    }
+    let output = std::env::var("CIVVIS_LANE_TRACE_OUTPUT").unwrap();
+    std::fs::write(output, serde_json::to_vec_pretty(&arms).unwrap()).unwrap();
+}
