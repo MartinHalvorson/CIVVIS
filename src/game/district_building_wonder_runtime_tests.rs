@@ -1034,17 +1034,20 @@ fn a_pillaged_prerequisite_is_repaired_before_the_building_that_needs_it() {
         repair: Name::new(building),
         pos: position,
     };
-    for building in ["workshop", "factory"] {
-        assert!(game.can_produce(0, city, &repair(building)), "{building}");
+    // The host walks the chain the same way: in G50 its buildable list held
+    // no Factory repair at turn 144 and offered one at 147, the turn after the
+    // Workshop was repaired.
+    let chain = ["workshop", "factory", "coal_power_plant"];
+    for step in 0..chain.len() {
+        game.query_memo.producible.borrow_mut().clear();
+        let menu = game.producible_items(0, city);
+        for (index, building) in chain.iter().enumerate().skip(step) {
+            let open = index == step;
+            assert_eq!(game.can_produce(0, city, &repair(building)), open, "{building} at step {step}");
+            assert_eq!(menu.contains(&repair(building)), open, "{building} at step {step}");
+        }
+        assert!(game.complete_item(0, city, &repair(chain[step])));
     }
-    assert!(!game.can_produce(0, city, &repair("coal_power_plant")));
-    assert!(!game
-        .producible_items(0, city)
-        .contains(&repair("coal_power_plant")));
-
-    assert!(game.complete_item(0, city, &repair("factory")));
-    game.query_memo.producible.borrow_mut().clear();
-    assert!(game.can_produce(0, city, &repair("coal_power_plant")));
 }
 
 #[test]
