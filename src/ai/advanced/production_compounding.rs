@@ -7,8 +7,9 @@
 //! separately screened adaptive treatment retains its measured expression.
 
 use super::{AdvancedAi, ChainRung, GrandStrategy, StrategicPlan, VictoryTarget};
-use crate::game::{Game, Item};
+use crate::game::{Action, Game, Item};
 use crate::rules::{BuildingSpec, Yields};
+use crate::think;
 
 impl AdvancedAi {
     /// The Science reservation must compare its owed research building with
@@ -146,7 +147,169 @@ impl AdvancedAi {
         }
         (earning_turns * gain / cost.max(1.0)).clamp(0.0, 1.0)
     }
+
+    /// Purchase productive worker coverage without taking a construction queue.
+    /// The forecast credits nearby charges generously; actual work and survival
+    /// must still be measured in paired games rather than inferred from it.
+    pub(super) fn productive_builder_purchase(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        reserve: f64,
+    ) -> bool {
+        let Some((cid, price, gain)) = self.productive_builder_purchase_candidate(g, pid, reserve)
+        else {
+            return false;
+        };
+        let action = Action::Buy {
+            city: cid,
+            unit: crate::name!("builder"),
+            formation: 0,
+            currency: "gold".into(),
+        };
+        if g.apply(pid, &action).is_err() {
+            return false;
+        }
+        if self.journal().wants(crate::reasoning::Level::Decision) {
+            let city_name = &g.cities[&cid].name;
+            think!(self.journal(), Economy, Decision,
+                "Buying productive Builder coverage for {city_name}";
+                "{price:.0} Gold, retaining a {reserve:.0} reserve; {gain:.1} worked-tile Production forecast after nearby charge credits");
+        }
+        true
+    }
+
+    fn productive_builder_purchase_candidate(
+        &self,
+        g: &Game,
+        pid: usize,
+        reserve: f64,
+    ) -> Option<(u32, f64, f64)> {
+        if self.victory_target != Some(VictoryTarget::Domination)
+            || self.base.minor
+            || self.base.barb
+            || g.turn > g.standard_duration(160)
+            || g.players[pid].gold_per_turn <= 0.0
+            || self.plan.as_ref().is_none_or(|plan| {
+                plan.strategy == GrandStrategy::Recovery || plan.threatened_city.is_some()
+            })
+            || g.players.iter().enumerate().any(|(other, player)| {
+                other != pid
+                    && player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && g.is_at_war(pid, other)
+            })
+        {
+            return None;
+        }
+        let _memo = g.query_memo();
+        let cities = g.player_city_ids(pid);
+        if cities.len() < 2 || self.counts(g, pid).builders == 0 {
+            return None;
+        }
+        let units = g.player_unit_ids(pid);
+        let defenders = units
+            .iter()
+            .filter(|uid| {
+                let spec = &g.rules.units[&g.units[uid].kind];
+                spec.class == "military" && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            })
+            .count();
+        if defenders < cities.len() {
+            return None;
+        }
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        let due = g.standard_duration(10) as f64;
+        let window = g.turn_limit().map_or(g.standard_duration(30), |limit| {
+            g.standard_duration(30).min(limit.saturating_sub(g.turn))
+        }) as f64;
+        let earning = (window - due).max(0.0);
+        let mut best: Option<(u32, f64, f64)> = None;
+        for cid in &cities {
+            let city = &g.cities[cid];
+            if city.loyalty < 75.0
+                || g.city_amenity_surplus(city) < 0
+                || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+                || self.base.barbarian_local_alarm_for_controller(g, pid, *cid)
+                || g.purchase_is_blocked(*cid, &builder)
+            {
+                continue;
+            }
+            let Some(price) = g.unit_purchase_cost(pid, *cid, "builder", "gold") else {
+                continue;
+            };
+            if g.players[pid].gold + f64::EPSILON < reserve + price
+                || g.players[pid].gold_per_turn * due < price
+            {
+                continue;
+            }
+            let mut gains: Vec<_> = g
+                .city_citizen_plan(*cid)
+                .worked_tiles
+                .into_iter()
+                .filter_map(|pos| {
+                    let tile = g.map.get(pos)?;
+                    if pos == city.pos
+                        || tile.owner_city != Some(*cid)
+                        || tile.improvement.is_some()
+                        || tile.district.is_some()
+                        || g.wdist(city.pos, pos) > 3
+                    {
+                        return None;
+                    }
+                    let gain = g
+                        .valid_improvements(pid, pos)
+                        .into_iter()
+                        .filter(|name| {
+                            let spec = &g.rules.improvements[name];
+                            spec.builder_buildable && !spec.removes_feature
+                        })
+                        .map(|name| g.improvement_yield_change(pid, pos, name).production)
+                        .fold(0.0, f64::max);
+                    (gain > 0.0).then_some(gain)
+                })
+                .collect();
+            gains.sort_by(|a, b| b.total_cmp(a));
+            let mut credited: usize = units
+                .iter()
+                .filter_map(|uid| {
+                    let unit = &g.units[uid];
+                    (unit.kind == "builder" && g.wdist(unit.pos, city.pos) <= 6)
+                        .then_some(unit.charges.max(0) as usize)
+                })
+                .sum();
+            for origin in &cities {
+                let launch = &g.cities[origin];
+                if matches!(launch.queue.first(), Some(Item::Unit { unit }) if unit == "builder")
+                    && g.wdist(launch.pos, city.pos) <= 6
+                    && self.production_build_turns(g, pid, *origin, &builder) <= due
+                {
+                    credited += g.builder_charges(pid).max(0) as usize
+                        + g.governor_effect(pid, *origin, "builder_charges").max(0.0) as usize;
+                }
+            }
+            let bought_charges = g.builder_charges(pid).max(0) as usize
+                + g.governor_effect(pid, *cid, "builder_charges").max(0.0) as usize;
+            let gain: f64 = gains.into_iter().skip(credited).take(bought_charges).sum();
+            if gain < 3.0 || earning * gain < 1.25 * g.item_cost_for_city(pid, *cid, &builder) {
+                continue;
+            }
+            if best.as_ref().is_none_or(|(old_cid, old_price, old_gain)| {
+                gain / price > old_gain / old_price
+                    || (gain / price == old_gain / old_price && cid < old_cid)
+            }) {
+                best = Some((*cid, price, gain));
+            }
+        }
+        best
+    }
 }
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod treasury_tests;

@@ -9,9 +9,9 @@ fn main() {
     let games: u64 = args[2].parse().unwrap();
     let difficulty = &args[3];
     assert!(matches!(difficulty.as_str(), "emperor" | "deity"));
-    assert!(matches!(args[4].as_str(), "control" | "diagnostic"));
+    assert!(matches!(args[4].as_str(), "control" | "candidate"));
     let arm = &args[4];
-    println!("seed,turn,cities,production,rival_production,science,culture,gold,cumulative_production,alive,winner,population,granaries,housing_bound,housing_bound_without_granary,amenity_short_cities,builders,military_power,rival_cities,rival_population");
+    println!("seed,turn,cities,production,rival_production,science,culture,gold,cumulative_production,alive,winner,population,granaries,housing_bound,housing_bound_without_granary,amenity_short_cities,builders,military_power,rival_cities,rival_population,builder_gold_buys,productive_improvements");
     for seed in seed..seed + games {
         let mut opts = GameOptions::new(4, 60, 38, seed, 150, 6);
         opts.map_script = civvis::setup::MapScript::Pangaea;
@@ -49,8 +49,10 @@ fn main() {
                     let city = &g.cities[*cid];
                     g.city_housing(city) - city.pop as f64 <= 1.0
                 };
+                let builder_gold_buys = g.log.iter().filter(|(owner, action)| *owner == 0 && matches!(action, civvis::game::Action::Buy { unit, currency, .. } if unit == "builder" && currency == "gold")).count();
+                let productive_improvements = g.log.iter().filter(|(owner, action)| *owner == 0 && matches!(action, civvis::game::Action::Improve { improvement, .. } if g.rules.improvements[improvement].yields.production > 0.0)).count();
                 println!(
-                    "{seed},{},{},{p:.6},{:.6},{science:.6},{culture:.6},{:.6},{sum:.6},{},,{},{},{},{},{},{},{:.6},{},{}",
+                    "{seed},{},{},{p:.6},{:.6},{science:.6},{culture:.6},{:.6},{sum:.6},{},,{},{},{},{},{},{},{:.6},{},{},{builder_gold_buys},{productive_improvements}",
                     g.turn,
                     cities.len(),
                     rival.0,
@@ -71,14 +73,16 @@ fn main() {
         let actions: Vec<_> = g.log.iter().collect();
         std::fs::write(
             format!(
-                "/tmp/civvis-production-growth-coverage-{difficulty}-{seed}-{arm}-actions.json"
+                "/tmp/civvis-production-growth-coverage-pilot-{difficulty}-{seed}-{arm}-actions.json"
             ),
             serde_json::to_vec(&actions).unwrap(),
         )
         .unwrap();
         let save = serde_json::to_vec(&g).unwrap();
         std::fs::write(
-            format!("/tmp/civvis-production-growth-coverage-{difficulty}-{seed}-{arm}-final.json"),
+            format!(
+                "/tmp/civvis-production-growth-coverage-pilot-{difficulty}-{seed}-{arm}-final.json"
+            ),
             save,
         )
         .unwrap();

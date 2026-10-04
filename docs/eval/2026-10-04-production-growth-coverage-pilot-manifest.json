@@ -1,0 +1,53 @@
+{
+  "preregistered_at": "2026-10-04T14:42:46.767131+00:00",
+  "base": "84a64d8a3cf9769afec4940f4b611608ac0851d2",
+  "hypothesis": "Buy additional local productive Builder coverage from surplus Gold when existing/soon-due charges cannot service currently worked legal production jobs; maintain reserve and construction progress",
+  "pilot": {
+    "emperor": [
+      61007000,
+      61007001,
+      61007002,
+      61007003
+    ],
+    "deity": [
+      61007100,
+      61007101,
+      61007102,
+      61007103
+    ]
+  },
+  "confirmation_reserved": {
+    "emperor": [
+      61007200,
+      61007201,
+      61007202,
+      61007203,
+      61007204,
+      61007205,
+      61007206,
+      61007207,
+      61007208,
+      61007209,
+      61007210,
+      61007211
+    ],
+    "deity": [
+      61007300,
+      61007301,
+      61007302,
+      61007303,
+      61007304,
+      61007305,
+      61007306,
+      61007307
+    ]
+  },
+  "promotion_scope": "Component improvement only; cannot establish the complete high-level AI production-parity objective",
+  "advance_from_pilot_if": "Deity turn-75 own production >=+5% and cumulative production >=+2%; Emperor turn-75 and cumulative production nonnegative; both turn-100 production >=-3%, science/culture/military >=-5%; no additional eliminations; actual purchase and completed productive-work effects recorded",
+  "confirmation_requirement": "Same thresholds on fresh reserved confirmation pairs, with all outcomes and missing checkpoints retained; unchanged runtime throughout the comparison",
+  "runtime_files_sha256": {
+    "src/ai/advanced/gold_and_cards.rs": "ed8cfaffda8b21b3a9116807540f15bd3067e2319bd412abc5215f6c3f3ee687",
+    "src/ai/advanced/production_compounding.rs": "a745a6bd28d18b8e01796146cc023fb67a54d0a139e4e18ea241cd9f729dea21"
+  },
+  "trace_equivalence": "Four consumed-seed worlds, 120977 identical executed actions; diagnostics are not fresh strength samples"
+}
