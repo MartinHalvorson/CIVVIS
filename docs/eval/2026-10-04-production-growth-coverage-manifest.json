@@ -1,0 +1,16 @@
+{
+  "frozen_before_play_at": "2026-10-04T14:04:10.323937+00:00",
+  "base": "84a64d8a3cf9769afec4940f4b611608ac0851d2",
+  "trace": "temporary read-only instrumentation at actual young_empire_purchase call, enabled only by CIVVIS_PROD_TRACE=1",
+  "protocol": "Consumed-seed diagnostics, no new strength samples or policy promotion; compare trace checkpoints and complete serialized final state to uninstrumented source",
+  "emperor_seeds": [
+    61006800,
+    61006801
+  ],
+  "deity_seeds": [
+    61006900,
+    61006901
+  ],
+  "probe_sha256_before_formatting": "c4434b510d129fbdfccc68e6e91167c9948a75236bd94a1849ff002a2b5f1a51",
+  "trace_patch_sha256": "a1c1df9e40aae3b4f73d84baabbfe314f38ab44af3067b6de1904781a309d161"
+}

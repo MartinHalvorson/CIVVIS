@@ -1,0 +1,60 @@
+diff --git a/src/ai/advanced/gold_and_cards.rs b/src/ai/advanced/gold_and_cards.rs
+index d39f1be6d..e11829be5 100644
+--- a/src/ai/advanced/gold_and_cards.rs
++++ b/src/ai/advanced/gold_and_cards.rs
+@@ -414,6 +414,55 @@ impl AdvancedAi {
+     /// nothing qualifies or clears the reserve.
+     pub(super) fn young_empire_purchase(&self, g: &mut Game, pid: usize, reserve: f64) -> bool {
+         let counts = self.counts(g, pid);
++        // Temporary read-only experiment trace; removed from the final tree.
++        static TRACE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++        if pid == 0
++            && g.turn <= 106
++            && *TRACE.get_or_init(|| std::env::var_os("CIVVIS_PROD_TRACE").is_some())
++        {
++            let _memo = g.query_memo();
++            let builders: Vec<_> = g
++                .player_unit_ids(pid)
++                .into_iter()
++                .filter_map(|uid| {
++                    let unit = &g.units[&uid];
++                    (unit.kind == "builder").then_some((uid, unit.pos, unit.charges))
++                })
++                .collect();
++            for cid in g.player_city_ids(pid) {
++                let city = &g.cities[&cid];
++                let gains: Vec<_> = g
++                    .city_citizen_plan(cid)
++                    .worked_tiles
++                    .into_iter()
++                    .filter_map(|pos| {
++                        let tile = g.map.get(pos)?;
++                        if pos == city.pos
++                            || tile.owner_city != Some(cid)
++                            || tile.improvement.is_some()
++                            || tile.district.is_some()
++                        {
++                            return None;
++                        }
++                        let gain = g
++                            .valid_improvements(pid, pos)
++                            .into_iter()
++                            .filter(|name| {
++                                let spec = &g.rules.improvements[name];
++                                spec.builder_buildable && !spec.removes_feature
++                            })
++                            .map(|name| g.improvement_yield_change(pid, pos, name).production)
++                            .fold(0.0, f64::max);
++                        (gain > 0.0).then_some((pos, gain))
++                    })
++                    .collect();
++                let price = g.unit_purchase_cost(pid, cid, "builder", "gold");
++                let queued = g.player_city_ids(pid).iter().filter(|id| matches!(g.cities[id].queue.first(), Some(Item::Unit { unit }) if unit == "builder")).count();
++                eprintln!("coverage turn={} city={cid} bank={:.6} reserve={reserve:.6} income={:.6} quote={price:?} blocked={} counted_builders={} queued_builders={queued} productive_work={gains:?} field_builders={builders:?}",
++                    g.turn, g.players[pid].gold, g.players[pid].gold_per_turn,
++                    g.purchase_is_blocked(cid, &Item::Unit { unit: crate::name!("builder") }), counts.builders);
++            }
++        }
+         // Cities by Production, least first. Each yield is read once, under
+         // one memo, rather than twice per comparison.
+         let cities: Vec<u32> = {
