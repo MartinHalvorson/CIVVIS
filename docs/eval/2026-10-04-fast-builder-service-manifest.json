@@ -1,0 +1,84 @@
+{
+  "kind": "rejected fast Builder service pilot",
+  "candidate_source_commit": "9b03cbed7531cc20a43c6cdd6ac6d326aeb47ae5",
+  "fixture_only_checkpoint": "9831ca2631ae0c2b5da18d9401e7f2bbdba7477f",
+  "task_base_commit": "6b6832f0623e2afe8f4b91824c1393cbe27c1276",
+  "control_source_commit": "f0c79ad09f24a944f194ab990c5888f23a4a6b43",
+  "candidate_source_sha256": {
+    "src/ai/advanced.rs": "ff71c23f2b227b2eb58b6e62c12b91f9fdfe4a55867bae88af8aefdf6ad3f915",
+    "src/ai/advanced/production_service.rs": "b4b84246e0dbe72d83f849c3d631912b21dcf38c140d24321c2441139055d956"
+  },
+  "candidate_library_sha256": "7b082e85afba522bda1bce1eaa4cb4b6440f9f6859e80d3a06c2882919be1a8a",
+  "control_binary_sha256": "7afd0bcedcaf7a9311a3d3af4ea33703530686927be84d01aeeba2af93746a41",
+  "candidate_binary_sha256": "f7051c4915be74be3028b7e2fbf1b4ca1ea3e75ee3c1f43450789d4ce1de2c09",
+  "gene_ledger_sha256": "e86a761d3fc5d51f3d41b289c5b7275810fe5adbbe2a85581d32833ad3e05a45",
+  "pilot_seeds": {
+    "emperor": [
+      61005000,
+      61005003
+    ],
+    "deity": [
+      61005100,
+      61005103
+    ]
+  },
+  "confirmation_seeds_reserved_but_not_run": {
+    "emperor": [
+      61005200,
+      61005211
+    ],
+    "deity": [
+      61005300,
+      61005307
+    ]
+  },
+  "control_to_base_difference": "advanced.rs formatting only; no engine, data, ledger or controller behavior change",
+  "decision": "Reject: no turn-50 gain and substantial turn-100/125 Deity losses. No confirmation run.",
+  "profile": {
+    "players": 4,
+    "map": "Pangaea",
+    "width": 60,
+    "height": 38,
+    "city_states": 6,
+    "speed": "Online",
+    "turn_cap": 150,
+    "difficulty": [
+      "Emperor",
+      "Deity"
+    ],
+    "focal_civ": "Gran Colombia",
+    "focal_controller": "AdvancedAi::targeting(Domination) with gene ledger",
+    "focal_handicap_exempt": true,
+    "rivals": "AdvancedAi::fleet with difficulty bonuses",
+    "victories": "all"
+  },
+  "fixture_sha256": "09b8bf373c5d4b07c01e10fb0386688bd6429ea8f06f7b68499a97004d2c8618",
+  "final_runtime_delta": "none to task base; experimental module and tests removed",
+  "validation": {
+    "focused_tests": 3,
+    "experimental_full_passed": 4542,
+    "ignored": 53,
+    "experimental_changed_line_quality": "passed",
+    "final_validation": {
+      "full_passed": 4542,
+      "ignored": 53,
+      "changed_line_quality": "passed",
+      "runtime_equals_final_base": true
+    }
+  },
+  "artifacts_sha256": {
+    "docs/eval/2026-10-04-fast-builder-service-pilot-deity-candidate.csv": "ecc0699522f0fc4201d03837ec0cac22c64a26bec4f4180979e4c4762552d421",
+    "docs/eval/2026-10-04-fast-builder-service-pilot-deity-candidate.txt": "cddd59cd2a7b1c092ebe22245d20edb8765719c07f23c6e4106fa07fa608a0dc",
+    "docs/eval/2026-10-04-fast-builder-service-pilot-deity-control.csv": "37ddc4f4868d44739fa712167d8caadf359f9b7cddfda85576070497e3403d40",
+    "docs/eval/2026-10-04-fast-builder-service-pilot-deity-control.txt": "97b4d05805120ad8aae7000776071c1aa270f8d1dbdb7372b626081bffa6774b",
+    "docs/eval/2026-10-04-fast-builder-service-pilot-emperor-candidate.csv": "9e46197b2548a2d986c25ccdf7ace1094f955c318dcb534f90efa2cc3cd47d23",
+    "docs/eval/2026-10-04-fast-builder-service-pilot-emperor-candidate.txt": "52853968ee610748f6df3d8488e1a94b603b1e5c5e1680b368d925fe4428b176",
+    "docs/eval/2026-10-04-fast-builder-service-pilot-emperor-control.csv": "22c01a79420e98356387f191a601f7348ac5e5d495a512e6fe64c18f92642e73",
+    "docs/eval/2026-10-04-fast-builder-service-pilot-emperor-control.txt": "52853968ee610748f6df3d8488e1a94b603b1e5c5e1680b368d925fe4428b176",
+    "docs/eval/2026-10-04-fast-builder-service-pilot-summary.json": "151bf804065361febac0bc827380ca40efadd7d8e851cbda3e29027c47e78411",
+    "docs/eval/2026-10-04-fast-builder-service-probe.rs": "945f55241793ec57cfae27fa9fd3fe34b3715438646f4f40f81d3e13fd2dd6ab",
+    "docs/eval/2026-10-04-fast-builder-service-summarize.py": "225aa60cbfbe46e2f9c7770cbe00cf98f71c36c616a6e6ab592a478ecf39da73",
+    "docs/eval/2026-10-04-fast-builder-service.md": "6a9e12fc886bbf83ae06ec436c79abe94b500a6da285bc10086c6e21c1043d6c"
+  },
+  "final_base_commit": "77a8970911f310f831e7524c7cf92410aa128270"
+}
