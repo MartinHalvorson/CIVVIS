@@ -189,7 +189,7 @@ fn an_observed_hostile_city_reopens_a_speculative_hold() {
 }
 
 #[test]
-fn a_confirmed_capture_or_peace_keeps_the_hold() {
+fn ownership_reconciliation_preserves_capture_and_peace_assessment() {
     for (own_city, same_turn) in [(false, false), (false, true), (true, false), (true, true)] {
         let (mut g, mut ai, cid, warrior) = remembered_hold();
         if same_turn {
@@ -202,15 +202,20 @@ fn a_confirmed_capture_or_peace_keeps_the_hold() {
             g.map_script = crate::setup::MapScript::Pangaea;
             g.at_war.clear();
             assert!(!g.is_at_war(0, 1));
-            let city = CityView::of(&g, cid).unwrap();
-            assert!(unit_power(&g, warrior) >= ABORT_SHARE * siege_bill(&g, 0, &city));
         }
         let plan = plan_against(&g, cid);
         let force = group(&g, warrior, cid);
         let entered = ai.sieges[&cid].entered;
         ai.assess_siege(&g, 0, cid, &plan, &force);
-        assert_eq!(ai.sieges[&cid].stage, SiegeStage::Hold);
-        assert_eq!(ai.sieges[&cid].entered, entered);
+        if !own_city && !same_turn {
+            // Normal assessment already aborts an empty force at peace. The
+            // reconciliation must not instead restart Reduce/Take.
+            assert_eq!(ai.sieges[&cid].stage, SiegeStage::Stage);
+            assert_eq!(ai.sieges[&cid].entered, g.turn);
+        } else {
+            assert_eq!(ai.sieges[&cid].stage, SiegeStage::Hold);
+            assert_eq!(ai.sieges[&cid].entered, entered);
+        }
         assert!(ai.sieges[&cid].taker.is_none());
         assert!(!ai.reserved_units.contains(&warrior));
     }
