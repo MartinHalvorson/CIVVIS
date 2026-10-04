@@ -2586,6 +2586,16 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `industry-before-the-army-2`.
     pub(crate) industry_before_the_army_2: bool,
+    /// `industry_before_the_army_2`, only while the standing army already
+    /// meets its floor (`military >= military_floor`): the chain then takes
+    /// the builds the floor would leave to Builders, Traders, Harbors and the
+    /// district list, never a soldier. Version 2 over 32 domination pairs
+    /// (seeds 37150000) bought +70 production by t120 (z +3.7) and still
+    /// turned 5 rival Science wins into earlier Culture wins (none the other
+    /// way), the thinner wartime army leaving the culture leader unpressed.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `industry-before-the-army-3`.
+    pub(crate) industry_before_the_army_3: bool,
     /// `industry-in-the-district-list`: the Industrial Zone joins the
     /// delegated governor's own district list (`DISTRICT_PRIORITY`), ranked
     /// between the Campus and the Commercial Hub, and a city holding a zone
@@ -2602,6 +2612,21 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `industry-in-the-district-list`.
     pub(crate) industry_in_the_district_list: bool,
+    /// `industrial-hub`: one Industrial Zone, in the city whose zone site
+    /// reaches the most own cities within a Factory's regional range (at
+    /// least `INDUSTRIAL_HUB_MIN_REACH`), then its Workshop, its Factory and
+    /// a power plant the empire holds fuel for, ahead of the military floor
+    /// in that city alone and never while its Settler step is due. The
+    /// Factory and the plant also wait while the empire's net Gold is
+    /// negative. A Factory pays its +3 Production (+3 more powered) to every
+    /// own city it reaches: 22 live King games put 5.6 of 8.6 cities within
+    /// one hub's reach at t130, about +35 Production for ~930 spent in a
+    /// single city, against `industry_before_the_army`'s zone in every city
+    /// that thinned the wartime army (rival Science wins turned to Culture
+    /// wins 8:0 over 32 domination pairs).
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `industrial-hub`.
+    pub(crate) industrial_hub: bool,
     /// A standing district's first building before the city opens another
     /// district. This governor tried every district the city still lacked
     /// before any building, so a district stood without the building that
@@ -5364,7 +5389,9 @@ impl BasicAi {
             granary_before_the_army: false,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
+            industry_before_the_army_3: false,
             industry_in_the_district_list: false,
+            industrial_hub: false,
             district_buildings_first: false,
             capital_library_first: false,
             culture_defense_theater: false,
@@ -5845,7 +5872,9 @@ impl BasicAi {
             granary_before_the_army: false,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
+            industry_before_the_army_3: false,
             industry_in_the_district_list: false,
+            industrial_hub: false,
             district_buildings_first: false,
             capital_library_first: false,
             culture_defense_theater: false,
@@ -12464,9 +12493,27 @@ impl BasicAi {
                 return Some(builder);
             }
         }
+        // `industrial-hub`: one zone where its Factory reaches the most
+        // cities, and its chain, behind the Campus step and a due Settler.
+        if self.industrial_hub
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(item) = Self::industrial_hub_item(g, pid, cid) {
+                think!(self.journal, Cities, Detail,
+                       "The industrial hub takes the build";
+                       "{} in {}", crate::reasoning::plain(&format!("{item:?}")),
+                       g.cities[&cid].name);
+                return Some(item);
+            }
+        }
         // `industry-before-the-army`: the production chain the district list
         // below never names, behind the Campus step and a due Settler.
-        if (self.industry_before_the_army || self.industry_before_the_army_2)
+        if (self.industry_before_the_army
+            || self.industry_before_the_army_2
+            || (self.industry_before_the_army_3 && military as f64 >= military_floor))
             && !self.minor
             && !self.barb
             && !emergency_defense
@@ -12477,7 +12524,7 @@ impl BasicAi {
                 pid,
                 cid,
                 n_cities,
-                self.industry_before_the_army_2,
+                self.industry_before_the_army_2 || self.industry_before_the_army_3,
             ) {
                 think!(self.journal, Cities, Detail,
                        "Industry before the army takes the build";
@@ -14786,6 +14833,116 @@ impl BasicAi {
                 })
         });
         (!reached && within(&factory)).then_some(factory)
+    }
+
+    /// The fewest own cities an `industrial_hub` zone must reach.
+    const INDUSTRIAL_HUB_MIN_REACH: usize = 3;
+
+    /// The slowest the hub city may build its zone or a hub building.
+    const INDUSTRIAL_HUB_MAX_TURNS: f64 = 25.0;
+
+    /// Fuel a power plant burns, in the order `industrial_hub` tries them,
+    /// and the stockpile that must stand before one is built.
+    const INDUSTRIAL_HUB_PLANTS: [(&'static str, &'static str); 3] = [
+        ("coal_power_plant", "coal"),
+        ("oil_power_plant", "oil"),
+        ("nuclear_power_plant", "uranium"),
+    ];
+    const INDUSTRIAL_HUB_MIN_FUEL: f64 = 5.0;
+
+    /// See `industrial_hub`: the hub city's next item. The hub is the own
+    /// city whose standing zone reaches the most own cities; with none
+    /// reaching `INDUSTRIAL_HUB_MIN_REACH`, the city whose best zone site
+    /// would reach the most (then the more productive) opens one there.
+    pub(crate) fn industrial_hub_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let range = g
+            .rules
+            .buildings
+            .get(&crate::name!("factory"))
+            .map_or(6, |spec| spec.regional_range);
+        let own: Vec<&crate::game::City> = g.cities.values().filter(|c| c.owner == pid).collect();
+        if own.len() < Self::INDUSTRIAL_HUB_MIN_REACH {
+            return None;
+        }
+        let reach = |pos: Pos| own.iter().filter(|c| g.wdist(pos, c.pos) <= range).count();
+        let zone_of = |city: &crate::game::City| {
+            city.districts
+                .iter()
+                .find(|(district, _)| g.district_family(**district) == "industrial_zone")
+                .map(|(_, pos)| *pos)
+        };
+        let production = |city: &crate::game::City| g.city_yields(city.id).production;
+        let within = |item: &Item| {
+            g.host_production_turns(cid, item).unwrap_or_else(|| {
+                g.item_cost_for(pid, item) / g.city_yields(cid).production.max(0.5)
+            }) <= Self::INDUSTRIAL_HUB_MAX_TURNS
+        };
+        let hub = own
+            .iter()
+            .filter_map(|city| zone_of(city).map(|pos| (*city, reach(pos))))
+            .filter(|(_, reached)| *reached >= Self::INDUSTRIAL_HUB_MIN_REACH)
+            .max_by(|a, b| {
+                a.1.cmp(&b.1)
+                    .then(production(a.0).total_cmp(&production(b.0)))
+                    .then(b.0.id.cmp(&a.0.id))
+            })
+            .map(|(city, _)| city.id);
+        if let Some(hub) = hub {
+            if hub != cid {
+                return None;
+            }
+            if let Some(workshop) = Self::civ_building(g, pid, cid, "workshop") {
+                return within(&workshop).then_some(workshop);
+            }
+            if g.players[pid].gold_per_turn < 0.0 {
+                return None;
+            }
+            if let Some(factory) = Self::civ_building(g, pid, cid, "factory") {
+                return within(&factory).then_some(factory);
+            }
+            return Self::INDUSTRIAL_HUB_PLANTS.iter().find_map(|(plant, fuel)| {
+                if g.strategic_stockpile(pid, Name::new(fuel)) < Self::INDUSTRIAL_HUB_MIN_FUEL {
+                    return None;
+                }
+                Self::civ_building(g, pid, cid, plant).filter(within)
+            });
+        }
+        // No hub yet: the city whose best site reaches the most opens one.
+        let zone = Self::civ_district(g, pid, "industrial_zone");
+        let spec = g.rules.districts.get(&zone)?;
+        let unlocked = spec
+            .tech
+            .as_ref()
+            .is_none_or(|tech| g.players[pid].techs.contains(tech))
+            && spec
+                .civic
+                .as_ref()
+                .is_none_or(|civic| g.players[pid].civics.contains(civic));
+        if !unlocked {
+            return None;
+        }
+        let best_site = |city: &crate::game::City| {
+            g.district_sites(city.id, Name::new(zone.as_str()))
+                .into_iter()
+                .map(|pos| (pos, reach(pos), g.district_yields(zone, pos).production))
+                .max_by(|a, b| a.1.cmp(&b.1).then(a.2.total_cmp(&b.2)).then(b.0.cmp(&a.0)))
+        };
+        let (designated, pos, reached) = own
+            .iter()
+            .filter_map(|city| best_site(city).map(|(pos, reached, _)| (*city, pos, reached)))
+            .max_by(|a, b| {
+                a.2.cmp(&b.2)
+                    .then(production(a.0).total_cmp(&production(b.0)))
+                    .then(b.0.id.cmp(&a.0.id))
+            })?;
+        if designated.id != cid || reached < Self::INDUSTRIAL_HUB_MIN_REACH {
+            return None;
+        }
+        let item = Item::District {
+            district: zone,
+            pos,
+        };
+        (g.can_produce(pid, cid, &item) && within(&item)).then_some(item)
     }
 
     /// See `industry_before_the_army`: this city's Workshop, else its Factory
@@ -23208,6 +23365,91 @@ mod tests {
         };
         assert!(is_builder(&second(0)), "version 2 answers the drought");
         assert_eq!(second(1), pick(false, 3, 1), "version 2 leaves one Builder to stock");
+    }
+
+    /// See `industrial_hub`: of three cities in one Factory's reach, the
+    /// most productive opens the zone and the others keep the stock choice;
+    /// the hub then takes its Workshop, Factory and a fuelled power plant,
+    /// and the Factory waits while the empire's Gold runs negative.
+    #[test]
+    fn the_industrial_hub_opens_where_its_factory_reaches_most() {
+        let (mut game, capital) = founded_capital_fixture("INDUSTRIALHUB", 91_833);
+        let center = game.cities[&capital].pos;
+        let mut others = Vec::new();
+        for pos in game.map.tiles.keys().copied().collect::<Vec<_>>() {
+            if others.len() == 2 {
+                break;
+            }
+            let tile = &game.map.tiles[&pos];
+            let land = !game.rules.terrains[&tile.terrain].water && tile.terrain != "mountain";
+            let spaced = game.wdist(center, pos) == 4
+                && others.iter().all(|other| game.wdist(*other, pos) >= 4);
+            if land && spaced && tile.owner_city.is_none() {
+                others.push(pos);
+            }
+        }
+        assert_eq!(others.len(), 2, "the fixture places two more cities");
+        let others: Vec<u32> = others
+            .into_iter()
+            .map(|pos| game.found_city_for(0, pos, None))
+            .collect();
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("apprenticeship"));
+        game.cities.get_mut(&capital).unwrap().pop = 7;
+        let zone = BasicAi::industrial_hub_item(&game, 0, capital);
+        let site = match zone {
+            Some(Item::District { district, pos }) if district == "industrial_zone" => pos,
+            other => panic!("the capital opens the hub's zone: {other:?}"),
+        };
+        for city in &others {
+            assert_eq!(BasicAi::industrial_hub_item(&game, 0, *city), None, "one hub");
+        }
+        game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("industrial_zone"));
+        game.cities
+            .get_mut(&capital)
+            .unwrap()
+            .districts
+            .insert(crate::name!("industrial_zone"), site);
+        let next = |game: &Game| BasicAi::industrial_hub_item(game, 0, capital);
+        assert_eq!(
+            next(&game),
+            Some(Item::Building {
+                building: crate::name!("workshop")
+            })
+        );
+        game.cities
+            .get_mut(&capital)
+            .unwrap()
+            .buildings
+            .push(crate::name!("workshop"));
+        game.players[0]
+            .techs
+            .insert(crate::name!("industrialization"));
+        assert_eq!(
+            next(&game),
+            Some(Item::Building {
+                building: crate::name!("factory")
+            })
+        );
+        game.players[0].gold_per_turn = -3.0;
+        assert_eq!(next(&game), None, "the Factory waits on a negative budget");
+        game.players[0].gold_per_turn = 5.0;
+        game.cities
+            .get_mut(&capital)
+            .unwrap()
+            .buildings
+            .push(crate::name!("factory"));
+        assert_eq!(next(&game), None, "no fuel, no plant");
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("coal"), 20.0);
+        assert_eq!(
+            next(&game),
+            Some(Item::Building {
+                building: crate::name!("coal_power_plant")
+            })
+        );
     }
 
     /// See `builder_before_the_army_3`: past version 2's first Builder, an

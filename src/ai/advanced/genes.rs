@@ -2514,6 +2514,15 @@ pub const GENES: &[Gene] = &[
     // See `BasicAi::builder_before_the_army_3`.
     Gene { tag: "builder-before-the-army-3", field: "builder_before_the_army_3", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_before_the_army_3, disable: AdvancedAi::disable_builder_before_the_army_3 },
     Gene { tag: "colonization-earns-its-slot", field: "colonization_earns_its_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_colonization_earns_its_slot, disable: AdvancedAi::disable_colonization_earns_its_slot },
+    // A Builder priced a Mine at its printed +1 Production after
+    // Apprenticeship made it +2. See `AdvancedAi::improvement_upgrades_count`.
+    Gene { tag: "improvement-upgrades-count", field: "improvement_upgrades_count", kind: Kind::OptIn, enable: AdvancedAi::enable_improvement_upgrades_count, disable: AdvancedAi::disable_improvement_upgrades_count },
+    // Version 2 still flipped 5 rival Science wins to Culture over 32 pairs.
+    // See `BasicAi::industry_before_the_army_3`.
+    Gene { tag: "industry-before-the-army-3", field: "industry_before_the_army_3", kind: Kind::OptIn, enable: AdvancedAi::enable_industry_before_the_army_3, disable: AdvancedAi::disable_industry_before_the_army_3 },
+    // One zone where its Factory reaches the most cities: 5.6 of 8.6 live
+    // cities at t130. See `BasicAi::industrial_hub`.
+    Gene { tag: "industrial-hub", field: "industrial_hub", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_hub, disable: AdvancedAi::disable_industrial_hub },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

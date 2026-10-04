@@ -230,8 +230,11 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `great-work-completion-value` | off (unmeasured) | Enable `great-work-completion-value` for measurement. | 1 \| 1 |
 | `hostile-memory-3` | off (unmeasured) | Version three also revises stale sightings when their forecast area is fully visible, using only the unit facts recorded at observation. | 1 \| 3 |
 | `housing-research-2` | off (unmeasured) | Research housing that the capped cities can actually build. | 1 \| 2 |
-| `industry-before-the-army` | off (unmeasured) | The delegated city governor's Industrial Zone, Workshop and Factory ahead of the military floor. | — \| 2 |
-| `industry-before-the-army-2` | off (unmeasured) | Version 2 of `industry-before-the-army`; see `BasicAi::industry_before_the_army_2`. | — \| 2 |
+| `improvement-upgrades-count` | off (unmeasured) | Opt-in gene `improvement-upgrades-count`; see `Self::improvement_upgrades_count`. | 1 \| 1 |
+| `industrial-hub` | off (unmeasured) | One Industrial Zone where its Factory reaches the most cities, and its chain; see `BasicAi::industrial_hub`. | 1 \| 1 |
+| `industry-before-the-army` | off (unmeasured) | The delegated city governor's Industrial Zone, Workshop and Factory ahead of the military floor. | — \| 3 |
+| `industry-before-the-army-2` | off (unmeasured) | Version 2 of `industry-before-the-army`; see `BasicAi::industry_before_the_army_2`. | — \| 3 |
+| `industry-before-the-army-3` | off (unmeasured) | Version 3 of `industry-before-the-army`; see `BasicAi::industry_before_the_army_3`. | — \| 3 |
 | `industry-in-the-district-list` | off (unmeasured) | The Industrial Zone in the delegated governor's district list; see `BasicAi::industry_in_the_district_list`. | 1 \| 1 |
 | `lane-delegates-production` | off (unmeasured) | Until the development half ends, an assigned lane's cities take the unassigned seat's production dispatch. | — \| 2 |
 | `lane-delegates-production-2` | off (unmeasured) | Version two: an assigned lane's cities take the unassigned seat's production dispatch for the whole game. | — \| 2 |

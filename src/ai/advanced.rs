@@ -6233,9 +6233,24 @@ pub struct AdvancedAi {
     /// Version 2 of `industry-before-the-army`; see
     /// `BasicAi::industry_before_the_army_2`.
     industry_before_the_army_2: bool,
+    /// Version 3 of `industry-before-the-army`; see
+    /// `BasicAi::industry_before_the_army_3`.
+    industry_before_the_army_3: bool,
     /// The Industrial Zone in the delegated governor's district list; see
     /// `BasicAi::industry_in_the_district_list`.
     industry_in_the_district_list: bool,
+    /// One Industrial Zone where its Factory reaches the most cities, and its
+    /// chain; see `BasicAi::industrial_hub`.
+    industrial_hub: bool,
+    /// `improvement-upgrades-count`: a Builder prices an improvement with the
+    /// yields its owner's techs and civics already add to it (Apprenticeship's
+    /// and Industrialization's +1 Production on a Mine, Gunpowder's on a
+    /// Quarry, Feudalism's Food on a Plantation, …), as the engine pays them
+    /// (`player_tile_yields`). The stock price reads only the printed yield,
+    /// so after Apprenticeship a Mine (+2 Production) still priced as +1 and
+    /// tied a Farm; live King games since builder-before-the-army-2 worked
+    /// 10.0 unimproved hills at t100.
+    improvement_upgrades_count: bool,
     // ---- append: l-o ------------------------------------------------
     /// A city's Monument ahead of the military floor and the Settler step in
     /// the delegated city governor. Opt-in gene `monument-first`; see
@@ -8796,7 +8811,10 @@ impl AdvancedAi {
             granary_before_the_army: false,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
+            industry_before_the_army_3: false,
             industry_in_the_district_list: false,
+            industrial_hub: false,
+            improvement_upgrades_count: false,
             // ---- append: l-o ----------------------------------------
             monument_first: false,
             magnus_follows_settlers: false,
@@ -35981,6 +35999,39 @@ impl AdvancedAi {
         self.improvement_value_with_appeal(g, pos, improvement, strategy, appeal)
     }
 
+    /// See `improvement_upgrades_count`: what `pid`'s researched techs and
+    /// civics add to `improvement`, the same tree effects
+    /// `Game::player_tile_yields` pays on a built one.
+    fn improvement_tree_yields(g: &Game, pid: usize, improvement: &str) -> Yields {
+        let tree = |effect: &str| g.tree_effect(pid, effect);
+        let mut yields = Yields::default();
+        match improvement {
+            "mine" => yields.production += tree("mine_production"),
+            "quarry" => yields.production += tree("quarry_production"),
+            "lumber_mill" => yields.production += tree("lumber_mill_production"),
+            "pasture" => {
+                yields.food += tree("pasture_food");
+                yields.production += tree("pasture_production");
+            }
+            "plantation" => {
+                yields.food += tree("plantation_food");
+                yields.gold += tree("plantation_gold");
+            }
+            "camp" => {
+                yields.food += tree("camp_food");
+                yields.production += tree("camp_production");
+                yields.gold += tree("camp_gold");
+            }
+            "fishing_boats" => {
+                yields.food += tree("fishing_boats_food");
+                yields.production += tree("fishing_boats_production");
+                yields.gold += tree("fishing_boats_gold");
+            }
+            _ => {}
+        }
+        yields
+    }
+
     fn improvement_value_with_appeal(
         &self,
         g: &Game,
@@ -35993,6 +36044,15 @@ impl AdvancedAi {
         let spec = &g.rules.improvements[improvement];
         let mut yields = spec.yields;
         yields.gold += spec.effects.get("appeal_gold").copied().unwrap_or(0.0) * appeal;
+        if self.improvement_upgrades_count {
+            if let Some(owner) = tile
+                .owner_city
+                .and_then(|city| g.cities.get(&city))
+                .map(|city| city.owner)
+            {
+                yields.add(Self::improvement_tree_yields(g, owner, improvement));
+            }
+        }
         let mut value = self.yield_value(yields, strategy);
         if strategy == GrandStrategy::Culture {
             // Tourism is cumulative: delaying a resort or national park by
