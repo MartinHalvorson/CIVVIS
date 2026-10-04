@@ -2536,6 +2536,10 @@ pub const GENES: &[Gene] = &[
     // queues Builders often enough to hold Urban Planning out behind Ilkum.
     // See `AdvancedAi::colonization_earns_its_slot_2`.
     Gene { tag: "colonization-earns-its-slot-2", field: "colonization_earns_its_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_colonization_earns_its_slot_2, disable: AdvancedAi::disable_colonization_earns_its_slot_2 },
+    // Version 1's Granary/Aqueduct behind campus v2 and the Builder backlog:
+    // 3.9 of 8.4 live cities sat at their housing cap at t100. See
+    // `BasicAi::granary_before_the_army_2`.
+    Gene { tag: "granary-before-the-army-2", field: "granary_before_the_army_2", kind: Kind::OptIn, enable: AdvancedAi::enable_granary_before_the_army_2, disable: AdvancedAi::disable_granary_before_the_army_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

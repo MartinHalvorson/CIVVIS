@@ -2559,6 +2559,16 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `granary-before-the-army`.
     pub(crate) granary_before_the_army: bool,
+    /// `granary_before_the_army`, behind the Campus step and the Builder
+    /// backlog instead of ahead of them, so the housing reserve displaces
+    /// only the military floor. Version 1 stood ahead of
+    /// `campus_before_the_army_2`: 16 domination pairs bought +2.1 citizens
+    /// at t100 (z +2.5) and paid 23 Science at t150 (z -2.4) and 0.87
+    /// Libraries. Live King games since 2026-10-03T131343Z held 3.9 of 8.4
+    /// cities at their housing cap at t100 and 2.6 more within one.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `granary-before-the-army-2`.
+    pub(crate) granary_before_the_army_2: bool,
     /// `industry-before-the-army`: the Industrial Zone, then its Workshop,
     /// then its Factory, ahead of the military floor for at most a third of
     /// the empire's cities at a time, from three cities on. A city opens a
@@ -5387,6 +5397,7 @@ impl BasicAi {
             campus_before_the_army_3: false,
             settler_before_the_navy: false,
             granary_before_the_army: false,
+            granary_before_the_army_2: false,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
             industry_before_the_army_3: false,
@@ -5870,6 +5881,7 @@ impl BasicAi {
             campus_before_the_army_3: false,
             settler_before_the_navy: false,
             granary_before_the_army: false,
+            granary_before_the_army_2: false,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
             industry_before_the_army_3: false,
@@ -12491,6 +12503,23 @@ impl BasicAi {
         {
             if let Some(builder) = Self::builder_backlog_item(g, pid, cid, n_cities, builders) {
                 return Some(builder);
+            }
+        }
+        // `granary-before-the-army-2`: version 1's housing reserve, behind
+        // the Campus step and the Builder backlog.
+        if self.granary_before_the_army_2
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(item) = Self::housing_reserve_item(g, pid, cid).filter(|item| {
+                !matches!(item, Item::District { .. })
+                    || g.host_production_turns(cid, item).unwrap_or_else(|| {
+                        g.item_cost_for(pid, item) / g.city_yields(cid).production.max(0.5)
+                    }) <= Self::FIRST_CAMPUS_MAX_TURNS
+            }) {
+                return Some(item);
             }
         }
         // `industrial-hub`: one zone where its Factory reaches the most
@@ -23145,6 +23174,16 @@ mod tests {
         let stock = pick(false, 1);
         assert_ne!(stock, granary, "the fixture's stock pick fills the military floor");
         assert_eq!(pick(true, 1), granary, "the Granary comes first");
+        // Version 2 takes the same Granary from behind the Campus step, and
+        // yields to a due Settler.
+        let second = |settlers: usize| {
+            let mut ai = BasicAi::new();
+            ai.granary_before_the_army_2 = true;
+            ai.pick_item(&game, 0, cid, 3, settlers, 3, 1, 0, 0, 0, 0)
+        };
+        assert_eq!(second(1), granary, "version 2 takes the floor's build");
+        assert!(BasicAi::new().settler_due(&game, 0, cid, 3, 0), "the fixture is due a Settler");
+        assert_ne!(second(0), granary, "a due Settler comes first");
     }
 
     /// See `settler_before_the_navy`: a coastal city due a Settler trains it

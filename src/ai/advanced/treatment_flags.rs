@@ -4885,6 +4885,7 @@ impl AdvancedAi {
     /// See `BasicAi::granary_before_the_army`: a housing-bound city's Granary,
     /// else its Aqueduct, ahead of the military floor.
     pub fn enable_granary_before_the_army(&mut self) {
+        self.disable_granary_before_the_army_2();
         self.granary_before_the_army = true;
         self.base.granary_before_the_army = true;
     }
@@ -5034,6 +5035,21 @@ impl AdvancedAi {
     /// The twin of `enable_colonization_earns_its_slot_2`.
     pub fn disable_colonization_earns_its_slot_2(&mut self) {
         self.colonization_earns_its_slot_2 = false;
+    }
+
+    /// See `BasicAi::granary_before_the_army_2`: version 1's housing reserve
+    /// behind the Campus step and the Builder backlog. Exclusive with
+    /// version 1.
+    pub fn enable_granary_before_the_army_2(&mut self) {
+        self.disable_granary_before_the_army();
+        self.granary_before_the_army_2 = true;
+        self.base.granary_before_the_army_2 = true;
+    }
+
+    /// The twin of `enable_granary_before_the_army_2`.
+    pub fn disable_granary_before_the_army_2(&mut self) {
+        self.granary_before_the_army_2 = false;
+        self.base.granary_before_the_army_2 = false;
     }
 
     /// Opt-in gene `colonization-earns-its-slot`; see

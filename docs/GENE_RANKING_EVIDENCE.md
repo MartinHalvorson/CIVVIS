@@ -227,7 +227,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `first-granary-reserve-2` | off (unmeasured) | Reserve a Granary only when its housing accelerates the next citizen within the construction and growth budget. | 1 \| 3 |
 | `first-granary-reserve-3` | off (unmeasured) | `first-granary-reserve-3`: version one's rule (population within one of housing, no Granary) reaches the delegated city governor too, and an Aqueduct follows the Granary while the city is still housing-bound. | 1 \| 3 |
 | `government-ladder-3` | off (unmeasured) | Choose a government by its remaining civic cost per extra policy slot, reserving time to use the upgrade. | 2 \| 3 |
-| `granary-before-the-army` | off (unmeasured) | The delegated city governor's housing reserve (Granary, else Aqueduct) ahead of the military floor. | 1 \| 1 |
+| `granary-before-the-army` | off (unmeasured) | The delegated city governor's housing reserve (Granary, else Aqueduct) ahead of the military floor. | — \| 2 |
+| `granary-before-the-army-2` | off (unmeasured) | Version 2 of `granary-before-the-army`; see `BasicAi::granary_before_the_army_2`. | — \| 2 |
 | `great-work-completion-value` | off (unmeasured) | Enable `great-work-completion-value` for measurement. | 1 \| 1 |
 | `hostile-memory-3` | off (unmeasured) | Version three also revises stale sightings when their forecast area is fully visible, using only the unit facts recorded at observation. | 1 \| 3 |
 | `housing-research-2` | off (unmeasured) | Research housing that the capped cities can actually build. | 1 \| 2 |

@@ -6233,6 +6233,9 @@ pub struct AdvancedAi {
     /// Aqueduct) ahead of the military floor. Opt-in gene
     /// `granary-before-the-army`; see `BasicAi::granary_before_the_army`.
     granary_before_the_army: bool,
+    /// Version 2 of `granary-before-the-army`; see
+    /// `BasicAi::granary_before_the_army_2`.
+    granary_before_the_army_2: bool,
     /// The delegated city governor's Industrial Zone, Workshop and Factory
     /// ahead of the military floor. Opt-in gene `industry-before-the-army`;
     /// see `BasicAi::industry_before_the_army`.
@@ -8825,6 +8828,7 @@ impl AdvancedAi {
 
             host_war_unit_losses: None,
             granary_before_the_army: false,
+            granary_before_the_army_2: false,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
             industry_before_the_army_3: false,

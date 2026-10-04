@@ -2449,6 +2449,15 @@
           "government-ladder-3": null
         }
       },
+      "granary-before-the-army": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "granary-before-the-army": null,
+          "granary-before-the-army-2": null
+        }
+      },
       "holy-site-where-the-threat-is": {
         "rule_on": [],
         "head": "holy-site-where-the-threat-is",
