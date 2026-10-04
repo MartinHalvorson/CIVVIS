@@ -30,3 +30,25 @@ and hashes are catalogued in the adjacent trace-results JSON. Map 61007101 evict
 the per-turn drains captured contiguous IDs 1–6750 through the final cursor.
 Map 61007102 captured IDs 1–4434 with no ring evictions. Both report zero
 truncated turns; no thought IDs are missing from the saved streams.
+
+## Deferred-order projection
+
+A second observer ran a separately cloned first-frame plan on turns 60–100 of
+map 61007101 and replayed that frame on an authoritative clone, following the
+native executor's stopping rules. The original game still used the unchanged
+production executor. Its 34,454 action bytes and final save match the original
+trace exactly. These 41 projections are not telemetry from later real replans.
+
+On each turn 63–69, the first-frame clone refused a zero-Gold peace proposal
+to player 2 with `invalid diplomatic deal`, stopping before Builder 362's move
+to (29,7). The builder had a proposed move on every one of those seven tails.
+In `src/game/actions.rs`, `do_propose_deal` validates before creating a pending
+deal; every error returns before the state writes. A refused proposal changes
+neither diplomatic access nor the tactical map. The executor currently treats
+that refusal as a reason to stop all subsequent unit orders, unlike a refused
+financial trade. A narrow executor repair can therefore preserve independent
+Builder and military work after the refusal and refresh after the batch.
+
+This finding applies to the native observed-player executor. The live Civ6
+bridge exports peace proposals as host peace orders through its own adapter;
+this diagnostic does not demonstrate that adapter has the same failure.
