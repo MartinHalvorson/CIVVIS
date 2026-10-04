@@ -338,3 +338,33 @@ version 1 (16 pairs): t100 population +4.06 (z +4.16), cities +0.88
 against no Campus gene comes to about +5 Science and +0.9 techs at t100, with
 population, cities, civics and culture flat. `builder-before-the-army-2`
 (drought only) against version 1: games last 8.1 turns longer (z +2.27).
+
+## Housing: `granary-before-the-army` (not armed)
+
+At t100 our cities held 4-5 citizens against the rivals' 7-9, and many sat at
+their housing cap. Game 41 (155014Z) had 5 of 6 cities at housing and no
+Granary. `first-granary-reserve-3` arms two Granary steps. The stock
+`housing_reserve_item` comes after the floor and the Settler. The advanced
+reserve runs ahead of the strategic scorer, which a delegated live seat never
+reaches. `granary-before-the-army` moves the stock step ahead of the floor,
+behind the Monument and the capital Settler, yielding to a due Settler.
+
+The 16-pair domination probe against the live bundle bought +2.1 citizens at
+t100 (z +2.48). It paid 23 Science (z −2.38), 0.87 Libraries (z −2.04) and
+1.9 districts at t150, because the Granary step displaces
+`campus-before-the-army-2`. Replays bind rarely: 0 and 3 of 10 housing-bound
+idle turns, and in game 41 the siege reservation claimed the idle capital
+first. The gene is not armed.
+
+Dry sites (base housing 2) numbered 2-3 per weak game against none in game
+26. The site scorer already prices water three ways: the growth forecast,
+`(housing − 2) × 4`, and an early dry-site penalty. This reads as map
+scarcity, not a missing term.
+
+## `campus-before-the-army-3` (not armed) and version 2 confirmed
+
+Version 3 carries the chain on to the University and the Research Lab.
+Against version 2 it scored −51 (z −1.87), with Science −12, Culture −10 and
+Gold −8.6 at t150. A 72-game confirmation screen of the armed version 2
+(seeds 31004000) gave +1.1 pp (z +0.26). The earlier 24-game −14.7 pp
+(z −2.90) was noise.
