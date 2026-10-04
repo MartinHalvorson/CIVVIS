@@ -1,0 +1,74 @@
+{
+  "baseline_commit": "45137644f66f3b00a15a30d8de03ae679b3b7aa5",
+  "candidate_code_sha256": {
+    "src/game/city.rs": "88230cb1ccc95ef1b83cb8ad994f16d1d7d6fa16d544fec3075ced7d11f98e2d",
+    "src/ai/advanced/marginal_usefulness.rs": "6e914835d9db01431193580c9421ad167c047285d877094e9e2f3381d271a08e"
+  },
+  "binaries": {
+    "/tmp/civvis-prod-baseline-probe": "9d01241a3431780fdcd43aff3f2ce439178b6cbef93b0c802d097f0e6e5cec94",
+    "/tmp/civvis-prod-candidate-probe": "dcd6a2ac1fa920b640b78fde6d83ca7a5779f43fcbdd18fc56e6e9b23a420f4b",
+    "/tmp/civvis-prod-baseline-orders": "5a227dec272aef4c08450ebb6a84f77041926544fdfcb7ff9faecc991d4ecdbe",
+    "/Users/martbot-mbp-m5-max-128/civvis-production-worked-tiles-b5d2/target/ci/civvis_orders": "0d269fa49811eabf23a766527372944ac58fcdcd583696530994220e5da5823a"
+  },
+  "development_seeds": [
+    61003000,
+    61003001,
+    61003002,
+    61003003
+  ],
+  "confirmation_seeds": [
+    61003100,
+    61003101,
+    61003102,
+    61003103,
+    61003104,
+    61003105,
+    61003106,
+    61003107,
+    61003108,
+    61003109,
+    61003110,
+    61003111
+  ],
+  "profile": {
+    "players": 4,
+    "map": "Pangaea",
+    "width": 60,
+    "height": 38,
+    "speed": "online",
+    "max_turns": 150,
+    "difficulty": "emperor",
+    "barbarian_difficulty": "emperor",
+    "handicap_exempt": [
+      0
+    ],
+    "focal_civ": "Gran Colombia",
+    "focal_target": "Domination",
+    "focal_controller": "AdvancedAi::targeting + apply_gene_ledger",
+    "rivals": "AdvancedAi::fleet",
+    "city_states": 6
+  },
+  "candidate_checkpoint": "5cb344deb",
+  "decision": "Rejected: no convincing early cumulative production gain; science/culture regressions in later matched games.",
+  "compiled_probe_source_sha256": "4f17470a08fe324e9319ed283d7aa28df45919ba0271b59afe5d852e4feb4db2",
+  "probe_source_sha256": "945f55241793ec57cfae27fa9fd3fe34b3715438646f4f40f81d3e13fd2dd6ab",
+  "source_formatting": "Tracked probe source is rustfmt output of the compiled source; formatting changes only.",
+  "artifacts": {
+    "2026-10-03-production-worked-tiles-confirmation-control.txt": "ec4a97748d421178aef14840a130cb4ee2bf0f6a0cfc4b4de0ae817a528a35e1",
+    "2026-10-03-production-worked-tiles-candidate.txt": "a645a6b52a1e80feacbd4bd482b10e2dcc28ae9e133bf9e820ac873ceb0892ec",
+    "2026-10-03-production-worked-tiles-control.csv": "30206a2e18ef4540e789a55b84b0aec7ed42764eb76db8d07189ab1b2fbf98c6",
+    "2026-10-03-production-worked-tiles-confirmation-candidate.csv": "4713d0df6467e7cc632ee5dcf2d79d1a350c57b4be04bb84686f25f2810e2cd6",
+    "2026-10-03-production-worked-tiles-probe.rs": "945f55241793ec57cfae27fa9fd3fe34b3715438646f4f40f81d3e13fd2dd6ab",
+    "2026-10-03-production-worked-tiles-live-baseline.json": "0dd24c85b55427858799e346fab13d39bd90530b2ed11799aa0c35e409274ae5",
+    "2026-10-03-production-worked-tiles-confirmation-control.csv": "8dafa166fca3077a085e5b76ad8d55bb1ff61ff727cba3ef4e60013f3f3818d1",
+    "2026-10-03-production-worked-tiles-candidate.csv": "53ad913cc7fbf1a1527db91ac92a9e6475eb21892d34a52305d5899c7b676139",
+    "2026-10-03-production-worked-tiles-control.txt": "a35ed5912684994e1dee09a3604eb6b6187807debe606e8dee552f175645954c",
+    "2026-10-03-production-worked-tiles-confirmation-candidate.txt": "31b1a96722e24364cb6390b35738b434dc30d708481b3049f5ad7dcc409e4d75"
+  },
+  "replay_prefixes": {
+    "50": "849d520787e61187e97d50a6390829352e2bd2e9ca76e0b7f17ac8d7510b00c5",
+    "75": "7c390f1ad86e9a921abe45c8fafc984d6d522182ca7ac33709ae17c57f9af699",
+    "100": "3be5d13ea7174bc66b4c687344c62e103b92ddd829a01282c3ea5442b5733248",
+    "125": "7981f85c0a188a07956bd803078da40e684302cd7960c43f7cea89c83bf7907b"
+  }
+}
