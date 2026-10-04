@@ -20649,7 +20649,14 @@ impl AdvancedAi {
             }) && !self.domination_siege_is_progressing(g, pid, *other, plan)
                 && !self.domination_siege_train_mobilizing(g, pid, *other, plan)
                 && !self.domination_front_crushed(g, pid, *other)
-                && !siege_grace;
+                && !siege_grace
+                // The conquest opening's war answers to the opening's own
+                // peace (`conquest_sue_for_peace`). Live King
+                // civvis-20261004T025448Z declared on Spain at turn 51 and
+                // had 9 bodies on Barcelona's ring when this clause offered
+                // "the war has stalled" peace at 81; Spain took it and the
+                // game's one opening closed without a capture.
+                && !self.conquest_opening_war(*other);
             let peace_pending = g.pending_deals.iter().any(|deal| {
                 deal.peace
                     && ((deal.from == pid && deal.to == *other)
