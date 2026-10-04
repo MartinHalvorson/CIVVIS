@@ -1785,6 +1785,39 @@ class Civ6PlayTest(unittest.TestCase):
             (True, True, True),
         )
 
+    def test_a_seat_with_the_wrong_counts_for_its_size_is_refused(self) -> None:
+        """Static map defaults skip the UI's per-size count reset; the seat
+        must still carry the size's own majors and city-states
+        (`MapSizes.xml`: Small 6/9, Tiny 4/6)."""
+        event = {
+            "difficulty": "DIFFICULTY_SETTLER", "size": "MAPSIZE_SMALL",
+            "speed": "GAMESPEED_ONLINE", "map": "Continents.lua",
+            "leader": "LEADER_TRAJAN", "modes": [],
+            "ruleset": "RULESET_EXPANSION_2", "players": 6, "city_states": 9,
+        }
+        self.assertEqual(civ6_play.setup_drift(event, args()), [])
+        self.assertEqual(civ6_play.seat_matches_requested(event, args()), (True, True, True))
+        tiny_with_small_counts = {**event, "size": "MAPSIZE_TINY"}
+        self.assertEqual(civ6_play.setup_drift(tiny_with_small_counts, args(map_size="MAPSIZE_TINY")),
+                         ["players 6 != 4", "city_states 9 != 6"])
+        self.assertEqual(
+            civ6_play.seat_matches_requested(tiny_with_small_counts, args(map_size="MAPSIZE_TINY")),
+            (False, True, True))
+        self.assertEqual(civ6_play.setup_drift({**event, "city_states": 12}, args()),
+                         ["city_states 12 != 9"])
+
+    def test_unreported_counts_are_unverified_not_wrong(self) -> None:
+        event = {"size": "MAPSIZE_TINY"}
+        self.assertEqual(civ6_play.setup_drift(event, args()), [])
+        self.assertEqual(civ6_play.setup_drift({**event, "players": None, "city_states": "?"}, args()), [])
+        self.assertEqual(civ6_play.setup_drift({**event, "players": True}, args()), [])
+        self.assertEqual(civ6_play.setup_drift({"size": "MAPSIZE_UNKNOWN", "players": 99}, args()), [])
+
+    def test_the_live_lane_seat_passes(self) -> None:
+        """The seat every 2026-10-04 game reported (G61-G65)."""
+        live = {"players": 4, "size": "MAPSIZE_TINY", "map": "Pangaea.lua", "city_states": 6}
+        self.assertEqual(civ6_play.setup_drift(live, args(map_size="MAPSIZE_TINY")), [])
+
 
 class SetupRowReadbackTest(unittest.TestCase):
     """The Create Game panel, at the geometry that broke every batch on 2026-08-02.
