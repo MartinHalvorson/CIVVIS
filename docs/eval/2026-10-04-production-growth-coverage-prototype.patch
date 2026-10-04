@@ -2,35 +2,20 @@ diff --git a/src/ai/advanced/gold_and_cards.rs b/src/ai/advanced/gold_and_cards.
 index d39f1be6d..1042e15b6 100644
 --- a/src/ai/advanced/gold_and_cards.rs
 +++ b/src/ai/advanced/gold_and_cards.rs
-@@ -413,6 +413,9 @@ impl AdvancedAi {
-     /// leaving `reserve` in the bank. At most one purchase a turn; false when
-     /// nothing qualifies or clears the reserve.
-     pub(super) fn young_empire_purchase(&self, g: &mut Game, pid: usize, reserve: f64) -> bool {
+@@ -415,0 +416,3 @@ impl AdvancedAi {
 +        if self.productive_builder_purchase(g, pid, reserve) {
 +            return true;
 +        }
-         let counts = self.counts(g, pid);
-         // Cities by Production, least first. Each yield is read once, under
-         // one memo, rather than twice per comparison.
 diff --git a/src/ai/advanced/production_compounding.rs b/src/ai/advanced/production_compounding.rs
 index 224b2d77d..0d2e312de 100644
 --- a/src/ai/advanced/production_compounding.rs
 +++ b/src/ai/advanced/production_compounding.rs
-@@ -7,8 +7,9 @@
- //! separately screened adaptive treatment retains its measured expression.
- 
- use super::{AdvancedAi, ChainRung, GrandStrategy, StrategicPlan, VictoryTarget};
+@@ -10 +10 @@ use super::{AdvancedAi, ChainRung, GrandStrategy, StrategicPlan, VictoryTarget};
 -use crate::game::{Game, Item};
 +use crate::game::{Action, Game, Item};
- use crate::rules::{BuildingSpec, Yields};
+@@ -11,0 +12 @@ use crate::rules::{BuildingSpec, Yields};
 +use crate::think;
- 
- impl AdvancedAi {
-     /// The Science reservation must compare its owed research building with
-@@ -146,7 +147,169 @@ impl AdvancedAi {
-         }
-         (earning_turns * gain / cost.max(1.0)).clamp(0.0, 1.0)
-     }
+@@ -148,0 +150,159 @@ impl AdvancedAi {
 +
 +    /// Purchase productive worker coverage without taking a construction queue.
 +    /// The forecast credits nearby charges generously; actual work and survival
@@ -190,10 +175,7 @@ index 224b2d77d..0d2e312de 100644
 +        }
 +        best
 +    }
- }
- 
- #[cfg(test)]
- mod tests;
+@@ -152,0 +313,3 @@ mod tests;
 +
 +#[cfg(test)]
 +mod treasury_tests;
