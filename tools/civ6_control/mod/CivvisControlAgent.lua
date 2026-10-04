@@ -12368,6 +12368,10 @@ local function applyOrder(player, pid, row, turn)
 		end);
 		if ok then
 			warDeclared[subject] = true;
+			-- RequestSession accepts an asynchronous request, not an acknowledged
+			-- war (DiplomacyActionView.lua:427). Dependent condemnation must read
+			-- IsAtWarWith before issuing its parameterless command.
+			CivvisQueue.warRequests[subject] = turn;
 			-- ⚠ THE FIRES-CHECK FOR THE DECISION THAT DECIDES THE GAME. `declareWar`
 			-- emits this on the built-in path; without it here, a CIVVIS-declared war
 			-- appeared only as an anonymous `by.war = 1` count and the run's `war`
@@ -15283,6 +15287,9 @@ local function applyOrder(player, pid, row, turn)
 		if verb == "CONDEMN_HERETIC" then
 			local hash = CMD["UNITCOMMAND_CONDEMN_HERETIC"];
 			if hash == nil then return false, "unknown_cmd_" .. verb; end
+			if CivvisQueue.condemnWarPending(player, pid, row, turn) ~= nil then
+				return false, "condemn_war_pending";
+			end
 			CivvisLedger.expectCondemn(player, pid, unit, turn);
 			local ok, why = commandUnit(unit, hash, true);
 			if not ok then CivvisLedger.cancelCondemn(unit:GetID()); end
@@ -15882,6 +15889,7 @@ end
 -- One bare global table: the main chunk sits two slots under Lua 5.1's
 -- 200-local ceiling (see the CI headroom check), so nothing here is a `local`.
 CivvisQueue = {
+	warRequests = {}, -- target -> turn of an accepted request, NOT acknowledgement
 	pending = {},   -- host unit id -> { rows, next, expect, ready, wait, settle_passes }
 	order = {},     -- unit ids in the order they were first queued
 	count = 0,
@@ -15906,8 +15914,49 @@ CivvisQueue.reset = function(turn)
 		CivvisQueue.report(q.turn, "turn_over");
 	end
 	q.pending = {}; q.order = {}; q.count = 0; q.watching = 0; q.turn = turn; q.ticks = 0;
+	q.warRequests = {};
 	q.stats = { applied = 0, refused = 0, refusals = {}, strikes_landed = 0,
 	            strikes_planned = 0, queued = 0 };
+end;
+
+-- UnitCommands.xml:47 makes condemnation parameterless and tile-local.
+-- The shipped CityStates.lua:1508 reads IsAtWarWith for the actual relation;
+-- RequestSession's return is not that readback. Only wait for a requested war
+-- when its religious target is on our actor's visible plot. A different target
+-- already at war makes an immediate condemnation useful, so do not delay it.
+CivvisQueue.condemnWarPending = function(player, pid, row, turn)
+	if tostring(row.kind or "") ~= "unit"
+			or tostring(row.verb or "") ~= "CONDEMN_HERETIC" then return nil; end
+	local requested = false;
+	for _, requestTurn in pairs(CivvisQueue.warRequests) do
+		if requestTurn == turn then requested = true; break; end
+	end
+	if not requested then return nil; end
+	local unit = liveUnit(pid, tonumber(row.subject) or -1);
+	if unit == nil then return nil; end
+	return try(function()
+		local x, y = unit:GetX(), unit:GetY();
+		if PlayersVisibility[pid]:IsVisible(x, y) ~= true then return nil; end
+		local diplomacy = player:GetDiplomacy();
+		local pending;
+		for _, otherId in ipairs(PlayerManager.GetAliveMajorIDs()) do
+			if otherId ~= pid then
+				local atWar = diplomacy:IsAtWarWith(otherId);
+				if atWar == true or CivvisQueue.warRequests[otherId] == turn then
+					for _, target in Players[otherId]:GetUnits():Members() do
+						if target:GetX() == x and target:GetY() == y then
+							local info = GameInfo.Units[target:GetUnitType()];
+							if info ~= nil and (tonumber(info.ReligiousStrength) or 0) > 0 then
+								if atWar == true then return nil; end
+								pending = otherId;
+							end
+						end
+					end
+				end
+			end
+		end
+		return pending;
+	end, nil);
 end;
 
 -- The position an order should leave its unit at, when the next order must
@@ -16170,6 +16219,25 @@ CivvisQueue.drain = function(player, pid, turn)
 					and not arrived and entry.wait >= grace;
 				local ready = (entry.ready or arrived or spent or moved_from_origin
 					or unpathed or entry.wait >= grace) and (not active_operation or stuck_operation);
+				if ready and #entry.rows > 0 then
+					local target = CivvisQueue.condemnWarPending(player, pid, entry.rows[entry.next], turn);
+					if target ~= nil then
+						entry.war_wait = (entry.war_wait or 0) + 1;
+						if entry.war_wait == 1 then
+							emit("queue_war_wait", { turn = turn, unit = subject, target = target });
+						end
+						if entry.war_wait >= grace then
+							CivvisQueue.refuseRest(subject, entry, "queue_war_not_acknowledged");
+						end
+						ready = false;
+					elseif (entry.war_wait or 0) > 0 then
+						-- No acknowledgement claim: the target could also have moved
+						-- or vanished. The normal native command gate still decides.
+						emit("queue_war_wait_released", { turn = turn, unit = subject,
+							waited = entry.war_wait });
+						entry.war_wait = nil;
+					end
+				end
 				-- A path can report its destination before Civ VI has finished
 				-- deactivating the asynchronous MOVE_TO. On the live host the
 				-- activity read can briefly say "awake" in that window, so an
@@ -16236,6 +16304,7 @@ CivvisQueue.drain = function(player, pid, turn)
 								entry.expect = ok and CivvisQueue.expectFor(row) or nil;
 								entry.ready = false;
 								entry.wait = 0;
+								entry.war_wait = nil;
 								entry.settle_passes = ok
 									and verb == "MOVE_TO"
 									and tostring(entry.rows[entry.next].verb or "") == "FORTIFY"
@@ -18415,6 +18484,14 @@ local function applyOrders(player, pid, turn, rows)
 				else
 					CivvisQueue.push(subject, row, firstRun[subject].expect);
 				end
+			elseif queueOn and isUnit
+					and CivvisQueue.condemnWarPending(player, pid, row, turn) ~= nil then
+				-- No earlier unit order is needed for this dependency: the war
+				-- request itself is still in flight. Queue it without reporting
+				-- a failed command or poisoning this unit's later orders.
+				ordered[index] = true;
+				CivvisQueue.push(subject, row, nil);
+				firstRun[subject] = { expect = nil };
 			else
 				local ok = runOrder(index, row);
 				if isUnit then
@@ -19166,7 +19243,11 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- query that deadlocked 20260730T110209Z — and the poll budgets below are
 	-- scaled by the same factor so every wall-clock allowance is unchanged.
 	local every = cfg.OrdersPollTicks or 2;
-	if awaiting.ticks % every ~= 0 then return false; end
+	-- `CivvisQueue.forcePoll` is set when `CivvisQueue.ordersLanded` found the
+	-- answer already in the channel: this tick reads it rather than waiting
+	-- for its turn.
+	if awaiting.ticks % every ~= 0 and not CivvisQueue.forcePoll then return false; end
+	CivvisQueue.forcePoll = false;
 	awaiting.polls = (awaiting.polls or 0) + 1;
 
 	-- ★★★★★ THE HEARTBEAT IS LOAD-BEARING. IT IS NOT DIAGNOSTICS.
@@ -19484,6 +19565,70 @@ function CivvisBoard.movementNotYetRestored(player, turn)
 	return true;
 end
 
+-- ★★ DOES THE HOST MAKE OUR END TURN WAIT, AND IS QUICK MOVEMENT LIVE?
+--
+-- `turn_retry_settled` cannot answer the first: it fires for any of our
+-- units settling while `Game.GetCurrentGameTurn()` still equals the retry
+-- turn, and that number does not change through the AI phase -- our units
+-- attacked or deactivated after our turn ended emit it too. Read against the
+-- engine's own `Player 0 set TurnActive 0` stamp, our turn ends within ~0.3 s
+-- of the last orders (G64-G67, 2026-10-04). Quick Movement reads 1 in
+-- UserOptions.txt, but the stock Options.lua copies it into the live
+-- UserConfiguration only on its own Confirm, and every queued order of
+-- ours waits on its unit's previous move settling.
+--
+-- This only RECORDS: per turn, how many requests the host refused and what
+-- the shipped predicates said at each (`UI.IsGameCoreBusy`, `UI.CanEndTurn`,
+-- `UI.IsProcessingMessages`, the first end-turn blocker), how long from the
+-- first request to our turn ending, and the live Quick Movement/Combat. One
+-- `end_turn_wait` per turn, from `LocalPlayerTurnEnd`. Sampled after the
+-- 0.25 s rate guard, so at most four reads a second; on `CivvisQueue`
+-- because the main chunk is at its local ceiling.
+CivvisQueue.noteEndTurnRequest = function(turn, now, forced)
+	local w = CivvisQueue.endTurnWait;
+	if w == nil or w.turn ~= turn then
+		w = { turn = turn, first = now, last = now, requests = 0, forced = 0,
+		      busy = 0, cannot = 0, processing = 0, blockers = {} };
+		CivvisQueue.endTurnWait = w;
+	end
+	w.requests = w.requests + 1;
+	w.last = now;
+	if forced then w.forced = w.forced + 1; end
+	if try(function() return UI.IsGameCoreBusy(); end, nil) == true then w.busy = w.busy + 1; end
+	if try(function() return UI.CanEndTurn(); end, nil) == false then w.cannot = w.cannot + 1; end
+	if try(function() return UI.IsProcessingMessages(); end, nil) == true then
+		w.processing = w.processing + 1;
+	end
+	local blocker = try(function()
+		return NotificationManager.GetFirstEndTurnBlocking(Game.GetLocalPlayer());
+	end, nil);
+	local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, nil);
+	if blocker ~= nil and blocker ~= none then
+		local key = tostring(blocker);
+		w.blockers[key] = (w.blockers[key] or 0) + 1;
+	end
+end;
+
+CivvisQueue.onLocalTurnEnd = function()
+	local w = CivvisQueue.endTurnWait;
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	if w == nil or w.turn ~= turn or w.emitted then return; end
+	w.emitted = true;
+	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local function since(t)
+		if type(now) ~= "number" or type(t) ~= "number" then return nil; end
+		return math.floor((now - t) * 1000 + 0.5) / 1000;
+	end
+	emit("end_turn_wait", {
+		turn = turn, requests = w.requests, forced = w.forced,
+		wait = since(w.first), after_last = since(w.last),
+		busy = w.busy, cannot = w.cannot, processing = w.processing,
+		blockers = w.blockers,
+		quick_movement = try(function() return UserConfiguration.IsQuickMovement(); end, nil),
+		quick_combat = try(function() return UserConfiguration.IsQuickCombat(); end, nil),
+	});
+end;
+
 -- Submission is not acceptance: the host may still be settling a movement.
 CivvisQueue.requestEndTurn = function(turn, parameters)
 	-- ActionPanel.lua:505-506 uses the same guard for automatic end turns.
@@ -19511,6 +19656,7 @@ CivvisQueue.requestEndTurn = function(turn, parameters)
 		CivvisQueue.endTurnSubmittedAt = now;
 	end
 	CivvisQueue.endTurnRetryTurn = turn;
+	CivvisQueue.noteEndTurnRequest(turn, now, parameters ~= nil);
 	if parameters == nil then
 		UI.RequestAction(ActionTypes.ACTION_ENDTURN);
 	else
@@ -20666,11 +20812,48 @@ end
 -- queries the notification system and the turn state before deciding it has
 -- nothing to do -- so acting on all of them spends the game's own frame budget
 -- on asking whether there is anything to spend it on.
+-- ★★★ THE ANSWER WAITED FOR THE NEXT POLL, NOT FOR THE BRAIN.
+--
+-- With the relay and the decider fast, a board's orders are in the channel
+-- 0.06 s after the board leaves (median, G66 civvis-20261004T164910Z), but
+-- the poll above runs every `OrdersPollTicks` ticks of `TickEvery` publish
+-- batches, and a game sitting on its turn publishes slowly: the mod read
+-- them 0.27 s later (median; mean 0.41, p90 0.66) -- 85% of every frame's
+-- round trip, three frames a turn.
+--
+-- So while a board is out, each publish batch may PEEK at the channel's
+-- one-row `ready` marker -- the same query the poll starts with -- at most
+-- once per `OrdersPeekSeconds` of the UI clock (`requestEndTurn`'s clock).
+-- A hit runs the tick now and makes its poll read the answer. ⚠ The peek is
+-- wall-clock bounded, never per batch: a query on EVERY publish batch is
+-- what deadlocked civvis-20260730T110209Z, and 20 a second at most is two
+-- orders of magnitude short of that. The poll's own cadence, and the poll
+-- budgets counted in it, are untouched; a miss changes nothing.
+CivvisQueue.ordersLanded = function()
+	if cfg.Play == false or not cfg.CivvisDecides or awaiting.done
+			or awaiting.turn == nil or awaiting.turn < 0 then
+		return false;
+	end
+	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	if type(now) ~= "number" or now ~= now then return false; end
+	local last = CivvisQueue.ordersPeekAt;
+	if last ~= nil and now >= last
+			and now - last < (tonumber(cfg.OrdersPeekSeconds) or 0.05) then
+		return false;
+	end
+	CivvisQueue.ordersPeekAt = now;
+	local ready = ordersReady(awaiting.turn, awaiting.frame or 0);
+	return ready ~= nil and ready >= 0;
+end;
+
 local function onGameCoreTick()
 	ensureStarted();
 	CivvisTrade.pollPeace();
 	ticksSeen = ticksSeen + 1;
-	if ticksSeen % (cfg.TickEvery or 16) ~= 0 then return; end
+	if ticksSeen % (cfg.TickEvery or 16) ~= 0 then
+		if not CivvisQueue.ordersLanded() then return; end
+		CivvisQueue.forcePoll = true;
+	end
 	ticksTaken = ticksTaken + 1;
 	tick();
 end
@@ -20957,6 +21140,7 @@ function Initialize()
 	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse); end);
 	for name, handler in pairs({
 		LocalPlayerTurnBegin = onLocalPlayerTurnBegin,
+		LocalPlayerTurnEnd = function() CivvisQueue.onLocalTurnEnd(); end,
 		GameCoreEventPublishComplete = onGameCoreTick,
 		EndTurnBlockingChanged = onEndTurnBlockingChanged,
 		UnitMoveComplete = function(player, unitId) CivvisQueue.onUnitSettled(player, unitId); end,

@@ -1,0 +1,42 @@
+{
+  "validated_at": "2026-10-04T17:07:36.417215+00:00",
+  "head": "f5644702297423b113d4afae4e2667dbf0e57e59",
+  "merged_main": "a4f25c724421580d40a686eccaa5139e9c8dcfbf",
+  "full_suite_started_head": "3d04023c76559ce75460aded38245e7862a970be",
+  "source_note": "Full suite began at merged main checkpoint; subsequent commit adds only evaluation evidence. Runtime sources, Cargo metadata and data match merged main. No runtime modifications.",
+  "full_suite": {
+    "command": "cargo test --profile ci --locked -- --test-threads=4",
+    "exit_code": 0,
+    "counts": {
+      "passed": 4563,
+      "failed": 0,
+      "ignored": 54
+    },
+    "target": "Owned worktree target directory; no sibling binary reuse.",
+    "compile_time": [
+      "Finished `ci` profile [optimized] target(s) in 19m 36s"
+    ],
+    "log": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/ledger/validation/civvis-production-growth-ledger-full-tests.txt",
+    "sha256": "312f81ae3293fcd3ce2f502b31b231141dd38b048fd222490b7966b8046c5ea5"
+  },
+  "quality": {
+    "command": "python3 tools/rust_quality.py --base origin/main --head HEAD",
+    "exit_code": 0,
+    "log": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/ledger/validation/civvis-production-growth-ledger-quality.txt",
+    "sha256": "635b9142a334c257556d8b84f1c6227d40ec1f3c8af27869ca5336d9b605ecb1"
+  },
+  "focused": {
+    "original_replays": 8,
+    "identical_actions_original": 215603,
+    "supplemental_setup_executions": 17,
+    "identical_actions_extra_stock_replay": 35022,
+    "live_native_flag_readbacks": 16,
+    "incorrect_live_flag_rejected": true,
+    "summary_reproduction_byte_equal": true,
+    "report_numbers_checked": true,
+    "catalog_payload_hashes_verified": 23,
+    "fresh_strength_samples": 0
+  },
+  "diff_check": true,
+  "engine_soak": "Not applicable: evaluation-only artifacts, no engine changes."
+}

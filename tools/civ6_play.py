@@ -27,8 +27,10 @@ import subprocess
 import shutil
 import sys
 import tempfile
+import threading
 import time
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -112,6 +114,66 @@ GAME_PROCESS = popup_clear.GAME_PROCESS
 #: which every screen shares. See `civ6_control/capture_budget.py` for the
 #: measurement that made it necessary.
 DESKTOP_RESCUE_BUDGET = capture_budget.CaptureBudget()
+
+
+class DesktopRescueQueue:
+    """Run desktop rescues on one worker so the event relay never waits on them.
+
+    ★★★ THE RESCUE RAN INSIDE `record`, AND `record` IS THE RELAY. A desktop
+    rescue focuses the game, captures the screen and reads it, and on this
+    host a capture can take 12 s to fail (systemstatusd). Every `autoclose_
+    desktop` therefore stopped events reaching `events.jsonl` -- and so boards
+    reaching the decider -- for as long as the rescue took: median 1.5 s,
+    p90 11.8 s, 143 s over game G65 (civvis-20261004T160213Z, 39 asks), while
+    the rescue itself mostly reported "popup capture unavailable" or "no safe
+    visible dialogue (map)" because the Lua ladder had already closed the
+    screen. Turns with a rescue ran 2.2-3.7 s (median) over their neighbours.
+
+    One worker keeps rescues serial, as they always were, and keeps the
+    capture budget single-threaded. A screen with a rescue already queued or
+    running is not queued again: the AutoClose shim re-asks every few
+    attempts while its screen is still up. `drain` lets a caller that is
+    about to drive the desktop itself (stall recovery, quitting the game)
+    wait for the worker first.
+    """
+
+    def __init__(self) -> None:
+        self._pool = ThreadPoolExecutor(max_workers=1,
+                                        thread_name_prefix="desktop-rescue")
+        self._lock = threading.Lock()
+        self._pending: set = set()
+
+    def submit(self, screen, rescue) -> bool:
+        """Queue ``rescue()`` for ``screen``; False when one is already pending."""
+        with self._lock:
+            if screen in self._pending:
+                return False
+            self._pending.add(screen)
+
+        def run() -> None:
+            try:
+                rescue()
+            except Exception as error:  # noqa: BLE001 - a rescue must not kill the worker
+                print(f"[desktop-rescue] {screen}: {error}", file=sys.stderr, flush=True)
+            finally:
+                with self._lock:
+                    self._pending.discard(screen)
+
+        self._pool.submit(run)
+        return True
+
+    def drain(self, timeout_s: float) -> bool:
+        """Wait until every queued rescue has run; False if ``timeout_s`` ran out."""
+        try:
+            self._pool.submit(lambda: None).result(timeout=timeout_s)
+        except Exception:  # noqa: BLE001 - TimeoutError, or a pool already shut down
+            return False
+        return True
+
+    def close(self, timeout_s: float) -> None:
+        """Let a running rescue finish (bounded) and accept no more."""
+        self.drain(timeout_s)
+        self._pool.shutdown(wait=False)
 # ★★★★★ THE LADDER'S OBJECTIVE, AND THE ONE PLACE IT IS STATED. Three
 # launchers forward `--victory` down one chain and each of them used to declare
 # its own default; `civ6_civvis_climb.py` and `civ6_brain.py` now import this
@@ -2665,33 +2727,40 @@ def _main_menu_visible(path: Path) -> bool:
     )
 
 
-#: Lines only Civ VI's legal splash carries -- the copyright page that follows
-#: the logos, which the launcher's log-backed "main menu reached" can fire over.
-LEGAL_SPLASH_MARKERS = ("take-two interactive", "rad game tools", "audiokinetic")
+#: The main menu's own rows. The enlarged menu crop reads them on every real
+#: menu capture, with or without the promo banner beside them.
+MAIN_MENU_LABELS = ("single player", "multiplayer", "game options",
+                    "additional content", "tutorial", "benchmark",
+                    "world builder", "exit to desktop")
 
 
-def _legal_splash_visible(path: Path, bounds: tuple[int, int, int, int]) -> bool:
-    """Whether a screenshot shows the copyright splash instead of the menu.
+def _intro_screen_visible(path: Path, bounds: tuple[int, int, int, int]) -> bool:
+    """Whether a screenshot shows text but none of the main menu's own rows.
 
-    ★★ THE FIRST MENU READ OF ALMOST EVERY GAME WAS THE SPLASH. Its seven lines
-    of legal text and the middleware logos read as nine menu rows, so the
-    row fallback clicked "Single Player" on the copyright page, opened nothing,
-    and the submenu poll spent its whole twenty-second budget before attempt
-    two found the real menu: `attempt 1: menu read at 0.450 (pitch 0.051, 9
-    rows)` then `no submenu (0 rows)` in 10 of the 14 games of 2026-10-04,
-    ~30 s each (G64/G65 `menu-attempt1.png` are the splash). The words are
-    read from the enlarged menu crop -- inside the game window by construction,
-    so a terminal quoting them elsewhere on the desktop cannot stall a real
-    menu -- and the label search that just missed "Single Player" has already
-    paid for that crop: `_menu_crop_ocr` is cached per capture. The full-screen
-    pass does not read these small lines at all; the crop reads "Take-Two
-    Interactive" on both captures above and on neither real menu.
+    ★★ THE FIRST MENU READ OF ALMOST EVERY GAME WAS AN INTRO SCREEN. The
+    launcher's log-backed "main menu reached" fires while Civ VI is still on
+    its logos or its copyright splash. With the Single Player label unreadable
+    the row fallback took their lines for menu rows -- the splash's legal
+    text as nine (`menu read at 0.450 (pitch 0.051, 9 rows)`, 10 of the 14
+    game starts of 2026-10-04, G64/G65), the Firaxis Games logo's swirl as
+    six (`menu read at 0.406 (pitch 0.104, 6 rows)`, G67) -- clicked "Single
+    Player" on it, opened nothing, and spent the submenu poll's twenty
+    seconds before attempt two found the real menu.
+
+    The enlarged menu crop -- inside the game window by construction, so a
+    terminal elsewhere on the desktop cannot stall a real menu, and already
+    paid for by the label search that just missed (`_menu_crop_ocr` is cached
+    per capture) -- reads "FIRAXIS | GAMES" on the logo and the legal text on
+    the splash, and at least one menu row on every real menu. So text with
+    no menu row in it is an intro screen to wait out. A crop that read
+    nothing at all is unreadable, not an intro, and keeps the row fallback a
+    host without vision depends on.
     """
-    return any(
-        marker in str(observation.get("text", "")).lower()
-        for observation in _menu_crop_ocr(path, bounds)
-        for marker in LEGAL_SPLASH_MARKERS
-    )
+    texts = [str(observation.get("text", "")).lower()
+             for observation in _menu_crop_ocr(path, bounds)]
+    if not texts:
+        return False
+    return not any(label in text for text in texts for label in MAIN_MENU_LABELS)
 
 
 def _menu_ocr_observations(path: Path) -> list[dict]:
@@ -3108,9 +3177,9 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             if point is None and dismiss_connection_issue(menushot, bounds):
                 time.sleep(.5)
                 return None  # The polling reader takes a fresh menu frame.
-            # The copyright splash's text lines read as menu rows; wait it
-            # out on the poll rather than click its text (`_legal_splash_visible`).
-            if point is None and _legal_splash_visible(menushot, bounds):
+            # An intro screen's lines read as menu rows; wait it out on the
+            # poll rather than click it (`_intro_screen_visible`).
+            if point is None and _intro_screen_visible(menushot, bounds):
                 return None
             rows = vision.menu_rows(menushot, bounds) if vision.available() else []
             return (point, rows) if point is not None or len(rows) >= 4 else None
@@ -4057,6 +4126,20 @@ def seat_matches_requested(
     )
 
 
+#: How long a game we did NOT win keeps its final screen. The full
+#: `--end-game-seconds` is for the win clip, and the clip keeper deletes a
+#: loss's recording, so a loss's hold only serves someone watching live: a
+#: short look at the result, not ten seconds the next game waits for.
+LOSS_SCREEN_HOLD_S = 3.0
+
+
+def end_game_hold_seconds(outcome: dict, requested: float) -> float:
+    """The final-screen hold: all of ``requested`` for our win, a short look otherwise."""
+    if isinstance(outcome, dict) and outcome.get("won") is True:
+        return requested
+    return min(requested, LOSS_SCREEN_HOLD_S)
+
+
 def summary_reason(state: dict, reason: str) -> str:
     """How the run ended: a refusal outranks the loop's own reason.
 
@@ -4488,6 +4571,126 @@ def _play(args: argparse.Namespace) -> int:
 
     atexit.register(_partial_summary_if_stopped)
 
+    desktop_rescues = DesktopRescueQueue()
+
+    def desktop_rescue(kind: str, event: dict, turn: int) -> None:
+        """One desktop rescue, on `desktop_rescues`' worker (see that class)."""
+        # These shim requests can outlive their dialogue. On the live
+        # 20260909T150620Z run, t24 raised Civ VI over Chrome only to find
+        # an ordinary card. Defer optional requests before capture/budget
+        # work while the shared desktop is in use. The independent,
+        # confirmed-stall recovery below can still recover a blocked game.
+        if shared_desktop_in_use():
+            print(f"[{kind}] shared desktop in use; deferring optional "
+                  f"recovery for {event.get('screen')}")
+            return
+        # Every desktop request is pixel-classified before any click. A
+        # DiplomacyActionView context can remain technically visible while
+        # the ordinary map is in front; treating its counter alone as proof
+        # caused a live t68 fallback to sweep clicks across an uncovered map.
+        #
+        # `autoclose_stuck` means twenty close attempts failed. Photograph the
+        # exact variant before clicking: dialogue geometry has changed several
+        # times, and without the frame a miss cannot be repaired honestly.
+        #
+        # A leader conversation needs a dialogue option CHOSEN; everything
+        # else on this list just needs dismissing. Escape was tried for the
+        # conversation case and does nothing at all on it — verified by hand
+        # against a live stuck screen — so the two get different treatment.
+        screen = event.get("screen")
+        reason = (
+            "requested desktop help after"
+            if kind == "autoclose_desktop" else "gave up after"
+        )
+        # Capture availability is cheap to check. The visual rescue saves
+        # and classifies the same game-window frame: a separate diagnostic
+        # capture used to double the timeout cost on a degraded host.
+        #
+        # The budget still spends one real attempt per screen per minute so
+        # a genuinely stuck leader screen is rescued (see the module for why
+        # that path may never be removed); the asks in between cost 0.02 s.
+        #
+        # ⚠ ONLY THE PIXEL PATH IS RATIONED. `WorldCongressBetweenTurns`
+        # is dismissed by clicking its shipped close control at a computed
+        # rectangle and the rest by Escape; neither reads a frame, so
+        # neither may be delayed by a capture the host cannot take. Holding
+        # a blocking Congress screen for a minute over an unrelated capture
+        # service would be a new outage, not a saving.
+        needs_pixels = screen in ("DiplomacyActionView", "LeaderView",
+                                  "DiplomacyDealView")
+        try:
+            capture_state = popup_clear.capture_pause_reason()
+        except Exception as error:  # noqa: BLE001 - see below
+            # ⚠ THIS RUNS INSIDE `record`, WHICH DRIVES THE WHOLE GAME. An
+            # exception here would end the run over a question that is only
+            # an optimisation. `capture_pause_reason` catches
+            # `CaptureUnavailable`, but `_native_binary()` beneath it can
+            # still raise `TimeoutExpired` if the Swift helper has to be
+            # recompiled. Unknown means "try it and find out", which is
+            # exactly the old behaviour.
+            capture_state = None
+            print(f"[{kind}] could not read capture availability ({error}); "
+                  "treating it as available", file=sys.stderr)
+        allowed, budget_note = DESKTOP_RESCUE_BUDGET.spend(screen, capture_state)
+        if needs_pixels and not allowed:
+            # The event is already in events.jsonl -- `record` writes it
+            # before this chain runs -- so returning here loses no history,
+            # only the capture.
+            print(f"[{kind}] {screen} {reason} {event.get('attempts')} "
+                  f"attempts; {budget_note}")
+            return
+        shot = run_dir / f"autoclose-stuck-turn-{turn}.png"
+        attempt_started = time.monotonic()
+        if allowed and not needs_pixels:
+            screenshot(shot)
+        print(f"[{kind}] {screen} {reason} "
+              f"{event.get('attempts')} attempts; "
+              + (f"diagnostic path {shot} ({budget_note})" if allowed
+                 else f"not photographed ({budget_note})"))
+        # ⚠⚠ ESCAPE WITH NOTHING TO CLOSE OPENS THE PAUSE MENU, AND THAT KILLS THE
+        # RUN. Photographed at the moment of a stall (run civvis-20260730T181327Z,
+        # turn 69, three healthy cities at loyalty 100): Civilization VI showing
+        # RETURN TO GAME / SAVE / OPTIONS / RETIRE / EXIT TO DESKTOP. A paused game
+        # advances no turns, so the harness then recorded its own keystroke as
+        # "stalled".
+        #
+        # The screens that had "given up" were TradeRouteChooser and
+        # TechCivicCompletedPopup, and the run had already reached turn 69 WITH them
+        # stuck — they were never blocking anything. The blind Escape was more
+        # dangerous than the screen it was aimed at.
+        #
+        # So the key is pressed only for screens known to hold the game. Everything
+        # else is reported and left alone, which is the honest response to "the shim
+        # gave up on a screen that is not stopping us".
+        BLOCKING = ("DiplomacyActionView", "LeaderView", "DiplomacyDealView",
+                    "WorldCongressBetweenTurns", "GreatWorkShowcase",
+                    "ChooseArtifact")
+        if screen in ("DiplomacyActionView", "LeaderView", "DiplomacyDealView"):
+            ok, how = dismiss_visually_confirmed_popup(diagnostic_path=shot)
+            # ★ THE PREFLIGHT IS A PREDICTION; THIS IS THE ANSWER.
+            # `capture_pause_reason()` says "systemstatusd is spinning"
+            # whenever that daemon is busy, and measured on this host the
+            # spin can be true while captures return in 0.07 s. Rationing a
+            # rescue that costs 70 ms saves nothing and delays the only
+            # thing that can dismiss a stuck leader screen, so an attempt
+            # that came back cheap -- or one whose click landed -- clears
+            # the schedule.
+            DESKTOP_RESCUE_BUDGET.record_attempt(
+                screen, time.monotonic() - attempt_started, dismissed=ok)
+        elif screen == "WorldCongressBetweenTurns":
+            ok = dismiss_world_congress_between_turns()
+            how = "World Congress close control"
+        elif screen in BLOCKING:
+            ok = press_escape()
+            how = "escape"
+        else:
+            ok = True
+            how = "left alone (not a blocking screen)"
+        safe_skip = not ok and how.startswith("no safe visible dialogue")
+        result = "sent" if ok else "skipped safely" if safe_skip else "FAILED"
+        print(f"[{kind}] {how} {result} for {screen}",
+              file=sys.stderr if not ok and not safe_skip else sys.stdout)
+
     def record(event: dict) -> None:
         # ★ RECEIPT TIME — the run's only wall-clock. `Automation.log` carries no
         # clock, so events.jsonl could say an opening board waited 20 polls but
@@ -4590,121 +4793,15 @@ def _play(args: argparse.Namespace) -> int:
             print(f"[turn {event.get('turn')}] blocked on {event.get('blocker')} "
                   f"({event.get('attempts')} attempts)")
         elif kind in ("autoclose_desktop", "autoclose_stuck"):
-            # These shim requests can outlive their dialogue. On the live
-            # 20260909T150620Z run, t24 raised Civ VI over Chrome only to find
-            # an ordinary card. Defer optional requests before capture/budget
-            # work while the shared desktop is in use. The independent,
-            # confirmed-stall recovery below can still recover a blocked game.
-            if shared_desktop_in_use():
-                print(f"[{kind}] shared desktop in use; deferring optional "
-                      f"recovery for {event.get('screen')}")
-                return
-            # Every desktop request is pixel-classified before any click. A
-            # DiplomacyActionView context can remain technically visible while
-            # the ordinary map is in front; treating its counter alone as proof
-            # caused a live t68 fallback to sweep clicks across an uncovered map.
-            #
-            # `autoclose_stuck` means twenty close attempts failed. Photograph the
-            # exact variant before clicking: dialogue geometry has changed several
-            # times, and without the frame a miss cannot be repaired honestly.
-            #
-            # A leader conversation needs a dialogue option CHOSEN; everything
-            # else on this list just needs dismissing. Escape was tried for the
-            # conversation case and does nothing at all on it — verified by hand
-            # against a live stuck screen — so the two get different treatment.
+            # Queued, never run here: this function is the event relay, and a
+            # rescue can spend 12 s on a capture the host cannot take
+            # (`DesktopRescueQueue`).
             screen = event.get("screen")
-            reason = (
-                "requested desktop help after"
-                if kind == "autoclose_desktop" else "gave up after"
-            )
-            # Capture availability is cheap to check. The visual rescue saves
-            # and classifies the same game-window frame: a separate diagnostic
-            # capture used to double the timeout cost on a degraded host.
-            #
-            # The budget still spends one real attempt per screen per minute so
-            # a genuinely stuck leader screen is rescued (see the module for why
-            # that path may never be removed); the asks in between cost 0.02 s.
-            #
-            # ⚠ ONLY THE PIXEL PATH IS RATIONED. `WorldCongressBetweenTurns`
-            # is dismissed by clicking its shipped close control at a computed
-            # rectangle and the rest by Escape; neither reads a frame, so
-            # neither may be delayed by a capture the host cannot take. Holding
-            # a blocking Congress screen for a minute over an unrelated capture
-            # service would be a new outage, not a saving.
-            needs_pixels = screen in ("DiplomacyActionView", "LeaderView",
-                                      "DiplomacyDealView")
-            try:
-                capture_state = popup_clear.capture_pause_reason()
-            except Exception as error:  # noqa: BLE001 - see below
-                # ⚠ THIS RUNS INSIDE `record`, WHICH DRIVES THE WHOLE GAME. An
-                # exception here would end the run over a question that is only
-                # an optimisation. `capture_pause_reason` catches
-                # `CaptureUnavailable`, but `_native_binary()` beneath it can
-                # still raise `TimeoutExpired` if the Swift helper has to be
-                # recompiled. Unknown means "try it and find out", which is
-                # exactly the old behaviour.
-                capture_state = None
-                print(f"[{kind}] could not read capture availability ({error}); "
-                      "treating it as available", file=sys.stderr)
-            allowed, budget_note = DESKTOP_RESCUE_BUDGET.spend(screen, capture_state)
-            if needs_pixels and not allowed:
-                # The event is already in events.jsonl -- `record` writes it
-                # before this chain runs -- so returning here loses no history,
-                # only the capture.
-                print(f"[{kind}] {screen} {reason} {event.get('attempts')} "
-                      f"attempts; {budget_note}")
-                return
-            shot = run_dir / f"autoclose-stuck-turn-{state['turn']}.png"
-            attempt_started = time.monotonic()
-            if allowed and not needs_pixels:
-                screenshot(shot)
-            print(f"[{kind}] {screen} {reason} "
-                  f"{event.get('attempts')} attempts; "
-                  + (f"diagnostic path {shot} ({budget_note})" if allowed
-                     else f"not photographed ({budget_note})"))
-            # ⚠⚠ ESCAPE WITH NOTHING TO CLOSE OPENS THE PAUSE MENU, AND THAT KILLS THE
-            # RUN. Photographed at the moment of a stall (run civvis-20260730T181327Z,
-            # turn 69, three healthy cities at loyalty 100): Civilization VI showing
-            # RETURN TO GAME / SAVE / OPTIONS / RETIRE / EXIT TO DESKTOP. A paused game
-            # advances no turns, so the harness then recorded its own keystroke as
-            # "stalled".
-            #
-            # The screens that had "given up" were TradeRouteChooser and
-            # TechCivicCompletedPopup, and the run had already reached turn 69 WITH them
-            # stuck — they were never blocking anything. The blind Escape was more
-            # dangerous than the screen it was aimed at.
-            #
-            # So the key is pressed only for screens known to hold the game. Everything
-            # else is reported and left alone, which is the honest response to "the shim
-            # gave up on a screen that is not stopping us".
-            BLOCKING = ("DiplomacyActionView", "LeaderView", "DiplomacyDealView",
-                        "WorldCongressBetweenTurns", "GreatWorkShowcase",
-                        "ChooseArtifact")
-            if screen in ("DiplomacyActionView", "LeaderView", "DiplomacyDealView"):
-                ok, how = dismiss_visually_confirmed_popup(diagnostic_path=shot)
-                # ★ THE PREFLIGHT IS A PREDICTION; THIS IS THE ANSWER.
-                # `capture_pause_reason()` says "systemstatusd is spinning"
-                # whenever that daemon is busy, and measured on this host the
-                # spin can be true while captures return in 0.07 s. Rationing a
-                # rescue that costs 70 ms saves nothing and delays the only
-                # thing that can dismiss a stuck leader screen, so an attempt
-                # that came back cheap -- or one whose click landed -- clears
-                # the schedule.
-                DESKTOP_RESCUE_BUDGET.record_attempt(
-                    screen, time.monotonic() - attempt_started, dismissed=ok)
-            elif screen == "WorldCongressBetweenTurns":
-                ok = dismiss_world_congress_between_turns()
-                how = "World Congress close control"
-            elif screen in BLOCKING:
-                ok = press_escape()
-                how = "escape"
-            else:
-                ok = True
-                how = "left alone (not a blocking screen)"
-            safe_skip = not ok and how.startswith("no safe visible dialogue")
-            result = "sent" if ok else "skipped safely" if safe_skip else "FAILED"
-            print(f"[{kind}] {how} {result} for {screen}",
-                  file=sys.stderr if not ok and not safe_skip else sys.stdout)
+            turn = state["turn"]
+            if not desktop_rescues.submit(
+                    screen, lambda: desktop_rescue(kind, event, turn)):
+                print(f"[{kind}] {screen}: a desktop rescue is already queued; "
+                      "not queueing another")
         elif kind == "retired":
             request = state.get("operator_retire_request")
             if request is None:
@@ -4989,6 +5086,8 @@ def _play(args: argparse.Namespace) -> int:
         print(f"stalled — photographed to {shot}; rescue attempt {consecutive} "
               f"of {args.stall_rescues} on this screen ({rescues} this run)",
               flush=True)
+        # A queued desktop rescue may be driving the same screen right now.
+        desktop_rescues.drain(30.0)
         dismiss_leader_dialogue()
         reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                               each_poll=keep_foreground, poll_s=poll_s,
@@ -5030,9 +5129,9 @@ def _play(args: argparse.Namespace) -> int:
     # refusal has nothing on screen worth looking at, and holding there would add
     # ten seconds to every failure in a batch.
     if state["outcome"] and args.end_game_seconds > 0:
-        print(f"holding the final screen for {args.end_game_seconds:.0f}s",
-              flush=True)
-        time.sleep(args.end_game_seconds)
+        hold = end_game_hold_seconds(state["outcome"], args.end_game_seconds)
+        print(f"holding the final screen for {hold:.0f}s", flush=True)
+        time.sleep(hold)
     elif state.get("operator_retire_event"):
         # ``UI.RequestAction`` crosses from the control mod into the game core
         # asynchronously.  Leave it a small frame window to commit the native
@@ -5040,6 +5139,8 @@ def _play(args: argparse.Namespace) -> int:
         print(f"holding the native retire action for {OPERATOR_RETIRE_SETTLE_S:.1f}s",
               flush=True)
         time.sleep(OPERATOR_RETIRE_SETTLE_S)
+    # No rescue may click into a game that is being quit (`DesktopRescueQueue`).
+    desktop_rescues.close(30.0)
     game_stopped = launcher.stop()
     stop_brain()
     if not game_stopped:
