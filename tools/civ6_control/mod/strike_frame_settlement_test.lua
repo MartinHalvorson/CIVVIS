@@ -21,6 +21,11 @@ local env = setmetatable({ cfg = cfg, awaiting = { turn = turn, done = true },
     unitTypeName = function() return "UNIT_ARCHER" end,
     refusalReason = function() return "can_start=false,no_reasons [p4r]" end,
     UnitManager = { GetActivityType = function() return activity end },
+    eachCity = function(_, visit)
+        visit({ GetBuildQueue = function()
+            return { GetCurrentProductionTypeHash = function() return 0 end }
+        end })
+    end,
 }, { __index = _G })
 env.CivvisLedger = {
     pending = {}, open = {}, damage = {},
@@ -138,6 +143,36 @@ check("frames disabled exports nothing", exports, 0)
 cfg.ReplanFrames = 2
 reset(); frames.noteStrike(); settle()
 check("a legacy strike trigger without a tracked request is unchanged", exports, 1)
+
+reset(); issue()
+check("direct production export holds accepted strike", frames.begin({}, 0, turn, "production"), false)
+check("blocked direct frame does not export", exports, 0)
+check("blocked direct frame leaves handshake answered", env.awaiting.done, true)
+finish()
+check("resolved direct production export opens", frames.begin({}, 0, turn, "production"), true)
+check("resolved direct frame exports once", exports, 1)
+
+reset(); cfg.CivvisDecides = true; issue(); frames.current = frames.max()
+check("production repair owns the wait even after combat-frame cap", frames.repairProduction({}, 0, turn), true)
+check("pending repair does not spend a repair lease", frames.productionRepairs, 0)
+check("pending repair does not bypass combat completion", exports, 0)
+finish(); frames.repairProduction({}, 0, turn)
+check("completed repair spends one lease", frames.productionRepairs, 1)
+check("completed repair opens past normal combat cap", frames.current, 3)
+check("completed repair exports once", exports, 1)
+frames.repairProduction({}, 0, turn)
+check("second permitted repair spends second lease", frames.productionRepairs, 2)
+check("third repair remains capped", frames.repairProduction({}, 0, turn), false)
+
+reset(); cfg.ReplanFrames = 0; issue(); frames.repairProduction({}, 0, turn)
+check("production-only frame mode also tracks accepted shots", exports, 0)
+frames.repairProduction({}, 0, turn)
+check("production-only wait does not consume repair attempts", frames.productionRepairs, 0)
+frames.repairProduction({}, 0, turn)
+check("production-only missing callback remains bounded", exports, 1)
+check("production-only timeout is explicitly unknown", count("strike_frame_timeout"), 1)
+check("production-only timeout consumes only successful export lease", frames.productionRepairs, 1)
+cfg.ReplanFrames = 2; cfg.CivvisDecides = nil
 
 assert(failures == 0, tostring(failures) .. " failures in " .. tostring(checks) .. " checks")
 print("native strike frame settlement: " .. tostring(checks) .. " checks passed")

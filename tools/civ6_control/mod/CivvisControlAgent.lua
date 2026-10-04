@@ -18292,15 +18292,17 @@ CivvisFrames.max = function()
 end;
 
 -- An accepted ranged request can outlive the move queue. Four closed native
--- attempts on 2026-10-04
--- opened replan snapshots before 221 unambiguous own shots completed;
+-- attempts on 2026-10-04 opened replan snapshots before 221 unambiguous own
+-- shots completed;
 -- 168 later requests by those actors were refused before the original combat
 -- ended. Some snapshots said awake with an attack left: neither activity nor
 -- RequestOperation's return proves a settled board. The shipped
 -- WorldView/SelectedUnit.lua:295 reads CombatVisEnd's attacker after combat.
 -- Track only requested ranged shots, not every animation or foreign combat.
 CivvisFrames.startStrike = function(pid, subject, turn, x, y)
-	if CivvisFrames.max() <= 0 then return nil; end
+	-- Production repair can request a frame even with both normal caps at
+	-- zero. Its two leases are separate, but its board must be settled too.
+	if CivvisFrames.max() <= 0 and cfg.CivvisDecides ~= true then return nil; end
 	CivvisFrames.pendingStrikes = CivvisFrames.pendingStrikes or {};
 	CivvisFrames.strikeSequence = (CivvisFrames.strikeSequence or 0) + 1;
 	local ticket = CivvisFrames.strikeSequence;
@@ -18391,6 +18393,9 @@ end;
 -- Open the next frame: export the board again, stamped, and re-arm the
 -- handshake so `settleTurn` waits for this frame's answer.
 CivvisFrames.begin = function(player, pid, turn, requestedReason)
+	-- Every export boundary, including production repair after the normal
+	-- combat cap, uses this gate. A held frame changes no handshake or budget.
+	if not CivvisFrames.strikesSettled(turn) then return false; end
 	local reason = requestedReason or CivvisFrames.why() or "strike";
 	CivvisFrames.current = CivvisFrames.current + 1;
 	CivvisFrames.reason = reason;
@@ -18413,6 +18418,7 @@ CivvisFrames.begin = function(player, pid, turn, requestedReason)
 		strikes = strikes, revealed = revealed, movers = CivvisFrames.movers,
 	});
 	pcall(function() exportState(player, pid, turn, CivvisFrames.current); end);
+	return true;
 end;
 
 -- A city can finish or appear after the opening board, including while a unit
@@ -18427,8 +18433,11 @@ CivvisFrames.repairProduction = function(player, pid, turn)
 		if current == 0 then empty = empty + 1; end
 	end);
 	if empty == 0 then return false; end
-	CivvisFrames.productionRepairs = (CivvisFrames.productionRepairs or 0) + 1;
-	CivvisFrames.begin(player, pid, turn, "production");
+	if CivvisFrames.begin(player, pid, turn, "production") then
+		CivvisFrames.productionRepairs = (CivvisFrames.productionRepairs or 0) + 1;
+	end
+	-- The caller also holds the turn when a repair is waiting for combat;
+	-- only an opened frame spends a lease. The same grace bounds this wait.
 	return true;
 end;
 
@@ -19456,7 +19465,6 @@ local function settleTurn(player, pid, turn, playFallback)
 		if not CivvisFrames.settled then
 			CivvisFrames.observe(player, pid, turn);
 			if CivvisFrames.wanted() then
-				if not CivvisFrames.strikesSettled(turn) then return false; end
 				CivvisFrames.begin(player, pid, turn);
 				return false;
 			end
