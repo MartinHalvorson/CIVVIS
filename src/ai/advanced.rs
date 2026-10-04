@@ -40818,9 +40818,14 @@ impl AdvancedAi {
         // Archers reached Mari's range-2 posts and were walked back to 3-4
         // tiles every turn of Reduce (`move_to_evacuation_tile`); 4 shots in
         // 9 turns, walls 100 -> 88. Only the wounded come out.
+        // A siege still in Stage too: its Stage step holds a gun back on the
+        // gun's own risk limit. Frame-0 replay of game 46 turn 140, after the
+        // rotation exemption freed the Babylon force: two 100-hp catapults
+        // were still held by this evacuation at 7-8 tiles and never reached
+        // the siege step.
         let siege_post_holds = spec.class == "military"
             && unit.hp >= battle_planner::ROTATE_HP
-            && self.active_siege_member(g, pid, uid);
+            && (self.active_siege_member(g, pid, uid) || self.staging_siege_member(g, pid, uid));
         if !unwanted_settler_adjacent && !holding_threatened_city && !siege_post_holds {
             if let Some(acted) = self.base.healing_step(g, pid, uid) {
                 return acted;
