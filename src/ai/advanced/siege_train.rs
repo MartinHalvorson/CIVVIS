@@ -610,6 +610,34 @@ fn hostiles_near(g: &Game, pid: usize, center: Pos, radius: i32) -> Vec<Pos> {
     out
 }
 
+/// Tiles a hostile city or Encampment other than the target can strike: a
+/// gun posted there is shot by a city the siege is not reducing. Live King
+/// civvis-20261004T070716Z (game 49): Nagoya's catapults were posted within
+/// reach of a levied city-state's walled district; its strikes and a
+/// crossbow took one to 44 and then dead and another to 34, and Nagoya's
+/// Invest landed one blow in six turns.
+fn third_strike_sources(g: &Game, pid: usize, target: u32) -> Vec<Pos> {
+    let mut out = Vec::new();
+    for city in g.cities.values() {
+        if city.id == target || city.owner == pid || !g.is_at_war(pid, city.owner) {
+            continue;
+        }
+        if city.wall_hp > 0 {
+            out.push(city.pos);
+        }
+        if city.encampment_hp > 0 && city.encampment_wall_hp > 0 && !city.encampment_pillaged {
+            if let Some(at) = g
+                .wdisk(city.pos, 3)
+                .into_iter()
+                .find(|pos| g.encampment_at(*pos) == Some(city.id))
+            {
+                out.push(at);
+            }
+        }
+    }
+    out
+}
+
 /// The melee-capable unit that walks in: adjacent to the city with the most
 /// movement, else able to reach a free ring tile this turn.
 fn designate_taker(g: &Game, city: &CityView, force: &[u32]) -> Option<u32> {
@@ -1052,12 +1080,16 @@ fn siege_posts(
         )
     });
     let corridor = taker_corridor(g, city, taker, &ring_taken, &open_land);
+    let third = third_strike_sources(g, pid, city.id);
+    let third_exposed =
+        |pos: Pos| third.iter().any(|source| g.wdist(*source, pos) <= CITY_STRIKE_RANGE);
     let mut fire_taken: BTreeSet<Pos> = BTreeSet::new();
     for uid in guns {
         let here = g.units[&uid].pos;
         let range = g.unit_attack_range(uid).max(1);
         if g.wdist(here, city.pos) <= range
             && Some(here) != corridor
+            && !third_exposed(here)
             && !fire_taken.contains(&here)
             && g.ranged_order_is_legal(pid, uid, city.pos, frame.as_ref(), &viewers)
         {
@@ -1090,7 +1122,9 @@ fn siege_posts(
                     let far_side = g.wdist(here, *pos) > g.wdist(here, city.pos);
                     let behind = ring_taken.iter().any(|held| g.wdist(*held, *pos) == 1);
                     let exposure = hostiles.iter().filter(|h| g.wdist(**h, *pos) <= 2).count();
-                    (far_side, !behind, exposure, g.wdist(here, *pos), *pos)
+                    // Out of every other hostile city's strike first; see
+                    // `third_strike_sources`.
+                    (third_exposed(*pos), far_side, !behind, exposure, g.wdist(here, *pos), *pos)
                 })
         });
         if let Some(pos) = best {
