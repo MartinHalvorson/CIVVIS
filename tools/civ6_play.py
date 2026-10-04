@@ -1542,7 +1542,8 @@ def _recognize_window(path: Path, bounds: tuple[int, int, int, int]) -> list[dic
             observations = macos_ocr.recognize(crop)
         finally:
             crop.unlink(missing_ok=True)
-    except (OSError, ValueError):
+    except (ImportError, OSError, ValueError):
+        # No Pillow (CI), or an unreadable image: read the whole capture.
         return macos_ocr.recognize(path)
     cw, ch = x1 - x0, y1 - y0
     mapped = []
