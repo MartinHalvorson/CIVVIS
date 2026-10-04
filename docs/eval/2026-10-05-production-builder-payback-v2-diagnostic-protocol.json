@@ -1,0 +1,25 @@
+{
+  "frozen_at": "2026-10-04T23:06:11.326085+00:00",
+  "runtime_source": "68782f32268c7584582b3a7ba9e5f88f91e3c0ea",
+  "phase": "coverage diagnostic only",
+  "fresh_strength_samples": 0,
+  "actual_Firaxis_verification": false,
+  "consumed_seeds": {
+    "emperor": [
+      61008600,
+      61008601,
+      61008602,
+      61008603
+    ],
+    "deity": [
+      61008700,
+      61008701,
+      61008702,
+      61008703
+    ]
+  },
+  "arms": "same normal optimized CI binary; candidate enables the new shared Builder reservation; control does not",
+  "continuation_rule": "only consider a new fresh screen if consumed paired diagnostics demonstrate an accepted worked-production Builder reservation and additional completed useful work; no strength claim from these maps",
+  "prior_confirmation": "unplayed; no reuse to tune this prototype",
+  "output_isolation": "new consumed executions go to diagnostic-v2; original pilot remains durably archived"
+}
