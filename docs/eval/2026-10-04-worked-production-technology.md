@@ -78,6 +78,14 @@ not establish competitiveness with the AI. **Withhold the extension and restore
 the runtime.** This decision is about the requested early ramp, not a claim that
 every later effect is negative.
 
+## Final tree verification
+
+Both implementation files were restored to the task base. The final locked
+CI-profile suite passes 4,539 tests, with 49 library tests and four documentation
+examples ignored. Final changed-line formatting and quality pass. The runtime,
+rules and gene ledger diff against current main is empty; main was already
+included at `f82f13af2`. Artifact checksums and the standalone summary reproduce.
+
 ## Reproduction and live replay
 
 Build each source independently, then compile the probe:
