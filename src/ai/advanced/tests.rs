@@ -51310,3 +51310,60 @@ fn an_unseen_major_is_an_unconverted_holdout() {
     ai.enable_conversion_majority_alarm_2();
     assert_eq!(ai.conversion_majority_pressure(&game, 1), 0);
 }
+
+/// See `advanced/faith_veto.rs`: a faithless Domination seat enters the
+/// Prophet race once a rival faith holds two of four majors (the
+/// early-warning bar) and a slot is open, and only under the gene.
+#[test]
+fn a_rival_faith_at_the_bar_opens_the_prophet_race_for_a_faithless_conqueror() {
+    let mut game = Game::new_full(4, 34, 20, 76_108, 120, 0, false);
+    for pid in 0..3 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        let at = game.units[&settler].pos;
+        game.remove_unit(settler);
+        game.found_city_for(pid, at, None);
+    }
+    for tech in ["animal_husbandry", "mining"] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+    let capital = game.player_city_ids(0)[0];
+    let anchor = game.cities[&capital].pos;
+    found_nearby_test_city(&mut game, 0, anchor);
+    let faith = "Rival Faith".to_string();
+    game.players[1].religion = Some(faith.clone());
+    for pid in [1, 2] {
+        for city in game.player_city_ids(pid) {
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert(faith.clone(), 5_000.0);
+        }
+    }
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert!(!ai.faith_veto_due(&game, 0), "off");
+    ai.enable_found_against_a_rival_faith();
+    assert!(ai.faith_veto_due(&game, 0));
+    assert!(ai.prophet_race_enterable_for(&game, 0, Some(VictoryTarget::Domination)));
+    ai.advanced_research(&mut game, 0, &plan);
+    assert_eq!(game.players[0].research.as_deref(), Some("astrology"));
+    // No rival faith at the bar: no race.
+    let mut quiet = game.clone();
+    for city in quiet.player_city_ids(2) {
+        quiet.cities.get_mut(&city).unwrap().pressure.clear();
+    }
+    assert!(!ai.faith_veto_due(&quiet, 0));
+}
