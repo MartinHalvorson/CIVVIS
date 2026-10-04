@@ -2591,6 +2591,22 @@ pub const GENES: &[Gene] = &[
     // Version 1 measured -9.7 +/- 5.3 pp: only the capitals Domination
     // needs, no displaced building. See `siege_production::SUPPLY_STRENGTH_WINDOW`.
     Gene { tag: "breaker-supply-scales-2", field: "breaker_supply_scales_2", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales_2, disable: AdvancedAi::disable_breaker_supply_scales_2 },
+    // Live King 212049Z left unwalled Viseu in Invest, damage ready in 3.2
+    // turns, for an urgent counter sixteen tiles away. See
+    // `one_war::front_siege_to_finish`.
+    Gene { tag: "front-finishes-its-siege", field: "front_finishes_its_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_front_finishes_its_siege, disable: AdvancedAi::disable_front_finishes_its_siege },
+    // Live King 212049Z made peace with the Zulu beside unwalled
+    // Umgungundlovu, a seized foothold, to declare on Portugal at even power.
+    // See `one_war::one_war_foothold_at_hand`.
+    Gene { tag: "peace-waits-for-the-foothold", field: "peace_waits_for_the_foothold", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_the_foothold, disable: AdvancedAi::disable_peace_waits_for_the_foothold },
+    // Live King 212049Z: Guayaquil's Holy Site and its walls traded the queue
+    // five times in five turns. See
+    // `adopted_faith_sanctuary::sanctuary_queue_held`.
+    Gene { tag: "sanctuary-yields-a-held-queue", field: "sanctuary_yields_a_held_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_sanctuary_yields_a_held_queue, disable: AdvancedAi::disable_sanctuary_yields_a_held_queue },
+    // Live King 205431Z held the Prophet race open from turn 30 to 60 and
+    // opened two Campuses, no Holy Site, at the campus-first steps. See
+    // `BasicAi::prophet_race_takes_a_district_slot`.
+    Gene { tag: "prophet-race-takes-a-district-slot", field: "prophet_race_takes_a_district_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_takes_a_district_slot, disable: AdvancedAi::disable_prophet_race_takes_a_district_slot },
     // Live King 183907Z: our faithless cities were converted by passive
     // pressure alone; game 70 left two religion slots open. See
     // `advanced/faith_veto.rs`.

@@ -140,6 +140,49 @@ fn counterfaith_cannot_finish_another_founders_victory() {
     assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
 }
 
+/// See `sanctuary_queue_held`: under the gene, walls at the head and a
+/// district that already holds production keep their city.
+#[test]
+fn a_held_queue_keeps_its_city_under_the_gene() {
+    let walls = Item::Building {
+        building: crate::name!("walls"),
+    };
+    let reserved = |held: Item, production: f64, gene: bool| {
+        let (mut g, mut ai, plan, home) = fixture();
+        if gene {
+            ai.enable_sanctuary_yields_a_held_queue();
+        }
+        let city = g.cities.get_mut(&home).unwrap();
+        city.queue = vec![held];
+        city.production = production;
+        ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+        g.cities[&home].queue.first().cloned()
+    };
+    let holy = |item: &Option<Item>| matches!(item, Some(Item::District { district, .. }) if district == "holy_site");
+    assert!(
+        holy(&reserved(walls.clone(), 0.0, false)),
+        "off, the sanctuary takes the walls' queue"
+    );
+    assert_eq!(
+        reserved(walls.clone(), 0.0, true),
+        Some(walls),
+        "the walls keep their queue"
+    );
+    let theater = Item::District {
+        district: crate::name!("theater_square"),
+        pos: (5, 5),
+    };
+    assert!(
+        holy(&reserved(theater.clone(), 0.0, true)),
+        "an unstarted district yields"
+    );
+    assert_eq!(
+        reserved(theater.clone(), 12.0, true),
+        Some(theater),
+        "a started one holds"
+    );
+}
+
 #[test]
 fn repeated_reservation_does_not_start_a_second_supplier() {
     let (mut g, ai, plan, home) = fixture();

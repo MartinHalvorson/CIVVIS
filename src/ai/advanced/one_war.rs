@@ -90,6 +90,10 @@ pub(crate) const ONE_WAR_CITY_BROKEN_FRACTION: f64 = 0.5;
 /// rival. The capture body may be a few tiles behind the guns.
 pub(crate) const ONE_WAR_FINISH_HP: i32 = 60;
 pub(crate) const ONE_WAR_FINISH_REACH: i32 = 4;
+/// How close a land taker stands to the unwalled objective for
+/// `one_war_foothold_at_hand`: the reach `capture_opportunity_city` seizes
+/// a foothold from.
+pub(crate) const ONE_WAR_FOOTHOLD_REACH: i32 = 3;
 /// A front we outgun this many times over is not traded away for a
 /// counter-campaign against a rival whose clock is not yet urgent.
 pub(crate) const ONE_WAR_CRUSHED_RATIO: f64 = 4.0;
@@ -407,9 +411,13 @@ impl AdvancedAi {
                     // score look urgent even after this rival lost its
                     // original capital. Follow the active war for that
                     // capital while retaining the projected warning.
+                    // See `front_siege_to_finish`.
+                    let finishing = current.is_some_and(|front| front != rival)
+                        && self.front_siege_to_finish(g);
                     if !(current == Some(rival)
                         && capital_handoff.is_some()
                         && self.one_war_projected_diplomacy_below_bar(g, rival))
+                        && !finishing
                     {
                         return Some(rival);
                     }
@@ -717,6 +725,45 @@ impl AdvancedAi {
         })
     }
 
+    /// `peace-waits-for-the-foothold`: the plan's objective is an unwalled
+    /// city of `other` with one of our land takers in reach, on the terms
+    /// that let the campaign seize it as an open foothold
+    /// (`capture_opportunity_city`). An untouched city is not at
+    /// [`ONE_WAR_FINISH_HP`], so `one_war_capture_at_hand` passes it by. The
+    /// capture ledger bounds the wait: an objective nobody takes is stood
+    /// down and the plan moves on. Live King civvis-20261004T212049Z (game
+    /// 80) seized the open foothold Umgungundlovu (population 2, no walls) at
+    /// turn 140, offered the Zulu peace at 141 at 312 power against 177 to
+    /// counter Portugal, and declared on Portugal the same turn at 312
+    /// against 311. Coimbra's 400 walls stood for the next 23 turns.
+    fn one_war_foothold_at_hand(&self, g: &Game, pid: usize, other: usize) -> bool {
+        if !self.peace_waits_for_the_foothold {
+            return false;
+        }
+        let Some(city) = self
+            .plan
+            .as_ref()
+            .and_then(|plan| plan.target_city)
+            .and_then(|cid| g.cities.get(&cid))
+            .filter(|city| city.owner == other && city.wall_hp <= 0)
+        else {
+            return false;
+        };
+        let fresh = city.hp >= super::CITY_MAX_HP;
+        let (least_hp, least_strength) = if fresh { (70, 25.0) } else { (60, 30.0) };
+        g.player_unit_ids(pid).into_iter().any(|uid| {
+            let unit = &g.units[&uid];
+            let spec = &g.rules.units[unit.kind];
+            spec.class == "military"
+                && !spec.has_ranged_attack()
+                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                && !g.is_embarked(unit)
+                && unit.hp >= least_hp
+                && g.unit_strength(unit, false) >= least_strength
+                && g.wdist(unit.pos, city.pos) <= ONE_WAR_FOOTHOLD_REACH
+        })
+    }
+
     /// A front we outgun [`ONE_WAR_CRUSHED_RATIO`] times over. Peace there
     /// hands a beaten rival the turns to rebuild: on King
     /// `civvis-20260929T020236Z` the seat offered Norway peace at 812
@@ -939,10 +986,20 @@ impl AdvancedAi {
     }
 
     /// Whether a counter-war on `rival`'s religious clock falls under
-    /// [`COUNTER_WAR_POWER_FLOOR`].
+    /// [`COUNTER_WAR_POWER_FLOOR`]. The clock is religious when the rival's
+    /// highest lane reads Religion, or when its founded faith already holds
+    /// our majority, whatever its highest lane reads: a score lead can stand
+    /// in front of the religion lane. Live King civvis-20261004T205431Z
+    /// (game 79) held four of seven cities under Scythia's Zoroastrianism at
+    /// turn 72, Scythia led on score, and the seat declared on Scythia at 73
+    /// at 344 power against 560 (0.61).
     pub(crate) fn counter_war_hopeless(&self, g: &Game, pid: usize, rival: usize) -> bool {
-        self.rival_victory_pressure(g, rival).strategy == GrandStrategy::Religion
-            && g.military_power(pid) < COUNTER_WAR_POWER_FLOOR * g.military_power(rival)
+        let religious = self.rival_victory_pressure(g, rival).strategy == GrandStrategy::Religion
+            || g.players[rival]
+                .religion
+                .as_deref()
+                .is_some_and(|faith| g.civ_follows_religion(pid, faith));
+        religious && g.military_power(pid) < COUNTER_WAR_POWER_FLOOR * g.military_power(rival)
     }
 
     /// Whether a siege on one of the front's cities is live: not Hold, read
@@ -968,6 +1025,41 @@ impl AdvancedAi {
                 && g.turn.saturating_sub(siege.assessed) <= 1
                 && (siege.stage != super::siege_train::SiegeStage::Stage
                     || g.turn.saturating_sub(siege.entered) <= window)
+        })
+    }
+
+    /// `front-finishes-its-siege`: an urgent counter-war already running
+    /// waits for the front's siege of an unwalled or breached city past
+    /// Stage, read this turn or the last, while that city has set a new low
+    /// of health within [`FRONT_SIEGE_LIVE_TURNS`]. The urgent clause in
+    /// `one_war_choose_front` moved the army at once. Live King
+    /// civvis-20261004T212049Z (game 80) had unwalled Viseu in Invest at turn
+    /// 81, damage ready in 3.2 turns, 338 strength against a bill of 66; at
+    /// 82 an urgent counter turned the front to the Zulu, already at war, and
+    /// to walled Kwahlomendlini sixteen tiles away. Viseu was never taken,
+    /// and neither was Kwahlomendlini.
+    pub(crate) fn front_siege_to_finish(&self, g: &Game) -> bool {
+        let Some(front) = self
+            .one_war_front()
+            .filter(|_| self.front_finishes_its_siege)
+        else {
+            return false;
+        };
+        let window = g.standard_duration(FRONT_SIEGE_LIVE_TURNS);
+        self.sieges.iter().any(|(cid, siege)| {
+            g.cities.get(cid).is_some_and(|city| {
+                city.owner == front
+                    && city.wall_hp <= 0
+                    && self
+                        .front_city_low
+                        .get(&city.pos)
+                        .is_some_and(|(_, set)| g.turn.saturating_sub(*set) <= window)
+            }) && matches!(
+                siege.stage,
+                super::siege_train::SiegeStage::Invest
+                    | super::siege_train::SiegeStage::Reduce
+                    | super::siege_train::SiegeStage::Take
+            ) && g.turn.saturating_sub(siege.assessed) <= 1
         })
     }
 
@@ -1135,6 +1227,7 @@ impl AdvancedAi {
                             || (!fresh_front && !self.one_war_front_crushed(g, pid, other)))
                 })
             && !self.one_war_capture_at_hand(g, pid, other)
+            && !self.one_war_foothold_at_hand(g, pid, other)
         {
             return Some(OneWarPeace::VictoryThreat);
         }

@@ -2406,6 +2406,20 @@ pub struct BasicAi {
     /// Set per turn from `AdvancedAi::take_turn_inner` by the gene
     /// `enter-the-prophet-race-2`, and only while `prophet_race_open_for` holds.
     pub(crate) enter_prophet_race: bool,
+    /// While `enter_prophet_race` holds and the empire has no Holy Site,
+    /// built or queued, the Campus or Theater Square a campus-first or
+    /// culture-defense step returns becomes this city's Holy Site
+    /// (`race_takes_the_district_slot`). The boost above lives in the
+    /// district loop, and those steps return before it: live King
+    /// 2026-10-04T205431Z held the race open from turn 30 to 60 with
+    /// Astrology in hand, opened Campuses at Maracaibo (t32) and Quito (t38),
+    /// and built its first Holy Site at t75, for a Great Person; T212049Z had
+    /// Astrology at t35, a Campus at t57 and a Theater Square at t62, and no
+    /// Holy Site.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene
+    /// `prophet-race-takes-a-district-slot`.
+    pub(crate) prophet_race_takes_a_district_slot: bool,
     /// Build a building that MAKES SCIENCE before one that does not.
     ///
     /// Buildings are picked cheapest-first, and that order is deliberate policy
@@ -5430,6 +5444,7 @@ impl BasicAi {
             pursue_religion: true,
             skip_prophet_race: false,
             enter_prophet_race: false,
+            prophet_race_takes_a_district_slot: false,
             science_building_first: false,
             housing_reserve: false,
             campus_before_harbor: false,
@@ -5917,6 +5932,7 @@ impl BasicAi {
             pursue_religion: true,
             skip_prophet_race: false,
             enter_prophet_race: false,
+            prophet_race_takes_a_district_slot: false,
             science_building_first: false,
             housing_reserve: false,
             campus_before_harbor: false,
@@ -12493,7 +12509,7 @@ impl BasicAi {
         }
         if self.campus_before_the_army && !self.minor && !self.barb && !emergency_defense {
             if let Some(item) = Self::campus_before_the_army_item(g, pid, cid, n_cities, false) {
-                return Some(item);
+                return Some(self.race_takes_the_district_slot(g, pid, cid, item));
             }
         }
         if self.monument_first
@@ -12583,7 +12599,7 @@ impl BasicAi {
                 n_cities,
                 self.campus_before_the_army_3,
             ) {
-                return Some(item);
+                return Some(self.race_takes_the_district_slot(g, pid, cid, item));
             }
         }
         // `builder-before-the-army-3`: Builders for the unimproved ground the
@@ -12876,7 +12892,7 @@ impl BasicAi {
             && g.cities[&cid].is_capital
         {
             if let Some(item) = Self::first_campus_item(g, pid, cid) {
-                return Some(item);
+                return Some(self.race_takes_the_district_slot(g, pid, cid, item));
             }
         }
         // `district-buildings-first-2`: and the Campus's Library in the same
@@ -12994,14 +13010,14 @@ impl BasicAi {
         // `campus-before-harbor`: the city's first Campus before its Harbor.
         if self.campus_before_harbor && !self.minor && !self.barb {
             if let Some(item) = Self::first_campus_item(g, pid, cid) {
-                return Some(item);
+                return Some(self.race_takes_the_district_slot(g, pid, cid, item));
             }
         }
         // `culture-defense-theater`: a Theater Square while the empire's
         // Culture trails, ahead of the Harbor and the bred district order.
         if self.culture_defense_theater && !self.minor && !self.barb {
             if let Some(item) = Self::culture_defense_theater_item(g, pid, cid, n_cities) {
-                return Some(item);
+                return Some(self.race_takes_the_district_slot(g, pid, cid, item));
             }
         }
         // Coastal infrastructure is part of the water strategy, not an
@@ -14764,11 +14780,18 @@ impl BasicAi {
     /// already queued in it, and the city would finish it within
     /// [`Self::FIRST_CAMPUS_MAX_TURNS`]. `None` otherwise.
     pub(crate) fn first_campus_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        Self::first_district_item(g, pid, cid, "campus")
+    }
+
+    /// This city's first district of `family` (its civilization's
+    /// replacement where it has one) on the site with the highest total
+    /// yield, when the city would finish it within `FIRST_CAMPUS_MAX_TURNS`.
+    fn first_district_item(g: &Game, pid: usize, cid: u32, family: &str) -> Option<Item> {
         let city = g.cities.get(&cid)?;
-        if g.city_has_district_family(city, crate::name!("campus")) {
+        if g.city_has_district_family(city, Name::new(family)) {
             return None;
         }
-        let dname = Self::civ_district(g, pid, "campus");
+        let dname = Self::civ_district(g, pid, family);
         let spec = g.rules.districts.get(&dname)?;
         let unlocked = spec
             .tech
@@ -14802,6 +14825,60 @@ impl BasicAi {
             g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
         });
         (turns <= Self::FIRST_CAMPUS_MAX_TURNS).then_some(item)
+    }
+
+    /// See `prophet_race_takes_a_district_slot`: `item` unless it is a Campus
+    /// or a Theater Square while the race is open, a slot is left, and no
+    /// city of the empire holds or is building a Holy Site; then this city's
+    /// Holy Site, where one is buildable within `FIRST_CAMPUS_MAX_TURNS`.
+    pub(crate) fn race_takes_the_district_slot(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: Item,
+    ) -> Item {
+        let specialty = matches!(
+            &item,
+            Item::District { district, .. }
+                if matches!(g.district_family(*district).as_str(), "campus" | "theater_square")
+        );
+        if !specialty
+            || !self.prophet_race_takes_a_district_slot
+            || !self.enter_prophet_race
+            || self.skip_prophet_race
+            || g.players[pid].religion.is_some()
+            || g.religions_founded() >= g.max_religions()
+        {
+            return item;
+        }
+        let site_reserved = g.cities.values().any(|other| {
+            other.owner == pid
+                && (g.city_has_district_family(other, crate::name!("holy_site"))
+                    || matches!(
+                        other.queue.first(),
+                        Some(Item::District { district, .. })
+                            if g.district_family(*district) == "holy_site"
+                    ))
+        });
+        if site_reserved {
+            return item;
+        }
+        match Self::first_district_item(g, pid, cid, "holy_site") {
+            Some(holy_site) => {
+                think!(self.journal, Cities, Decision,
+                       "{} opens a Holy Site in its {} slot", g.cities[&cid].name,
+                       match &item {
+                           Item::District { district, .. } => plain(district.as_str()),
+                           _ => String::new(),
+                       };
+                       "the Great Prophet race is open with {} of {} religions founded, \
+                        and the empire holds no Holy Site",
+                       g.religions_founded(), g.max_religions());
+                holy_site
+            }
+            None => item,
+        }
     }
 
     /// The gates of the delegated governor's Settler step, shared with the
@@ -23582,6 +23659,71 @@ mod tests {
         assert!(
             matches!(&factory, Some(Item::Building { building }) if *building == "factory"),
             "{factory:?}"
+        );
+    }
+
+    /// See `prophet_race_takes_a_district_slot`: while the race is open, the
+    /// campus-first step's Campus becomes the empire's first Holy Site, and
+    /// only the first.
+    #[test]
+    fn an_open_prophet_race_takes_a_district_slot() {
+        let (mut game, cid) = founded_capital_fixture("RACESLOT", 91_843);
+        game.cities.get_mut(&cid).unwrap().pop = 4;
+        for position in game.nbrs(game.cities[&cid].pos) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+        }
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("writing"));
+        game.players[0].techs.insert(crate::name!("astrology"));
+        assert!(
+            BasicAi::first_campus_item(&game, 0, cid).is_some(),
+            "the fixture can open a Campus"
+        );
+        let pick = |game: &Game, gene: bool, open: bool| {
+            let mut ai = BasicAi::new();
+            ai.campus_before_the_army = true;
+            ai.enter_prophet_race = open;
+            ai.prophet_race_takes_a_district_slot = gene;
+            ai.pick_item(game, 0, cid, 3, 0, 3, 1, 0, 0, 0, 0)
+        };
+        let family = |item: &Option<Item>| match item {
+            Some(Item::District { district, .. }) => district.as_str().to_string(),
+            other => format!("{other:?}"),
+        };
+        assert_eq!(
+            family(&pick(&game, false, true)),
+            "campus",
+            "off, the Campus keeps its slot"
+        );
+        assert_eq!(
+            family(&pick(&game, true, false)),
+            "campus",
+            "a closed race keeps the Campus"
+        );
+        assert_eq!(
+            family(&pick(&game, true, true)),
+            "holy_site",
+            "{:?}",
+            pick(&game, true, true)
+        );
+        // One Holy Site reserves the race: a second city keeps its Campus.
+        let site = match pick(&game, true, true) {
+            Some(Item::District { pos, .. }) => pos,
+            other => panic!("{other:?}"),
+        };
+        game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("holy_site"));
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .districts
+            .insert(crate::name!("holy_site"), site);
+        assert_eq!(
+            family(&pick(&game, true, true)),
+            "campus",
+            "one Holy Site is enough"
         );
     }
 

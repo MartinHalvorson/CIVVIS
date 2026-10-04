@@ -5174,6 +5174,52 @@ impl AdvancedAi {
         self.breaker_before_the_war = false;
     }
 
+    /// Opt-in gene `front-finishes-its-siege`; see
+    /// [`Self::front_finishes_its_siege`].
+    pub fn enable_front_finishes_its_siege(&mut self) {
+        self.front_finishes_its_siege = true;
+    }
+
+    /// The twin of `enable_front_finishes_its_siege`.
+    pub fn disable_front_finishes_its_siege(&mut self) {
+        self.front_finishes_its_siege = false;
+    }
+
+    /// Opt-in gene `peace-waits-for-the-foothold`; see
+    /// [`Self::peace_waits_for_the_foothold`].
+    pub fn enable_peace_waits_for_the_foothold(&mut self) {
+        self.peace_waits_for_the_foothold = true;
+    }
+
+    /// The twin of `enable_peace_waits_for_the_foothold`.
+    pub fn disable_peace_waits_for_the_foothold(&mut self) {
+        self.peace_waits_for_the_foothold = false;
+    }
+
+    /// Opt-in gene `sanctuary-yields-a-held-queue`; see
+    /// [`Self::sanctuary_yields_a_held_queue`].
+    pub fn enable_sanctuary_yields_a_held_queue(&mut self) {
+        self.sanctuary_yields_a_held_queue = true;
+    }
+
+    /// The twin of `enable_sanctuary_yields_a_held_queue`.
+    pub fn disable_sanctuary_yields_a_held_queue(&mut self) {
+        self.sanctuary_yields_a_held_queue = false;
+    }
+
+    /// Opt-in gene `prophet-race-takes-a-district-slot`; see
+    /// [`Self::prophet_race_takes_a_district_slot`].
+    pub fn enable_prophet_race_takes_a_district_slot(&mut self) {
+        self.prophet_race_takes_a_district_slot = true;
+        self.base.prophet_race_takes_a_district_slot = true;
+    }
+
+    /// The twin of `enable_prophet_race_takes_a_district_slot`.
+    pub fn disable_prophet_race_takes_a_district_slot(&mut self) {
+        self.prophet_race_takes_a_district_slot = false;
+        self.base.prophet_race_takes_a_district_slot = false;
+    }
+
     /// Opt-in gene `found-against-a-rival-faith`; see
     /// [`Self::found_against_a_rival_faith`].
     pub fn enable_found_against_a_rival_faith(&mut self) {
