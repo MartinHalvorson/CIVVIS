@@ -6866,6 +6866,12 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-counts-posted-shooters`: the siege's wall forecast counts a
+    /// shooter only where it can actually fire on the walls: from a firing
+    /// post `siege_posts` can give it, with no hostile unit in its reach to
+    /// draw the shot first. See `siege_train::shooter_hits_walls`. Off by
+    /// default.
+    siege_counts_posted_shooters: bool,
     /// `staging-gun-trusts-its-escort`: an escorted gun in Stage budgets one
     /// reply turn of danger on its march. See
     /// `siege_train::STAGING_ESCORT_BODIES`. Off by default.
@@ -8995,6 +9001,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_counts_posted_shooters: false,
             staging_gun_trusts_its_escort: false,
             siege_force_keeps_its_members: false,
             siege_needs_a_breaker: false,

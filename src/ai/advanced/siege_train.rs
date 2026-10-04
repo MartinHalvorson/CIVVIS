@@ -1227,6 +1227,54 @@ fn siege_posts_keeping(
     posts
 }
 
+/// `siege-counts-posted-shooters`: does this shooter put its shot on the
+/// walls? Only from a firing post `siege_posts` can give it — the range band
+/// holds few free tiles, and a shooter with none fortifies where it stands
+/// (live King civvis-20261004T122037Z, game 62: archer u43 three tiles from
+/// Yaroslavl with range 2) — and only with no hostile unit within its reach of
+/// that post, since `siege_shooter_step` shoots a unit before the city while
+/// the walls stand.
+fn shooter_hits_walls(g: &Game, pid: usize, uid: u32, posts: &BTreeMap<u32, Pos>) -> bool {
+    let Some(post) = posts.get(&uid).copied() else {
+        return false;
+    };
+    let range = g.unit_attack_range(uid).max(1);
+    !g.wdisk(post, range)
+        .into_iter()
+        .any(|pos| pos != post && strongest_hostile_at(g, pid, pos).is_some())
+}
+
+/// A land shooter of the train: what [`posted_shooters`] gives posts to.
+pub(super) fn is_siege_shooter(g: &Game, uid: u32) -> bool {
+    arm_of(g, uid) == Arm::Shooter
+}
+
+/// `siege-counts-posted-shooters`: the shooters of `force` that hold a firing
+/// post on `cid` (`.0`), and those of them whose shot goes to the walls
+/// (`.1`). See [`shooter_hits_walls`].
+pub(super) fn posted_shooters(
+    g: &Game,
+    pid: usize,
+    cid: u32,
+    force: &[u32],
+) -> (BTreeSet<u32>, BTreeSet<u32>) {
+    let Some(city) = CityView::of(g, cid) else {
+        return (BTreeSet::new(), BTreeSet::new());
+    };
+    let posts = siege_posts(g, pid, &city, force, None);
+    let posted: BTreeSet<u32> = force
+        .iter()
+        .copied()
+        .filter(|uid| arm_of(g, *uid) == Arm::Shooter && posts.contains_key(uid))
+        .collect();
+    let walls = posted
+        .iter()
+        .copied()
+        .filter(|uid| shooter_hits_walls(g, pid, *uid, &posts))
+        .collect();
+    (posted, walls)
+}
+
 impl AdvancedAi {
     /// Carry siege progress and assignments through a native board rebuild.
     /// City positions and host-unit mappings identify the same participants;
@@ -1558,6 +1606,10 @@ impl AdvancedAi {
             horizon: SHOOTER_BREACH_TURNS,
             ..BreachReading::default()
         };
+        // `siege-counts-posted-shooters`: see `shooter_hits_walls`.
+        let wall_shooters = self
+            .siege_counts_posted_shooters
+            .then(|| posted_shooters(g, pid, city.id, force).1);
         let mut users = false;
         for uid in force {
             let Some(unit) = g.units.get(uid) else {
@@ -1570,7 +1622,9 @@ impl AdvancedAi {
                 Arm::Siege if self.siege_member_fit(g, *uid) => reading.guns += 1,
                 Arm::Siege => reading.wounded_guns += 1,
                 Arm::Shooter if self.siege_member_fit(g, *uid) => {
-                    reading.shooter_walls += wall_damage_per_shot(g, *uid, city.id);
+                    if wall_shooters.as_ref().is_none_or(|shooters| shooters.contains(uid)) {
+                        reading.shooter_walls += wall_damage_per_shot(g, *uid, city.id);
+                    }
                 }
                 Arm::Melee if breach_support_user(g, *uid) => {
                     users = true;

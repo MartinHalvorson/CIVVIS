@@ -5214,6 +5214,17 @@ impl AdvancedAi {
         self.breach_assault = false;
     }
 
+    /// Opt-in gene `siege-counts-posted-shooters`; see
+    /// [`Self::siege_counts_posted_shooters`].
+    pub fn enable_siege_counts_posted_shooters(&mut self) {
+        self.siege_counts_posted_shooters = true;
+    }
+
+    /// The twin of `enable_siege_counts_posted_shooters`.
+    pub fn disable_siege_counts_posted_shooters(&mut self) {
+        self.siege_counts_posted_shooters = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

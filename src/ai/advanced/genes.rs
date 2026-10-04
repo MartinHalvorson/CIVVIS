@@ -2596,6 +2596,13 @@ pub const GENES: &[Gene] = &[
     // on India, their Corps refused and re-planned every turn. Live-only: the
     // refused set is empty off the bridge. See `advanced/formation_refusals.rs`.
     Gene { tag: "formations-heed-refusals", field: "formations_heed_refusals", kind: Kind::OptIn, enable: AdvancedAi::enable_formations_heed_refusals, disable: AdvancedAi::disable_formations_heed_refusals },
+    // Live King civvis-20261004T122037Z (game 62): Yaroslavl's walls went
+    // 100 -> 84 in twelve turns while the journal read "shooters 6-16 wall a
+    // turn": nine archers within five tiles were counted, but the range-2
+    // band had room for few of them and those that fired shot units first.
+    // G64's Canberra read "6.9 turns" at turn 125 and fell at 148. See
+    // `siege_train::shooter_hits_walls`.
+    Gene { tag: "siege-counts-posted-shooters", field: "siege_counts_posted_shooters", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_counts_posted_shooters, disable: AdvancedAi::disable_siege_counts_posted_shooters },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
