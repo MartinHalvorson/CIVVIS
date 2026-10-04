@@ -2967,3 +2967,69 @@ class TheRowSaysHowBigTheFieldWas(unittest.TestCase):
             encoding="utf-8")
         self.assertIn('"met": (last_turn or {}).get("met")', climb)
         self.assertIn('"met": summary.get("met")', ladder)
+
+
+class OneParseServesEveryScan(unittest.TestCase):
+    """`events_of` parses a run's log once and every scan reads that parse."""
+
+    def setUp(self) -> None:
+        civ6_ladder._EVENTS_PARSED = None
+        self.tmp = TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "events.jsonl"
+        lines = [
+            {"kind": "turn", "ctx": "agent", "turn": 3, "score": 40, "rival_best": 55},
+            {"kind": "deal_session", "phase": "opening", "target": 1},
+            {"kind": "deal_session", "phase": "asked", "target": 1},
+        ]
+        self.path.write_text("\n".join(json.dumps(e) for e in lines)
+                             + "\n\nnot json\n", encoding="utf-8")
+
+    def tearDown(self) -> None:
+        civ6_ladder._EVENTS_PARSED = None
+        self.tmp.cleanup()
+
+    def test_values_are_what_each_loop_parsed(self) -> None:
+        with self.path.open("a", encoding="utf-8") as handle:
+            handle.write("7\n")
+        values = civ6_ladder.events_of(self.path)
+        # Blank and non-JSON lines are skipped; a JSON non-object is kept,
+        # as each scan's own `json.loads(line)` kept it.
+        self.assertEqual(len(values), 4)
+        self.assertEqual(values[3], 7)
+        self.assertEqual(values[0]["score"], 40)
+
+    def test_several_scans_decode_the_file_once(self) -> None:
+        real = json.loads
+        calls = {"n": 0}
+
+        def counting(text, *args, **kwargs):
+            calls["n"] += 1
+            return real(text, *args, **kwargs)
+
+        from unittest import mock
+        with mock.patch.object(civ6_ladder.json, "loads", counting):
+            standing = civ6_ladder.final_standing(self.path)
+            deals = civ6_ladder.deal_totals(self.path)
+            civ6_ladder.seat_autonomy(self.path)
+        self.assertEqual(standing, (40, 55))
+        self.assertEqual(deals["sessions_opened"], 1)
+        self.assertEqual(calls["n"], 5, "one decode per line, shared by all three scans")
+
+    def test_an_appended_log_is_read_again(self) -> None:
+        self.assertEqual(civ6_ladder.final_standing(self.path), (40, 55))
+        with self.path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "turn", "ctx": "agent", "turn": 4,
+                                     "score": 60, "rival_best": 58}) + "\n")
+        self.assertEqual(civ6_ladder.final_standing(self.path), (60, 58))
+
+    def test_a_gzipped_log_is_read_the_same_way(self) -> None:
+        import gzip
+        packed = Path(self.tmp.name) / "events.jsonl.gz"
+        with gzip.open(packed, "wt", encoding="utf-8") as handle:
+            handle.write(self.path.read_text(encoding="utf-8"))
+        self.assertEqual(civ6_ladder.final_standing(packed), (40, 55))
+
+    def test_a_torn_byte_does_not_abort_the_other_questions(self) -> None:
+        with self.path.open("ab") as handle:
+            handle.write(b'{"kind": "turn", "ctx": "agent", "score": 1, "rival_best": 2, "x": "\xff"}\n')
+        self.assertEqual(civ6_ladder.final_standing(self.path), (1, 2))
