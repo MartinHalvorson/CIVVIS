@@ -1,0 +1,85 @@
+{
+  "candidate_source_commit": "6042efd2b0f0e14a70d8ec56ec3062ec27d610da",
+  "candidate_sources_sha256": {
+    "src/ai/advanced/higher_level_strategy.rs": "089016de6ace59a9433674fa65d337f6f393213bd2504402fe83b89d336e3452",
+    "src/ai/advanced.rs": "82838ac2ce4a1a7a516a60e856ada7f9ef65c32b6b26673d0e2fb36f44224642",
+    "src/game/city.rs": "88230cb1ccc95ef1b83cb8ad994f16d1d7d6fa16d544fec3075ced7d11f98e2d"
+  },
+  "candidate_library_sha256": "f2371c3485861ba396ed5e7a06d16eef2e0d928003e93b6030b094c128ccf748",
+  "gene_ledger_sha256": "e86a761d3fc5d51f3d41b289c5b7275810fe5adbbe2a85581d32833ad3e05a45",
+  "control_source_commit": "f0c79ad09",
+  "control_binary_sha256": "7afd0bcedcaf7a9311a3d3af4ea33703530686927be84d01aeeba2af93746a41",
+  "seeds": {
+    "emperor": [
+      61004800,
+      61004811
+    ],
+    "deity": [
+      61004900,
+      61004907
+    ]
+  },
+  "no_runtime_delta_control_to_task_base": "The 3886 measured control predates only formatting and tools/web/docs changes; no engine, rules, gene ledger or behavior changes.",
+  "kind": "rejected paired production research extension",
+  "decision": "Withhold: negligible turn-75 gain and no turn-100 rate gain on either difficulty; later conditional gains do not demonstrate a faster early production ramp.",
+  "final_runtime_delta_to_task_base": "none; both implementation files restored to 99ec5708a after the frozen experiment",
+  "profile": {
+    "players": 4,
+    "width": 60,
+    "height": 38,
+    "city_states": 6,
+    "map": "Pangaea",
+    "speed": "Online",
+    "max_turns": 150,
+    "focal_civ": "Gran Colombia",
+    "randomized_rivals": true,
+    "focal_controller": "AdvancedAi::targeting(Domination) with gene ledger",
+    "focal_handicap_exempt": true,
+    "rivals": "AdvancedAi::fleet with Emperor/Deity bonuses; all victories enabled"
+  },
+  "candidate_binary_sha256": "d202580d09b0b7a152f48fe789cf0b3e38f535cdc2964a7c98729201d10ac038",
+  "candidate_orders_sha256": "50c97559a500c0cc69edbb770f3284f1f061a57567481ccf6f496f15d23795df",
+  "replay_prefixes_sha256": {
+    "50": "849d520787e61187e97d50a6390829352e2bd2e9ca76e0b7f17ac8d7510b00c5",
+    "75": "7c390f1ad86e9a921abe45c8fafc984d6d522182ca7ac33709ae17c57f9af699",
+    "100": "3be5d13ea7174bc66b4c687344c62e103b92ddd829a01282c3ea5442b5733248",
+    "125": "7981f85c0a188a07956bd803078da40e684302cd7960c43f7cea89c83bf7907b"
+  },
+  "replay_orders_equal_to_3886_control": {
+    "50": true,
+    "75": true,
+    "100": true,
+    "125": true
+  },
+  "artifacts_sha256": {
+    "docs/eval/2026-10-04-worked-production-technology-candidate.csv": "18c3aa67ffa242a300a63c59a289792a61a51aa57fe274ac4ec41212a1d97084",
+    "docs/eval/2026-10-04-worked-production-technology-candidate.txt": "309e4c17dc84eaa85c4a0f9b5d45dae4baa3a8cb481abdd358f540b084df74d1",
+    "docs/eval/2026-10-04-worked-production-technology-control.csv": "5fe871c468b23bf519142f647865abb1c74089c9511829c31e9c7e05254abeb8",
+    "docs/eval/2026-10-04-worked-production-technology-control.txt": "e1dccafbbab6b715ca21efa8c899190d86140b8ed51f30c0aa3529532442eaaa",
+    "docs/eval/2026-10-04-worked-production-technology-deity-candidate.csv": "04cfe369b940278e2e1a861d1147b1ce1b4fb4562e661bd1392dc8ad85e0ee73",
+    "docs/eval/2026-10-04-worked-production-technology-deity-candidate.txt": "d00ed88f8a44b60a27746b0757b7c7c745f6267ad8ccf5e0c845d9016f314692",
+    "docs/eval/2026-10-04-worked-production-technology-deity-control.csv": "a36f9425aa42c3ac9853a51bc5c43fd06bf215ab9f297da04c296e898359da66",
+    "docs/eval/2026-10-04-worked-production-technology-deity-control.txt": "d00ed88f8a44b60a27746b0757b7c7c745f6267ad8ccf5e0c845d9016f314692",
+    "docs/eval/2026-10-04-worked-production-technology-live-installed-probe.rs": "685d159222b5c719fd2a5119107f1c781278091336f13807f435bd5f53ee0217",
+    "docs/eval/2026-10-04-worked-production-technology-live-installed.txt": "7335f0d8230ce1b831b071349cca29375e418b8f55d3d27fa78672f8bdaa1c7b",
+    "docs/eval/2026-10-04-worked-production-technology-probe.rs": "945f55241793ec57cfae27fa9fd3fe34b3715438646f4f40f81d3e13fd2dd6ab",
+    "docs/eval/2026-10-04-worked-production-technology-replay-100.json": "f2d30788ddaa301b218729df27d4a4e325e40b1c8337605ca563f67063fba0d8",
+    "docs/eval/2026-10-04-worked-production-technology-replay-100.txt": "3f17626e8daa581abdd9eff55abd8424c140ab7f774bf9a1f6a7f28550ef2331",
+    "docs/eval/2026-10-04-worked-production-technology-replay-125.json": "78bcb084733a7bb5a4fda4b4643899012d6d88e9c220279399bc1d3bad40cfbe",
+    "docs/eval/2026-10-04-worked-production-technology-replay-125.txt": "7df1cdf471e93572a6909afcd77f9189d4ca58980757ab8764db802207d9f15b",
+    "docs/eval/2026-10-04-worked-production-technology-replay-50.json": "ac56a59191b4733841c261dcd7c44338dd023aae3820d21abcb7d3022d695888",
+    "docs/eval/2026-10-04-worked-production-technology-replay-50.txt": "3138702a09ed2c96e3b36e3978b63df986d6027b3557bde9153424a74b78a2f0",
+    "docs/eval/2026-10-04-worked-production-technology-replay-75.json": "4ffb83ac537fc51af3091d9c12e0a2d5b9894c700dcc42fe2968e4f0f46fddf5",
+    "docs/eval/2026-10-04-worked-production-technology-replay-75.txt": "1750d6697487f2ce1a4784ad18639c5fd626660d202a07b8c959501bc5d6104a",
+    "docs/eval/2026-10-04-worked-production-technology-summarize.py": "584bf273ac47d68435dae7536f7c78329a417d922ab2bc9c2804202cccd3e306",
+    "docs/eval/2026-10-04-worked-production-technology-summary.json": "6cfa157f35fd7d8d7f9e27de27c5058ea49fc6263956abc5210891d70ac0d041",
+    "docs/eval/2026-10-04-worked-production-technology.md": "4444ebf31a72246beb08a0d4c491a9afb2fba04b927751d444356bff5f44d4e2"
+  },
+  "live_installed_diagnostic": {
+    "binary_sha256": "2589652120bad5a6dab56fa756c856d6ae68d3bd3328e611f918f3777b07f3de",
+    "compiled_source_sha256": "ddd2803dcf9f4581e3464241b8572e183651505dec1cbdbd5d1939bd78486e36",
+    "tracked_source_difference": "formatting only",
+    "runtime": "#3886 research-only library",
+    "read_only": true
+  }
+}
