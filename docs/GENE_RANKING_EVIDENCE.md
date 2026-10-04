@@ -209,6 +209,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-faith-reservation` | off (unmeasured) | Enable `culture-faith-reservation` for measurement. | 1 \| 1 |
 | `culture-lane-forecast-2` | off (unmeasured) | Version 2 of the Culture clock forecast: project secular and religious Tourism through each rival's current international modifiers. | 1 \| 2 |
 | `culture-tourism-payback` | off (unmeasured) | Enable `culture-tourism-payback` for measurement. | 1 \| 1 |
+| `decisive-window` | off (unmeasured) | Opt-in gene `decisive-window`; see `Self::decisive_window`. | 1 \| 1 |
 | `denial-nearest-finish` | off (unmeasured) | Opt-in gene `denial-nearest-finish`; see `Self::denial_nearest_finish`. | 1 \| 1 |
 | `denial-needs-a-road` | off (unmeasured) | Opt-in gene `denial-needs-a-road`; see `Self::denial_needs_a_road`. | 1 \| 1 |
 | `denial-outranks-expansion` | off (unmeasured) | A rival close to winning is answered before the lane's expansion rule. | 1 \| 1 |
@@ -254,6 +255,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `trade-growth-to-district` | off (unmeasured) | Price route food by the next population-gated district slot. | 1 \| 1 |
 | `trade-production-to-launch` | off (unmeasured) | Price route production by time saved on an active space project. | 1 \| 1 |
 | `treasury-at-work-2-2` | off (unmeasured) | Keep the working reserve and buy the first Builder near local work. | 1 \| 2 |
+| `unique-unit-preference` | off (unmeasured) | Opt-in gene `unique-unit-preference`; see `BasicAi::unique_unit_preference`. | 1 \| 1 |
 | `upgrade-window-campaign` | off (unmeasured) | Enable `upgrade-window-campaign` for measurement. | 1 \| 1 |
 | `upkeep-reserve` | off (unmeasured) | Upgrade passes keep one and a half turns of the army's bill in the treasury instead of a flat 30 Gold at war. | 1 \| 1 |
 | `victory-deadline-budget` | off (unmeasured) | Enable `victory-deadline-budget` for measurement. | 1 \| 1 |
