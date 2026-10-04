@@ -1138,7 +1138,13 @@ impl AdvancedAi {
                         || (self.one_war_still_winning(g, pid, other)
                             && g.cities
                                 .values()
-                                .any(|city| city.owner == pid && city.original_owner == other)))))
+                                .any(|city| city.owner == pid && city.original_owner == other))))
+                // See `second_front_kept_when_winning_2`.
+                || (self.second_front_kept_when_winning_2
+                    && self.one_war_still_winning(g, pid, other)
+                    && g.cities.values().any(|city| {
+                        city.is_capital && city.original_owner == other && city.owner == other
+                    })))
     }
 
     /// Whether a Domination seat holds `rival`'s original capital while the

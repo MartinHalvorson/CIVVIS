@@ -6935,6 +6935,15 @@ pub struct AdvancedAi {
     /// front; the war is only kept, so the next front opens without a
     /// declaration. See `one_war::second_front_war_kept`. Off by default.
     second_front_kept_when_winning: bool,
+    /// `second-front-kept-when-winning-2`: and a war we are winning on a
+    /// rival that still holds its own original capital, the city Domination
+    /// needs from it. Live King civvis-20261004T232618Z (game 86) offered the
+    /// Netherlands "one war at a time" peace at turn 112 at 564 power against
+    /// 177 (3.2 times, no Dutch city held, so version one let it go) for an
+    /// urgent counter on India, and declared on the Netherlands again at 120
+    /// at 613 against 183. See `one_war::second_front_war_kept`. Off by
+    /// default.
+    second_front_kept_when_winning_2: bool,
     /// `siege-counts-posted-shooters`: the siege's wall forecast counts a
     /// shooter only where it can actually fire on the walls: from a firing
     /// post `siege_posts` can give it, with no hostile unit in its reach to
@@ -9091,6 +9100,7 @@ impl AdvancedAi {
 
             // ---- append: s-s ----------------------------------------
             second_front_kept_when_winning: false,
+            second_front_kept_when_winning_2: false,
             siege_counts_posted_shooters: false,
             sanctuary_yields_a_held_queue: false,
             staging_gun_trusts_its_escort: false,

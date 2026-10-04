@@ -604,6 +604,31 @@ fn a_beaten_second_front_is_kept_under_the_gene() {
     assert_eq!(ai.one_war_peace(&g, 0, 2), None, "winning, a city taken");
 }
 
+/// See `second_front_kept_when_winning_2`: under version two, a war we are
+/// winning on a rival that still holds its own capital is kept without a
+/// city taken; a rival without its capital is still offered peace.
+#[test]
+fn a_winning_second_front_on_a_standing_capital_is_kept_under_version_two() {
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
+    let mut row = 2;
+    while g.military_power(0) >= ONE_WAR_CRUSHED_RATIO * g.military_power(2) {
+        g.spawn_test_unit("modern_armor", 2, (30, row));
+        row += 1;
+    }
+    assert!(g.military_power(0) >= ONE_WAR_WINNING_RATIO * g.military_power(2));
+    ai.one_war_observe(&g, 0);
+    let second = Some(OneWarPeace::SecondFront);
+    ai.enable_second_front_kept_when_winning();
+    assert_eq!(ai.one_war_peace(&g, 0, 2), second, "version one");
+    ai.enable_second_front_kept_when_winning_2();
+    assert_eq!(ai.one_war_peace(&g, 0, 2), None, "its capital stands");
+    let capital = g.player_city_ids(2)[0];
+    assert!(g.cities[&capital].is_capital);
+    g.cities.get_mut(&capital).unwrap().owner = 3;
+    assert_eq!(ai.one_war_peace(&g, 0, 2), second, "its capital is gone");
+}
+
 /// Live King civvis-20261004T025448Z (game 45): a counter the war cannot
 /// answer without a siege (a culture or science clock) takes no second front
 /// before it is urgent, so the army stays on the prey front's siege.

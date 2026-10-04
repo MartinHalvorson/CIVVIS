@@ -2603,6 +2603,10 @@ pub const GENES: &[Gene] = &[
     // it to Canada at 407 against 138 after taking Brantford. See
     // `AdvancedAi::second_front_kept_when_winning`.
     Gene { tag: "second-front-kept-when-winning", field: "second_front_kept_when_winning", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_kept_when_winning, disable: AdvancedAi::disable_second_front_kept_when_winning },
+    // Live King 232618Z offered the Netherlands that peace at 3.2 times with
+    // The Hague, its capital, the next objective, and declared again eight
+    // turns later. See `AdvancedAi::second_front_kept_when_winning_2`.
+    Gene { tag: "second-front-kept-when-winning-2", field: "second_front_kept_when_winning_2", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_kept_when_winning_2, disable: AdvancedAi::disable_second_front_kept_when_winning_2 },
     // Live King 213648Z took Babylon's only known city at turn 81, at six
     // times its power, and offered peace; Babylon held six cities at 207.
     // See `one_war::unseen_prey`.

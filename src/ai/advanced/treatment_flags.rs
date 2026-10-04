@@ -5209,6 +5209,18 @@ impl AdvancedAi {
         self.second_front_kept_when_winning = false;
     }
 
+    /// Opt-in gene `second-front-kept-when-winning-2`; see
+    /// [`Self::second_front_kept_when_winning_2`]. Version one's terms stay
+    /// with their own flag.
+    pub fn enable_second_front_kept_when_winning_2(&mut self) {
+        self.second_front_kept_when_winning_2 = true;
+    }
+
+    /// The twin of `enable_second_front_kept_when_winning_2`.
+    pub fn disable_second_front_kept_when_winning_2(&mut self) {
+        self.second_front_kept_when_winning_2 = false;
+    }
+
     /// Opt-in gene `peace-waits-for-unseen-prey`; see
     /// [`Self::peace_waits_for_unseen_prey`].
     pub fn enable_peace_waits_for_unseen_prey(&mut self) {
