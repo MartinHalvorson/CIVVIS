@@ -47,6 +47,8 @@ use civvis::mirror;
 mod air_assault;
 #[path = "civvis_orders/air_assault_continuation.rs"]
 mod air_assault_continuation;
+#[path = "civvis_orders/host_ranged_history.rs"]
+mod host_ranged_history;
 
 fn arg_text(args: &[String], flag: &str) -> Option<String> {
     args.iter()
@@ -8895,6 +8897,7 @@ fn main() {
     // A city's strike is once per host turn and the export never says it was
     // spent; the decider's own earlier frames do. See `HostCityStrikes`.
     let mut host_city_strikes = HostCityStrikes::default();
+    let mut host_ranged_history = host_ranged_history::History::default();
     let mut explain_cursor: u64 = 0;
     // What left for the host on each frame, until the next turn's frame answers
     // for it. See "order postconditions" above.
@@ -9025,6 +9028,7 @@ fn main() {
                         None => ai.forget_unit_memory(),
                     }
                     board.carry_treasury_baseline(carried_treasury);
+                    host_ranged_history.observe_and_apply(&mut board, &state);
                     host_city_attack_cooldowns.apply(&mut board);
                     host_city_strikes.apply(&mut board, state.turn);
                     host_move_refusals.apply(&mut board);
@@ -9055,6 +9059,7 @@ fn main() {
                                 mirror_turns,
                                 frontier,
                             );
+                            host_ranged_history.observe_and_apply(&mut fresh, &state);
                             host_city_attack_cooldowns.apply(&mut fresh);
                             host_city_strikes.apply(&mut fresh, state.turn);
                             host_move_refusals.apply(&mut fresh);
@@ -9077,6 +9082,7 @@ fn main() {
                         }
                         Some(existing) => {
                             existing.sync(&snapshot, &state, frontier);
+                            host_ranged_history.observe_and_apply(existing, &state);
                             host_city_attack_cooldowns.apply(existing);
                             host_city_strikes.apply(existing, state.turn);
                             host_move_refusals.apply(existing);
