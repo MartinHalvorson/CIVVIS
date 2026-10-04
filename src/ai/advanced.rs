@@ -5001,6 +5001,9 @@ pub struct AdvancedAi {
     /// Count local repair jobs as well as new improvements when replacing
     /// a lost Builder, retaining v2's three-job threshold.
     builder_workforce_recovery_3: bool,
+    /// Accepted replacement Builder reservation, retained through replanning
+    /// in its starting turn before any production has been invested.
+    higher_level_builder_reservation: RefCell<Option<(u32, u32)>>,
     /// `anvil`: the land group nearest a threatened city of ours holds it
     /// as a formation — a shooter on the centre, melee on the front tiles,
     /// the rest within two — instead of the relief hold point. Opt-in gene;
@@ -8407,6 +8410,7 @@ impl AdvancedAi {
             builder_workforce_recovery: false,
             builder_workforce_recovery_2: false,
             builder_workforce_recovery_3: false,
+            higher_level_builder_reservation: RefCell::new(None),
             anvil: false,
             anvil_orders: BTreeMap::new(),
             anvil_orders_turn: None,
@@ -26646,6 +26650,12 @@ impl AdvancedAi {
                     }
                 }
             }
+            // A catch-up reservation can be rescored before its first hammer
+            // lands, including on another observed frame in this same turn.
+            // Keep the accepted Builder after siege handling, while allowing
+            // the existing insolvency preemption below to take priority.
+            let higher_level_builder_commitment =
+                self.higher_level_builder_queue_committed(g, pid, cid);
             let recovery_preemption = economic_recovery
                 && committed
                     .as_ref()
@@ -26704,6 +26714,7 @@ impl AdvancedAi {
                     || defensive_temple_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
+                    || higher_level_builder_commitment
             }) && !recovery_preemption
                 && (finish_investment
                     || science_endgame_commitment
@@ -26712,6 +26723,7 @@ impl AdvancedAi {
                     || defensive_temple_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
+                    || higher_level_builder_commitment
                     || preempt_margin <= 1.0
                     || economic_recovery)
             {

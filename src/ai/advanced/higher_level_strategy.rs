@@ -824,12 +824,33 @@ impl AdvancedAi {
             },
         )
         .is_ok()
-            && self.journal().wants(Level::Decision)
         {
-            think!(self.journal(), Economy, Decision,
-                "{} starts {} for {}", g.cities[&city].name, Self::plain_item(&item), debt.tag(self);
-                "one safe idle queue services the development shortfall");
+            if debt == Debt::Builder {
+                self.higher_level_builder_reservation
+                    .replace(Some((g.turn, city)));
+            }
+            if self.journal().wants(Level::Decision) {
+                think!(self.journal(), Economy, Decision,
+                    "{} starts {} for {}", g.cities[&city].name, Self::plain_item(&item), debt.tag(self);
+                    "one safe idle queue services the development shortfall");
+            }
         }
+    }
+
+    pub(super) fn higher_level_builder_queue_committed(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> bool {
+        (self.builder_workforce_recovery
+            || self.builder_workforce_recovery_2
+            || self.builder_workforce_recovery_3)
+            && *self.higher_level_builder_reservation.borrow() == Some((g.turn, cid))
+            && g.cities[&cid].queue.first().is_some_and(|item| {
+                matches!(item, Item::Unit { unit } if unit == "builder")
+                    && Self::production_commitment_is_legal(g, pid, cid, item)
+            })
     }
 }
 
@@ -847,3 +868,6 @@ mod campus_foundation_tests;
 
 #[cfg(test)]
 mod production_unlock_tests;
+
+#[cfg(test)]
+mod builder_commitment_tests;
