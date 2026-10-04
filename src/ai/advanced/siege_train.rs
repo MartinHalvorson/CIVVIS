@@ -1156,6 +1156,31 @@ impl AdvancedAi {
             })
     }
 
+    /// Whether this unit belongs to a Domination siege still in Stage. The
+    /// train's own Stage step prices its approach (`siege_stage_step`: a gun
+    /// holds back on its own risk limit; the rest march to the staging
+    /// ring), so the battle planner does not rotate a healthy member out "to
+    /// heal". Live King civvis-20261004T033533Z (game 46), turn 140: all four
+    /// 100-hp catapults before Babylon were rotated out at danger 96-100 and
+    /// fortified; Stage never invested in 18 turns.
+    pub(super) fn staging_siege_member(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        self.siege_train
+            && self.active_victory_target(g) == Some(super::VictoryTarget::Domination)
+            && self.force_groups.iter().any(|group| {
+                group.domain == ForceDomain::Land
+                    && group.units.contains(&uid)
+                    && g.city_at(group.objective).is_some_and(|cid| {
+                        let owner = g.cities[&cid].owner;
+                        owner != pid
+                            && g.is_at_war(pid, owner)
+                            && self
+                                .sieges
+                                .get(&cid)
+                                .is_some_and(|siege| siege.stage == SiegeStage::Stage)
+                    })
+            })
+    }
+
     /// Whether this unit is a member of an active Domination siege (see
     /// `active_siege_member`) whose city stands without walls: its shot
     /// is the city's health, and the battle planner leaves it to the train.

@@ -2223,7 +2223,14 @@ impl AdvancedAi {
             // and on King `civvis-20260930T221624Z` it rotated 89-hp archers
             // off an unwalled Stockholm for 27 turns while the train read
             // "damage ready". Only the wounded come out.
-            if !wounded && self.active_siege_member(g, pid, uid) {
+            // A healthy member of a siege still in Stage is the train's to
+            // move as well: its Stage step holds a gun back on the gun's own
+            // risk limit. Live King civvis-20261004T033533Z (game 46) rotated
+            // four 100-hp catapults out at Babylon every turn from 135 to 153.
+            if !wounded
+                && (self.active_siege_member(g, pid, uid)
+                    || self.staging_siege_member(g, pid, uid))
+            {
                 continue;
             }
             // A healthy explorer is not a garrison either. The same summed
