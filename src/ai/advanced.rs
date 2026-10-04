@@ -5672,6 +5672,10 @@ pub struct AdvancedAi {
     /// the Research Lab. See `BasicAi::campus_before_the_army_3`.
     campus_before_the_army_3: bool,
     // ---- append: e-f ------------------------------------------------
+    /// The lowest city-plus-wall health each city of the one-war front has
+    /// shown, by tile, and the turn it was set; cleared with a new front.
+    /// See `one_war::FRONT_SIEGE_LIVE_TURNS`.
+    front_city_low: BTreeMap<crate::Pos, (i32, u32)>,
     /// A district is worth the land-grab building it will host.
     ///
     /// ★★★★ THE PLAZA IS BUILT AT TURN 112 AND THE OPENING NEEDED IT AT 40.
@@ -8750,6 +8754,7 @@ impl AdvancedAi {
             campus_before_the_army_2: false,
             campus_before_the_army_3: false,
             // ---- append: e-f ----------------------------------------
+            front_city_low: BTreeMap::new(),
             expansion_hall_district: false,
             early_conquest_opening: false,
             expansion_scales_with_difficulty: false,

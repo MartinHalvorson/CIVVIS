@@ -701,3 +701,55 @@ fn a_counter_war_below_the_power_floor_is_neither_opened_nor_freed_for() {
     ai.one_war_observe(&g, 0);
     assert_ne!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
 }
+
+/// See `FRONT_SIEGE_LIVE_TURNS`: a front siege whose city has shown no new
+/// low of health for the window no longer holds the faith counter back
+/// (Madrid, game 53, besieged turns 44-152).
+#[test]
+fn a_stalled_front_siege_stops_holding_the_faith_counter() {
+    let (mut g, mut ai) = two_fronts();
+    g.found_city_for(0, (6, 18), None);
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    let front_city = g.player_city_ids(1)[0];
+    ai.sieges.insert(
+        front_city,
+        crate::ai::advanced::siege_train::Siege {
+            stage: crate::ai::advanced::siege_train::SiegeStage::Invest,
+            taker: None,
+            entered: g.turn - 2,
+            assessed: g.turn,
+            posts: Default::default(),
+            short_since: None,
+        },
+    );
+    ai.one_war_observe(&g, 0);
+    assert!(
+        ai.second_front_waits_for_the_front(&g, 0, 2),
+        "a fresh siege"
+    );
+    // The city stands at the health it showed: no new low.
+    g.turn += g.standard_duration(FRONT_SIEGE_LIVE_TURNS) + 1;
+    ai.sieges.get_mut(&front_city).unwrap().assessed = g.turn;
+    ai.one_war_observe(&g, 0);
+    assert!(!ai.front_siege_live(&g), "a siege that only stands");
+    assert!(!ai.second_front_waits_for_the_front(&g, 0, 2));
+    // A blow that sets a new low makes it live again.
+    g.cities.get_mut(&front_city).unwrap().hp -= 30;
+    ai.one_war_observe(&g, 0);
+    assert!(ai.second_front_waits_for_the_front(&g, 0, 2));
+}
+
+/// The live seat renumbers cities every turn; the front's health reading is
+/// keyed by tile, so a renumbered city still reads as itself.
+#[test]
+fn the_front_reads_city_health_by_tile() {
+    let (g, mut ai) = two_fronts();
+    ai.one_war_observe(&g, 0);
+    let front = ai.one_war.as_ref().expect("a front");
+    let city = &g.cities[&g.player_city_ids(front.target)[0]];
+    assert_eq!(
+        front.city_health.get(&city.pos),
+        Some(&(city.hp, city.wall_hp))
+    );
+}
