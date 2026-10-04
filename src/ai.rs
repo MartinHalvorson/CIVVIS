@@ -23182,7 +23182,10 @@ mod tests {
             ai.pick_item(&game, 0, cid, 3, settlers, 3, 1, 0, 0, 0, 0)
         };
         assert_eq!(second(1), granary, "version 2 takes the floor's build");
-        assert!(BasicAi::new().settler_due(&game, 0, cid, 3, 0), "the fixture is due a Settler");
+        assert!(
+            BasicAi::new().settler_due(&game, 0, cid, 3, 0),
+            "the fixture is due a Settler"
+        );
         assert_ne!(second(0), granary, "a due Settler comes first");
     }
 
