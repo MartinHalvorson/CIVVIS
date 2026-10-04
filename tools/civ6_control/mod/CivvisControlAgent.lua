@@ -16085,7 +16085,13 @@ CivvisQueue.drain = function(player, pid, turn)
 						and not entry.path_probed and not entry.ready
 						and ux == entry.origin.x and uy == entry.origin.y
 						and entry.wait >= (tonumber(cfg.OrderQueueNoopProbeTicks) or 8)
-						and entry.wait < grace then
+						and entry.wait < grace
+						-- WorldInput.lua:884 returns before its path read at :961
+						-- while the game core is busy. A request can still be queued
+						-- there even with an empty path; do not consume the one-shot
+						-- probe or label that transient read an early no-op. Arrival
+						-- and the existing grace/turn bounds remain authoritative.
+						and try(function() return UI.IsGameCoreBusy(); end, false) ~= true then
 					entry.path_probed = true;
 					local spentNow = moves ~= nil and moves <= 0;
 					local destination = try(function()
@@ -16523,6 +16529,7 @@ end;
 -- WorldInput.lua:961 reads GetMoveToPathEx; UnitPanel.lua:2147 reads activity.
 CivvisBoard.noopEvidence = function(unit, x, y)
 	local evidence = {};
+	evidence.core_busy = try(function() return UI.IsGameCoreBusy(); end, nil);
 	evidence.activity = tonumber(try(function() return UnitManager.GetActivityType(unit); end, nil));
 	local destination = try(function() return Map.GetPlotIndex(x, y); end, nil);
 	local path = try(function() return UnitManager.GetMoveToPathEx(unit, destination); end, nil);
