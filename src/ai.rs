@@ -2481,6 +2481,21 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `builder-before-the-army-2`.
     pub(crate) builder_before_the_army_2: bool,
+    /// `builder_before_the_army_2`, and past that first Builder a quota of
+    /// one Builder per three worked tiles that stand unimproved but could
+    /// take an improvement, at most one per two cities. The extra Builders
+    /// come behind the Campus step and never while this city's Settler step
+    /// is due (`settler_due`), so they displace only the military floor.
+    ///
+    /// Live King games since version 2 was armed (2026-10-03T131343Z on, 10
+    /// games) worked 11.1 unimproved land tiles against 6.4 improved at t60
+    /// and 20.7 against 14.5 at t100 — ten of them hills a Mine pays two
+    /// Production on after Apprenticeship — with 1.6 build charges on the map
+    /// across t41-80 and none at all on 32% of those turns. ~95% of the
+    /// seat's production comes from worked tiles.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `builder-before-the-army-3`.
+    pub(crate) builder_before_the_army_3: bool,
     /// A city's first Campus, then its Library (`first_campus_item`,
     /// `campus_library_item`: each buildable here within
     /// `FIRST_CAMPUS_MAX_TURNS`), ahead of the Monument, the capital Settler
@@ -5341,6 +5356,7 @@ impl BasicAi {
             monument_first: false,
             builder_before_the_army: false,
             builder_before_the_army_2: false,
+            builder_before_the_army_3: false,
             campus_before_the_army: false,
             campus_before_the_army_2: false,
             campus_before_the_army_3: false,
@@ -5821,6 +5837,7 @@ impl BasicAi {
             monument_first: false,
             builder_before_the_army: false,
             builder_before_the_army_2: false,
+            builder_before_the_army_3: false,
             campus_before_the_army: false,
             campus_before_the_army_2: false,
             campus_before_the_army_3: false,
@@ -12327,7 +12344,9 @@ impl BasicAi {
         // military floor and the Settler step, which otherwise kept a city
         // from ever reaching it. The capital sends the land grab's first two
         // Settlers out first, and an early rush still assembles its stack.
-        if (self.builder_before_the_army || self.builder_before_the_army_2)
+        if (self.builder_before_the_army
+            || self.builder_before_the_army_2
+            || self.builder_before_the_army_3)
             && !self.minor
             && !self.barb
             && !emergency_defense
@@ -12431,6 +12450,18 @@ impl BasicAi {
                 self.campus_before_the_army_3,
             ) {
                 return Some(item);
+            }
+        }
+        // `builder-before-the-army-3`: Builders for the unimproved ground the
+        // cities already work, behind the Campus step and a due Settler.
+        if self.builder_before_the_army_3
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(builder) = Self::builder_backlog_item(g, pid, cid, n_cities, builders) {
+                return Some(builder);
             }
         }
         // `industry-before-the-army`: the production chain the district list
@@ -14942,7 +14973,7 @@ impl BasicAi {
         if n_cities < 2 {
             return None;
         }
-        let quota = if self.builder_before_the_army_2 {
+        let quota = if self.builder_before_the_army_2 || self.builder_before_the_army_3 {
             1
         } else {
             ((self.w.builder_per_city * n_cities as f64).ceil() as usize)
@@ -14962,6 +14993,60 @@ impl BasicAi {
             return None;
         }
         Some(builder)
+    }
+
+    /// Worked tiles across the empire that stand unimproved (or pillaged)
+    /// and could take a Builder's improvement. See
+    /// `builder_before_the_army_3`.
+    pub(crate) fn unimproved_worked_tiles(g: &Game, pid: usize) -> usize {
+        let _memo = g.query_memo();
+        g.player_city_ids(pid)
+            .into_iter()
+            .map(|cid| {
+                g.city_citizen_plan(cid)
+                    .worked_tiles
+                    .into_iter()
+                    .filter(|pos| {
+                        g.map.get(*pos).is_some_and(|tile| {
+                            tile.district.is_none()
+                                && (tile.improvement.is_none() || tile.pillaged)
+                        }) && g
+                            .valid_improvements(pid, *pos)
+                            .iter()
+                            .any(|improvement| g.rules.improvements[improvement].builder_buildable)
+                    })
+                    .count()
+            })
+            .sum()
+    }
+
+    /// See `builder_before_the_army_3`: a Builder while the empire holds (or
+    /// has queued) fewer than one per three unimproved worked tiles, at most
+    /// one per two cities, and this city finishes one within
+    /// `LENT_FLOOR_MAX_BUILD_TURNS`.
+    pub(crate) fn builder_backlog_item(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        builders: usize,
+    ) -> Option<Item> {
+        if n_cities < 2 || builders >= n_cities.div_ceil(2) {
+            return None;
+        }
+        let quota = Self::unimproved_worked_tiles(g, pid)
+            .div_ceil(3)
+            .min(n_cities.div_ceil(2));
+        if builders >= quota {
+            return None;
+        }
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        (g.can_produce(pid, cid, &builder)
+            && Self::unit_build_turns(g, pid, cid, "builder")
+                <= g.standard_duration(LENT_FLOOR_MAX_BUILD_TURNS) as f64)
+            .then_some(builder)
     }
 
     pub(crate) fn culture_defense_theater_item(
@@ -23020,7 +23105,8 @@ mod tests {
         for position in owned {
             if game.wdist(center, position) == 2 && game.map.tiles[&position].district.is_none() {
                 let tile = game.map.tiles.get_mut(&position).unwrap();
-                tile.terrain = crate::name!("plains_hills");
+                tile.terrain = crate::name!("plains");
+                tile.hills = true;
                 tile.feature = None;
                 tile.resource = None;
                 tile.improvement = Some(crate::name!("mine"));
@@ -23123,6 +23209,49 @@ mod tests {
         };
         assert!(is_builder(&second(0)), "version 2 answers the drought");
         assert_eq!(second(1), pick(false, 3, 1), "version 2 leaves one Builder to stock");
+    }
+
+    /// See `builder_before_the_army_3`: past version 2's first Builder, an
+    /// empire working unimproved hills trains another where the stock
+    /// governor fills the military floor, and a due Settler comes first.
+    #[test]
+    fn unimproved_worked_hills_call_another_builder_before_the_army() {
+        let (mut game, cid) = founded_capital_fixture("BUILDERBACKLOG", 91_832);
+        game.cities.get_mut(&cid).unwrap().pop = 6;
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("mining"));
+        let center = game.cities[&cid].pos;
+        let owned: Vec<Pos> = game.cities[&cid].owned_tiles.to_vec();
+        for position in owned {
+            if position != center && game.map.tiles[&position].district.is_none() {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("grassland");
+                tile.hills = true;
+                tile.feature = None;
+                tile.resource = None;
+                tile.improvement = None;
+            }
+        }
+        assert!(
+            BasicAi::unimproved_worked_tiles(&game, 0) >= 4,
+            "the fixture works unimproved hills: {}",
+            BasicAi::unimproved_worked_tiles(&game, 0)
+        );
+        let pick = |version: u8, settlers: usize, builders: usize| {
+            let mut ai = BasicAi::new();
+            ai.builder_before_the_army_2 = version == 2;
+            ai.builder_before_the_army_3 = version == 3;
+            ai.pick_item(&game, 0, cid, 3, settlers, builders, 1, 0, 0, 0, 0)
+        };
+        let is_builder =
+            |item: &Option<Item>| matches!(item, Some(Item::Unit { unit }) if *unit == "builder");
+        assert!(!is_builder(&pick(2, 1, 1)), "version 2 leaves a second Builder to stock");
+        assert!(is_builder(&pick(3, 1, 1)), "{:?}", pick(3, 1, 1));
+        assert!(is_builder(&pick(3, 1, 0)), "the first Builder as version 2");
+        assert_eq!(pick(3, 1, 2), pick(2, 1, 2), "the one-per-two-cities cap is met");
+        assert!(BasicAi::new().settler_due(&game, 0, cid, 3, 0), "the fixture is due a Settler");
+        assert!(!is_builder(&pick(3, 0, 1)), "a due Settler comes first");
     }
 
     /// See `monument_first`: a city without a Monument builds it where the

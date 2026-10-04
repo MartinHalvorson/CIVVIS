@@ -2509,6 +2509,10 @@ pub const GENES: &[Gene] = &[
     // of the floor thinned the wartime army. See
     // `BasicAi::industry_in_the_district_list`.
     Gene { tag: "industry-in-the-district-list", field: "industry_in_the_district_list", kind: Kind::OptIn, enable: AdvancedAi::enable_industry_in_the_district_list, disable: AdvancedAi::disable_industry_in_the_district_list },
+    // Live King since version 2 armed: 20.7 unimproved worked land tiles
+    // against 14.5 improved at t100, 1.6 build charges on the map at t41-80.
+    // See `BasicAi::builder_before_the_army_3`.
+    Gene { tag: "builder-before-the-army-3", field: "builder_before_the_army_3", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_before_the_army_3, disable: AdvancedAi::disable_builder_before_the_army_3 },
     Gene { tag: "colonization-earns-its-slot", field: "colonization_earns_its_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_colonization_earns_its_slot, disable: AdvancedAi::disable_colonization_earns_its_slot },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------

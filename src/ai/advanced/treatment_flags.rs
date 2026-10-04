@@ -4767,6 +4767,7 @@ impl AdvancedAi {
     /// Builder quota ahead of the Monument, the Settler and the military floor.
     pub fn enable_builder_before_the_army(&mut self) {
         self.disable_builder_before_the_army_2();
+        self.disable_builder_before_the_army_3();
         self.builder_before_the_army = true;
         self.base.builder_before_the_army = true;
     }
@@ -4781,6 +4782,7 @@ impl AdvancedAi {
     /// the empire has no Builder standing or queued. Exclusive with version 1.
     pub fn enable_builder_before_the_army_2(&mut self) {
         self.disable_builder_before_the_army();
+        self.disable_builder_before_the_army_3();
         self.builder_before_the_army_2 = true;
         self.base.builder_before_the_army_2 = true;
     }
@@ -4953,6 +4955,22 @@ impl AdvancedAi {
     pub fn disable_industry_in_the_district_list(&mut self) {
         self.industry_in_the_district_list = false;
         self.base.industry_in_the_district_list = false;
+    }
+
+    /// See `BasicAi::builder_before_the_army_3`: version 2's first Builder,
+    /// then one per three unimproved worked tiles behind the Campus step and
+    /// a due Settler. Exclusive with versions 1 and 2.
+    pub fn enable_builder_before_the_army_3(&mut self) {
+        self.disable_builder_before_the_army();
+        self.disable_builder_before_the_army_2();
+        self.builder_before_the_army_3 = true;
+        self.base.builder_before_the_army_3 = true;
+    }
+
+    /// The twin of `enable_builder_before_the_army_3`.
+    pub fn disable_builder_before_the_army_3(&mut self) {
+        self.builder_before_the_army_3 = false;
+        self.base.builder_before_the_army_3 = false;
     }
 
     /// Opt-in gene `colonization-earns-its-slot`; see

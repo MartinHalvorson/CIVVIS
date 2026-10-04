@@ -5204,6 +5204,9 @@ pub struct AdvancedAi {
     /// `builder-before-the-army-2`: the same step, only while the empire has
     /// no Builder standing or queued. See `BasicAi::builder_before_the_army_2`.
     builder_before_the_army_2: bool,
+    /// `builder-before-the-army-3`: version 2's first Builder, then one per
+    /// three unimproved worked tiles. See `BasicAi::builder_before_the_army_3`.
+    builder_before_the_army_3: bool,
     // ---- append: c-d ------------------------------------------------
     /// `denial-needs-a-road`: a Conquest counter to a rival's victory clock
     /// is actionable only when a land path that respects closed borders
@@ -8650,6 +8653,7 @@ impl AdvancedAi {
             air_resource_colony_target: None,
             builder_before_the_army: false,
             builder_before_the_army_2: false,
+            builder_before_the_army_3: false,
             // ---- append: c-d ----------------------------------------
             denial_needs_a_road: false,
             denial_nearest_finish: false,

@@ -22031,6 +22031,60 @@ fn live_war_economy_recovers_before_rearming_a_bankrupt_army() {
     );
 }
 
+/// See `colonization_earns_its_slot`: with no Settler in production, the
+/// one early economic slot stays with Urban Planning even while the city
+/// plan is short; a queued Settler still takes it for Colonization.
+#[test]
+fn colonization_earns_its_slot_only_while_a_settler_is_building() {
+    let setup = |settler: bool| {
+        let (mut game, city, _) = empire_with_a_capital(79_099);
+        game.cities.get_mut(&city).unwrap().pop = 3;
+        game.players[0].government = Some("chiefdom".to_string());
+        game.players[0]
+            .civics
+            .extend([crate::name!("code_of_laws"), crate::name!("early_empire")]);
+        game.players[0]
+            .policies
+            .extend([crate::name!("discipline"), crate::name!("urban_planning")]);
+        let unit = if settler { "settler" } else { "warrior" };
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: Item::Unit {
+                    unit: Name::new(unit),
+                },
+            },
+        )
+        .expect("the capital can build the unit");
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+        ai.enable_wide_map_capacity();
+        ai.enable_colonization_earns_its_slot();
+        ai.plan = Some(StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: PRODUCTION_CITY_TARGET_FLOOR,
+            assessed_turn: game.turn,
+            rush: false,
+        });
+        ai.strategic_policies(&mut game, 0, GrandStrategy::Science);
+        game
+    };
+    let idle = setup(false);
+    assert!(
+        idle.players[0].policies.contains(&crate::name!("urban_planning")),
+        "no Settler in production leaves the slot to Urban Planning"
+    );
+    assert!(!idle.players[0].policies.contains(&crate::name!("colonization")));
+    let building = setup(true);
+    assert!(
+        building.players[0].policies.contains(&crate::name!("colonization")),
+        "a Settler in production still takes the slot"
+    );
+}
+
 #[test]
 fn live_policy_timing_slots_colonization_while_the_city_plan_is_short() {
     let (mut game, city, _) = empire_with_a_capital(79_099);
