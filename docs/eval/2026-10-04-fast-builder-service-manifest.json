@@ -59,7 +59,12 @@
     "experimental_full_passed": 4542,
     "ignored": 53,
     "experimental_changed_line_quality": "passed",
-    "final_validation": "pending"
+    "final_validation": {
+      "full_passed": 4542,
+      "ignored": 53,
+      "changed_line_quality": "passed",
+      "runtime_equals_final_base": true
+    }
   },
   "artifacts_sha256": {
     "docs/eval/2026-10-04-fast-builder-service-pilot-deity-candidate.csv": "ecc0699522f0fc4201d03837ec0cac22c64a26bec4f4180979e4c4762552d421",
@@ -73,6 +78,7 @@
     "docs/eval/2026-10-04-fast-builder-service-pilot-summary.json": "151bf804065361febac0bc827380ca40efadd7d8e851cbda3e29027c47e78411",
     "docs/eval/2026-10-04-fast-builder-service-probe.rs": "945f55241793ec57cfae27fa9fd3fe34b3715438646f4f40f81d3e13fd2dd6ab",
     "docs/eval/2026-10-04-fast-builder-service-summarize.py": "225aa60cbfbe46e2f9c7770cbe00cf98f71c36c616a6e6ab592a478ecf39da73",
-    "docs/eval/2026-10-04-fast-builder-service.md": "94126beba2f6af227c16d49389792ec1b5ca936d5497448e15bdc88109eee04a"
-  }
+    "docs/eval/2026-10-04-fast-builder-service.md": "6a9e12fc886bbf83ae06ec436c79abe94b500a6da285bc10086c6e21c1043d6c"
+  },
+  "final_base_commit": "77a8970911f310f831e7524c7cf92410aa128270"
 }

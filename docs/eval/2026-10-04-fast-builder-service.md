@@ -83,7 +83,11 @@ The prototype's three focused tests exercise the actual governor, cross-city
 worked jobs, charge coverage, slow and committed queues, and safety/clock
 boundaries. They pass after the two fixture corrections above. The full locked
 CI-profile suite passes 4,542 tests, with 53 ignored, on the prototype.
-Changed-line quality and final restored-tree validation are recorded in the PR.
+Both experimental and final changed-line quality pass. After merging main
+`77a8970911f310f831e7524c7cf92410aa128270`, the restored tree also passes
+4,542 tests (53 ignored); main added three unrelated plot-refusal tests while
+the three prototype tests were removed. The final source, rules and gene
+ledger match that main revision exactly.
 
 Build the library on the frozen experimental checkpoint with
 `cargo build --profile ci --locked --lib`, then compile the tracked probe:
