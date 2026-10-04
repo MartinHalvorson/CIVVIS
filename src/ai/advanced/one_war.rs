@@ -713,13 +713,15 @@ impl AdvancedAi {
     }
 
     /// Whether a war on `other`, beside the front, is one the Domination
-    /// counter wants kept: `other`'s clock is urgent, or it is a counter
-    /// target we outgun [`ONE_WAR_SECOND_FRONT_RATIO`] times over. See
-    /// `one_war_peace`.
+    /// counter wants kept: `other`'s clock is urgent, its land is the only
+    /// road to a target (`war_holds_the_road`), or it is a counter target we
+    /// outgun [`ONE_WAR_SECOND_FRONT_RATIO`] times over. See `one_war_peace`.
     pub(crate) fn second_front_war_kept(&self, g: &Game, pid: usize, other: usize) -> bool {
         self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && g.is_at_war(pid, other)
             && (self.urgent_victory_threat(g, other)
+                // See `war_holds_the_road`.
+                || self.war_holds_the_road(g, pid, other)
                 || (self.domination_counter_target(g, pid, other)
                     && g.military_power(pid)
                         >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(other).max(1.0)))
