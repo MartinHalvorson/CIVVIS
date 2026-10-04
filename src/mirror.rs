@@ -606,9 +606,18 @@ fn state_line_can_match_turn(line: &str, turn: Option<u32>) -> bool {
 /// the scan cannot tell (no integer `turn` anywhere), so the exact parse still
 /// owns missing, null, string, escaped and duplicate keys. Nesting is ignored.
 fn turn_may_match(line: &str, want: u32) -> bool {
+    turn_may_be_any(line, &[want])
+}
+
+/// [`turn_may_match`] for a set of turns: false only when `line` spells at
+/// least one integer `"turn"` member and none of them is in `turns`. A record
+/// whose top-level `turn` reads as one of `turns` (`as_u64`, or a `u32` field)
+/// must spell it, so a reader that keeps only such records may skip the parse
+/// of everything this rejects.
+pub fn turn_may_be_any(line: &str, turns: &[u32]) -> bool {
     let bytes = line.as_bytes();
     let key = "\"turn\"";
-    let want = want.to_string();
+    let wanted: Vec<String> = turns.iter().map(|turn| turn.to_string()).collect();
     let mut saw_integer = false;
     // Every occurrence, overlapping included, as the `str::find` walk it
     // replaces found them; memmem is the SIMD searcher (std's is scalar here).
@@ -636,7 +645,7 @@ fn turn_may_match(line: &str, want: u32) -> bool {
         if after.is_some_and(|b| matches!(b, b'.' | b'e' | b'E')) {
             continue;
         }
-        if &bytes[at..at + digits] == want.as_bytes() {
+        if wanted.iter().any(|want| &bytes[at..at + digits] == want.as_bytes()) {
             return true;
         }
         saw_integer = true;
@@ -676,7 +685,7 @@ struct NeedleHits {
 /// a persistent reader pays for the appended bytes alone. A shrunk, replaced or
 /// unreadable file is read afresh. Bytes after the last newline are a line still
 /// being written; they are left for the next read on the incremental path.
-pub(crate) fn read_events(path: &std::path::Path) -> std::io::Result<std::rc::Rc<String>> {
+pub fn read_events(path: &std::path::Path) -> std::io::Result<std::rc::Rc<String>> {
     use std::io::{Read, Seek, SeekFrom};
     const TAIL: u64 = 4096;
     let len = std::fs::metadata(path)?.len();
@@ -757,7 +766,7 @@ pub(crate) fn lines_containing<'a>(raw: &'a str, needle: &str) -> std::vec::Into
 
 /// [`lines_containing`] as byte ranges into `raw`, for readers that also need
 /// where a line sits (its order against a selected state record).
-fn line_ranges_containing(raw: &str, needle: &str) -> Vec<(usize, usize)> {
+pub fn line_ranges_containing(raw: &str, needle: &str) -> Vec<(usize, usize)> {
     EVENTS_READ
         .with(|cell| {
             let mut slot = cell.borrow_mut();
@@ -998,6 +1007,11 @@ mod log_scan_prefilter_tests {
         assert!(!turn_may_match(r#"{"kind":"state","turn":8}"#, 7));
         assert!(!turn_may_match(r#"{"kind":"state","turn":70}"#, 7));
         assert!(turn_may_match(r#"{"kind":"state","turn":8,"turn":7}"#, 7));
+        use super::turn_may_be_any;
+        assert!(turn_may_be_any(r#"{"kind":"combat","turn":12}"#, &[11, 12]));
+        assert!(!turn_may_be_any(r#"{"kind":"combat","turn":13}"#, &[11, 12]));
+        assert!(turn_may_be_any(r#"{"kind":"combat","turn":-3}"#, &[11, 12]));
+        assert!(!turn_may_be_any(r#"{"kind":"combat","turn":18446744073709551616}"#, &[11]));
     }
 }
 
