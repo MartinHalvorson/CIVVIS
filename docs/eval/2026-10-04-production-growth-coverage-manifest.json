@@ -12,7 +12,6 @@
     61006901
   ],
   "trace_patch_sha256": "a1c1df9e40aae3b4f73d84baabbfe314f38ab44af3067b6de1904781a309d161",
-  "probe_sha256": "0a8260ba283c51834f10fd8175e1f8e7c8eabd764f8faa16a64590636c8ffe12",
   "control_compile_args": [
     "rustc",
     "--edition=2021",
@@ -96,5 +95,15 @@
     "libzmij-db1726fcbad03e10.rlib": "087ecf77c66cc9d9f6a71ef4c393bf87194fd96ce7c57921adea7f9d598086d7"
   },
   "action_log_probe_frozen_before_play_at": "2026-10-04T14:14:22.371706+00:00",
-  "probe_revision_note": "Added explicit action log files because serialized Game excludes the runtime action log. Observer and all decisions unchanged."
+  "probe_revision_note": "Added explicit action log files because serialized Game excludes the runtime action log. Observer and all decisions unchanged.",
+  "initial_probe_sha256": "81f590f10b179ae8cd0affb6eb1e493a133d266f2a3e0277beabeee115786667",
+  "initial_probe_source_checkpoint": "9b5b79599",
+  "action_log_probe_sha256": "0a8260ba283c51834f10fd8175e1f8e7c8eabd764f8faa16a64590636c8ffe12",
+  "action_log_control_binary_sha256": "2b9aa6eee0b5a20ec549c8d1f2c4b5c175a7d3de5a4e85ae608ac043cd5f9354",
+  "action_log_diagnostic_binary_sha256": "fc6cd57d3b46c8bb091a805fca6d9f527bec784e53e298fbb727f1736c9c2ce6",
+  "hash_scope_note": "Generic control/diagnostic binary hashes and action_log_* hashes describe the final explicit-action verification binaries. The initial binaries were replaced and not retained. The initial probe source is preserved at 9b5b79599; its source hash is recorded separately. Library and observer decisions were unchanged between passes, and paired checkpoints/worlds were equivalent.",
+  "initial_manifest_checkpoint": "9b5b79599",
+  "initial_manifest_hashes": {
+    "trace_patch_sha256": "a1c1df9e40aae3b4f73d84baabbfe314f38ab44af3067b6de1904781a309d161"
+  }
 }
