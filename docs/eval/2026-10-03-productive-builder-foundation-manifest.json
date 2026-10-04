@@ -1,0 +1,70 @@
+{
+  "kind": "paired production ramp experiment",
+  "candidate_source_commit": "f0c79ad09",
+  "final_source_changes_after_measurement": "formatting only; merged main modifies tools/web/docs, with no src/data/deploy or gene ledger changes",
+  "control_runtime_revision": "45137644f66f3b00a15a30d8de03ae679b3b7aa5",
+  "control_runtime_equals_task_base": true,
+  "profile": {
+    "players": 4,
+    "civs": [
+      "Gran Colombia"
+    ],
+    "randomize_civs": true,
+    "width": 60,
+    "height": 38,
+    "city_states": 6,
+    "map": "Pangaea",
+    "speed": "Online",
+    "max_turns": 150,
+    "victory": "Domination focal, all victory conditions enabled",
+    "focal_handicap_exempt": true,
+    "rivals": "AdvancedAi::fleet",
+    "focal_genome": "AdvancedAi::targeting(Domination) with gene ledger; no forced live genes"
+  },
+  "seeds": {
+    "emperor": [
+      61004500,
+      61004511
+    ],
+    "deity": [
+      61004600,
+      61004607
+    ]
+  },
+  "binaries_sha256": {
+    "control_probe": "9d01241a3431780fdcd43aff3f2ce439178b6cbef93b0c802d097f0e6e5cec94",
+    "candidate_probe": "7afd0bcedcaf7a9311a3d3af4ea33703530686927be84d01aeeba2af93746a41",
+    "candidate_orders": "496b0662a6734a8c229a5d65ef25d2fa30b9fdaeffeb6611580c63936399e3dd"
+  },
+  "candidate_sources_sha256": {
+    "src/ai/advanced.rs": "a2d5773bc6648e0c266131a80358c90c22800f27624bd07b62685a9c2cc390ea",
+    "src/ai/advanced/higher_level_strategy.rs": "869ad5982964d933ec047a112e3230f92d24809030b23f662005b5ad055fe419",
+    "src/game/city.rs": "88230cb1ccc95ef1b83cb8ad994f16d1d7d6fa16d544fec3075ced7d11f98e2d"
+  },
+  "replay_prefixes_sha256": {
+    "50": "849d520787e61187e97d50a6390829352e2bd2e9ca76e0b7f17ac8d7510b00c5",
+    "75": "7c390f1ad86e9a921abe45c8fafc984d6d522182ca7ac33709ae17c57f9af699",
+    "100": "3be5d13ea7174bc66b4c687344c62e103b92ddd829a01282c3ea5442b5733248",
+    "125": "7981f85c0a188a07956bd803078da40e684302cd7960c43f7cea89c83bf7907b"
+  },
+  "artifacts_sha256": {
+    "docs/eval/2026-10-03-productive-builder-foundation-research-only-candidate.csv": "fd249cba2cc6098f31bc847acd9f9c2582351e91f40ab8168a52450d62ce75cc",
+    "docs/eval/2026-10-03-productive-builder-foundation-research-only-candidate.txt": "45b1d881c75e454c73d0a0e8546c75014ef1b9b4d216f532f02f2510cd4a3835",
+    "docs/eval/2026-10-03-productive-builder-foundation-research-only-control.csv": "0d8ad97cb393d0eb18199ad8b46e65efe2e2c8a15136c30e1ad4365c1e71c1e6",
+    "docs/eval/2026-10-03-productive-builder-foundation-research-only-control.txt": "c92f03f5c2a4b88280ae48cdb1e9c17ec87a43b8475cc8967538c66756126fbc",
+    "docs/eval/2026-10-03-productive-builder-foundation-research-only-deity-candidate.csv": "4edcac57496b828cd52abb8714f04523b11689db53a16a2f29698003260c0776",
+    "docs/eval/2026-10-03-productive-builder-foundation-research-only-deity-candidate.txt": "b8a945aded5ff7fd3522f9e5b53d60f739e1cb71c52af90cfbde196f16df29b5",
+    "docs/eval/2026-10-03-productive-builder-foundation-research-only-deity-control.csv": "99775a74ab29df6677508d26d09cb81e73bd98568407df5c873f3072ac72f834",
+    "docs/eval/2026-10-03-productive-builder-foundation-research-only-deity-control.txt": "2a3b6f5253bcf5d69ad31c3ae7f6311dc507d02da9614f274d46ebf4914f5e58",
+    "docs/eval/2026-10-03-productive-builder-foundation-replay-100.json": "f2d30788ddaa301b218729df27d4a4e325e40b1c8337605ca563f67063fba0d8",
+    "docs/eval/2026-10-03-productive-builder-foundation-replay-100.txt": "3f17626e8daa581abdd9eff55abd8424c140ab7f774bf9a1f6a7f28550ef2331",
+    "docs/eval/2026-10-03-productive-builder-foundation-replay-125.json": "78bcb084733a7bb5a4fda4b4643899012d6d88e9c220279399bc1d3bad40cfbe",
+    "docs/eval/2026-10-03-productive-builder-foundation-replay-125.txt": "7df1cdf471e93572a6909afcd77f9189d4ca58980757ab8764db802207d9f15b",
+    "docs/eval/2026-10-03-productive-builder-foundation-replay-50.json": "ac56a59191b4733841c261dcd7c44338dd023aae3820d21abcb7d3022d695888",
+    "docs/eval/2026-10-03-productive-builder-foundation-replay-50.txt": "3138702a09ed2c96e3b36e3978b63df986d6027b3557bde9153424a74b78a2f0",
+    "docs/eval/2026-10-03-productive-builder-foundation-replay-75.json": "4ffb83ac537fc51af3091d9c12e0a2d5b9894c700dcc42fe2968e4f0f46fddf5",
+    "docs/eval/2026-10-03-productive-builder-foundation-replay-75.txt": "1750d6697487f2ce1a4784ad18639c5fd626660d202a07b8c959501bc5d6104a",
+    "docs/eval/2026-10-03-productive-builder-foundation-probe.rs": "945f55241793ec57cfae27fa9fd3fe34b3715438646f4f40f81d3e13fd2dd6ab"
+  },
+  "gene_ledger_sha256": "e86a761d3fc5d51f3d41b289c5b7275810fe5adbbe2a85581d32833ad3e05a45"
+}
