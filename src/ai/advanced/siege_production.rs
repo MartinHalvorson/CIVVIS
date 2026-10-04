@@ -28,6 +28,9 @@ pub(super) const SUPPLY_GUNS_MAX: usize = 3;
 /// A city may set aside a building it has invested in for the gun only
 /// when the gun reaches the front within this many turns.
 pub(super) const SUPPLY_DISPLACE_ARRIVAL: f64 = 10.0;
+/// `breaker-supply-scales-2`: a stronger gun is preferred only when it
+/// arrives within this many turns of the soonest.
+pub(super) const SUPPLY_STRENGTH_WINDOW: f64 = 3.0;
 
 impl AdvancedAi {
     /// Whether the wall-breaker reservation reads `owner` as at war: a war
@@ -216,6 +219,16 @@ impl AdvancedAi {
         let supply_short = self.breaker_supply_scales
             && g.city_max_wall_hp(target) >= SUPPLY_WALL_HP
             && counts.siege < supply_wanted;
+        // `breaker-supply-scales-2`: the same parallel supply, only for an
+        // original capital Domination needs, without setting aside a
+        // building already under way, and the stronger gun only when it is
+        // nearly as soon. Version 1 measured -9.7 +/- 5.3 pp on the win axis.
+        let supply_v2 = self.breaker_supply_scales_2
+            && target.is_capital
+            && target.original_owner != pid
+            && g.city_max_wall_hp(target) >= SUPPLY_WALL_HP
+            && counts.siege < supply_wanted;
+        let parallel = supply_short || supply_v2;
         let queued_arrival = if counts.land_siege_power > 0.0
             && !breach_shortfall
             && counts.siege == 1
@@ -245,7 +258,7 @@ impl AdvancedAi {
         };
         if counts.land_siege_power > 0.0
             && !breach_shortfall
-            && !supply_short
+            && !parallel
             && queued_arrival.is_none()
         {
             return None;
@@ -253,8 +266,7 @@ impl AdvancedAi {
 
         let best = {
             let _memo = g.query_memo();
-            let mut best_idle: Option<(f64, u32, Name)> = None;
-            let mut best_fresh: Option<(f64, u32, Name)> = None;
+            let mut candidates: Vec<(bool, f64, u32, Name)> = Vec::new();
             for cid in g.player_city_ids(pid) {
                 if plan.threatened_city == Some(cid) {
                     continue;
@@ -306,36 +318,36 @@ impl AdvancedAi {
                     if busy && arrival > SUPPLY_DISPLACE_ARRIVAL {
                         continue;
                     }
-                    let best = if fresh_routine || busy {
-                        &mut best_fresh
-                    } else {
-                        &mut best_idle
-                    };
-                    // `breaker-supply-scales`: the strongest gun first, then
-                    // the soonest; otherwise the soonest.
-                    let strength = if supply_short {
-                        spec.ranged_attack_strength()
-                    } else {
-                        0.0
-                    };
-                    let old_strength = |old_unit: &Name| {
-                        if supply_short {
-                            g.rules.units[old_unit].ranged_attack_strength()
-                        } else {
-                            0.0
-                        }
-                    };
-                    if best.as_ref().is_none_or(|(old, old_city, old_unit)| {
-                        let old_power = old_strength(old_unit);
-                        strength > old_power
-                            || (strength == old_power
-                                && (arrival.total_cmp(old).is_lt()
-                                    || (arrival == *old && (cid, unit) < (*old_city, *old_unit))))
-                    }) {
-                        *best = Some((arrival, cid, unit));
-                    }
+                    candidates.push((fresh_routine || busy, arrival, cid, unit));
                 }
             }
+            // The soonest gun; under `breaker-supply-scales` the strongest,
+            // then the soonest; under `-2` the strongest of those within
+            // SUPPLY_STRENGTH_WINDOW turns of the soonest, then the soonest.
+            let strength = |unit: &Name| g.rules.units[unit].ranged_attack_strength();
+            let pick = |fresh: bool| -> Option<(f64, u32, Name)> {
+                let bucket: Vec<&(bool, f64, u32, Name)> =
+                    candidates.iter().filter(|c| c.0 == fresh).collect();
+                let soonest = bucket.iter().map(|c| c.1).min_by(f64::total_cmp)?;
+                bucket
+                    .into_iter()
+                    .filter(|c| {
+                        !supply_v2 || supply_short || c.1 <= soonest + SUPPLY_STRENGTH_WINDOW
+                    })
+                    .min_by(|a, b| {
+                        let by_strength = if supply_short || supply_v2 {
+                            strength(&b.3).total_cmp(&strength(&a.3))
+                        } else {
+                            std::cmp::Ordering::Equal
+                        };
+                        by_strength
+                            .then(a.1.total_cmp(&b.1))
+                            .then((a.2, &a.3).cmp(&(b.2, &b.3)))
+                    })
+                    .map(|c| (c.1, c.2, c.3.clone()))
+            };
+            let best_idle = pick(false);
+            let best_fresh = pick(true);
             match (best_idle, best_fresh) {
                 (Some(idle), Some(fresh))
                     if fresh.0 <= 30.0 && idle.0 >= fresh.0 + 8.0 && idle.0 >= fresh.0 * 1.5 =>
@@ -353,11 +365,7 @@ impl AdvancedAi {
         let faster_than_queued = queued_arrival.is_some_and(|queued| {
             arrival <= 20.0 && queued >= arrival + 8.0 && queued >= arrival * 1.5
         });
-        if counts.land_siege_power > 0.0
-            && !breach_shortfall
-            && !supply_short
-            && !faster_than_queued
-        {
+        if counts.land_siege_power > 0.0 && !breach_shortfall && !parallel && !faster_than_queued {
             return None;
         }
         let displaced = g.cities[&city].queue.first().cloned();

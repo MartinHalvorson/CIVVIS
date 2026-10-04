@@ -5182,6 +5182,17 @@ impl AdvancedAi {
         self.formations_heed_refusals = false;
     }
 
+    /// Opt-in gene `breaker-supply-scales-2`; see
+    /// [`Self::breaker_supply_scales_2`].
+    pub fn enable_breaker_supply_scales_2(&mut self) {
+        self.breaker_supply_scales_2 = true;
+    }
+
+    /// The twin of `enable_breaker_supply_scales_2`.
+    pub fn disable_breaker_supply_scales_2(&mut self) {
+        self.breaker_supply_scales_2 = false;
+    }
+
     /// Opt-in gene `breaker-supply-scales`; see
     /// [`Self::breaker_supply_scales`].
     pub fn enable_breaker_supply_scales(&mut self) {
