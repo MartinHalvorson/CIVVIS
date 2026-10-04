@@ -278,7 +278,8 @@ fn growth_capacity_prices_mild_amenity_deficits_and_maintenance_runway() {
         Arc::make_mut(&mut g.observed_city_amenity_adjustments).insert(city, -1 - current);
     }
     let upkeep = g.rules.buildings[crate::name!("granary")].maintenance;
-    assert!(upkeep > 0.0);
+    // Price the loaded rule, including a zero-maintenance Granary.
+    // A half-Gold deficit must still consume the forecast's cash runway.
     g.players[0].gold_per_turn = upkeep - 0.5;
     let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
     ai.enable_live_bridge();
