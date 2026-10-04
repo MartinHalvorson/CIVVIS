@@ -294,3 +294,107 @@ class TheDedicatedDisplayShowsTheHud(unittest.TestCase):
         html = INDEX.read_text(encoding="utf-8")
         self.assertRegex(html, r'<div id="tree">', "the tech/civics tree is a modal")
         self.assertNotRegex(html, r'<div id="tree"[^>]*class="[^"]*\bopen\b')
+
+
+ACTIVE_AREA_SCENARIOS = r"""
+const key = pos => pos[0] + "," + pos[1];
+const militaryUnit = unit => !["builder", "trader", "settler"].includes(unit.type);
+const whexDist = (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]));
+const statePlayerAnchor = (st, pid) =>
+  st.cities.find(city => city.owner === pid && city.is_capital) || null;
+__BLOCK__
+const tiles = [];
+for (let y = 0; y < 40; y++) for (let x = 0; x < 60; x++) tiles.push({pos:[x, y]});
+const players = [{id:0}, {id:1, at_war_with_me:true}, {id:2, at_war_with_me:false}];
+const capital = {owner:0, is_capital:true, pos:[10, 10], hp:200, wall_hp:0, wall_max:0};
+const outpost = {owner:0, pos:[50, 5], hp:60, wall_hp:0, wall_max:0};
+const world = (seed, turn, units, cities = []) =>
+  ({seed, turn, units, cities:[capital, ...(seed === 1 ? [outpost] : []), ...cities], players, map:{tiles}});
+const unit = (owner, pos, extra = {}) => ({owner, pos, type:"musketman", hp:100, ...extra});
+const near = (pos, x, y, r = 0) => !!pos && whexDist(pos, [x, y]) <= r;
+const check = (ok, why) => { if (!ok) throw new Error(why); };
+let t = 0;
+const at = (st, wait = 5000) => activeAreaCenter(st, 0, (t += wait));
+
+check(near(at(world(1, 10, [unit(0, [11, 10])])), 10, 10), "no activity yet: frame the capital");
+
+const army = [unit(0, [30, 20]), unit(0, [31, 20]), unit(0, [30, 21])];
+const addis = {owner:1, pos:[32, 20], hp:200, wall_hp:100, wall_max:400};
+const guard = unit(1, [33, 20]);
+check(near(at(world(1, 10, [...army, guard], [addis])), 32, 20),
+      "a siege of an enemy city outweighs a quiet capital, centred on the city");
+check(activeAreaSubjects(world(1, 10, [...army, guard], [addis]), 0, (t += 5000)).length === 49,
+      "the frame is the hot tile's neighbourhood, not the empire");
+
+check(near(at(world(1, 10, [...army, unit(0, [31, 21], {hp:40}), guard], [addis])), 32, 20),
+      "more fighting in the same place keeps the frame");
+check(near(at(world(1, 10, [...army, guard, unit(0, [5, 35], {type:"builder"})], [addis])), 32, 20),
+      "a builder elsewhere does not steal the frame from a siege");
+const rivalsTown = {owner:2, pos:[13, 10], hp:0, wall_hp:0, wall_max:200};
+check(near(at(world(1, 10, [...army, guard, unit(0, [11, 10]), unit(2, [12, 10])], [addis, rivalsTown])), 32, 20),
+      "a city at peace with us is not our front");
+
+const raid = [unit(1, [50, 6]), unit(1, [51, 6]), unit(1, [49, 5])];
+const defenders = [unit(0, [50, 4], {hp:20}), unit(0, [51, 5], {hp:30}), unit(0, [49, 4], {hp:10})];
+const twoFronts = world(1, 10, [...army, guard, ...raid, ...defenders], [addis]);
+check(near(at(twoFronts), 50, 5, 1), "a clearly hotter front takes the frame");
+const breached = {...addis, wall_hp:0, hp:50};
+const raidOver = world(1, 10, [...army, guard, ...defenders], [breached]);
+check(near(at(raidOver, 1000), 50, 5, 1), "the next hotter front waits out the hold");
+check(near(at(world(1, 10, [...army, guard, ...defenders], [breached]), 4000), 32, 20),
+      "and takes the frame once the hold has passed");
+
+const sieged = [...army, guard, ...defenders];
+const west = [[10, 30], [11, 30], [10, 31], [11, 31]].map(pos => unit(0, pos, {hp:30}));
+const westRaider = unit(1, [12, 32]);
+check(near(at(world(1, 10, [...sieged, ...west, westRaider], [breached])), 32, 20),
+      "a front only slightly hotter does not take the frame");
+const westWorse = [...west, unit(0, [10, 32], {hp:0}), unit(0, [11, 32], {hp:0})];
+check(near(at(world(1, 10, [...sieged, ...westWorse, westRaider], [breached])), 11, 31, 1),
+      "a front clearly hotter does");
+check(near(activeAreaTrack.center, 10, 32), "centred on the west front's hottest tile");
+const beside = [[13, 32], [14, 32], [15, 32], [16, 32]].map(pos => unit(0, pos, {hp:0}));
+check(near(at(world(1, 10, [...sieged, ...westWorse, westRaider, unit(1, [15, 33]), ...beside], [breached])), 10, 32),
+      "a hotter tile three tiles over is still the same view");
+
+check(near(at(world(2, 3, [unit(0, [11, 10])])), 10, 10), "a new world starts over at its capital");
+let marching = [unit(0, [11, 10])];
+at(world(2, 3, marching));
+for (let step = 0; step < 4; step++) {
+  marching = [unit(0, [11, 10]), ...[0, 1, 2, 3].map(i => unit(0, [40 + i, 30 + step]))];
+  at(world(2, 4 + step, marching));
+}
+check(near(activeAreaTrack.center, 41, 32, 3), "where our units keep arriving is where we are acting");
+check(near(at(world(2, 30, marching)), 41, 32, 3),
+      "a quiet stretch keeps the last front rather than snapping home");
+check(activeAreaTrack.memory.size <= 1, "arrivals older than the memory are forgotten");
+const founded = {owner:0, pos:[5, 5], hp:200, wall_hp:0, wall_max:0};
+check(near(at(world(2, 30, marching, [founded])), 5, 5), "a city that becomes ours is where we are acting");
+check(near(at(world(2, 5, [unit(0, [11, 10])])), 10, 10), "a reload to an earlier turn starts over");
+console.log("active area checks passed");
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class TheDedicatedDisplayFollowsTheActiveArea(unittest.TestCase):
+    """The page beside a live game is filmed with the Civ VI window, and the
+    operator asked for both to stay close on where our civilization is acting
+    (2026-10-04). Framing the whole empire showed the whole map."""
+
+    def test_only_the_dedicated_display_frames_the_active_area(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        body = source[source.index("function watchedEmpireSubjects(player)"):]
+        body = body[:body.index("\n}\n")]
+        self.assertIn("if (DEDICATED_DISPLAY) {", body)
+        self.assertIn("activeAreaSubjects(state, player)", body)
+
+    def test_the_frame_follows_the_hottest_front(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        start = source.index("const ACTIVE_AREA = {")
+        block = source[start:source.index("function watchedEmpireSubjects(player)")]
+        done = subprocess.run(
+            [NODE, "-e", ACTIVE_AREA_SCENARIOS.replace("__BLOCK__", block)],
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr.strip())
+        self.assertIn("active area checks passed", done.stdout)
