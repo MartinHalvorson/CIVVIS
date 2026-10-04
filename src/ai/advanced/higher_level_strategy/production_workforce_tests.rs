@@ -69,7 +69,7 @@ fn one_empire_builder_does_not_suppress_profitable_work_in_another_city() {
     assert_eq!(g.cities[&city].queue.first(), Some(&item));
     assert!(
         ai.named_productive_workforce_target(&g, 0, &plan).is_none(),
-        "one pipeline, bounded workforce"
+        "bounded workforce includes the new queue"
     );
 }
 
@@ -86,11 +86,14 @@ fn a_nearby_charged_builder_already_services_the_local_jobs() {
 }
 
 #[test]
-fn unworked_or_single_productive_jobs_do_not_justify_a_new_unit() {
+fn unworked_jobs_and_jobs_without_time_to_repay_do_not_justify_a_new_unit() {
     let (mut g, ai, plan, city, _) = board();
     let worked = g.observed_city_worked_tiles[&city].clone();
     Arc::make_mut(&mut g.observed_city_worked_tiles).insert(city, vec![worked[0]]);
+    assert!(ai.named_productive_workforce_target(&g, 0, &plan).is_some());
+    g.turn = 240;
     assert!(ai.named_productive_workforce_target(&g, 0, &plan).is_none());
+    g.turn = 40;
     Arc::make_mut(&mut g.observed_city_worked_tiles).insert(city, Vec::new());
     assert!(ai.named_productive_workforce_target(&g, 0, &plan).is_none());
 }
@@ -169,4 +172,45 @@ fn adaptive_genomes_and_science_launch_cities_keep_their_contracts() {
     assert!(g.cities[&city]
         .districts
         .contains_key(&Name::new("spaceport")));
+}
+
+#[test]
+fn researched_improvement_forecast_matches_the_completed_operation() {
+    let (mut g, _, _, city, _) = board();
+    let pos = g.observed_city_worked_tiles[&city][0];
+    g.players[0].techs.insert(crate::name!("apprenticeship"));
+    let before = g.modeled_tile_yields(pos);
+    let gain = g.improvement_yield_change(0, pos, crate::name!("mine"));
+    assert!(gain.production > g.rules.improvements["mine"].yields.production);
+    assert!(g.map.tiles[&pos].improvement.is_none());
+    let builder = g.spawn_test_unit("builder", 0, pos);
+    g.apply(
+        0,
+        &Action::Improve {
+            unit: builder,
+            improvement: crate::name!("mine"),
+        },
+    )
+    .unwrap();
+    assert!(
+        (g.modeled_tile_yields(pos).production - before.production - gain.production).abs() < 1e-9
+    );
+}
+
+#[test]
+fn a_slow_builder_queue_elsewhere_does_not_block_a_profitable_local_worker() {
+    let (mut g, ai, plan, city, builder) = board();
+    let first = g.map.tiles[&g.units[&builder].pos].owner_city.unwrap();
+    g.remove_unit(builder);
+    g.cities.get_mut(&first).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("builder"),
+    }];
+    assert_eq!(
+        ai.named_productive_workforce_target(&g, 0, &plan)
+            .unwrap()
+            .0,
+        city
+    );
+    ai.reserve_higher_level_investment(&mut g, 0, &plan);
+    assert!(ai.named_productive_workforce_target(&g, 0, &plan).is_none());
 }

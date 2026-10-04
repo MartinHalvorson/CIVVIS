@@ -126,9 +126,6 @@ impl AdvancedAi {
             || counts.builders >= ceiling
             || counts.military < cities.len()
             || self.live_war_economy_requires_recovery(g, pid, &counts)
-            || cities.iter().any(|cid| {
-                matches!(g.cities[cid].queue.first(), Some(Item::Unit { unit }) if unit == "builder")
-            })
         {
             return None;
         }
@@ -153,15 +150,15 @@ impl AdvancedAi {
                 || g.units.values().any(|unit| {
                     unit.owner == pid
                         && unit.kind == "builder"
-                        && unit.charges >= 2
+                        && unit.charges >= 1
                         && g.wdist(unit.pos, city.pos) <= 3
                 })
             {
                 continue;
             }
-            // Only jobs whose printed production survives the operation.
-            // Resource access, future citizens, tree bonuses and repairs do
-            // not inflate this conservative local repayment estimate.
+            // Forecast only local, currently worked gains. Research bonuses
+            // count; resource access, future citizens and repairs do not.
+            // This is a repayment projection, not guaranteed route timing.
             let mut gains: Vec<f64> = g
                 .city_citizen_plan(cid)
                 .worked_tiles
@@ -180,17 +177,16 @@ impl AdvancedAi {
                         .into_iter()
                         .filter_map(|name| {
                             let spec = &g.rules.improvements[name];
-                            (spec.builder_buildable
-                                && !spec.removes_feature
-                                && spec.yields.production > 0.0)
-                                .then_some(spec.yields.production)
+                            (spec.builder_buildable && !spec.removes_feature)
+                                .then(|| g.improvement_yield_change(pid, pos, name).production)
+                                .filter(|gain| *gain > 0.0)
                         })
                         .max_by(f64::total_cmp)
                 })
                 .collect();
             gains.sort_by(|a, b| b.total_cmp(a));
             gains.truncate(charges);
-            if gains.len() < 2 {
+            if gains.is_empty() {
                 continue;
             }
             let gain: f64 = gains.iter().sum();
@@ -200,7 +196,7 @@ impl AdvancedAi {
                 .max(1.0);
             // Up to three tiles from the center and six between subsequent
             // jobs, at the stock two movement, plus one operation per job.
-            // Colombia's extra movement and researched yields only help.
+            // Terrain and safety detours can delay this service projection.
             let service = ((3 + 6 * (gains.len() - 1)) as f64 / 2.0).ceil() + gains.len() as f64;
             let payback =
                 build + service + g.item_remaining_cost_for_city(pid, cid, &builder) / gain;
