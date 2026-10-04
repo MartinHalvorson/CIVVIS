@@ -15739,6 +15739,37 @@ impl AdvancedAi {
             // `advanced/decisive_window.rs`.
             let decisive_window = self.decisive_window(g, pid, plan);
             let decisive_window_goal = decisive_window.as_ref().and_then(|window| window.tech_goal);
+            // Say what the window reads when it does not take the slot, so a
+            // live readout can tell "already armed" from "nothing in reach".
+            if self.decisive_window
+                && decisive_window_goal.is_none()
+                && self.journal().wants(crate::reasoning::Level::Detail)
+            {
+                match &decisive_window {
+                    Some(window) => {
+                        think!(self.journal(), Research, Detail, "decisive-window: open";
+                               "{} beats {}'s best defender ({:.0}) by {:.0}{}",
+                               plain(window.assault.as_str()),
+                               g.players[window.target].civ,
+                               window.defender,
+                               window.margin,
+                               window
+                                   .breaker
+                                   .map(|breaker| format!(
+                                       " and {} opens tier-{} walls",
+                                       plain(breaker.as_str()),
+                                       window.wall_tier
+                                   ))
+                                   .unwrap_or_default())
+                    }
+                    None => {
+                        think!(self.journal(), Research, Detail, "decisive-window: no package";
+                               "nothing this civilization can train beats the target by {:.0} and opens its walls within {} turns of research",
+                               decisive_window::DECISIVE_MARGIN,
+                               g.standard_duration(decisive_window::DECISIVE_RESEARCH_HORIZON))
+                    }
+                }
+            }
             let forced_goal = match objective {
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
