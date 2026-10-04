@@ -11679,6 +11679,11 @@ CivvisLedger.onCombatVisEnd = function(kVisData)
 	if combat == nil then return; end
 	local attackerNow = CivvisLedger.describe(combat.attacker_id);
 	local defenderNow = CivvisLedger.describe(combat.defender_id);
+	if CivvisFrames ~= nil and combat.attacker ~= nil and combat.defender ~= nil
+			and combat.attacker.type == "unit" then
+		CivvisFrames.finishStrikeCombat(combat.attacker.player, combat.attacker.id,
+			combat.turn, combat.defender.x, combat.defender.y);
+	end
 	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
 	local preview = nil;
 	if combat.attacker ~= nil and combat.attacker.player == pid then
@@ -14753,8 +14758,12 @@ local function applyOrder(player, pid, row, turn)
 			local survivalRefusal = CivvisLedger.refuseLethalPreview(unit, subject, verb, x, y, turn, row);
 			if survivalRefusal ~= nil then return false, survivalRefusal; end
 			CivvisLedger.strike(unit, subject, verb, x, y, turn);
+			-- Arm before RequestOperation: the host can deliver its completion
+			-- callback synchronously. A refused request removes only its ticket.
+			local strikeTicket = CivvisFrames.startStrike(pid, subject, turn, x, y);
 			local accepted = operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params);
 			if not accepted then
+				CivvisFrames.finishStrike(strikeTicket);
 				-- The simulator can preview a shot that the host rejects for a
 				-- target-specific reason (LOS, range, diplomatic state, etc.). Keep
 				-- the decision and the host verdict separate so the next run can
@@ -18260,6 +18269,9 @@ CivvisFrames.reset = function()
 	-- and the sweep must not run on each of them.
 	CivvisFrames.settled = false;
 	CivvisFrames.productionRepairs = 0;
+	CivvisFrames.pendingStrikes = {};
+	CivvisFrames.strikeSequence = 0;
+	CivvisFrames.strikeWait = 0;
 end;
 
 -- Called from CivvisLedger.strike for every strike issued, opening or queued.
@@ -18277,6 +18289,67 @@ end;
 
 CivvisFrames.max = function()
 	return math.max(CivvisFrames.combatMax(), CivvisFrames.replanMax());
+end;
+
+-- An accepted ranged request can outlive the move queue. Four closed native
+-- attempts on 2026-10-04 opened replan snapshots before 221 unambiguous own
+-- shots completed;
+-- 168 later requests by those actors were refused before the original combat
+-- ended. Some snapshots said awake with an attack left: neither activity nor
+-- RequestOperation's return proves a settled board. The shipped
+-- WorldView/SelectedUnit.lua:295 reads CombatVisEnd's attacker after combat.
+-- Track only requested ranged shots, not every animation or foreign combat.
+CivvisFrames.startStrike = function(pid, subject, turn, x, y)
+	-- Production repair can request a frame even with both normal caps at
+	-- zero. Its two leases are separate, but its board must be settled too.
+	if CivvisFrames.max() <= 0 and cfg.CivvisDecides ~= true then return nil; end
+	CivvisFrames.pendingStrikes = CivvisFrames.pendingStrikes or {};
+	CivvisFrames.strikeSequence = (CivvisFrames.strikeSequence or 0) + 1;
+	local ticket = CivvisFrames.strikeSequence;
+	CivvisFrames.pendingStrikes[ticket] = { player = pid, unit = subject, turn = turn, x = x, y = y };
+	return ticket;
+end;
+
+CivvisFrames.finishStrike = function(ticket)
+	if ticket ~= nil and CivvisFrames.pendingStrikes ~= nil then
+		CivvisFrames.pendingStrikes[ticket] = nil;
+	end
+end;
+
+CivvisFrames.finishStrikeCombat = function(pid, subject, turn, x, y)
+	local first = nil;
+	for ticket, shot in pairs(CivvisFrames.pendingStrikes or {}) do
+		if shot.player == pid and shot.unit == subject and shot.turn == turn
+				and shot.x == x and shot.y == y and (first == nil or ticket < first) then
+			first = ticket;
+		end
+	end
+	-- One combat ends one request, including multi-attack units. Host unit ids
+	-- are player-local; a foreign same-id attacker must not release our shot.
+	CivvisFrames.finishStrike(first);
+end;
+
+CivvisFrames.strikesSettled = function(turn)
+	local pending = 0;
+	for _, shot in pairs(CivvisFrames.pendingStrikes or {}) do
+		if shot.turn == turn then pending = pending + 1; end
+	end
+	if pending == 0 then CivvisFrames.strikeWait = 0; return true; end
+	CivvisFrames.strikeWait = (CivvisFrames.strikeWait or 0) + 1;
+	local waited = CivvisFrames.strikeWait;
+	if waited == 1 then
+		emit("strike_frame_wait", { turn = turn, frame = CivvisFrames.current, pending = pending });
+	end
+	-- A missing callback or accepted no-op costs a bounded wait, never turn
+	-- progress. Name this unknown settlement; do not report it as a landed hit.
+	if waited < (tonumber(cfg.OrderQueueGraceTicks) or 30) then return false; end
+	emit("strike_frame_timeout", { turn = turn, frame = CivvisFrames.current,
+		pending = pending, waited = waited });
+	for ticket, shot in pairs(CivvisFrames.pendingStrikes) do
+		if shot.turn == turn then CivvisFrames.pendingStrikes[ticket] = nil; end
+	end
+	CivvisFrames.strikeWait = 0;
+	return true;
 end;
 
 -- Look at the settled board once, before asking `wanted`: how many plots this
@@ -18320,6 +18393,9 @@ end;
 -- Open the next frame: export the board again, stamped, and re-arm the
 -- handshake so `settleTurn` waits for this frame's answer.
 CivvisFrames.begin = function(player, pid, turn, requestedReason)
+	-- Every export boundary, including production repair after the normal
+	-- combat cap, uses this gate. A held frame changes no handshake or budget.
+	if not CivvisFrames.strikesSettled(turn) then return false; end
 	local reason = requestedReason or CivvisFrames.why() or "strike";
 	CivvisFrames.current = CivvisFrames.current + 1;
 	CivvisFrames.reason = reason;
@@ -18342,6 +18418,7 @@ CivvisFrames.begin = function(player, pid, turn, requestedReason)
 		strikes = strikes, revealed = revealed, movers = CivvisFrames.movers,
 	});
 	pcall(function() exportState(player, pid, turn, CivvisFrames.current); end);
+	return true;
 end;
 
 -- A city can finish or appear after the opening board, including while a unit
@@ -18356,8 +18433,11 @@ CivvisFrames.repairProduction = function(player, pid, turn)
 		if current == 0 then empty = empty + 1; end
 	end);
 	if empty == 0 then return false; end
-	CivvisFrames.productionRepairs = (CivvisFrames.productionRepairs or 0) + 1;
-	CivvisFrames.begin(player, pid, turn, "production");
+	if CivvisFrames.begin(player, pid, turn, "production") then
+		CivvisFrames.productionRepairs = (CivvisFrames.productionRepairs or 0) + 1;
+	end
+	-- The caller also holds the turn when a repair is waiting for combat;
+	-- only an opened frame spends a lease. The same grace bounds this wait.
 	return true;
 end;
 
