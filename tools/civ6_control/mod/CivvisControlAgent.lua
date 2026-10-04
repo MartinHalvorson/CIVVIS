@@ -19748,8 +19748,92 @@ CivvisTrade.holdsEndTurn = function(turn)
 	return true;
 end;
 
+-- ★★ A MAJOR'S SESSION THAT NOTHING ANSWERS HOLDS THE TURN FOREVER. G75
+-- (civvis-20261004T194303Z) t133: our peace asks to 2 and 3 made both open
+-- their own MAKE_DEAL session to us. 2's ran at once and was refused; 3's
+-- queued behind it (DiplomacyManager.csv "Adding To Queue", then "Processing
+-- Queued Statement" as its last row) and opened behind an action view the
+-- closer had already dismissed (`session: -1`), so no screen ever showed it.
+-- Civ then un-readied every end turn we sent: 772 `AppRequestTurnUnready`
+-- in 3.5 min, until the watchdog reloaded the autosave. Whatever path leaves
+-- a session open, the end turn bouncing for `OrphanSessionSeconds` (10) is the
+-- evidence, so ask the engine for any session still open with a major and
+-- answer it the shipped way: a rival's own session is refused as
+-- DiplomacyDealView.lua OnRefuseDeal(true) does (SendWorkingDeal REJECTED,
+-- then CloseSession), and one we opened is closed. If it is still open a
+-- second later, try AddResponse NEGATIVE, then a bare CloseSession; after that
+-- give up and say so once. An unanswered-deal hold (`holdsEndTurn`) is
+-- deliberate and is left alone.
+CivvisTrade.answerOrphanSessions = function(turn)
+	local trade = CivvisTrade;
+	local hold = trade.turnHold;
+	if hold ~= nil and hold.turn == turn then return; end
+	local w = CivvisQueue.endTurnWait;
+	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	if w == nil or w.turn ~= turn or type(now) ~= "number" or type(w.first) ~= "number" then
+		return;
+	end
+	local waited = now - w.first;
+	if waited < (tonumber(cfg.OrphanSessionSeconds) or 10) then return; end
+	local seen = trade.orphans;
+	if seen == nil or seen.turn ~= turn then
+		seen = { turn = turn, sessions = {} };
+		trade.orphans = seen;
+	end
+	if seen.at ~= nil and now >= seen.at and now - seen.at < 1 then return; end
+	seen.at = now;
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if pid == nil or pid < 0 then return; end
+	for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+		local sessionID = other ~= pid and try(function()
+			return DiplomacyManager.FindOpenSessionID(pid, other);
+		end, nil) or nil;
+		if sessionID ~= nil then
+			local tries = (seen.sessions[sessionID] or 0) + 1;
+			seen.sessions[sessionID] = tries;
+			local owned = trade.sessions[other] ~= nil;
+			local info = try(function() return DiplomacyManager.GetSessionInfo(sessionID); end, nil);
+			local from = type(info) == "table" and info.FromPlayer or nil;
+			local theirs = from == other or (from == nil and not owned);
+			local how;
+			if tries == 1 and theirs then
+				how = "refused";
+				pcall(function()
+					DealManager.SendWorkingDeal(DealProposalAction.REJECTED, pid, other);
+				end);
+				pcall(function() DiplomacyManager.CloseSession(sessionID); end);
+			elseif tries == 1 or tries == 3 then
+				how = "closed";
+				pcall(function() DiplomacyManager.CloseSession(sessionID); end);
+			elseif tries == 2 then
+				how = "negative";
+				pcall(function() DiplomacyManager.AddResponse(sessionID, pid, "NEGATIVE"); end);
+			end
+			if how ~= nil then
+				local open = try(function() return DiplomacyManager.IsSessionIDOpen(sessionID); end, nil);
+				if owned and trade.sessions[other].peace_pending ~= nil then
+					trade.settlePeace(pid, other, "orphaned", true);
+				elseif owned then
+					trade.close(pid, other, "orphaned", true);
+				end
+				emit("orphan_session_answered", {
+					turn = turn, target = other, session = sessionID, owned = owned,
+					initiator = from, how = how, try = tries,
+					waited = math.floor(waited * 10 + 0.5) / 10, requests = w.requests,
+					still_open = open,
+					queued = try(function() return DiplomacyManager.HasQueuedSession(pid); end, nil),
+				});
+			elseif tries == 4 then
+				emit("orphan_session_stuck", { turn = turn, target = other, session = sessionID });
+			end
+		end
+	end
+end;
+
 -- Submission is not acceptance: the host may still be settling a movement.
 CivvisQueue.requestEndTurn = function(turn, parameters)
+	-- Before the sent-turn guard: a session can hold the turn in either state.
+	CivvisTrade.answerOrphanSessions(turn);
 	-- ActionPanel.lua:505-506 uses the same guard for automatic end turns.
 	-- Submission can already be pending while settlement/UI callbacks arrive.
 	-- A refusal clears the host flag, so later callbacks can still retry.
