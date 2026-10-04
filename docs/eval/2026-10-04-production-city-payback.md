@@ -1,6 +1,6 @@
 # Early city production payback
 
-Status: frozen runtime prototype 086cb4dd2; pilot in progress, not a strength claim.
+Status: rejected after pilot and fresh confirmation. Runtime policy and tests restored to the control; the previously retained production research remains unchanged.
 
 ## Hypothesis and frozen protocol
 
@@ -61,3 +61,100 @@ food lost from district placement are not fully forecast; paired games
 measure the consequences instead of treating this estimate as realized
 production. Existing profitable industrial buildings retain priority and
 other named lanes keep their previous district behavior.
+
+## Pilot results and confirmation decision
+
+All eight pairs reached turn 75. Production, science and culture were
+unchanged there. At turn 100, matched Emperor production rose 6.99%
+(n=3; one world ended at turn 94), science 14.29%, and culture 4.16%.
+Deity production rose 5.36% (n=4), science fell 0.47%, and culture rose
+0.78%. No focal seat won or was eliminated in either arm.
+
+Late outcomes are mixed and conditional on reaching those checkpoints.
+At turn 150, Emperor production fell 3.30% and culture 15.67% (n=3);
+Deity production rose 9.53%, science fell 3.11%, and culture rose 19.60%
+(n=3). This is not a promotion result. The unchanged runtime is now
+being evaluated on the reserved fresh confirmation block to resolve the
+late tradeoff and check the turn-100 signal before any integration.
+
+## Fresh confirmation and decision
+
+The twelve Emperor and eight Deity confirmation pairs kept the exact
+frozen runtime 086cb4dd2; no policy tuning followed the pilot. All twenty
+pairs reached turn 75.
+
+| Difficulty | Turn | Matched pairs | Production | Cumulative observed production | Science | Culture |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Emperor | 75 | 12 | +0.53% | +0.04% | −0.67% | 0.00% |
+| Emperor | 100 | 11 | +2.57% | +1.12% | +1.13% | +0.14% |
+| Emperor | 125 | 8 | −6.32% | +0.26% | −2.14% | −0.81% |
+| Emperor | 150 | 7 | +4.32% | +1.18% | +11.57% | +3.52% |
+| Deity | 75 | 8 | 0.00% | 0.00% | 0.00% | 0.00% |
+| Deity | 100 | 6 | +4.37% | +1.12% | +4.56% | −1.78% |
+| Deity | 125 | 5 | +9.75% | +1.19% | +7.54% | +9.71% |
+| Deity | 150 | 5 | +11.78% | +3.75% | +11.07% | +5.05% |
+
+The late Deity increases are conditional on five surviving game timelines,
+not evidence of an early catch-up. No focal seat won. All Emperor focal
+seats survived; one Deity focal seat was eliminated in each arm. The
+summary retains every final outcome and explicitly lists missing seeds
+at every checkpoint. At turn 100, production increased in three Emperor
+pairs, fell in one, and was identical in seven; Deity had one higher,
+one lower and four identical pairs.
+
+The mean own/strongest-rival production ratio at turn 100 moved only
+0.419→0.424 on Emperor and 0.182→0.191 on Deity. The policy is not a
+competitive early-production solution. It buys some additional industry,
+but changes too few early states, has a mixed later Emperor ramp, and
+leaves a large high-difficulty gap. Restore it rather than promote this
+small, uneven improvement as accomplishing the goal.
+
+## Read-only host replay and opportunity check
+
+The cold single-state replay proposed identical orders in both arms. That
+was an incomplete diagnostic: a new AI had no opening-book history. A
+second replay requests turns 1–100 through the persistent `--serve
+--fresh-board` interface over the original run through turn 61 and its
+continuation through the first turn-100 state. Warm proposed order lists
+differ at turns 81, 82, 99 and 100. The candidate journal proposes an
+Industrial Zone in Cuenca at turn 81, Guayaquil at 98, and Caracas at
+99–100. These proposals were not actuated, and recorded subsequent states
+are outcomes of the other controller, not outcomes of these proposals.
+This proves historical branch reachability, not host acceptance or strength.
+
+The `-host-sites.rs` diagnostic rebuilds the recorded turn-100 board and
+prints legal Industrial Zone sites and net current production after
+subtracting a worked plot's yield. Bogotá, Guayaquil, Caracas and Popayán
+have legal sites with best net production gains of 2, 3, 3 and 1. Other
+cities have no legal sites in the reconstruction, and the two newest
+cities also have amenity deficits. This supports a real opportunity but
+does not identify the best allocation of construction.
+
+## Validation and reproduction
+
+The frozen runtime passed all CI checks, including changed-line Rust
+quality and the paired-cost check. The prototype full local suite passes
+4,545 tests with 53 ignored, including three new tests for actual queue
+placement, the complete two-stage cost, and serial investment without
+blocking the owed Workshop. Runtime code and tests are restored afterward.
+Final control validation is recorded in the manifest once complete.
+
+Build the control at 2146d93a2 and candidate at 086cb4dd2 in separate
+checkouts with `cargo build --profile ci --locked --lib`, then link the
+archived probe against each library using `rustc --edition=2021 -O`,
+`--extern civvis=target/ci/libcivvis.rlib`, `-L dependency=target/ci/deps`,
+and the native mimalloc output directory for that build. The probe takes
+`START_SEED GAME_COUNT DIFFICULTY`. Recompute all paired evidence with:
+
+```sh
+python3 docs/eval/2026-10-04-production-city-payback-summarize.py pilot
+python3 docs/eval/2026-10-04-production-city-payback-summarize.py confirmation
+```
+
+These measurements distinguish native simulations from read-only Firaxis
+replay. They do not verify AI production parity or a new live-game ramp.
+The next hypothesis should address the earlier bottlenecks: housing
+limited five of six recorded cities at turn 75, while seven of eight
+pilot native games had not unlocked Apprenticeship by that checkpoint.
+Industry must be accessible and the city must be able to grow before
+reserving a late chain can produce a fast, broad gain.

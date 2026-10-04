@@ -1,0 +1,9 @@
+turn=100 income=18 apprenticeship=true
+Bogotá pop=7 production=14.000 amenity_surplus=0 legal_sites=11 best_net=Some((2.0, 2.0, 0.0, (6, 32)))
+Guayaquil pop=4 production=8.000 amenity_surplus=0 legal_sites=6 best_net=Some((3.0, 3.0, 0.0, (1, 32)))
+Caracas pop=4 production=6.000 amenity_surplus=0 legal_sites=5 best_net=Some((3.0, 3.0, 0.0, (5, 33)))
+Quito pop=4 production=13.000 amenity_surplus=0 legal_sites=0 best_net=None
+Popayán pop=4 production=15.000 amenity_surplus=0 legal_sites=6 best_net=Some((1.0, 1.0, 0.0, (11, 32)))
+Cuenca pop=2 production=8.000 amenity_surplus=0 legal_sites=0 best_net=None
+Cartagena de Indias pop=2 production=8.102 amenity_surplus=-1 legal_sites=0 best_net=None
+Valencia de Carabobo pop=2 production=3.602 amenity_surplus=-1 legal_sites=0 best_net=None
