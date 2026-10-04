@@ -15062,9 +15062,9 @@ impl AdvancedAi {
                 // strand the expedition without its next launch or laser tech.
                 _ if endgame_research_preempts_wartime => endgame_goal,
                 _ if standing_army_fuel_goal.is_some() => standing_army_fuel_goal.as_deref(),
-                _ if production_technology_goal.is_some() => {
-                    production_technology_goal.as_ref().map(|tech| tech.as_str())
-                }
+                _ if production_technology_goal.is_some() => production_technology_goal
+                    .as_ref()
+                    .map(|tech| tech.as_str()),
                 _ if wartime_modernization_goal.is_some() => wartime_modernization_goal.as_deref(),
                 _ if domination_siege_goal.is_some() => domination_siege_goal.as_deref(),
                 // Once the late launch chain is committed, finish its remaining
