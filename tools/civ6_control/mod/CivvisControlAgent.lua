@@ -19866,6 +19866,7 @@ CivvisQueue.onLocalTurnEnd = function()
 	if w == nil or w.turn ~= turn or w.emitted then return; end
 	w.emitted = true;
 	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	w.ended_at = now;
 	local function since(t)
 		if type(now) ~= "number" or type(t) ~= "number" then return nil; end
 		return math.floor((now - t) * 1000 + 0.5) / 1000;
@@ -19878,6 +19879,69 @@ CivvisQueue.onLocalTurnEnd = function()
 		quick_movement = try(function() return UserConfiguration.IsQuickMovement(); end, nil),
 		quick_combat = try(function() return UserConfiguration.IsQuickCombat(); end, nil),
 	});
+end;
+
+-- ★★ THE APP CAN STOP DRIVING THE GAME AFTER OUR TURN ENDS. G84
+-- (civvis-20261004T223225Z) t117, twice from AutoSave_0116: our turn ended,
+-- `Player 2 set TurnActive 1`, then not one GameUpdate pass for two minutes.
+-- The watchdog's stack sample had the Game Core thread idle in
+-- pthread_cond_wait in every sample while WinMain kept rendering: a UI-side
+-- pause, not an engine loop. Nothing in the mod's record named it, and the
+-- watchdog took ~2 min to call it (a unit-blocker age rule that happened to
+-- fire). Today's 3,906 AI phases ran at most 14 s (p99 8 s), so
+-- `AiPhaseStallSeconds` (30) after our turn ended with the turn number
+-- unchanged is a stall. Say so once, with what the UI shows, from the HUD
+-- pulse, which keeps firing while the core waits. The wedge watchdog reads
+-- `ai_phase_stall` and hands the game over without waiting out its own clocks.
+CivvisQueue.STALL_VIEWS = {
+	"DiplomacyActionView", "DiplomacyDealView", "LeaderScene", "WorldCongressPopup",
+	"WorldCongressIntro", "WorldCongressBetweenTurns", "WonderBuiltPopup",
+	"NaturalWonderPopup", "EraCompletePopup", "EraReviewPopup", "HistoricMoments",
+	"TechCivicCompletedPopup", "BoostUnlockedPopup", "ProjectBuiltPopup",
+	"NaturalDisasterPopup", "InGamePopup", "DedicationPopup", "GreatWorkShowcase",
+	"RockBandMoviePopup", "EndGameMenu",
+};
+CivvisQueue.checkAiPhaseStall = function()
+	local w = CivvisQueue.endTurnWait;
+	if w == nil or not w.emitted or w.stall_reported or type(w.ended_at) ~= "number" then
+		return false;
+	end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	if turn ~= w.turn then return false; end
+	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	if type(now) ~= "number" or now ~= now or now < w.ended_at then return false; end
+	local waited = now - w.ended_at;
+	if waited < (tonumber(cfg.AiPhaseStallSeconds) or 30) then return false; end
+	w.stall_reported = true;
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	local active = {};
+	for _, p in ipairs(try(function() return PlayerManager.GetAliveIDs(); end, {}) or {}) do
+		if try(function() return Players[p]:IsTurnActive(); end, false) == true then
+			active[#active + 1] = p;
+		end
+	end
+	local sessions = {};
+	for _, p in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {}) or {}) do
+		if p ~= pid then
+			local id = try(function() return DiplomacyManager.FindOpenSessionID(pid, p); end, nil);
+			if type(id) == "number" then sessions[#sessions + 1] = { with = p, session = id }; end
+		end
+	end
+	local visible = {};
+	for _, name in ipairs(CivvisQueue.STALL_VIEWS) do
+		local hidden = try(function()
+			return ContextPtr:LookUpControl("/InGame/" .. name):IsHidden();
+		end, nil);
+		if hidden == false then visible[#visible + 1] = name; end
+	end
+	emit("ai_phase_stall", {
+		turn = turn, waited = math.floor(waited * 10 + 0.5) / 10,
+		core_busy = try(function() return UI.IsGameCoreBusy(); end, nil),
+		processing = try(function() return UI.IsProcessingMessages(); end, nil),
+		active_players = active, open_sessions = sessions, visible = visible,
+		queued = try(function() return DiplomacyManager.HasQueuedSession(pid); end, nil),
+	});
+	return true;
 end;
 
 -- Whether an unanswered deal ask still holds this turn open (see abandon).
@@ -21281,6 +21345,7 @@ CivvisQueue.onUiPulse = function(source)
 	local rejected = finished and "finished" or inTick and "in_tick"
 		or cfg.Play == false and "disabled" or not cfg.CivvisDecides and "standalone";
 	if rejected then CivvisQueue.noteUiPulse(source, rejected); return; end
+	pcall(CivvisQueue.checkAiPhaseStall);
 	local serial = CivvisQueue.controllerTicks or 0;
 	if CivvisQueue.lastUiTick ~= serial then
 		CivvisQueue.noteUiPulse(source, "observing");

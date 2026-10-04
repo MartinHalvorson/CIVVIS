@@ -293,6 +293,37 @@ class WatchdogWiringTest(unittest.TestCase):
             self.assertEqual(run(5.0), "")
             self.assertEqual(run(120.0), "105 ENDTURN_BLOCKING_UNITS 7")
 
+    def test_an_unresolved_ai_phase_stall_is_reported(self) -> None:
+        events = [{"kind": "turn", "turn": 117},
+                  {"kind": "ai_phase_stall", "turn": 117, "waited": 30.4}]
+        self.assertEqual(watchdog_state.ai_phase_stall(events), (117, 30.4))
+
+    def test_a_later_turn_or_the_end_resolves_an_ai_phase_stall(self) -> None:
+        stalled = [{"kind": "turn", "turn": 117},
+                   {"kind": "ai_phase_stall", "turn": 117, "waited": 31}]
+        self.assertIsNone(watchdog_state.ai_phase_stall(stalled + [{"kind": "turn", "turn": 118}]))
+        self.assertIsNone(watchdog_state.ai_phase_stall(stalled + [{"kind": "victory", "turn": 117}]))
+        self.assertIsNone(watchdog_state.ai_phase_stall([{"kind": "turn", "turn": 117}]))
+
+    def test_the_ai_stall_cli_prints_turn_and_wait(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            path.write_text(json.dumps({"kind": "turn", "turn": 117}) + "\n"
+                            + json.dumps({"kind": "ai_phase_stall", "turn": 117,
+                                          "waited": 30.1}) + "\n")
+            out = subprocess.run([sys.executable, str(OPS / "civvis_watchdog_state.py"),
+                                  "--ai-stall", str(path)],
+                                 capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(out, "117 30.1")
+
+    def test_agent_watchdog_hands_over_an_ai_phase_stall_before_its_silence_clocks(self) -> None:
+        source = (OPS / "civvis-agent-wedge-watchdog.sh").read_text()
+        self.assertIn('--ai-stall "$RUNS/$tag/events.jsonl"', source)
+        self.assertIn("AI PHASE STALL at t", source)
+        self.assertLess(source.index("repeating unit blocker ${blocker_name}"),
+                        source.index("AI PHASE STALL at t"))
+        self.assertLess(source.index("AI PHASE STALL at t"), source.index("mirror_status=$(curl"))
+
     def test_agent_watchdog_escalates_an_explicit_repeating_unit_blocker(self) -> None:
         source = (OPS / "civvis-agent-wedge-watchdog.sh").read_text()
         self.assertIn("CIVVIS_WEDGE_BLOCKER_STREAK", source)

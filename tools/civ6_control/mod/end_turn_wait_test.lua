@@ -289,6 +289,36 @@ handlers.LocalPlayerTurnEnd()
 check("…and the turn still reports", #events("end_turn_wait"), 2)
 check("…with nothing counted", has(events("end_turn_wait")[2], '"busy":0'), true)
 
+-- 5. An AI phase that never hands the turn back (G84 t117): 30 s after our
+-- turn ended with the turn number unchanged, one `ai_phase_stall` with what
+-- the UI shows. A turn that advances, or a second pulse, says nothing more.
+check("the HUD pulse asks for the stall check first",
+	has(io.open(here .. "/CivvisControlAgent.lua"):read("*a"),
+		"if rejected then CivvisQueue.noteUiPulse(source, rejected); return; end\n\tpcall(CivvisQueue.checkAiPhaseStall);"), true)
+local turnNow = 8
+Game.GetCurrentGameTurn = function() return turnNow end
+UI.IsGameCoreBusy = function() return false end
+local liveContext = rawget(_G, "ContextPtr")
+ContextPtr = { LookUpControl = function(_, path)
+	return { IsHidden = function() return path ~= "/InGame/DiplomacyActionView" end }
+end }
+now = 40.0
+check("not before AiPhaseStallSeconds", queue.checkAiPhaseStall(), false)
+now = 50.6
+check("a stalled AI phase is named", queue.checkAiPhaseStall(), true)
+local stall = events("ai_phase_stall")[1]
+check("…for our turn", has(stall, '"turn":8'), true)
+check("…with how long since our turn ended", has(stall, '"waited":30.1'), true)
+check("…and which views were up", has(stall, '"visible":["DiplomacyActionView"]'), true)
+check("…and the core's own busy flag", has(stall, '"core_busy":false'), true)
+now = 70.0
+check("once per turn", queue.checkAiPhaseStall(), false)
+check("…one event", #events("ai_phase_stall"), 1)
+turnNow = 9
+now = 90.0
+check("a turn that advanced is never a stall", queue.checkAiPhaseStall(), false)
+ContextPtr = liveContext
+
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
 	os.exit(1)
