@@ -7,7 +7,8 @@
 //!
 //! Both legs use 4 players, 60x38 Pangaea, 6 city-states, Online,
 //! barbarians, all victory conditions and the natural 250-turn clock.
-//! `--difficulty prince|king` sets both player and barbarian difficulty.
+//! `--difficulty prince|king|emperor|immortal|deity` sets both player and
+//! barbarian difficulty.
 //! Omission preserves the historical King-player/Emperor-barbarian profile.
 //! Only seat zero's named policy is disabled/enabled. The other seats keep
 //! their adaptive deployed controllers. The focal seat also carries the
@@ -52,7 +53,15 @@ fn parse(args: &[String]) -> Result<Config, String> {
                 difficulty = Some(match value.as_str() {
                     "prince" => "prince",
                     "king" => "king",
-                    _ => return Err("--difficulty must be prince or king".to_string()),
+                    "emperor" => "emperor",
+                    "immortal" => "immortal",
+                    "deity" => "deity",
+                    _ => {
+                        return Err(
+                            "--difficulty must be prince, king, emperor, immortal or deity"
+                                .to_string(),
+                        )
+                    }
                 });
             }
             "--games" => games = value.parse::<u64>().map_err(|e| e.to_string())?,
