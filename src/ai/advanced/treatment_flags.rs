@@ -4969,6 +4969,17 @@ impl AdvancedAi {
         self.breaker_before_the_war = false;
     }
 
+    /// Opt-in gene `breaker-supply-scales`; see
+    /// [`Self::breaker_supply_scales`].
+    pub fn enable_breaker_supply_scales(&mut self) {
+        self.breaker_supply_scales = true;
+    }
+
+    /// The twin of `enable_breaker_supply_scales`.
+    pub fn disable_breaker_supply_scales(&mut self) {
+        self.breaker_supply_scales = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

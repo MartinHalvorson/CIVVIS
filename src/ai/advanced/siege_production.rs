@@ -19,6 +19,16 @@ pub(super) const SHORTFALL_SIEGE_CAP: usize = 3;
 pub(super) const HEAVY_WALL_HP: i32 = 300;
 pub(super) const HEAVY_WALL_SIEGE_CAP: usize = 5;
 
+/// `breaker-supply-scales`: a target whose full walls reach this many hit
+/// points (Medieval Walls or better) is supplied with guns in parallel.
+pub(super) const SUPPLY_WALL_HP: i32 = 200;
+/// The guns such a target is supplied with: one per hundred wall points,
+/// at most this many.
+pub(super) const SUPPLY_GUNS_MAX: usize = 3;
+/// A city may set aside a building it has invested in for the gun only
+/// when the gun reaches the front within this many turns.
+pub(super) const SUPPLY_DISPLACE_ARRIVAL: f64 = 10.0;
+
 impl AdvancedAi {
     /// Whether the wall-breaker reservation reads `owner` as at war: a war
     /// being fought, or, under `breaker-before-the-war`, the Conquest plan's
@@ -192,6 +202,20 @@ impl AdvancedAi {
         if self.live_war_economy_requires_recovery(g, pid, &counts) {
             return None;
         }
+        // `breaker-supply-scales`: a high-walled target takes one gun per
+        // hundred wall points, ordered in parallel. Live King
+        // civvis-20261004T083931Z (game 50), dominant at turn 125 (351
+        // production, 1,127 power against at most 225), stood before Lisbon,
+        // Portugal's capital, with walls 200 then 300 from turn 131 to 146,
+        // "holding the capture for a wall-breaker on its way", and stood it
+        // down: the reservation had ordered one Bombard, 17 turns out, while
+        // Artillery was unlocked (diagnosed by -60).
+        let supply_wanted = (g.city_max_wall_hp(target) as usize)
+            .div_ceil(100)
+            .clamp(1, SUPPLY_GUNS_MAX);
+        let supply_short = self.breaker_supply_scales
+            && g.city_max_wall_hp(target) >= SUPPLY_WALL_HP
+            && counts.siege < supply_wanted;
         let queued_arrival = if counts.land_siege_power > 0.0
             && !breach_shortfall
             && counts.siege == 1
@@ -219,7 +243,11 @@ impl AdvancedAi {
         } else {
             None
         };
-        if counts.land_siege_power > 0.0 && !breach_shortfall && queued_arrival.is_none() {
+        if counts.land_siege_power > 0.0
+            && !breach_shortfall
+            && !supply_short
+            && queued_arrival.is_none()
+        {
             return None;
         }
 
@@ -232,6 +260,15 @@ impl AdvancedAi {
                     continue;
                 }
                 let city = &g.cities[&cid];
+                // `breaker-supply-scales`: a building already under way, not
+                // a defence, may yield to the gun if the gun arrives soon.
+                let displaceable = supply_short
+                    && matches!(city.queue.first(), Some(Item::Building { building })
+                    if !matches!(
+                        building.as_str(),
+                        "walls" | "medieval_walls" | "renaissance_walls"
+                    ))
+                    && !(city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
                 let fresh_routine = match city.queue.as_slice() {
                     [] => false,
                     [queued]
@@ -250,9 +287,10 @@ impl AdvancedAi {
                     }
                     _ => continue,
                 };
-                if !city.queue.is_empty() && !fresh_routine {
+                if !city.queue.is_empty() && !fresh_routine && !displaceable {
                     continue;
                 }
+                let busy = !city.queue.is_empty() && !fresh_routine;
                 for item in g.producible_items(pid, cid) {
                     let Item::Unit { unit } = item else { continue };
                     let spec = &g.rules.units[&unit];
@@ -265,14 +303,34 @@ impl AdvancedAi {
                     }
                     let arrival = self.production_build_turns(g, pid, cid, &item)
                         + f64::from(g.wdist(g.cities[&cid].pos, objective)) / spec.moves.max(1.0);
-                    let best = if fresh_routine {
+                    if busy && arrival > SUPPLY_DISPLACE_ARRIVAL {
+                        continue;
+                    }
+                    let best = if fresh_routine || busy {
                         &mut best_fresh
                     } else {
                         &mut best_idle
                     };
+                    // `breaker-supply-scales`: the strongest gun first, then
+                    // the soonest; otherwise the soonest.
+                    let strength = if supply_short {
+                        spec.ranged_attack_strength()
+                    } else {
+                        0.0
+                    };
+                    let old_strength = |old_unit: &Name| {
+                        if supply_short {
+                            g.rules.units[old_unit].ranged_attack_strength()
+                        } else {
+                            0.0
+                        }
+                    };
                     if best.as_ref().is_none_or(|(old, old_city, old_unit)| {
-                        arrival.total_cmp(old).is_lt()
-                            || (arrival == *old && (cid, unit) < (*old_city, *old_unit))
+                        let old_power = old_strength(old_unit);
+                        strength > old_power
+                            || (strength == old_power
+                                && (arrival.total_cmp(old).is_lt()
+                                    || (arrival == *old && (cid, unit) < (*old_city, *old_unit))))
                     }) {
                         *best = Some((arrival, cid, unit));
                     }
@@ -295,10 +353,17 @@ impl AdvancedAi {
         let faster_than_queued = queued_arrival.is_some_and(|queued| {
             arrival <= 20.0 && queued >= arrival + 8.0 && queued >= arrival * 1.5
         });
-        if counts.land_siege_power > 0.0 && !breach_shortfall && !faster_than_queued {
+        if counts.land_siege_power > 0.0
+            && !breach_shortfall
+            && !supply_short
+            && !faster_than_queued
+        {
             return None;
         }
         let displaced = g.cities[&city].queue.first().cloned();
+        let displaced_invested = displaced
+            .as_ref()
+            .is_some_and(|old| g.item_invested_production(city, old) > f64::EPSILON);
         let item = Item::Unit { unit };
         if g.apply(
             pid,
@@ -318,7 +383,8 @@ impl AdvancedAi {
             );
             think!(self.journal(), Military, Detail,
                 "{} gives its fresh {} queue to the siege gun", g.cities[&city].name, Self::plain_item(&old);
-                "no production was invested in it; the gun arrives in about {arrival:.0} turns, while {alternative}";
+                "{}; the gun arrives in about {arrival:.0} turns, while {alternative}",
+                if displaced_invested { "its progress waits in the city" } else { "no production was invested in it" };
                 objective);
         }
         think!(self.journal(), Military, Decision,

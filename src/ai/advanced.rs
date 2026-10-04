@@ -5001,6 +5001,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `breaker-supply-scales`: a high-walled Domination target is supplied
+    /// with guns in parallel, the strongest first. See
+    /// `siege_production::SUPPLY_WALL_HP`. Off by default.
+    breaker_supply_scales: bool,
     /// `breaker-before-the-war`: the first wall breaker is reserved for the
     /// Conquest plan's walled target while the army stages, not only once the
     /// war is on. See `siege_production::breaker_war_with`. Off by default.
@@ -8610,6 +8614,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            breaker_supply_scales: false,
             breaker_before_the_war: false,
             befriend_the_strongest: false,
             beeline_orders_by_value: false,

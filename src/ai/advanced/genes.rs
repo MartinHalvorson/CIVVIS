@@ -2513,6 +2513,10 @@ pub const GENES: &[Gene] = &[
     // first Catapult at 70, after the war began. See
     // `siege_production::breaker_war_with`.
     Gene { tag: "breaker-before-the-war", field: "breaker_before_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_before_the_war, disable: AdvancedAi::disable_breaker_before_the_war },
+    // Live King 083931Z stood down Lisbon's 300 walls after fifteen turns
+    // waiting on one Bombard while Artillery was unlocked. See
+    // `siege_production::SUPPLY_WALL_HP`.
+    Gene { tag: "breaker-supply-scales", field: "breaker_supply_scales", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales, disable: AdvancedAi::disable_breaker_supply_scales },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

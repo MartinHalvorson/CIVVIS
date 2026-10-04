@@ -603,3 +603,33 @@ fn the_first_breaker_is_reserved_while_the_army_stages() {
         .reserve_delegated_domination_siege(&mut g, 0, &plan)
         .is_none());
 }
+
+/// See `SUPPLY_WALL_HP`: under `breaker-supply-scales` a high-walled target
+/// takes a second gun while one already stands, the strongest buildable.
+#[test]
+fn a_high_walled_target_is_supplied_with_guns_in_parallel() {
+    for gene in [false, true] {
+        let (mut g, mut ai, plan, home, target) = siege_gap_case();
+        ai.enable_lane_delegates_production_2();
+        if gene {
+            ai.enable_breaker_supply_scales();
+        }
+        g.players[0]
+            .techs
+            .insert(crate::name::Name::new("military_engineering"));
+        assert!(g.city_max_wall_hp(&g.cities[&target]) >= super::SUPPLY_WALL_HP);
+        // One gun already in the field.
+        g.spawn_unit("catapult", 0, g.cities[&home].pos);
+        let reserved = ai.reserve_delegated_domination_siege(&mut g, 0, &plan);
+        assert_eq!(reserved.is_some(), gene, "gene {gene}");
+        if gene {
+            assert_eq!(
+                g.cities[&home].queue.first(),
+                Some(&Item::Unit {
+                    unit: crate::name!("trebuchet"),
+                }),
+                "the strongest gun the city can build"
+            );
+        }
+    }
+}
