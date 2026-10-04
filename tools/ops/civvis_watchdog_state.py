@@ -112,6 +112,41 @@ def repeating_unit_blocker(
     return turn, blocker, counts[latest]
 
 
+def ai_phase_stall(events: Iterable[dict[str, Any]]) -> tuple[int, float] | None:
+    """Return ``(turn, waited)`` for an unresolved ``ai_phase_stall``, or None.
+
+    The mod emits it once a turn when the AI phase has not handed the turn
+    back `AiPhaseStallSeconds` after ours ended (G84 t117: the app stopped
+    driving the game core for two minutes). A later ``turn`` or a terminal
+    event resolves it.
+    """
+
+    stall: tuple[int, float] | None = None
+    latest_turn = -1
+    terminal_turns: set[int] = set()
+    for event in events:
+        kind = event.get("kind")
+        turn = _turn(event)
+        if turn is None:
+            continue
+        if kind == "turn":
+            latest_turn = max(latest_turn, turn)
+        elif kind in GAME_TERMINAL_KINDS:
+            terminal_turns.add(turn)
+        elif kind == "ai_phase_stall":
+            try:
+                waited = float(event.get("waited") or 0.0)
+            except (TypeError, ValueError):
+                waited = 0.0
+            stall = (turn, waited)
+    if stall is None:
+        return None
+    turn, _ = stall
+    if latest_turn > turn or any(done >= turn for done in terminal_turns):
+        return None
+    return stall
+
+
 def _nonnegative_int(value: Any) -> int | None:
     """Return an integer status field, excluding bools and negative values."""
 
@@ -207,6 +242,8 @@ def main() -> int:
                         help="event log for the repeating-unit-blocker signal")
     parser.add_argument("--progress", type=Path, metavar="EVENTS",
                         help="read /status JSON from stdin and print a synchronized progress token")
+    parser.add_argument("--ai-stall", action="store_true",
+                        help="print `turn waited` for an unresolved ai_phase_stall instead")
     parser.add_argument("--blocker-min-age", type=float, default=BLOCKER_MIN_AGE_S,
                         help="seconds a unit blocker must have persisted on its turn")
     parser.add_argument("--max-turn-skew", type=int, default=1,
@@ -229,6 +266,11 @@ def main() -> int:
         return 0
     if args.events is None:
         parser.error("events is required unless --progress is used")
+    if args.ai_stall:
+        stall = ai_phase_stall(events_from(args.events))
+        if stall is not None:
+            print(stall[0], f"{stall[1]:g}")
+        return 0
     result = repeating_unit_blocker(events_from(args.events), now=time.time(),
                                     min_age_s=args.blocker_min_age)
     if result is not None:
