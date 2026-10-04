@@ -123,7 +123,8 @@ pub(crate) const ONE_WAR_SECOND_FRONT_HOLD_RATIO: f64 = 1.3;
 pub(crate) const COUNTER_WAR_POWER_FLOOR: f64 = 0.7;
 
 /// Standard turns a front siege still in Stage counts as live for
-/// `front_siege_live`. A siege past Stage counts while it is read.
+/// `front_siege_live`. A siege past Stage counts while it is read and its
+/// city has fallen to a new low of health within this many standard turns.
 pub(crate) const FRONT_SIEGE_LIVE_TURNS: u32 = 10;
 /// Standard turns the front may refuse the peace that would free the army
 /// before the second front opens beside it.
@@ -153,8 +154,11 @@ pub(crate) struct OneWarFront {
     /// The turn the tide turned against us, if it has and has not turned
     /// back since.
     pub(crate) tide_against_since: Option<u32>,
-    /// City and wall health of the front's cities at the last observation.
-    pub(crate) city_health: BTreeMap<u32, (i32, i32)>,
+    /// City and wall health of the front's cities at the last observation,
+    /// by city tile. The live seat renumbers its cities every turn, so an id
+    /// key compared each city with whichever city held its id the turn
+    /// before.
+    pub(crate) city_health: BTreeMap<Pos, (i32, i32)>,
     /// Cities of the front whose health fell at the last observation.
     pub(crate) sieges_advancing: usize,
     /// The first turn of the current run of observations in which the gene
@@ -508,6 +512,7 @@ impl AdvancedAi {
         let mut front = match self.one_war.take() {
             Some(front) if front.target == target => front,
             _ => {
+                self.front_city_low.clear();
                 let mut fresh = OneWarFront::new(target, g.turn);
                 fresh.ledger = self.one_war_ledger(g, pid, target);
                 fresh
@@ -540,12 +545,22 @@ impl AdvancedAi {
             let health = (city.hp, city.wall_hp);
             if front
                 .city_health
-                .get(&cid)
+                .get(&city.pos)
                 .is_some_and(|before| health.0 < before.0 || health.1 < before.1)
             {
                 advancing += 1;
             }
-            health_now.insert(cid, health);
+            health_now.insert(city.pos, health);
+            // See `FRONT_SIEGE_LIVE_TURNS`: the lowest health each front city
+            // has shown, and when.
+            let total = city.hp.max(0) + city.wall_hp.max(0);
+            let low = self
+                .front_city_low
+                .entry(city.pos)
+                .or_insert((total, g.turn));
+            if total < low.0 {
+                *low = (total, g.turn);
+            }
         }
         front.city_health = health_now;
         front.sieges_advancing = advancing;
@@ -629,7 +644,7 @@ impl AdvancedAi {
             }
             let falling = front
                 .city_health
-                .get(&cid)
+                .get(&city.pos)
                 .is_some_and(|(hp, wall)| (city.hp, city.wall_hp) < (*hp, *wall))
                 || front.sieges_advancing > 0;
             let full = ONE_WAR_CITY_FULL_HP + g.city_max_wall_hp(city).max(0);
@@ -753,19 +768,28 @@ impl AdvancedAi {
     }
 
     /// Whether a siege on one of the front's cities is live: not Hold, read
-    /// this turn or the last, and past Stage or entered within
-    /// [`FRONT_SIEGE_LIVE_TURNS`] standard turns.
+    /// this turn or the last, past Stage or entered within
+    /// [`FRONT_SIEGE_LIVE_TURNS`] standard turns, and its city at a new low
+    /// of health within that window. A siege that only stands is not one the
+    /// army must finish first: live King civvis-20261004T111442Z (game 53)
+    /// besieged Madrid from turn 44 to 152, sixty-four turns of them in Invest
+    /// or Reduce, and never took it; Madrid's lowest health came at turn 62.
     pub(crate) fn front_siege_live(&self, g: &Game) -> bool {
         let Some(front) = self.one_war_front() else {
             return false;
         };
+        let window = g.standard_duration(FRONT_SIEGE_LIVE_TURNS);
         self.sieges.iter().any(|(cid, siege)| {
-            g.cities.get(cid).is_some_and(|city| city.owner == front)
-                && siege.stage != super::siege_train::SiegeStage::Hold
+            g.cities.get(cid).is_some_and(|city| {
+                city.owner == front
+                    && self
+                        .front_city_low
+                        .get(&city.pos)
+                        .is_some_and(|(_, set)| g.turn.saturating_sub(*set) <= window)
+            }) && siege.stage != super::siege_train::SiegeStage::Hold
                 && g.turn.saturating_sub(siege.assessed) <= 1
                 && (siege.stage != super::siege_train::SiegeStage::Stage
-                    || g.turn.saturating_sub(siege.entered)
-                        <= g.standard_duration(FRONT_SIEGE_LIVE_TURNS))
+                    || g.turn.saturating_sub(siege.entered) <= window)
         })
     }
 
