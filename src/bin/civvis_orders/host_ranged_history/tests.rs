@@ -123,7 +123,7 @@ fn current_exact_city_values_including_zero_override_history() {
 #[test]
 fn history_uses_nominal_type_not_formation_or_simulated_counter() {
     let (snapshot, mut state) = fixture();
-    state.rivals[0].units[0].formation = 2;
+    state.rivals[0].units[0].formation = Some(2);
     state.rivals[0].units[0].ranged = 102.0;
     let mut history = History::default();
     let mut seen = board(&snapshot, &state);
@@ -181,7 +181,7 @@ fn owner_identity_changes_and_turn_rewind_do_not_inherit_history() {
 fn unseen_unlocks_and_exact_city_only_sightings_do_not_create_unit_history() {
     let (snapshot, mut state) = fixture();
     state.rivals[0].units.clear();
-    state.rivals[0].tech_names = vec!["TECH_ADVANCED_BALLISTICS".into()];
+    state.rivals[0].tech_names = Some(vec!["TECH_ADVANCED_BALLISTICS".into()]);
     state.rivals[0].cities[0].ranged_strength = Some(102.0);
     let mut history = History::default();
     history.observe_and_apply(&mut board(&snapshot, &state), &state);
@@ -228,4 +228,28 @@ fn own_units_are_remembered_but_unmapped_foreign_units_are_not() {
         Some(&60)
     );
     assert_eq!(fire(&current), 3.0);
+}
+
+#[test]
+fn captured_city_uses_its_new_owners_history_not_the_old_owners() {
+    let (snapshot, mut state) = fixture();
+    let mut history = History::default();
+    history.observe_and_apply(&mut board(&snapshot, &state), &state);
+    state.rivals[0].units.clear();
+    let cities = std::mem::take(&mut state.rivals[0].cities);
+    state.rivals.push(StateRival {
+        player: 3,
+        civ: "CIVILIZATION_PERSIA".into(),
+        cities,
+        ..Default::default()
+    });
+    let mut current = board(&snapshot, &state);
+    history.observe_and_apply(&mut current, &state);
+    assert_eq!(fire(&current), 3.0);
+    assert_eq!(
+        current.game.players[2]
+            .counters
+            .get("strongest_ranged_built"),
+        Some(&60)
+    );
 }
