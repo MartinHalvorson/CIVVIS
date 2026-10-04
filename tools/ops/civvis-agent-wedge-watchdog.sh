@@ -78,6 +78,18 @@ PROGRESS_TURN_SKEW=${CIVVIS_WEDGE_PROGRESS_TURN_SKEW:-1}
 # silence in these runs is 25s. So two minutes of total silence is a wedge,
 # with a 40s margin over the worst thing any of these games did while alive.
 #
+# ★★★★ ONE MINUTE SINCE 2026-10-04. Two more causes of long live gaps are gone:
+# the starved host (Civ at 7-10% CPU under load 110+, fixed by the headroom
+# governor) and the order-queue stall (#3893: a follow-up held to
+# `OrderQueueMaxTicks`, 31-62 s; it is what the 55-62 s gaps of
+# civvis-20261003T135713Z t207-234 were). Over 66k gaps in the first games with
+# both fixes (civvis-20261004T094143Z, 100903Z, 100903Z-cont1) the longest was
+# 14.8 s and none reached 30 s, so 60 s keeps a 4x margin. The proof below is
+# unchanged, which bounds a false alarm: the forced end turn has to fail before
+# anything restarts, and on a live game it will not. Worth ~60 s of every real
+# freeze; the lane was running about one a game (deal sessions left pending to
+# us, civvis-20261004T100903Z t216 and t240).
+#
 # ⚠ IT LOWERS THE BAR; IT DOES NOT SKIP THE PROOF. A silent run still has to
 # fail the same forced end turn as any other: `nudge_end_turn`, wait
 # `NUDGE_SETTLE_S`, ask again, and restart only if nothing moved. This buys
@@ -99,7 +111,7 @@ PROGRESS_TURN_SKEW=${CIVVIS_WEDGE_PROGRESS_TURN_SKEW:-1}
 # `blocked ENDTURN_BLOCKING_UNITS` to 32 more. That is the desktop-rescue
 # capture stall in its escalated form, and it is #3089's to remove, not this
 # rule's to detect. The five-sample turn rule below still owns that class.
-SILENCE_S=${CIVVIS_WEDGE_SILENCE_S:-120}
+SILENCE_S=${CIVVIS_WEDGE_SILENCE_S:-60}
 SILENCE_CONFIRM=${CIVVIS_WEDGE_SILENCE_CONFIRM:-2}
 
 # ★★★★★ STANDING DOWN IS NOT THE SAME AS LOOKING AWAY.
