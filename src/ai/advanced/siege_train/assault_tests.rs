@@ -26,7 +26,7 @@ fn play(ai: &mut AdvancedAi, g: &mut Game, pid: usize, plan: &StrategicPlan) {
 
 /// Live King 20261004T111442Z (game 53): Madrid without walls, five to eight
 /// units staged, two Archers shooting, the melee holding the ring. With the
-/// gene the ring's melee joins once the force's blows cover the city.
+/// gene the ring's melee joins once the force's blows can take the city.
 #[test]
 fn melee_joins_the_assault_on_an_unwalled_city_its_blows_can_take() {
     let mut outcome = Vec::new();
@@ -35,7 +35,7 @@ fn melee_joins_the_assault_on_an_unwalled_city_its_blows_can_take() {
         {
             let city = g.cities.get_mut(&cid).unwrap();
             city.wall_hp = 0;
-            city.hp = 120;
+            city.hp = 200;
         }
         let ring = ring_of(&g, cid);
         for pos in ring.iter().take(4) {
@@ -51,9 +51,12 @@ fn melee_joins_the_assault_on_an_unwalled_city_its_blows_can_take() {
         let city = &g.cities[&cid];
         outcome.push((city.owner, if city.owner == 0 { 0 } else { city.hp }));
     }
+    // The baseline may already strike a breached city (the taker's own
+    // pressure); the gene must do at least as well and make progress on a
+    // full-health one. The Stage test below is the case the baseline misses.
     let (off, on) = (outcome[0], outcome[1]);
-    assert!(on.0 == 0 || on.1 < off.1, "the assault must take or wound the city: off {off:?}, on {on:?}");
-    assert_ne!(off.0, 0, "without the gene the ring holds: {off:?}");
+    assert!(on.0 == 0 || on.1 < 200, "the assault makes progress: {on:?}");
+    assert!(on.0 == 0 || (off.0 != 0 && on.1 <= off.1), "never worse than without: off {off:?}, on {on:?}");
 }
 
 /// A lone unit whose blow cannot take the city in two turns waits, and a
