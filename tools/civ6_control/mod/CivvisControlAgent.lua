@@ -16251,6 +16251,37 @@ CivvisQueue.drain = function(player, pid, turn)
 						for _ in pairs(path.plots) do n = n + 1; end
 						unpathed = n <= 1;
 					end
+					-- RECORD-ONLY: does a stalled operation ever step? G77
+					-- (civvis-20261004T201619Z): 22 of the 23 no-ops that held
+					-- their frame to the 30-tick grace as `unknown` were in
+					-- ACTIVITY_OPERATION. The accepted MOVE_TO was active, the
+					-- unit was still on its origin with its movement intact, and
+					-- the host's path ended this turn (~3.8 s each, ~90 s a game).
+					-- Cancelling such a leg here would recover that, but only if
+					-- these legs almost never step later. Mark them here, then
+					-- `stall_probe_resolved` (stepped) or the grace `move_noop`
+					-- (which carries `stall_probe`) says which. No decision reads it.
+					local attempt = CivvisBoard.moveAttempts[subject];
+					if not unpathed and not spentNow and attempt ~= nil and attempt.turn == turn
+							and attempt.moves ~= nil and moves ~= nil and moves >= attempt.moves
+							and ActivityTypes.ACTIVITY_OPERATION ~= nil
+							and try(function() return UnitManager.GetActivityType(unit); end, nil)
+								== ActivityTypes.ACTIVITY_OPERATION then
+						entry.stall_probe = entry.wait;
+						emit("stall_probe", { turn = turn, unit = subject,
+							unit_kind = unitTypeName(unit), tick = entry.wait, moves = moves,
+							from = { ux, uy }, want = { entry.expect.x, entry.expect.y } });
+					end
+				end
+				if entry.stall_probe ~= nil and not entry.stall_resolved and entry.origin ~= nil then
+					local attempt = CivvisBoard.moveAttempts[subject];
+					if ux ~= entry.origin.x or uy ~= entry.origin.y
+							or (moves ~= nil and attempt ~= nil and attempt.moves ~= nil
+								and moves < attempt.moves) then
+						entry.stall_resolved = true;
+						emit("stall_probe_resolved", { turn = turn, unit = subject,
+							outcome = "stepped", probe_tick = entry.stall_probe, tick = entry.wait });
+					end
 				end
 				-- Arrival is not the same as settlement on the live host. Civ VI can
 				-- place a unit on the requested plot while its MOVE_TO operation is
@@ -16693,10 +16724,44 @@ end;
 -- Preserve native evidence before trying a fallback. A path can exist without
 -- ending on the requested plot, and an accepted request can remain active.
 -- WorldInput.lua:961 reads GetMoveToPathEx; UnitPanel.lua:2147 reads activity.
+-- The stock activity names (UnitActivities.artdef), lowercased, for a value
+-- from `UnitManager.GetActivityType`; the raw value as a string for one this
+-- list does not know, nil for nil. The same list and rule as the state
+-- export's unit `activity` (kept inline there for its install test), so a
+-- mirror row and a `move_noop` name an activity alike.
+CivvisBoard.activityName = function(kind)
+	if kind == nil then return nil; end
+	for _, label in ipairs({
+		"SLEEP", "HOLD", "OPERATION", "AWAKE",
+		"HEAL", "SENTRY", "INTERCEPT", "NO_ACTIVITY",
+		"BUILD", "DIG", "CUT", "REPAIR",
+		"SPREAD_RELIGION", "LAUNCH_INQUISITION",
+		"EVANGELIZE_BELIEF", "EXCAVATE", "DESIGNATE_PARK",
+		"FOUND_RELIGION",
+	}) do
+		local enum = label == "NO_ACTIVITY"
+			and ActivityTypes.NO_ACTIVITY
+			or ActivityTypes["ACTIVITY_" .. label];
+		if enum ~= nil and enum == kind then
+			return string.lower(label);
+		end
+	end
+	return tostring(kind);
+end;
+
+-- ⚠ G77 (civvis-20261004T201619Z): 22 of the 23 no-ops that waited the full
+-- grace as `unknown` (CanStartOperation true, path ending this turn, nothing
+-- stacked or hostile) carried native activity 1225574625, a value only 30 of
+-- the game's 1,217 no-ops had; the board had read those units `awake` or
+-- `operation` before the order. `activity_name` says which state the accepted
+-- leg left the unit in, an active operation that never steps or something else.
 CivvisBoard.noopEvidence = function(unit, x, y)
 	local evidence = {};
 	evidence.core_busy = try(function() return UI.IsGameCoreBusy(); end, nil);
 	evidence.activity = tonumber(try(function() return UnitManager.GetActivityType(unit); end, nil));
+	evidence.activity_name = try(function()
+		return CivvisBoard.activityName(UnitManager.GetActivityType(unit));
+	end, nil);
 	local destination = try(function() return Map.GetPlotIndex(x, y); end, nil);
 	local path = try(function() return UnitManager.GetMoveToPathEx(unit, destination); end, nil);
 	if type(path) == "table" and type(path.plots) == "table" then
@@ -16796,11 +16861,14 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 	local afterFallback = attempt ~= nil and attempt.turn == turn and attempt.fallback == true;
 	local why = CivvisBoard.classifyNoop(player, pid, unit, ux, uy, wantX, wantY, moves);
 	CivvisBoard.stats.move_noop = CivvisBoard.stats.move_noop + 1;
+	local stalled = not entry.stall_resolved and entry.stall_probe or nil;
+	if stalled ~= nil then entry.stall_resolved = true; end
 	emit("move_noop", {
 		turn = turn, unit = subject, unit_kind = unitTypeName(unit),
 		from = { ux, uy }, want = { wantX, wantY }, moves = moves,
 		ticks = entry.wait, why = why, after_fallback = afterFallback,
 		native = CivvisBoard.noopEvidence(unit, wantX, wantY),
+		stall_probe = stalled,
 	});
 	if afterFallback then return false; end
 	local sent = CivvisBoard.fallbackStep(player, pid, unit, subject, ux, uy, wantX, wantY, turn, why);
