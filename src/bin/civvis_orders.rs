@@ -1661,7 +1661,35 @@ fn defer_host_peace_retries(
 /// receiver lacks is how an accepted order becomes a silent no-op.
 #[cfg(test)]
 fn coalesce_unit_paths(orders: Vec<Order>, sequenced: bool) -> (Vec<Order>, usize, usize) {
-    coalesce_unit_paths_except(orders, sequenced, &Default::default())
+    coalesce_unit_paths_except(orders, sequenced, &Default::default(), &Default::default())
+}
+
+/// The centre tiles of every city we are at war with, in Civilization VI
+/// offset coordinates (the coordinates `Order::pos` carries).
+///
+/// ★★★★ A WALK THAT TAKES A CITY ENDS THERE. Live King 20261004T100903Z
+/// (G52), turn 191: the Siege of Mashhad left the city at 0 health behind
+/// fallen walls, CIVVIS moved its Helicopter in ("taken by the helicopter"),
+/// then the battle planner rotated the wounded Helicopter (77 hp) out to heal.
+/// `coalesce_unit_paths_except` folded the step INTO the city and the step OUT
+/// of it into one `MOVE_TO` to the healing tile, so the host flew the
+/// Helicopter past Mashhad and the city healed. Persia's capital stayed
+/// Persian.
+fn capture_tiles(state: &civvis::mirror::StateSnapshot) -> std::collections::BTreeSet<(i32, i32)> {
+    state
+        .rivals
+        .iter()
+        .filter(|rival| rival.at_war)
+        .flat_map(|rival| rival.cities.iter())
+        .chain(
+            state
+                .minors
+                .iter()
+                .filter(|minor| minor.at_war)
+                .flat_map(|minor| minor.cities.iter()),
+        )
+        .map(|city| (city.x, city.y))
+        .collect()
 }
 
 /// A wounded military unit near a known enemy must follow the planner's safe
@@ -1741,6 +1769,7 @@ fn coalesce_unit_paths_except(
     orders: Vec<Order>,
     sequenced: bool,
     local_routes: &std::collections::BTreeSet<i64>,
+    capture_tiles: &std::collections::BTreeSet<(i32, i32)>,
 ) -> (Vec<Order>, usize, usize) {
     // Per unit: where its kept order sits in `out`, and whether that order is still
     // an open walk (every order for the unit so far has been a MOVE_TO).
@@ -1769,9 +1798,12 @@ fn coalesce_unit_paths_except(
             continue;
         };
         let is_step = order.verb.as_deref() == Some("MOVE_TO") && order.pos.is_some();
+        // A step onto an enemy city takes it; whatever the unit does next
+        // must happen after the host has moved it in. See `capture_tiles`.
+        let takes_city = is_step && order.pos.is_some_and(|pos| capture_tiles.contains(&pos));
         match kept.get_mut(&subject) {
             None => {
-                kept.insert(subject, (out.len(), is_step));
+                kept.insert(subject, (out.len(), is_step && !takes_city));
                 out.push(order);
             }
             Some((index, open)) => {
@@ -1779,6 +1811,9 @@ fn coalesce_unit_paths_except(
                     // The walk continues: the host only needs its last hex.
                     out[*index].pos = order.pos;
                     coalesced += 1;
+                    if takes_city {
+                        *open = false;
+                    }
                 } else if sequenced {
                     // The mod queues this behind the unit's earlier orders and
                     // issues it once they have settled. A move after an act is
@@ -4426,7 +4461,7 @@ fn decide(
         note_bits.push(format!("wounded_local_routes={}", local_routes.len()));
     }
     let (causally_safe, deferred_unit_followups, coalesced_path_steps) =
-        coalesce_unit_paths_except(orders, sequenced, &local_routes);
+        coalesce_unit_paths_except(orders, sequenced, &local_routes, &capture_tiles(state));
     orders = causally_safe;
     if coalesced_path_steps > 0 {
         note_bits.push(format!("coalesced_path_steps={coalesced_path_steps}"));
@@ -11095,7 +11130,7 @@ mod tests {
             unit_order(unit, "MOVE_TO", Some((6, 5))),
         ];
         let local = refusals.local_retry.keys().copied().collect();
-        let (orders, _, coalesced) = coalesce_unit_paths_except(retry_steps, true, &local);
+        let (orders, _, coalesced) = coalesce_unit_paths_except(retry_steps, true, &local, &Default::default());
         assert_eq!(coalesced, 0);
         assert_eq!(orders.len(), 2);
         state.frame = 1;
@@ -14432,13 +14467,13 @@ mod tests {
                 unit_order(8, "MOVE_TO", Some((21, 8))),
             ]
         };
-        let (orders, deferred, coalesced) = coalesce_unit_paths_except(planned(), true, &local);
+        let (orders, deferred, coalesced) = coalesce_unit_paths_except(planned(), true, &local, &Default::default());
         assert_eq!(deferred, 0);
         assert_eq!(coalesced, 1, "healthy travel still coalesces");
         assert_eq!(orders[0].pos, Some((10, 9)));
         assert_eq!(orders[1].pos, Some((11, 8)));
         assert_eq!(orders[2].verb.as_deref(), Some("FORTIFY"));
-        let (old_host, deferred, _) = coalesce_unit_paths_except(planned(), false, &local);
+        let (old_host, deferred, _) = coalesce_unit_paths_except(planned(), false, &local, &Default::default());
         assert_eq!(deferred, 2);
         assert_eq!(
             old_host
