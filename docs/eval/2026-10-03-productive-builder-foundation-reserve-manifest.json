@@ -1,0 +1,57 @@
+{
+  "phase": "rejected idle queue reservations",
+  "control_runtime_revision": "45137644f66f3b00a15a30d8de03ae679b3b7aa5",
+  "control_runtime_matches_task_base": true,
+  "initial_candidate_source_commit": "7ff8dbd70",
+  "revised_candidate_source_commit": "7a051149f",
+  "control_binary_sha256": "9d01241a3431780fdcd43aff3f2ce439178b6cbef93b0c802d097f0e6e5cec94",
+  "initial_candidate_binary_sha256": "4a2cca87bd5d7cad69f8d49c3b4e5562b5e211eae66d068fee1efdd22d355330",
+  "revised_candidate_binary_sha256": "66a3243b8ff95f1cd3cccea95afb6864b06bfec9ae05196f126507c913c21445",
+  "profile": {
+    "players": 4,
+    "civs": [
+      "Gran Colombia"
+    ],
+    "randomize_civs": true,
+    "width": 60,
+    "height": 38,
+    "city_states": 6,
+    "map": "Pangaea",
+    "speed": "Online",
+    "max_turns": 150,
+    "victory": "Domination focal, all victory conditions enabled",
+    "focal_handicap_exempt": true,
+    "rivals": "AdvancedAi::fleet",
+    "focal_genome": "AdvancedAi::targeting(Domination) with gene ledger; no forced live genes"
+  },
+  "seeds": {
+    "development_emperor": [
+      61003800,
+      61003803
+    ],
+    "confirmation_emperor": [
+      61003900,
+      61003911
+    ],
+    "deity": [
+      61004000,
+      61004003
+    ]
+  },
+  "artifacts_sha256": {
+    "docs/eval/2026-10-03-productive-builder-foundation-reserve-candidate.csv": "a2c61e8deef67e401fd65b44ae6c3eaedacf628e4b18f3ff52b7b599feaff0a1",
+    "docs/eval/2026-10-03-productive-builder-foundation-reserve-candidate.txt": "390f31be3a57718ce8046957fb5fcaefab17b61fb1e4d9e80425c983aa66c800",
+    "docs/eval/2026-10-03-productive-builder-foundation-reserve-confirmation-candidate.csv": "175178e5c26fb987ea0b43de170dd5b556c98db4c8a61dad33e3bf58ca5ff512",
+    "docs/eval/2026-10-03-productive-builder-foundation-reserve-confirmation-candidate.txt": "ee3cdba57b0864f6006a6b22120eedae78c920f3f7e3c765df898ccb967f2e16",
+    "docs/eval/2026-10-03-productive-builder-foundation-reserve-confirmation-control.csv": "97a2f78a333efd4d00461bb3e4505886301c851844cea24dd4282a134bcc7692",
+    "docs/eval/2026-10-03-productive-builder-foundation-reserve-confirmation-control.txt": "f958b67acfc36481a7056c4991f147cbc86045062364df3d6ee8e06f0d9f6130",
+    "docs/eval/2026-10-03-productive-builder-foundation-reserve-control.csv": "ad60fa34fa17fb2c1bed7fedb361b1461b2af386c66071afbb571c0ba5406793",
+    "docs/eval/2026-10-03-productive-builder-foundation-reserve-control.txt": "f1d766417d2709860c68b3aa2c9454bb7acf93aa8a740d59859ef72afbd73497",
+    "docs/eval/2026-10-03-productive-builder-foundation-reserve-deity-candidate.csv": "d928697a68d25b48eaf1406c83dac2bd14620848de477b4000c262c22e0c1621",
+    "docs/eval/2026-10-03-productive-builder-foundation-reserve-deity-candidate.txt": "237981ac0f36d5c250456137dbb1b89bc9843943bf11b8978ff2405ee1c6ef80",
+    "docs/eval/2026-10-03-productive-builder-foundation-reserve-deity-control.csv": "b7bc008287c4b9fcb99d2c0a17ed9ed3444b1f4690e14e23cd38015b61073c84",
+    "docs/eval/2026-10-03-productive-builder-foundation-reserve-deity-control.txt": "60f9917bbdc1b20141af0f8c44e235c803df67d5beb64244fbf8201464f5fe8e",
+    "docs/eval/2026-10-03-productive-builder-foundation-reserve-v2-candidate.csv": "dbc5d440bfd7346a1f929f786b751a881f6c0dc4797d91279870cfbbc756c610",
+    "docs/eval/2026-10-03-productive-builder-foundation-reserve-v2-candidate.txt": "a28c1dd24cea24f4fd0597e6a4a50e58ec762f4461fe38b9f335b30225514108"
+  }
+}

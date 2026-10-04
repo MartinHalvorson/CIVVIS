@@ -196,7 +196,8 @@ fn an_unassigned_soldier_can_still_pick_up_a_civilian() {
 /// the same unit outside an active siege still evacuates.
 #[test]
 fn a_healthy_siege_shooter_is_not_evacuated_off_its_post() {
-    let turn = |active: bool| {
+    let turn = |stage: Option<SiegeStage>| {
+        let active = stage.is_some_and(|stage| stage != SiegeStage::Stage);
         let (mut g, cid) = walled_city();
         // A campaign board: an arena has no recovery to evacuate into.
         g.map_script = crate::setup::MapScript::LandOnly;
@@ -230,11 +231,11 @@ fn a_healthy_siege_shooter_is_not_evacuated_off_its_post() {
         let mut ai = AdvancedAi::targeting(crate::ai::VictoryTarget::Domination);
         ai.enable_siege_train();
         ai.force_groups = vec![group(&g, archer, cid)];
-        if active {
+        if let Some(stage) = stage {
             ai.sieges.insert(
                 cid,
                 Siege {
-                    stage: SiegeStage::Reduce,
+                    stage,
                     taker: None,
                     entered: g.turn,
                     assessed: g.turn,
@@ -252,12 +253,16 @@ fn a_healthy_siege_shooter_is_not_evacuated_off_its_post() {
             g.cities[&cid].wall_hp,
         )
     };
-    let (recovering, held, _) = turn(false);
+    let (recovering, held, _) = turn(None);
     assert!(
         recovering && !held,
         "the control: the summed envelope walks the archer off the post"
     );
-    let (recovering, held, walls) = turn(true);
+    let (recovering, held, walls) = turn(Some(SiegeStage::Reduce));
     assert!(!recovering && held, "an active siege keeps its healthy shooter on the post");
     assert!(walls < 100, "and the shooter fires at the walls");
+    // A siege still in Stage owns the turn too: its own step may step the
+    // shooter back out of the city's reach, but the evacuation does not.
+    let (recovering, _, _) = turn(Some(SiegeStage::Stage));
+    assert!(!recovering, "a Stage siege's healthy member is not evacuated");
 }

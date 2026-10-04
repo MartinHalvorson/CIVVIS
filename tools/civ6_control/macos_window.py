@@ -82,10 +82,25 @@ def capture_looks_unavailable() -> bool:
 
 
 def game_window(game_process: str) -> tuple[int, int, int, int] | None:
-    """Position and size of the game window in points, or ``None``."""
+    """Position and size of the game window in points, or ``None``.
+
+    Every window of the process is read and the largest one big enough to be
+    the game is returned. ``window 1`` alone is not the game: on 2026-10-04
+    Civ6_Exe_Child also owned a 66x20 window named "Window" at (0, 33) that
+    System Events listed first, so two setups in a row waited out "no game
+    window yet" beside a visible 1634x1084 "Civilization VI" window and
+    played no turns.
+    """
     script = ('tell application "System Events" to tell '
-              f'process "{game_process}" to '
-              'get {position, size} of window 1')
+              f'process "{game_process}"\n'
+              'set out to ""\n'
+              'repeat with w in windows\n'
+              'set {px, py} to position of w\n'
+              'set {sx, sy} to size of w\n'
+              'set out to out & px & ", " & py & ", " & sx & ", " & sy & ";"\n'
+              'end repeat\n'
+              'return out\n'
+              'end tell')
     try:
         out = subprocess.run(["osascript", "-e", script], capture_output=True,
                              text=True, timeout=HOST_PROBE_TIMEOUT_S)
@@ -94,11 +109,17 @@ def game_window(game_process: str) -> tuple[int, int, int, int] | None:
               f"{HOST_PROBE_TIMEOUT_S:g}s; treating the geometry as unknown",
               flush=True)
         return None
-    parts = [part.strip() for part in out.stdout.split(",") if part.strip()]
-    if len(parts) != 4 or not all(part.lstrip("-").isdigit() for part in parts):
-        return None
-    x, y, width, height = (int(part) for part in parts)
-    return (x, y, width, height) if width > 400 and height > 300 else None
+    best: tuple[int, int, int, int] | None = None
+    for record in (out.stdout or "").split(";"):
+        parts = [part.strip() for part in record.split(",") if part.strip()]
+        if len(parts) != 4 or not all(part.lstrip("-").isdigit() for part in parts):
+            continue
+        x, y, width, height = (int(part) for part in parts)
+        if width <= 400 or height <= 300:
+            continue
+        if best is None or width * height > best[2] * best[3]:
+            best = (x, y, width, height)
+    return best
 
 
 def screen_locked() -> bool:
@@ -207,12 +228,28 @@ def place_game(game_process: str, side: str = "left", fraction: float = 0.5,
     # make unrelated windows reflow, so leave an unchanged frame alone.
     if get_game_window() == desired:
         return
+    # The largest window, as in `game_window`: `window 1` was a 66x20
+    # "Window" on 2026-10-04, so the game kept its 1634x1084 frame and setup
+    # read its panels at the wrong scale.
     script = (
         'tell application "System Events" to tell '
-        f'process "{game_process}" to tell window 1\n'
-        f'  set size to {{{width}, {height}}}\n'
+        f'process "{game_process}"\n'
+        '  set best to 0\n'
+        '  set bestArea to 0\n'
+        '  repeat with i from 1 to count of windows\n'
+        '    set {sx, sy} to size of window i\n'
+        '    if sx * sy > bestArea then\n'
+        '      set bestArea to sx * sy\n'
+        '      set best to i\n'
+        '    end if\n'
+        '  end repeat\n'
+        '  if best > 0 then\n'
+        '    tell window best\n'
+        f'      set size to {{{width}, {height}}}\n'
         # Aspyr constrains the existing origin while applying a smaller size.
-        f'  set position to {{{x}, {y}}}\n'
+        f'      set position to {{{x}, {y}}}\n'
+        '    end tell\n'
+        '  end if\n'
         'end tell')
     _best_effort_osascript(script, "place")
     actual = get_game_window()
