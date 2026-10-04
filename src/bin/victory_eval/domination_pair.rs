@@ -185,6 +185,9 @@ struct SeatEconomy {
     factories: usize,
     power_plants: usize,
     military_units: usize,
+    /// Live trade routes other majors own that end in this seat's cities:
+    /// each grants its owner +25% Tourism against this seat.
+    inbound_foreign_routes: usize,
 }
 
 impl SeatEconomy {
@@ -198,6 +201,16 @@ impl SeatEconomy {
                 .units
                 .values()
                 .filter(|unit| unit.owner == pid && g.rules.units[unit.kind].class == "military")
+                .count(),
+            inbound_foreign_routes: g
+                .routes
+                .iter()
+                .filter(|route| {
+                    route.owner != pid
+                        && route.ends > g.turn
+                        && !g.players[route.owner].is_minor
+                        && g.cities.get(&route.dest).is_some_and(|city| city.owner == pid)
+                })
                 .count(),
             ..Default::default()
         };
@@ -252,6 +265,7 @@ impl SeatEconomy {
             factories: self.factories.max(other.factories),
             power_plants: self.power_plants.max(other.power_plants),
             military_units: self.military_units.max(other.military_units),
+            inbound_foreign_routes: self.inbound_foreign_routes.max(other.inbound_foreign_routes),
         }
     }
 }
