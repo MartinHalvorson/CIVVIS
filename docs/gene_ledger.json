@@ -2151,7 +2151,8 @@
         "ships": null,
         "versions": {
           "builder-before-the-army": null,
-          "builder-before-the-army-2": null
+          "builder-before-the-army-2": null,
+          "builder-before-the-army-3": null
         }
       },
       "builder-workforce-recovery": {
@@ -2465,6 +2466,15 @@
         "versions": {
           "housing-research": -0.009393,
           "housing-research-2": null
+        }
+      },
+      "industry-before-the-army": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "industry-before-the-army": null,
+          "industry-before-the-army-2": null
         }
       },
       "lane-delegates-production": {

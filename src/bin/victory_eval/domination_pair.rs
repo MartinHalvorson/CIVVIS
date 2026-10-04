@@ -158,7 +158,9 @@ struct Outcome {
 
 /// Turns at which [`EconomySnapshot`] is taken: the live ladder's own
 /// checkpoints (`cities_at_60`, `techs_at_100`) and a later one.
-const ECONOMY_MARKS: [u32; 3] = [60, 100, 150];
+/// Schema 5 adds turns 40, 80, 120 and 200 so a production policy is read on
+/// the curve it bends, not only at the ladder's checkpoints.
+const ECONOMY_MARKS: [u32; 7] = [40, 60, 80, 100, 120, 150, 200];
 
 #[derive(Debug, Default, Serialize, Clone)]
 struct SeatEconomy {
@@ -174,14 +176,29 @@ struct SeatEconomy {
     monuments: usize,
     granaries: usize,
     libraries: usize,
+    /// City production a turn (handicap included, as the engine pays it).
+    production: f64,
+    /// Every turn's city production summed from turn one to this mark.
+    production_to_date: f64,
+    industrial_zones: usize,
+    workshops: usize,
+    factories: usize,
+    power_plants: usize,
+    military_units: usize,
 }
 
 impl SeatEconomy {
-    fn of(g: &Game, pid: usize) -> Self {
+    fn of(g: &Game, pid: usize, production_to_date: f64) -> Self {
         let mut seat = SeatEconomy {
             techs: g.players[pid].techs.len(),
             civics: g.players[pid].civics.len(),
             treasury: g.players[pid].gold,
+            production_to_date,
+            military_units: g
+                .units
+                .values()
+                .filter(|unit| unit.owner == pid && g.rules.units[unit.kind].class == "military")
+                .count(),
             ..Default::default()
         };
         for city in g.cities.values().filter(|city| city.owner == pid) {
@@ -189,6 +206,7 @@ impl SeatEconomy {
             seat.science += yields.science;
             seat.culture += yields.culture;
             seat.gold += yields.gold;
+            seat.production += yields.production;
             seat.population += i64::from(city.pop);
             seat.cities += 1;
             seat.districts += city
@@ -200,6 +218,13 @@ impl SeatEconomy {
             seat.monuments += usize::from(has("monument"));
             seat.granaries += usize::from(has("granary"));
             seat.libraries += usize::from(has("library"));
+            seat.industrial_zones +=
+                usize::from(g.city_has_district_family(city, civvis::name!("industrial_zone")));
+            seat.workshops += usize::from(has("workshop"));
+            seat.factories += usize::from(has("factory") || has("electronics_factory"));
+            seat.power_plants += usize::from(
+                has("coal_power_plant") || has("oil_power_plant") || has("nuclear_power_plant"),
+            );
         }
         seat
     }
@@ -220,6 +245,13 @@ impl SeatEconomy {
             monuments: self.monuments.max(other.monuments),
             granaries: self.granaries.max(other.granaries),
             libraries: self.libraries.max(other.libraries),
+            production: self.production.max(other.production),
+            production_to_date: self.production_to_date.max(other.production_to_date),
+            industrial_zones: self.industrial_zones.max(other.industrial_zones),
+            workshops: self.workshops.max(other.workshops),
+            factories: self.factories.max(other.factories),
+            power_plants: self.power_plants.max(other.power_plants),
+            military_units: self.military_units.max(other.military_units),
         }
     }
 }
@@ -231,22 +263,34 @@ struct EconomySnapshot {
     best_rival: SeatEconomy,
 }
 
-fn observe_economy(g: &Game, economy: &mut Vec<EconomySnapshot>) {
+/// Adds each seat's city production for this turn to its running total.
+/// Called once per observed turn boundary.
+fn accrue_production(g: &Game, totals: &mut Vec<f64>) {
+    totals.resize(g.players.len(), 0.0);
+    for city in g.cities.values() {
+        if let Some(total) = totals.get_mut(city.owner) {
+            *total += g.city_yields(city.id).production;
+        }
+    }
+}
+
+fn observe_economy(g: &Game, totals: &[f64], economy: &mut Vec<EconomySnapshot>) {
     let Some(&mark) = ECONOMY_MARKS.get(economy.len()) else {
         return;
     };
     if g.turn < mark {
         return;
     }
+    let to_date = |pid: usize| totals.get(pid).copied().unwrap_or(0.0);
     let best_rival = g
         .players
         .iter()
         .filter(|p| p.id != 0 && p.alive && !p.is_minor && !p.is_barbarian)
-        .map(|p| SeatEconomy::of(g, p.id))
+        .map(|p| SeatEconomy::of(g, p.id, to_date(p.id)))
         .fold(SeatEconomy::default(), SeatEconomy::max);
     economy.push(EconomySnapshot {
         turn: g.turn,
-        focal: SeatEconomy::of(g, 0),
+        focal: SeatEconomy::of(g, 0, to_date(0)),
         best_rival,
     });
 }
@@ -372,6 +416,8 @@ fn trial(seed: u64, difficulty: Option<&str>, policy: &Gene, enabled: bool) -> T
     let mut held = BTreeSet::new();
     let mut conquest = ConquestProgress::default();
     let mut economy = Vec::new();
+    let mut production_totals = Vec::new();
+    let mut accrued_turn = None;
     let mut bankrupt_turns = 0u32;
     let mut bankrupt_seen_turn = None;
     // The journal is a ring of the last few thousand thoughts; drain it at
@@ -380,7 +426,11 @@ fn trial(seed: u64, difficulty: Option<&str>, policy: &Gene, enabled: bool) -> T
     let mut cursor = 0;
     let mut observe = |g: &Game| {
         conquest.observe(g);
-        observe_economy(g, &mut economy);
+        if accrued_turn != Some(g.turn) {
+            accrued_turn = Some(g.turn);
+            accrue_production(g, &mut production_totals);
+        }
+        observe_economy(g, &production_totals, &mut economy);
         if g.players[0].bankruptcy_amenity_penalty > 0 && bankrupt_seen_turn != Some(g.turn) {
             bankrupt_seen_turn = Some(g.turn);
             bankrupt_turns += 1;
@@ -473,7 +523,7 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
             domination[i] += usize::from(arm.outcome.focal_domination_won);
         }
         let row = serde_json::json!({
-            "schema": 4, "kind": "simulator_domination_policy_pair",
+            "schema": 5, "kind": "simulator_domination_policy_pair",
             "policy": config.policy.tag, "seed": seed,
             "execution_order": if index % 2 == 0 { "off,on" } else { "on,off" },
             "profile": profile(seed, config.difficulty), "civilizations": off.civs,
