@@ -45,7 +45,7 @@ class CrashAlertCleanupTest(unittest.TestCase):
                                   else {"return_value": running})), \
              mock.patch.object(climb.desktop_control, "dismiss_modals", return_value=[]) as dismiss:
             climb.dismiss_crash_dialogs()
-        dismiss.assert_called_once_with(civ6_crashes_only=True)
+        dismiss.assert_called_once_with(crashes_only=True)
         return [call.args[0] for call in run.call_args_list if call.args[0][0] == "osascript"]
 
     def test_the_sweep_asks_only_for_owners_that_run(self):
