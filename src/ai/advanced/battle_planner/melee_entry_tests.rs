@@ -322,13 +322,17 @@ fn fixed_reach_boards() -> Vec<(&'static str, Game, u32)> {
                 g.spawn_unit("supply_convoy", 1, at(12, 7));
             }
             "host-allowance" => {
-                g.host_unit_facts.entry(enemy).or_default().max_moves = Some(4.0);
+                Arc::make_mut(&mut g.host_unit_facts)
+                    .entry(enemy)
+                    .or_default()
+                    .max_moves = Some(4.0);
             }
             "war-cart" => {
                 g.remove_unit(enemy);
                 enemy = g.spawn_unit("war_cart", 1, at(12, 6));
-                for (pos, tile) in g.map.tiles.iter_mut() {
-                    tile.hills = (pos.0 + pos.1).rem_euclid(3) == 0;
+                let positions: Vec<_> = g.map.tiles.keys().copied().collect();
+                for pos in positions {
+                    g.map.tiles.get_mut(&pos).unwrap().hills = (pos.0 + pos.1).rem_euclid(3) == 0;
                 }
             }
             _ => {}
@@ -348,9 +352,10 @@ fn fixed_reach_boards() -> Vec<(&'static str, Game, u32)> {
     g.map.tiles.get_mut(&at(10, 6)).unwrap().hills = true;
     boards.push(("ranged", g, enemy));
     let mut g = field();
-    for (pos, tile) in g.map.tiles.iter_mut() {
+    let positions: Vec<_> = g.map.tiles.keys().copied().collect();
+    for pos in positions {
         if crate::hex::axial_to_offset(pos.0, pos.1).0 >= 11 {
-            tile.terrain = crate::name!("coast");
+            g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("coast");
         }
     }
     let enemy = g.spawn_unit("galley", 1, at(12, 6));
@@ -463,4 +468,41 @@ fn measure_fixed_board_reach_memo() {
         .unwrap(),
     )
     .unwrap();
+}
+
+#[test]
+#[ignore = "read-only host-combat witnesses supplied by external manifest"]
+fn inspect_recorded_native_melee_permissions() {
+    let manifest = std::env::var("CIVVIS_NATIVE_ENTRY_MANIFEST").unwrap();
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(manifest).unwrap()).unwrap();
+    let mut rows = Vec::new();
+    for case in manifest["cases"].as_array().unwrap() {
+        let path = std::path::Path::new(case["prefix"].as_str().unwrap());
+        let snapshot = crate::mirror::snapshot_from_events(path).unwrap();
+        let state = crate::mirror::state_from_events(path, None).unwrap();
+        assert_eq!(u64::from(state.turn), case["turn"].as_u64().unwrap());
+        assert_eq!(u64::from(state.frame), case["frame"].as_u64().unwrap());
+        let live = crate::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 650, 6);
+        let uid = live.uid_of[&case["native_unit"].as_i64().unwrap()];
+        let g = live.game;
+        let from = at(
+            case["from"][0].as_i64().unwrap() as i32,
+            case["from"][1].as_i64().unwrap() as i32,
+        );
+        let target = at(
+            case["target"][0].as_i64().unwrap() as i32,
+            case["target"][1].as_i64().unwrap() as i32,
+        );
+        assert_eq!(g.units[&uid].pos, from);
+        assert_eq!(g.units[&uid].moves_left, case["moves"].as_f64().unwrap());
+        assert_eq!(g.unit_max_moves(uid), case["max_moves"].as_f64().unwrap());
+        let mut row = case.clone();
+        row["model_step_cost"] = serde_json::json!(g.step_cost_for(uid, from, target));
+        row["model_can_pay_entry"] = serde_json::json!(g.can_pay_melee_entry(uid, target));
+        row["model_domain"] = serde_json::json!(g.rules.units[g.units[&uid].kind].domain);
+        rows.push(row);
+    }
+    let output = std::env::var("CIVVIS_NATIVE_ENTRY_OUTPUT").unwrap();
+    std::fs::write(output, serde_json::to_vec_pretty(&rows).unwrap()).unwrap();
 }

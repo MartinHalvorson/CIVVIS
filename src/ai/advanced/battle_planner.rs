@@ -370,6 +370,10 @@ pub(crate) fn strike_reach_of(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos
     if let Some(live) = probe.units.get_mut(&uid) {
         *live = saved.clone();
     }
+    // The speculative probe starts without memo terms, and approach_reach's
+    // scope has ended. All unit fields are restored before this read-only
+    // loop: share allowance and step terms across its stands and neighbors.
+    let _restored_target_memo = probe.query_memo();
     let range = if ranged {
         probe.unit_attack_range(uid).max(1)
     } else {
