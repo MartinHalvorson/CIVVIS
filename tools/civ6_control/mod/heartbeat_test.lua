@@ -212,3 +212,48 @@ closedByAgent.hideOnPulse = true
 closedByAgent.update(1)
 assert(closedByAgent.pulses == 1 and closedByAgent.closes == 0,
        "a pulse that closes the popup must not run its native close again")
+
+-- The landed-orders peek rides the same per-frame clock: one
+-- `CivvisControlPeek` every `OrdersPeekSeconds` (floored at 20 ms), never a
+-- burst after a long frame, and a failing listener cannot stop the clock.
+-- The 1 s pulse is unchanged beside it.
+local function peekHost(cfg)
+    local h = { peeks = 0, pulses = 0 }
+    local env = setmetatable({ CivvisControlConfig = cfg }, { __index = _G })
+    env.include = function(name)
+        if name ~= "TopPanel" then error("unavailable expansion") end
+        env.LateInitialize = function() end
+    end
+    env.ContextPtr = { SetUpdate = function(_, callback) h.update = callback end }
+    env.LuaEvents = {
+        CivvisControlPulse = function() h.pulses = h.pulses + 1 end,
+        CivvisControlPeek = function()
+            h.peeks = h.peeks + 1
+            if h.throw then error("listener temporarily unavailable") end
+        end,
+    }
+    local chunk = assert(loadfile(here .. "/CivvisControlHeartbeat.lua"))
+    setfenv(chunk, env); chunk()
+    return h
+end
+local pk = peekHost({ CivvisDecides = true })
+pk.update(0.03); assert(pk.peeks == 0, "peek too early")
+pk.update(0.03); assert(pk.peeks == 1, "50 ms of frames offer one peek")
+for _ = 1, 10 do pk.update(0.05) end
+assert(pk.peeks == 11, "one peek per 50 ms")
+pk.update(5); assert(pk.peeks == 12, "a long frame offers one peek, not a burst")
+pk.throw = true; pk.update(0.05); pk.throw = false; pk.update(0.05)
+assert(pk.peeks == 14, "a failing peek listener must not stop the clock")
+assert(pk.pulses == 1, "the 1 s pulse still fires on its own cadence")
+local slow = peekHost({ CivvisDecides = true, OrdersPeekSeconds = 0.2 })
+for _ = 1, 3 do slow.update(0.05) end
+assert(slow.peeks == 0, "a configured interval is honoured")
+slow.update(0.06); assert(slow.peeks == 1)
+local floor = peekHost({ CivvisDecides = true, OrdersPeekSeconds = 0 })
+floor.update(0.01); assert(floor.peeks == 0, "the interval is floored at 20 ms")
+floor.update(0.011); assert(floor.peeks == 1)
+for _, cfg in ipairs({{Play = false, CivvisDecides = true}, {CivvisDecides = false}}) do
+    local h = peekHost(cfg)
+    assert(h.update == nil, "disabled automation must not arm the peek clock")
+end
+print("all landed-orders peek clock checks passed")
