@@ -20966,6 +20966,9 @@ impl AdvancedAi {
         // threshold that authorizes a Surprise War, waiting for superiority
         // guarantees that the rival gets the final uncontested turns.
         let urgent_denial = self.urgent_victory_threat(g, target);
+        // See `faith_counter_due`: a faith taking our cities is answered by the
+        // war itself, like the religious match point below.
+        let faith_counter_due = self.faith_counter_due(g, pid, target);
         // `my_power > target_power * 1.32 + 12` is an empire-wide comparison,
         // and at turn 40 both empires are three or four units, so the `+ 12`
         // alone can outweigh the whole ratio. What decides an ancient siege is
@@ -20980,6 +20983,7 @@ impl AdvancedAi {
             self.census.war_policy_declarations_held += 1;
         }
         let ready = urgent_denial
+            || faith_counter_due
             || if let Some(verdict) = &policy {
                 verdict.is_ok()
             } else if rushing {
@@ -21020,10 +21024,11 @@ impl AdvancedAi {
         // siege bill. Live King civvis-20261003T113755Z read "the army has not
         // finished staging" at turns 145-150 at 578-602 power against 210-362
         // while Khmer Buddhism took our cities, and lost at 153.
-        let religion_counter_ready = urgent_denial
+        let religion_counter_ready = (urgent_denial
             && self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && self.rival_victory_pressure(g, target).strategy == GrandStrategy::Religion
-            && my_power >= target_power;
+            && my_power >= target_power)
+            || faith_counter_due;
         if close_enough && ready && (staged || air_ready || religion_counter_ready) {
             // `coalition_before_war`: invite the target's neighbours to a
             // joint war first, and hold while an answer is due. See

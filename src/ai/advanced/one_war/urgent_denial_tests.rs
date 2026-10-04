@@ -449,6 +449,49 @@ fn a_counter_target_opens_a_second_front_beside_a_prey_front() {
     assert_eq!(ai.one_war_second_front(&g, 0), None);
 }
 
+/// See `faith_counter_due`: the second front on a faith taking our cities is
+/// declared without a staged siege; the war itself is the counter.
+#[test]
+fn a_faith_taking_our_cities_is_declared_on_without_a_staged_siege() {
+    let (mut g, mut ai) = two_fronts();
+    // A declaration needs a second city of ours.
+    g.found_city_for(0, (6, 18), None);
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    ai.one_war_observe(&g, 0);
+    assert!(ai.faith_counter_due(&g, 0, 2));
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.target_player, Some(2));
+    // The coalition invitation holds a turn for answers; it is not the gate
+    // under test.
+    ai.coalition_before_war = false;
+    ai.coalition_before_war_2 = false;
+    ai.coalition_before_war_3 = false;
+    // No spreader stands in our land, so the opening is the denouncement
+    // and the Formal War follows its preparation period.
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!g.is_at_war(0, 2));
+    for _ in 0..12 {
+        if g.is_at_war(0, 2) {
+            break;
+        }
+        g.turn += 1;
+        let plan = ai.assess(&g, 0);
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+    }
+    assert!(g.is_at_war(0, 2), "declared beside the prey front");
+
+    // Without the power margin the war waits for its siege.
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    for y in [4, 5, 6, 7, 8, 9] {
+        g.spawn_test_unit("modern_armor", 2, (26, y));
+    }
+    ai.one_war_observe(&g, 0);
+    assert!(!ai.faith_counter_due(&g, 0, 2));
+}
+
 /// The conquest opening's declared war is not traded for another rival's
 /// victory clock; the opening's own peace rules decide it.
 #[test]

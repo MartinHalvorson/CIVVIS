@@ -690,6 +690,28 @@ impl AdvancedAi {
                 || self.holds_bleeding_capital_of(g, pid, other))
     }
 
+    /// Whether a faithless Domination seat should declare on `rival` without
+    /// a staged siege: `rival`'s faith is taking our cities
+    /// (`domination_faithless_conversion_counter`) and we have
+    /// [`ONE_WAR_SECOND_FRONT_RATIO`] times its power. At war our units may
+    /// condemn its Missionaries and Apostles in our own land, which needs no
+    /// army at its cities. Live King civvis-20261003T155014Z (game 41): with
+    /// the Cree as the second front, a replay held the war from turn 89 to
+    /// 113 for "0 staged on its ring" while the army besieged America, at
+    /// 1.9 to 2.3 times their power; the Cree took our cities and won at 126.
+    pub(crate) fn faith_counter_due(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.players[pid].religion.is_none()
+            && self.domination_faithless_conversion_counter(
+                g,
+                pid,
+                rival,
+                self.rival_victory_pressure(g, rival),
+            )
+            && g.military_power(pid)
+                >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(rival).max(1.0)
+    }
+
     /// Whether a war on `other`, beside the front, is one the Domination
     /// counter wants kept: `other`'s clock is urgent, or it is a counter
     /// target we outgun [`ONE_WAR_SECOND_FRONT_RATIO`] times over. See
