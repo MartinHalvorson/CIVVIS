@@ -1,13 +1,19 @@
-# Early worked-production Builder investment
+# Rejected early worked-production Builder investment
 
 The previous Builder reservation repair corrected a diagnosed same-frame
 handoff, but all eight fresh paired games were byte-identical. It did not
-raise average early production. This independent candidate buys an idle city
+raise average early production. This experiment tested an opt-in reservation to train an idle city
 a Builder when its currently worked, unlocked productive jobs forecast enough
 production to repay the actual remaining cost.
 
-The candidate is opt-in through `enable_builder_payback_reserve`; production
-defaults are unchanged during evaluation. Existing named-lane workforce
+Both prototypes failed coverage and their runtime API, policies, diagnostics,
+and tests were removed. The final native source is byte-identical to its
+merged main baseline. The historical probe intentionally references the removed
+API and reproduces the experiment using the archived prototype libraries; it
+is not a probe for the final main library.
+
+During evaluation the candidate was opt-in through
+`enable_builder_payback_reserve`; production defaults were unchanged. Existing named-lane workforce
 limits are retained. Nearby active charges cover jobs first and another
 queued Builder prevents a second reservation. Two distinct uncovered worked
 land jobs are required, in a city below the existing 8-production foundation.
@@ -26,7 +32,7 @@ same investment forecast; explicit refusal and siege handling retain priority.
 ## Frozen evaluation
 
 The protocol and probe were written before treatment play. Control and
-candidate will use the same frozen normal optimized CI-profile binary; only
+candidate used the same frozen normal optimized CI-profile binary; only
 the candidate opts in. Four Emperor and four Deity pairs screen the candidate
 before the separate sixteen-pair-per-difficulty confirmation. Primary is
 turn-75 production, with death or an early end counted as zero. Confirmation
@@ -45,7 +51,7 @@ requires improvement at both difficulties without lower survival or more than
 - A new five-test fast suite passes after the shared turn-driver reservation;
   this includes a full native delegated turn with the opening already complete
   and both required Scouts present. A disabled control chooses another item.
-- Final normal optimized local Cargo suite: pending.
+- Final normal optimized local Cargo suite: 4,591 passed, zero failed, 54 ignored; four test threads. Native source is identical to merged main.
 - Prototype-one fresh pilot: sixteen executions, all zero exit; all eight
   paired action logs and final worlds byte-identical. No worked-production
   Builder reservation was recorded. Emperor mean turn-75 Production 53.675
@@ -59,7 +65,7 @@ Builder commitment expression is above #3938's separate receipt insertion;
 its preservation disjunctions are unchanged here. Shared-file ownership is
 recorded by the launcher in the draft PR.
 
-## Second prototype, still under diagnosis
+## Second prototype rejected after consumed replay
 
 The first prototype's city-local reservation only runs inside the strategic
 governor. The turn driver also has a delegated route, so the revised opt-in
@@ -82,3 +88,30 @@ work on consumed diagnostic worlds. The first protocol's confirmation remains
 unplayed. The first probe and normal optimized library remain frozen under
 `civvis-production-evidence/2026-10-04/payback/artifacts`; all 88 raw pilot files
 and their hashes remain in the adjacent `pilot` archive.
+
+
+The second prototype replayed all eight already-consumed pilot maps, with
+sixteen executions and zero failures. All eight paired action logs and final
+worlds were byte-identical, and no reservation was accepted. Deferral buckets
+showed existing city-output/alarm, workforce/insolvency, uncovered-job, and
+age/recovery/threat guards excluding the investment. Each bucket groups several
+conditions and does not isolate one cause. The shared driver did execute its
+checks, so a passing route fixture cannot establish useful treatment coverage.
+
+The second prototype includes the merged #3938 Builder receipt repair. Its
+control world can therefore differ from the first prototype's control; those
+cross-version differences are not treatment gains. Exact same-source arm pairs
+remain the comparison. All 136 replay files and hashes are archived under
+`civvis-production-evidence/2026-10-04/payback/diagnostic-v2`. Both native patches,
+optimized libraries, dependencies, compiler commands, and probe hashes remain
+in adjacent `artifacts` and `artifacts-v2` directories.
+
+The coverage gate failed. No fresh second-prototype screen was run. The first
+protocol's confirmation seeds remain unplayed. No average early-production
+improvement or Firaxis parity was established. The next independent experiment
+will test the public opening order to make a Builder available earlier.
+
+Journal ring eviction counters are recorded separately from actual lost
+observations: the drained thought IDs were contiguous, with no reset or
+truncated-turn events. The first fresh pilot's 88 files and all sixteen exit
+codes remain in its result manifest. Every assigned map was reported.

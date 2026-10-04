@@ -4979,8 +4979,6 @@ pub struct AdvancedAi {
     builders_work_through_raiders: bool,
     /// Slot Serfdom while a queued Builder is close to completion.
     builder_charge_window: bool,
-    /// Experiment: reserve Builders whose worked-tile production repays their cost.
-    builder_payback_reserve: bool,
     /// `boost-planner-builds`: the boost planner may make a side objective of a
     /// `building:` trigger, the largest family in the two trees, which it
     /// otherwise reads as strategic spending and never plans.
@@ -8405,7 +8403,6 @@ impl AdvancedAi {
             beeline_orders_by_value: false,
             builders_work_through_raiders: false,
             builder_charge_window: false,
-            builder_payback_reserve: false,
             boost_planner_builds: false,
             boost_planner: false,
             boost_planner_frame: RefCell::new(boost_planner::BoostPlannerFrame::default()),
@@ -26671,8 +26668,7 @@ impl AdvancedAi {
                 *value > -1_000.0
                     && Self::production_commitment_is_legal(g, pid, cid, item)
                     && (matches!(item, Item::Wonder { .. })
-                        || g.item_invested_production(cid, item) > 0.0
-                        || self.production_builder_commitment(g, pid, cid, item, plan))
+                        || g.item_invested_production(cid, item) > 0.0)
             });
             let science_endgame_commitment = committed.as_ref().is_some_and(|(_, item)| {
                 Self::production_commitment_is_legal(g, pid, cid, item)
@@ -27010,33 +27006,6 @@ impl AdvancedAi {
                                 "the promoted baseline repair was unreachable in strategic production; {} Amenities short",
                                 shortfall);
                         }
-                        self.clear_idle_production_streak(cid);
-                        continue;
-                    }
-                }
-            }
-            // An idle weak city can buy production on the tiles its citizens
-            // already work. The same forecast retains this queue on a later
-            // frame before its first hammer, after the siege response above.
-            if committed.is_none() {
-                if let Some(investment) = self.production_builder_investment(g, pid, cid, plan) {
-                    let item = Item::Unit {
-                        unit: crate::name!("builder"),
-                    };
-                    if g.apply(
-                        pid,
-                        &Action::Produce {
-                            city: cid,
-                            item: item.clone(),
-                        },
-                    )
-                    .is_ok()
-                    {
-                        think!(self.journal(), Economy, Decision,
-                            "{} reserves a Builder for worked production", g.cities[&cid].name;
-                            "{} uncovered jobs forecast {:.1} production returned against {:.1} remaining cost, after {:.1} build turns",
-                            investment.jobs, investment.returned, investment.cost, investment.build_turns);
-                        counts.add_item(g, &item);
                         self.clear_idle_production_streak(cid);
                         continue;
                     }
@@ -42764,7 +42733,6 @@ impl AdvancedAi {
             // Scout as a weak Warrior. Same claim discipline as the naval eye:
             // one idle, safe queue, only while `recon_is_the_missing_arm`.
             self.reserve_idle_land_recon(g, pid, &plan);
-            self.reserve_production_builder(g, pid, &plan);
             if (self.governor_in_recovery && plan.strategy == GrandStrategy::Recovery)
                 || dispatch_target.is_some()
                 || adaptive_expansion_dispatch

@@ -78,6 +78,12 @@ fn main() {
             let cities = g.player_city_ids(0);
             let p: f64 = cities.iter().map(|c| g.city_yields(*c).production).sum();
             sum += p;
+            if [25, 50, 75].contains(&g.turn) {
+                std::fs::write(
+                    format!("/tmp/civvis-production-builder-payback-paired-{difficulty}-{seed}-{arm}-view-t{}.json",g.turn),
+                    serde_json::to_vec(&g.player_decision_view(0)).unwrap(),
+                ).unwrap();
+            }
             if [25, 50, 75, 100, 125, 150].contains(&g.turn) {
                 let city_records: Vec<_> = cities.iter().map(|cid| {
                     let c=&g.cities[cid];
