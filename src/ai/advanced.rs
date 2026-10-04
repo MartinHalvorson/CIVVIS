@@ -6210,6 +6210,10 @@ pub struct AdvancedAi {
     /// games; Some(empty) means the host has confirmed no casualties.
     host_war_unit_losses: Option<BTreeMap<(usize, usize), u32>>,
 
+    /// The delegated city governor's housing reserve (Granary, else
+    /// Aqueduct) ahead of the military floor. Opt-in gene
+    /// `granary-before-the-army`; see `BasicAi::granary_before_the_army`.
+    granary_before_the_army: bool,
     // ---- append: l-o ------------------------------------------------
     /// A city's Monument ahead of the military floor and the Settler step in
     /// the delegated city governor. Opt-in gene `monument-first`; see
@@ -8762,6 +8766,7 @@ impl AdvancedAi {
             government_ladder: false,
 
             host_war_unit_losses: None,
+            granary_before_the_army: false,
             // ---- append: l-o ----------------------------------------
             monument_first: false,
             magnus_follows_settlers: false,

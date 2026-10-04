@@ -4880,6 +4880,19 @@ impl AdvancedAi {
         self.base.settler_before_the_navy = false;
     }
 
+    /// See `BasicAi::granary_before_the_army`: a housing-bound city's Granary,
+    /// else its Aqueduct, ahead of the military floor.
+    pub fn enable_granary_before_the_army(&mut self) {
+        self.granary_before_the_army = true;
+        self.base.granary_before_the_army = true;
+    }
+
+    /// The twin of `enable_granary_before_the_army`.
+    pub fn disable_granary_before_the_army(&mut self) {
+        self.granary_before_the_army = false;
+        self.base.granary_before_the_army = false;
+    }
+
     /// Opt-in gene `siege-budget-counts-what-fires`; see
     /// [`Self::siege_budget_counts_what_fires`].
     pub fn enable_siege_budget_counts_what_fires(&mut self) {
