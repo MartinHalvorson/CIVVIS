@@ -6385,6 +6385,59 @@ CivvisUnitVisible = function(pid, unit)
 	end, false) == true;
 end;
 
+-- ★★ WHERE DOES A BOARD EXPORT SPEND ITS TIME?
+--
+-- A replan frame's `state` line reaches the relay ~0.2 s after its
+-- `replan_frame` line (median 0.219 s over 409 frames of
+-- civvis-20261004T171152Z), and `exportState` runs between them in one
+-- synchronous call. The gap barely moves while the line grows from 28 KB
+-- (t<60) to 122 KB (t>170), so it is not the JSON. Three frames a turn make
+-- it ~0.6 s of every turn. This RECORDS only: marks between the export's
+-- sections, one `export_timing` event per export with milliseconds per
+-- section. `os.rawclock()/os.clockpersecond()` is the high-resolution clock
+-- (both are in the shipped `os` table); `Automation.GetTime()` and `os.clock()`
+-- totals ride along so the clock itself can be checked. A global table, not
+-- locals: the main chunk and this function are near Lua's register ceiling.
+CivvisExportClock = { marks = nil };
+CivvisExportClock.now = function()
+	local raw = try(function() return os.rawclock(); end, nil);
+	local per = try(function() return os.clockpersecond(); end, nil);
+	if type(raw) == "number" and type(per) == "number" and per > 0 then
+		return raw / per;
+	end
+	return nil;
+end;
+CivvisExportClock.begin = function()
+	CivvisExportClock.marks = {};
+	CivvisExportClock.auto0 = try(function() return Automation.GetTime(); end, nil);
+	CivvisExportClock.cpu0 = try(function() return os.clock(); end, nil);
+	CivvisExportClock.mark("start");
+end;
+CivvisExportClock.mark = function(name)
+	local marks = CivvisExportClock.marks;
+	if marks == nil then return; end
+	marks[#marks + 1] = { name = name, at = CivvisExportClock.now() };
+end;
+CivvisExportClock.report = function(turn, frame)
+	local marks = CivvisExportClock.marks;
+	CivvisExportClock.marks = nil;
+	if marks == nil or #marks < 2 then return; end
+	local function delta(t0, t1)
+		if type(t0) ~= "number" or type(t1) ~= "number" then return nil; end
+		return math.floor((t1 - t0) * 100000 + 0.5) / 100;
+	end
+	local sections = {};
+	for i = 2, #marks do
+		sections[marks[i].name] = delta(marks[i - 1].at, marks[i].at);
+	end
+	emit("export_timing", {
+		turn = turn, frame = frame, ms = sections,
+		total_ms = delta(marks[1].at, marks[#marks].at),
+		auto_total = delta(CivvisExportClock.auto0, try(function() return Automation.GetTime(); end, nil)),
+		cpu_total_ms = delta(CivvisExportClock.cpu0, try(function() return os.clock(); end, nil)),
+	});
+end;
+
 local function exportState(player, pid, turn, frame, eventKind)
 	-- Keep export-only helpers inside this function: the main chunk is near
 	-- Lua's local-variable ceiling.
@@ -6426,6 +6479,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		end);
 	end
 	if cfg.ExportState ~= true then return; end
+	CivvisExportClock.begin();
 
 	-- A met rival's detailed city list stays gated on actual map sight below.
 	-- These totals are different: they are the public standings a player can
@@ -6579,6 +6633,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 	-- that one city, so the mirror can set `captured_from` and the board
 	-- offers the same three choices the popup does. The `city` order kind in
 	-- `applyOrder` carries the answer back.
+	CivvisExportClock.mark("prelude");
 	local pendingCaptureId = try(function()
 		local pending = player:GetCities():GetNextCapturedCity();
 		return pending and pending:GetID() or nil;
@@ -7289,6 +7344,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 	-- stands still on. Worst measured run civvis-20260818T052156Z: fourteen
 	-- idle cultural people, sixteen matching empty slots, `empty_slots: 0`
 	-- on every one of them.
+	CivvisExportClock.mark("cities");
 	local gwSurvey = CivvisGreatWorks.survey(player, turn);
 
 	local units = {};
@@ -7577,8 +7633,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 		};
 	end);
 
+	CivvisExportClock.mark("units");
 	local suzerainCounts = publicSuzerainCounts();
 	local publicStats = publicEmpireStats(player, suzerainCounts);
+	CivvisExportClock.mark("public_stats");
 
 	-- Rivals: only what we have actually met, so the mirror never contains
 	-- knowledge the seat has not earned.
@@ -8158,6 +8216,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 	-- merely "cannot settle here" hid Kabul's city, army, Envoys and Suzerain from
 	-- both the mirror and the planner even while its banner was on screen.
 	local minors = {};
+	CivvisExportClock.mark("rivals");
 	for _, minor in ipairs(try(function() return PlayerManager.GetAliveMinors(); end, {})) do
 		pcall(function()
 			local mid = minor:GetID();
@@ -8370,6 +8429,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 	local techs, civics = {}, {};
 	local boosted_techs, boosted_civics = {}, {};
 	local research_quotes = {};
+	CivvisExportClock.mark("minors");
 	local ptechs = try(function() return player:GetTechs(); end);
 	if ptechs ~= nil then
 		for row in GameInfo.Technologies() do
@@ -8603,6 +8663,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 	-- CIVVIS re-makes from scratch every turn against a fact it was never told, and
 	-- while it is cheap in orders it is not cheap in belief: policy slots hang off the
 	-- government, and CIVVIS is choosing cards for a government it does not know it has.
+	CivvisExportClock.mark("techs_civics_projects");
 	local government = try(function()
 		local culture = player:GetCulture();
 		local index = culture:GetCurrentGovernment();
@@ -8895,6 +8956,7 @@ local function exportState(player, pid, turn, frame, eventKind)
         holyCity, holyCityObservation = CivvisReligionState.holyCity(playerReligion);
         holyCityObservation.religion_created = religionCreated;
     end
+	CivvisExportClock.mark("government_religion_policies");
 	emit(eventKind or "state", {
 		turn = turn,
 		-- 0 for the turn's opening board; N for the Nth mid-turn combat frame
@@ -9607,6 +9669,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 			return out;
 		end, nil),
 	});
+	CivvisExportClock.mark("state_table_and_emit");
+	CivvisExportClock.report(turn, frame);
 end
 
 
