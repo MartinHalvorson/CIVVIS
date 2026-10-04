@@ -21,3 +21,29 @@ All thought IDs were contiguous, with no resets or truncated turns.
 The next prototype uses a per-city payback forecast before choosing food. It
 will remain a separately frozen consumed diagnostic; no fresh pilot or
 confirmation is played on the basis of the first result.
+
+
+The second prototype is also rejected. All sixteen assigned executions exited
+zero. It evaluated 280 eligible city-turn forecasts and accepted zero; all eight
+paired action logs and final worlds were byte-identical. Food shifts mostly did
+not advance growth sufficiently, or the next citizen did not produce enough
+hammers during its projected lead to repay the lost current construction.
+Rejection categories overlap. The result demonstrates no policy coverage on
+these consumed maps, not that growth is universally unprofitable.
+
+The model read a one-round food-bank change from passive native engine copies,
+then extrapolated that rate to the next citizen. It used the ordinary +1-pop
+assignment to price marginal production and credited only the lead before the
+control's projected arrival and turn 75. It required growth within eight turns,
+at least two turns sooner, 25% uncertainty discount and 125% cost repayment.
+It skipped military, Settler, wall and repair queues, recent attacks and nearby
+visible threats. This is a forecast, not a simulation of future opponent actions,
+queue decisions, improved tiles or new governors. Passive copies are model
+rollouts of already consumed worlds, excluded from fresh strength samples.
+
+No runtime API, helper or default was added. Both historical probes and their
+frozen optimized libraries, dependency hashes, per-turn assignment readbacks,
+policy forecast traces and complete outcomes remain under
+`civvis-production-evidence/2026-10-04/citizen-growth`. No fresh pilot or
+confirmation was played. Every assigned map, early ending and exit is reported.
+No production gain or high-level Firaxis parity is established.
