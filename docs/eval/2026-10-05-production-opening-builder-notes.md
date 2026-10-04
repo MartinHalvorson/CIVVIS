@@ -27,3 +27,24 @@ its iterator corrected that observation code. The successful compiler command,
 source and dependency hashes were frozen before all assigned executions.
 All drained planning thought IDs are contiguous, with no reset or turn
 truncation. Every assigned map is included. No Firaxis parity is established.
+
+
+The second variant also completed every assigned pair with sixteen zero-exit
+executions. Scored turn-75 Production fell 14.02% at Emperor and 1.34% at Deity;
+turn-75 survival was unchanged, but Deity Science fell more than 10%. End-game
+Deity survival was also lower. It is rejected, with no fresh pilot or
+confirmation played. Production costs, yields, protected live configuration,
+registry and deployment weights remain unchanged.
+
+Each variant's control action logs and final worlds are byte-identical to the
+other variant's control on all eight maps. Complete per-turn focal actions,
+Builder states and city queues support the timing diagnosis. All raw files,
+frozen dependencies, binaries, protocols and compiler hashes are preserved in
+`civvis-production-evidence/2026-10-04/opening-order`. The historical probes
+compile against the frozen public library and can reproduce both rejected
+experiments. The final PR changes only evaluation documentation and probes.
+
+The first expansion analysis was attempted before both Deity processes had
+finished and stopped on a missing final-world file. That incomplete invocation
+produced no final result file. The complete invocation ran only after all four
+batch processes reported exit zero and includes all eight pairs.
