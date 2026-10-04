@@ -1022,6 +1022,32 @@ fn flooded_district_and_building_repairs_wait_for_dry_ground() {
 }
 
 #[test]
+fn a_pillaged_prerequisite_is_repaired_before_the_building_that_needs_it() {
+    let (mut game, city, position) = one_city(144_0205);
+    install_district(&mut game, city, position, "industrial_zone");
+    for building in ["workshop", "factory", "coal_power_plant"] {
+        let city = game.cities.get_mut(&city).unwrap();
+        city.buildings.push(Name::new(building));
+        city.pillaged_buildings.insert(Name::new(building));
+    }
+    let repair = |building: &str| Item::Repair {
+        repair: Name::new(building),
+        pos: position,
+    };
+    for building in ["workshop", "factory"] {
+        assert!(game.can_produce(0, city, &repair(building)), "{building}");
+    }
+    assert!(!game.can_produce(0, city, &repair("coal_power_plant")));
+    assert!(!game
+        .producible_items(0, city)
+        .contains(&repair("coal_power_plant")));
+
+    assert!(game.complete_item(0, city, &repair("factory")));
+    game.query_memo.producible.borrow_mut().clear();
+    assert!(game.can_produce(0, city, &repair("coal_power_plant")));
+}
+
+#[test]
 fn rock_bands_are_faith_bought_and_perform_at_local_venues() {
     let (mut game, city, position) = one_city(crate::rng::fixture_seed("ROCKBAND", 774_407));
     game.players[0].civics.insert(crate::name!("cold_war"));
