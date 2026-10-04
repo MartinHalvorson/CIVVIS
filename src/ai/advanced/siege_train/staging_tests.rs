@@ -674,3 +674,33 @@ fn a_posted_gun_never_embarks_around_its_own_screen() {
     assert!(!water(&g, now), "the gun stands on dry ground: {now:?}");
     assert!(!g.is_embarked(&g.units[&gun]));
 }
+
+/// See `siege_posts_keeping`: a melee unit still walking in keeps last
+/// turn's ring post while it stays free and reachable, rather than taking
+/// whichever tile the spread-first order prefers this turn (the Siege Tower
+/// carrier at Yaroslavl, game 62). An occupied post is given up.
+#[test]
+fn a_walking_unit_keeps_last_turns_ring_post() {
+    let (mut g, cid) = super::tests::walled_city();
+    let ring = super::tests::ring_of(&g, cid);
+    let start = super::tests::at_distance(&g, cid, 3)[0];
+    let walker = g.spawn_unit("warrior", 0, start);
+    let city = CityView::of(&g, cid).unwrap();
+    let fresh = siege_posts(&g, 0, &city, &[walker], None)[&walker];
+    let kept = ring
+        .iter()
+        .copied()
+        .find(|pos| *pos != fresh && siege_route_step(&g, 0, walker, *pos, city.pos).is_some())
+        .expect("another reachable ring tile");
+    let previous = BTreeMap::from([(walker, kept)]);
+    assert_eq!(
+        siege_posts_keeping(&g, 0, &city, &[walker], None, &previous)[&walker],
+        kept
+    );
+    // Taken by someone else, the old post gives way to this turn's choice.
+    g.spawn_unit("warrior", 0, kept);
+    assert_ne!(
+        siege_posts_keeping(&g, 0, &city, &[walker], None, &previous)[&walker],
+        kept
+    );
+}
