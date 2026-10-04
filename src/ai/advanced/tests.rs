@@ -51079,3 +51079,33 @@ fn a_doomed_small_capture_is_razed_under_the_gene() {
     assert!(build(false), "the shipped rules keep it");
     assert!(!build(true), "razed rather than handed back");
 }
+
+/// A living major whose cities we have never seen is a holdout at zero for
+/// `conversion-majority-alarm-2`, not skipped: skipped, the founder's
+/// progress read 100 off our own converted cities alone (Indonesia, live
+/// game 63, declared on at 0.74 times its power).
+#[test]
+fn an_unseen_major_is_an_unconverted_holdout() {
+    let mut game = Game::new(3, 40, 26, 8_402, 250, 0);
+    let faith = "Test Faith".to_string();
+    // Player 1 founded the faith; player 0 is ours, fully converted.
+    game.players[1].religion = Some(faith.clone());
+    for x in [10, 14] {
+        let city = game.found_city_for(0, (x, 10), None);
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .pressure
+            .insert(faith.clone(), 500.0);
+    }
+    game.found_city_for(1, (20, 10), None);
+    // Player 2 is alive but owns no city on our board.
+    for city in game.player_city_ids(2) {
+        game.cities.remove(&city);
+    }
+    assert!(game.players[2].alive);
+    assert!(game.player_city_ids(2).is_empty());
+    let mut ai = AdvancedAi::new();
+    ai.enable_conversion_majority_alarm_2();
+    assert_eq!(ai.conversion_majority_pressure(&game, 1), 0);
+}

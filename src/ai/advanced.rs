@@ -11416,6 +11416,21 @@ impl AdvancedAi {
         }) {
             let cities = g.player_city_ids(other.id);
             if cities.is_empty() {
+                // A living major whose cities we have not seen is a holdout
+                // until the host says it follows the faith. Skipped, it left
+                // the least-converted holdout to be our own cities: live King
+                // civvis-20261004T150335Z (game 63) met Vietnam without seeing
+                // a city of it, read Indonesia's Hinduism, holding Indonesia
+                // and three of our four cities, at 100, and declared on
+                // Indonesia at turn 50 at 182 power against 246 as "close
+                // enough to winning that waiting loses it".
+                let follows = g.civ_follows_religion(other.id, faith);
+                required += 1;
+                held += usize::from(follows);
+                let progress = if follows { 100 } else { 0 };
+                bottleneck_progress = Some(
+                    bottleneck_progress.map_or(progress, |current: usize| current.min(progress)),
+                );
                 continue;
             }
             // The engine's own test is `following * 2 > cities.len()`, so the
