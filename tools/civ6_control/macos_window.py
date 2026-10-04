@@ -228,12 +228,28 @@ def place_game(game_process: str, side: str = "left", fraction: float = 0.5,
     # make unrelated windows reflow, so leave an unchanged frame alone.
     if get_game_window() == desired:
         return
+    # The largest window, as in `game_window`: `window 1` was a 66x20
+    # "Window" on 2026-10-04, so the game kept its 1634x1084 frame and setup
+    # read its panels at the wrong scale.
     script = (
         'tell application "System Events" to tell '
-        f'process "{game_process}" to tell window 1\n'
-        f'  set size to {{{width}, {height}}}\n'
+        f'process "{game_process}"\n'
+        '  set best to 0\n'
+        '  set bestArea to 0\n'
+        '  repeat with i from 1 to count of windows\n'
+        '    set {sx, sy} to size of window i\n'
+        '    if sx * sy > bestArea then\n'
+        '      set bestArea to sx * sy\n'
+        '      set best to i\n'
+        '    end if\n'
+        '  end repeat\n'
+        '  if best > 0 then\n'
+        '    tell window best\n'
+        f'      set size to {{{width}, {height}}}\n'
         # Aspyr constrains the existing origin while applying a smaller size.
-        f'  set position to {{{x}, {y}}}\n'
+        f'      set position to {{{x}, {y}}}\n'
+        '    end tell\n'
+        '  end if\n'
         'end tell')
     _best_effort_osascript(script, "place")
     actual = get_game_window()
