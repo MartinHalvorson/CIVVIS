@@ -3166,18 +3166,23 @@ def main() -> int:
                 # play process killed by signal, which is the case that motivated the
                 # explicit terminate in the first place.
                 play_log.close()
-                # Older embedding tests and operators may supply a cleanup
-                # callback that returns None; only an explicit False is a
-                # refusal from the built-in ownership guard.
-                cleanup_ok = teardown(run_tag) is not False
-                torn_down = cleanup_ok
-                if why == "frozen" and cleanup_ok:
+                # ★ SNAPSHOT A FROZEN GAME'S NATIVE LOGS BEFORE TEARDOWN, WHATEVER
+                # TEARDOWN DECIDES. Copying them is read-only. It used to wait for
+                # a proven cleanup, so live King civvis-20261004T185259Z (game 72),
+                # whose teardown was refused, kept no DiplomacyManager.csv, and the
+                # next launch overwrote the only record of what wedged it.
+                if why == "frozen":
                     try:
                         manifest = civ6_native_log_snapshot.snapshot(
                             env.logs_dir(), RUN_ROOT / run_tag / "native-freeze-logs")
                         print(f"[resume] native log snapshot: {manifest}", flush=True)
                     except OSError as error:
                         print(f"[resume] native log snapshot failed: {error}", flush=True)
+                # Older embedding tests and operators may supply a cleanup
+                # callback that returns None; only an explicit False is a
+                # refusal from the built-in ownership guard.
+                cleanup_ok = teardown(run_tag) is not False
+                torn_down = cleanup_ok
                 # The run is over: write up every settler it lost to capture,
                 # beside its events, before the row is read.
                 write_settler_capture_dossiers(run_tag)
