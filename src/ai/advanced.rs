@@ -5696,6 +5696,10 @@ pub struct AdvancedAi {
     /// the Research Lab. See `BasicAi::campus_before_the_army_3`.
     campus_before_the_army_3: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `front-finishes-its-siege`: an urgent counter-war already running
+    /// waits for the front's live siege of an unwalled city. See
+    /// `one_war::front_siege_to_finish`. Off by default.
+    front_finishes_its_siege: bool,
     /// `found-against-a-rival-faith`: a faithless Domination seat enters
     /// the Prophet race once a rival faith reaches the religious
     /// early-warning bar while a slot is open. See `advanced/faith_veto.rs`.
@@ -6603,6 +6607,19 @@ pub struct AdvancedAi {
     lane_delegates_production_2: bool,
 
     // ---- append: p-r ------------------------------------------------
+    /// `peace-waits-for-unseen-prey`: a beaten rival whose cities are all in
+    /// the fog is not offered peace. See `one_war::unseen_prey`. Off by
+    /// default.
+    peace_waits_for_unseen_prey: bool,
+    /// `peace-waits-for-the-foothold`: the victory-threat peace waits while
+    /// an unwalled city of the front is in a taker's reach. See
+    /// `one_war::one_war_foothold_at_hand`. Off by default.
+    peace_waits_for_the_foothold: bool,
+    /// `prophet-race-takes-a-district-slot`: while `enter-the-prophet-race-2`
+    /// holds the race open, a campus-first step's Campus becomes the empire's
+    /// first Holy Site. See `BasicAi::prophet_race_takes_a_district_slot`.
+    /// Off by default.
+    prophet_race_takes_a_district_slot: bool,
     /// The live bridge's refused Corps and Army pairs for this board. See
     /// `advanced/formation_refusals.rs`.
     refused_combinations: BTreeSet<(u32, u32)>,
@@ -6804,6 +6821,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `sanctuary-yields-a-held-queue`: the religious-defense sanctuary
+    /// leaves a city whose queue another rule holds. See
+    /// `adopted_faith_sanctuary::sanctuary_queue_held`. Off by default.
+    sanctuary_yields_a_held_queue: bool,
     /// `staging-gun-trusts-its-escort`: an escorted gun in Stage budgets one
     /// reply turn of danger on its march. See
     /// `siege_train::STAGING_ESCORT_BODIES`. Off by default.
@@ -8806,6 +8827,7 @@ impl AdvancedAi {
             campus_before_the_army_2: false,
             campus_before_the_army_3: false,
             // ---- append: e-f ----------------------------------------
+            front_finishes_its_siege: false,
             found_against_a_rival_faith: false,
             formations_heed_refusals: false,
             front_city_low: BTreeMap::new(),
@@ -8894,6 +8916,9 @@ impl AdvancedAi {
             lane_delegates_production_2: false,
 
             // ---- append: p-r ----------------------------------------
+            peace_waits_for_unseen_prey: false,
+            peace_waits_for_the_foothold: false,
+            prophet_race_takes_a_district_slot: false,
             refused_combinations: BTreeSet::new(),
             raids_cut_tourism: false,
             runaway_expander_counter: false,
@@ -8925,6 +8950,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            sanctuary_yields_a_held_queue: false,
             staging_gun_trusts_its_escort: false,
             siege_force_keeps_its_members: false,
             siege_needs_a_breaker: false,
@@ -20908,7 +20934,10 @@ impl AdvancedAi {
                                 || self.domination_capital_prey(g, pid, *other)))
                         // Nor with the only land road to the target. See
                         // `war_holds_the_road`.
-                        && !self.war_holds_the_road(g, pid, *other))
+                        && !self.war_holds_the_road(g, pid, *other)
+                        // Nor with a beaten rival in the fog. See
+                        // `unseen_prey`.
+                        && !self.unseen_prey(g, pid, *other))
                     || (self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                         && !appointed_objective)
