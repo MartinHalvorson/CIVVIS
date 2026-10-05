@@ -3183,6 +3183,19 @@ impl AdvancedAi {
         self.base.activation_resume_waits = false;
     }
 
+    /// See `BasicAi::activation_keeps_its_building`: an activation path keeps
+    /// a queued rung of any waiting person's slot chain.
+    pub fn enable_activation_keeps_its_building(&mut self) {
+        self.activation_keeps_its_building = true;
+        self.base.activation_keeps_its_building = true;
+    }
+
+    /// The twin of `enable_activation_keeps_its_building`.
+    pub fn disable_activation_keeps_its_building(&mut self) {
+        self.activation_keeps_its_building = false;
+        self.base.activation_keeps_its_building = false;
+    }
+
     /// The working reserve, and the first Builder or a missing Monument
     /// bought ahead of the purchase argmax. See `treasury_at_work_2`.
     pub fn enable_treasury_at_work_2(&mut self) {

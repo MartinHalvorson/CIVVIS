@@ -5258,6 +5258,11 @@ pub struct AdvancedAi {
     /// (the activation needs come only from the live host); see
     /// `BasicAi::activation_resume_waits`.
     activation_resume_waits: bool,
+    /// A Great Person activation path does not replace a queued building on
+    /// any waiting person's slot chain. HostOnly gene
+    /// `activation-keeps-its-building`; see
+    /// `BasicAi::activation_keeps_its_building`.
+    activation_keeps_its_building: bool,
     /// The strategic scorer does not displace a queued siege unit that holds
     /// production while its city is not threatened. Opt-in gene
     /// `breaker-keeps-its-queue`; see `AdvancedAi::breaker_commitment_holds`.
@@ -8959,6 +8964,7 @@ impl AdvancedAi {
             builder_before_the_army_2: false,
             builder_before_the_army_3: false,
             activation_resume_waits: false,
+            activation_keeps_its_building: false,
             breaker_keeps_its_queue: false,
             breaker_to_the_fastest: false,
             // ---- append: c-d ----------------------------------------

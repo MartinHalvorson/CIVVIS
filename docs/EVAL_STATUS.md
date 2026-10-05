@@ -12,8 +12,8 @@ page is the current inventory and live-bridge snapshot.
 | inventory | count |
 |---|---:|
 | Built-in agents | 9 |
-| Live-bridge treatments | 72 |
-| Firaxis-only treatments | 34 |
+| Live-bridge treatments | 73 |
+| Firaxis-only treatments | 35 |
 | Native engine-repair treatments | 38 |
 | Withholdable live treatments | 38 |
 
@@ -47,11 +47,11 @@ How much of the controller the genome instrument can vary at all.
 `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
 genes"; this is the denominator that direction is measured against.
 
-- Capability toggles on the controller: **433**
+- Capability toggles on the controller: **434**
 - Reachable as a gene `gene_screen` can vary: **412**
 - Measured by at least one screen: **72**
 - Resolved by the ledger (helps or hurts): **16**
-- **Unreachable by any screen: 44**
+- **Unreachable by any screen: 45**
 
 ⚠ This is the mirror of the section above and it errs the other way.
 `Never named` under-counts the live-bundle debt; this OVER-counts the
@@ -69,7 +69,7 @@ nothing said so.
 
 Unreachable:
 
-`activation_resume_waits`, `bank_envoys`, `camp_bounty`, `counter_in_lane`, `deny_while_targeted`, `engine_repairs`, `engine_repairs_economy`, `engine_repairs_universe`, `engine_repairs_war`, `envelope_cache_across_own_moves`, `era_paced_expansion`, `escort_patience_runs_out`, `expansion_before_prophet`, `expansion_hall`, `expansion_pantheon`, `explore_commit`, `explore_dead_targets`, `fog_land_capacity`, `frontier_loyalty`, `guard_breaks_the_pin`, `host_settler_pop`, `land_grab`, `live_barbarian_scouts_capture`, `live_bridge`, `live_bridge_universe`, `live_formationless_settler_shadow`, `live_motion_turn_accounting`, `live_move_refusal_break`, `live_religious_purchase_guard`, `live_settler_capture_lessons`, `live_trader_route_adapter`, `live_wonder_race`, `native_deployment`, `naval_escort_patience`, `no_elective_war`, `opening_settler_waits`, `parallel_settlers`, `projected_stock_denial`, `settler_founds_when_stalled`, `solvent_faith_army`, `spy_mission_patience`, `stock_denial_lead_time`, `tally_culture`, `tally_great_people`
+`activation_keeps_its_building`, `activation_resume_waits`, `bank_envoys`, `camp_bounty`, `counter_in_lane`, `deny_while_targeted`, `engine_repairs`, `engine_repairs_economy`, `engine_repairs_universe`, `engine_repairs_war`, `envelope_cache_across_own_moves`, `era_paced_expansion`, `escort_patience_runs_out`, `expansion_before_prophet`, `expansion_hall`, `expansion_pantheon`, `explore_commit`, `explore_dead_targets`, `fog_land_capacity`, `frontier_loyalty`, `guard_breaks_the_pin`, `host_settler_pop`, `land_grab`, `live_barbarian_scouts_capture`, `live_bridge`, `live_bridge_universe`, `live_formationless_settler_shadow`, `live_motion_turn_accounting`, `live_move_refusal_break`, `live_religious_purchase_guard`, `live_settler_capture_lessons`, `live_trader_route_adapter`, `live_wonder_race`, `native_deployment`, `naval_escort_patience`, `no_elective_war`, `opening_settler_waits`, `parallel_settlers`, `projected_stock_denial`, `settler_founds_when_stalled`, `solvent_faith_army`, `spy_mission_patience`, `stock_denial_lead_time`, `tally_culture`, `tally_great_people`
 
 ## Live ladder
 
