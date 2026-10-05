@@ -1121,3 +1121,104 @@ fn a_second_front_needs_a_city_within_declaration_range() {
     }
     assert!(!ai.declarable_in_reach(&g, 0, 3));
 }
+
+/// See `front_capital_to_finish`: under the gene, an urgent counter already
+/// at war waits for a fresh siege of the front's original capital behind
+/// light walls, even in Stage; heavy walls or a stale stage release it.
+#[test]
+fn the_front_finishes_its_capital_before_an_urgent_counter() {
+    use crate::ai::advanced::siege_train::{Siege, SiegeStage};
+    let front_after = |gene: bool, walls: i32, entered_ago: u32| {
+        let (mut g, mut ai) = two_fronts();
+        convert(&mut g, &[0, 1, 2]);
+        assert!(ai.urgent_victory_threat(&g, 2));
+        if gene {
+            ai.enable_front_finishes_its_capital();
+        }
+        let capital = g.player_city_ids(1)[0];
+        assert!(g.cities[&capital].is_capital);
+        g.cities.get_mut(&capital).unwrap().wall_hp = walls;
+        let siege = Siege {
+            stage: SiegeStage::Stage,
+            taker: None,
+            entered: g.turn - entered_ago,
+            assessed: g.turn,
+            posts: Default::default(),
+            short_since: None,
+        };
+        ai.sieges.insert(capital, siege);
+        ai.one_war_observe(&g, 0);
+        ai.one_war_front()
+    };
+    assert_eq!(front_after(false, 100, 2), Some(2), "off");
+    assert_eq!(
+        front_after(true, 100, 2),
+        Some(1),
+        "Canberra's walls, staged"
+    );
+    assert_eq!(front_after(true, 200, 2), Some(2), "heavier walls");
+    assert_eq!(
+        front_after(true, 100, FRONT_CAPITAL_FINISH_TURNS + 1),
+        Some(2),
+        "a stale stage"
+    );
+    // Any other city of the front holds it once breached past Stage.
+    let other_after = |stage: SiegeStage| {
+        let (mut g, mut ai) = two_fronts();
+        let town = g.found_city_for(1, (14, 18), None);
+        convert(&mut g, &[0, 1, 2]);
+        assert!(ai.urgent_victory_threat(&g, 2));
+        ai.enable_front_finishes_its_capital();
+        assert!(!g.cities[&town].is_capital);
+        g.cities.get_mut(&town).unwrap().wall_hp = 28;
+        let siege = Siege {
+            stage,
+            taker: None,
+            entered: g.turn - 1,
+            assessed: g.turn,
+            posts: Default::default(),
+            short_since: None,
+        };
+        ai.sieges.insert(town, siege);
+        ai.one_war_observe(&g, 0);
+        ai.one_war_front()
+    };
+    assert_eq!(
+        other_after(SiegeStage::Invest),
+        Some(1),
+        "Pharsalos at 28 walls, investing"
+    );
+    assert_eq!(
+        other_after(SiegeStage::Stage),
+        Some(2),
+        "a town still staging"
+    );
+}
+
+/// See `religious_threat_spares_the_front`: under the gene, a religious clock
+/// does not take the front while our cities keep our own faith.
+#[test]
+fn a_religious_clock_spares_the_front_while_we_keep_our_faith() {
+    let front_after = |gene: bool, ours_converted: bool| {
+        let (mut g, mut ai) = two_fronts();
+        g.players[0].religion = Some("taoism".to_string());
+        if ours_converted {
+            convert(&mut g, &[0, 1, 2, 3]);
+        } else {
+            convert(&mut g, &[1, 2, 3]);
+        }
+        assert!(ai.urgent_victory_threat(&g, 2));
+        if gene {
+            ai.enable_religious_threat_spares_the_front();
+        }
+        ai.one_war_observe(&g, 0);
+        ai.one_war_front()
+    };
+    assert_eq!(front_after(false, false), Some(2), "off");
+    assert_eq!(front_after(true, false), Some(1), "we keep taoism");
+    assert_eq!(
+        front_after(true, true),
+        Some(2),
+        "their faith holds our majority"
+    );
+}

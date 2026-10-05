@@ -5811,6 +5811,10 @@ pub struct AdvancedAi {
     /// the stock Ilkum commitment would hold Urban Planning out again.
     colonization_earns_its_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `front-finishes-its-capital`: an urgent counter-war already running
+    /// waits for the front's siege of the front rival's original capital or
+    /// last city behind light walls. See `one_war::front_capital_to_finish`.
+    front_finishes_its_capital: bool,
     /// `front-needs-a-declarable-rival`: a second front not yet at war is
     /// named only when the declaration could reach it. See
     /// `one_war::declarable_in_reach`. Off by default.
@@ -6788,6 +6792,10 @@ pub struct AdvancedAi {
     /// `naval-escort-patience`.
     naval_escort_patience: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religious-threat-spares-the-front`: a religious clock does not take
+    /// the army off its front while our cities keep our own faith. See
+    /// `one_war::religious_threat_spares_the_front`.
+    religious_threat_spares_the_front: bool,
     /// `prophet-race-takes-a-district-slot-2`: the race's Holy Site in the
     /// city that builds it soonest. See
     /// `BasicAi::prophet_race_takes_a_district_slot_2`. Off by default.
@@ -9110,6 +9118,7 @@ impl AdvancedAi {
             colonization_earns_its_slot: false,
             colonization_earns_its_slot_2: false,
             // ---- append: e-f ----------------------------------------
+            front_finishes_its_capital: false,
             front_needs_a_declarable_rival: false,
             front_finishes_its_siege: false,
             found_against_a_rival_faith: false,
@@ -9213,6 +9222,7 @@ impl AdvancedAi {
             one_sanctuary: false,
             naval_escort_patience: false,
             // ---- append: p-r ----------------------------------------
+            religious_threat_spares_the_front: false,
             prophet_race_takes_a_district_slot_2: false,
             peace_waits_for_unseen_prey: false,
             peace_waits_for_the_foothold: false,

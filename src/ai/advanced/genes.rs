@@ -2753,6 +2753,16 @@ pub const GENES: &[Gene] = &[
     // Greece, at peace and out of declaration range, from turn 147 to 182+
     // with no Siege row to fight. See `one_war::declarable_in_reach`.
     Gene { tag: "front-needs-a-declarable-rival", field: "front_needs_a_declarable_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_front_needs_a_declarable_rival, disable: AdvancedAi::disable_front_needs_a_declarable_rival },
+    // Live King civvis-20261005T060002Z (game 104) staged Canberra,
+    // Australia's original capital and last city, at turns 85-90, damage
+    // ready in 4.2 turns; an urgent counter took the army to Norway at 91
+    // and Canberra had no siege again for sixty turns. See
+    // `one_war::front_capital_to_finish`.
+    Gene { tag: "front-finishes-its-capital", field: "front_finishes_its_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_front_finishes_its_capital, disable: AdvancedAi::disable_front_finishes_its_capital },
+    // The same game's counter was Norway's Orthodoxy, holding three majors
+    // while all our cities kept Buddhism. See
+    // `one_war::religious_threat_spares_the_front`.
+    Gene { tag: "religious-threat-spares-the-front", field: "religious_threat_spares_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_threat_spares_the_front, disable: AdvancedAi::disable_religious_threat_spares_the_front },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

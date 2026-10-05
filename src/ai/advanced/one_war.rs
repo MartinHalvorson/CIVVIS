@@ -160,6 +160,10 @@ pub(crate) const COUNTER_WAR_PARITY: f64 = 1.0;
 /// city has fallen to a new low of health within this many standard turns.
 pub(crate) const FRONT_SIEGE_LIVE_TURNS: u32 = 10;
 
+/// `front-finishes-its-capital`: standard turns a siege stage on the front's
+/// capital or last city holds the army against an urgent counter-war.
+pub(crate) const FRONT_CAPITAL_FINISH_TURNS: u32 = 8;
+
 /// `one-war-swaps-a-stalled-front`: standard turns without a new low of
 /// health in any front city after which the front counts as stalled.
 pub(crate) const FRONT_STALL_TURNS: u32 = 20;
@@ -447,14 +451,21 @@ impl AdvancedAi {
                 // does not take the army off the front either.
                 let hopeless =
                     self.counter_war_needs_parity && self.counter_war_hopeless(g, pid, rival);
-                if enemies.contains(&rival) && self.urgent_victory_threat(g, rival) && !hopeless {
+                if enemies.contains(&rival)
+                    && self.urgent_victory_threat(g, rival)
+                    && !hopeless
+                    // See `religious_threat_spares_the_front`.
+                    && !self.religious_threat_spares_the_front(g, pid, rival)
+                {
                     // A congress jump can make a subthreshold Diplomatic
                     // score look urgent even after this rival lost its
                     // original capital. Follow the active war for that
                     // capital while retaining the projected warning.
                     // See `front_siege_to_finish`.
                     let finishing = current.is_some_and(|front| front != rival)
-                        && self.front_siege_to_finish(g);
+                        && (self.front_siege_to_finish(g)
+                            // See `front_capital_to_finish`.
+                            || self.front_capital_to_finish(g, rival));
                     if !(current == Some(rival)
                         && capital_handoff.is_some()
                         && self.one_war_projected_diplomacy_below_bar(g, rival))
@@ -1270,6 +1281,85 @@ impl AdvancedAi {
         })
     }
 
+    /// `front-finishes-its-capital`: an urgent counter on `threat` — a war
+    /// already running (`one_war_choose_front`) or a second front opened at
+    /// peace (`one_war_second_front`) — waits for the front's siege of a
+    /// city behind at most [`CAPITAL_PREY_WALLS`] of wall: the front rival's
+    /// original capital or last city in any stage, any other city past Stage.
+    /// The siege is not Hold, read this turn or the last, its stage entered
+    /// within [`FRONT_CAPITAL_FINISH_TURNS`] standard turns — unless
+    /// `threat`'s culture finish is projected inside that window.
+    /// `front_siege_to_finish` holds only an unwalled city past Stage. Live
+    /// King civvis-20261005T061801Z (game 105) had Pharsalos in Invest at
+    /// turn 187, walls 28/400, damage ready in 4.1 turns at 1,275 strength
+    /// against a bill of 122; at 188 Canada, at peace and the eventual
+    /// culture winner, took the plan as an urgent second front, the
+    /// declaration held for staging and then range, and Pharsalos stood at
+    /// 400/400 again by 209. Live
+    /// King civvis-20261005T060002Z (game 104) staged Canberra, Australia's
+    /// original capital and last visible city, from turn 85 to 90 with 14
+    /// units, walls 100, 318 strength against a bill of 48 and damage ready
+    /// in 4.2 turns; an urgent counter took the army to Norway at 91, and
+    /// Canberra had no siege row again for sixty turns while Australia held
+    /// 18 to 40 military (diagnosed by -60).
+    pub(crate) fn front_capital_to_finish(&self, g: &Game, threat: usize) -> bool {
+        let Some(front) = self
+            .one_war_front()
+            .filter(|_| self.front_finishes_its_capital)
+        else {
+            return false;
+        };
+        let window = g.standard_duration(FRONT_CAPITAL_FINISH_TURNS);
+        if self
+            .projected_culture_finish(g, threat)
+            .is_some_and(|turns| turns < f64::from(window))
+        {
+            return false;
+        }
+        let last_city = g.player_city_ids(front).len() == 1;
+        self.sieges.iter().any(|(cid, siege)| {
+            let past_stage = matches!(
+                siege.stage,
+                super::siege_train::SiegeStage::Invest
+                    | super::siege_train::SiegeStage::Reduce
+                    | super::siege_train::SiegeStage::Take
+            );
+            g.cities.get(cid).is_some_and(|city| {
+                city.owner == front
+                    && city.wall_hp <= CAPITAL_PREY_WALLS
+                    && ((city.is_capital && city.original_owner == front)
+                        || last_city
+                        || past_stage)
+            }) && siege.stage != super::siege_train::SiegeStage::Hold
+                && g.turn.saturating_sub(siege.assessed) <= 1
+                && g.turn.saturating_sub(siege.entered) <= window
+        })
+    }
+
+    /// `religious-threat-spares-the-front`: a rival whose clock is religious
+    /// does not take the army off its front while our cities keep the faith
+    /// we founded. A Religious Victory needs our majority too, and a war on
+    /// the rival's cities does not defend it; the counter is our own faith
+    /// (`conversion_majority_alarm` and the inquisitors), and the rival stays
+    /// a counter target for the declaration and the peace desk. Live King
+    /// civvis-20261005T060002Z (game 104) read Norway's Orthodoxy, holding
+    /// Greece, Australia and Norway, as urgent at turn 91 while all our
+    /// cities kept Buddhism, and moved the army off Canberra (diagnosed by
+    /// -60).
+    pub(crate) fn religious_threat_spares_the_front(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> bool {
+        self.religious_threat_spares_the_front
+            && self.rival_victory_pressure(g, rival).strategy == GrandStrategy::Religion
+            && g.players[pid]
+                .religion
+                .as_deref()
+                .is_some_and(|ours| g.civ_follows_religion(pid, ours))
+    }
+
     /// Whether the second front `rival` is declared on while the army stays
     /// on the front: a faith counter that is not urgent, beside a live front
     /// siege. The war on the faith condemns its spreaders in our own land,
@@ -1755,7 +1845,10 @@ impl AdvancedAi {
         self.actionable_victory_denial(g, pid)
             .filter(|(rival, counter)| {
                 *counter == GrandStrategy::Conquest
-                    && (self.urgent_victory_threat(g, *rival) || self.faith_counter(g, pid, *rival))
+                    && ((self.urgent_victory_threat(g, *rival)
+                        // See `front_capital_to_finish`.
+                        && !self.front_capital_to_finish(g, *rival))
+                        || self.faith_counter(g, pid, *rival))
             })
             .map(|(rival, _)| rival)
             .filter(|rival| usable(*rival))

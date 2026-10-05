@@ -5645,6 +5645,28 @@ impl AdvancedAi {
         self.front_needs_a_declarable_rival = false;
     }
 
+    /// Opt-in gene `front-finishes-its-capital`; see
+    /// [`Self::front_finishes_its_capital`].
+    pub fn enable_front_finishes_its_capital(&mut self) {
+        self.front_finishes_its_capital = true;
+    }
+
+    /// The twin of `enable_front_finishes_its_capital`.
+    pub fn disable_front_finishes_its_capital(&mut self) {
+        self.front_finishes_its_capital = false;
+    }
+
+    /// Opt-in gene `religious-threat-spares-the-front`; see
+    /// [`Self::religious_threat_spares_the_front`].
+    pub fn enable_religious_threat_spares_the_front(&mut self) {
+        self.religious_threat_spares_the_front = true;
+    }
+
+    /// The twin of `enable_religious_threat_spares_the_front`.
+    pub fn disable_religious_threat_spares_the_front(&mut self) {
+        self.religious_threat_spares_the_front = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
