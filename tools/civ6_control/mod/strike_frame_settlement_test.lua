@@ -39,6 +39,8 @@ env.CivvisLedger = {
 local function load(text)
     local chunk = assert(loadstring(text)); setfenv(chunk, env); chunk()
 end
+-- The real-seconds clock the combat ledger times visualizations on.
+load(assert(source:match("(CivvisClock = {.-)\nCivvisExportClock = ")))
 load(assert(source:match("(CivvisFrames = {.-)\nlocal function applyOrders")))
 load(assert(source:match("(CivvisLedger.strike = function.-)\n%-%- One of OUR units left")))
 -- This is the actual RANGE_ATTACK branch, not a copy of its logic.

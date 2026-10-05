@@ -176,6 +176,16 @@ ledger.onCombatVisBegin({ attacker = id(0, 7), defender = id(63, 900) })
 visClock = 11.0
 ledger.onCombatVisEnd({ attacker = id(0, 7), defender = id(63, 900) })
 check("…or inside it", has(lastEvent("combat"), '"our_turn":true'), true)
+-- At a 2x debug timescale the UI clock runs twice as fast, and the duration
+-- is still REAL seconds, so it compares with games that ran at 1x.
+local realClock = rawget(_G, "CivvisClock")
+realClock.setScale(2)
+visClock = 20.0
+ledger.onCombatVisBegin({ attacker = id(0, 7), defender = id(63, 900) })
+visClock = 20.7
+ledger.onCombatVisEnd({ attacker = id(0, 7), defender = id(63, 900) })
+check("at 2x, 0.7 UI seconds of visualization are 0.35 real", has(lastEvent("combat"), '"vis_seconds":0.35'), true)
+realClock.scale, realClock.offset = 1, 0
 UI.GetElapsedTime = nil
 host.turn_active = nil
 
