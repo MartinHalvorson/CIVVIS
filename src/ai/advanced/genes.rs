@@ -2876,6 +2876,10 @@ pub const GENES: &[Gene] = &[
     // turn 105 and offered it one-war peace the same turn. See
     // `one_war::second_front_recently_named`.
     Gene { tag: "second-front-keeps-its-war", field: "second_front_keeps_its_war", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_keeps_its_war, disable: AdvancedAi::disable_second_front_keeps_its_war },
+    // Live King civvis-20261005T110504Z (game 123) held its Catholic
+    // counterweight and spread Protestantism, the winner's faith, in its own
+    // cities. See `adopted_faith_sanctuary::stronger_faith_than`.
+    Gene { tag: "counterweight-faith-is-no-threat", field: "counterweight_faith_is_no_threat", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_faith_is_no_threat, disable: AdvancedAi::disable_counterweight_faith_is_no_threat },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
