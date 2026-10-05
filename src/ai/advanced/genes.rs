@@ -2591,6 +2591,10 @@ pub const GENES: &[Gene] = &[
     // "damage ready" — two Archers shot it and the melee held the ring, so it
     // healed every turn and built walls. See `siege_train::breach_assault_blow`.
     Gene { tag: "breach-assault", field: "breach_assault", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_assault, disable: AdvancedAi::disable_breach_assault },
+    // Live King 232618Z: unwalled The Hague at 95-134 health beside eleven
+    // staged units, horsemen three tiles out; the assault counted only melee
+    // already beside it. See `siege_train::closing_in`.
+    Gene { tag: "breach-assault-closes-in", field: "breach_assault_closes_in", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_assault_closes_in, disable: AdvancedAi::disable_breach_assault_closes_in },
     // Version 1 measured -9.7 +/- 5.3 pp: only the capitals Domination
     // needs, no displaced building. See `siege_production::SUPPLY_STRENGTH_WINDOW`.
     Gene { tag: "breaker-supply-scales-2", field: "breaker_supply_scales_2", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales_2, disable: AdvancedAi::disable_breaker_supply_scales_2 },

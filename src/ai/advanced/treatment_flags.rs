@@ -5187,6 +5187,17 @@ impl AdvancedAi {
         self.breaker_before_the_war = false;
     }
 
+    /// Opt-in gene `breach-assault-closes-in`; see
+    /// [`Self::breach_assault_closes_in`]. Acts only beside `breach-assault`.
+    pub fn enable_breach_assault_closes_in(&mut self) {
+        self.breach_assault_closes_in = true;
+    }
+
+    /// The twin of `enable_breach_assault_closes_in`.
+    pub fn disable_breach_assault_closes_in(&mut self) {
+        self.breach_assault_closes_in = false;
+    }
+
     /// Opt-in gene `second-front-kept-when-winning`; see
     /// [`Self::second_front_kept_when_winning`].
     pub fn enable_second_front_kept_when_winning(&mut self) {

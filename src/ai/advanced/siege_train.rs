@@ -148,6 +148,9 @@ pub(super) const ABORT_PATIENCE: u32 = 2;
 /// Melee holds the ring rather than swinging at a wall above this fraction
 /// of its pool, unless a ram or tower stands beside the city.
 pub(super) const MELEE_WALL_FRACTION: f64 = 0.2;
+/// `breach-assault-closes-in`: how far off the ring a healthy melee unit is
+/// called in from.
+pub(super) const CLOSING_REACH: i32 = 4;
 /// `breach-assault`: a melee unit joins the assault only from this health.
 pub(super) const ASSAULT_MIN_HP: i32 = 60;
 /// ... and only when it keeps at least this much after the city's reply.
@@ -2604,11 +2607,35 @@ impl AdvancedAi {
             return None;
         }
         let unit = g.units.get(&uid)?.clone();
+        if g.wdist(unit.pos, city.pos) > 1 {
+            // `breach-assault-closes-in`: a unit off the ring steps in toward
+            // a city the force's blows can take; it strikes from beside it.
+            if !self.breach_assault_closes_in
+                || unit.moves_left <= 0.0
+                || !self.closing_in(g, uid, city)
+            {
+                return None;
+            }
+            let volley = self.assault_volley(g, pid, city, plan, group);
+            let to_take = f64::from(city.hp + city.wall_hp.max(0)) + ASSAULT_HEAL;
+            if volley * ASSAULT_TURNS < to_take {
+                return None;
+            }
+            let next = march_step(g, uid, city.pos, 1).filter(|pos| g.can_move(uid, *pos))?;
+            if !self.base.tactical_apply_move(g, pid, uid, next) {
+                return None;
+            }
+            think!(self.journal(), Military, Decision,
+                "Siege of {}: the {} closes in for the assault", g.cities[&city.id].name, unit.kind;
+                "the force's blows come to {volley:.0} a turn against {} health with no wall standing",
+                city.hp;
+                city.pos);
+            return Some(true);
+        }
         if unit.attacks_left <= 0
             || unit.moves_left <= 0.0
             || unit.hp < ASSAULT_MIN_HP
             || g.is_embarked(&unit)
-            || g.wdist(unit.pos, city.pos) > 1
             || !g.melee_order_is_legal(pid, uid, city.pos)
         {
             return None;
@@ -2649,9 +2676,43 @@ impl AdvancedAi {
         Some(true)
     }
 
+    /// `breach-assault-closes-in`: whether this healthy melee unit, off the
+    /// ring but within [`CLOSING_REACH`] of a city with no wall standing, is
+    /// one the assault can call in: a free land tile beside the city is open
+    /// to it. The ring's melee wait outside the city's strike
+    /// (`siege_melee_step` marches them only to [`CITY_STRIKE_RANGE`]), and
+    /// `breach_assault_blow` and `assault_volley` counted only melee already
+    /// beside the city, so an unwalled city whose ranged damage healed away
+    /// never drew the assault. Zone of control ends a move beside the city,
+    /// so the step in and the blow fall on different turns. Live King
+    /// civvis-20261004T232618Z (game 86): The Hague stood without walls at
+    /// 95-134 health from turn 88 to 95 beside eleven staged units; horsemen
+    /// waited three tiles out with five moves left, the volley read 32.5
+    /// against 95-134, and the city built walls at 96.
+    fn closing_in(&self, g: &Game, uid: u32, city: &CityView) -> bool {
+        if city.wall_hp > 0 {
+            return false;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        let distance = g.wdist(unit.pos, city.pos);
+        unit.hp >= ASSAULT_MIN_HP
+            && !g.is_embarked(unit)
+            && (2..=CLOSING_REACH).contains(&distance)
+            && g.nbrs(city.pos).into_iter().any(|pos| {
+                g.unit_ids_at(pos).is_empty()
+                    && g.map
+                        .get(pos)
+                        .is_some_and(|tile| !g.rules.is_water(tile) && g.rules.is_passable(tile))
+            })
+    }
+
     /// The city damage the siege force can still deal this turn: ranged
     /// members in range at the land ranged-against-districts penalty, and
-    /// healthy melee members already beside the city.
+    /// healthy melee members already beside the city — or, under
+    /// `breach-assault-closes-in`, ones the assault can call in from off the
+    /// ring (`closing_in`).
     fn assault_volley(
         &self,
         g: &Game,
@@ -2677,7 +2738,11 @@ impl AdvancedAi {
                         attack += g.promotion_effect(unit, "ranged_vs_district") - 17.0;
                     }
                     crate::game::expected_damage(attack, defense)
-                } else if spec.is_melee_capable() && distance <= 1 && unit.hp >= ASSAULT_MIN_HP {
+                } else if spec.is_melee_capable()
+                    && unit.hp >= ASSAULT_MIN_HP
+                    && (distance <= 1
+                        || (self.breach_assault_closes_in && self.closing_in(g, unit.id, city)))
+                {
                     crate::game::expected_damage(g.unit_strength(unit, false), defense)
                 } else {
                     0.0

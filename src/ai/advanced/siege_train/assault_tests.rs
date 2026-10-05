@@ -125,3 +125,109 @@ fn a_stage_siege_finishes_a_dying_breached_city_beside_it() {
         outcome[1]
     );
 }
+
+/// See `closing_in`: a healthy melee unit off the ring, within
+/// `CLOSING_REACH` of a city with no wall standing and a free tile beside
+/// it, is one the assault can call in; walls, wounds, distance or a full
+/// ring rule it out.
+#[test]
+fn closing_in_calls_healthy_melee_off_the_ring_to_an_unwalled_city() {
+    let (mut g, cid) = walled_city();
+    g.cities.get_mut(&cid).unwrap().wall_hp = 0;
+    let centre = g.cities[&cid].pos;
+    let at = |g: &Game, distance: i32| {
+        let mut tiles: Vec<Pos> = g
+            .wdisk(centre, distance)
+            .into_iter()
+            .filter(|pos| {
+                g.wdist(*pos, centre) == distance
+                    && g.unit_ids_at(*pos).is_empty()
+                    && g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))
+            })
+            .collect();
+        tiles.sort();
+        tiles[0]
+    };
+    let near = g.spawn_unit("horseman", 0, at(&g, 3));
+    let far = g.spawn_unit("horseman", 0, at(&g, 6));
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    let view = |g: &Game| CityView::of(g, cid).unwrap();
+    assert!(
+        ai.closing_in(&g, near, &view(&g)),
+        "three tiles out, healthy"
+    );
+    assert!(!ai.closing_in(&g, far, &view(&g)), "beyond the reach");
+    g.units.get_mut(&near).unwrap().hp = ASSAULT_MIN_HP - 1;
+    assert!(!ai.closing_in(&g, near, &view(&g)), "wounded");
+    g.units.get_mut(&near).unwrap().hp = 100;
+    g.cities.get_mut(&cid).unwrap().wall_hp = 100;
+    assert!(!ai.closing_in(&g, near, &view(&g)), "a wall standing");
+    g.cities.get_mut(&cid).unwrap().wall_hp = 0;
+    for pos in ring_of(&g, cid) {
+        if g.unit_ids_at(pos).is_empty() {
+            g.spawn_unit("warrior", 0, pos);
+        }
+    }
+    assert!(
+        !ai.closing_in(&g, near, &view(&g)),
+        "no free tile beside the city"
+    );
+}
+
+/// Under `breach-assault-closes-in`, horsemen three tiles from an unwalled
+/// city do at least as well as without the gene, and against a standing
+/// wall the turn is unchanged.
+#[test]
+fn closing_in_never_does_worse_and_leaves_a_walled_city_alone() {
+    let run = |closes_in: bool, walls: i32| {
+        let (mut g, cid) = walled_city();
+        {
+            let city = g.cities.get_mut(&cid).unwrap();
+            city.wall_hp = walls;
+            city.hp = 120;
+        }
+        let centre = g.cities[&cid].pos;
+        let mut posts: Vec<Pos> = g
+            .wdisk(centre, 3)
+            .into_iter()
+            .filter(|pos| {
+                g.wdist(*pos, centre) == 3
+                    && g.unit_ids_at(*pos).is_empty()
+                    && g.city_at(*pos).is_none()
+                    && g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))
+            })
+            .collect();
+        posts.sort();
+        for pos in posts.iter().take(4) {
+            g.spawn_unit("horseman", 0, *pos);
+        }
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_siege_train();
+        ai.enable_breach_assault();
+        if closes_in {
+            ai.enable_breach_assault_closes_in();
+        }
+        let plan = plan_against(&g, cid);
+        play(&mut ai, &mut g, 0, &plan);
+        let city = &g.cities[&cid];
+        let mut units: Vec<(Pos, i32)> = g
+            .player_unit_ids(0)
+            .into_iter()
+            .map(|uid| (g.units[&uid].pos, g.units[&uid].hp))
+            .collect();
+        units.sort();
+        (city.owner, city.hp, city.wall_hp, units)
+    };
+    let (off, on) = (run(false, 0), run(true, 0));
+    assert!(
+        on.0 == 0 || (off.0 != 0 && on.1 <= off.1),
+        "never worse: off {:?}, on {:?}",
+        (off.0, off.1),
+        (on.0, on.1)
+    );
+    assert_eq!(
+        run(true, 100),
+        run(false, 100),
+        "a standing wall: the same turn"
+    );
+}

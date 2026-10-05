@@ -5025,6 +5025,11 @@ pub struct AdvancedAi {
     /// walls are down or opened by a ram or tower, once the siege's blows can
     /// take it within two turns. See `siege_train::breach_assault_blow`.
     breach_assault: bool,
+    /// `breach-assault-closes-in`: under `breach-assault`, healthy melee that
+    /// can reach a free tile beside a city with no wall standing, and still
+    /// strike this turn, count toward the assault and step in for it. See
+    /// `siege_train::closing_in`. Off by default.
+    breach_assault_closes_in: bool,
     /// `breaker-supply-scales-2`: an original capital Domination needs is
     /// supplied with guns in parallel, without displacing a building under
     /// way. See `siege_production::SUPPLY_STRENGTH_WINDOW`. Off by default.
@@ -8809,6 +8814,7 @@ impl AdvancedAi {
 
             // ---- append: a-b ----------------------------------------
             breach_assault: false,
+            breach_assault_closes_in: false,
             breaker_supply_scales_2: false,
             breaker_supply_scales: false,
             breaker_before_the_war: false,
