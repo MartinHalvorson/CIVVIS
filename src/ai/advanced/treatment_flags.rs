@@ -6133,6 +6133,17 @@ impl AdvancedAi {
         self.march_uses_its_moves = false;
     }
 
+    /// Opt-in gene `guns-grind-the-walls`; see
+    /// [`Self::guns_grind_the_walls`].
+    pub fn enable_guns_grind_the_walls(&mut self) {
+        self.guns_grind_the_walls = true;
+    }
+
+    /// The twin of `enable_guns_grind_the_walls`.
+    pub fn disable_guns_grind_the_walls(&mut self) {
+        self.guns_grind_the_walls = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

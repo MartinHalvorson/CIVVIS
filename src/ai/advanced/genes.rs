@@ -2951,6 +2951,7 @@ pub const GENES: &[Gene] = &[
     // Staging marches took the router's single step and stood: 47-62% of
     // live frame-0 MOVE_TOs were one tile. See `march_moves`.
     Gene { tag: "march-uses-its-moves", field: "march_uses_its_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_march_uses_its_moves, disable: AdvancedAi::disable_march_uses_its_moves },
+    Gene { tag: "guns-grind-the-walls", field: "guns_grind_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_grind_the_walls, disable: AdvancedAi::disable_guns_grind_the_walls },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
