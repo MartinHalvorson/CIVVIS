@@ -213,6 +213,34 @@ impl AdvancedAi {
             && !self.rival_reachable_by_land(g, pid, rival)
     }
 
+    /// `blocker-becomes-the-target`: whether the second front `rival`, still
+    /// at peace, is displaced from the plan by a war the plan keeps: the
+    /// plan's target is another rival already at war with us, so neither the
+    /// plan nor `second_front_waits_*`'s waiting declaration would ever open
+    /// the second front. The declaration desk then declares on it as on a
+    /// waiting one. The elimination front (`diplomatic_contender_to_eliminate`)
+    /// ranks ahead of the second front in `assess`, and a second front that
+    /// does not wait (an urgent clock, the road blocker) was left with no
+    /// declaration at all. Live King civvis-20261005T215912Z (game 167) read
+    /// "Eliminating Maori" from turn 200 while the Ottomans, the second front
+    /// from 201 (an urgent science clock, then the road blocker of five
+    /// stood-down Maori sieges), stood at peace at 516-1,234 power against our
+    /// 2,870-4,711 until they won on Science at 249; the gene's road blocker
+    /// was named every turn and never declared on. Off with the gene.
+    pub(crate) fn second_front_displaced(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+        plan: &super::StrategicPlan,
+    ) -> bool {
+        self.blocker_becomes_the_target
+            && !g.is_at_war(pid, rival)
+            && plan
+                .target_player
+                .is_some_and(|target| target != rival && g.is_at_war(pid, target))
+    }
+
     /// `blocker-becomes-the-target`: the major whose closed borders shut the
     /// road of a siege stood down for want of one, while that stand-down
     /// holds: alive, met, at peace with us and a legal campaign target,
@@ -542,6 +570,76 @@ mod tests {
         run(&mut ai_nocap, &mut g, target, soldier, hold, ROAD_HOLD_TURNS);
         assert!(ai_nocap.capture_stood_down_holds(&g, target));
         assert_eq!(ai_nocap.road_blocker_front(&g, 0), None);
+    }
+
+    /// Live King civvis-20261005T215912Z (game 167)'s shape: at war with the
+    /// target (player 2), a Diplomatic Victory contender the elimination
+    /// front keeps the plan on; its siege's road shut by the screen's
+    /// (player 1's) closed borders and stood down; the screen weak, holding
+    /// its original capital, and at 90% of a Science Victory. The road
+    /// blocker is named and the plan stays on the elimination front either
+    /// way; under the gene the diplomacy desk declares on the screen, off it
+    /// nothing does.
+    #[test]
+    fn a_blocker_the_elimination_front_displaces_is_still_declared_on() {
+        let (mut game, target, soldier) = strip();
+        game.turn = 200;
+        game.record_contact(0, 1);
+        game.record_contact(0, 2);
+        game.found_city_for(0, (8, 4), None);
+        game.players[0].gold = 3000.0;
+        game.players[2].dvp = 18;
+        game.players[1].science_projects.extend([
+            "launch_earth_satellite".to_string(),
+            "launch_moon_landing".to_string(),
+            "launch_mars_colony".to_string(),
+            "exoplanet_expedition".to_string(),
+        ]);
+        let observed = std::sync::Arc::make_mut(&mut game.observed_public_empire_stats)
+            .entry(1)
+            .or_default();
+        observed.science_victory_points = Some(14.0);
+        observed.science_victory_points_needed = Some(25.0);
+        observed.science_victory_points_per_turn = Some(6.0);
+        for (seat, power) in [(0, 4000.0), (1, 600.0), (2, 500.0)] {
+            std::sync::Arc::make_mut(&mut game.observed_military_power).insert(seat, power);
+        }
+        let hold = StageMarch::Hold { wet: 30 };
+        for gene in [false, true] {
+            let mut ai = ai(true, &game, target);
+            if gene {
+                ai.enable_blocker_becomes_the_target();
+            }
+            ai.enable_diplomatic_contender_eliminated();
+            ai.enable_one_war_at_a_time();
+            ai.disable_capital_prey_opens_a_front();
+            ai.disable_capital_prey_opens_a_front_2();
+            ai.coalition_before_war = false;
+            ai.coalition_before_war_2 = false;
+            ai.coalition_before_war_3 = false;
+            ai.one_war = Some(front(2, game.turn));
+            let mut g = game.clone();
+            run(&mut ai, &mut g, target, soldier, hold, ROAD_HOLD_TURNS);
+            assert!(ai.capture_stood_down_holds(&g, target), "the road stand-down holds");
+            assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), Some(2), "fixture: eliminating the target");
+            assert_eq!(ai.rival_pressure(&g, 1).0, GrandStrategy::Science, "fixture: the screen's race");
+            let mut plan = ai.plan.clone().expect("the fixture's plan");
+            plan.assessed_turn = g.turn;
+            for _ in 0..12 {
+                if g.is_at_war(0, 1) {
+                    break;
+                }
+                assert_eq!(plan.target_player, Some(2), "the plan stays on the elimination front");
+                ai.advanced_diplomacy(&mut g, 0, &plan);
+                g.turn += 1;
+            }
+            if gene {
+                assert_eq!(ai.road_blocker_front(&g, 0), None, "at war: the road is open");
+                assert!(g.is_at_war(0, 1), "gene on: the displaced blocker is declared on");
+            } else {
+                assert!(!g.is_at_war(0, 1), "gene off: nothing declares on the screen");
+            }
+        }
     }
 
     /// `blocker-becomes-the-target` is a registered, reversible opt-in.

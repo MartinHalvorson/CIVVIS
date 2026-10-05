@@ -22620,10 +22620,14 @@ impl AdvancedAi {
         // on while the plan, and the army, stay on the front's siege.
         // See `second_front_waits_for_its_war`: any second front still at
         // peace is declared on from here while the running war keeps the plan.
+        // See `second_front_displaced` (`blocker-becomes-the-target`): a
+        // second front the plan's running war displaced is declared on here
+        // too.
         let waiting_second = self.one_war_second_front(g, pid).filter(|rival| {
             !g.is_at_war(pid, *rival)
                 && (self.second_front_waits_for_the_front(g, pid, *rival)
-                    || self.second_front_waits_for_its_war(g, pid, *rival))
+                    || self.second_front_waits_for_its_war(g, pid, *rival)
+                    || self.second_front_displaced(g, pid, *rival, plan))
         });
         let Some(target) = waiting_second
             .or(plan.target_player)
