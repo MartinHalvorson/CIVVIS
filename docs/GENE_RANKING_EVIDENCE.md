@@ -309,6 +309,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `peace-asks-a-city` | off (unmeasured) | Opt-in gene `peace-asks-a-city`; see `Self::peace_asks_a_city`. | 1 \| 1 |
 | `peace-waits-for-the-foothold` | off (unmeasured) | Opt-in gene `peace-waits-for-the-foothold`; see `Self::peace_waits_for_the_foothold`. | 1 \| 1 |
 | `peace-waits-for-unseen-prey` | off (unmeasured) | Opt-in gene `peace-waits-for-unseen-prey`; see `Self::peace_waits_for_unseen_prey`. | 1 \| 1 |
+| `plaza-in-the-district-list` | off (unmeasured) | `BasicAi::plaza_in_the_district_list`. | 1 \| 1 |
 | `policy-deck-hysteresis` | off (unmeasured) | The policy deck keeps the maintenance relief the host held at the turn's start and the Amenity repair card while it is what keeps a city content. | — \| 2 |
 | `policy-deck-hysteresis-2` | off (unmeasured) | `policy-deck-hysteresis-2`: version 1, and a held relief stays while the income does not cover its discount, and the emergency's relief may evict a lower-ranked wanted military card. | — \| 2 |
 | `prey-reads-a-steady-power` | off (unmeasured) | Opt-in gene `prey-reads-a-steady-power`; see `Self::prey_reads_a_steady_power`. | 1 \| 1 |

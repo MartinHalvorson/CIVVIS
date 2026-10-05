@@ -7016,6 +7016,8 @@ pub struct AdvancedAi {
     /// `BasicAi::note_host_moves` and `advanced/own_column.rs`.
     own_column_is_not_a_refusal: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `BasicAi::plaza_in_the_district_list`.
+    plaza_in_the_district_list: bool,
     /// `recovery-needs-the-deficit`: a threatened city puts a war into
     /// Recovery only while the army is short of `RECOVERY_THREAT_POWER_RATIO`
     /// times the strongest opponent. See `assess`.
@@ -9563,6 +9565,7 @@ impl AdvancedAi {
             naval_escort_patience: false,
             own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
+            plaza_in_the_district_list: false,
             recovery_needs_the_deficit: false,
             recovery_peace_waits: false,
             ring_fires_on_the_city: false,

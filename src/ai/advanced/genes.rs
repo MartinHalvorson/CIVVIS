@@ -2964,6 +2964,10 @@ pub const GENES: &[Gene] = &[
     // a quarter of our power was passed for Mali at 201 and won on Diplomacy
     // at 235. See `one_war::diplomatic_contender_at_peace`.
     Gene { tag: "contender-at-peace-is-the-target", field: "contender_at_peace_is_the_target", kind: Kind::OptIn, enable: AdvancedAi::enable_contender_at_peace_is_the_target, disable: AdvancedAi::disable_contender_at_peace_is_the_target },
+    // 7 of 30 live runs built a Government Plaza (October 5), so no Grand
+    // Master's Chapel and no Faith-bought land units; up to 3,590 Faith
+    // unspent. See `BasicAi::plaza_in_the_district_list`.
+    Gene { tag: "plaza-in-the-district-list", field: "plaza_in_the_district_list", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_in_the_district_list, disable: AdvancedAi::disable_plaza_in_the_district_list },
     // Staging marches took the router's single step and stood: 47-62% of
     // live frame-0 MOVE_TOs were one tile. See `march_moves`.
     Gene { tag: "march-uses-its-moves", field: "march_uses_its_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_march_uses_its_moves, disable: AdvancedAi::disable_march_uses_its_moves },
