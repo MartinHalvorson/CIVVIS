@@ -5276,6 +5276,10 @@ pub struct AdvancedAi {
     /// `breaker-to-the-fastest`; see `siege_production.rs`.
     breaker_to_the_fastest: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `capital-prey-opens-a-front`: a collapsed rival's lightly walled
+    /// original capital opens a second front beside the burning war. See
+    /// `one_war::capital_prey_beside_the_front`. Off by default.
+    capital_prey_opens_a_front: bool,
     /// `conquest-opening-needs-the-production`: the early conquest opening
     /// names its target only when the capital can raise and march the strike
     /// force inside the window the opening would get. See
@@ -5807,6 +5811,10 @@ pub struct AdvancedAi {
     /// the stock Ilkum commitment would hold Urban Planning out again.
     colonization_earns_its_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `front-needs-a-declarable-rival`: a second front not yet at war is
+    /// named only when the declaration could reach it. See
+    /// `one_war::declarable_in_reach`. Off by default.
+    front_needs_a_declarable_rival: bool,
     /// `front-finishes-its-siege`: an urgent counter-war already running
     /// waits for the front's live siege of an unwalled city. See
     /// `one_war::front_siege_to_finish`. Off by default.
@@ -8999,6 +9007,7 @@ impl AdvancedAi {
             breaker_keeps_its_queue: false,
             breaker_to_the_fastest: false,
             // ---- append: c-d ----------------------------------------
+            capital_prey_opens_a_front: false,
             conquest_opening_needs_the_production: false,
             dialogue_never_declares_war: false,
             declaration_waits_for_the_breaker: false,
@@ -9101,6 +9110,7 @@ impl AdvancedAi {
             colonization_earns_its_slot: false,
             colonization_earns_its_slot_2: false,
             // ---- append: e-f ----------------------------------------
+            front_needs_a_declarable_rival: false,
             front_finishes_its_siege: false,
             found_against_a_rival_faith: false,
             formations_heed_refusals: false,
@@ -13767,7 +13777,7 @@ impl AdvancedAi {
                     } else if wartime_rivals.is_empty() {
                         "not yet at war"
                     } else {
-                        "chosen from the wars already running"
+                        "a second front beside the wars already running"
                     };
                     think!(self.journal(), Strategy, Strategy,
                            "Campaign aimed at {}", rival.civ;

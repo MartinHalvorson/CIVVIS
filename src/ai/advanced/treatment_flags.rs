@@ -5623,6 +5623,28 @@ impl AdvancedAi {
         self.declaration_waits_for_the_breaker = false;
     }
 
+    /// Opt-in gene `capital-prey-opens-a-front`; see
+    /// [`Self::capital_prey_opens_a_front`].
+    pub fn enable_capital_prey_opens_a_front(&mut self) {
+        self.capital_prey_opens_a_front = true;
+    }
+
+    /// The twin of `enable_capital_prey_opens_a_front`.
+    pub fn disable_capital_prey_opens_a_front(&mut self) {
+        self.capital_prey_opens_a_front = false;
+    }
+
+    /// Opt-in gene `front-needs-a-declarable-rival`; see
+    /// [`Self::front_needs_a_declarable_rival`].
+    pub fn enable_front_needs_a_declarable_rival(&mut self) {
+        self.front_needs_a_declarable_rival = true;
+    }
+
+    /// The twin of `enable_front_needs_a_declarable_rival`.
+    pub fn disable_front_needs_a_declarable_rival(&mut self) {
+        self.front_needs_a_declarable_rival = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

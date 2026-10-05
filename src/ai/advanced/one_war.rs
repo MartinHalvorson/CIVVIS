@@ -109,6 +109,20 @@ pub(crate) const ONE_WAR_WINNING_RATIO: f64 = 2.0;
 /// that war beside the one it is fighting. See `one_war_second_front`.
 pub(crate) const ONE_WAR_SECOND_FRONT_RATIO: f64 = 1.5;
 
+/// `capital-prey-opens-a-front`: the most military a rival may hold, as a
+/// share of ours, for its original capital to open a front beside the war.
+pub(crate) const CAPITAL_PREY_POWER: f64 = 0.15;
+/// `capital-prey-opens-a-front`: the most wall hit points the prey capital
+/// may stand behind: Ancient Walls, which the army opens in a few turns.
+pub(crate) const CAPITAL_PREY_WALLS: i32 = 100;
+/// `capital-prey-opens-a-front`: the turns a soft capital's siege is
+/// expected to take once the army stands on its ring.
+pub(crate) const CAPITAL_PREY_SIEGE_TURNS: f64 = 4.0;
+/// `capital-prey-opens-a-front`: a culture finish projected sooner than the
+/// prey's capture plus this many turns is a true match point, and the
+/// counter keeps the army.
+pub(crate) const CAPITAL_PREY_MATCH_MARGIN: f64 = 5.0;
+
 /// The power ratio that keeps a second front already named: the opening
 /// ratio, less a margin, so the pick does not flicker on the line. Live King
 /// civvis-20261004T025448Z (game 45) had 302-340 power against 1.5 times
@@ -647,6 +661,21 @@ impl AdvancedAi {
             }
         }
         self.one_war_second = self.one_war_second_front(g, pid);
+        // See `capital_prey_beside_the_front`: the near misses, once a turn.
+        if self.capital_prey_opens_a_front {
+            let (prey, near) = self.capital_prey_beside_the_front(g, pid, target);
+            if let Some(prey) = prey {
+                think!(self.journal(), Military, Detail,
+                       "Capital prey beside the front: {}", g.players[prey].civ;
+                       "its original capital is within reach behind light walls and its military is \
+                        at most {:.0}% of ours", CAPITAL_PREY_POWER * 100.0);
+            }
+            for (rival, gate) in near {
+                think!(self.journal(), Military, Detail,
+                       "Capital prey near miss: {}", g.players[rival].civ;
+                       "fails only the {gate} gate");
+            }
+        }
     }
 
     /// The power ratio over `rival` a second front needs: the hold ratio for
@@ -1302,7 +1331,9 @@ impl AdvancedAi {
                         city.is_capital && city.original_owner == other && city.owner == other
                     }))
                 // See `diplomatic_contender`.
-                || self.diplomatic_contender(g, pid, other))
+                || self.diplomatic_contender(g, pid, other)
+                // See `capital_prey_kept`.
+                || self.capital_prey_kept(g, pid, other))
     }
 
     /// `stalled-peace-spares-the-counter`: whether the fatigue clause's "the
@@ -1331,6 +1362,135 @@ impl AdvancedAi {
             && (self.domination_counter_target(g, pid, other)
                 || self.urgent_victory_threat(g, other)
                 || self.war_holds_the_road(g, pid, other))
+    }
+
+    /// `capital-prey-opens-a-front`: the weakest rival beside the front whose
+    /// own original capital is Domination progress the army can take now —
+    /// military at most [`CAPITAL_PREY_POWER`] of ours, the capital known and
+    /// behind at most [`CAPITAL_PREY_WALLS`] of wall, within the declaration
+    /// range and reachable by land — while the front holds no live siege to
+    /// finish first. A prey already at war is read the same way, less the
+    /// walls and the legality (the war is what opens them), and its war is
+    /// kept (`capital_prey_kept`). The second item names the rivals that fail
+    /// exactly one gate, for the journal.
+    ///
+    /// Domination needs every original capital, and a non-capital city of the
+    /// burning war is economy, not progress. Across games 92-103 the seat held
+    /// one rival original capital (Ottawa, game 102). Live King
+    /// civvis-20261005T053701Z (game 103) was at war with the Maori and then
+    /// Vietnam while the Inca held 12 military against our ~600 at turn 100,
+    /// Qusqu behind 100 walls nine tiles from Guayaquil; the seat offered the
+    /// Inca "one war at a time" peace seven times and first staged Qusqu at
+    /// turn 159, behind 300 walls (diagnosed by -60).
+    pub(crate) fn capital_prey_beside_the_front(
+        &self,
+        g: &Game,
+        pid: usize,
+        front: usize,
+    ) -> (Option<usize>, Vec<(usize, &'static str)>) {
+        if !self.capital_prey_opens_a_front
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || self.front_siege_live(g)
+        {
+            return (None, Vec::new());
+        }
+        let ours = g.military_power(pid);
+        let mut best: Option<(f64, usize)> = None;
+        let mut near_misses = Vec::new();
+        for rival in g.players.iter().filter(|other| {
+            other.id != pid
+                && other.id != front
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && g.has_met(pid, other.id)
+        }) {
+            let Some(capital) = g
+                .player_city_ids(rival.id)
+                .into_iter()
+                .map(|cid| &g.cities[&cid])
+                .find(|city| city.is_capital && city.original_owner == rival.id)
+            else {
+                continue;
+            };
+            let power = g.military_power(rival.id);
+            let at_war = g.is_at_war(pid, rival.id);
+            let weak = power <= CAPITAL_PREY_POWER * ours;
+            let soft = at_war || capital.wall_hp <= CAPITAL_PREY_WALLS;
+            // A prey already at war still needs a road: an overseas or far
+            // capital would take the plan's target from the front for a march
+            // the army cannot make (see `declarable_in_reach`).
+            let reach = Self::city_within_declaration_range(g, pid, capital.pos)
+                && self.rival_reachable_by_land(g, pid, rival.id)
+                && (at_war || self.campaign_target_legal(g, pid, rival.id));
+            match (weak, soft, reach) {
+                (true, true, true) => {
+                    if best.is_none_or(|(old, _)| power < old) {
+                        best = Some((power, rival.id));
+                    }
+                }
+                (false, true, true) => near_misses.push((rival.id, "power")),
+                (true, false, true) => near_misses.push((rival.id, "walls")),
+                (true, true, false) => near_misses.push((rival.id, "reach")),
+                _ => {}
+            }
+        }
+        // A true match point outranks the prey: an urgent rival whose culture
+        // finish is projected sooner than the prey's capture plus
+        // [`CAPITAL_PREY_MATCH_MARGIN`]. No other lane carries a finish clock,
+        // and the urgent flag alone misread Norway's religion at 75% while
+        // our own cities held Buddhism (game 104).
+        if let Some((_, prey)) = best {
+            let eta = self.capital_prey_eta(g, pid, prey);
+            let match_point = self
+                .actionable_victory_denial(g, pid)
+                .is_some_and(|(rival, _)| {
+                    rival != prey
+                        && self.urgent_victory_threat(g, rival)
+                        && self
+                            .projected_culture_finish(g, rival)
+                            .is_some_and(|finish| finish < eta + CAPITAL_PREY_MATCH_MARGIN)
+                });
+            if match_point {
+                return (None, near_misses);
+            }
+        }
+        (best.map(|(_, rival)| rival), near_misses)
+    }
+
+    /// The turns until `prey`'s original capital is expected to fall: our
+    /// nearest land soldier's march at two tiles a turn, plus
+    /// [`CAPITAL_PREY_SIEGE_TURNS`].
+    fn capital_prey_eta(&self, g: &Game, pid: usize, prey: usize) -> f64 {
+        let Some(capital) = g
+            .cities
+            .values()
+            .find(|city| city.owner == prey && city.is_capital && city.original_owner == prey)
+            .map(|city| city.pos)
+        else {
+            return f64::INFINITY;
+        };
+        let march = self
+            .one_war_soldiers(g, pid)
+            .into_iter()
+            .map(|pos| g.wdist(pos, capital))
+            .min()
+            .map_or(f64::INFINITY, |tiles| f64::from(tiles) / 2.0);
+        march + CAPITAL_PREY_SIEGE_TURNS
+    }
+
+    /// `capital-prey-opens-a-front`: whether the war on `other` is a capital
+    /// prey's, kept beside the front whatever the front's siege: at war, its
+    /// military at most [`CAPITAL_PREY_POWER`] of ours, and its own original
+    /// capital still in its hands.
+    pub(crate) fn capital_prey_kept(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.capital_prey_opens_a_front
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.is_at_war(pid, other)
+            && g.military_power(other) <= CAPITAL_PREY_POWER * g.military_power(pid)
+            && g.cities
+                .values()
+                .any(|city| city.owner == other && city.is_capital && city.original_owner == other)
     }
 
     /// Whether a Domination seat holds `rival`'s original capital while the
@@ -1509,6 +1669,34 @@ impl AdvancedAi {
     /// Kongo's 1,347. Kongo, holding Kabasa (the last capital Domination
     /// needed) and past its Exoplanet launch at 198, won on Science at 216.
     pub(crate) fn one_war_second_front(&self, g: &Game, pid: usize) -> Option<usize> {
+        // See `declarable_in_reach`.
+        self.one_war_second_front_named(g, pid).filter(|rival| {
+            !self.front_needs_a_declarable_rival
+                || g.is_at_war(pid, *rival)
+                || self.declarable_in_reach(g, pid, *rival)
+        })
+    }
+
+    /// `front-needs-a-declarable-rival`: whether the declaration could reach
+    /// `rival` — a city of theirs within the declaration range, or the far
+    /// reach a denial earns (`denial_reaches_far`). A second front the
+    /// declaration then holds off ("no city of theirs is within 18 tiles")
+    /// takes the plan's target from the burning war and leaves the army with
+    /// no Siege row at all. Live King civvis-20261005T060002Z (game 104) read
+    /// "Campaign aimed at Greece" from turn 147 to 182+, Greece at peace and
+    /// out of range, while Australia (military 18-57, its capital Canberra
+    /// standing) and Norway were at war with us; the same aim at a held-off
+    /// rival ran 27 turns in game 103 (Vietnam, the eventual culture winner)
+    /// and 6-11 turns in five more games (census by -60).
+    pub(crate) fn declarable_in_reach(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        g.player_city_ids(rival).into_iter().any(|cid| {
+            let pos = g.cities[&cid].pos;
+            Self::city_within_declaration_range(g, pid, pos)
+                || self.denial_reaches_far(g, pid, rival, pos)
+        })
+    }
+
+    fn one_war_second_front_named(&self, g: &Game, pid: usize) -> Option<usize> {
         if !self.one_war_at_a_time
             || self.active_victory_target(g) != Some(VictoryTarget::Domination)
             || self.forced_target_player.is_some()
@@ -1517,6 +1705,10 @@ impl AdvancedAi {
         }
         let front_state = self.one_war.as_ref()?;
         let front = front_state.target;
+        // See `capital_prey_beside_the_front`.
+        if let Some(prey) = self.capital_prey_beside_the_front(g, pid, front).0 {
+            return Some(prey);
+        }
         // See `diplomatic_contender`: the Diplomatic Victory leader we crush
         // opens the second front at once, the front's refusal or not.
         if let Some(leader) = self.diplomatic_contender_leader(g, pid).filter(|leader| {

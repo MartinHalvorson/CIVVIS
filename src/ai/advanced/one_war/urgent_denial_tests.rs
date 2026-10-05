@@ -1069,3 +1069,55 @@ fn a_crushed_contender_at_war_takes_the_front_under_version_two() {
     ai.one_war_observe(&g, 0);
     assert_eq!(ai.one_war_front(), Some(1), "under the bar");
 }
+
+/// See `capital_prey_beside_the_front`: under the gene, the weakest rival
+/// beside the front whose own capital stands open within reach is named; a
+/// walled capital or a real army leaves it a near miss, and a war on such a
+/// rival is kept (`capital_prey_kept`). Live King civvis-20261005T053701Z
+/// (game 103) left the Inca, at 12 military against ~600, at peace.
+#[test]
+fn a_collapsed_rivals_open_capital_opens_a_front_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    assert_eq!(ai.capital_prey_beside_the_front(&g, 0, 1).0, None, "off");
+    assert!(!ai.capital_prey_kept(&g, 0, 2), "off");
+    ai.enable_capital_prey_opens_a_front();
+    // Player 3, at peace with no army, is weaker than player 2's warrior.
+    assert_eq!(ai.capital_prey_beside_the_front(&g, 0, 1).0, Some(3));
+    assert!(ai.capital_prey_kept(&g, 0, 2), "the war on a prey is kept");
+    assert!(!ai.capital_prey_kept(&g, 0, 3), "no war, nothing to keep");
+    let capital = g
+        .cities
+        .values()
+        .find(|city| city.owner == 3 && city.is_capital)
+        .map(|city| city.id)
+        .unwrap();
+    g.cities.get_mut(&capital).unwrap().wall_hp = CAPITAL_PREY_WALLS + 100;
+    let (prey, near) = ai.capital_prey_beside_the_front(&g, 0, 1);
+    assert_eq!(
+        prey,
+        Some(2),
+        "a walled capital at peace waits; the war's prey stays"
+    );
+    assert!(near.contains(&(3, "walls")));
+    g.cities.get_mut(&capital).unwrap().wall_hp = 0;
+    for y in [2, 3, 4] {
+        g.spawn_test_unit("modern_armor", 3, (32, y));
+    }
+    let (prey, near) = ai.capital_prey_beside_the_front(&g, 0, 1);
+    assert_eq!(prey, Some(2));
+    assert!(near.contains(&(3, "power")));
+}
+
+/// See `declarable_in_reach`: a rival is declarable while a city of theirs is
+/// within the declaration range; moved out of it, it is not. Live King
+/// civvis-20261005T060002Z (game 104) aimed its campaign at Greece, out of
+/// range and at peace, from turn 147 to 182+.
+#[test]
+fn a_second_front_needs_a_city_within_declaration_range() {
+    let (mut g, ai) = two_fronts();
+    assert!(ai.declarable_in_reach(&g, 0, 3));
+    for city in g.cities.values_mut().filter(|city| city.owner == 3) {
+        city.pos = (26, 0);
+    }
+    assert!(!ai.declarable_in_reach(&g, 0, 3));
+}

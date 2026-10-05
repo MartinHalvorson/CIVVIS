@@ -2744,6 +2744,15 @@ pub const GENES: &[Gene] = &[
     // the walls stood at 200 by 78 and the city fell at 118. See
     // `siege_train::declaration_breaker_at_hand`.
     Gene { tag: "declaration-waits-for-the-breaker", field: "declaration_waits_for_the_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_waits_for_the_breaker, disable: AdvancedAi::disable_declaration_waits_for_the_breaker },
+    // Live King civvis-20261005T053701Z (game 103) left the Inca, at 12
+    // military against ~600 with Qusqu behind 100 walls nine tiles from
+    // Guayaquil, at peace from turn 95 to 125 while it fought the Maori and
+    // Vietnam. See `one_war::capital_prey_beside_the_front`.
+    Gene { tag: "capital-prey-opens-a-front", field: "capital_prey_opens_a_front", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_prey_opens_a_front, disable: AdvancedAi::disable_capital_prey_opens_a_front },
+    // Live King civvis-20261005T060002Z (game 104) aimed its campaign at
+    // Greece, at peace and out of declaration range, from turn 147 to 182+
+    // with no Siege row to fight. See `one_war::declarable_in_reach`.
+    Gene { tag: "front-needs-a-declarable-rival", field: "front_needs_a_declarable_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_front_needs_a_declarable_rival, disable: AdvancedAi::disable_front_needs_a_declarable_rival },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
