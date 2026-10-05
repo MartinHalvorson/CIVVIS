@@ -954,6 +954,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # grace. The same no-op path, 22 ticks sooner. Off until the probe's
         # record shows such legs never step late.
         "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
+        # The engine console's debug timescale, applied by the agent through
+        # AutoProfiler.RunCommand and reverted if the UI clock drifts (every
+        # mod timer runs on it). Combat visualization, which the game core
+        # waits on, was ~10 min of a 262-turn game (G93). Off unless set.
+        "DebugTimeScale": getattr(args, "debug_timescale", None),
         # ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. A MOVE_TO whose
         # host path outran the turn was queued, and the host walked the unit
         # along it at the start of the next turn before the brain could act. Now
@@ -4476,6 +4481,7 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "StrikePreview": getattr(args, "strike_preview", None),
             "MoveFallback": args.move_fallback,
             "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
+            "DebugTimeScale": getattr(args, "debug_timescale", None),
             "ReplanFrames": getattr(args, "replan_frames", None),
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
@@ -5508,6 +5514,7 @@ def _play(args: argparse.Namespace) -> int:
             "StrikePreview": args.strike_preview,
             "MoveFallback": args.move_fallback,
             "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
+            "DebugTimeScale": getattr(args, "debug_timescale", None),
             "ReplanFrames": args.replan_frames,
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
@@ -5695,6 +5702,8 @@ TREE_MOD_ARMS_FILE = REPO_ROOT / "deploy" / "live-mod-arms.txt"
 TREE_MOD_ARMS = {
     # #3939: answer a probe-marked stalled MOVE_TO operation at the probe tick.
     "stalled-operation-release": "stalled_operation_release",
+    # Debug timescale 2 (`--debug-timescale 2`): an arm can carry a value.
+    "debug-timescale-2": ("debug_timescale", 2.0),
 }
 
 
@@ -5714,12 +5723,13 @@ def apply_tree_mod_arms(args, path: Path = TREE_MOD_ARMS_FILE) -> list[str]:
     """Switch on each known arm the played tree lists; return the names applied."""
     applied: list[str] = []
     for name in read_tree_mod_arms(path):
-        dest = TREE_MOD_ARMS.get(name)
+        entry = TREE_MOD_ARMS.get(name)
+        dest, value = entry if isinstance(entry, tuple) else (entry, True)
         if dest is None:
             print(f"[mod-arms] {path.name}: unknown arm {name!r} ignored "
                   f"(known: {', '.join(sorted(TREE_MOD_ARMS))})", file=sys.stderr)
             continue
-        setattr(args, dest, True)
+        setattr(args, dest, value)
         applied.append(name)
     if applied:
         print(f"[mod-arms] {path.name} arms: {', '.join(applied)}", flush=True)
@@ -5999,6 +6009,11 @@ def main(argv: list[str] | None = None) -> int:
                          "without a step (`stall_probe`) at the probe tick instead of "
                          "waiting out the 30-tick grace: the same `move_noop` answer, "
                          "about 3 s sooner per stalled leg")
+    ap.add_argument("--debug-timescale", dest="debug_timescale", type=float, default=None,
+                    help="run the engine console's `timescale N` at game start (via "
+                         "AutoProfiler.RunCommand) to shorten the combat visualization "
+                         "the game core waits on; the agent reverts it if the UI clock "
+                         "drifts, and at game end")
     ap.add_argument("--no-cap-moves-to-reach", dest="cap_moves_to_reach",
                     action="store_false", default=True,
                     help="send a MOVE_TO's whole destination even when the host's path "
