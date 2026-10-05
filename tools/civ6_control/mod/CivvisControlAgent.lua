@@ -21750,7 +21750,18 @@ function Initialize()
 		DiplomacyStatement = CivvisOnDiplomacyStatement,
 		DiplomacySessionClosed = CivvisOnDealSessionClosed,
 		EmergencyAvailable = CivvisOnAidEmergencyAvailable,
-		LoadGameViewStateDone = ensureStarted,
+		-- RECORD-ONLY: when the load view finished. Game start is the load
+		-- screen's `OnActivateButtonClicked`, and its StartGame action only
+		-- counts after `OnLoadGameViewStateDone` sets `m_isLoadComplete`
+		-- (Base/Assets/UI/FrontEnd/LoadScreen.lua:93-97, :459). ensureStarted
+		-- dismisses once, as soon as a turn exists; turn 1 then began 1.3-2.5 s
+		-- later in most games but 4.9, 10.0 and 17.1 s in others (G100, G99,
+		-- G93). This row against `actions` (the dismissal) and `seat` (turn 1)
+		-- says whether that wait is the load or a dismissal sent too early.
+		LoadGameViewStateDone = function()
+			emit("load_view_done", { ui_now = CivvisClock.raw() });
+			ensureStarted();
+		end,
 		TeamVictory = onTeamVictory,
 		PlayerDefeat = onPlayerDefeat,
 		-- The tactical ledger: see CivvisLedger.

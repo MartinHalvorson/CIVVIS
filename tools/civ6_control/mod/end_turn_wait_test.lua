@@ -240,6 +240,10 @@ UserConfiguration = { IsQuickMovement = function() return false end,
                       IsQuickCombat = function() return true end }
 
 check("LocalPlayerTurnEnd is registered", type(handlers.LocalPlayerTurnEnd), "function")
+-- The load view finishing is recorded (then the start runs as before).
+check("LoadGameViewStateDone is registered", type(handlers.LoadGameViewStateDone), "function")
+pcall(handlers.LoadGameViewStateDone)  -- ensureStarted needs a host this test does not fake
+check("…and records when the load view finished", has(events("load_view_done")[1], '"ui_now":10'), true)
 
 -- 1. Turn 7: two refused requests while the core is busy, one inside the
 -- 0.25 s rate guard (not sent, not sampled), one with a blocker, one forced.
