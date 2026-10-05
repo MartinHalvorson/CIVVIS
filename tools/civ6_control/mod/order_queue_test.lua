@@ -425,6 +425,9 @@ applyOrders(player, PID, 7, {
 	row(162, "MOVE_TO", 6, 4), row(162, "ATTACK", 7, 4),
 })
 landTurn[161] = 2
+-- Both are under way (off their origins), as the held walks were: a unit still
+-- on its origin is the no-op path's to answer, not this one's.
+host.units[161].x, host.units[162].x = 2, 5
 for _ = 1, 7 do queue.drain(player, PID, 7) end
 check("no path read before the probe tick", queue.pendingCount(), 2)
 queue.drain(player, PID, 7)
