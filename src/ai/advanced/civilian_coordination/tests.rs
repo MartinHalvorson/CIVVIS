@@ -202,3 +202,92 @@ fn two_pairs_reserve_distinct_end_tiles() {
     assert_eq!(game.units[&builder].pos, game.units[&guard].pos);
     assert_eq!(game.units[&second].pos, game.units[&second_guard].pos);
 }
+
+fn productive_fixture() -> (Game, AdvancedAi, u32, u32) {
+    let (mut g, _, _, _, _) = fixture();
+    for uid in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(uid);
+    }
+    let city = g.player_city_ids(0)[0];
+    g.cities.get_mut(&city).unwrap().pop = 2;
+    g.map.tiles.get_mut(&(3, 5)).unwrap().hills = true;
+    g.players[0].techs.insert(crate::name!("mining"));
+    let builder = g.spawn_test_unit("builder", 0, (2, 5));
+    let guard = g.spawn_test_unit("warrior", 0, (3, 4));
+    g.spawn_test_unit("slinger", 1, (4, 5));
+    g.turn = 20;
+    assert!(g.city_citizen_plan(city).worked_tiles.contains(&(3, 5)));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_live_settler_capture_lessons();
+    (g, ai, builder, guard)
+}
+
+#[test]
+fn productive_job_is_opt_in_and_finishes_both_walks_and_the_mine() {
+    let (mut g, mut ai, builder, guard) = productive_fixture();
+    ai.plan_productive_builder_support(&g, 0, &strategy());
+    assert!(ai.builder_support.is_empty());
+    assert!(!ai.productive_builder_escort_enabled());
+    ai.enable_productive_builder_escort();
+    ai.plan_productive_builder_support(&g, 0, &strategy());
+    let support = ai.builder_support[&builder];
+    assert_eq!(support.guard, guard);
+    assert_eq!(support.destination, (3, 5));
+    assert_eq!(support.job, Some(crate::name!("mine")));
+    let city = g.player_city_ids(0)[0];
+    let before = g.city_yields(city).production;
+    assert_eq!(ai.builder_support_step(&mut g, 0, builder), Some(true));
+    assert_eq!(g.units[&builder].pos, (3, 5));
+    assert_eq!(g.units[&guard].pos, (3, 5));
+    assert_eq!(g.map.tiles[&(3, 5)].improvement, Some(crate::name!("mine")));
+    assert!(g.city_yields(city).production > before);
+    assert!(ai.builder_support_protects(&g, 0, builder, (3, 5)));
+}
+
+#[test]
+fn productive_job_does_not_borrow_a_settler_guard_or_a_doomed_guard() {
+    let (mut g, mut ai, builder, guard) = productive_fixture();
+    ai.enable_productive_builder_escort();
+    let settler = g.spawn_test_unit("settler", 0, (3, 4));
+    ai.settler_guards.insert(settler, guard);
+    ai.plan_productive_builder_support(&g, 0, &strategy());
+    assert!(!ai.builder_support.contains_key(&builder));
+    ai.settler_guards.clear();
+    g.units.get_mut(&guard).unwrap().hp = 1;
+    ai.plan_productive_builder_support(&g, 0, &strategy());
+    assert!(!ai.builder_support.contains_key(&builder));
+}
+
+#[test]
+fn productive_job_keeps_the_final_garrison_in_its_city() {
+    let (mut g, mut ai, builder, guard) = productive_fixture();
+    ai.enable_productive_builder_escort();
+    g.remove_unit(guard);
+    let guard = g.spawn_test_unit("warrior", 0, (2, 5));
+    ai.plan_productive_builder_support(&g, 0, &strategy());
+    assert!(!ai.builder_support.contains_key(&builder));
+    assert_eq!(g.units[&guard].pos, (2, 5));
+}
+
+#[test]
+fn invalidated_productive_job_executes_neither_half_of_the_walk() {
+    let (mut g, mut ai, builder, guard) = productive_fixture();
+    ai.enable_productive_builder_escort();
+    ai.plan_productive_builder_support(&g, 0, &strategy());
+    assert!(ai.builder_support.contains_key(&builder));
+    g.units.get_mut(&builder).unwrap().moves_left = 0.0;
+    assert_eq!(ai.builder_support_step(&mut g, 0, builder), None);
+    assert_eq!(g.units[&guard].pos, (3, 4));
+    assert_eq!(g.units[&builder].pos, (2, 5));
+    assert!(g.map.tiles[&(3, 5)].improvement.is_none());
+}
+
+#[test]
+fn productive_job_reaches_the_full_unit_driver_before_military_spends_its_guard() {
+    let (mut g, mut ai, builder, guard) = productive_fixture();
+    ai.enable_productive_builder_escort();
+    ai.advanced_units(&mut g, 0, &strategy());
+    assert_eq!(g.map.tiles[&(3, 5)].improvement, Some(crate::name!("mine")));
+    assert_eq!(g.units[&builder].pos, g.units[&guard].pos);
+    assert!(ai.guard_is_reserved_for_civilian(guard));
+}
