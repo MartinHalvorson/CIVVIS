@@ -59,38 +59,38 @@ local function aims(h)
     local n=0; for _, line in ipairs(h.logs) do if line:find('"aim":',1,true) then n=n+1 end end; return n
 end
 
--- Zoom: close, held in a band, never a correction loop.
-local rounded=host({CivvisDecides=true}, .4 - 0.00000005)
+-- Zoom: wide, held in a band, never a correction loop.
+local rounded=host({CivvisDecides=true}, .8 - 0.00000005)
 for i=1,100 do rounded.events.Camera_Updated() end
 assert(rounded.writes==0, "native floating-point rounding must not create a correction loop")
-assert(#rounded.logs==1 and rounded.logs[1]:find('"verified":true',1,true), "rounded close zoom is a verified stable view")
-local h=host({CivvisDecides=true}, .8)
-assert(h.zoom==.4 and h.restore==.4 and h.writes==1, "startup must bring a wide map in close without recursion")
+assert(#rounded.logs==1 and rounded.logs[1]:find('"verified":true',1,true), "rounded wide zoom is a verified stable view")
+local h=host({CivvisDecides=true}, .4)
+assert(h.zoom==.8 and h.restore==.8 and h.writes==1, "startup must take a close map out wide without recursion")
 assert(h.options.LookAtPlayerTurnCombat==0 and h.options.LookAtPlayerOffTurnCombat==0,
     "native combat panning must not pull the camera off our area")
 assert(h.options.AutoUnitCycle==0, "unit cycling must not pan the camera to every ready unit")
 for _, name in ipairs({"Camera_Updated","LoadGameViewStateDone","LocalPlayerTurnBegin","CombatVisEnd"}) do
-    h.zoom=.8;h.events[name]();assert(h.zoom==.4, name.." must correct a wide view")
-    h.zoom=.05;h.events[name]();assert(h.zoom==.4, name.." must correct an extreme close-up")
+    h.zoom=.4;h.events[name]();assert(h.zoom==.8, name.." must correct a close view")
+    h.zoom=.05;h.events[name]();assert(h.zoom==.8, name.." must correct an extreme close-up")
 end
-h.zoom=.43;local writes=h.writes;h.enforce();assert(h.zoom==.43 and h.writes==writes, "a view inside the band must not be moved")
-h.throw=true;h.enforce();h.throw=false;h.zoom=.9;h.enforce();assert(h.zoom==.4, "temporary host error must not disable protection")
-h.optionThrow=true;h.zoom=.9;h.pulse();assert(h.zoom==.4, "an options error must not prevent zoom correction");h.optionThrow=false
+h.zoom=.83;local writes=h.writes;h.enforce();assert(h.zoom==.83 and h.writes==writes, "a view inside the band must not be moved")
+h.throw=true;h.enforce();h.throw=false;h.zoom=.4;h.enforce();assert(h.zoom==.8, "temporary host error must not disable protection")
+h.optionThrow=true;h.zoom=.4;h.pulse();assert(h.zoom==.8, "an options error must not prevent zoom correction");h.optionThrow=false
 h.options.AutoUnitCycle=1;for i=1,50 do h.events.Camera_Updated() end
 assert(h.options.AutoUnitCycle==1, "per-frame camera events must not touch user options")
 h.events.LocalPlayerTurnBegin();assert(h.options.AutoUnitCycle==0, "turn start re-quiets the native camera")
-h.refuse=true;h.zoom=.9;h.enforce();assert(h.logs[#h.logs]:find('"verified":false',1,true), "native refusal must not be reported as fixed")
+h.refuse=true;h.zoom=.4;h.enforce();assert(h.logs[#h.logs]:find('"verified":false',1,true), "native refusal must not be reported as fixed")
 local refusedWrites=h.writes;local refusedLogs=#h.logs
 for i=1,100 do h.events.Camera_Updated() end
 assert(h.writes==refusedWrites and #h.logs==refusedLogs, "failed readback must not flood writes or logs between pulses")
 h.loadHud();h.hudTick(.5);assert(h.writes==refusedWrites)
 h.hudTick(.5);assert(h.writes==refusedWrites+1, "actual HUD heartbeat must retry a refused correction")
-h.zoom=.4-0.00000005;h.events.Camera_Updated()
+h.zoom=.8-0.00000005;h.events.Camera_Updated()
 assert(h.logs[#h.logs]:find('"verified":true',1,true), "asynchronous successful readback must be reported")
 h.refuse=false
 
 -- Aim: home first, then the hottest area of OUR activity.
-local f=host({CivvisDecides=true}, .4)
+local f=host({CivvisDecides=true}, .8)
 assert(#f.looks==0, "loading the module must not pan")
 f.pulse();assert(#f.looks==1 and f.last()[1]==10 and f.last()[2]==10, "no activity yet: look at the capital")
 f.march(1, 7, 30, 30, 20);f.pulses(4)
@@ -134,7 +134,7 @@ f.events.LoadGameViewStateDone();f.capital={8, 9};f.turn=15;f.pulse()
 assert(f.last()[1]==8 and f.last()[2]==9, "a reload forgets remembered activity and looks home")
 
 -- Hysteresis: a slightly hotter place, or a hot plot inside the view, keeps the aim.
-local g=host({CivvisDecides=true}, .4)
+local g=host({CivvisDecides=true}, .8)
 for _=1,2 do g.events.CombatVisBegin({{playerID=0},{playerID=1},x=10,y=30}) end
 g.pulses(5);assert(near(g.last(), 10, 30), "first front aimed")
 local gAims=aims(g)
@@ -149,14 +149,14 @@ for _=1,3 do g.events.CombatVisBegin({{playerID=0},{playerID=1},x=45,y=30}) end
 g.pulses(5);assert(aims(g)==gAims+1, "a hot plot three tiles away is still the same view")
 
 -- Re-aims are spaced: a new front waits out the hold after the last aim.
-local k=host({CivvisDecides=true}, .4)
+local k=host({CivvisDecides=true}, .8)
 k.pulse();assert(near(k.last(), 10, 10), "home first")
 k.events.CombatVisBegin({{playerID=0},{playerID=1},x=40,y=40});k.pulses(2)
 assert(near(k.last(), 10, 10), "no re-aim inside the hold")
 k.pulses(2);assert(near(k.last(), 40, 40), "re-aim once the hold has passed")
 
 -- Memory is bounded.
-local busy=host({CivvisDecides=true}, .4)
+local busy=host({CivvisDecides=true}, .8)
 for i=1,300 do busy.march(0, 7, i % 60, math.floor(i / 60), 1) end
 busy.pulse();assert(#busy.looks==1, "a flood of activity still yields one aim")
 

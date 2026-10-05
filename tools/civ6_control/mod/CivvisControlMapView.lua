@@ -18,7 +18,7 @@
 -- CombatVisBegin/End events the agent's ledger reads still fire.
 CivvisMapView = {};
 local cfg = CivvisControlConfig or {};
-local FOCUS_ZOOM = 0.40;
+local FOCUS_ZOOM = 0.80;  -- operator 2026-10-05: keep the map zoomed out
 -- Native float readback lands just off the requested value.
 local ZOOM_TOLERANCE = 0.05;
 local AREA_RADIUS = 3;      -- plots summed into one area's heat

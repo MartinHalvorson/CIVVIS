@@ -30159,7 +30159,8 @@ const EMPIRE_STRATEGIC_UNITS = new Set(["settler", "aircraft_carrier"]);
 // the neighbourhood of the hottest area's hottest tile. It moves on only when
 // another area is clearly hotter and far enough away to be a different place,
 // at most once per hold: one front at a time, not a camera chasing each unit.
-const ACTIVE_AREA = {radius:3, frame:3, reaimTiles:4, reaimMargin:1.25, holdMs:4000, memoryTurns:4};
+// The frame matches the native Civ VI view held zoomed out (CivvisControlMapView FOCUS_ZOOM 0.80).
+const ACTIVE_AREA = {radius:3, frame:8, reaimTiles:4, reaimMargin:1.25, holdMs:4000, memoryTurns:4};
 let activeAreaTrack = null;
 function activeAreaTally(st, player) {
   const units = new Map(), cities = new Map();
