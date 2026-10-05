@@ -6976,6 +6976,11 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `stalled-peace-spares-the-counter`: the fatigue clause's "the war has
+    /// stalled" peace is not offered to a rival whose victory clock the
+    /// Domination army answers. See `one_war::stalled_peace_spares`. Off by
+    /// default.
+    stalled_peace_spares_the_counter: bool,
     /// `staging-column-passes-through`: a Stage march step that brings a
     /// unit no nearer to the city is taken across the friend in the gap
     /// instead (`Game::pass_through_destination`). The router lets only the
@@ -9178,6 +9183,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            stalled_peace_spares_the_counter: false,
             staging_column_passes_through: false,
             second_front_kept_when_winning: false,
             second_front_kept_when_winning_2: false,
@@ -21415,6 +21421,8 @@ impl AdvancedAi {
                     || (!appointed_objective
                         && fatigued
                         && !one_war_presses
+                        // See `stalled_peace_spares`.
+                        && !self.stalled_peace_spares(g, pid, *other)
                         && g.player_city_ids(*other).len() > 1)
                     // See `peace_when_war_does_not_pay`: the same fatigue
                     // clause, without the appointed-objective exemption that
@@ -21423,6 +21431,7 @@ impl AdvancedAi {
                         && fatigued
                         && !one_war_presses
                         && !air_front
+                        && !self.stalled_peace_spares(g, pid, *other)
                         && g.player_city_ids(*other).len() > 1
                         && (!self.treasury_can_carry_a_war(g, pid)
                             || g.turn.saturating_sub(self.last_campaign_progress)

@@ -2706,6 +2706,11 @@ pub const GENES: &[Gene] = &[
     // the Guayaquil anvil and heal rotations while Lisbon's siege held "for a
     // wall-breaker on its way". See `objective_board::breaker_rows_ask`.
     Gene { tag: "breakers-stay-with-the-siege", field: "breakers_stay_with_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_breakers_stay_with_the_siege, disable: AdvancedAi::disable_breakers_stay_with_the_siege },
+    // Live King civvis-20261005T033442Z (game 96) offered the Khmer, at 70%
+    // of the culture bar, "the war has stalled" peace at turn 207; their
+    // Tourism rose 240 -> 357 in the peace and they won on Culture at 223.
+    // See `one_war::stalled_peace_spares`.
+    Gene { tag: "stalled-peace-spares-the-counter", field: "stalled_peace_spares_the_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_peace_spares_the_counter, disable: AdvancedAi::disable_stalled_peace_spares_the_counter },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

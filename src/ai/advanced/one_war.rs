@@ -1305,6 +1305,26 @@ impl AdvancedAi {
                 || self.diplomatic_contender(g, pid, other))
     }
 
+    /// `stalled-peace-spares-the-counter`: whether the fatigue clause's "the
+    /// war has stalled" peace spares the war on `other`, a rival whose victory
+    /// clock the Domination army answers (`domination_counter_target`) or one
+    /// close to winning (`urgent_victory_threat`). The Recovery clause already
+    /// spares a counter target; the fatigue clause did not. Live King
+    /// civvis-20261005T033442Z (game 96) offered the Khmer this peace at turn
+    /// 207 at 942 power against 555, with their visitors at 98 against the
+    /// largest staycation of 140 (70%; the culture bar is 50). They took it,
+    /// their Tourism rose from 240 to 357 through the open borders and trade
+    /// route the war had closed, the seat declared on them again at 219 to
+    /// close them, and they won on Culture at 223. Across 30 recent losses the
+    /// eventual winner was offered this peace within 25 turns of the end in
+    /// four (G95 the Zulu at 208-222, lost on Diplomacy at 222).
+    pub(crate) fn stalled_peace_spares(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.stalled_peace_spares_the_counter
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && (self.domination_counter_target(g, pid, other)
+                || self.urgent_victory_threat(g, other))
+    }
+
     /// Whether a Domination seat holds `rival`'s original capital while the
     /// city's Loyalty is falling. A peace then hands the capital back: the
     /// war is what finds and takes the cities whose pressure is draining it.

@@ -5531,6 +5531,17 @@ impl AdvancedAi {
         self.breakers_stay_with_the_siege = false;
     }
 
+    /// Opt-in gene `stalled-peace-spares-the-counter`; see
+    /// [`Self::stalled_peace_spares_the_counter`].
+    pub fn enable_stalled_peace_spares_the_counter(&mut self) {
+        self.stalled_peace_spares_the_counter = true;
+    }
+
+    /// The twin of `enable_stalled_peace_spares_the_counter`.
+    pub fn disable_stalled_peace_spares_the_counter(&mut self) {
+        self.stalled_peace_spares_the_counter = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
