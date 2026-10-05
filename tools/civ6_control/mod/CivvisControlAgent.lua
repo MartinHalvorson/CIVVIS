@@ -19934,6 +19934,8 @@ CivvisQueue.onLocalTurnEnd = function()
 		-- consecutive turns show whether the UI clock runs at real time (a
 		-- debug timescale could change that, and every mod timer runs on it).
 		ui_now = CivvisClock.raw(),
+		-- The timescale this turn ran at (the A/B's block tag).
+		scale = CivvisClock.scale,
 		-- Locks still held by a UI context as our turn ends (the AutoClose
 		-- ledger); a normal turn ends with none.
 		held_locks = try(function() return ExposedMembers.CivvisEventLocks.count; end, nil),
@@ -20071,6 +20073,55 @@ CivvisQueue.resetTimescale = function(why)
 	if ran then CivvisClock.setScale(1); end
 	emit("timescale", { phase = "reverted", why = why, ran = ran, result = tostring(result) });
 	return ran;
+end;
+
+-- ★ AN IN-GAME A/B OF TWO TIMESCALES. Across games the turn cost varies more
+-- than 2x does from 3x (G99 at 3x ran turns 1-135 slower than G97 at 2x, on
+-- a busier board), so `DebugTimeScaleAB` ("3,4") alternates the two scales in
+-- blocks of `DebugTimeScaleABTurns` (10) turns inside ONE game, the way the
+-- VSync A/B does; `end_turn_wait.scale` tags every turn with its block's
+-- scale. Each switch is a console command plus a CivvisClock rebase, and it
+-- restarts the clock check's window so no verdict mixes two scales. A switch
+-- the console refuses reverts the timescale (and so ends the A/B).
+CivvisQueue.timescaleBlock = function(turn)
+	local ts, ab = CivvisQueue.timescale, CivvisQueue.timescaleAB;
+	turn = tonumber(turn);
+	if ts == nil or not ts.applied or ts.reverted or ab == nil or turn == nil then return; end
+	local want = ab[(math.floor(turn / ab.turns) % 2) + 1];
+	if want == CivvisClock.scale then return; end
+	local ran = pcall(function() return AutoProfiler.RunCommand("timescale " .. tostring(want)); end);
+	if not ran then CivvisQueue.resetTimescale("ab_switch_failed"); return; end
+	CivvisClock.setScale(want);
+	ts.want, ts.slow_frames = want, 0;
+	ts.applied_ui, ts.ui0, ts.real0 = CivvisClock.raw(), CivvisClock.raw(), CivvisClock.now();
+	ts.wall0 = try(function() return Automation.GetTime(); end, nil);
+	emit("timescale", { phase = "ab_switch", want = want, turn = turn });
+end;
+
+CivvisQueue.startTimescaleAB = function(spec, turns)
+	local a, b = string.match(tostring(spec or ""), "^%s*([%d.]+)%s*,%s*([%d.]+)%s*$");
+	a, b, turns = tonumber(a), tonumber(b), math.floor(tonumber(turns) or 10);
+	if a == nil or b == nil or a <= 1 or b <= 1 or a > 8 or b > 8 or turns < 1 then
+		return false;
+	end
+	CivvisQueue.timescaleAB = { a, b, turns = turns };
+	return CivvisQueue.startTimescale(a);
+end;
+
+-- ★ AFTER THE LOAD, NOT DURING IT. Initialize runs in the middle of Civ VI's
+-- load (G102: agent loaded at +68 s, turn 1 at +81 s), and with `timescale 3`
+-- applied there the load ran ~10 s longer: Start Game -> turn 1 (net log,
+-- "Validating App Game Configuration" -> "InitialTurnProcessing=1") took 24,
+-- 21, 22 and 27 s in the four 3x games G99-G102, against 13-15 s at 1x and 2x
+-- (median 13 s over 45 games). So the scale is applied at the first
+-- LocalPlayerTurnBegin: every turn still runs at it, and the load runs at 1x.
+CivvisQueue.startPendingTimescale = function()
+	if not CivvisQueue.timescalePending then return false; end
+	CivvisQueue.timescalePending = false;
+	if cfg.DebugTimeScaleAB ~= nil then
+		return CivvisQueue.startTimescaleAB(cfg.DebugTimeScaleAB, cfg.DebugTimeScaleABTurns);
+	end
+	return CivvisQueue.startTimescale(cfg.DebugTimeScale);
 end;
 
 CivvisQueue.checkTimescaleClock = function()
@@ -21477,6 +21528,8 @@ end
 
 local function onLocalPlayerTurnBegin()
 	ensureStarted();
+	pcall(CivvisQueue.startPendingTimescale);
+	pcall(CivvisQueue.timescaleBlock, try(function() return Game.GetCurrentGameTurn(); end, nil));
 	CivvisTrade.pollPeace();
 	tick();
 end
@@ -21797,7 +21850,8 @@ function Initialize()
 		autoprofiler = try(function() return type(AutoProfiler); end, "error"),
 		run_command = try(function() return type(AutoProfiler.RunCommand); end, "error"),
 	});
-	pcall(CivvisQueue.startTimescale, cfg.DebugTimeScale);
+	-- The timescale waits for turn 1: see CivvisQueue.startPendingTimescale.
+	CivvisQueue.timescalePending = true;
 	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse); end);
 	pcall(function() LuaEvents.CivvisControlPeek.Add(CivvisQueue.onPeekPulse); end);
 	for name, handler in pairs({
@@ -21815,7 +21869,18 @@ function Initialize()
 		DiplomacyStatement = CivvisOnDiplomacyStatement,
 		DiplomacySessionClosed = CivvisOnDealSessionClosed,
 		EmergencyAvailable = CivvisOnAidEmergencyAvailable,
-		LoadGameViewStateDone = ensureStarted,
+		-- RECORD-ONLY: when the load view finished. Game start is the load
+		-- screen's `OnActivateButtonClicked`, and its StartGame action only
+		-- counts after `OnLoadGameViewStateDone` sets `m_isLoadComplete`
+		-- (Base/Assets/UI/FrontEnd/LoadScreen.lua:93-97, :459). ensureStarted
+		-- dismisses once, as soon as a turn exists; turn 1 then began 1.3-2.5 s
+		-- later in most games but 4.9, 10.0 and 17.1 s in others (G100, G99,
+		-- G93). This row against `actions` (the dismissal) and `seat` (turn 1)
+		-- says whether that wait is the load or a dismissal sent too early.
+		LoadGameViewStateDone = function()
+			emit("load_view_done", { ui_now = CivvisClock.raw() });
+			ensureStarted();
+		end,
 		TeamVictory = onTeamVictory,
 		PlayerDefeat = onPlayerDefeat,
 		-- The tactical ledger: see CivvisLedger.

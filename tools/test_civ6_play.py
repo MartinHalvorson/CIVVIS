@@ -544,6 +544,38 @@ class AttachSummaryTests(unittest.TestCase):
                          {"spaceport_turn": 201, "launches_completed": 2,
                           "last_launch_turn": 219})
 
+    def test_setup_timing_is_inert_until_the_clock_runs(self):
+        calls = []
+        timed = civ6_play._setup_timed("step", lambda x: calls.append(x) or x * 2)
+        civ6_play.SETUP_CLOCK["t0"] = None
+        with patch("builtins.print") as printed:
+            self.assertEqual(timed(3), 6)
+        printed.assert_not_called()
+        with patch("builtins.print") as printed:
+            civ6_play.setup_clock_start()
+            self.assertEqual(timed(4), 8)
+            civ6_play.setup_mark("configured", stop=True)
+            civ6_play.setup_mark("after the stop")
+        lines = [c.args[0] for c in printed.call_args_list]
+        self.assertTrue(lines[0].startswith("[setup-time] start "))
+        self.assertRegex(lines[1], r"^\[setup-time\] step \+\d+\.\d\ds took \d+\.\d\ds$")
+        self.assertRegex(lines[2], r"^\[setup-time\] configured \+\d+\.\d\ds$")
+        self.assertEqual(len(lines), 3)
+        self.assertIsNone(civ6_play.SETUP_CLOCK["t0"])
+        self.assertEqual(calls, [3, 4])
+
+    def test_setup_timing_wraps_the_setup_steps_and_spans_launch_to_configured(self):
+        for name in ("screenshot", "click_at", "focus_game", "_main_menu_point",
+                     "_observed_label_point", "_setup_current_value"):
+            self.assertEqual(getattr(civ6_play, name).__name__, name)
+            self.assertTrue(hasattr(getattr(civ6_play, name), "__wrapped__"))
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertIn("setup_clock_start()\n    game_process = launcher.launch(", source)
+        self.assertIn('setup_mark("menu_reached")', source)
+        self.assertIn('setup_mark("configured", stop=True)', source)
+        self.assertLess(source.index('setup_mark("configured", stop=True)'),
+                        source.index('"in a configured game; the agent holds the seat'))
+
     def test_write_attached_summary_indexes_the_run_after_writing_it(self):
         import civ6_ladder
 
@@ -1090,6 +1122,54 @@ class Civ6PlayTest(unittest.TestCase):
             ],
         )
         sleep.assert_called_once_with(1.0)
+
+    def test_a_deferred_probe_takes_no_capture_when_the_board_arrives(self) -> None:
+        """G102: a 22.6 s capture ran inside a 28 s load, and the agent had
+        already dismissed the load screen (0 card clicks in 92 logs)."""
+        bounds = (864, 33, 864, 542)
+        ready = iter([False, False, True])
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "_leader_intro_visible", return_value=False), \
+             patch.object(civ6_play.time, "sleep"):
+            self.assertFalse(civ6_play.advance_leader_intro(
+                bounds, "LEADER_TRAJAN", Path(temporary), 1, retries=4,
+                board_ready=lambda: next(ready), defer_s=45.0))
+        screenshot.assert_not_called()
+
+    def test_a_deferred_probe_still_probes_when_no_board_arrives(self) -> None:
+        """The safety net for an agent that never loaded."""
+        bounds = (864, 33, 864, 542)
+        clock = [100.0]
+
+        def fake_sleep(seconds):
+            clock[0] += seconds
+
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "_leader_intro_visible", return_value=True), \
+             patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play.time, "monotonic", side_effect=lambda: clock[0]), \
+             patch.object(civ6_play.time, "sleep", side_effect=fake_sleep):
+            self.assertTrue(civ6_play.advance_leader_intro(
+                bounds, "LEADER_TRAJAN", Path(temporary), 1, retries=2,
+                poll_s=2.0, board_ready=lambda: False, defer_s=10.0))
+        self.assertGreaterEqual(clock[0], 110.0, "the deferral was waited out")
+        screenshot.assert_called_once()
+        click.assert_called_once()
+
+    def test_the_leader_intro_defer_arm_is_45_seconds_and_off_by_default(self) -> None:
+        import tempfile as _tempfile
+        with _tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "live-mod-arms.txt"
+            path.write_text("leader-intro-defer\n", encoding="utf-8")
+            args = SimpleNamespace(leader_intro_defer=0.0)
+            self.assertEqual(civ6_play.apply_tree_mod_arms(args, path), ["leader-intro-defer"])
+            self.assertEqual(args.leader_intro_defer, 45.0)
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertIn('defer_s=float(getattr(args, "leader_intro_defer", 0.0) or 0.0))', source)
+        self.assertIn('ap.add_argument("--leader-intro-defer", dest="leader_intro_defer", type=float,\n'
+                      '                    default=0.0,', source)
 
     def test_the_first_board_is_relayed_while_a_capture_is_still_running(self) -> None:
         """G73: the board waited 11.2 s behind two failed captures."""

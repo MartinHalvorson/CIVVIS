@@ -28,6 +28,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import functools
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -480,6 +481,47 @@ LADDER = [
     "DIFFICULTY_IMMORTAL",
     "DIFFICULTY_DEITY",
 ]
+
+
+# ★ RECORD-ONLY SETUP TIMING. A game boundary spends ~21 s between Civ VI's
+# main menu being ready and the Create Game screen (G100: "Set Default Enabled
+# Mods" 21:42:27, create-attempt1.png 21:42:48), and file times cannot say
+# which of it is a settle, an OCR pass, a missed poll or a slow capture. While
+# the clock runs (launch -> "in a configured game"), every capture, click,
+# focus and screen read prints `[setup-time] <step> +<offset>s took <s>`; the
+# gaps between lines are the settles and poll sleeps. Play log only; nothing
+# here changes what setup does.
+SETUP_CLOCK: dict = {"t0": None}
+
+
+def setup_clock_start() -> None:
+    SETUP_CLOCK["t0"] = time.monotonic()
+    print(f"[setup-time] start {utc_stamp()} +0.00s", flush=True)
+
+
+def setup_mark(step: str, *, stop: bool = False) -> None:
+    t0 = SETUP_CLOCK["t0"]
+    if t0 is None:
+        return
+    print(f"[setup-time] {step} +{time.monotonic() - t0:.2f}s", flush=True)
+    if stop:
+        SETUP_CLOCK["t0"] = None
+
+
+def _setup_timed(name: str, fn):
+    """``fn``, printing its offset and duration while the setup clock runs."""
+    @functools.wraps(fn)
+    def timed(*args, **kwargs):
+        t0 = SETUP_CLOCK["t0"]
+        if t0 is None:
+            return fn(*args, **kwargs)
+        start = time.monotonic()
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            print(f"[setup-time] {name} +{start - t0:.2f}s "
+                  f"took {time.monotonic() - start:.2f}s", flush=True)
+    return timed
 
 
 def utc_stamp() -> str:
@@ -954,6 +996,15 @@ def build_config(args: argparse.Namespace) -> dict:
         # mod timer runs on it). Combat visualization, which the game core
         # waits on, was ~10 min of a 262-turn game (G93). Off unless set.
         "DebugTimeScale": getattr(args, "debug_timescale", None),
+        # An in-game A/B of two timescales ("3,4"), alternating every
+        # DebugTimeScaleABTurns turns (10); takes precedence over DebugTimeScale.
+        "DebugTimeScaleAB": getattr(args, "debug_timescale_ab", None),
+        "DebugTimeScaleABTurns": getattr(args, "debug_timescale_ab_turns", None) or 10,
+        # The agent's orders peek interval (CivvisQueue.ordersLanded, the
+        # Heartbeat's peek pulse); nil keeps the mod's 0.05 s. The peek returns
+        # before any query while no board is out (`awaiting.done`), so the AI
+        # phase never sees it.
+        "OrdersPeekSeconds": 0.02 if getattr(args, "poll_20ms", False) else None,
         # ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. A MOVE_TO whose
         # host path outran the turn was queued, and the host walked the unit
         # along it at the start of the next turn before the brain could act. Now
@@ -2195,7 +2246,8 @@ def _leader_intro_button_ocr(path: Path,
 def advance_leader_intro(bounds: tuple[int, int, int, int],
                          leader: str | None, run_dir: Path, attempt: int,
                          *, retries: int = 4, poll_s: float = 1.0,
-                         board_ready=None, relay_s: float | None = None) -> bool:
+                         board_ready=None, relay_s: float | None = None,
+                         defer_s: float = 0.0) -> bool:
     """Click the leader card's Begin Game control after visual confirmation.
 
     ``board_ready`` decides only after the screen has failed the exact intro
@@ -2238,6 +2290,24 @@ def advance_leader_intro(bounds: tuple[int, int, int, int],
         pump = threading.Thread(target=relay, name="intro-relay", daemon=True)
         pump.start()
     try:
+        # ★ DEFERRED (`--leader-intro-defer`, off unless armed): the agent
+        # dismisses the load screen itself -- the card was clicked 0 times in
+        # 92 October play logs -- while these captures run INSIDE Civ VI's
+        # load (G102: one took 22.6 s, and that load took 28 s against
+        # G100's 21 s). So for `defer_s` only drain the log; a live board in
+        # that window proves the intro is gone, exactly as below. Without one
+        # the probe runs as before: the safety net for an agent that never
+        # loaded.
+        if defer_s > 0 and board_ready is not None:
+            deadline = time.monotonic() + defer_s
+            while time.monotonic() < deadline:
+                if ready_now():
+                    print("[setup] live board arrived while the leader-intro probe "
+                          "was deferred; no capture during the load", flush=True)
+                    return False
+                time.sleep(max(0.0, min(poll_s, deadline - time.monotonic())))
+            print(f"[setup] no live board within {defer_s:.0f}s; probing the "
+                  "leader intro", flush=True)
         for retry in range(retries):
             shot = run_dir / f"leader-intro-attempt{attempt}-{retry}.png"
             screenshot(shot)
@@ -3436,7 +3506,8 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         intro_retries = max(4, min(60, int(verify_s / 2)))
         advance_leader_intro(bounds, args.leader, run_dir, attempt,
                              retries=intro_retries, poll_s=2.0,
-                             board_ready=board_is_ready, relay_s=0.05)
+                             board_ready=board_is_ready, relay_s=0.05,
+                             defer_s=float(getattr(args, "leader_intro_defer", 0.0) or 0.0))
         if board_seen["value"]:
             # A direct host transition can open the board without ever drawing
             # the leader card.  Its state has already been relayed above, so do
@@ -4353,6 +4424,8 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "MoveFallback": args.move_fallback,
             "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
             "DebugTimeScale": getattr(args, "debug_timescale", None),
+            "DebugTimeScaleAB": getattr(args, "debug_timescale_ab", None),
+            "OrdersPeekSeconds": 0.02 if getattr(args, "poll_20ms", False) else None,
             "ReplanFrames": getattr(args, "replan_frames", None),
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
@@ -4592,7 +4665,9 @@ def _play(args: argparse.Namespace) -> int:
     if not args.keep_game_options:
         apply_verification_options()
     launcher.clear_run_logs()
+    setup_clock_start()
     game_process = launcher.launch(stdout=run_dir / "stdout.log")
+    setup_mark("launched")
     if not launcher.wait_for_launched_main_menu(game_process, args.startup_timeout):
         stop_brain()
         print("the game did not reach the main menu", file=sys.stderr)
@@ -4606,6 +4681,7 @@ def _play(args: argparse.Namespace) -> int:
     # Establish the requested operator layout before taking any measurements.
     # Menu rows and setup controls are now read from this final geometry.
     place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
+    setup_mark("menu_reached")
     print("main menu reached; the setup context should host the game now")
 
     tail = watch.LogTail()
@@ -5064,6 +5140,7 @@ def _play(args: argparse.Namespace) -> int:
         print("could not load the saved game" if args.load_save else
               "could not start a game from the main menu", file=sys.stderr)
         return 5
+    setup_mark("configured", stop=True)
     print("in a configured game; the agent holds the seat from here")
 
     # Unattended upkeep is optional on a shared desktop. Keep processing
@@ -5140,7 +5217,11 @@ def _play(args: argparse.Namespace) -> int:
     # The board itself is relayed every 50 ms in between (`watch.follow`'s
     # `read_s`): the upkeep above runs `ps` and `ioreg` and the focus keeper,
     # which stretched each 0.25 s pass to 0.32 s of board-to-brain latency.
-    read_s = 0.05 if args.civvis_decides else None
+    # `poll-20ms` (arm): 20 ms here and for the agent's orders peek. G104
+    # (2026-10-05, 699 frames) waited a median 0.095 s between the brain's
+    # orders being ready and the agent applying them -- pure polling, these two
+    # 50 ms waits -- 1.75 min of a 15.9 min game.
+    read_s = (0.02 if getattr(args, "poll_20ms", False) else 0.05) if args.civvis_decides else None
     # ⚠ A STALLED RUN IS DEAD, AND WAITING TEN MINUTES FOR IT COSTS A WHOLE ATTEMPT.
     # Run civvis-20260730T140023Z wedged at turn 87 and burned the full 600 s before the
     # ladder could start the next game. The mod emits at least one event per turn and a
@@ -5382,6 +5463,8 @@ def _play(args: argparse.Namespace) -> int:
             "MoveFallback": args.move_fallback,
             "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
             "DebugTimeScale": getattr(args, "debug_timescale", None),
+            "DebugTimeScaleAB": getattr(args, "debug_timescale_ab", None),
+            "OrdersPeekSeconds": 0.02 if getattr(args, "poll_20ms", False) else None,
             "ReplanFrames": args.replan_frames,
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
@@ -5595,6 +5678,8 @@ TREE_MOD_ARMS_FILE = REPO_ROOT / "deploy" / "live-mod-arms.txt"
 TREE_MOD_ARMS = {
     # #3939: answer a probe-marked stalled MOVE_TO operation at the probe tick.
     "stalled-operation-release": "stalled_operation_release",
+    # Relay reads and the agent's orders peek every 20 ms instead of 50 ms.
+    "poll-20ms": "poll_20ms",
     # The engine's debug timescale (`--debug-timescale N`): an arm can carry a
     # value. G96 ran turns 1-139 at 2 in 8.71 min against 11.59 at 1 on the
     # same genes; 3 and 4 are the next trials. The agent reverts any of them
@@ -5603,6 +5688,12 @@ TREE_MOD_ARMS = {
     "debug-timescale-2": ("debug_timescale", 2.0),
     "debug-timescale-3": ("debug_timescale", 3.0),
     "debug-timescale-4": ("debug_timescale", 4.0),
+    # Hold the leader-intro probe's captures for 45 s while the game loads
+    # (`advance_leader_intro`'s defer_s); probe only if no board arrives.
+    "leader-intro-defer": ("leader_intro_defer", 45.0),
+    # In-game A/Bs of two timescales in 10-turn blocks (one game, same board).
+    "debug-timescale-ab-2-3": ("debug_timescale_ab", "2,3"),
+    "debug-timescale-ab-3-4": ("debug_timescale_ab", "3,4"),
 }
 
 
@@ -5912,6 +6003,19 @@ def main(argv: list[str] | None = None) -> int:
                          "without a step (`stall_probe`) at the probe tick instead of "
                          "waiting out the 30-tick grace: the same `move_noop` answer, "
                          "about 3 s sooner per stalled leg")
+    ap.add_argument("--poll-20ms", dest="poll_20ms", action="store_true",
+                    help="relay the log and peek for landed orders every 20 ms "
+                         "instead of 50 ms (arm `poll-20ms`)")
+    ap.add_argument("--debug-timescale-ab", dest="debug_timescale_ab", default=None,
+                    help="an in-game A/B of two timescales, e.g. '3,4': the agent "
+                         "alternates them every --debug-timescale-ab-turns turns and "
+                         "tags each turn with its scale (end_turn_wait.scale)")
+    ap.add_argument("--debug-timescale-ab-turns", dest="debug_timescale_ab_turns",
+                    type=int, default=None, help="block length of the timescale A/B (10)")
+    ap.add_argument("--leader-intro-defer", dest="leader_intro_defer", type=float,
+                    default=0.0,
+                    help="seconds to wait for a live board before the leader-intro "
+                         "probe takes any capture (0 = probe at once, as before)")
     ap.add_argument("--debug-timescale", dest="debug_timescale", type=float, default=None,
                     help="run the engine console's `timescale N` at game start (via "
                          "AutoProfiler.RunCommand) to shorten the combat visualization "
@@ -6021,6 +6125,21 @@ def main(argv: list[str] | None = None) -> int:
         args.tag = (args.difficulty.replace("DIFFICULTY_", "").lower()
                     + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     return play(args)
+
+
+# The setup clock's instrumented steps (see SETUP_CLOCK): rebound in place,
+# so every caller in this module times them, and inert while the clock is off.
+for _setup_step in ("screenshot", "click_at", "focus_game", "_main_menu_point",
+                    "_observed_label_point", "_intro_screen_visible",
+                    "_setup_current_value", "_leader_intro_visible",
+                    "dismiss_connection_issue", "wait_for_safe_screen_capture",
+                    "place_game"):
+    globals()[_setup_step] = _setup_timed(_setup_step, globals()[_setup_step])
+for _setup_step in ("menu_rows", "submenu_rows"):
+    if hasattr(vision, _setup_step):
+        setattr(vision, _setup_step,
+                _setup_timed("vision." + _setup_step, getattr(vision, _setup_step)))
+del _setup_step
 
 
 if __name__ == "__main__":

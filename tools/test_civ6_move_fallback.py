@@ -198,6 +198,34 @@ class MoveFallbackConfigTests(unittest.TestCase):
             civ6_play.apply_tree_mod_arms(args, path)
             self.assertEqual(args.debug_timescale, 3.0)
 
+    def test_the_timescale_ab_arms_carry_their_pair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "live-mod-arms.txt"
+            for name, pair in (("debug-timescale-ab-2-3", "2,3"), ("debug-timescale-ab-3-4", "3,4")):
+                path.write_text(name + "\n", encoding="utf-8")
+                args = SimpleNamespace(debug_timescale_ab=None)
+                self.assertEqual(civ6_play.apply_tree_mod_arms(args, path), [name])
+                self.assertEqual(args.debug_timescale_ab, pair)
+        self.assertIsNone(self._config()["DebugTimeScaleAB"])
+        self.assertEqual(self._config()["DebugTimeScaleABTurns"], 10)
+        self.assertEqual(self._config(debug_timescale_ab="3,4")["DebugTimeScaleAB"], "3,4")
+        source = pathlib.Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertEqual(source.count('"DebugTimeScaleAB": getattr(args, "debug_timescale_ab", None),'), 3)
+
+    def test_the_poll_20ms_arm_tightens_both_polls(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "live-mod-arms.txt"
+            path.write_text("poll-20ms\n", encoding="utf-8")
+            args = SimpleNamespace(poll_20ms=False)
+            self.assertEqual(civ6_play.apply_tree_mod_arms(args, path), ["poll-20ms"])
+            self.assertTrue(args.poll_20ms)
+        self.assertIsNone(self._config()["OrdersPeekSeconds"])
+        self.assertEqual(self._config(poll_20ms=True)["OrdersPeekSeconds"], 0.02)
+        source = pathlib.Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertIn('read_s = (0.02 if getattr(args, "poll_20ms", False) else 0.05) '
+                      'if args.civvis_decides else None', source)
+        self.assertEqual(source.count('"OrdersPeekSeconds": 0.02 if getattr(args, "poll_20ms", False) else None,'), 3)
+
     def test_main_applies_the_tree_arms_right_after_parsing(self) -> None:
         source = pathlib.Path(civ6_play.__file__).read_text(encoding="utf-8")
         self.assertIn("    args = ap.parse_args(raw_argv)\n    apply_tree_mod_arms(args)\n", source)
