@@ -108,7 +108,7 @@ impl AdvancedAi {
         };
         if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
             think!(self.journal(), Economy, Decision,
-                "{} completes its Theater's culture buildings", g.cities[&cid].name;
+                "{} starts a culture building in its Theater", g.cities[&cid].name;
                 "culture-defense-finishes-theater: one safe idle queue while Culture trails");
         }
     }

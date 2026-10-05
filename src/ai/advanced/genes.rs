@@ -2388,12 +2388,12 @@ pub const GENES: &[Gene] = &[
     // and below. King ladder proxy, 64 paired games: foreign cities held
     // 8 -> 22, alive 49 -> 54, +0.90 pp; Emperor -1.06 pp, so not above King. See `AdvancedAi::phase_specialization_active`.
     Gene { tag: "domination-specializes-earlier", field: "domination_specializes_earlier", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_specializes_earlier, disable: AdvancedAi::disable_domination_specializes_earlier },
-    // ---- append: a-b ------------------------------------------------
-    // ---- append: c-d ------------------------------------------------
     // Live King 2026-10-05T155755Z: five completed Theaters at t190,
     // no Amphitheaters. The delegated military floor never reads the
     // strategic culture-building debt. Complete one safe queue instead.
     Gene { tag: "culture-defense-finishes-theater", field: "culture_defense_finishes_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_defense_finishes_theater, disable: AdvancedAi::disable_culture_defense_finishes_theater },
+    // ---- append: a-b ------------------------------------------------
+    // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
