@@ -2857,7 +2857,7 @@ impl AdvancedAi {
                 // `march-uses-its-moves`: walk as far toward the staging
                 // ring as this turn's movement reaches, to a tile outside the
                 // city's strike that passes the same danger test as the step.
-                if matches!(dry_march, StageMarch::Ordinary) {
+                if self.march_uses_its_moves && matches!(dry_march, StageMarch::Ordinary) {
                     let goals: HashSet<Pos> = g.wdisk(city.pos, STAGING_FAR).into_iter().collect();
                     let outside_and_safe = |g: &Game, pos: Pos, _: &[Pos]| {
                         g.wdist(pos, city.pos) > CITY_STRIKE_RANGE
@@ -2946,13 +2946,66 @@ impl AdvancedAi {
             return acted;
         }
         if distance > CITY_STRIKE_RANGE {
-            if let Some(next) =
-                march_step(g, uid, city.pos, CITY_STRIKE_RANGE).filter(|pos| g.can_move(uid, *pos))
+            let dry = dry_march_step(g, uid, city.pos, CITY_STRIKE_RANGE);
+            if let Some(next) = dry
+                .or_else(|| g.route_step(uid, city.pos, CITY_STRIKE_RANGE))
+                .filter(|pos| g.can_move(uid, *pos))
             {
+                // `siege-members-use-their-moves`: walk as far toward the
+                // ring as this turn's movement reaches, over land and outside
+                // the city's strike; the step into the strike stays the
+                // router's. Not on a dry road round the water.
+                if self.siege_members_use_their_moves && dry.is_none() {
+                    if let Some(acted) =
+                        self.member_walk(g, pid, uid, city, CITY_STRIKE_RANGE, next)
+                    {
+                        return acted;
+                    }
+                }
                 return self.base.tactical_apply_move(g, pid, uid, next);
             }
         }
         self.base.fortify_or_stop(g, pid, uid)
+    }
+
+    /// `siege-members-use-their-moves`: walk an Invest or Reduce member from
+    /// beyond `range` of the city to the tile this turn's movement reaches
+    /// nearest that range, where that beats the router's single `step`, on a
+    /// dry path that stays outside the city's strike. `None` where no such
+    /// walk is taken.
+    fn member_walk(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        city: &CityView,
+        range: i32,
+        step: Pos,
+    ) -> Option<bool> {
+        let goals: HashSet<Pos> = g
+            .wdisk(city.pos, range)
+            .into_iter()
+            .filter(|pos| *pos != city.pos)
+            .collect();
+        let outside = |g: &Game, pos: Pos, path: &[Pos]| {
+            g.wdist(pos, city.pos) > CITY_STRIKE_RANGE
+                && path.iter().all(|tile| {
+                    g.wdist(*tile, city.pos) > CITY_STRIKE_RANGE
+                        && !g.rules.is_water(&g.map.tiles[tile])
+                })
+        };
+        let dest = self.march_destination(g, uid, &goals, step, outside)?;
+        let from = g.units[&uid].pos;
+        let kind = g.units[&uid].kind;
+        if !self.base.path_walk_to(g, pid, uid, dest) {
+            return None;
+        }
+        think!(self.journal(), Military, Detail,
+            "Siege of {}: the {} walks {} tiles toward the ring", g.cities[&city.id].name, kind, g.wdist(from, dest);
+            "its movement reaches {:?}, {} tiles from the city, where the router's single step reached {:?}",
+            dest, g.wdist(dest, city.pos), step;
+            city.pos);
+        Some(true)
     }
 
     /// Invest and Reduce, siege: a killable reliever, else the city — walls
@@ -3007,12 +3060,20 @@ impl AdvancedAi {
         } else {
             StageMarch::Ordinary
         };
-        let next = match dry_march {
-            StageMarch::Ordinary => march_step(g, uid, city.pos, STAGING_FAR),
+        let dry = match dry_march {
+            StageMarch::Ordinary => dry_march_step(g, uid, city.pos, STAGING_FAR),
             StageMarch::Dry { step, .. } => Some(step),
             StageMarch::Hold { .. } => return Some(self.base.fortify_or_stop(g, pid, uid)),
+        };
+        let next = dry
+            .or_else(|| g.route_step(uid, city.pos, STAGING_FAR))
+            .filter(|pos| g.can_move(uid, *pos))?;
+        // `siege-members-use-their-moves`: see `member_walk`.
+        if self.siege_members_use_their_moves && dry.is_none() {
+            if let Some(acted) = self.member_walk(g, pid, uid, city, STAGING_FAR, next) {
+                return Some(acted);
+            }
         }
-        .filter(|pos| g.can_move(uid, *pos))?;
         Some(self.base.tactical_apply_move(g, pid, uid, next))
     }
 

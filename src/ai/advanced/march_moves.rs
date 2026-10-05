@@ -36,8 +36,10 @@ impl AdvancedAi {
     /// The tile this turn's movement reaches nearest `goals` that beats the
     /// router's single `step`: fewer route steps from the goals, or as few
     /// with more movement left. `accept` vets each candidate's destination
-    /// and the path the unit would walk to it, best first. `None` with the
-    /// gene off, and wherever the step is already the best tile.
+    /// and the path the unit would walk to it, best first. `None` wherever
+    /// the step is already the best tile. The callers hold the gene gates:
+    /// `march-uses-its-moves` for the Stage, pre-war and reinforcement
+    /// marches, `siege-members-use-their-moves` for Invest and Reduce.
     pub(super) fn march_destination(
         &self,
         g: &Game,
@@ -46,9 +48,6 @@ impl AdvancedAi {
         step: Pos,
         mut accept: impl FnMut(&Game, Pos, &[Pos]) -> bool,
     ) -> Option<Pos> {
-        if !self.march_uses_its_moves {
-            return None;
-        }
         let (_, reach) = g.march_reach_toward_any(uid, goals)?;
         let (step_steps, step_left) = reach
             .iter()
