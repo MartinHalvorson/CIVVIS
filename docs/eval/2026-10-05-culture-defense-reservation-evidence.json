@@ -11,8 +11,8 @@
     "native_outcome": "lost to Culture at turn 211"
   },
   "rust_ci": {
-    "revision": "9852f561c",
-    "run_url": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/37342881951",
+    "revision": "6fe845703",
+    "run_url": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/37346945898",
     "passed": 4622,
     "skipped": 50,
     "reservation_tests_passed": 7,
@@ -89,9 +89,236 @@
     ]
   },
   "remaining": [
-    "Finish candidate build and compare it with general catch-up.",
-    "Generate actual game firing evidence.",
-    "Compare simulator Domination outcomes and original capital holdings.",
-    "Verify any promising policy in native games before claiming native win-rate improvement."
-  ]
+    "Finish six-game firing screen and analyze actual completed rows.",
+    "Finish simulator outcome probes; judge Domination and original-capital holdings rather than all victory wins.",
+    "Complete local final-revision tests and ship only through green checks.",
+    "Verify promising policies in controlled native games before claiming native win-rate improvement."
+  ],
+  "candidate_replay": {
+    "scope": "Exact 3188e7c07 source archive plus candidate; both arms use one binary and identical complete event histories; only candidate tag differs. Repeated proposals after divergence are not actual completed or interrupted work.",
+    "overlay": {
+      "base_revision": "3188e7c07d098de84d89f7fb233f015157afb69c",
+      "base_archive_sha256": "a26b2f6e2b5765a8aad42b8569f85c18a98a166a12821ff9565e7b6ff680425f",
+      "scope": "Exact live source plus independently switchable Theater building reservation; no game mutations",
+      "module_sha256": "b67b35bd1385ba1d1ca8d50ed68c6f5d804665a5436eeeb4f664de570a34c8f0"
+    },
+    "implementation_note": "Overlay retains implementation revision 9852f561c journal wording; PR source later changes only the journal sentence to say starts rather than completes and fixes formatting/registry append markers.",
+    "replays": [
+      {
+        "run": "civvis-20261005T155755Z",
+        "source_sha256": "fd4d07299b0e34764a484a4aa0e98e86322cf1b38407d9d72ab244aa27dfb42c",
+        "binary_sha256": {
+          "baseline": "69856050ba6df9d321b877328c221d09bc051dd848b6fdb7d29fc5149c652eba",
+          "candidate": "69856050ba6df9d321b877328c221d09bc051dd848b6fdb7d29fc5149c652eba"
+        },
+        "force_file_sha256": "ec542ddf5e2d9c55d1a067c4f4de869e0404770c790ecec3f944900cfaf6e7c5",
+        "frames": 594,
+        "changed_order_frames": 194,
+        "changed_native_action_frames": 303,
+        "returncodes": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "only_enabled_tag": [
+          "culture-defense-finishes-theater"
+        ],
+        "removed_tags": [],
+        "theater_proposal_frames": 52,
+        "unique_cities": 5,
+        "first_theater_proposal": {
+          "turn": 98,
+          "frame": 0,
+          "city_id": 196610,
+          "city": "Caracas",
+          "kind": "produce",
+          "verb": "BUILDING_AMPHITHEATER",
+          "observed_queue": null,
+          "observed_buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_WALLS"
+          ]
+        },
+        "observed_idle_queue_theater_proposals": 23
+      },
+      {
+        "run": "civvis-20261005T150407Z",
+        "source_sha256": "6e0b250282f79bb015dca5e61e28adf53784ab2412ee290eb09f938d624ca3ae",
+        "binary_sha256": {
+          "baseline": "69856050ba6df9d321b877328c221d09bc051dd848b6fdb7d29fc5149c652eba",
+          "candidate": "69856050ba6df9d321b877328c221d09bc051dd848b6fdb7d29fc5149c652eba"
+        },
+        "force_file_sha256": "1ca7595969c74d3841b9189b3071c882b347c2d0048a8114adc61410ec34f04e",
+        "frames": 703,
+        "changed_order_frames": 204,
+        "changed_native_action_frames": 352,
+        "returncodes": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "only_enabled_tag": [
+          "culture-defense-finishes-theater"
+        ],
+        "removed_tags": [],
+        "theater_proposal_frames": 70,
+        "unique_cities": 7,
+        "first_theater_proposal": {
+          "turn": 76,
+          "frame": 0,
+          "city_id": 262147,
+          "city": "Caracas",
+          "kind": "produce",
+          "verb": "BUILDING_AMPHITHEATER",
+          "observed_queue": null,
+          "observed_buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_GRANARY"
+          ]
+        },
+        "observed_idle_queue_theater_proposals": 34
+      }
+    ]
+  },
+  "same_binary_alternative": {
+    "tag": "culture-building-catchup-3",
+    "scope": "Generic option uses the exact candidate overlay binary, baseline forces and full event histories. Comparison removes the original snapshot-binary confound. Proposals establish reach, not counterfactual outcomes.",
+    "replays": [
+      {
+        "run": "civvis-20261005T155755Z",
+        "source_sha256": "fd4d07299b0e34764a484a4aa0e98e86322cf1b38407d9d72ab244aa27dfb42c",
+        "binary_sha256": {
+          "baseline": "69856050ba6df9d321b877328c221d09bc051dd848b6fdb7d29fc5149c652eba",
+          "candidate": "69856050ba6df9d321b877328c221d09bc051dd848b6fdb7d29fc5149c652eba"
+        },
+        "force_file_sha256": "ec542ddf5e2d9c55d1a067c4f4de869e0404770c790ecec3f944900cfaf6e7c5",
+        "frames": 594,
+        "changed_order_frames": 202,
+        "changed_native_action_frames": 314,
+        "returncodes": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "only_enabled_tag": [
+          "culture-building-catchup-3"
+        ],
+        "removed_tags": [],
+        "theater_proposal_frames": 52,
+        "unique_cities": 6,
+        "first_theater_proposal": {
+          "turn": 98,
+          "frame": 0,
+          "city_id": 196610,
+          "city": "Caracas",
+          "kind": "produce",
+          "verb": "BUILDING_AMPHITHEATER",
+          "observed_queue": null,
+          "observed_buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_WALLS"
+          ]
+        },
+        "observed_idle_queue_theater_proposals": 24
+      },
+      {
+        "run": "civvis-20261005T150407Z",
+        "source_sha256": "6e0b250282f79bb015dca5e61e28adf53784ab2412ee290eb09f938d624ca3ae",
+        "binary_sha256": {
+          "baseline": "69856050ba6df9d321b877328c221d09bc051dd848b6fdb7d29fc5149c652eba",
+          "candidate": "69856050ba6df9d321b877328c221d09bc051dd848b6fdb7d29fc5149c652eba"
+        },
+        "force_file_sha256": "1ca7595969c74d3841b9189b3071c882b347c2d0048a8114adc61410ec34f04e",
+        "frames": 703,
+        "changed_order_frames": 171,
+        "changed_native_action_frames": 294,
+        "returncodes": {
+          "baseline": 0,
+          "candidate": 0
+        },
+        "only_enabled_tag": [
+          "culture-building-catchup-3"
+        ],
+        "removed_tags": [],
+        "theater_proposal_frames": 51,
+        "unique_cities": 6,
+        "first_theater_proposal": {
+          "turn": 76,
+          "frame": 0,
+          "city_id": 262147,
+          "city": "Caracas",
+          "kind": "produce",
+          "verb": "BUILDING_AMPHITHEATER",
+          "observed_queue": null,
+          "observed_buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_GRANARY"
+          ]
+        },
+        "observed_idle_queue_theater_proposals": 27
+      }
+    ]
+  },
+  "pending_simulator_experiments": {
+    "candidate": {
+      "games": 16,
+      "start_seed": 100510000,
+      "profile": "4p Gran Colombia, King players and barbarians, 60x38 Pangaea, 6CS, Online, all victory conditions",
+      "engine_base": "3188e7c07",
+      "scope": "Paired simulator Domination and original-capital outcomes, not native Civilization VI wins"
+    },
+    "alternative": {
+      "games": 8,
+      "start_seed": 100510100,
+      "profile": "Same fixed King Domination pair profile",
+      "engine_base": "3188e7c07",
+      "scope": "Exploratory simulator comparison; seed blocks differ, so do not treat as direct head-to-head"
+    },
+    "firing": {
+      "scope": "Firing screen only; no win-rate, promotion, or native claim",
+      "created_utc": "2026-10-05T17:25:40.859962+00:00",
+      "games": 6,
+      "target_games": 6,
+      "jobs": 2,
+      "start_seed": 100510200,
+      "difficulty": "king",
+      "profile": "Default 6p 74x46 continents 9CS Online 250-turn all lanes and randomized civs",
+      "genes": [
+        "culture-defense-finishes-theater"
+      ],
+      "p_on": 0.5,
+      "command": [
+        "candidate-harness/gene_screen",
+        "--games",
+        "6",
+        "--target-games",
+        "6",
+        "--jobs",
+        "2",
+        "--difficulty",
+        "king",
+        "--genes",
+        "culture-defense-finishes-theater",
+        "--p-on",
+        "0.5",
+        "--start-seed",
+        "100510200",
+        "--out",
+        "candidate-harness/firing-screen.jsonl"
+      ],
+      "build_stamp": "Archive overlay cannot honestly claim a clean commit; retain unstamped probe and full overlay/source/binary hashes",
+      "observed_profile_readback": {
+        "major_difficulty": "king",
+        "barbarian_difficulty": "deity",
+        "native_competitions": true,
+        "players": 6,
+        "width": 74,
+        "height": 46,
+        "map": "continents",
+        "city_states": 9,
+        "games": 6,
+        "measured_seats": 36,
+        "jobs": 2,
+        "screened_genes": 1
+      },
+      "actual_binary_sha256": "76fdac1079ac4842ee5a714f1536a413165b788385cdb4054ebeeb680bfcded1"
+    }
+  }
 }
