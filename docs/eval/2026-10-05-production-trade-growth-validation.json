@@ -1,0 +1,16 @@
+{
+  "at": "2026-10-05T01:20:42.452859+00:00",
+  "final_native_equals_main": "a640e8737ee8765095e6bb8e817244930b787e2f",
+  "compared_paths": [
+    "src",
+    "Cargo.toml",
+    "Cargo.lock",
+    "data"
+  ],
+  "standalone_rustfmt": "passed",
+  "frozen_optimized_probe_compile": "passed",
+  "eight_complete_controls_byte_equivalent": true,
+  "new_full_Cargo_invocation": "Not applicable: no native/Cargo/data changes; standalone historical probe compiles against its pinned optimized library",
+  "fresh_samples_played": 0,
+  "actual_Firaxis_verification": false
+}

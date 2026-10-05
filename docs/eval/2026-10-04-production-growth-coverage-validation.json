@@ -1,0 +1,49 @@
+{
+  "prototype_checkpoint": "ab5066a9f",
+  "full_locked_suite": {
+    "command": "cargo test --profile ci --locked",
+    "passed": 4556,
+    "ignored": 54,
+    "exit_code": 0,
+    "includes_actual_city_production_assertion": true
+  },
+  "initial_focused_tests": {
+    "passed": 4,
+    "failed": 0
+  },
+  "quality_checkpoint": "12c38a53f",
+  "logs_sha256": {
+    "civvis-production-growth-coverage-full-tests.txt": "24861680237ba117c93ec94912fde3c47c9e6040c0e73fe7c1d243ffce2fdb20",
+    "civvis-production-growth-coverage-quality.txt": "179a6b0777c286c94056756008d84d97c6b8de261870f7d03ae03ea26a9237a4",
+    "civvis-production-growth-coverage-focused-tests-3.txt": "efac0d6b53286e7be8fee0cb47ec33b4d53fbd4c9945ac3240beb91d4905b561",
+    "civvis-production-growth-coverage-final-tests-retry.txt": "a088543b48b1551eaf57bd1c89581e9b0b20e5931b2c7364c143470f0fdef00f",
+    "civvis-production-growth-coverage-final-quality.txt": "f4c87427adf8791eedb5b36fae0196c496cd1e1628f8aafd9b1212a059e9eb95"
+  },
+  "durable_logs": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/coverage/validation",
+  "final_tree_validation": {
+    "command": "cargo test --profile ci --locked -- --test-threads=4",
+    "exit_code": 0,
+    "passed": 4563,
+    "failed": 0,
+    "ignored": 54,
+    "quality_command": "python3 tools/rust_quality.py --base origin/main --head HEAD",
+    "quality_exit_code": 0,
+    "tested_checkpoint": "ab5b27cb3341544a1b400be8b9b45f3135f99199",
+    "integrated_main": "3e5c9f32a70de8b0e1e277c461c169e193c4093f",
+    "source_and_dependency_diff_to_main": [],
+    "completed_at": "2026-10-04T15:48:36.801167+00:00"
+  },
+  "first_integrated_attempt": {
+    "command": "cargo test --profile ci --locked",
+    "exit_code": 101,
+    "library_passed": 4309,
+    "library_failed": 2,
+    "library_ignored": 50,
+    "failures": [
+      "server::tests::an_arriving_page_is_not_held_up_by_another_viewers_paint",
+      "server::tests::two_viewers_each_see_every_turn"
+    ],
+    "observed_failures": "First-frame latency 303.257542 ms exceeded 250 ms; slow viewer saw [1,2,3] within the two-second window instead of at least four turns.",
+    "log_sha256": "1e17db5878ee4cdfbcf1dbff367d4fd544a13e39c29c917f6e4971bf87eb790c"
+  }
+}

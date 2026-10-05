@@ -1,0 +1,735 @@
+{
+  "scope": "Consumed-seed diagnostic calls, not fresh strength samples; affordability alone does not establish eligibility, effective city production, safety or completed work.",
+  "records": {
+    "emperor": [
+      {
+        "seed": 61006800,
+        "city_calls": 403,
+        "productive_calls": 42,
+        "affordable_productive_calls": []
+      },
+      {
+        "seed": 61006801,
+        "city_calls": 369,
+        "productive_calls": 7,
+        "affordable_productive_calls": [
+          {
+            "seed": 61006801,
+            "turn": 69,
+            "city": 153,
+            "bank": 335.7,
+            "reserve": 120.0,
+            "income": 89.6,
+            "quote": 164.0,
+            "blocked": false,
+            "counted_builders": 4,
+            "queued_builders": 0,
+            "productive_work": [
+              [
+                [
+                  5,
+                  25
+                ],
+                2.0
+              ],
+              [
+                [
+                  5,
+                  26
+                ],
+                2.0
+              ]
+            ],
+            "field_builders": [
+              [
+                268,
+                [
+                  4,
+                  27
+                ],
+                3
+              ],
+              [
+                351,
+                [
+                  5,
+                  19
+                ],
+                2
+              ],
+              [
+                357,
+                [
+                  3,
+                  25
+                ],
+                2
+              ],
+              [
+                370,
+                [
+                  6,
+                  24
+                ],
+                2
+              ]
+            ],
+            "raw_gain": 4.0,
+            "affordable": true
+          },
+          {
+            "seed": 61006801,
+            "turn": 71,
+            "city": 153,
+            "bank": 314.9,
+            "reserve": 120.0,
+            "income": 93.6,
+            "quote": 164.0,
+            "blocked": false,
+            "counted_builders": 5,
+            "queued_builders": 1,
+            "productive_work": [
+              [
+                [
+                  5,
+                  25
+                ],
+                2.0
+              ],
+              [
+                [
+                  5,
+                  26
+                ],
+                2.0
+              ]
+            ],
+            "field_builders": [
+              [
+                268,
+                [
+                  3,
+                  27
+                ],
+                2
+              ],
+              [
+                351,
+                [
+                  7,
+                  19
+                ],
+                2
+              ],
+              [
+                357,
+                [
+                  5,
+                  25
+                ],
+                2
+              ],
+              [
+                370,
+                [
+                  6,
+                  27
+                ],
+                2
+              ]
+            ],
+            "raw_gain": 4.0,
+            "affordable": true
+          }
+        ]
+      }
+    ],
+    "deity": [
+      {
+        "seed": 61006900,
+        "city_calls": 158,
+        "productive_calls": 0,
+        "affordable_productive_calls": []
+      },
+      {
+        "seed": 61006901,
+        "city_calls": 370,
+        "productive_calls": 78,
+        "affordable_productive_calls": [
+          {
+            "seed": 61006901,
+            "turn": 74,
+            "city": 192,
+            "bank": 256.8,
+            "reserve": 120.0,
+            "income": 33.7,
+            "quote": 116.0,
+            "blocked": false,
+            "counted_builders": 1,
+            "queued_builders": 0,
+            "productive_work": [
+              [
+                [
+                  38,
+                  18
+                ],
+                1.0
+              ],
+              [
+                [
+                  38,
+                  19
+                ],
+                2.0
+              ],
+              [
+                [
+                  39,
+                  18
+                ],
+                2.0
+              ]
+            ],
+            "field_builders": [
+              [
+                256,
+                [
+                  42,
+                  14
+                ],
+                1
+              ]
+            ],
+            "raw_gain": 5.0,
+            "affordable": true
+          },
+          {
+            "seed": 61006901,
+            "turn": 74,
+            "city": 247,
+            "bank": 256.8,
+            "reserve": 120.0,
+            "income": 33.7,
+            "quote": 116.0,
+            "blocked": false,
+            "counted_builders": 1,
+            "queued_builders": 0,
+            "productive_work": [
+              [
+                [
+                  40,
+                  18
+                ],
+                1.0
+              ],
+              [
+                [
+                  41,
+                  17
+                ],
+                2.0
+              ],
+              [
+                [
+                  41,
+                  18
+                ],
+                1.0
+              ],
+              [
+                [
+                  43,
+                  15
+                ],
+                2.0
+              ],
+              [
+                [
+                  44,
+                  16
+                ],
+                1.0
+              ]
+            ],
+            "field_builders": [
+              [
+                256,
+                [
+                  42,
+                  14
+                ],
+                1
+              ]
+            ],
+            "raw_gain": 7.0,
+            "affordable": true
+          },
+          {
+            "seed": 61006901,
+            "turn": 77,
+            "city": 192,
+            "bank": 238.0,
+            "reserve": 120.0,
+            "income": 33.8,
+            "quote": 116.0,
+            "blocked": false,
+            "counted_builders": 1,
+            "queued_builders": 0,
+            "productive_work": [
+              [
+                [
+                  38,
+                  18
+                ],
+                1.0
+              ],
+              [
+                [
+                  38,
+                  19
+                ],
+                2.0
+              ],
+              [
+                [
+                  39,
+                  18
+                ],
+                2.0
+              ]
+            ],
+            "field_builders": [
+              [
+                256,
+                [
+                  41,
+                  15
+                ],
+                1
+              ]
+            ],
+            "raw_gain": 5.0,
+            "affordable": true
+          },
+          {
+            "seed": 61006901,
+            "turn": 77,
+            "city": 247,
+            "bank": 238.0,
+            "reserve": 120.0,
+            "income": 33.8,
+            "quote": 116.0,
+            "blocked": false,
+            "counted_builders": 1,
+            "queued_builders": 0,
+            "productive_work": [
+              [
+                [
+                  40,
+                  18
+                ],
+                1.0
+              ],
+              [
+                [
+                  41,
+                  18
+                ],
+                1.0
+              ],
+              [
+                [
+                  43,
+                  15
+                ],
+                2.0
+              ],
+              [
+                [
+                  43,
+                  17
+                ],
+                1.0
+              ],
+              [
+                [
+                  44,
+                  16
+                ],
+                1.0
+              ]
+            ],
+            "field_builders": [
+              [
+                256,
+                [
+                  41,
+                  15
+                ],
+                1
+              ]
+            ],
+            "raw_gain": 6.0,
+            "affordable": true
+          },
+          {
+            "seed": 61006901,
+            "turn": 78,
+            "city": 192,
+            "bank": 271.8,
+            "reserve": 120.0,
+            "income": 33.8,
+            "quote": 116.0,
+            "blocked": false,
+            "counted_builders": 1,
+            "queued_builders": 0,
+            "productive_work": [
+              [
+                [
+                  38,
+                  18
+                ],
+                1.0
+              ],
+              [
+                [
+                  39,
+                  16
+                ],
+                2.0
+              ],
+              [
+                [
+                  39,
+                  18
+                ],
+                2.0
+              ]
+            ],
+            "field_builders": [
+              [
+                256,
+                [
+                  42,
+                  14
+                ],
+                1
+              ]
+            ],
+            "raw_gain": 5.0,
+            "affordable": true
+          },
+          {
+            "seed": 61006901,
+            "turn": 78,
+            "city": 247,
+            "bank": 271.8,
+            "reserve": 120.0,
+            "income": 33.8,
+            "quote": 116.0,
+            "blocked": false,
+            "counted_builders": 1,
+            "queued_builders": 0,
+            "productive_work": [
+              [
+                [
+                  40,
+                  18
+                ],
+                1.0
+              ],
+              [
+                [
+                  41,
+                  18
+                ],
+                1.0
+              ],
+              [
+                [
+                  43,
+                  15
+                ],
+                2.0
+              ],
+              [
+                [
+                  43,
+                  17
+                ],
+                1.0
+              ],
+              [
+                [
+                  44,
+                  16
+                ],
+                1.0
+              ]
+            ],
+            "field_builders": [
+              [
+                256,
+                [
+                  42,
+                  14
+                ],
+                1
+              ]
+            ],
+            "raw_gain": 6.0,
+            "affordable": true
+          },
+          {
+            "seed": 61006901,
+            "turn": 87,
+            "city": 192,
+            "bank": 263.2,
+            "reserve": 120.0,
+            "income": 31.8,
+            "quote": 116.0,
+            "blocked": false,
+            "counted_builders": 1,
+            "queued_builders": 1,
+            "productive_work": [
+              [
+                [
+                  39,
+                  16
+                ],
+                2.0
+              ],
+              [
+                [
+                  39,
+                  18
+                ],
+                2.0
+              ]
+            ],
+            "field_builders": [],
+            "raw_gain": 4.0,
+            "affordable": true
+          },
+          {
+            "seed": 61006901,
+            "turn": 87,
+            "city": 247,
+            "bank": 263.2,
+            "reserve": 120.0,
+            "income": 31.8,
+            "quote": 116.0,
+            "blocked": false,
+            "counted_builders": 1,
+            "queued_builders": 1,
+            "productive_work": [
+              [
+                [
+                  40,
+                  18
+                ],
+                2.0
+              ],
+              [
+                [
+                  41,
+                  18
+                ],
+                1.0
+              ],
+              [
+                [
+                  43,
+                  15
+                ],
+                2.0
+              ],
+              [
+                [
+                  43,
+                  17
+                ],
+                2.0
+              ],
+              [
+                [
+                  44,
+                  16
+                ],
+                2.0
+              ]
+            ],
+            "field_builders": [],
+            "raw_gain": 9.0,
+            "affordable": true
+          },
+          {
+            "seed": 61006901,
+            "turn": 92,
+            "city": 75,
+            "bank": 252.9,
+            "reserve": 120.0,
+            "income": 32.7,
+            "quote": 132.0,
+            "blocked": false,
+            "counted_builders": 3,
+            "queued_builders": 1,
+            "productive_work": [
+              [
+                [
+                  32,
+                  21
+                ],
+                2.0
+              ],
+              [
+                [
+                  34,
+                  17
+                ],
+                2.0
+              ]
+            ],
+            "field_builders": [
+              [
+                554,
+                [
+                  35,
+                  18
+                ],
+                2
+              ],
+              [
+                561,
+                [
+                  31,
+                  18
+                ],
+                2
+              ]
+            ],
+            "raw_gain": 4.0,
+            "affordable": true
+          },
+          {
+            "seed": 61006901,
+            "turn": 92,
+            "city": 192,
+            "bank": 252.9,
+            "reserve": 120.0,
+            "income": 32.7,
+            "quote": 132.0,
+            "blocked": false,
+            "counted_builders": 3,
+            "queued_builders": 1,
+            "productive_work": [
+              [
+                [
+                  39,
+                  16
+                ],
+                2.0
+              ],
+              [
+                [
+                  39,
+                  18
+                ],
+                2.0
+              ]
+            ],
+            "field_builders": [
+              [
+                554,
+                [
+                  35,
+                  18
+                ],
+                2
+              ],
+              [
+                561,
+                [
+                  31,
+                  18
+                ],
+                2
+              ]
+            ],
+            "raw_gain": 4.0,
+            "affordable": true
+          },
+          {
+            "seed": 61006901,
+            "turn": 92,
+            "city": 247,
+            "bank": 252.9,
+            "reserve": 120.0,
+            "income": 32.7,
+            "quote": 132.0,
+            "blocked": false,
+            "counted_builders": 3,
+            "queued_builders": 1,
+            "productive_work": [
+              [
+                [
+                  40,
+                  18
+                ],
+                2.0
+              ],
+              [
+                [
+                  41,
+                  18
+                ],
+                1.0
+              ],
+              [
+                [
+                  43,
+                  15
+                ],
+                2.0
+              ],
+              [
+                [
+                  43,
+                  17
+                ],
+                2.0
+              ],
+              [
+                [
+                  44,
+                  16
+                ],
+                2.0
+              ]
+            ],
+            "field_builders": [
+              [
+                554,
+                [
+                  35,
+                  18
+                ],
+                2
+              ],
+              [
+                561,
+                [
+                  31,
+                  18
+                ],
+                2
+              ]
+            ],
+            "raw_gain": 9.0,
+            "affordable": true
+          }
+        ]
+      }
+    ]
+  }
+}

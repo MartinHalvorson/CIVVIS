@@ -1,0 +1,81 @@
+{
+  "frozen_at": "2026-10-04T21:39:48.392453+00:00",
+  "candidate_source": "3e4b82b2a0c5ee1515c3e47f127a00d81ea53664",
+  "treatment": "Only accepted higher-level replacement Builder reservations survive routine production rescoring through their starting turn, including repeated observed frames. Legal continuation and siege/insolvency priorities remain required. No workforce quota, civilian safety or AI weight change.",
+  "configuration": "Public targeted Domination enable_live_bridge(), fixed stock adaptive rivals; native simulation; 4 players, 60x38 Pangaea, Online, 150-turn clock, Gran Colombia focal, randomized stock rivals, focal handicap-exempt",
+  "baseline": "Frozen #3932 repaired native executor candidate library. Both arms must include that executor repair; no two-change comparison.",
+  "consumed_diagnostics": {
+    "deity": [
+      61007901,
+      61007903
+    ]
+  },
+  "fresh_pilot": {
+    "emperor": [
+      61008200,
+      61008201,
+      61008202,
+      61008203
+    ],
+    "deity": [
+      61008300,
+      61008301,
+      61008302,
+      61008303
+    ]
+  },
+  "unused_confirmation": {
+    "emperor": [
+      61008400,
+      61008401,
+      61008402,
+      61008403,
+      61008404,
+      61008405,
+      61008406,
+      61008407,
+      61008408,
+      61008409,
+      61008410,
+      61008411,
+      61008412,
+      61008413,
+      61008414,
+      61008415
+    ],
+    "deity": [
+      61008500,
+      61008501,
+      61008502,
+      61008503,
+      61008504,
+      61008505,
+      61008506,
+      61008507,
+      61008508,
+      61008509,
+      61008510,
+      61008511,
+      61008512,
+      61008513,
+      61008514,
+      61008515
+    ]
+  },
+  "primary_metric": "Mean paired focal T75 Production, separate Emperor and Deity; dead or ended-before-T75 zero",
+  "secondary_metrics": [
+    "Cumulative focal Production through T75",
+    "T50 and T100 focal Production",
+    "T75 focal/highest-rival Production ratio",
+    "T75 science and military power",
+    "Cities and population at T75",
+    "Survival at T75 and game end",
+    "Actual Builder queues, completions and productive improvements",
+    "Winner"
+  ],
+  "pilot_gate": "Mean T75 Production positive at both difficulties, T75 survival not lower at either difficulty, and T75 mean science no more than 10% lower at either difficulty. Otherwise keep confirmation unplayed, report every assigned pilot, and investigate rather than claim a production gain.",
+  "confirmation_gate": "Independent confirmation mean paired T75 Production at least 5% higher at both difficulties, T75 survival not lower at either difficulty, and T75 science no more than 10% lower. Report paired confidence intervals and sample limits; do not claim Firaxis parity from native play.",
+  "sampling_rule": "Freeze exact paired binaries, dependency hashes and commands before any treatment/strength run. Complete and report every assigned pair including terminal errors. Consumed diagnostics are excluded from fresh strength. Do not pool pilot with confirmation.",
+  "fresh_strength_samples_played_at_freeze": 0,
+  "actual_Firaxis_verification": false
+}

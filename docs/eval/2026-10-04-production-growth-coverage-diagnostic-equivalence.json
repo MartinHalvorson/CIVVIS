@@ -1,0 +1,55 @@
+{
+  "games_per_arm": 4,
+  "initial_pass_games": 8,
+  "action_log_verification_pass_games": 8,
+  "fresh_strength_samples": 0,
+  "records": [
+    {
+      "difficulty": "emperor",
+      "seed": 61006800,
+      "identical_executed_actions": 22076,
+      "actions_sha256": "218e310cc61e3c1b8e6bdcc8c5b44c80594c0aed122de7c48d4240ce3b9685ed",
+      "serialized_world_equal": true
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61006801,
+      "identical_executed_actions": 29388,
+      "actions_sha256": "3ef52f2dadd56a3d539b94ce7c0f7c1a57fea0f54c03ed466165fd10b30ddbdc",
+      "serialized_world_equal": true
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61006900,
+      "identical_executed_actions": 34519,
+      "actions_sha256": "e111bd2f080a01fe541d87c35da29905d45ccabe51cebba710ef6583dbbf06cb",
+      "serialized_world_equal": true
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61006901,
+      "identical_executed_actions": 34994,
+      "actions_sha256": "e5c4d44bd914cc8ecb4cf315aa5c2a6b73635da5842cecf34dd3f1b8ec1d95df",
+      "serialized_world_equal": true
+    }
+  ],
+  "durable_raw_evidence": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/coverage/diagnostic",
+  "raw_sha256": {
+    "civvis-production-growth-coverage-deity-61006900-control-actions.json": "e111bd2f080a01fe541d87c35da29905d45ccabe51cebba710ef6583dbbf06cb",
+    "civvis-production-growth-coverage-deity-61006900-control-final.json": "397946ee7e4386d110143329751e119dfba738ef756094523f3e829159416704",
+    "civvis-production-growth-coverage-deity-61006900-diagnostic-actions.json": "e111bd2f080a01fe541d87c35da29905d45ccabe51cebba710ef6583dbbf06cb",
+    "civvis-production-growth-coverage-deity-61006900-diagnostic-final.json": "397946ee7e4386d110143329751e119dfba738ef756094523f3e829159416704",
+    "civvis-production-growth-coverage-deity-61006901-control-actions.json": "e5c4d44bd914cc8ecb4cf315aa5c2a6b73635da5842cecf34dd3f1b8ec1d95df",
+    "civvis-production-growth-coverage-deity-61006901-control-final.json": "b1720866e164aa50812acc063a1400ede6a404e74bd9bbdb0a0c6bae6a9ee246",
+    "civvis-production-growth-coverage-deity-61006901-diagnostic-actions.json": "e5c4d44bd914cc8ecb4cf315aa5c2a6b73635da5842cecf34dd3f1b8ec1d95df",
+    "civvis-production-growth-coverage-deity-61006901-diagnostic-final.json": "b1720866e164aa50812acc063a1400ede6a404e74bd9bbdb0a0c6bae6a9ee246",
+    "civvis-production-growth-coverage-emperor-61006800-control-actions.json": "218e310cc61e3c1b8e6bdcc8c5b44c80594c0aed122de7c48d4240ce3b9685ed",
+    "civvis-production-growth-coverage-emperor-61006800-control-final.json": "1e49e694fa168b46362e064e8b82af8bf09c1357a279d9b8a1ed0b529836e072",
+    "civvis-production-growth-coverage-emperor-61006800-diagnostic-actions.json": "218e310cc61e3c1b8e6bdcc8c5b44c80594c0aed122de7c48d4240ce3b9685ed",
+    "civvis-production-growth-coverage-emperor-61006800-diagnostic-final.json": "1e49e694fa168b46362e064e8b82af8bf09c1357a279d9b8a1ed0b529836e072",
+    "civvis-production-growth-coverage-emperor-61006801-control-actions.json": "3ef52f2dadd56a3d539b94ce7c0f7c1a57fea0f54c03ed466165fd10b30ddbdc",
+    "civvis-production-growth-coverage-emperor-61006801-control-final.json": "9b69763e52d7911d62ecce76d9a61ca69efa797244b9d96b352197890bef3931",
+    "civvis-production-growth-coverage-emperor-61006801-diagnostic-actions.json": "3ef52f2dadd56a3d539b94ce7c0f7c1a57fea0f54c03ed466165fd10b30ddbdc",
+    "civvis-production-growth-coverage-emperor-61006801-diagnostic-final.json": "9b69763e52d7911d62ecce76d9a61ca69efa797244b9d96b352197890bef3931"
+  }
+}

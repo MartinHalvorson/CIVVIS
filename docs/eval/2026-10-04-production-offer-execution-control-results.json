@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-10-04T20:16:18.941822+00:00",
+  "seed": 61007101,
+  "terminal_exit_code": 0,
+  "fresh_strength_samples": 0,
+  "actual_Firaxis_verification": false,
+  "raw_sha256": {
+    "civvis-production-offer-execution-deity-61007101-control-actions.json": "96796d0d483e1e11a4a75fca58eb465024b914445b12cf957a310c325974c7a1",
+    "civvis-production-offer-execution-deity-61007101-control-cities.jsonl": "05fbf56214a7e445caee2a0d77950b61958565bc6ffc0edd521cf23d5b6afbda",
+    "civvis-production-offer-execution-deity-61007101-control-setup.json": "9ec736f845c2db9ced170c1c88a935f9d3ef432a9d5d87dc4830a0937da6541e",
+    "civvis-production-offer-execution-deity-61007101-control-final.json": "395d697c4f8b9a1070df296b95a57ca083eea7893a6b0b3c8282535aa97f1fef"
+  },
+  "actions.json_byte_equals_consumed_control": true,
+  "final.json_byte_equals_consumed_control": true,
+  "action_count": 34454,
+  "csv_equals_routing_trace": true
+}

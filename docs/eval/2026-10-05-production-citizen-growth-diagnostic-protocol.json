@@ -1,0 +1,24 @@
+{
+  "frozen_at": "2026-10-04T23:36:09.280361+00:00",
+  "source": "6d769391da7a17891c295761c13e7cc3dcec997d",
+  "purpose": "Consumed native city-growth coverage diagnostic, no fresh strength",
+  "configuration": "Same public Domination live bridge, stock adaptive rivals, native 4p60x38 Pangaea Online150 Gran Colombia focal handicap-exempt as opening study; unchanged public weights. Both arms wrapped Ai forwarding observation use.",
+  "treatment": "Existing agent per-city directive adds only food appetite +2 for own cities below population6 with housing headroom>=2 and amenities>=-1 through OnlineT60. Remove owned directive on next turn if ineligible. No growth halt, pressure, role or production queue change. Skip recent city attacks and visible hostile military within4. Preserve citizen nutrition constraints and population-Settler food semantics.",
+  "consumed_diagnostics": {
+    "emperor": [
+      61008600,
+      61008601,
+      61008602,
+      61008603
+    ],
+    "deity": [
+      61008700,
+      61008701,
+      61008702,
+      61008703
+    ]
+  },
+  "continuation_gate": "Demonstrated changed citizen assignments/earlier growth; consumed T75 production positive at both difficulties, no lower T75 survival and science>=90%. Every assigned pair reported before deciding fresh pilot.",
+  "fresh_samples_played": 0,
+  "actual_Firaxis_verification": false
+}

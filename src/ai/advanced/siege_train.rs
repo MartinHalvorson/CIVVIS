@@ -1832,10 +1832,22 @@ impl AdvancedAi {
         group: &ForceGroup,
     ) {
         let turn = g.turn;
+        // A capture on a disposable planning board can leave persistent memory
+        // in Hold even when the next host frame still shows an enemy city.
+        // Reconcile that contradiction before the once-per-turn cache: native
+        // air-assault continuations can deliver a fresh board in the same turn.
+        let held_enemy_city = self
+            .sieges
+            .get(&cid)
+            .is_some_and(|siege| siege.stage == SiegeStage::Hold)
+            && g.cities
+                .get(&cid)
+                .is_some_and(|city| city.owner != pid && g.is_at_war(pid, city.owner));
         if self
             .sieges
             .get(&cid)
             .is_some_and(|siege| siege.assessed == turn)
+            && !held_enemy_city
         {
             return;
         }
@@ -1952,19 +1964,11 @@ impl AdvancedAi {
         record.assessed = turn;
         let previous = record.stage;
         let previous_taker = record.taker;
-        let mut stage = previous;
-        // A Hold over a city still the enemy's is a capture that never
-        // landed: the board applied it, the host did not. The live seat
-        // rebuilds its board each turn, so the next reading finds the city
-        // theirs again, and nothing below moves a record out of Hold. Live
-        // King civvis-20261004T070716Z (game 49) logged "Siege of Kyoto: taken
-        // by the giant_death_robot" at turn 213 with the robot seven tiles off;
-        // Kyoto stood at 0 HP from 214 while the siege read "hold" and its
-        // force held. Resume the assault where it stood.
-        if city.owner != pid && stage == SiegeStage::Hold {
-            stage = SiegeStage::Reduce;
-            record.entered = turn;
-        }
+        let mut stage = if held_enemy_city {
+            SiegeStage::Reduce
+        } else {
+            previous
+        };
         if city.owner == pid {
             stage = SiegeStage::Hold;
         } else {
@@ -1991,8 +1995,11 @@ impl AdvancedAi {
                         && !opens_walls)
                     || no_breaker)
             {
+                // A Hold over a city that is not ours is a capture that never
+                // landed, not a running assault: there is no dip to ride out,
+                // so reopening it never bypasses the abort gate.
                 let since = *record.short_since.get_or_insert(turn);
-                if turn.saturating_sub(since) + 1 >= ABORT_PATIENCE {
+                if previous == SiegeStage::Hold || turn.saturating_sub(since) + 1 >= ABORT_PATIENCE {
                     stage = SiegeStage::Stage;
                 }
             } else {

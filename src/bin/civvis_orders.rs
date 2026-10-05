@@ -49,6 +49,10 @@ mod air_assault;
 mod air_assault_continuation;
 #[path = "civvis_orders/formation_refusals.rs"]
 mod formation_refusals;
+#[path = "civvis_orders/host_move_postconditions.rs"]
+mod host_move_postconditions;
+#[path = "civvis_orders/host_ranged_history.rs"]
+mod host_ranged_history;
 
 fn arg_text(args: &[String], flag: &str) -> Option<String> {
     args.iter()
@@ -6049,6 +6053,7 @@ fn ledger_evidence_and_states(
     };
     let mut evidence = Vec::new();
     let mut states = Vec::new();
+    let mut seat: Option<civvis::mirror::Seat> = None;
     // ★★★★ ONLY THE LINES THAT NAME A KIND WE KEEP, AND ONLY THEIR TURNS.
     // This ran on the first frame of every turn and built a full
     // `serde_json::Value` of EVERY state record of the run (hundreds of
@@ -6058,26 +6063,39 @@ fn ledger_evidence_and_states(
     // are the same ones the old `contains` test kept, in file order; a record
     // that spells only other integer turns cannot pass the `as_u64` check below.
     let mut lines = civvis::mirror::line_ranges_containing(&raw, "\"state\"");
+    // State events omit identity; retain the preceding seat even though its
+    // metadata event has no requested turn. Do not parse unrelated state rows.
+    lines.extend(civvis::mirror::line_ranges_containing(&raw, "\"seat\""));
     for kind in EVIDENCE_KINDS {
-        lines.extend(civvis::mirror::line_ranges_containing(&raw, &format!("\"{kind}\"")));
+        lines.extend(civvis::mirror::line_ranges_containing(
+            &raw,
+            &format!("\"{kind}\""),
+        ));
     }
     lines.sort_unstable();
     lines.dedup();
     for (start, end) in lines {
         let line = &raw[start..end];
-        if !civvis::mirror::turn_may_be_any(line, turns) {
+        if !civvis::mirror::turn_may_be_any(line, turns) && !line.contains("\"seat\"") {
             continue;
         }
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
+        if event.get("kind").and_then(|kind| kind.as_str()) == Some("seat") {
+            seat = serde_json::from_value(event).ok();
+            continue;
+        }
         let turn = event.get("turn").and_then(|turn| turn.as_u64());
         if !turn.is_some_and(|turn| turns.iter().any(|want| u64::from(*want) == turn)) {
             continue;
         }
         let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
         if kind == "state" {
-            if let Ok(state) = serde_json::from_value(event) {
+            if let Ok(mut state) = serde_json::from_value::<civvis::mirror::StateSnapshot>(event) {
+                if let Some(seat) = &seat {
+                    state.seat = seat.clone();
+                }
                 states.push(state);
             }
         } else if EVIDENCE_KINDS.contains(&kind) {
@@ -6752,6 +6770,8 @@ struct LaterFrames {
     fortified: bool,
     /// The decider moved it on a later frame, overriding its own FORTIFY.
     moved: bool,
+    /// The actor actually occupied this MOVE_TO's endpoint on a later frame.
+    move_reached: bool,
 }
 
 fn verify_unit_order(
@@ -6779,6 +6799,12 @@ fn verify_unit_order(
             let Some(want) = order.pos else {
                 return Verdict::Failed("no_destination".to_string());
             };
+            // A completed move is not a refusal merely because a subsequent
+            // replan moved the actor away, or combat later removed it. Survival
+            // and operation causality are separate from this postcondition.
+            if was.is_some() && later.move_reached {
+                return Verdict::Verified;
+            }
             match (was, now) {
                 (_, Some(now)) if (now.x, now.y) == want => Verdict::Verified,
                 // A unit first seen on a combat frame has no baseline to move from.
@@ -7134,6 +7160,7 @@ struct VerificationContext<'a> {
     /// The decider moved this unit in a later frame of the same turn, so any
     /// FORTIFY it issued earlier was overridden by its own next decision.
     later_moved: bool,
+    later_move_reached: bool,
     /// A later policy-deck replacement in this turn matches the final state,
     /// so this order was superseded by the decider's own re-plan.
     later_policy_deck: bool,
@@ -7176,6 +7203,7 @@ fn verify_order_with_context(
             LaterFrames {
                 fortified: context.later_fortified,
                 moved: context.later_moved,
+                move_reached: context.later_move_reached,
             },
         ),
         "produce" => {
@@ -7434,6 +7462,7 @@ fn verify_order(
             same_turn_orders: &[],
             later_fortified: false,
             later_moved: false,
+            later_move_reached: false,
             later_policy_deck: false,
         },
     )
@@ -7508,6 +7537,11 @@ fn verify_orders_with_later_fortifications(
                         .subject
                         .is_some_and(|id| later.fortified.contains(&id)),
                     later_moved: order.subject.is_some_and(|id| later.moved.contains(&id)),
+                    later_move_reached: host_move_postconditions::observed_endpoint(
+                        pending,
+                        order,
+                        later.states,
+                    ),
                     later_policy_deck: later.policy_deck,
                 },
             ),
@@ -7704,15 +7738,21 @@ fn audit_orders(events: &Path, orders_path: &Path) {
     let mut all_states: Vec<civvis::mirror::StateSnapshot> = Vec::new();
     let mut reported: std::collections::BTreeMap<u32, (i64, i64)> = Default::default();
     let mut evidence: Vec<serde_json::Value> = Vec::new();
+    let mut seat: Option<civvis::mirror::Seat> = None;
     for line in raw.lines() {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
         let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
-        if kind == "state" {
+        if kind == "seat" {
+            seat = serde_json::from_value(event).ok();
+        } else if kind == "state" {
             // The opening board of each turn: the one the orders were decided on.
             match serde_json::from_value::<civvis::mirror::StateSnapshot>(event) {
-                Ok(state) => {
+                Ok(mut state) => {
+                    if let Some(seat) = &seat {
+                        state.seat = seat.clone();
+                    }
                     frame_states
                         .entry((state.turn, state.frame))
                         .or_insert_with(|| state.clone());
@@ -8234,12 +8274,26 @@ fn refuse_retired_strategy_flag(args: &[String]) {
     }
 }
 
+fn attach_input_capture(
+    reply: String,
+    capture: Option<mirror::input_capture::RequestCapture>,
+) -> String {
+    let Some(capture) = capture else {
+        return reply;
+    };
+    let mut payload: serde_json::Value =
+        serde_json::from_str(&reply).expect("decision reply is JSON");
+    payload["input_capture"] = capture.finish();
+    payload.to_string()
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(dir) = arg_text(&args, "--mirror") else {
         eprintln!(
             "usage: civvis-orders --mirror <run-dir> [--turn N] [--serve] \\
-             [--audit-orders <orders.jsonl>] [--audit-host-moves]"
+             [--audit-orders <orders.jsonl>] [--audit-host-moves] \\
+             [--capture-inputs <new-directory>]"
         );
         std::process::exit(2);
     };
@@ -9045,12 +9099,36 @@ fn main() {
         return;
     }
 
+    // Opt-in only: record the bytes each reader actually receives, rather than
+    // guessing one input frontier for a decision against a growing host log.
+    let input_capture = arg_text(&args, "--capture-inputs").map(|directory| {
+        mirror::input_capture::InputCapture::create(Path::new(&directory), &events).unwrap_or_else(
+            |error| {
+                eprintln!("civvis-orders: cannot create input capture: {error}");
+                std::process::exit(2);
+            },
+        )
+    });
+    if args.iter().any(|arg| arg == "--capture-inputs") && input_capture.is_none() {
+        eprintln!("civvis-orders: --capture-inputs requires a new directory");
+        std::process::exit(2);
+    }
+    let begin_capture = || {
+        input_capture
+            .as_ref()
+            .map(|capture| capture.begin().expect("one decision at a time"))
+    };
+
     if !serve {
+        let capture = begin_capture();
         let want_turn: Option<u32> = arg_text(&args, "--turn").and_then(|v| v.parse().ok());
         let Some((snapshot, state)) = load(want_turn) else {
-            println!(
-                "{{\"turn\":0,\"orders\":[],\"note\":\"no revealed terrain or no state yet\"}}"
+            let reply = attach_input_capture(
+                r#"{"turn":0,"orders":[],"note":"no revealed terrain or no state yet"}"#
+                    .to_string(),
+                capture,
             );
+            println!("{reply}");
             return;
         };
         let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
@@ -9096,6 +9174,7 @@ fn main() {
                 eprintln!("{}", explain_line(thought));
             }
         }
+        let reply = attach_input_capture(reply, capture);
         println!("{reply}");
         return;
     }
@@ -9136,12 +9215,14 @@ fn main() {
     // spent; the decider's own earlier frames do. See `HostCityStrikes`.
     let mut host_city_strikes = HostCityStrikes::default();
     let mut host_air_strikes = HostAirStrikes::default();
+    let mut host_ranged_history = host_ranged_history::History::default();
     let mut explain_cursor: u64 = 0;
     // What left for the host on each frame, until the next turn's frame answers
     // for it. See "order postconditions" above.
     let mut pending_orders: Vec<PendingOrders> = Vec::new();
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
+        let capture = begin_capture();
         let want: Option<u32> = line.trim().parse().ok();
         let reply = match load(want) {
             None => format!(
@@ -9267,6 +9348,7 @@ fn main() {
                         None => ai.forget_unit_memory(),
                     }
                     board.carry_treasury_baseline(carried_treasury);
+                    host_ranged_history.observe_and_apply(&mut board, &state);
                     host_city_attack_cooldowns.apply(&mut board);
                     if city_fire_memory {
                         host_city_fire.apply(&mut board.game);
@@ -9301,6 +9383,7 @@ fn main() {
                                 mirror_turns,
                                 frontier,
                             );
+                            host_ranged_history.observe_and_apply(&mut fresh, &state);
                             host_city_attack_cooldowns.apply(&mut fresh);
                             if city_fire_memory {
                                 host_city_fire.apply(&mut fresh.game);
@@ -9327,6 +9410,7 @@ fn main() {
                         }
                         Some(existing) => {
                             existing.sync(&snapshot, &state, frontier);
+                            host_ranged_history.observe_and_apply(existing, &state);
                             host_city_attack_cooldowns.apply(existing);
                             if city_fire_memory {
                                 host_city_fire.apply(&mut existing.game);
@@ -9400,6 +9484,7 @@ fn main() {
                 eprintln!("{}", explain_line(thought));
             }
         }
+        let reply = attach_input_capture(reply, capture);
         if writeln!(out, "{reply}").is_err() {
             break;
         }
@@ -20170,3 +20255,7 @@ mod air_sequence_tests;
 #[cfg(test)]
 #[path = "civvis_orders/air_receipt_tests.rs"]
 mod air_receipt_tests;
+
+#[cfg(test)]
+#[path = "civvis_orders/input_capture_tests.rs"]
+mod input_capture_tests;

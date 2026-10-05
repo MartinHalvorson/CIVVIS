@@ -1,0 +1,103 @@
+{
+  "control_commit": "2146d93a21ff595bbde3c636340b19552a214cc5",
+  "candidate_runtime_commit": "086cb4dd24c9032eb6206bbec92ff9bfe6fc261a",
+  "base_main": "cbc4cf533ef3f22b71bd14d6f8175769411dd0be",
+  "control_binary_sha256": "39b58598ebb0d7ecb6fef3ea95b4dd86d9e73553cb6a7943e7c0c585bae8fadb",
+  "candidate_binary_sha256": "f6e3d3d13217678d8a68227ef440695c5268fff77ceddefe2494ec9a2dfff779",
+  "control_library_sha256": "a7ce7a19956e57451d7ec1a84cdd0ca3b66d1a64d0b6d7ef85ae0aa39e230cff",
+  "candidate_library_sha256": "4d7d41cab8ad7e4a43267e89e58447185f011d35e4c50580b59f6b0d1c4a2feb",
+  "source_sha256": {
+    "control": {
+      "src/ai/advanced/production_compounding.rs": "03a6e300f7c62a7dbf7943aba11bbedc52a30d5b384e99fa5c4bb495290e6408",
+      "docs/gene_ledger.json": "e86a761d3fc5d51f3d41b289c5b7275810fe5adbbe2a85581d32833ad3e05a45"
+    },
+    "candidate": {
+      "src/ai/advanced/production_compounding.rs": "a828444fd82afc2e154f6a937315730173cdefc58e0cf445637e159b18b09084",
+      "docs/gene_ledger.json": "e86a761d3fc5d51f3d41b289c5b7275810fe5adbbe2a85581d32833ad3e05a45"
+    }
+  },
+  "pilot": {
+    "emperor": {
+      "seed_start": 61005800,
+      "games": 4
+    },
+    "deity": {
+      "seed_start": 61005900,
+      "games": 4
+    }
+  },
+  "reserved_confirmation": {
+    "emperor": {
+      "seed_start": 61005600,
+      "games": 12
+    },
+    "deity": {
+      "seed_start": 61005700,
+      "games": 8
+    }
+  },
+  "confirmation_run": true,
+  "decision": "rejected after pilot and unchanged fresh confirmation; runtime and tests restored to control",
+  "validation": {
+    "existing_production_compounding_tests": "8 passed",
+    "prototype_ci_quality_and_paired_cost": "passed",
+    "new_fixture_full_suite": "running",
+    "prototype_full_suite": "4545 passed, 53 ignored",
+    "final_control_suite": "4542 passed, 53 ignored; cargo test --profile ci --locked",
+    "prototype_ci": "all checks passed at 086cb4dd2; all checks passed at 4318bb406",
+    "final_rust_quality": "passed: tools/rust_quality.py --base 2146d93a21ff595bbde3c636340b19552a214cc5 --head ad323cf60",
+    "summaries_and_artifact_hashes": "both summaries reproduced byte for byte and all 32 artifact hashes verified",
+    "final_runtime_delta": "empty against origin/main and control: src, data, docs/gene_ledger.json"
+  },
+  "artifacts_sha256": {
+    "2026-10-04-production-city-payback-confirmation-deity-candidate.csv": "613965794e93b8fbc02ced238faef0c207000aeb6239f77f50f504ddb8a99289",
+    "2026-10-04-production-city-payback-confirmation-deity-candidate.txt": "da80235e5caa95a433ebd1e3b8ab3bc27c616611fa439e8b7fb9514b97858796",
+    "2026-10-04-production-city-payback-confirmation-deity-control.csv": "33cc415f1aa13dde2ca15660d53fb1cb3debad6bc3bab80597ed0c47f16dd037",
+    "2026-10-04-production-city-payback-confirmation-deity-control.txt": "1294ae9096328fc066802abd691678e0b3bfffafcb6d677f0ab48eea0fdc4e26",
+    "2026-10-04-production-city-payback-confirmation-emperor-candidate.csv": "3d031b8e9bbeeea5503cfc64ecbd9b722662886fc58e72c63a6f52d846cb0058",
+    "2026-10-04-production-city-payback-confirmation-emperor-candidate.txt": "ad7315b654b93bf5cacef46ba6719b24bb3c0a0ef10be4c730bc4415d8674da7",
+    "2026-10-04-production-city-payback-confirmation-emperor-control.csv": "218a9937eed2533e5be755568b3f911c341fc6474d67979655baaf54be27c638",
+    "2026-10-04-production-city-payback-confirmation-emperor-control.txt": "8aa3be4ea36ccb2281b37f726953c0922908c68eee5611602bea4c7cf509e6f6",
+    "2026-10-04-production-city-payback-confirmation-summary.json": "35a562cff5b356a983df15baee23606e381324f2f5f689b246d0b8928b7180d8",
+    "2026-10-04-production-city-payback-host-observations.json": "f73c797d60e0593d1e6abde0f4bd3aeed36751c47dd741497b699fa195438291",
+    "2026-10-04-production-city-payback-host-replay-100-candidate.json": "e8a02dde3b523547a8bfa4b7ad1f20272695f6db82b24b0d3c417ee9514d103e",
+    "2026-10-04-production-city-payback-host-replay-100-candidate.txt": "f1c86658e47e8b2432d171f148ab50ae8ad4a36160221c34a197d01676caaea5",
+    "2026-10-04-production-city-payback-host-replay-100-control.json": "e8a02dde3b523547a8bfa4b7ad1f20272695f6db82b24b0d3c417ee9514d103e",
+    "2026-10-04-production-city-payback-host-replay-100-control.txt": "f1c86658e47e8b2432d171f148ab50ae8ad4a36160221c34a197d01676caaea5",
+    "2026-10-04-production-city-payback-host-sites.rs": "ce468f738843c938c9862b3c950837214aa5e4796c47324da11b987ce5991031",
+    "2026-10-04-production-city-payback-host-sites.txt": "e4a5543f01477d5bb0a0bab38f621613bf2b86998b1d5fa8928fbd1e8053e07c",
+    "2026-10-04-production-city-payback-host-warm-replay-100-candidate.jsonl": "64349ca97f5069d314f6e890bfcb8d1ce03dc2ff352b63059d3ddcaea7c19974",
+    "2026-10-04-production-city-payback-host-warm-replay-100-candidate.txt": "41f19f1fd479b2b45cffc4773d37e1482198c801f14a96893dd66b48292a7f1c",
+    "2026-10-04-production-city-payback-host-warm-replay-100-control.jsonl": "8f46ded9d2ce28630263bebdd8554371750560dcb678969c4b44423ce046122b",
+    "2026-10-04-production-city-payback-host-warm-replay-100-control.txt": "c82ded78712be665b7d1580dc0428d9b48a4fd0878c54a3c60caf2ceff3a96cc",
+    "2026-10-04-production-city-payback-pilot-deity-candidate.csv": "ed37dbe07ade844275290ca7d007ecb22000a1066fa8a0fd08e85ae7c6454d9b",
+    "2026-10-04-production-city-payback-pilot-deity-candidate.txt": "d04e932eb3cb0151359289ba4b03c6484513bc3070b85d93a6cacab826decf7d",
+    "2026-10-04-production-city-payback-pilot-deity-control.csv": "51aa9af6f17e763de2a1cefdcd2630726929700311add62f9fe65965d3b512f3",
+    "2026-10-04-production-city-payback-pilot-deity-control.txt": "26477fae5ce261092aa6eac45c96f5ccfb75ed6f9c910b7f7ba273ccb0fafd27",
+    "2026-10-04-production-city-payback-pilot-emperor-candidate.csv": "0e7300ed94f8f1fb92312af5609c3dc08dbb72a3f6b2a26857a9de266bae934b",
+    "2026-10-04-production-city-payback-pilot-emperor-candidate.txt": "95d49d4701726da581e613fe084a88bc9f1f98a005c30dcc682261aa874d1cff",
+    "2026-10-04-production-city-payback-pilot-emperor-control.csv": "e3aed810cc9c06bf2353b0641841cba734503b0af8f639846c77c4e5f330c97a",
+    "2026-10-04-production-city-payback-pilot-emperor-control.txt": "95d49d4701726da581e613fe084a88bc9f1f98a005c30dcc682261aa874d1cff",
+    "2026-10-04-production-city-payback-pilot-summary.json": "691c8c40c9004af23e25f3f39dd152614097e2a24bfd9a37ff1fb68fdbae49cf",
+    "2026-10-04-production-city-payback-probe.rs": "5f0c044d52f487cdc685416c35cbaec0440e38edc66d151e289d727306d7553f",
+    "2026-10-04-production-city-payback-summarize.py": "756f97397555a6bd7f56c153c334eea5e40f4c20d950bf19108d5ab7181da144",
+    "2026-10-04-production-city-payback.md": "28315b6b53d3759599bbf472e05e73c295f7da4ce43d9c4b68defb50beff3d44"
+  },
+  "fixture_commit": "4318bb40662b4f82f91e1e51cab41b7389c87bf7",
+  "read_only_replay": {
+    "cold_prefix_sha256": "54fa752bd1569cbdd3e0f2bec8d092f271484050d98487a350ffa36e9532f877",
+    "warm_prefix_sha256": "8fdecedbe036cecb6685450dad2659b3974e3c3aff9f272679ca969b2cbd15be",
+    "warm_input_turns": "1..100 inclusive, persistent AI, --serve --fresh-board --victory domination --explain",
+    "control_orders_binary_sha256": "f51882e989a7fa54f777b9a1dfeb14b573ee764b988541466967c9672008ac4e",
+    "candidate_orders_binary_sha256": "9055975335ead86211ed39a0bf54946481db2e6be62eedf43282ea9cd6d61836",
+    "cold_orders_identical": true,
+    "warm_changed_order_turns": [
+      81,
+      82,
+      99,
+      100
+    ],
+    "actuated": false
+  },
+  "latest_main_before_ready": "cbc4cf533ef3f22b71bd14d6f8175769411dd0be"
+}
