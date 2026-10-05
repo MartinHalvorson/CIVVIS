@@ -5461,6 +5461,14 @@ def _play(args: argparse.Namespace) -> int:
     # ⚠ Only when the game actually ENDED. A stall, a timeout, or a wrong-modes
     # refusal has nothing on screen worth looking at, and holding there would add
     # ten seconds to every failure in a batch.
+    # `[end-time] <step> +<s>`: the boundary from the loop ending to the ladder
+    # row, step by step (the hold, the rescue queue, the quit, the decider, the
+    # summary). Play log only.
+    end_t0 = time.monotonic()
+
+    def end_mark(step: str) -> None:
+        print(f"[end-time] {step} +{time.monotonic() - end_t0:.2f}s", flush=True)
+
     if state["outcome"] and args.end_game_seconds > 0:
         hold = end_game_hold_seconds(state["outcome"], args.end_game_seconds)
         print(f"holding the final screen for {hold:.0f}s", flush=True)
@@ -5472,10 +5480,13 @@ def _play(args: argparse.Namespace) -> int:
         print(f"holding the native retire action for {OPERATOR_RETIRE_SETTLE_S:.1f}s",
               flush=True)
         time.sleep(OPERATOR_RETIRE_SETTLE_S)
+    end_mark("held")
     # No rescue may click into a game that is being quit (`DesktopRescueQueue`).
     desktop_rescues.close(30.0)
     game_stopped = launcher.stop()
+    end_mark("game_stopped")
     stop_brain()
+    end_mark("brain_stopped")
     if not game_stopped:
         print("could not stop Civilization VI after the run", file=sys.stderr)
 
@@ -5725,6 +5736,7 @@ def _play(args: argparse.Namespace) -> int:
         print(f"bridge-health totals unavailable: {exc}", file=sys.stderr)
     summary = with_diagnostic(summary, run_dir / "summary.json")
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
+    end_mark("summary_written")
     print(json.dumps(summary, indent=2, sort_keys=True))
 
     # The ladder records itself. This used to be a by-hand step, and the
