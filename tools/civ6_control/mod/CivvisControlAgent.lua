@@ -6404,6 +6404,36 @@ end;
 -- (both are in the shipped `os` table); `Automation.GetTime()` and `os.clock()`
 -- totals ride along so the clock itself can be checked. A global table, not
 -- locals: the main chunk and this function are near Lua's register ceiling.
+-- ★ REAL SECONDS FOR EVERY MOD TIMER. `UI.GetElapsedTime` is the only
+-- sub-second clock here (`os.rawclock` is absent: `export_timing` sections
+-- stay empty; `Automation.GetTime` and `os.clock` tick whole seconds), and the
+-- engine's debug `timescale` speeds it up (G95: 1.94x at `timescale 2`). So
+-- every duration the mod measures (the deal holds, the orphan net, the stall
+-- detector, end-turn pacing, combat vis) reads this clock instead: the UI
+-- clock divided by the commanded scale, rebased when the scale changes so it
+-- never jumps. At scale 1 it IS the UI clock. The other contexts read the
+-- same scale from `ExposedMembers.CivvisTimeScale` and divide their frame
+-- deltas by it (Heartbeat, AutoClose); see `CivvisQueue.checkTimescaleClock`.
+CivvisClock = { scale = 1, offset = 0 };
+CivvisClock.raw = function()
+	local ui = try(function() return UI.GetElapsedTime(); end, nil);
+	if type(ui) ~= "number" or ui ~= ui then return nil; end
+	return ui;
+end;
+CivvisClock.now = function()
+	local ui = CivvisClock.raw();
+	if ui == nil then return nil; end
+	return ui / CivvisClock.scale + CivvisClock.offset;
+end;
+CivvisClock.setScale = function(scale)
+	local ui = CivvisClock.raw();
+	if ui ~= nil then
+		CivvisClock.offset = ui / CivvisClock.scale + CivvisClock.offset - ui / scale;
+	end
+	CivvisClock.scale = scale;
+	return pcall(function() ExposedMembers.CivvisTimeScale = scale; end);
+end;
+
 CivvisExportClock = { marks = nil };
 CivvisExportClock.now = function()
 	local raw = try(function() return os.rawclock(); end, nil);
@@ -10953,7 +10983,7 @@ CivvisTrade.abandon = function(subject, why)
 	-- `CivvisTrade.holdsEndTurn`.
 	if session.sent and why == "session_closed" then
 		trade.turnHold = { turn = turn, target = subject,
-			at = try(function() return UI.GetElapsedTime(); end, nil) };
+			at = CivvisClock.now() };
 		emit("deal_turn_hold", { turn = turn, target = subject, phase = "held",
 			seconds = tonumber(cfg.DealAnswerHoldSeconds) or 30 });
 	end
@@ -11645,7 +11675,7 @@ CivvisLedger.onCombatVisBegin = function(kVisData)
 		-- none, 5.5 s with 6+). How long each visualization holds, and whether
 		-- it ran in our turn or the AI's, says whether that time is the combat
 		-- display or the AI's own thinking.
-		vis_at = try(function() return UI.GetElapsedTime(); end, nil),
+		vis_at = CivvisClock.now(),
 		our_turn = try(function() return Players[pid]:IsTurnActive(); end, nil),
 		attacker = CivvisLedger.describe(attacker),
 		defender = CivvisLedger.describe(defender),
@@ -11711,7 +11741,7 @@ CivvisLedger.onCombatVisEnd = function(kVisData)
 		against_us = combat.defender ~= nil and combat.defender.player == pid,
 		preview = preview,
 		vis_seconds = try(function()
-			local now = UI.GetElapsedTime();
+			local now = CivvisClock.now();
 			if type(now) ~= "number" or type(combat.vis_at) ~= "number" then return nil; end
 			return math.floor((now - combat.vis_at) * 1000 + 0.5) / 1000;
 		end, nil),
@@ -19766,7 +19796,7 @@ CivvisQueue.onLocalTurnEnd = function()
 	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
 	if w == nil or w.turn ~= turn or w.emitted then return; end
 	w.emitted = true;
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local now = CivvisClock.now();
 	w.ended_at = now;
 	local function since(t)
 		if type(now) ~= "number" or type(t) ~= "number" then return nil; end
@@ -19782,7 +19812,7 @@ CivvisQueue.onLocalTurnEnd = function()
 		-- The UI clock at this moment: against the relay's wall-clock `utc`,
 		-- consecutive turns show whether the UI clock runs at real time (a
 		-- debug timescale could change that, and every mod timer runs on it).
-		ui_now = now,
+		ui_now = CivvisClock.raw(),
 		-- Locks still held by a UI context as our turn ends (the AutoClose
 		-- ledger); a normal turn ends with none.
 		held_locks = try(function() return ExposedMembers.CivvisEventLocks.count; end, nil),
@@ -19809,7 +19839,7 @@ CivvisQueue.checkAiPhaseStall = function()
 	end
 	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
 	if turn ~= w.turn then return false; end
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local now = CivvisClock.now();
 	if type(now) ~= "number" or now ~= now or now < w.ended_at then return false; end
 	local waited = now - w.ended_at;
 	if waited < (tonumber(cfg.AiPhaseStallSeconds) or 30) then return false; end
@@ -19876,25 +19906,38 @@ end;
 -- own turns, so ~10 min of that game. `DebugTimeScale` (default off) runs
 -- the engine console's `timescale N` through AutoProfiler.RunCommand, which
 -- exists in this context (`debug_api`, G94).
--- ⚠ Every mod timer runs on UI.GetElapsedTime: the deal hold, the orphan
--- net, the stall detector, the autoclose holds. If the timescale moves that
--- clock, they would all fire early or late. So the UI clock is measured
--- against the wall clock (Automation.GetTime) at every turn end, and once
--- 10 s of wall time have passed a ratio outside [0.77, 1.3] reverts to
--- `timescale 1`. Game end reverts it too, so it never outlives the game.
+-- It speeds the UI clock up too (G95: 1.94x, reverted after 10 s), so the
+-- mod's timers run on CivvisClock, which divides the scale back out, and the
+-- other contexts divide their frame deltas by the shared scale. Every turn
+-- end checks that this holds, over windows of at least 30 s of wall time
+-- (Automation.GetTime ticks whole seconds): CivvisClock against the wall
+-- clock within [0.85, 1.15]; the Heartbeat has seen the scale since it was
+-- set; no context that ticked since then read a different scale; and the
+-- Heartbeat's frame deltas keep pace with the UI clock. Any failure reverts
+-- to `timescale 1`, and so does game end, so it never outlives the game.
 CivvisQueue.startTimescale = function(want)
 	want = tonumber(want);
-	if want == nil or want <= 1 or CivvisQueue.timescale ~= nil then return false; end
-	local ran, result = pcall(function()
-		return AutoProfiler.RunCommand("timescale " .. tostring(want));
-	end);
-	CivvisQueue.timescale = {
-		want = want, applied = ran,
-		ui0 = try(function() return UI.GetElapsedTime(); end, nil),
-		wall0 = try(function() return Automation.GetTime(); end, nil),
-	};
+	if want == nil or want <= 1 or want > 8 or CivvisQueue.timescale ~= nil then return false; end
+	local ack = pcall(function() ExposedMembers.CivvisClockAck = { scale = {}, at = {} }; end);
+	local ran, result = false, "no shared table";
+	if ack then
+		ran, result = pcall(function()
+			return AutoProfiler.RunCommand("timescale " .. tostring(want));
+		end);
+	end
+	local ts = { want = want, applied = ran, applied_ui = CivvisClock.raw() };
+	CivvisQueue.timescale = ts;
 	emit("timescale", { phase = "applied", want = want, ran = ran, result = tostring(result) });
-	return ran;
+	if not ran then return false; end
+	-- The command and the shared scale land in one call: no other UI context
+	-- runs between them.
+	if not CivvisClock.setScale(want) then
+		CivvisQueue.resetTimescale("scale_not_shared");
+		return false;
+	end
+	ts.ui0, ts.real0 = CivvisClock.raw(), CivvisClock.now();
+	ts.wall0 = try(function() return Automation.GetTime(); end, nil);
+	return true;
 end;
 
 CivvisQueue.resetTimescale = function(why)
@@ -19902,6 +19945,8 @@ CivvisQueue.resetTimescale = function(why)
 	if ts == nil or not ts.applied or ts.reverted then return false; end
 	ts.reverted = true;
 	local ran, result = pcall(function() return AutoProfiler.RunCommand("timescale 1"); end);
+	-- A failed revert leaves the engine scaled, so the timers keep dividing.
+	if ran then CivvisClock.setScale(1); end
 	emit("timescale", { phase = "reverted", why = why, ran = ran, result = tostring(result) });
 	return ran;
 end;
@@ -19909,18 +19954,52 @@ end;
 CivvisQueue.checkTimescaleClock = function()
 	local ts = CivvisQueue.timescale;
 	if ts == nil or not ts.applied or ts.reverted then return; end
-	local ui = try(function() return UI.GetElapsedTime(); end, nil);
+	local ui, real = CivvisClock.raw(), CivvisClock.now();
 	local wall = try(function() return Automation.GetTime(); end, nil);
-	if type(ui) ~= "number" or type(wall) ~= "number"
-			or type(ts.ui0) ~= "number" or type(ts.wall0) ~= "number" then
+	if ui == nil or real == nil or type(wall) ~= "number" then return; end
+	if type(ts.wall0) ~= "number" or type(ts.ui0) ~= "number" or type(ts.real0) ~= "number" then
+		ts.ui0, ts.real0, ts.wall0 = ui, real, wall;
 		return;
 	end
 	local wallElapsed = wall - ts.wall0;
-	if wallElapsed < 10 then return; end
-	local ratio = math.floor((ui - ts.ui0) / wallElapsed * 100 + 0.5) / 100;
-	emit("timescale_clock", { ui_elapsed = math.floor((ui - ts.ui0) * 10 + 0.5) / 10,
-		wall_elapsed = wallElapsed, ratio = ratio });
-	if ratio > 1.3 or ratio < 0.77 then CivvisQueue.resetTimescale("ui_clock_scaled"); end
+	if wallElapsed < 30 then return; end
+	local function per(x) return math.floor(x / wallElapsed * 100 + 0.5) / 100; end
+	local scale = CivvisClock.scale;
+	local since = type(ts.applied_ui) == "number" and ts.applied_ui or 0;
+	local why, unscaled = nil, {};
+	local heartbeat = false;
+	pcall(function()
+		local ack = ExposedMembers.CivvisClockAck;
+		for name, at in pairs(ack.at) do
+			if type(at) == "number" and at >= since then
+				if name == "Heartbeat" then heartbeat = true; end
+				if ack.scale[name] ~= scale then unscaled[#unscaled + 1] = name; end
+			end
+		end
+	end);
+	local frame = try(function() return ExposedMembers.CivvisFrameClock; end, nil);
+	local frameRatio = nil;
+	if type(frame) == "table" and frame.scale == scale and type(frame.at) == "number"
+			and frame.at >= since then
+		frameRatio = tonumber(frame.ratio);
+	end
+	local realRatio = per(real - ts.real0);
+	emit("timescale_clock", {
+		ui_elapsed = math.floor((ui - ts.ui0) * 10 + 0.5) / 10,
+		wall_elapsed = wallElapsed, ratio = per(ui - ts.ui0), real_ratio = realRatio,
+		scale = scale, heartbeat = heartbeat, unscaled = unscaled, frame_ratio = frameRatio,
+	});
+	ts.ui0, ts.real0, ts.wall0 = ui, real, wall;
+	if realRatio > 1.15 or realRatio < 0.85 then
+		why = "real_clock_off";
+	elseif not heartbeat then
+		why = "heartbeat_unscaled";
+	elseif #unscaled > 0 then
+		why = "context_unscaled";
+	elseif frameRatio ~= nil and (frameRatio > 1.15 or frameRatio < 0.85) then
+		why = "frame_clock_off";
+	end
+	if why ~= nil then CivvisQueue.resetTimescale(why); end
 end;
 
 -- Whether an unanswered deal ask still holds this turn open (see abandon).
@@ -19929,7 +20008,7 @@ end;
 CivvisTrade.holdsEndTurn = function(turn)
 	local hold = CivvisTrade.turnHold;
 	if hold == nil then return false; end
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local now = CivvisClock.now();
 	local limit = tonumber(cfg.DealAnswerHoldSeconds) or 30;
 	if hold.turn ~= turn or type(now) ~= "number" or type(hold.at) ~= "number"
 			or now < hold.at or now - hold.at >= limit then
@@ -19966,7 +20045,7 @@ CivvisTrade.answerOrphanSessions = function(turn)
 	local hold = trade.turnHold;
 	if hold ~= nil and hold.turn == turn then return; end
 	local w = CivvisQueue.endTurnWait;
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local now = CivvisClock.now();
 	if w == nil or w.turn ~= turn or type(now) ~= "number" or type(w.first) ~= "number" then
 		return;
 	end
@@ -20043,7 +20122,8 @@ CivvisQueue.requestEndTurn = function(turn, parameters)
 	-- Native t208 logged 7,843 unready requests, up to 70 in one second. Bound
 	-- retries across ALL callbacks, not just the divided game-core tick. The
 	-- shipped PlotToolTip.lua:879 uses this clock for a seconds-based delay.
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	-- (In real seconds: see CivvisClock.)
+	local now = CivvisClock.now();
 	if type(now) == "number" and now == now and now >= 0 and now < math.huge then
 		local previous = CivvisQueue.endTurnSubmittedAt;
 		if CivvisQueue.endTurnSubmittedTurn == turn and previous ~= nil
@@ -20070,7 +20150,7 @@ local function tick()
 	if finished or inTick or cfg.Play == false then return; end
 	inTick = true;
 	CivvisQueue.controllerTicks = (CivvisQueue.controllerTicks or 0) + 1;
-	CivvisQueue.lastTickAt = try(function() return UI.GetElapsedTime(); end, nil);
+	CivvisQueue.lastTickAt = CivvisClock.now();
 	local ok, err = pcall(function()
 		-- ★★★★ RETIRE, WHICH IS HOW A QUIT GAME GETS A RESULT AT ALL.
 		--
@@ -21262,7 +21342,7 @@ CivvisQueue.ordersLanded = function()
 			or awaiting.turn == nil or awaiting.turn < 0 then
 		return false;
 	end
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local now = CivvisClock.now();
 	if type(now) ~= "number" or now ~= now then return false; end
 	local last = CivvisQueue.ordersPeekAt;
 	if last ~= nil and now >= last
@@ -21387,7 +21467,7 @@ end;
 CivvisQueue.onPeekPulse = function()
 	if finished or inTick or cfg.Play == false or not cfg.CivvisDecides then return; end
 	if not CivvisQueue.ordersLanded() then return; end
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local now = CivvisClock.now();
 	local last = CivvisQueue.lastTickAt;
 	emit("orders_peek_wake", {
 		turn = awaiting.turn, frame = awaiting.frame or 0,
