@@ -31,3 +31,8 @@ strength test or native controller edit has started.
 The first whole-turn probe compile caught a missing Action import before any
 replay started. It was corrected; that failed compile is retained separately
 and is not passing validation.
+
+An additional static attribution audit prices the city immediately after the
+modeled walk and before the Farm. This separates potential movement effects,
+such as a tribal-village reward, from the improvement's own effect. The frozen
+whole-turn observer remains unchanged while its eight controls are in flight.
