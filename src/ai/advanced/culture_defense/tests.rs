@@ -84,3 +84,39 @@ fn a_trailing_empire_reserves_a_theater_ahead_of_the_delegated_governor() {
     ai.reserve_culture_defense_theater(&mut g, 0, &plan);
     assert!(queued_theater(&g, cid), "queue: {:?}", g.cities[&cid].queue);
 }
+
+/// Version 2: a city at its housing whose next housing is a Granary is left
+/// to the governor's housing reserve; with the Granary standing, or under
+/// version 1, the reservation claims it.
+#[test]
+fn version_two_leaves_a_housing_bound_city_its_granary() {
+    let (mut g, cid, plan) = board();
+    g.players[0].techs.insert(crate::name!("pottery"));
+    // The board's pop 7 already stands at or above its housing.
+    assert!(g.cities[&cid].pop as f64 + 1.0 >= g.city_housing(&g.cities[&cid]));
+    assert!(matches!(
+        crate::ai::BasicAi::housing_reserve_item(&g, 0, cid),
+        Some(Item::Building { building }) if building == "granary"
+    ));
+    let mut ai = AdvancedAi::new();
+    ai.base.w.city_target = 1.0;
+
+    ai.enable_culture_defense_theater();
+    let mut v1 = g.clone();
+    ai.reserve_culture_defense_theater(&mut v1, 0, &plan);
+    assert!(queued_theater(&v1, cid), "version 1 claims it: {:?}", v1.cities[&cid].queue);
+
+    ai.disable_culture_defense_theater();
+    ai.enable_culture_defense_theater_2();
+    assert!(ai.base.culture_defense_theater, "version 2 keeps the governor's step");
+    let mut v2 = g.clone();
+    ai.reserve_culture_defense_theater(&mut v2, 0, &plan);
+    assert!(v2.cities[&cid].queue.is_empty(), "the Granary first: {:?}", v2.cities[&cid].queue);
+
+    g.cities.get_mut(&cid).unwrap().buildings.push(crate::name!("granary"));
+    ai.reserve_culture_defense_theater(&mut g, 0, &plan);
+    assert!(queued_theater(&g, cid), "with its Granary it is claimed: {:?}", g.cities[&cid].queue);
+
+    ai.disable_culture_defense_theater_2();
+    assert!(!ai.base.culture_defense_theater);
+}

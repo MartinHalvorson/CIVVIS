@@ -2310,6 +2310,15 @@
           "culture-building-catchup-3": null
         }
       },
+      "culture-defense-theater": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "culture-defense-theater": null,
+          "culture-defense-theater-2": null
+        }
+      },
       "culture-lane-forecast": {
         "rule_on": [
           "culture-lane-forecast"

@@ -4698,7 +4698,20 @@ impl AdvancedAi {
     /// The twin of `enable_culture_defense_theater`.
     pub fn disable_culture_defense_theater(&mut self) {
         self.culture_defense_theater = false;
-        self.base.culture_defense_theater = false;
+        self.base.culture_defense_theater = self.culture_defense_theater_2;
+    }
+
+    /// See `AdvancedAi::culture_defense_theater_2`: version 1, but a
+    /// housing-bound city builds its Granary before the reservation's Theater.
+    pub fn enable_culture_defense_theater_2(&mut self) {
+        self.culture_defense_theater_2 = true;
+        self.base.culture_defense_theater = true;
+    }
+
+    /// The twin of `enable_culture_defense_theater_2`.
+    pub fn disable_culture_defense_theater_2(&mut self) {
+        self.culture_defense_theater_2 = false;
+        self.base.culture_defense_theater = self.culture_defense_theater;
     }
 
     /// See `gold_and_cards::UPKEEP_RESERVE_TURNS`: upgrade passes keep one and

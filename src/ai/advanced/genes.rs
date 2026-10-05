@@ -2409,6 +2409,9 @@ pub const GENES: &[Gene] = &[
     // third to a half of the strongest rival's and the bred district order
     // always ranks the Theater Square last. See `BasicAi::culture_defense_theater`.
     Gene { tag: "culture-defense-theater", field: "culture_defense_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_defense_theater, disable: AdvancedAi::disable_culture_defense_theater },
+    // Live King 2026-10-05: 11 of 55 housing-bound cities at t75 built the
+    // reservation's Theater instead of a Granary; see `culture_defense.rs`.
+    Gene { tag: "culture-defense-theater-2", field: "culture_defense_theater_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_defense_theater_2, disable: AdvancedAi::disable_culture_defense_theater_2 },
     // V3 carries version one's housing rule into the delegated city governor,
     // where most live builds are placed, and follows the Granary with an
     // Aqueduct while the city stays housing-bound.

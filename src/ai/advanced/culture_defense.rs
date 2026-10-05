@@ -19,6 +19,12 @@
 //! a King rival's early Culture is four times ours, so the trailing rule holds
 //! from Drama and Poetry on, while the culture victories it answers come after
 //! t150. The Theater is a later district, never the first.
+//!
+//! Version 2 (`culture-defense-theater-2`) leaves a housing-bound city whose
+//! next housing is a Granary to the governor. In 16 live King games
+//! 2026-10-04/05, 11 of the 55 cities at their housing (food surplus 2+, no
+//! Granary) were building this Theater at t75; 41 of the 45 capped cities at
+//! t75 had no Granary, and the mean housing growth multiplier at t100 was 0.58.
 
 use super::{AdvancedAi, StrategicPlan};
 use crate::ai::BasicAi;
@@ -32,7 +38,10 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        if !self.culture_defense_theater || self.base.minor || self.base.barb {
+        if !(self.culture_defense_theater || self.culture_defense_theater_2)
+            || self.base.minor
+            || self.base.barb
+        {
             return;
         }
         let city_ids = g.player_city_ids(pid);
@@ -65,6 +74,16 @@ impl AdvancedAi {
                 || self.base.settler_due(g, pid, cid, city_ids.len(), settlers)
                 || plan.threatened_city == Some(cid)
                 || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+            {
+                continue;
+            }
+            // Version 2: a city at its housing whose next housing is a
+            // Granary grows first; the governor's housing reserve builds it.
+            if self.culture_defense_theater_2
+                && matches!(
+                    BasicAi::housing_reserve_item(g, pid, cid),
+                    Some(crate::game::Item::Building { .. })
+                )
             {
                 continue;
             }
