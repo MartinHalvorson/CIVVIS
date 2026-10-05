@@ -285,6 +285,27 @@ pub(crate) const CONQUEST_SEARCH_SCOUT_VALUE: f64 = 300.0;
 /// seventeen turns out, when the capital finished its Settler in four.
 pub(crate) const CONQUEST_SEARCH_SCOUT_MAX_TURNS: f64 = 6.0;
 
+/// `conquest-opening-needs-the-production`: standard turns between two
+/// journal lines for an opening the gene refuses, so a capital that stays
+/// short of the force does not write the same line every turn.
+pub(crate) const CONQUEST_FEASIBILITY_NOTE_TURNS: u32 = 5;
+
+/// `conquest-opening-needs-the-production`: tiles a strike-force body covers
+/// per turn on the march from the capital to the rally. An Ancient land
+/// body's two moves; roads and terrain are left out, so the march is priced
+/// at its best case.
+pub(crate) const CONQUEST_MARCH_TILES_PER_TURN: f64 = 2.0;
+
+/// `conquest-opening-needs-the-production`: the share of the window the
+/// best-case estimate may fill. The estimate leaves out the capital's other
+/// builds, barbarian pressure and the Settler's walk, so a force priced at
+/// the whole window does not arrive inside it. Replaying live game 94: at
+/// turn 14 the estimate read 26 turns of a 26-turn window, and live the
+/// second city came at 18, the book's Settler ran to 27, and the force was
+/// still short when the opening released at 40. None of the last 24 live
+/// openings ever took its city.
+pub(crate) const CONQUEST_FEASIBLE_SHARE: f64 = 0.8;
+
 /// The opening this controller has committed to.
 ///
 /// Everything the gene remembers between turns lives here, so the flag being
@@ -1556,6 +1577,144 @@ impl AdvancedAi {
         }
     }
 
+    /// `conquest-opening-needs-the-production`: the turns the opening would
+    /// need against the turns it would have, as `(needed, window)`.
+    ///
+    /// `needed` is what the capital must still do before the force can stand
+    /// at the rally:
+    ///
+    /// - the first Settler, when the empire has one city and no Settler on
+    ///   the map (the reservation never defers it, so the force waits);
+    /// - the book's next Settler, while a population-two Settler gene still
+    ///   holds the opening book (it takes the capital's empty queue ahead of
+    ///   the reservation);
+    /// - the missing ranged bodies, at the Archer's cost while the best
+    ///   shooter the capital can train is still range-one (the reservation
+    ///   trains the Archer as soon as it can), and the missing melee bodies
+    ///   at the fastest rate the capital trains them;
+    /// - a Battering Ram, when the target is walled and the capital can
+    ///   train one;
+    /// - the march to the rally at [`CONQUEST_MARCH_TILES_PER_TURN`].
+    ///
+    /// The capital's other builds, barbarians and the Settler's own walk are
+    /// left out, so the estimate errs fast: the gene refuses only an opening
+    /// that could not assemble even with the capital on nothing else.
+    ///
+    /// `window` is the deadline the opening would get if it opened now: the
+    /// shipped [`Self::conquest_commit_base`] with preparation starting once
+    /// the first Settler is out.
+    ///
+    /// `None` when a missing half has no body the capital can train, so an
+    /// opening this cannot price is left to the shipped rule.
+    ///
+    /// Live King civvis-20261005T024614Z (game 94) opened on Lisbon at turn
+    /// 9 with one city; the capital ran its Settler book, began the force at
+    /// turn 27 and released the opening at turn 40, "the commit deadline
+    /// passed before the force ever assembled" — the release reason in 9 of
+    /// the last 24 live games.
+    pub(crate) fn conquest_force_estimate(
+        &self,
+        g: &Game,
+        pid: usize,
+        capital: u32,
+        city: u32,
+        rally: Pos,
+    ) -> Option<(f64, f64)> {
+        let production = g.city_yields(capital).production.max(0.5);
+        let turns_for = |item: &Item| {
+            g.host_production_turns(capital, item)
+                .unwrap_or_else(|| g.item_cost_for(pid, item) / production)
+        };
+        let counts = self.counts(g, pid);
+        let (ranged, melee) = Self::conquest_reservation_shortfall(&counts);
+        let mut fastest_ranged: Option<f64> = None;
+        let mut fastest_melee: Option<f64> = None;
+        for item in g.producible_items(pid, capital) {
+            let Item::Unit { unit } = &item else { continue };
+            let spec = &g.rules.units[unit];
+            let slot = if Self::conquest_ranged_body(spec) {
+                &mut fastest_ranged
+            } else if Self::conquest_melee_body(spec) {
+                &mut fastest_melee
+            } else {
+                continue;
+            };
+            let turns = turns_for(&item);
+            *slot = Some(slot.map_or(turns, |best| best.min(turns)));
+        }
+        // The reservation trains the range-two shooter (the Archer) the
+        // moment it can, and its research credit chases exactly that unlock,
+        // so a range-one best (the Slinger) is priced at the Archer's cost.
+        let civ = &g.players[pid].civ;
+        let archer = g
+            .rules
+            .units
+            .iter()
+            .filter(|(_, spec)| spec.buildable && Self::early_archers_shooter(spec))
+            .filter(|(_, spec)| spec.unique_to.as_ref().is_none_or(|unique| unique == civ))
+            .min_by(|a, b| a.1.cost.total_cmp(&b.1.cost))
+            .map(|(name, _)| Item::Unit { unit: *name });
+        let range_one_best = !g.producible_items(pid, capital).iter().any(|item| {
+            matches!(item, Item::Unit { unit } if Self::early_archers_shooter(&g.rules.units[unit]))
+        });
+        let ranged_turns = match (&archer, range_one_best) {
+            (Some(archer), true) => Some(
+                fastest_ranged
+                    .map_or_else(|| turns_for(archer), |best| best.max(turns_for(archer))),
+            ),
+            _ => fastest_ranged,
+        };
+        let mut build = 0.0;
+        if ranged > 0 {
+            build += ranged_turns? * ranged as f64;
+        }
+        if melee > 0 {
+            build += fastest_melee? * melee as f64;
+        }
+        let ram = Item::Unit {
+            unit: crate::name!("battering_ram"),
+        };
+        let walled = g
+            .cities
+            .get(&city)
+            .is_some_and(|target| g.city_max_wall_hp(target) > 0);
+        if walled && g.can_produce(pid, capital, &ram) {
+            let breakers =
+                CONQUEST_WALL_BREAKERS.saturating_sub(Self::conquest_breakers_held(g, pid));
+            build += turns_for(&ram) * breakers as f64;
+        }
+        let settler_turns = turns_for(&Item::Unit {
+            unit: crate::name!("settler"),
+        });
+        let settler_out = g
+            .units
+            .values()
+            .any(|unit| unit.owner == pid && unit.kind.as_str() == "settler");
+        // The first Settler is never deferred: the reservation waits for the
+        // second city, and preparation starts there.
+        let first = if g.player_city_ids(pid).len() < CONQUEST_FIRST_SETTLER_CITIES && !settler_out
+        {
+            settler_turns
+        } else {
+            0.0
+        };
+        // While the opening book is open, a population-two Settler gene
+        // takes the capital's next empty queue before the reservation can.
+        // Live game 94 founded its second city at turn 18 and the capital
+        // queued another Settler that same turn; the force began at 27.
+        let book = if self.base.book_settler_ahead() {
+            settler_turns
+        } else {
+            0.0
+        };
+        let home = g.cities[&capital].pos;
+        let march = (f64::from(g.wdist(home, rally)) / CONQUEST_MARCH_TILES_PER_TURN).ceil();
+        let now = f64::from(g.turn);
+        let deadline = f64::from(g.standard_duration(CONQUEST_COMMIT_DEADLINE))
+            .max(now + first + f64::from(g.standard_duration(CONQUEST_MIN_PREPARATION_TURNS)));
+        Some((first + book + build + march, deadline - now))
+    }
+
     fn conquest_open(&mut self, g: &mut Game, pid: usize) {
         if self.conquest_closed || g.turn >= self.conquest_naming_deadline(g) {
             return;
@@ -1570,6 +1729,34 @@ impl AdvancedAi {
         let Some(rally) = Self::conquest_rally_tile(g, pid, home, g.cities[&city].pos) else {
             return;
         };
+        if self.conquest_opening_needs_the_production {
+            if let Some((needed, window)) =
+                self.conquest_force_estimate(g, pid, capital, city, rally)
+            {
+                let budget = window * CONQUEST_FEASIBLE_SHARE;
+                if needed <= budget {
+                    think!(self.journal(), Military, Detail,
+                           "The conquest force for {} fits its window", g.cities[&city].name;
+                           "raising and marching it takes about {:.0} turns; the opening would \
+                            get {:.0} and plans on {:.0} of them", needed, window, budget);
+                }
+                if needed > budget {
+                    let note_due = self.conquest_feasibility_noted.is_none_or(|noted| {
+                        g.turn >= noted + g.standard_duration(CONQUEST_FEASIBILITY_NOTE_TURNS)
+                    });
+                    if note_due {
+                        self.conquest_feasibility_noted = Some(g.turn);
+                        think!(self.journal(), Military, Strategy,
+                               "Not opening a conquest against {}", g.players[target].civ;
+                               "the force for {} would take {:.0} turns to raise and march \
+                                against a window of {:.0}, of which it plans on {:.0}; the \
+                                capital keeps its own builds",
+                               g.cities[&city].name, needed, window, budget);
+                    }
+                    return;
+                }
+            }
+        }
         let known = Self::conquest_known_cities(g, pid, target).len();
         think!(self.journal(), Military, Strategy,
                "Opening a conquest against {}", g.players[target].civ;

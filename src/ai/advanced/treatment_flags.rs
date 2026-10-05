@@ -5566,6 +5566,17 @@ impl AdvancedAi {
         self.staging_gun_remembers_hostiles = false;
     }
 
+    /// Opt-in gene `conquest-opening-needs-the-production`; see
+    /// [`Self::conquest_force_estimate`].
+    pub fn enable_conquest_opening_needs_the_production(&mut self) {
+        self.conquest_opening_needs_the_production = true;
+    }
+
+    /// The twin of `enable_conquest_opening_needs_the_production`.
+    pub fn disable_conquest_opening_needs_the_production(&mut self) {
+        self.conquest_opening_needs_the_production = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

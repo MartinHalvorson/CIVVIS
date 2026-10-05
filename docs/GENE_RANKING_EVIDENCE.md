@@ -215,6 +215,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `colonization-earns-its-slot` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot`; see `Self::colonization_earns_its_slot`. | — \| 2 |
 | `colonization-earns-its-slot-2` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot-2`; see `Self::colonization_earns_its_slot_2`. | — \| 2 |
 | `connect-the-luxury-2` | off (unmeasured) | Research a first-copy luxury only when it can relieve an Amenity deficit after a legal, affordable unlock. | 1 \| 2 |
+| `conquest-opening-needs-the-production` | off (unmeasured) | Opt-in gene `conquest-opening-needs-the-production`; see `Self::conquest_force_estimate`. | 1 \| 1 |
 | `conquest-takes-the-soft-city` | off (unmeasured) | `conquest-takes-the-soft-city`: rank the early conquest target by what can be taken before what is worth most. | 1 \| 1 |
 | `counter-culture-by-conquest` | off (unmeasured) | `counter-culture-by-conquest`: answer a culture leader with war aimed at its Great Works. | 1 \| 1 |
 | `counter-war-needs-parity` | off (unmeasured) | Opt-in gene `counter-war-needs-parity`; see `Self::counter_war_needs_parity`. | 1 \| 1 |

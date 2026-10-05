@@ -2721,6 +2721,11 @@ pub const GENES: &[Gene] = &[
     // the fog, and were one-shot at turns 145 and 146. See
     // `siege_train::siege_stage_step`.
     Gene { tag: "staging-gun-remembers-hostiles", field: "staging_gun_remembers_hostiles", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_remembers_hostiles, disable: AdvancedAi::disable_staging_gun_remembers_hostiles },
+    // Live King civvis-20261005T024614Z (game 94) opened its conquest on
+    // Lisbon at turn 9 with one city and released it at turn 40, "the commit
+    // deadline passed before the force ever assembled" -- the release in 9 of
+    // the last 24 live games. See `early_conquest::conquest_force_estimate`.
+    Gene { tag: "conquest-opening-needs-the-production", field: "conquest_opening_needs_the_production", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_opening_needs_the_production, disable: AdvancedAi::disable_conquest_opening_needs_the_production },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

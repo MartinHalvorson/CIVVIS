@@ -1922,3 +1922,193 @@ fn a_bleeding_captured_capital_is_not_traded_for_terms() {
         assert_eq!(ai.peace_offers.contains(&1), sues, "loyalty {rate}");
     }
 }
+
+// ------------------------------------- conquest-opening-needs-the-production
+
+fn needs_the_production() -> AdvancedAi {
+    let mut ai = armed();
+    ai.enable_conquest_opening_needs_the_production();
+    ai
+}
+
+/// Every unit the capital can train, in `turns` on the host's own menu.
+fn fast_capital(game: &mut Game, capital: u32, turns: f64) {
+    let menu: std::collections::BTreeMap<String, crate::game::HostMenuEntry> = game
+        .producible_items(0, capital)
+        .into_iter()
+        .map(|item| {
+            (
+                Game::production_block_key(&item),
+                crate::game::HostMenuEntry {
+                    cost: None,
+                    turns: Some(turns),
+                },
+            )
+        })
+        .collect();
+    Arc::make_mut(&mut game.host_buildable).insert(capital, menu);
+}
+
+#[test]
+fn a_force_the_capital_cannot_raise_inside_the_window_is_not_opened() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    meet_and_explore(&mut game, 1);
+    let mut off = armed();
+    off.maintain_conquest_opening(&mut game, 0);
+    assert!(
+        off.conquest_opening.is_some(),
+        "off: the shipped opening names the target"
+    );
+
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    meet_and_explore(&mut game, 1);
+    let mut on = needs_the_production();
+    let capital = game.player_city_ids(0)[0];
+    let (target, city) = on.conquest_target(&game, 0).expect("a target in reach");
+    assert_eq!(target, 1);
+    let rally = AdvancedAi::conquest_rally_tile(
+        &game,
+        0,
+        game.cities[&capital].pos,
+        game.cities[&city].pos,
+    )
+    .expect("a rally tile");
+    let (needed, window) = on
+        .conquest_force_estimate(&game, 0, capital, city, rally)
+        .expect("the force is priced");
+    assert!(
+        needed > window * CONQUEST_FEASIBLE_SHARE,
+        "a one-city capital on bare grassland cannot raise six bodies in the window: needed {needed} vs {window}"
+    );
+    on.maintain_conquest_opening(&mut game, 0);
+    assert!(
+        on.conquest_opening.is_none(),
+        "on: the opening is not named"
+    );
+    assert_eq!(
+        on.conquest_feasibility_noted,
+        Some(game.turn),
+        "the refusal is journalled"
+    );
+}
+
+#[test]
+fn a_capital_that_raises_the_force_inside_the_window_still_opens() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    meet_and_explore(&mut game, 1);
+    let capital = game.player_city_ids(0)[0];
+    // The Archer is on the menu, so the ranged half is priced at the menu's turn.
+    game.players[0].techs.insert(name!("archery"));
+    fast_capital(&mut game, capital, 1.0);
+    let mut on = needs_the_production();
+    let (_, city) = on.conquest_target(&game, 0).expect("a target in reach");
+    let rally = AdvancedAi::conquest_rally_tile(
+        &game,
+        0,
+        game.cities[&capital].pos,
+        game.cities[&city].pos,
+    )
+    .expect("a rally tile");
+    let (needed, window) = on
+        .conquest_force_estimate(&game, 0, capital, city, rally)
+        .expect("the force is priced");
+    assert!(
+        needed <= window * CONQUEST_FEASIBLE_SHARE,
+        "a turn a body is quick: needed {needed} vs {window}"
+    );
+    on.maintain_conquest_opening(&mut game, 0);
+    assert!(
+        on.conquest_opening.is_some(),
+        "on: a buildable force opens as before"
+    );
+    assert_eq!(on.conquest_feasibility_noted, None);
+}
+
+#[test]
+fn a_refused_opening_opens_on_a_later_turn_once_the_force_is_in_hand() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    meet_and_explore(&mut game, 1);
+    let mut on = needs_the_production();
+    on.maintain_conquest_opening(&mut game, 0);
+    assert!(
+        on.conquest_opening.is_none(),
+        "refused while the force is out of reach"
+    );
+
+    // Two turns later the empire has its second city and the six bodies.
+    game.turn += 2;
+    game.found_city_for(0, at(6, 17), None);
+    let capital = game
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| game.cities[cid].is_capital)
+        .expect("our capital");
+    let home = game.cities[&capital].pos;
+    bodies(&mut game, 0, "archer", home, 1, CONQUEST_RANGED);
+    bodies(&mut game, 0, "warrior", home, 2, CONQUEST_MELEE);
+    on.maintain_conquest_opening(&mut game, 0);
+    assert!(
+        on.conquest_opening.is_some(),
+        "the same target opens once the force can stand at the rally"
+    );
+}
+
+#[test]
+fn the_refusal_is_journalled_once_per_note_window_not_every_turn() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    meet_and_explore(&mut game, 1);
+    let mut on = needs_the_production();
+    on.maintain_conquest_opening(&mut game, 0);
+    let first = on.conquest_feasibility_noted.expect("noted");
+    game.turn += 1;
+    on.maintain_conquest_opening(&mut game, 0);
+    assert_eq!(
+        on.conquest_feasibility_noted,
+        Some(first),
+        "not re-noted a turn later"
+    );
+    game.turn = first + game.standard_duration(CONQUEST_FEASIBILITY_NOTE_TURNS);
+    on.maintain_conquest_opening(&mut game, 0);
+    assert_eq!(
+        on.conquest_feasibility_noted,
+        Some(game.turn),
+        "re-noted after the window"
+    );
+}
+
+#[test]
+fn the_books_next_settler_is_priced_ahead_of_the_force() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    meet_and_explore(&mut game, 1);
+    let capital = game.player_city_ids(0)[0];
+    let mut ai = needs_the_production();
+    let (_, city) = ai.conquest_target(&game, 0).expect("a target in reach");
+    let rally = AdvancedAi::conquest_rally_tile(
+        &game,
+        0,
+        game.cities[&capital].pos,
+        game.cities[&city].pos,
+    )
+    .expect("a rally tile");
+    let (without, window) = ai
+        .conquest_force_estimate(&game, 0, capital, city, rally)
+        .expect("priced");
+    ai.enable_capital_settler_after_completion();
+    let (with, same_window) = ai
+        .conquest_force_estimate(&game, 0, capital, city, rally)
+        .expect("priced");
+    assert_eq!(
+        window, same_window,
+        "the book's Settler does not move the deadline"
+    );
+    let settler = game.item_cost_for(
+        0,
+        &Item::Unit {
+            unit: name!("settler"),
+        },
+    ) / game.city_yields(capital).production.max(0.5);
+    assert!(
+        (with - without - settler).abs() < 1e-6,
+        "the population-two Settler gene's book Settler is one more Settler ahead: {without} -> {with} (settler {settler})"
+    );
+}
