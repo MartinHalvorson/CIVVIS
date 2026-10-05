@@ -257,3 +257,63 @@ for _, cfg in ipairs({{Play = false, CivvisDecides = true}, {CivvisDecides = fal
     assert(h.update == nil, "disabled automation must not arm the peek clock")
 end
 print("all landed-orders peek clock checks passed")
+
+-- At a 2x debug timescale the frame deltas run twice as fast, and the agent's
+-- pulse (which every pulse-counted timer inherits) still comes once per REAL
+-- second: each delta is divided by the scale the agent shares. The Heartbeat
+-- acknowledges the scale it read, and reports how its frame deltas compare
+-- with the UI clock, so the agent can revert a timescale they disagree with.
+do
+    local env = setmetatable({ CivvisControlConfig = { CivvisDecides = true } }, { __index = _G })
+    local h = { pulses = 0, ui = 100 }
+    env.include = function(name)
+        if name ~= "TopPanel" then error("unavailable expansion") end
+        env.LateInitialize = function() end
+    end
+    env.ContextPtr = { SetUpdate = function(_, callback) h.update = callback end }
+    env.LuaEvents = { CivvisControlPulse = function() h.pulses = h.pulses + 1 end,
+                      CivvisControlPeek = function() end }
+    env.UI = { GetElapsedTime = function() return h.ui end }
+    env.ExposedMembers = { CivvisTimeScale = 2, CivvisClockAck = { scale = {}, at = {} } }
+    local chunk = assert(loadfile(here .. "/CivvisControlHeartbeat.lua"))
+    setfenv(chunk, env)
+    chunk()
+    local function frame(dt) h.ui = h.ui + dt; h.update(dt) end
+    frame(1.5)
+    assert(h.pulses == 0, "at 2x, 1.5 frame seconds (0.75 real) must not pulse")
+    frame(0.6)
+    assert(h.pulses == 1, "at 2x, 2.1 frame seconds (1.05 real) pulse once")
+    assert(env.ExposedMembers.CivvisClockAck.scale.Heartbeat == 2, "the Heartbeat acknowledges the scale")
+    assert(env.ExposedMembers.CivvisClockAck.at.Heartbeat == h.ui, "…with the UI time it read it")
+    for _ = 1, 120 do frame(0.1) end
+    local fc = env.ExposedMembers.CivvisFrameClock
+    assert(fc ~= nil and fc.scale == 2 and fc.ratio == 1, "frame deltas that keep pace with the UI clock read 1")
+    -- Frame deltas that do not scale while the UI clock does read 0.5.
+    for _ = 1, 120 do h.ui = h.ui + 0.2; h.update(0.1) end
+    assert(env.ExposedMembers.CivvisFrameClock.ratio == 0.5, "unscaled frame deltas read 0.5")
+    -- Only consecutive frames count. A hidden HUD (a leader screen stops this
+    -- SetUpdate while the UI clock runs on: G98 read 0.48) and a long hitch
+    -- whose delta the engine caps are gaps, not missing frame time.
+    env.ExposedMembers.CivvisFrameClock = nil
+    env.CivvisFrameClock.raw, env.CivvisFrameClock.ui = 0, 0  -- a fresh window
+    for _ = 1, 60 do frame(0.1) end
+    h.ui = h.ui + 5.0                       -- 5 UI-s with no frames at all
+    for _ = 1, 30 do frame(0.1) end
+    h.ui = h.ui + 0.8; h.update(0.2)        -- one long frame, its delta capped
+    for _ = 1, 30 do frame(0.1) end
+    fc = env.ExposedMembers.CivvisFrameClock
+    assert(fc ~= nil and fc.ratio == 1, "a hidden stretch and a capped hitch read 1, not 0.48: " .. tostring(fc and fc.ratio))
+    -- Unscaled deltas still read 0.5 in every ordinary frame.
+    env.ExposedMembers.CivvisFrameClock = nil
+    env.CivvisFrameClock.raw, env.CivvisFrameClock.ui = 0, 0
+    for _ = 1, 120 do h.ui = h.ui + 0.2; h.update(0.1) end
+    assert(env.ExposedMembers.CivvisFrameClock.ratio == 0.5, "unscaled deltas across consecutive frames read 0.5")
+    -- A missing or nonsense scale reads as 1, and is acknowledged as 1.
+    env.ExposedMembers.CivvisTimeScale = "fast"
+    frame(0.1)
+    assert(env.ExposedMembers.CivvisClockAck.scale.Heartbeat == 1, "a nonsense scale reads as 1")
+    local before = h.pulses
+    frame(1.0)
+    assert(h.pulses == before + 1, "at scale 1 one frame second pulses")
+end
+print("all real-seconds heartbeat checks passed")

@@ -5021,6 +5021,11 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `breakers-stay-with-the-siege`: while a walled Siege row asks the
+    /// Objective Board for guns, a siege gun serves only Siege rows and the
+    /// Reserve, never a Defend, Relieve, Destroy, Escort or camp row. See
+    /// `objective_board::breaker_rows_ask`. Off by default.
+    breakers_stay_with_the_siege: bool,
     /// `breach-assault`: the ring's melee joins the assault on a city whose
     /// walls are down or opened by a ram or tower, once the siege's blows can
     /// take it within two turns. See `siege_train::breach_assault_blow`.
@@ -5273,6 +5278,10 @@ pub struct AdvancedAi {
     /// is kept at war, and the leader among them opens a second front. See
     /// `one_war::diplomatic_contender`. Off by default.
     diplomatic_contender_kept: bool,
+    /// `diplomatic-contender-kept-2`: and the crushed Diplomatic Victory
+    /// contender we are already fighting takes the front. See
+    /// `one_war::diplomatic_contender_front`. Off by default.
+    diplomatic_contender_kept_2: bool,
     /// `decisive-window`: research and civics aimed at the cheapest
     /// assault-plus-breaker package that beats the campaign target's
     /// defender and opens its wall tier, the civilization's unique unit
@@ -5289,6 +5298,9 @@ pub struct AdvancedAi {
     /// The objective tile, our nearest land soldier's best distance to it,
     /// and the turn it was set. See `advanced/capture_march.rs`.
     capture_march: Option<(crate::Pos, i32, u32)>,
+    /// `stall-rebases-on-new-walls`: the capture objective's tile and the
+    /// wall pool last read there. See `rebase_capture_on_new_walls`.
+    capture_walls_seen: Option<(crate::Pos, i32)>,
     /// `culture-counter-declares`: an urgent culture rival is declared on at
     /// `one_war::CULTURE_COUNTER_RATIO` times its power without waiting for a
     /// staged siege. See `one_war::culture_counter_due`. Off by default.
@@ -6740,6 +6752,10 @@ pub struct AdvancedAi {
     /// `naval-escort-patience`.
     naval_escort_patience: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `prophet-race-takes-a-district-slot-2`: the race's Holy Site in the
+    /// city that builds it soonest. See
+    /// `BasicAi::prophet_race_takes_a_district_slot_2`. Off by default.
+    prophet_race_takes_a_district_slot_2: bool,
     /// `peace-waits-for-unseen-prey`: a beaten rival whose cities are all in
     /// the fog is not offered peace. See `one_war::unseen_prey`. Off by
     /// default.
@@ -6964,6 +6980,22 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `stalled-peace-spares-the-counter`: the fatigue clause's "the war has
+    /// stalled" peace is not offered to a rival whose victory clock the
+    /// Domination army answers. See `one_war::stalled_peace_spares`. Off by
+    /// default.
+    stalled_peace_spares_the_counter: bool,
+    /// `staging-gun-remembers-hostiles`: the Stage march prices a hostile it
+    /// saw this turn or last and lost in the fog. The danger field reads only
+    /// units on the board, so a lone gun walked into the reach of cavalry the
+    /// seat had just seen: live King civvis-20261005T033442Z (game 96) lost
+    /// two Trebuchets at turns 145 and 146 to Khmer Cuirassiers last seen at
+    /// turn 144 four to seven tiles from the tiles the guns marched to; each
+    /// one-shot a full-health gun. A remembered melee hostile strikes anywhere
+    /// within its movement for every turn since the sighting plus one, with
+    /// its full-health blow. See `siege_train::siege_stage_step` and
+    /// `AdvancedAi::remembered_strikers`. Off by default.
+    staging_gun_remembers_hostiles: bool,
     /// `staging-column-passes-through`: a Stage march step that brings a
     /// unit no nearer to the city is taken across the friend in the gap
     /// instead (`Game::pass_through_destination`). The router lets only the
@@ -7032,6 +7064,10 @@ pub struct AdvancedAi {
     /// down falls back to Stage only under `HELD_BREACH_ABORT_SHARE` of the
     /// bill. See `siege_train::HELD_BREACH_WALL_SHARE`. Off by default.
     siege_holds_a_breach: bool,
+    /// `stall-rebases-on-new-walls`: a capture objective that builds walls
+    /// mid-siege starts its stall reading again. See
+    /// `commitments::rebase_capture_on_new_walls`. Off by default.
+    stall_rebases_on_new_walls: bool,
     /// `siege-ranged-floor`: a Siege row asks for
     /// `objective_board::SIEGE_RANGED_FLOOR` ranged bodies whatever its bill,
     /// so the city's own hit points and heal are paid for. Off by default.
@@ -8873,6 +8909,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            breakers_stay_with_the_siege: false,
             breach_assault: false,
             breach_assault_closes_in: false,
             breaker_supply_scales_2: false,
@@ -8927,10 +8964,12 @@ impl AdvancedAi {
             // ---- append: c-d ----------------------------------------
             capital_defense_holds: false,
             diplomatic_contender_kept: false,
+            diplomatic_contender_kept_2: false,
             decisive_window: false,
             domination_strikes_when_staged: false,
             capture_waits_on_the_march: false,
             capture_march: None,
+            capture_walls_seen: None,
             culture_counter_declares: false,
             denial_needs_a_road: false,
             denial_nearest_finish: false,
@@ -9123,6 +9162,7 @@ impl AdvancedAi {
             one_sanctuary: false,
             naval_escort_patience: false,
             // ---- append: p-r ----------------------------------------
+            prophet_race_takes_a_district_slot_2: false,
             peace_waits_for_unseen_prey: false,
             peace_waits_for_the_foothold: false,
             prophet_race_takes_a_district_slot: false,
@@ -9159,6 +9199,8 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            stalled_peace_spares_the_counter: false,
+            staging_gun_remembers_hostiles: false,
             staging_column_passes_through: false,
             second_front_kept_when_winning: false,
             second_front_kept_when_winning_2: false,
@@ -9169,6 +9211,7 @@ impl AdvancedAi {
             siege_needs_a_breaker: false,
             siege_budget_counts_what_fires: false,
             siege_holds_a_breach: false,
+            stall_rebases_on_new_walls: false,
             siege_ranged_floor: false,
             siege_rally_holds: false,
             siege_train_scales_with_walls: false,
@@ -9281,6 +9324,7 @@ impl AdvancedAi {
             || self.hostile_memory_2
             || self.hostile_memory_3
             || self.live_settler_capture_lessons
+            || self.staging_gun_remembers_hostiles
         {
             self.remember_visible_hostiles(g, pid);
         }
@@ -16430,10 +16474,15 @@ impl AdvancedAi {
                                 .filter(|window| window.tech_goal.map(Name::as_str) == Some(goal))
                             {
                                 format!(
-                                    "decisive-window: the {step} step toward {}; {}{} beats {}'s best defender ({:.0}) by {:.0}{} in {:.0} turns",
+                                    "decisive-window: the {step} step toward {}; {}{} {} {}'s best defender ({:.0}) by {:.0}{} in {:.0} turns",
                                     plain(goal),
                                     plain(window.assault.as_str()),
                                     if window.unique { " (our unique unit)" } else { "" },
+                                    if window.margin >= decisive_window::DECISIVE_MARGIN {
+                                        "beats".to_string()
+                                    } else {
+                                        format!("at {:.1}x their power faces", window.power_ratio)
+                                    },
                                     g.players[window.target].civ,
                                     window.defender,
                                     window.margin,
@@ -21395,6 +21444,8 @@ impl AdvancedAi {
                     || (!appointed_objective
                         && fatigued
                         && !one_war_presses
+                        // See `stalled_peace_spares`.
+                        && !self.stalled_peace_spares(g, pid, *other)
                         && g.player_city_ids(*other).len() > 1)
                     // See `peace_when_war_does_not_pay`: the same fatigue
                     // clause, without the appointed-objective exemption that
@@ -21403,6 +21454,7 @@ impl AdvancedAi {
                         && fatigued
                         && !one_war_presses
                         && !air_front
+                        && !self.stalled_peace_spares(g, pid, *other)
                         && g.player_city_ids(*other).len() > 1
                         && (!self.treasury_can_carry_a_war(g, pid)
                             || g.turn.saturating_sub(self.last_campaign_progress)

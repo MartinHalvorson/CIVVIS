@@ -416,3 +416,45 @@ fn a_pending_window_yields_astrology_to_the_faith_veto() {
     let goal = window.tech_goal.expect("a goal");
     assert!(ai.tech_leads_to(&known, &picked, goal.as_str()), "{picked}");
 }
+
+/// Numbers relax the margin: against defenders that outclass our army, an
+/// even fight needs a better assault, but at `OVERWHELMING_POWER` the
+/// package is our existing assault plus the breaker that opens the walls
+/// (live G94: 5-8x Portugal's power, "no package" t73-t135, Trebuchets at
+/// t111 for walls raised at t86).
+#[test]
+fn overwhelming_power_reduces_the_window_to_a_breaker() {
+    let (mut g, ai, plan) = board("Gran Colombia");
+    // Medieval walls are one step away for the target; its Pikemen and
+    // Men-at-Arms outclass our Swordsmen.
+    learn(&mut g, 1, &["construction", "masonry", "military_tactics", "apprenticeship"]);
+    learn(&mut g, 0, &["iron_working", "bronze_working", "masonry"]);
+    g.players[0].strategic_resources.insert(name!("iron"), 40.0);
+    let even = ai
+        .decisive_window_within(&g, 0, &plan, f64::INFINITY)
+        .expect("some package eventually outclasses them");
+    assert!(even.margin >= DECISIVE_MARGIN, "{even:?}");
+    assert!(even.power_ratio < DOMINANT_POWER, "{even:?}");
+
+    let home = g.cities[&g.player_city_ids(0)[0]].pos;
+    for _ in 0..12 {
+        g.spawn_test_unit("swordsman", 0, home);
+    }
+    let crushing = ai
+        .decisive_window_within(&g, 0, &plan, f64::INFINITY)
+        .expect("a breaker package");
+    assert!(crushing.power_ratio >= OVERWHELMING_POWER, "{crushing:?}");
+    let assault = &g.rules.units[crushing.assault];
+    assert!(
+        assault.tech.is_none_or(|tech| g.players[0].techs.contains(&tech)),
+        "the assault is one we already field: {crushing:?}"
+    );
+    let breaker = crushing.breaker.expect("walls need a breaker");
+    let breaker_tech = g.rules.units[breaker].tech.expect("a researched breaker");
+    let goal = crushing.tech_goal.expect("the breaker is still owed");
+    assert!(
+        ai.tech_leads_to(&g, goal.as_str(), breaker_tech.as_str()),
+        "{goal} leads to {breaker_tech}: {crushing:?}"
+    );
+    assert!(crushing.turns <= even.turns, "{crushing:?} vs {even:?}");
+}

@@ -414,6 +414,15 @@ impl AdvancedAi {
         let capital_handoff = current
             .and_then(|front| self.domination_followup_target(g, pid, Some(front)))
             .filter(|target| enemies.contains(target));
+        // `diplomatic-contender-kept-2`: the crushed Diplomatic Victory
+        // contender with the most points among the wars already running
+        // takes the front ahead of every other clock. See
+        // `diplomatic_contender_front`.
+        if self.diplomatic_contender_kept_2 && self.forced_target_player.is_none() {
+            if let Some(contender) = self.diplomatic_contender_front(g, pid, enemies) {
+                return Some(contender);
+            }
+        }
         // The declaration gate already admits urgent victory denial. Once
         // that war exists, concentrate on it instead of immediately offering
         // the winning rival peace as a second front. Keep the ordinary rout
@@ -848,8 +857,35 @@ impl AdvancedAi {
     /// points against Sumeria's 3 military and four cities, while Persia, the
     /// front, won the Diplomatic Victory at turn 242.
     pub(crate) fn diplomatic_contender(&self, g: &Game, pid: usize, other: usize) -> bool {
-        self.diplomatic_contender_kept
-            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+        self.diplomatic_contender_kept && self.diplomatic_contender_reading(g, pid, other)
+    }
+
+    /// `diplomatic-contender-kept-2`: among `enemies`, the one reading as a
+    /// diplomatic contender (`diplomatic_contender_reading`) with the most
+    /// Diplomatic Victory points. Only its elimination takes those points
+    /// off the board, so it takes the front ahead of every other clock. Live
+    /// King civvis-20261005T021048Z (game 93) fought Portugal (15 points, 7
+    /// cities, 172 military), the Zulu (14) and Indonesia (13, 988 military)
+    /// at once from turn 220, at 1,970 power, and aimed the campaign at
+    /// Indonesia every turn.
+    pub(crate) fn diplomatic_contender_front(
+        &self,
+        g: &Game,
+        pid: usize,
+        enemies: &[usize],
+    ) -> Option<usize> {
+        enemies
+            .iter()
+            .copied()
+            .filter(|enemy| self.diplomatic_contender_reading(g, pid, *enemy))
+            .max_by_key(|enemy| (g.players[*enemy].dvp, std::cmp::Reverse(*enemy)))
+    }
+
+    /// A living major at [`DIPLOMATIC_CONTENDER_DVP`] Diplomatic Victory
+    /// points or more that a Domination seat outguns
+    /// [`ONE_WAR_CRUSHED_RATIO`] times over.
+    fn diplomatic_contender_reading(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && g.players.get(other).is_some_and(|player| {
                 player.alive
                     && !player.is_minor
@@ -1267,6 +1303,26 @@ impl AdvancedAi {
                     }))
                 // See `diplomatic_contender`.
                 || self.diplomatic_contender(g, pid, other))
+    }
+
+    /// `stalled-peace-spares-the-counter`: whether the fatigue clause's "the
+    /// war has stalled" peace spares the war on `other`, a rival whose victory
+    /// clock the Domination army answers (`domination_counter_target`) or one
+    /// close to winning (`urgent_victory_threat`). The Recovery clause already
+    /// spares a counter target; the fatigue clause did not. Live King
+    /// civvis-20261005T033442Z (game 96) offered the Khmer this peace at turn
+    /// 207 at 942 power against 555, with their visitors at 98 against the
+    /// largest staycation of 140 (70%; the culture bar is 50). They took it,
+    /// their Tourism rose from 240 to 357 through the open borders and trade
+    /// route the war had closed, the seat declared on them again at 219 to
+    /// close them, and they won on Culture at 223. Across 30 recent losses the
+    /// eventual winner was offered this peace within 25 turns of the end in
+    /// four (G95 the Zulu at 208-222, lost on Diplomacy at 222).
+    pub(crate) fn stalled_peace_spares(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.stalled_peace_spares_the_counter
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && (self.domination_counter_target(g, pid, other)
+                || self.urgent_victory_threat(g, other))
     }
 
     /// Whether a Domination seat holds `rival`'s original capital while the

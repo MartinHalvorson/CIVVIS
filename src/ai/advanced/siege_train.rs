@@ -116,6 +116,22 @@ const STAGING_GUN_HP_RESERVE: f64 = 20.0;
 /// "damage ready false"; civvis-20261004T040138Z (game 47) held Quebec
 /// City's at ten.
 pub(super) const STAGING_ESCORT_BODIES: usize = 2;
+/// `staging-gun-remembers-hostiles`: a sighting this many turns old or newer
+/// still prices a hostile on the Stage march. Older sightings scatter too
+/// widely to steer a gun by: a Cuirassier seen two turns ago reaches twelve
+/// tiles under the rule below.
+const REMEMBERED_STRIKER_TURNS: u32 = 1;
+
+/// `staging-gun-remembers-hostiles`: a hostile the seat saw this turn or last
+/// and can no longer see. It may stand anywhere within its movement for every
+/// turn since the sighting, and strike one more movement on: `reach` from
+/// `from`. `blow` is its full-health melee blow on the gun asked about.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct RememberedStriker {
+    pub(super) from: Pos,
+    pub(super) reach: i32,
+    pub(super) blow: f64,
+}
 /// The bill is the defence within [`DEFENDER_RADIUS`] plus the city and its
 /// walls at [`WALL_STRENGTH_PER_100_HP`] a hundred, times this.
 pub(super) const BILL_MARGIN: f64 = 1.25;
@@ -2298,6 +2314,23 @@ impl AdvancedAi {
                 gun_risk_limit
             }
         };
+        // `staging-gun-remembers-hostiles`: the danger field reads only the
+        // units on the board, and a hostile that walked into the fog is not
+        // on it. Price the ones the seat saw this turn or last. Off, the
+        // list is empty and every reading below is the field's alone.
+        let remembered = if self.staging_gun_remembers_hostiles && arm_of(g, uid) == Arm::Siege {
+            self.remembered_strikers(g, pid, uid)
+        } else {
+            Vec::new()
+        };
+        let fog_blow = |g: &Game, pos: Pos| -> f64 {
+            remembered
+                .iter()
+                .filter(|striker| g.wdist(striker.from, pos) <= striker.reach)
+                .map(|striker| striker.blow)
+                .fold(0.0, f64::max)
+        };
+        let remembers = !remembered.is_empty();
         if let Some(field) = gun_danger.as_mut() {
             let risk_here = field.danger(here, uid);
             if risk_here > escorted_limit(g, here) {
@@ -2361,10 +2394,13 @@ impl AdvancedAi {
                 if self.staging_column_passes_through && g.wdist(next, city.pos) >= distance {
                     if let Some(dest) = g.pass_through_destination(uid, city.pos, STAGING_FAR) {
                         let kind = g.units[&uid].kind;
-                        if gun_danger
-                            .as_mut()
-                            .is_none_or(|field| field.danger(dest, uid) <= gun_risk_limit)
-                            && self.base.path_walk_to(g, pid, uid, dest)
+                        if gun_danger.as_mut().is_none_or(|field| {
+                            if remembers {
+                                field.danger(dest, uid) + fog_blow(g, dest) <= gun_risk_limit
+                            } else {
+                                field.danger(dest, uid) <= gun_risk_limit
+                            }
+                        }) && self.base.path_walk_to(g, pid, uid, dest)
                         {
                             think!(self.journal(), Military, Detail,
                                 "Siege of {}: the {} crosses its own column toward the staging ring", g.cities[&city.id].name, kind;
@@ -2376,7 +2412,22 @@ impl AdvancedAi {
                     }
                 }
                 if let Some(field) = gun_danger.as_mut() {
-                    if field.danger(next, uid) > escorted_limit(g, next) {
+                    let mut risk_at = |g: &Game, pos: Pos| -> f64 {
+                        let seen = field.danger(pos, uid);
+                        if remembers {
+                            seen + fog_blow(g, pos)
+                        } else {
+                            seen
+                        }
+                    };
+                    if risk_at(g, next) > escorted_limit(g, next) {
+                        if remembers && fog_blow(g, next) > 0.0 {
+                            think!(self.journal(), Military, Detail,
+                                "Siege of {}: the {} holds short of a hostile seen in the fog", g.cities[&city.id].name, g.units[&uid].kind;
+                                "{:?} lies in the reach of one the seat saw this turn or last; its blow there reads {:.0} against a limit of {:.0}",
+                                next, fog_blow(g, next), escorted_limit(g, next);
+                                city.pos);
+                        }
                         let safe = g
                             .nbrs(here)
                             .into_iter()
@@ -2385,7 +2436,7 @@ impl AdvancedAi {
                                     && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE
                                     && g.wdist(*pos, city.pos) <= distance
                             })
-                            .map(|pos| (g.wdist(pos, city.pos), field.danger(pos, uid), pos))
+                            .map(|pos| (g.wdist(pos, city.pos), risk_at(g, pos), pos))
                             .filter(|(_, risk, _)| *risk <= gun_risk_limit)
                             .min_by(|a, b| {
                                 a.0.cmp(&b.0)
@@ -2405,10 +2456,13 @@ impl AdvancedAi {
             // the same whole-path legality and movement bookkeeping as the
             // general mover. The destination remains outside the strike ring.
             if let Some(dest) = g.pass_through_destination(uid, city.pos, STAGING_FAR) {
-                if gun_danger
-                    .as_mut()
-                    .is_none_or(|field| field.danger(dest, uid) <= gun_risk_limit)
-                    && self.base.path_walk_to(g, pid, uid, dest)
+                if gun_danger.as_mut().is_none_or(|field| {
+                    if remembers {
+                        field.danger(dest, uid) + fog_blow(g, dest) <= gun_risk_limit
+                    } else {
+                        field.danger(dest, uid) <= gun_risk_limit
+                    }
+                }) && self.base.path_walk_to(g, pid, uid, dest)
                 {
                     return true;
                 }
@@ -3302,6 +3356,65 @@ impl AdvancedAi {
         }
         self.force_groups_dirty = true;
         Some(true)
+    }
+}
+
+impl AdvancedAi {
+    /// `staging-gun-remembers-hostiles`: every land melee hostile at war with
+    /// `pid` that the seat saw within [`REMEMBERED_STRIKER_TURNS`] turns and
+    /// cannot see now, as a [`RememberedStriker`] against the gun `uid`. A
+    /// unit still in sight is the danger field's own and is left out, so the
+    /// two never count one hostile twice. Live King civvis-20261005T033442Z
+    /// (game 96): the Khmer Cuirassiers that one-shot two Trebuchets at turns
+    /// 145 and 146 stood in sight at turn 144 and in the fog at 145, when the
+    /// Stage march read 0 to 7 danger on the tiles it walked the guns to.
+    pub(super) fn remembered_strikers(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+    ) -> Vec<RememberedStriker> {
+        let Some(gun) = g.units.get(&uid) else {
+            return Vec::new();
+        };
+        let defence = effective_strength(g.unit_strength(gun, true), gun.hp);
+        let visible = g.player_vision_frame(pid);
+        let in_sight: BTreeSet<i64> = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner != pid && g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid)
+            })
+            .map(|unit| super::hostile_memory_key(g, unit))
+            .collect();
+        self.hostile_last_seen
+            .iter()
+            .filter_map(|(key, record)| {
+                if in_sight.contains(key)
+                    || record.owner >= g.players.len()
+                    || record.owner == pid
+                    || !g.is_at_war(pid, record.owner)
+                    || record.when > g.turn
+                    || g.turn - record.when > REMEMBERED_STRIKER_TURNS
+                {
+                    return None;
+                }
+                let spec = &g.rules.units[record.kind];
+                if spec.class != "military"
+                    || !spec.is_melee_capable()
+                    || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                {
+                    return None;
+                }
+                let moves = (spec.moves.ceil() as i32).max(1);
+                let elapsed = (g.turn - record.when) as i32;
+                Some(RememberedStriker {
+                    from: record.pos,
+                    reach: moves * (elapsed + 1),
+                    blow: expected_damage(effective_strength(spec.strength, 100), defence),
+                })
+            })
+            .collect()
     }
 }
 

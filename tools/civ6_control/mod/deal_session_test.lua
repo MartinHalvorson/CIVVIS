@@ -578,6 +578,40 @@ queue.requestEndTurn(TURN)
 check("…once", #answers, 4)
 stuck, open = false, {}
 
+-- At a 2x debug timescale the UI clock runs twice as fast, and both windows
+-- still wait REAL seconds (CivvisClock divides the scale out): the 30 s
+-- answer hold and the 10 s orphan net each take twice as many UI seconds.
+local realClock = rawget(_G, "CivvisClock")
+realClock.setScale(2)
+trade.disabled, trade.unanswered, trade.turnHold = false, 0, nil
+trade.sessions, trade.pending, trade.asked = {}, {}, {}
+TURN = 260
+local slow, slowPlayer = fixture()
+applyOrder(slowPlayer, 7, { kind = "sell", subject = "3", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
+onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 966 })
+onClosed(966)
+local endsBefore = endTurns
+clock = clock + 50
+queue.requestEndTurn(TURN)
+check("at 2x, 50 UI seconds (25 real) still hold the turn", endTurns, endsBefore)
+clock = clock + 12
+queue.requestEndTurn(TURN)
+check("…31 real seconds release it", endTurns, endsBefore + 1)
+check("…as expired", eventField(lastEvent("deal_turn_hold"), "why"), "expired")
+TURN = 262
+open[973] = { with = 3, from = 3 }
+local answersBefore = #answers
+queue.requestEndTurn(TURN)
+clock = clock + 15
+queue.requestEndTurn(TURN)
+check("at 2x, 15 UI seconds (7.5 real) leave the session to the closer", #answers, answersBefore)
+clock = clock + 6
+queue.requestEndTurn(TURN)
+check("…10.5 real seconds answer it", answers[#answers], "close:973")
+open = {}
+-- Back to the plain UI clock the sections below stamp holds with.
+realClock.scale, realClock.offset = 1, 0
+
 -- A session we opened is closed (not refused) and our ledger is closed with it.
 TURN = 260
 trade.sessions = { [3] = { kind = "sell", action = "EQUALIZE", turn = TURN, sent = true } }
@@ -682,6 +716,30 @@ sessionListener(4, false, 0)
 update(0.05)
 check("an early host close enters the native close ladder", closeCalls, 1)
 check("the early host close hides the action view", hidden, true)
+
+-- At a 2x debug timescale the frame deltas run twice as fast, and the answer
+-- hold still waits 30 REAL seconds: the closer divides each delta by the
+-- scale the agent shares, and says which scale it read.
+update(0.05)  -- a hidden frame resets the closer for the next show
+ExposedMembers = { CivvisTimeScale = 2, CivvisClockAck = { scale = {}, at = {} } }
+hidden = false
+local closesAt2x = closeCalls
+sessionListener(4, true, 30)
+update(25); update(25)
+check("at 2x, 50 frame seconds (25 real) keep the asked deal open", closeCalls, closesAt2x)
+check("…and the closer acknowledges the scale it read",
+	ExposedMembers.CivvisClockAck.scale.DiplomacyActionView, 2)
+update(11)
+update(0.05)
+check("…31 real seconds end the hold", closeCalls, closesAt2x + 1)
+-- A missing or nonsense scale reads as 1, and is acknowledged as 1, so the
+-- agent sees the disagreement and reverts the timescale.
+ExposedMembers = { CivvisTimeScale = "fast", CivvisClockAck = { scale = {}, at = {} } }
+update(0.05)
+check("a nonsense scale reads as 1", ExposedMembers.CivvisClockAck.scale.DiplomacyActionView, 1)
+ExposedMembers = nil
+update(0.05)
+check("a missing shared table still ticks", type(update), "function")
 
 -- A direct deal can also leave a live session on an otherwise blank action
 -- view.  The ordinary close rung calls CloseSession, but Firaxis does not hide

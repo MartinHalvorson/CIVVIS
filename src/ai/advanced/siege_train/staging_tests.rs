@@ -794,3 +794,102 @@ fn staging_column_gene_leaves_an_open_march_alone() {
     let (on, off) = (run(true), run(false));
     assert_eq!(on, off);
 }
+
+/// An open Stage march for a lone Trebuchet, nine tiles from the walled
+/// city, with a Cuirassier the seat saw `age` turns ago five tiles past the
+/// march's next step and not on the board now.
+fn march_past_a_remembered_cuirassier(age: u32) -> (Game, u32, u32, Pos, Pos, AdvancedAi) {
+    let (mut g, cid) = walled_city();
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    g.at_war.insert((0, 1));
+    g.turn = 50;
+    let target = g.cities[&cid].pos;
+    let start = (target.0 - 9, target.1);
+    let gun = g.spawn_unit("trebuchet", 0, start);
+    let next = march_step(&g, gun, target, STAGING_FAR).expect("an open march");
+    assert!(g.wdist(next, target) < g.wdist(start, target));
+    let seen_at = (next.0, next.1 + 5);
+    assert_eq!(g.wdist(seen_at, next), 5);
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.hostile_last_seen.insert(
+        424_242,
+        super::super::RememberedHostile {
+            pos: seen_at,
+            when: g.turn - age,
+            owner: 1,
+            kind: crate::name!("cuirassier"),
+        },
+    );
+    (g, cid, gun, start, next, ai)
+}
+
+/// Live King civvis-20261005T033442Z (game 96): Khmer Cuirassiers seen at
+/// turn 144 were in the fog at 145, the Stage march read 0 to 7 danger, and
+/// two lone Trebuchets walked into their reach and were one-shot. Off, the
+/// march takes its step; with `staging-gun-remembers-hostiles` the gun holds
+/// short of the remembered Cuirassier's reach.
+#[test]
+fn a_staging_gun_holds_short_of_a_cuirassier_it_saw_last_turn() {
+    let run = |gene: bool| {
+        let (mut g, cid, gun, _, _, mut ai) = march_past_a_remembered_cuirassier(1);
+        if gene {
+            ai.enable_staging_gun_remembers_hostiles();
+        }
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+        g.units[&gun].pos
+    };
+    let (_, _, gun, start, next, ai) = march_past_a_remembered_cuirassier(1);
+    let _ = (gun, ai);
+    assert_eq!(run(false), next, "off, nothing on the board says danger");
+    let held = run(true);
+    assert_eq!(held, start, "on, the gun holds short of the remembered reach");
+}
+
+/// A sighting older than `REMEMBERED_STRIKER_TURNS` steers nothing: the
+/// gene's march is the plain march.
+#[test]
+fn an_older_sighting_leaves_the_staging_march_alone() {
+    let run = |gene: bool| {
+        let (mut g, cid, gun, _, _, mut ai) = march_past_a_remembered_cuirassier(2);
+        if gene {
+            ai.enable_staging_gun_remembers_hostiles();
+        }
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+        (g.units[&gun].pos, g.units[&gun].moves_left.to_bits())
+    };
+    assert_eq!(run(true), run(false));
+}
+
+/// A remembered hostile still in sight is the danger field's own; the
+/// remembered list leaves it out so one Cuirassier is never priced twice. Out
+/// of sight, its blow is the one-shot that killed the Trebuchets.
+#[test]
+fn a_remembered_hostile_in_sight_is_not_counted_twice() {
+    let (mut g, _, gun, start, _, mut ai) = march_past_a_remembered_cuirassier(1);
+    let beside = (start.0 + 1, start.1);
+    let cuirassier = g.spawn_unit("cuirassier", 1, beside);
+    let record = ai.hostile_last_seen.remove(&424_242).unwrap();
+    ai.hostile_last_seen.insert(cuirassier as i64, record);
+    assert!(
+        ai.remembered_strikers(&g, 0, gun).is_empty(),
+        "a hostile in sight is left to the danger field"
+    );
+    g.remove_unit(cuirassier);
+    let strikers = ai.remembered_strikers(&g, 0, gun);
+    assert_eq!(strikers.len(), 1);
+    assert_eq!(strikers[0].reach, 8, "four moves for the turn since, four to strike");
+    assert!(
+        strikers[0].blow > 80.0,
+        "a Cuirassier's blow on a Trebuchet is a one-shot: {}",
+        strikers[0].blow
+    );
+}

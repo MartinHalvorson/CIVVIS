@@ -18,7 +18,9 @@ local function stub()
 	})
 end
 setmetatable(_G, { __index = function(_, key)
-	if key == "CivvisCongressVoteBudget" then return rawget(_G, key); end
+	if key == "CivvisCongressVoteBudget" or key == "CivvisCongressBallotBank" then
+		return rawget(_G, key);
+	end
 	return stub()
 end })
 
@@ -122,8 +124,10 @@ Players = { [0] = {
     GetFavor = function() return 340 end,
     GetFavorEnteringCongress = function() return 340 end,
 } }
+-- The leader stands at match point, where `CivvisCongressBallotBank` lets
+-- the whole bank be priced (below it a denial spends half).
 for id = 1, 3 do
-    local points = id == 3 and 15 or 11
+    local points = id == 3 and 18 or 11
     Players[id] = {
         GetStats = function() return { GetDiplomaticVictoryPoints = function() return points end } end,
         GetScore = function() return 1000 end,
@@ -150,12 +154,30 @@ local count, spent, _, leader, points, _, mode = vote(0)
 check("actual ballot cast", count, 1)
 check("actual ballot modeled cost", spent, 312)
 check("actual ballot leading rival", leader, 3)
-check("actual ballot rival points", points, 15)
+check("actual ballot rival points", points, 18)
 check("actual ballot mode keeps denial above the floor", mode, "deny")
 check("actual request votes", requested and requested.votes, 13)
 check("actual request option", requested and requested.option, 2)
 check("actual request target index is the leader", requested and requested.selection, 3)
 check("actual ballot submitted once", submitted, 1)
+
+-- `CivvisCongressBallotBank`: the share of the bank a Diplomatic Victory
+-- ballot may spend. Game 95 (civvis-20261005T030607Z) spent its whole bank on
+-- B ballots at 16 and 17 points the rivals won without it, and met the
+-- deciding session at t221 with nothing; it lost there 6 votes to 4.
+local ballotBank = rawget(_G, "CivvisCongressBallotBank")
+check("ballot bank exported", type(ballotBank), "function")
+check("match point spends the whole bank", ballotBank(200, 18, {}), 200)
+check("past match point too", ballotBank(200, 19, nil), 200)
+check("the denial floor spends half", ballotBank(200, 12, {}), 100)
+check("just below match point, half", ballotBank(139, 17, {}), 69.5)
+check("below the floor, above the reserve only", ballotBank(368, 6, {}), 248)
+check("a bank inside the reserve buys nothing", ballotBank(100, 6, {}) < 0, true)
+check("configured match point", ballotBank(200, 16, { DiploVictoryMatchPoint = 16 }), 200)
+check("configured reserve", ballotBank(368, 6, { DiploVictoryClaimReserve = 0 }), 368)
+-- Game 95's t221 under pacing: 40 Favor at 16 points buys the three votes
+-- (12 Favor) the 6-4 session lacked.
+check("half of 40 buys three votes", voteBudget(ballotBank(40, 16, {}), onlineCosts(20), 20), 3)
 
 if failures > 0 then
 	print(string.format("%d failure(s)", failures))

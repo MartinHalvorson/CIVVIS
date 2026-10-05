@@ -2986,8 +2986,11 @@ def main() -> int:
     #
     # ⚠ `--skip-engine`: the ladder is being launched, not the test suite, and cargo
     # test here would add minutes to every batch. The engine is gated at merge.
+    # `--cache-seal`: every live game is a one-attempt batch, so this runs at
+    # every game boundary, and the codesign of Civ6.app was most of it. A valid
+    # verdict is reused while the bundle's own files are unchanged.
     preflight = run([sys.executable, str(HERE / "civ6_preflight.py"), "--skip-engine",
-                     "--orders-bin", str(orders_bin)], timeout=300.0)
+                     "--cache-seal", "--orders-bin", str(orders_bin)], timeout=300.0)
     print(preflight.rstrip(), flush=True)
     if "PREFLIGHT FAILED" in preflight:
         print("refusing to start a batch on a broken bridge; fix the failures above",

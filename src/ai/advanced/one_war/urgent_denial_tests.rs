@@ -1043,3 +1043,29 @@ fn a_counter_war_needs_parity_under_the_gene() {
     ai.one_war_observe(&g, 0);
     assert_eq!(ai.one_war_front(), Some(1), "the front stays");
 }
+
+/// See `diplomatic_contender_front`: under version two, the crushed
+/// contender we are already fighting takes the front, ahead of an urgent
+/// clock, even beside a richer rival we are not fighting.
+#[test]
+fn a_crushed_contender_at_war_takes_the_front_under_version_two() {
+    let (mut g, mut ai) = two_fronts();
+    assert_eq!(ai.one_war_front(), Some(1));
+    g.players[2].dvp = DIPLOMATIC_CONTENDER_DVP;
+    g.players[3].dvp = DIPLOMATIC_CONTENDER_DVP + 1;
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(1), "off");
+    ai.enable_diplomatic_contender_kept_2();
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(2), "the contender at war");
+    convert(&mut g, &[0, 1, 2]);
+    g.players[2].religion = None;
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(2), "ahead of the urgent clause");
+    // Under the bar, the front is chosen as before.
+    let (mut g, mut ai) = two_fronts();
+    ai.enable_diplomatic_contender_kept_2();
+    g.players[2].dvp = DIPLOMATIC_CONTENDER_DVP - 1;
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(1), "under the bar");
+}

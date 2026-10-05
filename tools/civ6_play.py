@@ -28,6 +28,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import functools
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -486,6 +487,47 @@ LADDER = [
     "DIFFICULTY_IMMORTAL",
     "DIFFICULTY_DEITY",
 ]
+
+
+# ★ RECORD-ONLY SETUP TIMING. A game boundary spends ~21 s between Civ VI's
+# main menu being ready and the Create Game screen (G100: "Set Default Enabled
+# Mods" 21:42:27, create-attempt1.png 21:42:48), and file times cannot say
+# which of it is a settle, an OCR pass, a missed poll or a slow capture. While
+# the clock runs (launch -> "in a configured game"), every capture, click,
+# focus and screen read prints `[setup-time] <step> +<offset>s took <s>`; the
+# gaps between lines are the settles and poll sleeps. Play log only; nothing
+# here changes what setup does.
+SETUP_CLOCK: dict = {"t0": None}
+
+
+def setup_clock_start() -> None:
+    SETUP_CLOCK["t0"] = time.monotonic()
+    print(f"[setup-time] start {utc_stamp()} +0.00s", flush=True)
+
+
+def setup_mark(step: str, *, stop: bool = False) -> None:
+    t0 = SETUP_CLOCK["t0"]
+    if t0 is None:
+        return
+    print(f"[setup-time] {step} +{time.monotonic() - t0:.2f}s", flush=True)
+    if stop:
+        SETUP_CLOCK["t0"] = None
+
+
+def _setup_timed(name: str, fn):
+    """``fn``, printing its offset and duration while the setup clock runs."""
+    @functools.wraps(fn)
+    def timed(*args, **kwargs):
+        t0 = SETUP_CLOCK["t0"]
+        if t0 is None:
+            return fn(*args, **kwargs)
+        start = time.monotonic()
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            print(f"[setup-time] {name} +{start - t0:.2f}s "
+                  f"took {time.monotonic() - start:.2f}s", flush=True)
+    return timed
 
 
 def utc_stamp() -> str:
@@ -954,6 +996,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # grace. The same no-op path, 22 ticks sooner. Off until the probe's
         # record shows such legs never step late.
         "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
+        # The engine console's debug timescale, applied by the agent through
+        # AutoProfiler.RunCommand and reverted if the UI clock drifts (every
+        # mod timer runs on it). Combat visualization, which the game core
+        # waits on, was ~10 min of a 262-turn game (G93). Off unless set.
+        "DebugTimeScale": getattr(args, "debug_timescale", None),
         # ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. A MOVE_TO whose
         # host path outran the turn was queued, and the host walked the unit
         # along it at the start of the next turn before the brain could act. Now
@@ -4476,6 +4523,7 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "StrikePreview": getattr(args, "strike_preview", None),
             "MoveFallback": args.move_fallback,
             "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
+            "DebugTimeScale": getattr(args, "debug_timescale", None),
             "ReplanFrames": getattr(args, "replan_frames", None),
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
@@ -4704,7 +4752,9 @@ def _play(args: argparse.Namespace) -> int:
     if not args.keep_game_options:
         apply_verification_options()
     launcher.clear_run_logs()
+    setup_clock_start()
     game_process = launcher.launch(stdout=run_dir / "stdout.log")
+    setup_mark("launched")
     if not launcher.wait_for_launched_main_menu(game_process, args.startup_timeout):
         stop_brain()
         print("the game did not reach the main menu", file=sys.stderr)
@@ -4718,6 +4768,7 @@ def _play(args: argparse.Namespace) -> int:
     # Establish the requested operator layout before taking any measurements.
     # Menu rows and setup controls are now read from this final geometry.
     place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
+    setup_mark("menu_reached")
     print("main menu reached; the setup context should host the game now")
 
     tail = watch.LogTail()
@@ -5174,6 +5225,7 @@ def _play(args: argparse.Namespace) -> int:
         print("could not load the saved game" if args.load_save else
               "could not start a game from the main menu", file=sys.stderr)
         return 5
+    setup_mark("configured", stop=True)
     # ★★★★★ THE SEAT EVENT USUALLY ARRIVES DURING BOOTSTRAP, so `finished` never
     # sees it and the refusal above never fired: live run
     # civvis-20261003T035351Z logged "game modes are ['GAMEMODE_HEROES'], asked
@@ -5508,6 +5560,7 @@ def _play(args: argparse.Namespace) -> int:
             "StrikePreview": args.strike_preview,
             "MoveFallback": args.move_fallback,
             "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
+            "DebugTimeScale": getattr(args, "debug_timescale", None),
             "ReplanFrames": args.replan_frames,
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
@@ -5654,17 +5707,43 @@ def _play(args: argparse.Namespace) -> int:
     # (`tools/live_ledger.py pull`). Same rule as recording: a failure here
     # is a line on stderr, never a failed run; `civ6_ladder.py publish-run
     # <tag>` recovers it, and the publish is idempotent.
-    try:
-        import civ6_ladder
-        civ6_ladder.publish_run(run_dir.name, run_dir.parent)
-    except Exception as exc:  # noqa: BLE001 — deliberately broad, see above
-        print(f"ledger publish failed (summary is on disk; "
-              f"`civ6_ladder.py publish-run {run_dir.name}` will recover it): "
-              f"{exc}", file=sys.stderr)
+    # ★ IN THE BACKGROUND (`publish_run_in_background`): nothing on this
+    # machine waits for the ledger branch, and the publish held every game
+    # boundary for its fetch, gzip and push.
+    publish_run_in_background(run_dir)
 
     if outcome.get("kind") == "victory" and outcome.get("team") == outcome.get("local_team"):
         return 0
     return 1
+
+
+def publish_run_in_background(run_dir: Path) -> subprocess.Popen | None:
+    """Publish a finished run to the ledger branch without holding the boundary.
+
+    `civ6_ladder.publish_run` fetches the ledger tip, gzips `events.jsonl` and
+    pushes a commit. A 222-turn game's events are 90 MB: 3.9 s of gzip alone,
+    then a ~9 MB push, on top of a ~1.2 s fetch, all of it between the game's
+    end and the next game's start, which nothing here waits for (the keeper and
+    the climb read the LOCAL ladder `record_summary` just wrote). So it runs as
+    a detached `civ6_ladder.py publish-run <tag>`, in its own session so the
+    lane's process-group signals never reach it, with no pipe to this process
+    (a caller reading our stdout must not wait for it), logging beside the
+    run. The publish is idempotent and append-only, and a failure is recovered
+    exactly as before: `civ6_ladder.py publish-run <tag>`.
+    """
+    log = run_dir / "ledger-publish.log"
+    command = [sys.executable, str(Path(__file__).resolve().with_name("civ6_ladder.py")),
+               "--runs", str(run_dir.parent), "publish-run", run_dir.name]
+    try:
+        with open(log, "ab") as out:
+            return subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=out,
+                                    stderr=subprocess.STDOUT, start_new_session=True,
+                                    close_fds=True)
+    except OSError as exc:
+        print(f"ledger publish could not start (summary is on disk; "
+              f"`civ6_ladder.py publish-run {run_dir.name}` will recover it): "
+              f"{exc}", file=sys.stderr)
+        return None
 
 
 def status() -> int:
@@ -5695,6 +5774,14 @@ TREE_MOD_ARMS_FILE = REPO_ROOT / "deploy" / "live-mod-arms.txt"
 TREE_MOD_ARMS = {
     # #3939: answer a probe-marked stalled MOVE_TO operation at the probe tick.
     "stalled-operation-release": "stalled_operation_release",
+    # The engine's debug timescale (`--debug-timescale N`): an arm can carry a
+    # value. G96 ran turns 1-139 at 2 in 8.71 min against 11.59 at 1 on the
+    # same genes; 3 and 4 are the next trials. The agent reverts any of them
+    # whose real-seconds clock disagrees (`CivvisQueue.checkTimescaleClock`).
+    # Arms apply in file order, so of two timescale lines the LAST one wins.
+    "debug-timescale-2": ("debug_timescale", 2.0),
+    "debug-timescale-3": ("debug_timescale", 3.0),
+    "debug-timescale-4": ("debug_timescale", 4.0),
 }
 
 
@@ -5714,12 +5801,13 @@ def apply_tree_mod_arms(args, path: Path = TREE_MOD_ARMS_FILE) -> list[str]:
     """Switch on each known arm the played tree lists; return the names applied."""
     applied: list[str] = []
     for name in read_tree_mod_arms(path):
-        dest = TREE_MOD_ARMS.get(name)
+        entry = TREE_MOD_ARMS.get(name)
+        dest, value = entry if isinstance(entry, tuple) else (entry, True)
         if dest is None:
             print(f"[mod-arms] {path.name}: unknown arm {name!r} ignored "
                   f"(known: {', '.join(sorted(TREE_MOD_ARMS))})", file=sys.stderr)
             continue
-        setattr(args, dest, True)
+        setattr(args, dest, value)
         applied.append(name)
     if applied:
         print(f"[mod-arms] {path.name} arms: {', '.join(applied)}", flush=True)
@@ -5999,6 +6087,11 @@ def main(argv: list[str] | None = None) -> int:
                          "without a step (`stall_probe`) at the probe tick instead of "
                          "waiting out the 30-tick grace: the same `move_noop` answer, "
                          "about 3 s sooner per stalled leg")
+    ap.add_argument("--debug-timescale", dest="debug_timescale", type=float, default=None,
+                    help="run the engine console's `timescale N` at game start (via "
+                         "AutoProfiler.RunCommand) to shorten the combat visualization "
+                         "the game core waits on; the agent reverts it if the UI clock "
+                         "drifts, and at game end")
     ap.add_argument("--no-cap-moves-to-reach", dest="cap_moves_to_reach",
                     action="store_false", default=True,
                     help="send a MOVE_TO's whole destination even when the host's path "
@@ -6108,6 +6201,21 @@ def main(argv: list[str] | None = None) -> int:
         args.tag = (args.difficulty.replace("DIFFICULTY_", "").lower()
                     + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     return play(args)
+
+
+# The setup clock's instrumented steps (see SETUP_CLOCK): rebound in place,
+# so every caller in this module times them, and inert while the clock is off.
+for _setup_step in ("screenshot", "click_at", "focus_game", "_main_menu_point",
+                    "_observed_label_point", "_intro_screen_visible",
+                    "_setup_current_value", "_leader_intro_visible",
+                    "dismiss_connection_issue", "wait_for_safe_screen_capture",
+                    "place_game"):
+    globals()[_setup_step] = _setup_timed(_setup_step, globals()[_setup_step])
+for _setup_step in ("menu_rows", "submenu_rows"):
+    if hasattr(vision, _setup_step):
+        setattr(vision, _setup_step,
+                _setup_timed("vision." + _setup_step, getattr(vision, _setup_step)))
+del _setup_step
 
 
 if __name__ == "__main__":

@@ -6404,6 +6404,36 @@ end;
 -- (both are in the shipped `os` table); `Automation.GetTime()` and `os.clock()`
 -- totals ride along so the clock itself can be checked. A global table, not
 -- locals: the main chunk and this function are near Lua's register ceiling.
+-- ★ REAL SECONDS FOR EVERY MOD TIMER. `UI.GetElapsedTime` is the only
+-- sub-second clock here (`os.rawclock` is absent: `export_timing` sections
+-- stay empty; `Automation.GetTime` and `os.clock` tick whole seconds), and the
+-- engine's debug `timescale` speeds it up (G95: 1.94x at `timescale 2`). So
+-- every duration the mod measures (the deal holds, the orphan net, the stall
+-- detector, end-turn pacing, combat vis) reads this clock instead: the UI
+-- clock divided by the commanded scale, rebased when the scale changes so it
+-- never jumps. At scale 1 it IS the UI clock. The other contexts read the
+-- same scale from `ExposedMembers.CivvisTimeScale` and divide their frame
+-- deltas by it (Heartbeat, AutoClose); see `CivvisQueue.checkTimescaleClock`.
+CivvisClock = { scale = 1, offset = 0 };
+CivvisClock.raw = function()
+	local ui = try(function() return UI.GetElapsedTime(); end, nil);
+	if type(ui) ~= "number" or ui ~= ui then return nil; end
+	return ui;
+end;
+CivvisClock.now = function()
+	local ui = CivvisClock.raw();
+	if ui == nil then return nil; end
+	return ui / CivvisClock.scale + CivvisClock.offset;
+end;
+CivvisClock.setScale = function(scale)
+	local ui = CivvisClock.raw();
+	if ui ~= nil then
+		CivvisClock.offset = ui / CivvisClock.scale + CivvisClock.offset - ui / scale;
+	end
+	CivvisClock.scale = scale;
+	return pcall(function() ExposedMembers.CivvisTimeScale = scale; end);
+end;
+
 CivvisExportClock = { marks = nil };
 CivvisExportClock.now = function()
 	local raw = try(function() return os.rawclock(); end, nil);
@@ -10953,7 +10983,7 @@ CivvisTrade.abandon = function(subject, why)
 	-- `CivvisTrade.holdsEndTurn`.
 	if session.sent and why == "session_closed" then
 		trade.turnHold = { turn = turn, target = subject,
-			at = try(function() return UI.GetElapsedTime(); end, nil) };
+			at = CivvisClock.now() };
 		emit("deal_turn_hold", { turn = turn, target = subject, phase = "held",
 			seconds = tonumber(cfg.DealAnswerHoldSeconds) or 30 });
 	end
@@ -11645,7 +11675,7 @@ CivvisLedger.onCombatVisBegin = function(kVisData)
 		-- none, 5.5 s with 6+). How long each visualization holds, and whether
 		-- it ran in our turn or the AI's, says whether that time is the combat
 		-- display or the AI's own thinking.
-		vis_at = try(function() return UI.GetElapsedTime(); end, nil),
+		vis_at = CivvisClock.now(),
 		our_turn = try(function() return Players[pid]:IsTurnActive(); end, nil),
 		attacker = CivvisLedger.describe(attacker),
 		defender = CivvisLedger.describe(defender),
@@ -11711,7 +11741,7 @@ CivvisLedger.onCombatVisEnd = function(kVisData)
 		against_us = combat.defender ~= nil and combat.defender.player == pid,
 		preview = preview,
 		vis_seconds = try(function()
-			local now = UI.GetElapsedTime();
+			local now = CivvisClock.now();
 			if type(now) ~= "number" or type(combat.vis_at) ~= "number" then return nil; end
 			return math.floor((now - combat.vis_at) * 1000 + 0.5) / 1000;
 		end, nil),
@@ -15663,6 +15693,34 @@ CivvisCongressVoteBudget = function(favor, costs, maxVotes)
 	return host, host, standard;
 end
 
+-- ★★★ PACE THE BANK ACROSS THE SESSIONS A LEADER CAN WIN FROM.
+--
+-- The Favor a Diplomatic Victory ballot may spend. Every session from the
+-- denial floor used to spend the whole bank, and a self-claim below it did
+-- too. Three of the four live Diplomatic losses of 2026-10-04/05 then met the
+-- deciding session with nothing: civvis-20261005T030607Z (game 95) spent 112
+-- at t181 and 40 at t201 on B ballots the rivals won without us (29-6, 19-10),
+-- had 0 at t221, and lost there 6 votes to 4 -- three bought votes (12 Favor)
+-- would have turned it; T003728Z and T194303Z-cont1 cast only free votes at
+-- 18 and 19 points. Rivals turn on a leader themselves from about 15, so a
+-- bought vote matters most at match point. So: from `DiploVictoryMatchPoint`
+-- (18, one +2 from the win) the whole bank; from the denial floor, half;
+-- below it (the probe and the self-claim) only what is above
+-- `DiploVictoryClaimReserve` (120). Exported globally to stay below the
+-- chunk-local limit.
+CivvisCongressBallotBank = function(favor, leaderPoints, config)
+	local bank = tonumber(favor) or 0;
+	local points = tonumber(leaderPoints) or 0;
+	config = type(config) == "table" and config or {};
+	if points >= (tonumber(config.DiploVictoryMatchPoint) or 18) then
+		return bank;
+	end
+	if points >= (tonumber(config.DiploVictoryVoteFloor) or 12) then
+		return bank / 2;
+	end
+	return bank - (tonumber(config.DiploVictoryClaimReserve) or 120);
+end
+
 -- A ballot is verified against all three native selection fields, not just
 -- its size. WorldCongressPopup.lua:1915-1919 reads PlayerID, OptionChosen,
 -- and Votes; :1935-1940 reads ResolutionTarget for that same voter.
@@ -19119,6 +19177,10 @@ local function beginTurn(player, pid, turn)
 		local review = wc:GetReview(pid);
 		if type(review) ~= "table" then return; end
 		local resolutions, signature = {}, {};
+		-- The largest block a rival cast for option A ("+2 to the target")
+		-- on the Diplomatic Victory resolution: the block an A ballot must
+		-- outvote to take the +2 (`wc_rival_block`, read by the ballot).
+		local rivalBlock = nil;
 		for i, r in pairs(review.Resolutions or {}) do
 			if type(i) == "number" and type(r) == "table" and r.Type ~= nil then
 				local info = GameInfo.Resolutions[r.Type];
@@ -19130,6 +19192,10 @@ local function beginTurn(player, pid, turn)
 						local votes = tonumber(sel.Votes) or 0;
 						local option = tonumber(sel.OptionChosen) or 0;
 						if option == 1 then a = a + votes; else b = b + votes; end
+						if rtype == "WC_RES_DIPLOVICTORY" and option == 1 and who ~= pid
+							and votes > (rivalBlock or 0) then
+							rivalBlock = votes;
+						end
 						local target = sel.ResolutionTarget;
 						voters[#voters + 1] = { player = who, option = option, votes = votes,
 							target = target };
@@ -19178,6 +19244,7 @@ local function beginTurn(player, pid, turn)
 				end
 			end
 		end
+		if rivalBlock ~= nil then envoyTally.wc_rival_block = rivalBlock; end
 		if #resolutions == 0 and #proposals == 0 then return; end
 		table.sort(signature);
 		local key = table.concat(signature, "|");
@@ -19766,7 +19833,7 @@ CivvisQueue.onLocalTurnEnd = function()
 	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
 	if w == nil or w.turn ~= turn or w.emitted then return; end
 	w.emitted = true;
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local now = CivvisClock.now();
 	w.ended_at = now;
 	local function since(t)
 		if type(now) ~= "number" or type(t) ~= "number" then return nil; end
@@ -19782,11 +19849,12 @@ CivvisQueue.onLocalTurnEnd = function()
 		-- The UI clock at this moment: against the relay's wall-clock `utc`,
 		-- consecutive turns show whether the UI clock runs at real time (a
 		-- debug timescale could change that, and every mod timer runs on it).
-		ui_now = now,
+		ui_now = CivvisClock.raw(),
 		-- Locks still held by a UI context as our turn ends (the AutoClose
 		-- ledger); a normal turn ends with none.
 		held_locks = try(function() return ExposedMembers.CivvisEventLocks.count; end, nil),
 	});
+	pcall(CivvisQueue.checkTimescaleClock);
 end;
 
 -- ★★ THE APP CAN STOP DRIVING THE GAME AFTER OUR TURN ENDS. G84
@@ -19808,7 +19876,7 @@ CivvisQueue.checkAiPhaseStall = function()
 	end
 	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
 	if turn ~= w.turn then return false; end
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local now = CivvisClock.now();
 	if type(now) ~= "number" or now ~= now or now < w.ended_at then return false; end
 	local waited = now - w.ended_at;
 	if waited < (tonumber(cfg.AiPhaseStallSeconds) or 30) then return false; end
@@ -19868,13 +19936,129 @@ CivvisQueue.checkAiPhaseStall = function()
 	return true;
 end;
 
+-- ★ A DEBUG TIMESCALE FOR THE COMBAT VISUALIZATION THE GAME CORE WAITS ON.
+-- G93 (pin 7ee5812, 1,201 combats): every combat the player can see holds a
+-- serial CombatVis event for ~0.7 s even with QuickCombat live, and the
+-- AI phase waits on it: 300 s of 994 s of AI windows, plus ~330 s in our
+-- own turns, so ~10 min of that game. `DebugTimeScale` (default off) runs
+-- the engine console's `timescale N` through AutoProfiler.RunCommand, which
+-- exists in this context (`debug_api`, G94).
+-- It speeds the UI clock up too (G95: 1.94x, reverted after 10 s), so the
+-- mod's timers run on CivvisClock, which divides the scale back out, and the
+-- other contexts divide their frame deltas by the shared scale. Every turn
+-- end checks that this holds, over windows of at least 30 s of wall time
+-- (Automation.GetTime ticks whole seconds): CivvisClock against the wall
+-- clock within [0.85, 1.15]; the Heartbeat has seen the scale since it was
+-- set; no context that ticked since then read a different scale; and the
+-- Heartbeat's frame deltas are not ahead of the UI clock (<= 1.15) nor so far
+-- behind (< 0.7) that the timescale cannot be scaling them. Any failure reverts
+-- to `timescale 1`, and so does game end, so it never outlives the game.
+CivvisQueue.startTimescale = function(want)
+	want = tonumber(want);
+	if want == nil or want <= 1 or want > 8 or CivvisQueue.timescale ~= nil then return false; end
+	local ack = pcall(function() ExposedMembers.CivvisClockAck = { scale = {}, at = {} }; end);
+	local ran, result = false, "no shared table";
+	if ack then
+		ran, result = pcall(function()
+			return AutoProfiler.RunCommand("timescale " .. tostring(want));
+		end);
+	end
+	local ts = { want = want, applied = ran, applied_ui = CivvisClock.raw() };
+	CivvisQueue.timescale = ts;
+	emit("timescale", { phase = "applied", want = want, ran = ran, result = tostring(result) });
+	if not ran then return false; end
+	-- The command and the shared scale land in one call: no other UI context
+	-- runs between them.
+	if not CivvisClock.setScale(want) then
+		CivvisQueue.resetTimescale("scale_not_shared");
+		return false;
+	end
+	ts.ui0, ts.real0 = CivvisClock.raw(), CivvisClock.now();
+	ts.wall0 = try(function() return Automation.GetTime(); end, nil);
+	return true;
+end;
+
+CivvisQueue.resetTimescale = function(why)
+	local ts = CivvisQueue.timescale;
+	if ts == nil or not ts.applied or ts.reverted then return false; end
+	ts.reverted = true;
+	local ran, result = pcall(function() return AutoProfiler.RunCommand("timescale 1"); end);
+	-- A failed revert leaves the engine scaled, so the timers keep dividing.
+	if ran then CivvisClock.setScale(1); end
+	emit("timescale", { phase = "reverted", why = why, ran = ran, result = tostring(result) });
+	return ran;
+end;
+
+CivvisQueue.checkTimescaleClock = function()
+	local ts = CivvisQueue.timescale;
+	if ts == nil or not ts.applied or ts.reverted then return; end
+	local ui, real = CivvisClock.raw(), CivvisClock.now();
+	local wall = try(function() return Automation.GetTime(); end, nil);
+	if ui == nil or real == nil or type(wall) ~= "number" then return; end
+	if type(ts.wall0) ~= "number" or type(ts.ui0) ~= "number" or type(ts.real0) ~= "number" then
+		ts.ui0, ts.real0, ts.wall0 = ui, real, wall;
+		return;
+	end
+	local wallElapsed = wall - ts.wall0;
+	if wallElapsed < 30 then return; end
+	local function per(x) return math.floor(x / wallElapsed * 100 + 0.5) / 100; end
+	local scale = CivvisClock.scale;
+	local since = type(ts.applied_ui) == "number" and ts.applied_ui or 0;
+	local why, unscaled = nil, {};
+	local heartbeat = false;
+	pcall(function()
+		local ack = ExposedMembers.CivvisClockAck;
+		for name, at in pairs(ack.at) do
+			if type(at) == "number" and at >= since then
+				if name == "Heartbeat" then heartbeat = true; end
+				if ack.scale[name] ~= scale then unscaled[#unscaled + 1] = name; end
+			end
+		end
+	end);
+	local frame = try(function() return ExposedMembers.CivvisFrameClock; end, nil);
+	local frameRatio = nil;
+	if type(frame) == "table" and frame.scale == scale and type(frame.at) == "number"
+			and frame.at >= since then
+		frameRatio = tonumber(frame.ratio);
+	end
+	local realRatio = per(real - ts.real0);
+	emit("timescale_clock", {
+		ui_elapsed = math.floor((ui - ts.ui0) * 10 + 0.5) / 10,
+		wall_elapsed = wallElapsed, ratio = per(ui - ts.ui0), real_ratio = realRatio,
+		scale = scale, heartbeat = heartbeat, unscaled = unscaled, frame_ratio = frameRatio,
+	});
+	ts.ui0, ts.real0, ts.wall0 = ui, real, wall;
+	if realRatio > 1.15 or realRatio < 0.85 then
+		why = "real_clock_off";
+	elseif not heartbeat then
+		why = "heartbeat_unscaled";
+	elseif #unscaled > 0 then
+		why = "context_unscaled";
+	-- Frame deltas AHEAD of the UI clock would hurry the Heartbeat pulse and
+	-- the AutoClose holds, so the ceiling is tight. Behind it is the safe
+	-- side: G96 read 0.91-0.95 at 2x (a long frame's delta is capped, and at
+	-- 2x more frames are long), which only slows the pulses a little. The
+	-- floor catches deltas the timescale does not scale at all (0.5 at 2x).
+	elseif frameRatio ~= nil and frameRatio > 1.15 then
+		why = "frame_clock_off";
+	elseif frameRatio ~= nil and frameRatio < 0.7 then
+		-- Low is the safe side, and one long hitch can drag a single 10 s
+		-- window down (G96 t139: 0.80 between windows of ~1.0). Unscaled
+		-- deltas stay low in every window, so the second one in a row decides.
+		ts.slow_frames = (ts.slow_frames or 0) + 1;
+		if ts.slow_frames >= 2 then why = "frame_clock_off"; end
+	end
+	if frameRatio ~= nil and frameRatio >= 0.7 then ts.slow_frames = 0; end
+	if why ~= nil then CivvisQueue.resetTimescale(why); end
+end;
+
 -- Whether an unanswered deal ask still holds this turn open (see abandon).
 -- Bounded by `DealAnswerHoldSeconds` of the UI clock; a hold from another
 -- turn, or with no clock to bound it, is dropped rather than kept.
 CivvisTrade.holdsEndTurn = function(turn)
 	local hold = CivvisTrade.turnHold;
 	if hold == nil then return false; end
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local now = CivvisClock.now();
 	local limit = tonumber(cfg.DealAnswerHoldSeconds) or 30;
 	if hold.turn ~= turn or type(now) ~= "number" or type(hold.at) ~= "number"
 			or now < hold.at or now - hold.at >= limit then
@@ -19911,7 +20095,7 @@ CivvisTrade.answerOrphanSessions = function(turn)
 	local hold = trade.turnHold;
 	if hold ~= nil and hold.turn == turn then return; end
 	local w = CivvisQueue.endTurnWait;
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local now = CivvisClock.now();
 	if w == nil or w.turn ~= turn or type(now) ~= "number" or type(w.first) ~= "number" then
 		return;
 	end
@@ -19988,7 +20172,8 @@ CivvisQueue.requestEndTurn = function(turn, parameters)
 	-- Native t208 logged 7,843 unready requests, up to 70 in one second. Bound
 	-- retries across ALL callbacks, not just the divided game-core tick. The
 	-- shipped PlotToolTip.lua:879 uses this clock for a seconds-based delay.
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	-- (In real seconds: see CivvisClock.)
+	local now = CivvisClock.now();
 	if type(now) == "number" and now == now and now >= 0 and now < math.huge then
 		local previous = CivvisQueue.endTurnSubmittedAt;
 		if CivvisQueue.endTurnSubmittedTurn == turn and previous ~= nil
@@ -20015,7 +20200,7 @@ local function tick()
 	if finished or inTick or cfg.Play == false then return; end
 	inTick = true;
 	CivvisQueue.controllerTicks = (CivvisQueue.controllerTicks or 0) + 1;
-	CivvisQueue.lastTickAt = try(function() return UI.GetElapsedTime(); end, nil);
+	CivvisQueue.lastTickAt = CivvisClock.now();
 	local ok, err = pcall(function()
 		-- ★★★★ RETIRE, WHICH IS HOW A QUIT GAME GETS A RESULT AT ALL.
 		--
@@ -20311,14 +20496,17 @@ local function tick()
 						-- only matters at the sessions a leader can win from. Below
 						-- `DiploVictoryVoteFloor` points (12: four sessions of +2 from
 						-- twenty) the free vote is still cast against the leader and
-						-- nothing is spent; from there every session spends the bank.
+						-- nothing is spent; from there each session spends its share
+						-- of the bank (`CivvisCongressBallotBank`).
 						local floor = cfg.DiploVictoryVoteFloor or 12;
 						local maxVotes = tonumber(costs.MaxVotes) or 1;
 						-- Use the active game's host prices. Retain the Standard
 						-- comparison in the verdict for diagnosing pricing, without
 						-- limiting an Online ballot by a different speed's costs.
-						local budget, budgetHost, budgetStandard =
-							CivvisCongressVoteBudget(favor, costs, maxVotes);
+						-- See `CivvisCongressBallotBank`: the share of the
+						-- bank this session may spend.
+						local budget, budgetHost, budgetStandard = CivvisCongressVoteBudget(
+							CivvisCongressBallotBank(favor, leaderPoints, cfg), costs, maxVotes);
 						envoyTally.ballot_budget =
 							{ host = budgetHost, standard = budgetStandard };
 						local n = 1;
@@ -20369,12 +20557,34 @@ local function tick()
 						-- Native t201 of civvis-20260927T132350Z-cont1: our 13
 						-- A/self votes joined the leader's 14 A votes against 18 B
 						-- votes; the leader, not us, received the +2 and won.
-						if ourIdx ~= nil and budget >= claim
-							and (tonumber(leaderPoints) or 0) < floor then
+						--
+						-- ★★★ AND FROM THE FLOOR, A CLAIM THAT OUTVOTES EVERY BLOCK.
+						-- Option A's +2 lands on whoever casts the largest A block,
+						-- and each rival votes A for itself: a B ballot against the
+						-- leader we picked does nothing to the rival with the
+						-- biggest block. Live King civvis-20261005T042226Z (game
+						-- 99) cast 10 B votes against Mapuche (15 DVP, picked on a
+						-- tie by score) at t221; option A won 14-10, Brazil's 8 A
+						-- votes for itself took the +2, and Brazil won on Diplomacy
+						-- at 222. Those 10 votes as an A claim were the biggest
+						-- block. So from the floor, when the session's share of the
+						-- bank buys `DiploVictoryOutvoteFactor` (2) times the largest
+						-- rival A block of the last session (`wc_rival_block`), the
+						-- ballot claims instead ("outvote"). The factor covers a
+						-- rival block that grew since (Brazil 4 -> 8); native t201
+						-- of T132350Z-cont1, our 13 against the leader's 14, stays a
+						-- denial. Off with `DiploVictoryOutvoteClaim = false`.
+						if ourIdx ~= nil and ((budget >= claim
+							and (tonumber(leaderPoints) or 0) < floor)
+							or (cfg.DiploVictoryOutvoteClaim ~= false
+								and (tonumber(leaderPoints) or 0) >= floor
+								and tonumber(envoyTally.wc_rival_block) ~= nil
+								and budget >= (tonumber(cfg.DiploVictoryOutvoteFactor) or 2)
+									* math.max(tonumber(envoyTally.wc_rival_block), 1))) then
 							option = 1;
 							selection = ourIdx;
 							n = budget;
-							mode = "claim";
+							mode = ((tonumber(leaderPoints) or 0) < floor) and "claim" or "outvote";
 						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;
@@ -21207,7 +21417,7 @@ CivvisQueue.ordersLanded = function()
 			or awaiting.turn == nil or awaiting.turn < 0 then
 		return false;
 	end
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local now = CivvisClock.now();
 	if type(now) ~= "number" or now ~= now then return false; end
 	local last = CivvisQueue.ordersPeekAt;
 	if last ~= nil and now >= last
@@ -21332,7 +21542,7 @@ end;
 CivvisQueue.onPeekPulse = function()
 	if finished or inTick or cfg.Play == false or not cfg.CivvisDecides then return; end
 	if not CivvisQueue.ordersLanded() then return; end
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	local now = CivvisClock.now();
 	local last = CivvisQueue.lastTickAt;
 	emit("orders_peek_wake", {
 		turn = awaiting.turn, frame = awaiting.frame or 0,
@@ -21344,6 +21554,7 @@ CivvisQueue.onPeekPulse = function()
 end;
 
 local function onTeamVictory(team, victoryType, eventID)
+	pcall(CivvisQueue.resetTimescale, "game_over");
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
 	local ourTeam = try(function()
 		return (pid ~= nil and pid >= 0) and Players[pid]:GetTeam() or -1;
@@ -21363,7 +21574,10 @@ end
 
 local function onPlayerDefeat(player, defeat, eventID)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
-	if player == pid then finished = true; end
+	if player == pid then
+		finished = true;
+		pcall(CivvisQueue.resetTimescale, "defeated");
+	end
 	emit("defeat", {
 		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
 		player = player, defeat = defeat, local_player = pid,
@@ -21549,6 +21763,7 @@ function Initialize()
 		autoprofiler = try(function() return type(AutoProfiler); end, "error"),
 		run_command = try(function() return type(AutoProfiler.RunCommand); end, "error"),
 	});
+	pcall(CivvisQueue.startTimescale, cfg.DebugTimeScale);
 	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse); end);
 	pcall(function() LuaEvents.CivvisControlPeek.Add(CivvisQueue.onPeekPulse); end);
 	for name, handler in pairs({
@@ -21566,7 +21781,18 @@ function Initialize()
 		DiplomacyStatement = CivvisOnDiplomacyStatement,
 		DiplomacySessionClosed = CivvisOnDealSessionClosed,
 		EmergencyAvailable = CivvisOnAidEmergencyAvailable,
-		LoadGameViewStateDone = ensureStarted,
+		-- RECORD-ONLY: when the load view finished. Game start is the load
+		-- screen's `OnActivateButtonClicked`, and its StartGame action only
+		-- counts after `OnLoadGameViewStateDone` sets `m_isLoadComplete`
+		-- (Base/Assets/UI/FrontEnd/LoadScreen.lua:93-97, :459). ensureStarted
+		-- dismisses once, as soon as a turn exists; turn 1 then began 1.3-2.5 s
+		-- later in most games but 4.9, 10.0 and 17.1 s in others (G100, G99,
+		-- G93). This row against `actions` (the dismissal) and `seat` (turn 1)
+		-- says whether that wait is the load or a dismissal sent too early.
+		LoadGameViewStateDone = function()
+			emit("load_view_done", { ui_now = CivvisClock.raw() });
+			ensureStarted();
+		end,
 		TeamVictory = onTeamVictory,
 		PlayerDefeat = onPlayerDefeat,
 		-- The tactical ledger: see CivvisLedger.

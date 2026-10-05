@@ -4900,6 +4900,17 @@ impl AdvancedAi {
         self.siege_holds_a_breach = false;
     }
 
+    /// Opt-in gene `stall-rebases-on-new-walls`; see
+    /// [`Self::stall_rebases_on_new_walls`].
+    pub fn enable_stall_rebases_on_new_walls(&mut self) {
+        self.stall_rebases_on_new_walls = true;
+    }
+
+    /// The twin of `enable_stall_rebases_on_new_walls`.
+    pub fn disable_stall_rebases_on_new_walls(&mut self) {
+        self.stall_rebases_on_new_walls = false;
+    }
+
     /// Opt-in gene `siege-ranged-floor`; see [`Self::siege_ranged_floor`].
     pub fn enable_siege_ranged_floor(&mut self) {
         self.siege_ranged_floor = true;
@@ -5432,6 +5443,18 @@ impl AdvancedAi {
         self.diplomatic_contender_kept = false;
     }
 
+    /// Opt-in gene `diplomatic-contender-kept-2`; see
+    /// [`Self::diplomatic_contender_kept_2`]. Version one's terms stay with
+    /// their own flag.
+    pub fn enable_diplomatic_contender_kept_2(&mut self) {
+        self.diplomatic_contender_kept_2 = true;
+    }
+
+    /// The twin of `enable_diplomatic_contender_kept_2`.
+    pub fn disable_diplomatic_contender_kept_2(&mut self) {
+        self.diplomatic_contender_kept_2 = false;
+    }
+
     /// Opt-in gene `breaker-supply-scales-2`; see
     /// [`Self::breaker_supply_scales_2`].
     pub fn enable_breaker_supply_scales_2(&mut self) {
@@ -5495,6 +5518,52 @@ impl AdvancedAi {
     /// The twin of `enable_staging_column_passes_through`.
     pub fn disable_staging_column_passes_through(&mut self) {
         self.staging_column_passes_through = false;
+    }
+
+    /// Opt-in gene `breakers-stay-with-the-siege`; see
+    /// [`Self::breakers_stay_with_the_siege`].
+    pub fn enable_breakers_stay_with_the_siege(&mut self) {
+        self.breakers_stay_with_the_siege = true;
+    }
+
+    /// The twin of `enable_breakers_stay_with_the_siege`.
+    pub fn disable_breakers_stay_with_the_siege(&mut self) {
+        self.breakers_stay_with_the_siege = false;
+    }
+
+    /// Opt-in gene `stalled-peace-spares-the-counter`; see
+    /// [`Self::stalled_peace_spares_the_counter`].
+    pub fn enable_stalled_peace_spares_the_counter(&mut self) {
+        self.stalled_peace_spares_the_counter = true;
+    }
+
+    /// The twin of `enable_stalled_peace_spares_the_counter`.
+    pub fn disable_stalled_peace_spares_the_counter(&mut self) {
+        self.stalled_peace_spares_the_counter = false;
+    }
+
+    /// Opt-in gene `prophet-race-takes-a-district-slot-2`; see
+    /// [`Self::prophet_race_takes_a_district_slot_2`].
+    pub fn enable_prophet_race_takes_a_district_slot_2(&mut self) {
+        self.prophet_race_takes_a_district_slot_2 = true;
+        self.base.prophet_race_takes_a_district_slot_2 = true;
+    }
+
+    /// The twin of `enable_prophet_race_takes_a_district_slot_2`.
+    pub fn disable_prophet_race_takes_a_district_slot_2(&mut self) {
+        self.prophet_race_takes_a_district_slot_2 = false;
+        self.base.prophet_race_takes_a_district_slot_2 = false;
+    }
+
+    /// Opt-in gene `staging-gun-remembers-hostiles`; see
+    /// [`Self::staging_gun_remembers_hostiles`].
+    pub fn enable_staging_gun_remembers_hostiles(&mut self) {
+        self.staging_gun_remembers_hostiles = true;
+    }
+
+    /// The twin of `enable_staging_gun_remembers_hostiles`.
+    pub fn disable_staging_gun_remembers_hostiles(&mut self) {
+        self.staging_gun_remembers_hostiles = false;
     }
 
     // ---- append: a-b ------------------------------------------------

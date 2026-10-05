@@ -2654,6 +2654,33 @@ const FAVOR_SALE_MAX: f64 = 150.0;
 const FAVOR_SALE_CADENCE: u32 = 6;
 const FAVOR_SALE_PHASE: u32 = 3;
 const FAVOR_BUYER_DVP_MAX: i64 = 12;
+/// The Diplomatic Victory points at which any met rival makes the bank votes
+/// again: from then on no favor sells, ours or the planner's.
+///
+/// ★★★ THE VOTES REGISTER NOW, AND THE BANK WAS BEING SOLD. The note on
+/// [`plan_keeps_favor`] records a host that never honoured a purchased vote;
+/// the congress budget (`CivvisCongressVoteBudget` in the agent) has since
+/// cast them. Live King civvis-20261005T030607Z (game 95): "deny" ballots cast
+/// 3 votes against the Zulu for 112 favor at turn 181 and 40 at 201, and the
+/// Zulu went 16 -> 15 and 17 -> 15 DVP across those sessions. The bank was at
+/// 0 by 210 (grievances drain it), the turn 221 ballot could cast only free
+/// votes, and the Zulu took +5 at 222 and won. Between turns 87 and 177 this
+/// sale had sold sixteen blocks, about 600 favor, some of it to England, who
+/// finished on 16 DVP. Four is a fifth of the win, reached around the middle
+/// of a game: from then on the favor is the vote against the leader.
+const FAVOR_HOLD_DVP: i64 = 4;
+
+/// Whether the bank is held for the World Congress: a met rival has reached
+/// [`FAVOR_HOLD_DVP`]. `CIVVIS_SELL_IDLE_FAVOR=1` restores the old sale.
+fn favor_banked_for_votes(state: &civvis::mirror::StateSnapshot) -> bool {
+    let sell_anyway = std::env::var("CIVVIS_SELL_IDLE_FAVOR")
+        .is_ok_and(|value| !value.is_empty() && value != "0");
+    !sell_anyway
+        && state
+            .rivals
+            .iter()
+            .any(|rival| rival.dvp.unwrap_or(0) >= FAVOR_HOLD_DVP)
+}
 /// ★ Until 2026-08-24 the floor was a flat Gold a point; the engine's own
 /// book (`Game::favor_gold_value`, `1.1 + 0.14·era + 0.07·dvp`) says 1.7–3.0
 /// over a game, and the caller now passes it. Kept as the floor of floors.
@@ -2686,12 +2713,17 @@ fn plan_keeps_favor(plan: Option<(&str, Option<&str>)>) -> bool {
     plan.is_none()
 }
 
-/// Drop the planner's own favor sales when the plan means to cast that favor.
+/// Drop the planner's own favor sales when the plan means to cast that favor,
+/// or once a rival's DVP makes the bank votes ([`favor_banked_for_votes`]).
 /// `Game::quick_deals` quotes a ten-favor block to any partner two DVP richer,
-/// plan-blind; on a Diplomacy plan those ten points are two votes at the next
-/// session. Returns how many orders were held back.
-fn hold_planner_favor_sales(plan: Option<(&str, Option<&str>)>, orders: &mut Vec<Order>) -> usize {
-    if !plan_keeps_favor(plan) {
+/// plan-blind — a sale to a rival nearer the win than we are. Returns how many
+/// orders were held back.
+fn hold_planner_favor_sales(
+    plan: Option<(&str, Option<&str>)>,
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> usize {
+    if !plan_keeps_favor(plan) && !favor_banked_for_votes(state) {
         return 0;
     }
     let before = orders.len();
@@ -2743,6 +2775,9 @@ fn append_favor_sale_order(
     // stood here is gone with it — it could never be reached past this line.
     if plan.is_none() {
         return Some("favor_hold:no_plan");
+    }
+    if favor_banked_for_votes(state) {
+        return Some("favor_hold:contender");
     }
     if state.turn % FAVOR_SALE_CADENCE != FAVOR_SALE_PHASE {
         return Some("favor_hold:cadence");
@@ -4212,7 +4247,7 @@ fn decide(
     let plan_facts = plan
         .as_ref()
         .map(|report| (report.strategy, report.victory_target));
-    let held_favor_sales = hold_planner_favor_sales(plan_facts, &mut orders);
+    let held_favor_sales = hold_planner_favor_sales(plan_facts, state, &mut orders);
     if held_favor_sales > 0 {
         note_bits.push(format!(
             "favor_hold:planner_sales_dropped={held_favor_sales}"
@@ -4224,7 +4259,7 @@ fn decide(
         Some(why) => {
             // Only the holds worth a glance in the ledger: a bank sitting on
             // a plan that would sell it, with nobody to sell to.
-            if why == "favor_hold:no_buyer" {
+            if why == "favor_hold:no_buyer" || why == "favor_hold:contender" {
                 note_bits.push(why.to_string());
             }
         }
@@ -8391,6 +8426,9 @@ fn main() {
     let fresh_ai = args.iter().any(|a| a == "--fresh-ai");
     let war_from_plan = args.iter().any(|a| a == "--war-from-plan");
     let fresh_board = args.iter().any(|a| a == "--fresh-board");
+    // `CityFireMemory`'s kill switch: the flag or `CIVVIS_NO_CITY_FIRE_MEMORY=1`.
+    let city_fire_memory = !args.iter().any(|a| a == "--no-city-fire-memory")
+        && !civvis::mirror::CityFireMemory::disabled_by_env();
     let arm = DecisionArm {
         war_from_plan,
         forced_on: &forced_on,
@@ -9014,6 +9052,11 @@ fn main() {
             mirror_turns,
             frontier,
         );
+        // One frame has no earlier reading of a fogged city's fire; its
+        // seat's research still floors it. See `CityFireMemory`.
+        if city_fire_memory {
+            civvis::mirror::CityFireMemory::default().apply(&mut live.game);
+        }
         // One-shot: there is no next turn to be self-limiting against, so this starts
         // empty and every foreign choice is released once.
         let mut ours = std::collections::BTreeMap::new();
@@ -9076,6 +9119,9 @@ fn main() {
     // board. It must therefore survive `--fresh-board` just like the peace and
     // treasury handoffs above.
     let mut host_city_attack_cooldowns = HostCityAttackCooldowns::default();
+    // The export reads a rival city's fire only while it is in sight; the
+    // board rebuilt each turn keeps the last reading. See `CityFireMemory`.
+    let mut host_city_fire = civvis::mirror::CityFireMemory::default();
     // A city's strike is once per host turn and the export never says it was
     // spent; the decider's own earlier frames do. See `HostCityStrikes`.
     let mut host_city_strikes = HostCityStrikes::default();
@@ -9212,6 +9258,9 @@ fn main() {
                     }
                     board.carry_treasury_baseline(carried_treasury);
                     host_city_attack_cooldowns.apply(&mut board);
+                    if city_fire_memory {
+                        host_city_fire.apply(&mut board.game);
+                    }
                     host_city_strikes.apply(&mut board, state.turn);
                     host_air_strikes.apply(&mut board, state.turn);
                     host_move_refusals.apply(&mut board);
@@ -9243,6 +9292,9 @@ fn main() {
                                 frontier,
                             );
                             host_city_attack_cooldowns.apply(&mut fresh);
+                            if city_fire_memory {
+                                host_city_fire.apply(&mut fresh.game);
+                            }
                             host_city_strikes.apply(&mut fresh, state.turn);
                             host_air_strikes.apply(&mut fresh, state.turn);
                             host_move_refusals.apply(&mut fresh);
@@ -9266,6 +9318,9 @@ fn main() {
                         Some(existing) => {
                             existing.sync(&snapshot, &state, frontier);
                             host_city_attack_cooldowns.apply(existing);
+                            if city_fire_memory {
+                                host_city_fire.apply(&mut existing.game);
+                            }
                             host_city_strikes.apply(existing, state.turn);
                             host_air_strikes.apply(existing, state.turn);
                             host_move_refusals.apply(existing);
@@ -15581,7 +15636,7 @@ mod tests {
         // The bank the live seat actually holds: 300 favor at t141 with three
         // met rivals — one rich, one richer but two points short of the
         // twenty-point win, one at war with us.
-        let state = StateSnapshot {
+        let contended = StateSnapshot {
             turn: 141,
             favor: Some(300.0),
             rivals: vec![
@@ -15609,15 +15664,43 @@ mod tests {
         };
         let science = Some(("science", None));
 
+        // A rival at 17 DVP makes the whole bank votes: nothing sells, ours
+        // or the planner's. See `FAVOR_HOLD_DVP`.
         let mut orders = Vec::new();
+        assert_eq!(
+            append_favor_sale_order(science, &contended, &mut orders, 2.0),
+            Some("favor_hold:contender")
+        );
+        assert!(orders.is_empty());
+        let mut quoted = vec![Order {
+            kind: "sell",
+            subject: Some(4),
+            verb: Some("FAVOR=10".to_string()),
+            pos: Some((10, 0)),
+        }];
+        assert_eq!(
+            hold_planner_favor_sales(science, &contended, &mut quoted),
+            1
+        );
+        assert!(quoted.is_empty());
+        let mut at_four = contended.clone();
+        at_four.rivals.retain(|rival| rival.player != 4);
+        at_four.rivals[0].dvp = Some(FAVOR_HOLD_DVP);
+        assert_eq!(
+            append_favor_sale_order(science, &at_four, &mut orders, 2.0),
+            Some("favor_hold:contender")
+        );
+
+        // Below it, the surplus sells as before.
+        let mut state = contended.clone();
+        state.rivals.retain(|rival| rival.player != 4);
         assert_eq!(
             append_favor_sale_order(science, &state, &mut orders, 2.0),
             None
         );
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].kind, "sell");
-        // Not the richest (Persia at 17 DVP would spend it on the win), not
-        // the one at war: the rich rival at 3 DVP.
+        // Not the one at war: the rich rival at 3 DVP.
         assert_eq!(orders[0].subject, Some(2));
         // 300 − 120 reserve = 180 surplus, capped at one block of 150, at a
         // floor of a gold a point.
@@ -15705,18 +15788,18 @@ mod tests {
                 pos: Some((56, 0)),
             },
         ];
-        assert_eq!(hold_planner_favor_sales(science, &mut planner), 0);
+        assert_eq!(hold_planner_favor_sales(science, &state, &mut planner), 0);
         assert_eq!(planner.len(), 2);
         // The diplomacy plan lets the planner's own quote stand now: those ten
         // points were held as "two votes at the next session", and the next
         // session cannot take them.
         assert_eq!(
-            hold_planner_favor_sales(Some(("diplomacy", None)), &mut planner),
+            hold_planner_favor_sales(Some(("diplomacy", None)), &state, &mut planner),
             0
         );
         assert_eq!(planner.len(), 2);
         // A seat with no plan report still holds: unknown intent is not licence.
-        assert_eq!(hold_planner_favor_sales(None, &mut planner), 1);
+        assert_eq!(hold_planner_favor_sales(None, &state, &mut planner), 1);
         assert_eq!(planner.len(), 1);
         assert_eq!(planner[0].verb.as_deref(), Some("RESOURCE_DYES=1"));
 

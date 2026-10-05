@@ -558,6 +558,38 @@ class AttachSummaryTests(unittest.TestCase):
                          {"spaceport_turn": 201, "launches_completed": 2,
                           "last_launch_turn": 219})
 
+    def test_setup_timing_is_inert_until_the_clock_runs(self):
+        calls = []
+        timed = civ6_play._setup_timed("step", lambda x: calls.append(x) or x * 2)
+        civ6_play.SETUP_CLOCK["t0"] = None
+        with patch("builtins.print") as printed:
+            self.assertEqual(timed(3), 6)
+        printed.assert_not_called()
+        with patch("builtins.print") as printed:
+            civ6_play.setup_clock_start()
+            self.assertEqual(timed(4), 8)
+            civ6_play.setup_mark("configured", stop=True)
+            civ6_play.setup_mark("after the stop")
+        lines = [c.args[0] for c in printed.call_args_list]
+        self.assertTrue(lines[0].startswith("[setup-time] start "))
+        self.assertRegex(lines[1], r"^\[setup-time\] step \+\d+\.\d\ds took \d+\.\d\ds$")
+        self.assertRegex(lines[2], r"^\[setup-time\] configured \+\d+\.\d\ds$")
+        self.assertEqual(len(lines), 3)
+        self.assertIsNone(civ6_play.SETUP_CLOCK["t0"])
+        self.assertEqual(calls, [3, 4])
+
+    def test_setup_timing_wraps_the_setup_steps_and_spans_launch_to_configured(self):
+        for name in ("screenshot", "click_at", "focus_game", "_main_menu_point",
+                     "_observed_label_point", "_setup_current_value"):
+            self.assertEqual(getattr(civ6_play, name).__name__, name)
+            self.assertTrue(hasattr(getattr(civ6_play, name), "__wrapped__"))
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertIn("setup_clock_start()\n    game_process = launcher.launch(", source)
+        self.assertIn('setup_mark("menu_reached")', source)
+        self.assertIn('setup_mark("configured", stop=True)', source)
+        self.assertLess(source.index('setup_mark("configured", stop=True)'),
+                        source.index('"in a configured game; the agent holds the seat'))
+
     def test_write_attached_summary_indexes_the_run_after_writing_it(self):
         import civ6_ladder
 
@@ -604,6 +636,37 @@ class AttachSummaryTests(unittest.TestCase):
         self.assertEqual(written["outcome"]["kind"], "victory")
         record.assert_called_once_with(run_dir / "summary.json")
         publish.assert_called_once_with(run_dir.name, run_dir.parent)
+
+    def test_the_finished_run_publishes_in_a_detached_background_process(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "civvis-background-publish"
+            run_dir.mkdir()
+            with patch.object(civ6_play.subprocess, "Popen") as popen:
+                civ6_play.publish_run_in_background(run_dir)
+            command = popen.call_args.args[0]
+            kwargs = popen.call_args.kwargs
+            self.assertEqual(Path(command[1]).name, "civ6_ladder.py")
+            self.assertEqual(command[2:], ["--runs", str(run_dir.parent),
+                                           "publish-run", run_dir.name])
+            # Its own session (no lane signal reaches it), no pipe back to us
+            # (a caller reading our stdout must not wait for it), a log beside
+            # the run.
+            self.assertTrue(kwargs["start_new_session"])
+            self.assertIs(kwargs["stdin"], civ6_play.subprocess.DEVNULL)
+            self.assertIs(kwargs["stderr"], civ6_play.subprocess.STDOUT)
+            self.assertTrue(kwargs["close_fds"])
+            self.assertTrue((run_dir / "ledger-publish.log").is_file())
+            with patch.object(civ6_play.subprocess, "Popen", side_effect=OSError("no fork")):
+                self.assertIsNone(civ6_play.publish_run_in_background(run_dir))
+
+    def test_main_publishes_in_the_background_and_still_records_in_process(self):
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        tail = source[source.index('summary = with_diagnostic(summary, run_dir / "summary.json")\n'
+                                   '    (run_dir / "summary.json").write_text('):]
+        tail = tail[: tail.index("\ndef ")]
+        self.assertIn("civ6_ladder.record_summary(run_dir / \"summary.json\")", tail)
+        self.assertIn("publish_run_in_background(run_dir)", tail)
+        self.assertNotIn("civ6_ladder.publish_run(", tail)
 
     def test_attached_summary_keeps_native_retirement_payload(self):
         args = SimpleNamespace(

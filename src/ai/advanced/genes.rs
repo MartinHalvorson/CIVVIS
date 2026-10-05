@@ -2470,6 +2470,10 @@ pub const GENES: &[Gene] = &[
     // they stood at 400 again eight turns later. See
     // `siege_train::HELD_BREACH_WALL_SHARE`.
     Gene { tag: "siege-holds-a-breach", field: "siege_holds_a_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_holds_a_breach, disable: AdvancedAi::disable_siege_holds_a_breach },
+    // Live King 021048Z stood down Kwadukuza as "not pushed to a new low"
+    // while its new walls fell from 64 to 28. See
+    // `commitments::rebase_capture_on_new_walls`.
+    Gene { tag: "stall-rebases-on-new-walls", field: "stall_rebases_on_new_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_stall_rebases_on_new_walls, disable: AdvancedAi::disable_stall_rebases_on_new_walls },
     // Live King 115745Z sieged unwalled Pest with one Archer shot a turn
     // while ten bodies held in reserve; the city walled at turn 78. See
     // `objective_board::SIEGE_RANGED_FLOOR`.
@@ -2676,6 +2680,10 @@ pub const GENES: &[Gene] = &[
     // points and 3 military while Persia won the Diplomatic Victory. See
     // `one_war::diplomatic_contender`.
     Gene { tag: "diplomatic-contender-kept", field: "diplomatic_contender_kept", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_contender_kept, disable: AdvancedAi::disable_diplomatic_contender_kept },
+    // Live King 021048Z aimed the army at Indonesia (13 points, 988 military)
+    // while at war with Portugal at 15 points and 172 military. See
+    // `one_war::diplomatic_contender_front`.
+    Gene { tag: "diplomatic-contender-kept-2", field: "diplomatic_contender_kept_2", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_contender_kept_2, disable: AdvancedAi::disable_diplomatic_contender_kept_2 },
     // Live King civvis-20261004T122037Z (game 62): Yaroslavl's walls went
     // 100 -> 84 in twelve turns while the journal read "shooters 6-16 wall a
     // turn": nine archers within five tiles were counted, but the range-2
@@ -2694,6 +2702,25 @@ pub const GENES: &[Gene] = &[
     // between two tiles every frame behind one of ours in a ridge's only gap.
     // See `siege_train::siege_stage_step`.
     Gene { tag: "staging-column-passes-through", field: "staging_column_passes_through", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_column_passes_through, disable: AdvancedAi::disable_staging_column_passes_through },
+    // Live King civvis-20261005T024614Z (game 94): fielded Catapults went to
+    // the Guayaquil anvil and heal rotations while Lisbon's siege held "for a
+    // wall-breaker on its way". See `objective_board::breaker_rows_ask`.
+    Gene { tag: "breakers-stay-with-the-siege", field: "breakers_stay_with_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_breakers_stay_with_the_siege, disable: AdvancedAi::disable_breakers_stay_with_the_siege },
+    // Live King civvis-20261005T033442Z (game 96) offered the Khmer, at 70%
+    // of the culture bar, "the war has stalled" peace at turn 207; their
+    // Tourism rose 240 -> 357 in the peace and they won on Culture at 223.
+    // See `one_war::stalled_peace_spares`.
+    Gene { tag: "stalled-peace-spares-the-counter", field: "stalled_peace_spares_the_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_peace_spares_the_counter, disable: AdvancedAi::disable_stalled_peace_spares_the_counter },
+    // Live King civvis-20261005T035848Z (game 97): version 1 opened the
+    // race's Holy Site in a 3.6-production city (about 15 turns) and all
+    // three religions were founded first. See
+    // `BasicAi::prophet_race_takes_a_district_slot_2`.
+    Gene { tag: "prophet-race-takes-a-district-slot-2", field: "prophet_race_takes_a_district_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_takes_a_district_slot_2, disable: AdvancedAi::disable_prophet_race_takes_a_district_slot_2 },
+    // Live King civvis-20261005T033442Z (game 96): Trebuchets marched alone
+    // into the reach of Khmer Cuirassiers seen the turn before and lost in
+    // the fog, and were one-shot at turns 145 and 146. See
+    // `siege_train::siege_stage_step`.
+    Gene { tag: "staging-gun-remembers-hostiles", field: "staging_gun_remembers_hostiles", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_remembers_hostiles, disable: AdvancedAi::disable_staging_gun_remembers_hostiles },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

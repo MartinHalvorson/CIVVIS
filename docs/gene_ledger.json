@@ -2321,6 +2321,15 @@
           "culture-lane-forecast-2": null
         }
       },
+      "diplomatic-contender-kept": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "diplomatic-contender-kept": null,
+          "diplomatic-contender-kept-2": null
+        }
+      },
       "diplomatic-lane-forecast": {
         "rule_on": [
           "diplomatic-lane-forecast"
@@ -2607,6 +2616,15 @@
         "versions": {
           "power-the-laboratory": 0.035908,
           "power-the-laboratory-2": null
+        }
+      },
+      "prophet-race-takes-a-district-slot": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "prophet-race-takes-a-district-slot": null,
+          "prophet-race-takes-a-district-slot-2": null
         }
       },
       "recovery-reads-the-war": {

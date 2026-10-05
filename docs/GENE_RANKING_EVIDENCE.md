@@ -196,6 +196,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `breaker-supply-scales` | off (unmeasured) | Opt-in gene `breaker-supply-scales`; see `Self::breaker_supply_scales`. | — \| 2 |
 | `breaker-supply-scales-2` | off (unmeasured) | Opt-in gene `breaker-supply-scales-2`; see `Self::breaker_supply_scales_2`. | — \| 2 |
 | `breaker-to-the-fastest` | off (unmeasured) | The walled-assault gun reservation takes a busy city whose arrival beats the best idle one by `BREAKER_FASTEST_MARGIN` turns and `BREAKER_FASTEST_RATIO`, not by eight turns and half again. | 1 \| 1 |
+| `breakers-stay-with-the-siege` | off (unmeasured) | Opt-in gene `breakers-stay-with-the-siege`; see `Self::breakers_stay_with_the_siege`. | 1 \| 1 |
 | `builder-before-the-army` | off (unmeasured) | The delegated city governor's own Builder quota ahead of the Monument, the Settler and the military floor. | — \| 3 |
 | `builder-before-the-army-2` | off (unmeasured) | `builder-before-the-army-2`: the same step, only while the empire has no Builder standing or queued. | — \| 3 |
 | `builder-before-the-army-3` | off (unmeasured) | `builder-before-the-army-3`: version 2's first Builder, then one per three unimproved worked tiles. | — \| 3 |
@@ -227,7 +228,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `denial-nearest-finish` | off (unmeasured) | Opt-in gene `denial-nearest-finish`; see `Self::denial_nearest_finish`. | 1 \| 1 |
 | `denial-needs-a-road` | off (unmeasured) | Opt-in gene `denial-needs-a-road`; see `Self::denial_needs_a_road`. | 1 \| 1 |
 | `denial-outranks-expansion` | off (unmeasured) | A rival close to winning is answered before the lane's expansion rule. | 1 \| 1 |
-| `diplomatic-contender-kept` | off (unmeasured) | Opt-in gene `diplomatic-contender-kept`; see `Self::diplomatic_contender_kept`. | 1 \| 1 |
+| `diplomatic-contender-kept` | off (unmeasured) | Opt-in gene `diplomatic-contender-kept`; see `Self::diplomatic_contender_kept`. | — \| 2 |
+| `diplomatic-contender-kept-2` | off (unmeasured) | Opt-in gene `diplomatic-contender-kept-2`; see `Self::diplomatic_contender_kept_2`. | — \| 2 |
 | `district-buildings-first` | off (unmeasured) | A standing district's first building before the delegated city governor opens another district. | — \| 2 |
 | `district-buildings-first-2` | off (unmeasured) | Version one, and the capital's Library ahead of its next Settler once it holds a Campus. | — \| 2 |
 | `domination-capital-focus` | off (unmeasured) | Rank required capitals within the selected domination campaign front. | 1 \| 1 |
@@ -268,7 +270,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `peace-waits-for-unseen-prey` | off (unmeasured) | Opt-in gene `peace-waits-for-unseen-prey`; see `Self::peace_waits_for_unseen_prey`. | 1 \| 1 |
 | `policy-deck-hysteresis` | off (unmeasured) | The policy deck keeps the maintenance relief the host held at the turn's start and the Amenity repair card while it is what keeps a city content. | — \| 2 |
 | `policy-deck-hysteresis-2` | off (unmeasured) | `policy-deck-hysteresis-2`: version 1, and a held relief stays while the income does not cover its discount, and the emergency's relief may evict a lower-ranked wanted military card. | — \| 2 |
-| `prophet-race-takes-a-district-slot` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot`; see `Self::prophet_race_takes_a_district_slot`. | 1 \| 1 |
+| `prophet-race-takes-a-district-slot` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot`; see `Self::prophet_race_takes_a_district_slot`. | — \| 2 |
+| `prophet-race-takes-a-district-slot-2` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot-2`; see `Self::prophet_race_takes_a_district_slot_2`. | — \| 2 |
 | `raids-cut-tourism` | off (unmeasured) | Opt-in gene `raids-cut-tourism`; see `Self::raids_cut_tourism`. | 1 \| 1 |
 | `ranged-hp-reserve` | off (unmeasured) | A ranged unit keeps `RANGED_HP_RESERVE` in hand against the lethal pool. | 1 \| 1 |
 | `raze-a-doomed-capture` | off (unmeasured) | Opt-in gene `raze-a-doomed-capture`; see `Self::raze_doomed_capture`. | 1 \| 1 |
@@ -293,7 +296,10 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-ranged-floor` | off (unmeasured) | Opt-in gene `siege-ranged-floor`; see `Self::siege_ranged_floor`. | 1 \| 1 |
 | `siege-train-scales-with-walls` | off (unmeasured) | Opt-in gene `siege-train-scales-with-walls`; see `Self::siege_train_scales_with_walls`. | 1 \| 1 |
 | `staging-column-passes-through` | off (unmeasured) | Opt-in gene `staging-column-passes-through`; see `Self::staging_column_passes_through`. | 1 \| 1 |
+| `staging-gun-remembers-hostiles` | off (unmeasured) | Opt-in gene `staging-gun-remembers-hostiles`; see `Self::staging_gun_remembers_hostiles`. | 1 \| 1 |
 | `staging-gun-trusts-its-escort` | off (unmeasured) | Opt-in gene `staging-gun-trusts-its-escort`; see `Self::staging_gun_trusts_its_escort`. | 1 \| 1 |
+| `stall-rebases-on-new-walls` | off (unmeasured) | Opt-in gene `stall-rebases-on-new-walls`; see `Self::stall_rebases_on_new_walls`. | 1 \| 1 |
+| `stalled-peace-spares-the-counter` | off (unmeasured) | Opt-in gene `stalled-peace-spares-the-counter`; see `Self::stalled_peace_spares_the_counter`. | 1 \| 1 |
 | `strategic-deposit-prey` | off (unmeasured) | Opt-in gene `strategic-deposit-prey`; see `Self::strategic_deposit_prey`. | 1 \| 1 |
 | `threatened-city-reserve-2` | off (unmeasured) | V2 reserves the engine's local quote for an available defender in the threatened city. | 1 \| 2 |
 | `tourism-land-reservation` | off (unmeasured) | Enable `tourism-land-reservation` for measurement. | 1 \| 1 |

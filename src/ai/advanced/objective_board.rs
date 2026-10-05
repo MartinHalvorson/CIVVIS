@@ -552,6 +552,19 @@ fn breaker_guns_wanted(city: &crate::game::City) -> usize {
     (city.wall_hp as usize).div_ceil(100).clamp(1, BREAKER_GUNS_MAX)
 }
 
+/// `breakers-stay-with-the-siege`: whether a walled Siege row on the board
+/// asks for guns. While one does, a siege gun is the walls' breaker and
+/// nothing else: a Defend, Relieve, Destroy, Escort or camp row takes it as
+/// strength and a body, and a gun is the weakest body there is. Live King
+/// civvis-20261005T024614Z (game 94) fielded Catapults at turn 103
+/// ("Reinforcing the campaign with catapult | the front at (11, 21) is 12
+/// tiles away") that went to the Guayaquil anvil and the heal rotations at
+/// (18-23, 29-31) while Lisbon's siege held for "a wall-breaker on its way".
+fn breaker_rows_ask(rows: &[Objective]) -> bool {
+    rows.iter()
+        .any(|row| row.kind == ObjectiveKind::Siege && row.requirement.siege > 0)
+}
+
 /// A unit's production cost at its hit points, in hammers.
 fn unit_value(g: &Game, uid: u32) -> f64 {
     let unit = &g.units[&uid];
@@ -1603,6 +1616,21 @@ impl AdvancedAi {
         for force in &mut forces {
             force.units.retain(|uid| pool_set.contains(uid));
         }
+        // `breakers-stay-with-the-siege`: see `breaker_rows_ask`. A gun last
+        // turn's board sent elsewhere comes back to the pool for the siege.
+        let breakers_stay = self.breakers_stay_with_the_siege && breaker_rows_ask(&rows);
+        if breakers_stay {
+            for force in &mut forces {
+                if !matches!(
+                    force.objective_key,
+                    ObjectiveKey::Siege(_) | ObjectiveKey::Reserve
+                ) {
+                    force
+                        .units
+                        .retain(|uid| !facts.get(uid).is_some_and(|unit| unit.siege));
+                }
+            }
+        }
         // Match forces to rows: by key, a Destroy by where it was aimed, the
         // Reserve always.
         let mut taken_rows: BTreeSet<(ObjectiveKey, bool)> = BTreeSet::new();
@@ -1717,6 +1745,10 @@ impl AdvancedAi {
                                 || self.early_conquest_opening)
                         {
                             // A scout is not a body for a fight.
+                            continue;
+                        }
+                        // See `breaker_rows_ask`.
+                        if breakers_stay && unit.siege && row.kind != ObjectiveKind::Siege {
                             continue;
                         }
                         let distance = g.wdist(unit.pos, row.at);
