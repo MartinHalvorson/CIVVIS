@@ -15,57 +15,15 @@ pub(super) struct HostDeaths(BTreeMap<(usize, i64), HostUnitDeath>);
 
 impl HostDeaths {
     pub(super) fn observe(&mut self, line: &str) {
-        // ★★★★★ MATCH THE EVENT KIND, NOT THE WORD. `"combat"` is also a key in
-        // every exported unit, so the old `contains("\"combat\"")` sent every
-        // state record (100-300 KB each, ~690 by turn 220) through a full
-        // `serde_json::Value` build on every frame, only to read `kind` and
-        // discard it. Profiled on a t220 frame of civvis-20261003T164758Z that
-        // was a third of the decider's CPU. On that run's 96 MB log the old
-        // filter passed 1,418 lines and this one passes exactly its 730 combat
-        // events; the `kind` check below still decides.
-        if !super::json_may_have_value(line, "\"kind\"", "\"combat\"") {
-            return;
+        for death in deaths_in(line) {
+            self.record(death);
         }
-        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
-            return;
-        };
-        if event["kind"].as_str() != Some("combat") {
-            return;
-        }
-        let Some(turn) = event["turn"].as_u64().and_then(|t| u32::try_from(t).ok()) else {
-            return;
-        };
-        for (side, killed, other) in [
-            ("attacker", "attacker_killed", "defender"),
-            ("defender", "defender_killed", "attacker"),
-        ] {
-            let participant = &event[side];
-            if event[killed].as_bool() != Some(true) || participant["type"].as_str() != Some("unit")
-            {
-                continue;
-            }
-            let (Some(player), Some(unit)) = (
-                participant["player"]
-                    .as_u64()
-                    .and_then(|p| usize::try_from(p).ok()),
-                participant["id"].as_i64().filter(|id| *id >= 0),
-            ) else {
-                continue;
-            };
-            let opponent = event[other]["player"]
-                .as_u64()
-                .and_then(|p| usize::try_from(p).ok())
-                .filter(|other| *other != player);
-            self.0.insert(
-                (player, unit),
-                HostUnitDeath {
-                    player,
-                    unit,
-                    turn,
-                    opponent,
-                },
-            );
-        }
+    }
+
+    /// One death [`deaths_in`] read, recorded as `observe` records it: a later
+    /// report of the same unit replaces an earlier one.
+    pub(super) fn record(&mut self, death: HostUnitDeath) {
+        self.0.insert((death.player, death.unit), death);
     }
 
     /// Called at the selected state line: later combat results cannot leak
@@ -77,6 +35,60 @@ impl HostDeaths {
             .cloned()
             .collect()
     }
+}
+
+/// The unit deaths one combat line reports, in the order [`HostDeaths::observe`]
+/// records them; none for a line that is not a `combat` event.
+pub(super) fn deaths_in(line: &str) -> Vec<HostUnitDeath> {
+    let mut deaths = Vec::new();
+    // ★★★★★ MATCH THE EVENT KIND, NOT THE WORD. `"combat"` is also a key in
+    // every exported unit, so the old `contains("\"combat\"")` sent every
+    // state record (100-300 KB each, ~690 by turn 220) through a full
+    // `serde_json::Value` build on every frame, only to read `kind` and
+    // discard it. Profiled on a t220 frame of civvis-20261003T164758Z that
+    // was a third of the decider's CPU. On that run's 96 MB log the old
+    // filter passed 1,418 lines and this one passes exactly its 730 combat
+    // events; the `kind` check below still decides.
+    if !super::json_may_have_value(line, "\"kind\"", "\"combat\"") {
+        return deaths;
+    }
+    let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+        return deaths;
+    };
+    if event["kind"].as_str() != Some("combat") {
+        return deaths;
+    }
+    let Some(turn) = event["turn"].as_u64().and_then(|t| u32::try_from(t).ok()) else {
+        return deaths;
+    };
+    for (side, killed, other) in [
+        ("attacker", "attacker_killed", "defender"),
+        ("defender", "defender_killed", "attacker"),
+    ] {
+        let participant = &event[side];
+        if event[killed].as_bool() != Some(true) || participant["type"].as_str() != Some("unit") {
+            continue;
+        }
+        let (Some(player), Some(unit)) = (
+            participant["player"]
+                .as_u64()
+                .and_then(|p| usize::try_from(p).ok()),
+            participant["id"].as_i64().filter(|id| *id >= 0),
+        ) else {
+            continue;
+        };
+        let opponent = event[other]["player"]
+            .as_u64()
+            .and_then(|p| usize::try_from(p).ok())
+            .filter(|other| *other != player);
+        deaths.push(HostUnitDeath {
+            player,
+            unit,
+            turn,
+            opponent,
+        });
+    }
+    deaths
 }
 
 #[cfg(test)]

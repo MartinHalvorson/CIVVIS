@@ -664,6 +664,12 @@ fn state_line_can_match_turn(line: &str, turn: Option<u32>) -> bool {
     if !turn_may_match(line, want) {
         return false;
     }
+    header_turn(line).is_none_or(|found| found == want)
+}
+
+/// The record's root `turn` as the typed header reads it; `None` when the
+/// header does not parse or names no turn, which settles nothing.
+fn header_turn(line: &str) -> Option<u32> {
     #[derive(Deserialize)]
     struct TurnHeader {
         turn: Option<u32>,
@@ -671,7 +677,6 @@ fn state_line_can_match_turn(line: &str, turn: Option<u32>) -> bool {
     serde_json::from_str::<TurnHeader>(line)
         .ok()
         .and_then(|header| header.turn)
-        .is_none_or(|found| found == want)
 }
 
 /// False only when `line` spells at least one integer `"turn"` member and none
@@ -688,10 +693,26 @@ fn turn_may_match(line: &str, want: u32) -> bool {
 /// must spell it, so a reader that keeps only such records may skip the parse
 /// of everything this rejects.
 pub fn turn_may_be_any(line: &str, turns: &[u32]) -> bool {
-    let bytes = line.as_bytes();
-    let key = "\"turn\"";
     let wanted: Vec<String> = turns.iter().map(|turn| turn.to_string()).collect();
     let mut saw_integer = false;
+    let mut matched = false;
+    visit_integer_turns(line, |digits| {
+        if wanted.iter().any(|want| digits == want.as_bytes()) {
+            matched = true;
+            return std::ops::ControlFlow::Break(());
+        }
+        saw_integer = true;
+        std::ops::ControlFlow::Continue(())
+    });
+    matched || !saw_integer
+}
+
+/// The digits of each integer `"turn"` member `line` spells, in order, until
+/// `visit` breaks — the scan behind [`turn_may_be_any`], shared with the state
+/// index so both settle a record the same way.
+fn visit_integer_turns(line: &str, mut visit: impl FnMut(&[u8]) -> std::ops::ControlFlow<()>) {
+    let bytes = line.as_bytes();
+    let key = "\"turn\"";
     // Every occurrence, overlapping included, as the `str::find` walk it
     // replaces found them; memmem is the SIMD searcher (std's is scalar here).
     let finder = memchr::memmem::Finder::new(key.as_bytes());
@@ -721,15 +742,10 @@ pub fn turn_may_be_any(line: &str, turns: &[u32]) -> bool {
         if after.is_some_and(|b| matches!(b, b'.' | b'e' | b'E')) {
             continue;
         }
-        if wanted
-            .iter()
-            .any(|want| &bytes[at..at + digits] == want.as_bytes())
-        {
-            return true;
+        if visit(&bytes[at..at + digits]).is_break() {
+            return;
         }
-        saw_integer = true;
     }
-    !saw_integer
 }
 
 // ★★★★ ONE READ PER CHANGE OF THE LOG, AND NO LINE-BY-LINE WALK FOR A RARE EVENT.
@@ -808,24 +824,43 @@ fn read_events_uncaptured(path: &std::path::Path) -> std::io::Result<std::rc::Rc
                 let added = &bytes[split..];
                 let keep = added.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
                 if let Ok(more) = std::str::from_utf8(&added[..keep]) {
-                    let mut grown = String::with_capacity(text.len() + more.len());
-                    grown.push_str(&text);
-                    grown.push_str(more);
-                    let grown = std::rc::Rc::new(grown);
-                    EVENTS_READ.with(|cell| {
+                    // ★★★ APPEND IN PLACE WHEN NOTHING ELSE HOLDS THE TEXT. Copying
+                    // the whole log into a fresh buffer cost every frame of a
+                    // persistent decider a 70-100 MB copy by turn 200 for the few
+                    // KB the mod had appended. Between frames the kept copy is the
+                    // only owner, so it grows like any `String`; while a caller
+                    // still holds the old text it is copied, as before.
+                    let grown = EVENTS_READ.with(move |cell| {
                         let mut slot = cell.borrow_mut();
                         // The old text is a prefix of the new one, so every
                         // line found in it is still where it was.
-                        let (hits, generation) = slot
-                            .take()
-                            .map(|read| (read.hits, read.generation))
-                            .unwrap_or_default();
+                        let (kept, hits, generation) = match slot.take() {
+                            Some(read) => (Some(read.text), read.hits, read.generation),
+                            None => (None, Default::default(), Default::default()),
+                        };
+                        let mut grown = match kept {
+                            Some(kept) if std::rc::Rc::ptr_eq(&kept, &text) => {
+                                drop(text);
+                                kept
+                            }
+                            _ => text,
+                        };
+                        match std::rc::Rc::get_mut(&mut grown) {
+                            Some(owned) => owned.push_str(more),
+                            None => {
+                                let mut copy = String::with_capacity(grown.len() + more.len());
+                                copy.push_str(&grown);
+                                copy.push_str(more);
+                                grown = std::rc::Rc::new(copy);
+                            }
+                        }
                         *slot = Some(EventsRead {
                             path: path.to_path_buf(),
                             text: grown.clone(),
                             generation,
                             hits,
-                        })
+                        });
+                        grown
                     });
                     return Ok(grown);
                 }
@@ -1170,6 +1205,83 @@ mod log_scan_prefilter_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// ★ The kept state index must select what the full walk selects — the same
+    /// record, the deaths reported before it, the newest seat — at every size
+    /// the log passes through, a partly written last line included, and after
+    /// the log is replaced by a shorter one.
+    #[test]
+    fn the_kept_state_index_answers_like_the_full_walk() {
+        use super::{
+            events_generation, indexed_state, read_events, scanned_state, state_from_events,
+        };
+        let dir = std::env::temp_dir().join(format!("civvis-state-index-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("events.jsonl");
+        let state = |turn: u32, frame: u32| {
+            format!(r#"{{"kind": "state", "turn": {turn}, "frame": {frame}}}"#)
+        };
+        let combat = |turn: u32, id: i64| {
+            format!(
+                r#"{{"kind": "combat", "turn": {turn}, "defender_killed": true, "defender": {{"type": "unit", "player": 63, "id": {id}}}, "attacker": {{"type": "unit", "player": 0, "id": 5}}}}"#
+            )
+        };
+        let seat = |civ: &str| format!(r#"{{"kind": "seat", "civ": "{civ}"}}"#);
+        let lines = [
+            seat("CIVILIZATION_ROME"),
+            state(1, 0),
+            combat(1, 7),
+            state(2, 0),
+            // Nested members spell another turn; the root still decides.
+            r#"{"kind": "state", "turn": 2, "frame": 1, "units": [{"turn": 1, "combat": 3}]}"#
+                .to_string(),
+            // The same unit reported again: the later report stands.
+            combat(2, 7),
+            combat(2, 8),
+            // No integer turn anywhere: only the parse can settle it.
+            r#"{"kind": "state", "frame": 2}"#.to_string(),
+            seat(""),
+            state(3, 0),
+            r#"{"kind": "state", "turn": 3, "frame": 1, "#.to_string(),
+            combat(3, 9),
+            seat("CIVILIZATION_GREECE"),
+            state(3, 2),
+            combat(4, 10),
+        ];
+        let check = |when: &str| {
+            let raw = read_events(&path).unwrap();
+            let generation = events_generation(&path, &raw).unwrap();
+            for turn in 0..=5 {
+                let indexed =
+                    indexed_state(&path, &raw, generation, turn).map(|state| format!("{state:?}"));
+                let walked = scanned_state(&raw, Some(turn)).map(|state| format!("{state:?}"));
+                assert_eq!(indexed, walked, "turn {turn} {when}");
+            }
+        };
+        std::fs::write(&path, "").unwrap();
+        let mut text = String::new();
+        for (at, line) in lines.iter().enumerate() {
+            // The mod's write lands in two pieces: the reader may see half a line.
+            let (head, tail) = line.split_at(line.len() / 2);
+            std::fs::write(&path, format!("{text}{head}")).unwrap();
+            check(&format!("with half of line {at}"));
+            text.push_str(head);
+            text.push_str(tail);
+            text.push('\n');
+            std::fs::write(&path, &text).unwrap();
+            check(&format!("after line {at}"));
+        }
+        let selected = state_from_events(&path, Some(3)).unwrap();
+        assert_eq!(selected.frame, 2);
+        assert_eq!(selected.seat.civ, "CIVILIZATION_GREECE");
+        assert_eq!(selected.confirmed_unit_deaths.len(), 3);
+        // A replaced, shorter log is indexed afresh: nothing of turn 3 survives.
+        let shorter: String = lines[..5].iter().map(|line| format!("{line}\n")).collect();
+        std::fs::write(&path, &shorter).unwrap();
+        check("after the log was replaced");
+        assert!(state_from_events(&path, Some(3)).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn the_cached_log_reads_like_a_fresh_one() {
         use super::read_events;
@@ -1361,13 +1473,53 @@ fn rebuild_game_with_city_states(
     seed: u64,
     city_states: usize,
 ) -> crate::game::Game {
-    use crate::game::Game;
     let width = snapshot.width.max(1);
     let height = snapshot.height.max(1);
-    let mut game = Game::new(players.max(2), width, height, seed, 500, city_states);
-    std::sync::Arc::make_mut(&mut game.rules).enable_unknown_terrain();
+    let mut game = base_game(players.max(2), width, height, seed, city_states);
 
     apply_terrain(&mut game, snapshot);
+    game
+}
+
+thread_local! {
+    static BASE_GAME: std::cell::RefCell<Option<(BaseGameKey, crate::game::Game)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// `(players, width, height, seed, city_states)`: everything `base_game` builds from.
+type BaseGameKey = (usize, i32, i32, u64, usize);
+
+/// The generated game a mirror board is written onto, with unknown terrain enabled.
+///
+/// ★★★ GENERATED ONCE PER SHAPE, NOT ONCE PER FRAME. `--serve --fresh-board`
+/// rebuilds the board on every frame, and each rebuild ran the whole map
+/// generator — regions, start quality, connected components — for a map that
+/// [`apply_terrain`] then overwrites plot by plot: 9.8 ms of a 79 ms t200 frame
+/// (civvis-20261005T091120Z), plus a deep copy of the shared rules to enable
+/// unknown terrain. `Game::new` is a function of these arguments, so the first
+/// result is kept per thread and each later board is a copy of it. Copies come
+/// from [`Game::clone_unshared`](crate::game::Game::clone_unshared): an ordinary
+/// clone would hand every later board the same attack-reach table.
+fn base_game(
+    players: usize,
+    width: i32,
+    height: i32,
+    seed: u64,
+    city_states: usize,
+) -> crate::game::Game {
+    let key = (players, width, height, seed, city_states);
+    let kept = BASE_GAME.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .filter(|(kept, _)| *kept == key)
+            .map(|(_, game)| game.clone_unshared())
+    });
+    if let Some(game) = kept {
+        return game;
+    }
+    let mut game = crate::game::Game::new(players, width, height, seed, 500, city_states);
+    std::sync::Arc::make_mut(&mut game.rules).enable_unknown_terrain();
+    BASE_GAME.with(|cell| *cell.borrow_mut() = Some((key, game.clone_unshared())));
     game
 }
 
@@ -6993,6 +7145,37 @@ pub fn state_from_json(line: &str) -> serde_json::Result<StateSnapshot> {
 
 pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<StateSnapshot> {
     let raw = read_events(path).ok()?;
+    let mut best = match (turn, events_generation(path, &raw)) {
+        (Some(want), Some(generation)) => indexed_state(path, &raw, generation, want),
+        _ => scanned_state(&raw, turn),
+    };
+    if let Some(state) = best.as_mut() {
+        if state.dedication_choices.is_some_and(|choices| choices > 0) {
+            state.observed_dedication_activity = dedication_history::through(&raw, state.turn);
+        }
+        state.refused_sites = refused_sites_of_kind_through(path, "found_refused", turn);
+        state.refused_improves = refused_sites_of_kind_through(path, "improve_refused", turn);
+        state.refused_trade_routes = refused_trade_routes_through(path, turn);
+        state.refused_policy_names = refused_policies_through(path, turn);
+        state.refused_pantheons = refused_pantheons_through(path, turn);
+        state.refused_districts = refused_districts_through(path, turn);
+        state.host_district_sites = host_district_sites_through(path, state.turn);
+        state.host_wonder_sites = host_wonder_sites_through(path, state.turn);
+        state.refused_wonders = refused_wonders_through(path, turn);
+        state.host_unavailable_wonders = host_unavailable_wonders_through(path, Some(state.turn));
+        state.refused_production = refused_production(path, state.turn);
+        state.refused_purchases = refused_purchases(path, state.turn);
+        state.refused_promotions = refused_promotions_through(path, turn);
+        state.refused_strikes = refused_strikes_on(path, state.turn);
+        state.host_previews = host_previews_on(path, state.turn);
+    }
+    best
+}
+
+/// The state record [`state_from_events`] selects, found by walking every
+/// combat, seat and state line of `raw` in stream order. Serves any log and any
+/// request; [`indexed_state`] must answer exactly as this does.
+fn scanned_state(raw: &str, turn: Option<u32>) -> Option<StateSnapshot> {
     let mut best: Option<StateSnapshot> = None;
     let mut deaths = host_deaths::HostDeaths::default();
     // Identity rides in the `seat` event, which is emitted once at startup rather
@@ -7045,27 +7228,172 @@ pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<St
     if let (Some(state), Some(seat)) = (best.as_mut(), seat) {
         state.seat = seat;
     }
-    if let Some(state) = best.as_mut() {
-        if state.dedication_choices.is_some_and(|choices| choices > 0) {
-            state.observed_dedication_activity = dedication_history::through(&raw, state.turn);
-        }
-        state.refused_sites = refused_sites_of_kind_through(path, "found_refused", turn);
-        state.refused_improves = refused_sites_of_kind_through(path, "improve_refused", turn);
-        state.refused_trade_routes = refused_trade_routes_through(path, turn);
-        state.refused_policy_names = refused_policies_through(path, turn);
-        state.refused_pantheons = refused_pantheons_through(path, turn);
-        state.refused_districts = refused_districts_through(path, turn);
-        state.host_district_sites = host_district_sites_through(path, state.turn);
-        state.host_wonder_sites = host_wonder_sites_through(path, state.turn);
-        state.refused_wonders = refused_wonders_through(path, turn);
-        state.host_unavailable_wonders = host_unavailable_wonders_through(path, Some(state.turn));
-        state.refused_production = refused_production(path, state.turn);
-        state.refused_purchases = refused_purchases(path, state.turn);
-        state.refused_promotions = refused_promotions_through(path, turn);
-        state.refused_strikes = refused_strikes_on(path, state.turn);
-        state.host_previews = host_previews_on(path, state.turn);
-    }
     best
+}
+
+thread_local! {
+    static STATE_LINES: std::cell::RefCell<Option<StateLines>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The combat, seat and state lines of the log `read_events` holds, each read once.
+///
+/// ★★★ [`scanned_state`] walks all of them on every frame: every combat line
+/// parsed for its deaths and every state record scanned for its turn, ~1,400
+/// lines by t200, ~4 ms of a 79 ms frame (civvis-20261005T091120Z) and growing
+/// with the log. While the log only grows (its `read_events` generation holds)
+/// what those lines say cannot change, so it is kept here and only appended
+/// lines are read; a shrunk or replaced log has a new generation and is
+/// indexed from the start.
+struct StateLines {
+    path: std::path::PathBuf,
+    generation: u64,
+    /// Every line starting before this byte has been indexed.
+    covered: usize,
+    /// The deaths each combat line reported, keyed by the line's start, in stream order.
+    deaths: Vec<(usize, host_deaths::HostUnitDeath)>,
+    /// The newest seat naming a civilization.
+    seat: Option<Seat>,
+    states: Vec<StateLine>,
+}
+
+struct StateLine {
+    start: usize,
+    end: usize,
+    /// The distinct integer `"turn"` members the record spells ([`visit_integer_turns`]).
+    turns: Vec<Box<[u8]>>,
+    /// [`header_turn`], read the first time a request gets past `turns`.
+    header: Option<Option<u32>>,
+}
+
+impl StateLine {
+    /// [`state_line_can_match_turn`] for `Some(want)`, from what was kept.
+    fn can_match(&mut self, raw: &str, want: u32, digits: &[u8]) -> bool {
+        if !self.turns.is_empty() && !self.turns.iter().any(|turn| **turn == *digits) {
+            return false;
+        }
+        let (start, end) = (self.start, self.end);
+        self.header
+            .get_or_insert_with(|| header_turn(&raw[start..end]))
+            .is_none_or(|found| found == want)
+    }
+}
+
+impl StateLines {
+    /// Index the lines of `raw` that start at or after `covered`.
+    fn extend(&mut self, raw: &str) {
+        const COMBAT: u8 = 1;
+        const SEAT: u8 = 2;
+        const STATE: u8 = 4;
+        let mut marked: std::collections::BTreeMap<(usize, usize), u8> = Default::default();
+        for (needle, flag) in [
+            ("\"combat\"", COMBAT),
+            ("\"seat\"", SEAT),
+            ("\"state\"", STATE),
+        ] {
+            let ranges = line_ranges_containing(raw, needle);
+            let new = ranges.partition_point(|(start, _)| *start < self.covered);
+            for range in &ranges[new..] {
+                *marked.entry(*range).or_default() |= flag;
+            }
+        }
+        for ((start, end), flags) in marked {
+            let line = &raw[start..end];
+            if flags & COMBAT != 0 {
+                self.deaths.extend(
+                    host_deaths::deaths_in(line)
+                        .into_iter()
+                        .map(|death| (start, death)),
+                );
+            }
+            if flags & SEAT != 0 {
+                if let Ok(found) = serde_json::from_str::<Seat>(line) {
+                    if !found.civ.is_empty() {
+                        self.seat = Some(found);
+                    }
+                }
+            }
+            if flags & STATE != 0 {
+                let mut turns: Vec<Box<[u8]>> = Vec::new();
+                visit_integer_turns(line, |digits| {
+                    if !turns.iter().any(|turn| **turn == *digits) {
+                        turns.push(digits.into());
+                    }
+                    std::ops::ControlFlow::Continue(())
+                });
+                self.states.push(StateLine {
+                    start,
+                    end,
+                    turns,
+                    header: None,
+                });
+            }
+        }
+        self.covered = raw.len();
+    }
+
+    /// The newest record of turn `want`, as [`scanned_state`] selects it: the
+    /// last one in stream order that parses as that turn, with the deaths the
+    /// log had reported up to it and the newest seat.
+    fn select(&mut self, raw: &str, want: u32) -> Option<StateSnapshot> {
+        let digits = want.to_string();
+        for line in self.states.iter_mut().rev() {
+            if !line.can_match(raw, want, digits.as_bytes()) {
+                continue;
+            }
+            let Ok(mut state) = state_from_json(&raw[line.start..line.end]) else {
+                continue;
+            };
+            if state.turn != want {
+                continue;
+            }
+            let mut deaths = host_deaths::HostDeaths::default();
+            for (_, death) in self
+                .deaths
+                .iter()
+                .take_while(|(start, _)| *start <= line.start)
+            {
+                deaths.record(death.clone());
+            }
+            state.confirmed_unit_deaths = deaths.through(state.turn);
+            if let Some(seat) = &self.seat {
+                state.seat = seat.clone();
+            }
+            return Some(state);
+        }
+        None
+    }
+}
+
+/// [`scanned_state`] for `Some(want)` on the log `read_events` holds at
+/// `generation`, from the per-thread [`StateLines`].
+fn indexed_state(
+    path: &std::path::Path,
+    raw: &str,
+    generation: u64,
+    want: u32,
+) -> Option<StateSnapshot> {
+    STATE_LINES.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        let kept = slot.as_ref().is_some_and(|index| {
+            index.path == path && index.generation == generation && index.covered <= raw.len()
+        });
+        if !kept {
+            *slot = Some(StateLines {
+                path: path.to_path_buf(),
+                generation,
+                covered: 0,
+                deaths: Vec::new(),
+                seat: None,
+                states: Vec::new(),
+            });
+        }
+        let index = slot.as_mut()?;
+        if index.covered < raw.len() {
+            index.extend(raw);
+        }
+        index.select(raw, want)
+    })
 }
 
 /// The host's retired cards as CIVVIS spells them, dropping any it does not model.
@@ -7814,10 +8142,13 @@ fn refused_strikes_on(
     let Ok(raw) = read_events(path) else {
         return refused;
     };
-    for line in raw.lines() {
-        if !line.contains("range_attack_refused") && !line.contains("war_refused") {
-            continue;
-        }
+    // The lines naming either event, from the kept index rather than a walk of
+    // every line: this was the last whole-log `lines()` scan on the frame path,
+    // ~7.6 ms of a 79 ms t200 frame (civvis-20261005T091120Z) and growing with
+    // the log. A line naming both is read twice; the set keeps it once.
+    for line in
+        lines_containing(&raw, "range_attack_refused").chain(lines_containing(&raw, "war_refused"))
+    {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };

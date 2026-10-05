@@ -27492,6 +27492,19 @@ impl Game {
         reach
     }
 
+    /// A clone that shares no cache with `self`.
+    ///
+    /// An ordinary clone shares the attack-reach table through its [`Arc`],
+    /// which is right for a speculative branch of one decision. A board kept
+    /// as the template for later, unrelated boards (the mirror's generated
+    /// base, `mirror::base_game`) must not hand every copy one table, so each
+    /// copy starts with an empty one of its own, as a fresh `Game::new` does.
+    pub(crate) fn clone_unshared(&self) -> Game {
+        let mut game = self.clone();
+        game.attack_reach_cache = Arc::new(std::sync::Mutex::new(AttackReachCache::default()));
+        game
+    }
+
     #[cfg(test)]
     pub(crate) fn attack_reach_cache_computations(&self) -> u64 {
         self.attack_reach_cache
