@@ -212,6 +212,20 @@ class MoveFallbackConfigTests(unittest.TestCase):
         source = pathlib.Path(civ6_play.__file__).read_text(encoding="utf-8")
         self.assertEqual(source.count('"DebugTimeScaleAB": getattr(args, "debug_timescale_ab", None),'), 3)
 
+    def test_the_poll_20ms_arm_tightens_both_polls(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "live-mod-arms.txt"
+            path.write_text("poll-20ms\n", encoding="utf-8")
+            args = SimpleNamespace(poll_20ms=False)
+            self.assertEqual(civ6_play.apply_tree_mod_arms(args, path), ["poll-20ms"])
+            self.assertTrue(args.poll_20ms)
+        self.assertIsNone(self._config()["OrdersPeekSeconds"])
+        self.assertEqual(self._config(poll_20ms=True)["OrdersPeekSeconds"], 0.02)
+        source = pathlib.Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertIn('read_s = (0.02 if getattr(args, "poll_20ms", False) else 0.05) '
+                      'if args.civvis_decides else None', source)
+        self.assertEqual(source.count('"OrdersPeekSeconds": 0.02 if getattr(args, "poll_20ms", False) else None,'), 3)
+
     def test_main_applies_the_tree_arms_right_after_parsing(self) -> None:
         source = pathlib.Path(civ6_play.__file__).read_text(encoding="utf-8")
         self.assertIn("    args = ap.parse_args(raw_argv)\n    apply_tree_mod_arms(args)\n", source)
