@@ -9750,6 +9750,12 @@ impl AdvancedAi {
         self.base.adjacent_camp_clear
     }
 
+    /// Whether the gene is on; the live bridge asks before it plans the
+    /// purchase (`append_favor_buy_order` in `civvis_orders`).
+    pub fn favor_bought_before_congress_enabled(&self) -> bool {
+        self.favor_bought_before_congress
+    }
+
     /// Whether the barbarian seat hunts religious units. See
     /// `BasicAi::barbarian_heretic_hunt`.
     pub fn barbarian_heretic_hunt(&self) -> bool {
