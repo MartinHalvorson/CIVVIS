@@ -11759,6 +11759,13 @@ CivvisLedger.onCombatVisEnd = function(kVisData)
 	local function wallOf(desc) return desc ~= nil and desc.wall_hp or nil; end
 	local defenderKilled = defenderNow ~= nil and defenderNow.gone == true;
 	local attackerKilled = attackerNow ~= nil and attackerNow.gone == true;
+	if defenderKilled and CivvisFrames ~= nil and combat.defender ~= nil then
+		local released = CivvisFrames.releaseKilledTarget(combat.turn, combat.defender.x, combat.defender.y);
+		if released > 0 then
+			emit("strike_target_killed", { turn = combat.turn, x = combat.defender.x,
+				y = combat.defender.y, released = released });
+		end
+	end
 	local damageToDefender, damageToAttacker = nil, nil;
 	if hpOf(combat.defender) ~= nil then
 		if defenderKilled then damageToDefender = hpOf(combat.defender);
@@ -18413,6 +18420,23 @@ CivvisFrames.finishStrikeCombat = function(pid, subject, turn, x, y)
 	-- One combat ends one request, including multi-attack units. Host unit ids
 	-- are player-local; a foreign same-id attacker must not release our shot.
 	CivvisFrames.finishStrike(first);
+end;
+
+-- A shot at a plot whose defender just died cannot fire: the host drops the
+-- request with no combat, so its ticket held the frame for the whole grace
+-- (30 ticks, ~4 s late in a game). G113-G119 (2026-10-05): 20 of 23
+-- `strike_frame_timeout`s were ranged shots at a target another attacker had
+-- killed earlier in the same frame -- G115 t20, a warrior's melee killed the
+-- horse archer the slinger's queued shot was aimed at.
+CivvisFrames.releaseKilledTarget = function(turn, x, y)
+	local released = 0;
+	for ticket, shot in pairs(CivvisFrames.pendingStrikes or {}) do
+		if shot.turn == turn and shot.x == x and shot.y == y then
+			CivvisFrames.pendingStrikes[ticket] = nil;
+			released = released + 1;
+		end
+	end
+	return released;
 end;
 
 CivvisFrames.strikesSettled = function(turn)
