@@ -5569,8 +5569,14 @@ TREE_MOD_ARMS_FILE = REPO_ROOT / "deploy" / "live-mod-arms.txt"
 TREE_MOD_ARMS = {
     # #3939: answer a probe-marked stalled MOVE_TO operation at the probe tick.
     "stalled-operation-release": "stalled_operation_release",
-    # Debug timescale 2 (`--debug-timescale 2`): an arm can carry a value.
+    # The engine's debug timescale (`--debug-timescale N`): an arm can carry a
+    # value. G96 ran turns 1-139 at 2 in 8.71 min against 11.59 at 1 on the
+    # same genes; 3 and 4 are the next trials. The agent reverts any of them
+    # whose real-seconds clock disagrees (`CivvisQueue.checkTimescaleClock`).
+    # Arms apply in file order, so of two timescale lines the LAST one wins.
     "debug-timescale-2": ("debug_timescale", 2.0),
+    "debug-timescale-3": ("debug_timescale", 3.0),
+    "debug-timescale-4": ("debug_timescale", 4.0),
 }
 
 

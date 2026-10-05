@@ -185,6 +185,19 @@ class MoveFallbackConfigTests(unittest.TestCase):
         arms = arms[: arms.index("},")]
         self.assertIn('"DebugTimeScale": getattr(args, "debug_timescale", None),', arms)
 
+    def test_the_faster_timescale_arms_carry_their_values_and_the_last_wins(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "live-mod-arms.txt"
+            for name, value in (("debug-timescale-3", 3.0), ("debug-timescale-4", 4.0)):
+                path.write_text(name + "\n", encoding="utf-8")
+                args = SimpleNamespace(debug_timescale=None)
+                self.assertEqual(civ6_play.apply_tree_mod_arms(args, path), [name])
+                self.assertEqual(args.debug_timescale, value)
+            path.write_text("debug-timescale-2\ndebug-timescale-3\n", encoding="utf-8")
+            args = SimpleNamespace(debug_timescale=None)
+            civ6_play.apply_tree_mod_arms(args, path)
+            self.assertEqual(args.debug_timescale, 3.0)
+
     def test_main_applies_the_tree_arms_right_after_parsing(self) -> None:
         source = pathlib.Path(civ6_play.__file__).read_text(encoding="utf-8")
         self.assertIn("    args = ap.parse_args(raw_argv)\n    apply_tree_mod_arms(args)\n", source)
