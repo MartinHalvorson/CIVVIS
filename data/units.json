@@ -827,6 +827,200 @@
     "promotion_class": "light_cavalry", "zone_of_control": true,
     "upgrade_to": "helicopter"
   },
+  "mamluk": {
+    "class": "military", "cost": 220, "maintenance": 4, "moves": 4, "strength": 50,
+    "tech": "stirrups", "requires_resource": "iron", "resource_cost": 10, "unique_to": "Arabia",
+    "replaces": "knight", "cavalry": true, "promotion_class": "heavy_cavalry",
+    "zone_of_control": true, "upgrade_to": "cuirassier", "obsolete_tech": "composites"
+  },
+  "digger": {
+    "class": "military", "cost": 430, "maintenance": 6, "moves": 2, "strength": 78,
+    "tech": "replaceable_parts", "unique_to": "Australia",
+    "replaces": "infantry", "promotion_class": "melee", "zone_of_control": true,
+    "upgrade_to": "mechanized_infantry"
+  },
+  "sabum_kibittum": {
+    "class": "military", "cost": 35, "maintenance": 0, "moves": 3, "strength": 17, "sight": 3,
+    "unique_to": "Babylon", "promotion_class": "melee", "zone_of_control": true,
+    "upgrade_to": "swordsman", "obsolete_tech": "gunpowder"
+  },
+  "minas_geraes": {
+    "class": "military", "cost": 430, "maintenance": 6, "moves": 5, "strength": 70,
+    "ranged_strength": 80, "range": 3, "domain": "sea", "civic": "nationalism",
+    "requires_resource": "coal", "resource_cost": 1, "resource_maintenance": 1,
+    "unique_to": "Brazil", "replaces": "battleship", "promotion_class": "naval_ranged",
+    "zone_of_control": true, "upgrade_to": "missile_cruiser"
+  },
+  "dromon": {
+    "class": "military", "cost": 120, "maintenance": 2, "moves": 3, "strength": 20,
+    "ranged_strength": 25, "range": 2, "domain": "sea", "tech": "shipbuilding",
+    "unique_to": "Byzantium", "replaces": "quadrireme", "promotion_class": "naval_ranged",
+    "zone_of_control": true, "upgrade_to": "frigate", "obsolete_tech": "steel"
+  },
+  "mountie": {
+    "class": "military", "cost": 290, "maintenance": 3, "moves": 5, "strength": 62, "sight": 4,
+    "civic": "conservation", "unique_to": "Canada", "cavalry": true,
+    "promotion_class": "light_cavalry", "zone_of_control": true
+  },
+  "okihtcitaw": {
+    "class": "military", "cost": 40, "maintenance": 0, "moves": 3, "strength": 20,
+    "unique_to": "Cree", "replaces": "scout", "promotion_class": "recon",
+    "zone_of_control": true, "upgrade_to": "skirmisher"
+  },
+  "viking_longship": {
+    "class": "military", "cost": 65, "maintenance": 1, "moves": 3, "strength": 35,
+    "domain": "sea", "tech": "sailing", "unique_to": "Norway", "replaces": "galley",
+    "promotion_class": "naval_melee", "zone_of_control": true, "upgrade_to": "caravel",
+    "obsolete_tech": "electricity"
+  },
+  "sea_dog": {
+    "class": "military", "cost": 280, "maintenance": 4, "moves": 4, "strength": 40,
+    "ranged_strength": 55, "range": 2, "domain": "sea", "civic": "mercantilism",
+    "unique_to": "England", "replaces": "privateer", "promotion_class": "naval_raider",
+    "zone_of_control": true, "upgrade_to": "submarine", "obsolete_tech": "telecommunications"
+  },
+  "redcoat": {
+    "class": "military", "cost": 360, "maintenance": 5, "moves": 2, "strength": 70,
+    "tech": "military_science", "requires_resource": "niter", "resource_cost": 10,
+    "unique_to": "England", "replaces": "line_infantry", "promotion_class": "melee",
+    "zone_of_control": true, "upgrade_to": "infantry"
+  },
+  "garde_imperiale": {
+    "class": "military", "cost": 360, "maintenance": 5, "moves": 2, "strength": 70,
+    "tech": "military_science", "requires_resource": "niter", "resource_cost": 10,
+    "unique_to": "France", "replaces": "line_infantry", "promotion_class": "melee",
+    "zone_of_control": true, "upgrade_to": "infantry"
+  },
+  "khevsureti": {
+    "class": "military", "cost": 160, "maintenance": 3, "moves": 2, "strength": 48,
+    "tech": "military_tactics", "requires_resource": "iron", "resource_cost": 10,
+    "unique_to": "Georgia", "replaces": "man_at_arms", "promotion_class": "melee",
+    "zone_of_control": true, "upgrade_to": "musketman", "obsolete_tech": "replaceable_parts"
+  },
+  "u_boat": {
+    "class": "military", "cost": 430, "maintenance": 6, "moves": 3, "strength": 65,
+    "ranged_strength": 75, "range": 2, "sight": 3, "domain": "sea", "tech": "electricity",
+    "unique_to": "Germany", "replaces": "submarine",
+    "promotion_class": "naval_raider", "upgrade_to": "nuclear_submarine"
+  },
+  "huszar": {
+    "class": "military", "cost": 335, "maintenance": 5, "moves": 5, "strength": 65,
+    "tech": "military_science", "requires_resource": "horses", "resource_cost": 10,
+    "unique_to": "Hungary", "replaces": "cavalry", "cavalry": true,
+    "promotion_class": "light_cavalry", "zone_of_control": true, "upgrade_to": "helicopter"
+  },
+  "black_army": {
+    "class": "military", "cost": 205, "maintenance": 3, "moves": 5, "strength": 49,
+    "tech": "castles", "requires_resource": "horses", "resource_cost": 10,
+    "unique_to": "Hungary", "replaces": "courser", "cavalry": true,
+    "promotion_class": "light_cavalry", "zone_of_control": true, "upgrade_to": "cavalry",
+    "obsolete_tech": "synthetic_materials"
+  },
+  "warakaq": {
+    "class": "military", "cost": 165, "maintenance": 2, "moves": 3, "strength": 20,
+    "ranged_strength": 40, "range": 1, "tech": "machinery", "unique_to": "Inca",
+    "replaces": "skirmisher", "promotion_class": "recon", "upgrade_to": "ranger"
+  },
+  "jong": {
+    "class": "military", "cost": 300, "maintenance": 5, "moves": 5, "strength": 45,
+    "ranged_strength": 55, "range": 2, "domain": "sea", "civic": "mercenaries",
+    "unique_to": "Indonesia", "replaces": "frigate", "promotion_class": "naval_ranged",
+    "zone_of_control": true, "upgrade_to": "battleship", "obsolete_tech": "lasers"
+  },
+  "domrey": {
+    "class": "military", "cost": 200, "maintenance": 3, "moves": 2, "strength": 40,
+    "bombard_strength": 50, "range": 2, "tech": "military_engineering", "unique_to": "Khmer",
+    "replaces": "trebuchet", "siege": true, "promotion_class": "siege", "zone_of_control": true,
+    "upgrade_to": "bombard", "obsolete_tech": "guidance_systems"
+  },
+  "hwacha": {
+    "class": "military", "cost": 250, "maintenance": 3, "moves": 2, "strength": 45,
+    "ranged_strength": 60, "range": 2, "tech": "gunpowder", "unique_to": "Korea",
+    "replaces": "field_cannon", "promotion_class": "ranged", "upgrade_to": "machine_gun",
+    "obsolete_tech": "advanced_ballistics"
+  },
+  "hetairoi": {
+    "class": "military", "cost": 100, "maintenance": 2, "moves": 4, "strength": 36,
+    "tech": "horseback_riding", "requires_resource": "horses", "resource_cost": 10,
+    "unique_to": "Macedon", "replaces": "horseman", "cavalry": true,
+    "promotion_class": "heavy_cavalry", "zone_of_control": true, "upgrade_to": "knight",
+    "obsolete_tech": "replaceable_parts"
+  },
+  "malon_raider": {
+    "class": "military", "cost": 230, "maintenance": 4, "moves": 4, "strength": 55,
+    "tech": "gunpowder", "unique_to": "Mapuche", "cavalry": true,
+    "promotion_class": "light_cavalry", "zone_of_control": true, "upgrade_to": "cavalry"
+  },
+  "hulche": {
+    "class": "military", "cost": 60, "maintenance": 1, "moves": 2, "strength": 15,
+    "ranged_strength": 28, "range": 2, "tech": "archery", "unique_to": "Maya",
+    "replaces": "archer", "promotion_class": "ranged", "upgrade_to": "crossbowman",
+    "obsolete_tech": "ballistics"
+  },
+  "de_zeven_provincien": {
+    "class": "military", "cost": 280, "maintenance": 5, "moves": 4, "strength": 50,
+    "ranged_strength": 60, "range": 2, "domain": "sea", "tech": "square_rigging",
+    "requires_resource": "niter", "resource_cost": 10, "unique_to": "Netherlands",
+    "replaces": "frigate", "promotion_class": "naval_ranged", "zone_of_control": true,
+    "upgrade_to": "battleship", "obsolete_tech": "lasers"
+  },
+  "berserker": {
+    "class": "military", "cost": 160, "maintenance": 3, "moves": 2, "strength": 48,
+    "tech": "military_tactics", "requires_resource": "iron", "resource_cost": 10,
+    "unique_to": "Norway", "replaces": "man_at_arms", "promotion_class": "melee",
+    "zone_of_control": true, "upgrade_to": "musketman", "obsolete_tech": "replaceable_parts"
+  },
+  "barbary_corsair": {
+    "class": "military", "cost": 240, "maintenance": 3, "moves": 4, "strength": 40,
+    "ranged_strength": 50, "range": 2, "domain": "sea", "civic": "medieval_faires",
+    "unique_to": "Ottomans", "replaces": "privateer", "promotion_class": "naval_raider",
+    "zone_of_control": true, "upgrade_to": "submarine", "obsolete_tech": "lasers"
+  },
+  "janissary": {
+    "class": "military", "cost": 120, "maintenance": 4, "moves": 2, "strength": 60,
+    "tech": "gunpowder", "requires_resource": "niter", "resource_cost": 10,
+    "unique_to": "Ottomans", "replaces": "musketman", "promotion_class": "melee",
+    "zone_of_control": true, "upgrade_to": "line_infantry",
+    "obsolete_tech": "advanced_ballistics"
+  },
+  "immortal": {
+    "class": "military", "cost": 100, "maintenance": 2, "moves": 2, "strength": 35,
+    "ranged_strength": 25, "range": 2, "tech": "iron_working", "requires_resource": "iron",
+    "resource_cost": 10, "unique_to": "Persia", "replaces": "swordsman",
+    "promotion_class": "melee", "zone_of_control": true, "can_melee": true, "can_ranged": true,
+    "upgrade_to": "man_at_arms", "obsolete_tech": "replaceable_parts"
+  },
+  "highlander": {
+    "class": "military", "cost": 380, "maintenance": 5, "moves": 3, "strength": 50,
+    "ranged_strength": 65, "range": 1, "tech": "rifling", "unique_to": "Scotland",
+    "replaces": "ranger", "promotion_class": "recon", "zone_of_control": true,
+    "upgrade_to": "spec_ops"
+  },
+  "conquistador": {
+    "class": "military", "cost": 250, "maintenance": 4, "moves": 2, "strength": 58,
+    "tech": "gunpowder", "requires_resource": "niter", "resource_cost": 10, "unique_to": "Spain",
+    "replaces": "musketman", "promotion_class": "melee", "zone_of_control": true,
+    "upgrade_to": "line_infantry", "obsolete_tech": "advanced_ballistics"
+  },
+  "carolean": {
+    "class": "military", "cost": 250, "maintenance": 3, "moves": 3, "strength": 55,
+    "tech": "metal_casting", "unique_to": "Sweden", "replaces": "pike_and_shot",
+    "promotion_class": "anti_cavalry", "zone_of_control": true, "upgrade_to": "at_crew",
+    "obsolete_tech": "combined_arms"
+  },
+  "impi": {
+    "class": "military", "cost": 125, "maintenance": 1, "moves": 2, "strength": 45,
+    "tech": "military_tactics", "unique_to": "Zulu", "replaces": "pikeman",
+    "promotion_class": "anti_cavalry", "zone_of_control": true, "upgrade_to": "pike_and_shot",
+    "obsolete_tech": "composites"
+  },
+  "p51_mustang": {
+    "class": "military", "cost": 520, "maintenance": 7, "moves": 10, "strength": 105,
+    "ranged_strength": 105, "range": 5, "sight": 4, "domain": "air", "tech": "advanced_flight",
+    "requires_resource": "aluminum", "resource_cost": 1, "resource_maintenance": 1,
+    "requires_district": "aerodrome", "unique_to": "America", "replaces": "fighter",
+    "promotion_class": "air_fighter", "upgrade_to": "jet_fighter"
+  },
   "line_infantry": {
     "class": "military", "cost": 360, "maintenance": 5, "moves": 2, "strength": 65,
     "tech": "military_science", "requires_resource": "niter", "resource_cost": 20, "promotion_class": "melee", "zone_of_control": true,

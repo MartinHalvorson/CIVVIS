@@ -357,6 +357,120 @@ check("follow-up runs after cancellation settles", ops(143),
 	"UNITOPERATION_MOVE_TO,UNITOPERATION_FORTIFY")
 check("asynchronous cancellation queue drains", queue.pendingCount(), 0)
 
+-- 2c. A path that cannot land this turn holds its follow-up only for the
+-- grace period. The host keeps a multi-turn (or leftover) MOVE_TO active until
+-- the next turn; the follow-up would be refused as not arrived anyway, so
+-- waiting longer only ran the turn into the stall cap (civvis-20261004T083931Z
+-- t84: a Scout's queued PILLAGE held the turn 37 s).
+reset()
+host.units[144] = {
+	id = 144, kind = "UNIT_SCOUT", x = 1, y = 1, moves = 2,
+	active_operation = true,
+}
+applyOrders(player, PID, 7, { row(144, "MOVE_TO", 9, 1), row(144, "PILLAGE") })
+local graceTicks = 30 -- the agent's OrderQueueGraceTicks default; no config is installed here
+for _ = 1, graceTicks - 1 do queue.drain(player, PID, 7) end
+check("en-route operation still holds within the grace", queue.pendingCount(), 1)
+queue.drain(player, PID, 7)
+check("past the grace an unlanded operation releases its follow-up", queue.pendingCount(), 0)
+check("released follow-up is never issued", ops(144), "UNITOPERATION_MOVE_TO")
+check("released follow-up is named not-arrived",
+	(lastEvent("orders_queue") or ""):find("queue_prior_not_arrived", 1, true) ~= nil, true)
+
+-- 2d. An opening walk the host cannot path is answered a few ticks in, not
+-- at the grace: one plot (or none) from `GetMoveToPathEx` means the leg will
+-- not happen (civvis-20261004T083931Z: 564 such no-ops held their frame to the
+-- 30-tick grace). A walk with a real path keeps waiting, and a host that
+-- cannot be asked decides nothing.
+reset()
+-- Every leg has a path when it is issued (`capToTurn` refuses one without);
+-- 145's is gone afterwards, which is what the live no-ops reported.
+host.paths = { [145] = 4, [146] = 4 }
+Map.GetPlotIndex = function(x, y) return y * 100 + x end
+UnitManager.GetMoveToPathEx = function(unit)
+	local n = host.paths[unit.GetID()];
+	if n == nil then return nil end
+	local plots = {};
+	for i = 1, n do plots[i] = i end
+	return { plots = plots, turns = {} };
+end
+host.units[145] = { id = 145, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.units[146] = { id = 146, kind = "UNIT_WARRIOR", x = 4, y = 4, moves = 2 }
+host.units[147] = { id = 147, kind = "UNIT_WARRIOR", x = 7, y = 7, moves = 2 }
+applyOrders(player, PID, 7, {
+	row(145, "MOVE_TO", 3, 1), row(146, "MOVE_TO", 6, 4), row(147, "MOVE_TO", 9, 7),
+})
+host.paths[145] = 1
+for _ = 1, 7 do queue.drain(player, PID, 7) end
+check("no probe before the probe tick", queue.pendingCount(), 3)
+queue.drain(player, PID, 7)
+check("an unpathed walk is answered at the probe tick", queue.pendingCount(), 2)
+local noop = lastEvent("move_noop") or ""
+check("the early no-op is named for its unit", noop:find('"unit":145', 1, true) ~= nil, true)
+check("the early no-op reports its tick", noop:find('"ticks":8', 1, true) ~= nil, true)
+for _ = 1, 20 do queue.drain(player, PID, 7) end
+check("a pathed walk and an unaskable host keep waiting", queue.pendingCount(), 2)
+UnitManager.GetMoveToPathEx = nil
+Map.GetPlotIndex = nil
+host.paths = nil
+
+-- 2d'. RECORD-ONLY stalled-operation probe (G77: 22 of 23 full-grace
+-- `unknown` no-ops sat in ACTIVITY_OPERATION on their origin). At the probe
+-- tick, a pathed opening walk still on its origin with its movement intact and
+-- an active operation is marked `stall_probe`; it then resolves `stepped` the
+-- moment it leaves the origin, or carries `stall_probe` on its grace no-op.
+-- A walk that is not in an operation is never marked. Nothing changes the queue.
+reset()
+host.paths = { [150] = 2, [151] = 2, [152] = 2 }
+Map.GetPlotIndex = function(x, y) return y * 100 + x end
+UnitManager.GetMoveToPathEx = function(unit)
+	local n = host.paths[unit.GetID()];
+	if n == nil then return nil end
+	local plots = {};
+	for i = 1, n do plots[i] = i end
+	return { plots = plots, turns = { 0, 1 } };
+end
+host.units[150] = { id = 150, kind = "UNIT_MUSKETMAN", x = 1, y = 1, moves = 2, active_operation = true }
+host.units[151] = { id = 151, kind = "UNIT_MUSKETMAN", x = 4, y = 4, moves = 2, active_operation = true }
+host.units[152] = { id = 152, kind = "UNIT_WARRIOR", x = 7, y = 7, moves = 2 }
+applyOrders(player, PID, 7, {
+	row(150, "MOVE_TO", 2, 1), row(151, "MOVE_TO", 5, 4), row(152, "MOVE_TO", 8, 7),
+})
+local function countEvents(kind)
+	local n = 0
+	for _, line in ipairs(LOG) do
+		if line:find('"kind":"' .. kind .. '"', 1, true) then n = n + 1 end
+	end
+	return n
+end
+local probesBefore = countEvents("stall_probe")
+for _ = 1, 8 do queue.drain(player, PID, 7) end
+check("both stalled operations are marked at the probe tick", countEvents("stall_probe") - probesBefore, 2)
+check("the mark names its tick", (lastEvent("stall_probe") or ""):find('"tick":8', 1, true) ~= nil, true)
+check("the mark says it was not released", (lastEvent("stall_probe") or ""):find('"released":false', 1, true) ~= nil, true)
+check("the probe changes nothing in the queue", queue.pendingCount(), 3)
+host.units[150].x = 2
+host.units[150].moves = 1
+queue.drain(player, PID, 7)
+local resolved = lastEvent("stall_probe_resolved") or ""
+check("a stalled operation that steps is resolved stepped", resolved:find('"outcome":"stepped"', 1, true) ~= nil
+	and resolved:find('"unit":150', 1, true) ~= nil, true)
+check("…with the probe tick and the step tick", resolved:find('"probe_tick":8', 1, true) ~= nil
+	and resolved:find('"tick":9', 1, true) ~= nil, true)
+for _ = 1, 25 do queue.drain(player, PID, 7) end
+local graceNoop
+for i = #LOG, 1, -1 do
+	if LOG[i]:find('"kind":"move_noop"', 1, true) and LOG[i]:find('"unit":151', 1, true) then graceNoop = LOG[i]; break end
+end
+check("one that never steps carries its probe on the grace no-op",
+	graceNoop ~= nil and graceNoop:find('"stall_probe":8', 1, true) ~= nil, true)
+check("a walk not in an operation is never marked",
+	(function() for _, l in ipairs(LOG) do if l:find('"kind":"stall_probe"', 1, true) and l:find('"unit":152', 1, true) then return true end end return false end)(), false)
+check("each mark resolves once", countEvents("stall_probe_resolved"), 1)
+UnitManager.GetMoveToPathEx = nil
+Map.GetPlotIndex = nil
+host.paths = nil
+
 -- 3. A refused first order takes its follow-ups with it, by name.
 reset()
 host.units[11] = { id = 11, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2 }
@@ -629,6 +743,48 @@ debug.setupvalue(queue.onUiPulse, pulseUpvalues.finished, false)
 Game.GetLocalPlayer = function() return -1 end
 queue.onUiPulse()
 check("no local seat cannot be woken", pulseCalls, 2)
+
+-- 11. `StalledOperationRelease` (off everywhere above). With the switch on,
+-- a leg the probe marks as a stalled operation takes the early no-op answer at
+-- the probe tick instead of waiting out the grace. A walk not in an operation
+-- is untouched. The agent binds `cfg` at load, so it is reloaded here.
+CivvisControlConfig = { StalledOperationRelease = true }
+local releaseChunk = assert(loadfile(here .. "/CivvisControlAgent.lua"))
+local releaseRan, releaseErr = pcall(releaseChunk)
+assert(releaseRan, "CivvisControlAgent.lua raised on reload: " .. tostring(releaseErr))
+local applyOn, queueOn = rawget(_G, "CivvisApplyOrders"), rawget(_G, "CivvisQueue")
+rawget(_G, "CivvisResolveActions")()
+host.units, host.ops, host.commands, host.refuse, host.contacts = {}, {}, {}, {}, {}
+host.governor_requests, host.cities = {}, {}
+Game.GetLocalPlayer = function() return PID end
+queueOn.reset(7)
+host.paths = { [160] = 2, [161] = 2 }
+Map.GetPlotIndex = function(x, y) return y * 100 + x end
+UnitManager.GetMoveToPathEx = function(unit)
+	local n = host.paths[unit.GetID()];
+	if n == nil then return nil end
+	local plots = {};
+	for i = 1, n do plots[i] = i end
+	return { plots = plots, turns = { 0, 1 } };
+end
+host.units[160] = { id = 160, kind = "UNIT_SKIRMISHER", x = 1, y = 1, moves = 2, active_operation = true }
+host.units[161] = { id = 161, kind = "UNIT_WARRIOR", x = 4, y = 4, moves = 2 }
+applyOn(player, PID, 7, { row(160, "MOVE_TO", 2, 1), row(161, "MOVE_TO", 5, 4) })
+for _ = 1, 7 do queueOn.drain(player, PID, 7) end
+check("release: nothing is answered before the probe tick", queueOn.pendingCount(), 2)
+queueOn.drain(player, PID, 7)
+check("release: the stalled operation is answered at the probe tick", queueOn.pendingCount(), 1)
+local released = lastEvent("move_noop") or ""
+check("release: the answer is the no-op for that unit, at tick 8",
+	released:find('"unit":160', 1, true) ~= nil and released:find('"ticks":8', 1, true) ~= nil, true)
+check("release: it carries its probe mark", released:find('"stall_probe":8', 1, true) ~= nil, true)
+check("release: the mark says it was released",
+	(lastEvent("stall_probe") or ""):find('"released":true', 1, true) ~= nil, true)
+for _ = 1, 20 do queueOn.drain(player, PID, 7) end
+check("release: a walk not in an operation still waits for the grace", queueOn.pendingCount(), 1)
+UnitManager.GetMoveToPathEx = nil
+Map.GetPlotIndex = nil
+host.paths = nil
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))

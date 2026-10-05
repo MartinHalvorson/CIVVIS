@@ -1117,6 +1117,13 @@ check("noop evidence preserves exhausted fallback", board.moveNoop(player, PID, 
 	stalled, entry, 7, 1, 1, 3), false)
 local diagnostic = lastEvent("move_noop")
 check("noop evidence includes native activity", has(diagnostic, '"activity":12345'), true)
+check("noop evidence names an unlisted activity by its value", has(diagnostic, '"activity_name":"12345"'), true)
+local oldActivityTypes = rawget(_G, "ActivityTypes")
+ActivityTypes = { ACTIVITY_OPERATION = 12345, ACTIVITY_AWAKE = 777 }
+check("noop evidence names a stock activity", board.noopEvidence(stalled, 4, 1).activity_name, "operation")
+check("the namer reads the stock enum", board.activityName(777), "awake")
+check("no activity is no name", board.activityName(nil), nil)
+ActivityTypes = oldActivityTypes
 check("noop evidence includes partial endpoint", has(diagnostic, '"path_last":103'), true)
 check("noop evidence identifies incomplete path", has(diagnostic, '"path_reaches_destination":false'), true)
 check("noop evidence includes turn and length", has(diagnostic, '"path_last_turn":1')

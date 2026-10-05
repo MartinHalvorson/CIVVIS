@@ -140,6 +140,129 @@ local function report(kind, fields)
 	pcall(function() Automation.Log(PREFIX .. line); end);
 end
 
+-- ★★ WHO HOLDS THE GAME? AN EVENT-LOCK LEDGER. G84 t117 froze twice with the
+-- Game Core thread idle in pthread_cond_wait and WinMain still rendering: the
+-- app stopped dispatching the game, which is what a UI context does while it
+-- holds an event lock (`UI.ReferenceCurrentEvent`, released by
+-- `UI.ReleaseEventID`; DiplomacyActionView.lua:2116/:2175). This build writes
+-- no Lua.log, so nothing could say which context held one. Every context this
+-- shim runs in wraps the pair once per UI table and keeps the held set in
+-- `ExposedMembers.CivvisEventLocks`, which the agent's `ai_phase_stall` and
+-- `end_turn_wait` read back.
+-- ⚠ FAIL-OPEN: the original is called first and its exact results returned;
+-- all recording is inside pcall, so the ledger cannot change or block a lock.
+-- Bounded: released entries are dropped and at most EVENT_LOCK_CAP are held.
+local EVENT_LOCK_CAP = 32;
+local function eventLedger()
+	if type(ExposedMembers) ~= "table" then return nil; end
+	local ledger = ExposedMembers.CivvisEventLocks;
+	if type(ledger) ~= "table" then
+		ledger = { held = {}, count = 0, overflow = 0 };
+		ExposedMembers.CivvisEventLocks = ledger;
+	end
+	return ledger;
+end
+local function noteEventLock(op, id)
+	local ledger = eventLedger();
+	local key = tonumber(id);
+	if key == nil then return; end
+	if ledger == nil then
+		-- No shared table in this context: still say what happened.
+		report("event_lock", string.format(',"op":"%s","id":%d,"held":-1', op, key));
+		return;
+	end
+	if op == "ref" then
+		if ledger.held[key] == nil then
+			if ledger.count >= EVENT_LOCK_CAP then
+				ledger.overflow = ledger.overflow + 1;
+			else
+				local turn = -1;
+				pcall(function() turn = Game.GetCurrentGameTurn(); end);
+				local at = -1;
+				pcall(function() at = UI.GetElapsedTime(); end);
+				ledger.held[key] = { ctx = NAME, turn = turn, at = at };
+				ledger.count = ledger.count + 1;
+			end
+		end
+	elseif ledger.held[key] ~= nil then
+		ledger.held[key] = nil;
+		ledger.count = ledger.count - 1;
+	end
+	report("event_lock", string.format(',"op":"%s","id":%d,"held":%d', op, key, ledger.count));
+end
+local function packResults(...)
+	return { n = select("#", ...), ... };
+end
+-- Install the wrap. In place when `UI` is a plain table that takes the
+-- assignment; otherwise this context's global `UI` is shadowed by a proxy
+-- that holds only the two wrapped lock calls and hands back the REAL object
+-- for every other key (writes go through to the real UI too).
+-- ⚠ G90 (pin bbb5732): 19 DiplomacyActionView closes and no `event_lock`
+-- row, so the in-place wrap never took on this build; `UI` is not a plain
+-- table there. Each context reports what it did (`event_ledger`), and if
+-- anything fails the global `UI` is left exactly as it was.
+local function installEventLedger()
+	local ui = UI;
+	local kind = type(ui);
+	if kind ~= "table" and kind ~= "userdata" then return false, "none", kind, "no_ui"; end
+	local marked = false;
+	pcall(function() marked = ui.CivvisEventLedger == true; end);
+	if marked then return false, "already", kind, nil; end
+	local reference, release;
+	pcall(function() reference, release = ui.ReferenceCurrentEvent, ui.ReleaseEventID; end);
+	if type(reference) ~= "function" or type(release) ~= "function" then
+		return false, "none", kind, "no_lock_functions";
+	end
+	local function wrappedReference(...)
+		local results = packResults(reference(...));
+		pcall(noteEventLock, "ref", results[1]);
+		return unpack(results, 1, results.n);
+	end
+	local function wrappedRelease(id, ...)
+		local results = packResults(release(id, ...));
+		pcall(noteEventLock, "release", id);
+		return unpack(results, 1, results.n);
+	end
+	if kind == "table" then
+		local wrote = pcall(function()
+			ui.ReferenceCurrentEvent = wrappedReference;
+			ui.ReleaseEventID = wrappedRelease;
+			ui.CivvisEventLedger = true;
+		end);
+		local took = false;
+		pcall(function()
+			took = rawequal(ui.ReferenceCurrentEvent, wrappedReference)
+				and rawequal(ui.ReleaseEventID, wrappedRelease);
+		end);
+		if wrote and took then return true, "direct", kind, nil; end
+		-- Undo a partial write before shadowing.
+		pcall(function() ui.ReferenceCurrentEvent = reference; ui.ReleaseEventID = release; end);
+	end
+	local proxy = nil;
+	pcall(function()
+		proxy = setmetatable({
+			ReferenceCurrentEvent = wrappedReference,
+			ReleaseEventID = wrappedRelease,
+			CivvisEventLedger = true,
+		}, {
+			__index = function(_, key) return ui[key]; end,
+			__newindex = function(_, key, value) ui[key] = value; end,
+		});
+	end);
+	if proxy == nil then return false, "none", kind, "proxy_not_built"; end
+	local swapped = pcall(function() UI = proxy; end);
+	if swapped and rawequal(UI, proxy) then return true, "proxy", kind, nil; end
+	pcall(function() UI = ui; end);
+	return false, "none", kind, "global_not_replaced";
+end
+do
+	local ran, installed, how, uiType, why = pcall(installEventLedger);
+	if not ran then installed, how, why = false, "none", "threw"; end
+	report("event_ledger", string.format(',"installed":%s,"how":"%s","ui_type":"%s","exposed":"%s"%s',
+		tostring(installed == true), tostring(how), tostring(uiType), type(ExposedMembers),
+		why and string.format(',"why":"%s"', tostring(why)) or ""));
+end
+
 -- One screen is already replaced by a DLC, on a criterion true of every run
 -- here: GranColombia_Maya swaps NaturalDisasterPopup for fourteen lines that
 -- add a comet-strike label. Two ReplaceUIScript actions on one context is a
@@ -221,12 +344,45 @@ local dialogueObserved = false;
 local dialogueChoice = nil;
 local dialogueCallback = nil;
 local dialogueAnswered = false;
+local dialogueStatement = nil;
+local dialogueWarWithheld = false;
+-- Gene `dialogue-never-declares-war`. Civ VI binds some answers to a war:
+-- WARNING_TOO_MANY_TROOPS_NEAR_ME_FROM_AI's CHOICE_NEGATIVE carries
+-- DIPLOACTION_DECLARE_SURPRISE_WAR (DiplomacyStatements_Warning.xml), and the
+-- NEGATIVE-first ladder below picked it: live civvis-20261005T045443Z went to
+-- surprise war with Korea at t94 while the board was holding off. When the
+-- brain selects the gene, each order batch renews a lease through
+-- `LuaEvents.CivvisDialogueNoWar(turn)`. It covers the next turn too, because
+-- a statement waiting at turn start is answered before that turn's first
+-- batch lands. Without a lease nothing below changes.
+local dialogueNoWarTurn = nil;
+if NAME == "DiplomacyActionView" then
+    pcall(function()
+        LuaEvents.CivvisDialogueNoWar.Add(function(turn)
+            dialogueNoWarTurn = tonumber(turn);
+        end);
+    end);
+end
+local function dialogueNoWar()
+    if dialogueNoWarTurn == nil then return false; end
+    local ok, now = pcall(function() return Game.GetCurrentGameTurn(); end);
+    -- An unreadable turn keeps the lease: refusing a war is the safe side.
+    if not ok or type(now) ~= "number" then return true; end
+    return now <= dialogueNoWarTurn + 1;
+end
+local function declaresWar(selection)
+    local action = selection.DiplomaticActionType;
+    return type(action) == "string"
+        and string.find(action, "^DIPLOACTION_DECLARE_.*WAR$") ~= nil;
+end
 if NAME == "DiplomacyActionView" and type(DefaultHandlers) == "table" then
     local stockApply = ApplyStatement;
     ApplyStatement = function(handler, statementType, subType, toPlayer, statement)
         firstMeetChoice = nil;
         firstMeetAnswered = false;
         dialogueObserved, dialogueChoice, dialogueCallback, dialogueAnswered = false, nil, nil, false;
+        dialogueStatement = type(statementType) == "string" and statementType or nil;
+        dialogueWarWithheld = false;
         stockApply(handler, statementType, subType, toPlayer, statement);
         local firstMeet = type(statementType) == "string"
             and string.find(statementType, "^FIRST_MEET_") ~= nil;
@@ -243,9 +399,12 @@ if NAME == "DiplomacyActionView" and type(DefaultHandlers) == "table" then
             dialogueObserved = true;
             local rank = { CHOICE_NEGATIVE = 3, CHOICE_IGNORE = 2, CHOICE_EXIT = 1 };
             local best = 0;
+            local noWar = dialogueNoWar();
             for _, selection in ipairs(parsed.Selections or {}) do
                 local score = rank[selection.Key] or 0;
-                if not selection.IsDisabled and score > best then
+                if noWar and score > 0 and not selection.IsDisabled and declaresWar(selection) then
+                    dialogueWarWithheld = true;
+                elseif not selection.IsDisabled and score > best then
                     dialogueChoice, best = selection.Key, score;
                 end
             end
@@ -477,7 +636,9 @@ local function endScreen(attempt)
         if not ok and dialogueCallback == callback and dialogueChoice == choice then
             dialogueAnswered = false;
         end
-        report("diplomacy_choice", string.format(',"choice":"%s","sent":%s', choice, tostring(ok)));
+        report("diplomacy_choice", string.format(',"choice":"%s","sent":%s,"statement":"%s"%s',
+            choice, tostring(ok), tostring(dialogueStatement),
+            dialogueWarWithheld and ',"war_withheld":true' or ''));
         return ok;
     end
     if NAME == "DiplomacyActionView" and firstMeetChoice ~= nil then
@@ -657,13 +818,16 @@ local function endScreen(attempt)
 	-- settled tick, answer the request negatively instead of spending fourteen
 	-- 250ms rungs getting there. The session ID is deliberately required so this
 	-- cannot turn an unrelated action-view screen into a response.
+	-- Under the `dialogue-never-declares-war` lease an unread statement is
+	-- answered IGNORE first: its NEGATIVE may be the war the board never chose.
 	if NAME == "DiplomacyActionView"
 			and (attempt or 1) >= 2 and (attempt or 1) <= 3
 			and not dialogueObserved
 			and type(OnSelectConversationDiplomacyStatement) == "function"
 			and ms_ActiveSessionID ~= nil
 			and pcall(function()
-				OnSelectConversationDiplomacyStatement("CHOICE_NEGATIVE");
+				OnSelectConversationDiplomacyStatement(
+					dialogueNoWar() and "CHOICE_IGNORE" or "CHOICE_NEGATIVE");
 			end) then
 		return true;
 	end
@@ -811,7 +975,7 @@ else
 	local reported = false;
 	local desktopReportedAt = -1;   -- attempts count at the last ask, -1 = never
 	local heartbeatFrames = 0;      -- tick() calls since load, hidden ones included
-	local heartbeatSeconds = 0;     -- fDTime accumulated over those same calls
+	local heartbeatSeconds = 0;     -- real seconds over those same calls
 	local controllerPulseSeconds = 0;
 	local dialogueFadeExpired = false;
 
@@ -1000,7 +1164,28 @@ else
 		return true, true;
 	end
 
+	-- ★ REAL SECONDS. The engine's debug `timescale` speeds frame deltas up
+	-- with the UI clock, and the deal hold, the close delay, the fade and
+	-- wonder timeouts and this context's agent pulse all count them. So each
+	-- delta is divided by the scale the agent shares in
+	-- `ExposedMembers.CivvisTimeScale` (1 when it is missing or nonsense), and
+	-- the scale this context read is acknowledged in `CivvisClockAck`, which
+	-- the agent checks before it keeps the timescale.
+	local function realSeconds(fDTime)
+		local raw = math.max(0, tonumber(fDTime) or 0);
+		local scale = nil;
+		pcall(function() scale = tonumber(ExposedMembers.CivvisTimeScale); end);
+		if scale == nil or scale ~= scale or scale < 1 or scale > 8 then scale = 1; end
+		pcall(function()
+			local ack = ExposedMembers.CivvisClockAck;
+			ack.scale[NAME] = scale;
+			ack.at[NAME] = UI.GetElapsedTime();
+		end);
+		return raw / scale;
+	end
+
 	local function tick(fDTime)
+		local realDT = realSeconds(fDTime);
 		-- ★★★★ PROOF THAT THE UI THREAD IS STILL ALIVE WHILE THE GAME IS NOT.
 		--
 		-- The dominant way a run now dies is a parked Game Core: the agent reports
@@ -1028,7 +1213,7 @@ else
 		-- heartbeats stopping too means the whole process is gone and only the
 		-- outside watchdog can help.
 		heartbeatFrames = heartbeatFrames + 1;
-		heartbeatSeconds = heartbeatSeconds + (tonumber(fDTime) or 0);
+		heartbeatSeconds = heartbeatSeconds + realDT;
 		if heartbeatFrames >= HEARTBEAT_FRAMES then
 			report("ui_heartbeat", string.format(',"frames":%d,"seconds":%.1f,"up":%s',
 			                                     heartbeatFrames, heartbeatSeconds,
@@ -1051,7 +1236,7 @@ else
 		-- Use the same guarded agent wakeup here; keep deal holds and native
 		-- close handling below intact. One long frame produces only one pulse.
 		if cfg.Play ~= false and cfg.CivvisDecides then
-			controllerPulseSeconds = controllerPulseSeconds + math.max(0, tonumber(fDTime) or 0);
+			controllerPulseSeconds = controllerPulseSeconds + realDT;
 			if controllerPulseSeconds >= 1 then
 				controllerPulseSeconds = 0;
 				pcall(function() LuaEvents.CivvisControlPulse(NAME); end);
@@ -1063,7 +1248,7 @@ else
 			remaining = SECONDS;
 			shown = 0;
 		end
-		local dt = math.max(0, tonumber(fDTime) or 0);
+		local dt = realDT;
 		local civvisDealView = NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView";
 		if civvisDealView and dealHold > 0 then
 			dealHold = dealHold - dt;

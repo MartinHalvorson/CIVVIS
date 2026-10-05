@@ -1010,6 +1010,18 @@ impl AdvancedAi {
     /// layer on water-to-water steps preserves the ordinary first embark and
     /// landfall behavior, while making the middle of a committed live
     /// crossing survivable against a threat the fog cannot reveal in time.
+    /// Whether a visible ship of a barbarian or of a major at war with `pid`
+    /// stands within `radius` of `pos`. The live board holds only what the
+    /// seat has seen.
+    pub(super) fn hostile_ship_near(g: &Game, pid: usize, pos: Pos, radius: i32) -> bool {
+        g.units.values().any(|unit| {
+            unit.owner != pid
+                && g.rules.units[unit.kind].domain.as_deref() == Some("sea")
+                && (g.players[unit.owner].is_barbarian || g.is_at_war(pid, unit.owner))
+                && g.wdist(unit.pos, pos) <= radius
+        })
+    }
+
     fn live_water_step_needs_naval_guard(
         &self,
         g: &Game,
@@ -1088,10 +1100,31 @@ impl AdvancedAi {
             return self.settler_step_toward_safe_with_guards(g, pid, uid, target);
         };
         if self.live_water_step_needs_naval_guard(g, pid, uid, current, next, target) {
-            think!(self.journal(), Expansion, Detail, "Settler holds for a naval escort";
-                   "an embarked long expedition cannot advance from {current:?} to {next:?} \
-                    without a bound naval guard that can follow the water leg"; current);
-            return false;
+            let turn = g.turn;
+            self.naval_escort_waits
+                .retain(|_, (last, _)| last.saturating_add(1) >= turn);
+            let waited = {
+                let entry = self.naval_escort_waits.entry(current).or_insert((turn, 0));
+                if entry.0 != turn || entry.1 == 0 {
+                    entry.0 = turn;
+                    entry.1 = entry.1.saturating_add(1);
+                }
+                entry.1
+            };
+            let crosses = self.naval_escort_patience
+                && waited > super::NAVAL_ESCORT_PATIENCE
+                && !Self::hostile_ship_near(g, pid, current, super::NAVAL_THREAT_RADIUS);
+            if !crosses {
+                think!(self.journal(), Expansion, Detail, "Settler holds for a naval escort";
+                       "an embarked long expedition cannot advance from {current:?} to {next:?} \
+                        without a bound naval guard that can follow the water leg"; current);
+                return false;
+            }
+            think!(self.journal(), Expansion, Detail, "Settler crosses without its naval escort";
+                   "{} turns held on the water and no hostile ship is visible within {} tiles; \
+                    every turn afloat is the exposure the escort exists to cut",
+                   waited - 1, super::NAVAL_THREAT_RADIUS; current);
+            self.naval_escort_waits.remove(&current);
         }
         // See `live_settler_capture_lessons`: the ground that took a settler
         // is entered only stacked, whether or not a raider is visible on it

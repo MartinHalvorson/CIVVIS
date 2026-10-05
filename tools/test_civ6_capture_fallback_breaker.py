@@ -109,6 +109,63 @@ class FallbackBreakerTest(unittest.TestCase):
         calls, _ = self.run_capture([completed(needed), None], shot)
         self.assertEqual(calls, ["native", "fallback"])
 
+    def test_a_rescued_native_no_frame_makes_the_fallback_sticky(self):
+        """G102: captures paid SCK's 3.5 s guard every time (7.9 s, 6.6 s)."""
+        shot = Path(__file__)
+        needed = macos_capture.SCREEN_CAPTURE_FALLBACK_NEEDED
+        with mock.patch("builtins.print") as printed:
+            calls, error = self.run_capture([completed(needed), completed(0)], shot)
+        self.assertEqual(calls, ["native", "fallback"])
+        self.assertIsNone(error)
+        self.assertIn("capture: sticky fallback (native timed out at",
+                      printed.call_args.args[0])
+        for _ in range(3):
+            self.now += 10.0
+            calls, error = self.run_capture([completed(0)], shot)
+            self.assertEqual(calls, ["fallback"], "native is not paid again")
+            self.assertIsNone(error)
+
+    def test_native_is_tried_again_after_the_sticky_interval(self):
+        shot = Path(__file__)
+        needed = macos_capture.SCREEN_CAPTURE_FALLBACK_NEEDED
+        with mock.patch("builtins.print"):
+            self.run_capture([completed(needed), completed(0)], shot)
+        self.now += macos_capture.NATIVE_STICKY_SECONDS + 1.0
+        calls, error = self.run_capture([completed(0)], shot)
+        self.assertEqual(calls, ["native"], "a recovered SCK is used again")
+        self.assertIsNone(error)
+        calls, _ = self.run_capture([completed(0)], shot)
+        self.assertEqual(calls, ["native"])
+
+    def test_a_sticky_fallback_that_fails_drops_back_to_native_in_the_same_call(self):
+        needed = macos_capture.SCREEN_CAPTURE_FALLBACK_NEEDED
+        with mock.patch("builtins.print"):
+            self.run_capture([completed(needed), completed(0)], Path(__file__))
+        calls, error = self.run_capture([None, completed(0)], Path(__file__))
+        self.assertEqual(calls, ["fallback", "native"])
+        self.assertIsNone(error)
+        calls, _ = self.run_capture([completed(0)], Path(__file__))
+        self.assertEqual(calls, ["native"], "no longer sticky")
+
+    def test_an_unrescued_native_no_frame_is_not_sticky(self):
+        needed = macos_capture.SCREEN_CAPTURE_FALLBACK_NEEDED
+        self.run_capture([completed(needed), None], Path("/tmp/never-written.png"))
+        calls, _ = self.run_capture([completed(0)], Path(__file__))
+        self.assertEqual(calls, ["native"])
+
+    def test_a_failing_sticky_fallback_is_charged_to_the_breaker_and_uses_native(self):
+        shot = Path(__file__)
+        needed = macos_capture.SCREEN_CAPTURE_FALLBACK_NEEDED
+        with mock.patch("builtins.print"):
+            self.run_capture([completed(needed), completed(0)], shot)
+        # Each failing sticky attempt counts against the breaker and falls to native.
+        self.run_capture([None, completed(0)], shot)
+        with mock.patch("builtins.print"):
+            self.run_capture([completed(needed), completed(0)], shot)
+        self.run_capture([None, completed(0)], shot)
+        calls, _ = self.run_capture([completed(0)], shot)
+        self.assertEqual(calls, ["native"])
+
     def test_the_breaker_interval_is_shorter_than_the_wedge_watchdog(self):
         self.assertLess(macos_capture.FALLBACK_BREAKER_SECONDS, 300.0)
 

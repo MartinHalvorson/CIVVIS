@@ -741,10 +741,16 @@ fn stock_unit_sight_ranges_match_civilization_vi() {
         // generic heavy-cavalry and crossbowman fallbacks each had only two.
         "varu",
         "voi_chien",
+        // The completed roster's shipped rows: the Sabum Kibittum is a
+        // scout-eyed raider, the U-Boat a submarine with three.
+        "sabum_kibittum",
+        "u_boat",
     ]
     .into_iter()
     .collect();
-    let sight_four: BTreeSet<&str> = ["biplane", "fighter", "bomber"].into_iter().collect();
+    let sight_four: BTreeSet<&str> = ["biplane", "fighter", "bomber", "mountie", "p51_mustang"]
+        .into_iter()
+        .collect();
     let sight_five: BTreeSet<&str> = ["drone", "jet_fighter", "jet_bomber"].into_iter().collect();
 
     for (unit, spec) in &rules.units {

@@ -201,6 +201,11 @@ mod tests {
         });
         assert!(ai.war_holds_the_road(&g, 0, 1));
         assert!(ai.second_front_war_kept(&g, 0, 1));
+        // `stalled-peace-spares-the-counter`: nor is it offered the fatigue
+        // clause's stall peace (game 101, Korea before the Maya, turn 184).
+        assert!(!ai.stalled_peace_spares(&g, 0, 1), "off without the gene");
+        ai.enable_stalled_peace_spares_the_counter();
+        assert!(ai.stalled_peace_spares(&g, 0, 1));
         // Open borders leave another road: the war holds nothing.
         g.players[1].borders_enforced = Some(false);
         assert!(!ai.holds_the_road_to(&g, 0, 1, 2));

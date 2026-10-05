@@ -342,10 +342,38 @@ def layout(assignments=STANDARD_LAYOUT) -> "list[dict]":
     return report
 
 
+def running_process_names() -> "set[str] | None":
+    """Every name System Events can know a running process by, in one query.
+
+    ★ A LOOKUP OF AN ABSENT PROCESS IS THE SLOW ONE. `process "X"` answers in
+    0.1 s when X runs and in 1.9-3.6 s when it does not (measured 2026-10-04,
+    with the live game up), so a sweep naming five owners of which one runs
+    spent ~12 s finding nothing -- in every teardown, and in every desktop
+    rescue's census. One `name, short name, displayed name of every process`
+    answers in 0.1 s (`steam_osx` is short-named "Steam"; Civ's
+    `Civ6_Exe_Child` is "Civilization VI"), and a name in none of the three is
+    a process System Events would not find. None when the query itself fails:
+    callers then ask per name, exactly as before.
+    """
+    try:
+        out = _osascript('tell application "System Events" to get '
+                         '{name, short name, displayed name} of every process',
+                         timeout=15.0)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    names = {n.strip() for n in out.stdout.split(",")}
+    return {n for n in names if n and n != "missing value"}
+
+
 def modal_census() -> "list[dict]":
     """Every known-owner modal currently on screen, with its text and buttons."""
     found = []
+    running = running_process_names()
     for owner, spec in KNOWN_MODALS.items():
+        if running is not None and owner not in running:
+            continue
         count = _osascript(f'tell application "System Events" to count windows '
                            f'of process {_as(owner)}')
         if count.returncode != 0 or not count.stdout.strip().isdigit():

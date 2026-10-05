@@ -365,9 +365,33 @@ def _note_fallback(result: subprocess.CompletedProcess | None) -> None:
 
 def reset_fallback_breaker() -> None:
     """Forget the fallback's history. For tests and for a deliberate retry."""
-    global _fallback_timeouts, _fallback_opened_at
+    global _fallback_timeouts, _fallback_opened_at, _native_sticky_since
     _fallback_timeouts = 0
     _fallback_opened_at = None
+    _native_sticky_since = None
+
+
+#: ★ A STICKY FALLBACK: THE MIRROR OF THE BREAKER ABOVE. With systemstatusd
+#: degrading ScreenCaptureKit, a native capture spends its whole 3.5 s guard
+#: before answering "no frame" (rc 78) and only then does the CoreGraphics
+#: fallback produce the image -- so every capture paid the guard again. At
+#: the G102 boundary (2026-10-05, pin 4f7c715) two setup captures on the
+#: critical path took 7.9 s and 6.6 s against 0.2 s for a healthy one. Once
+#: the fallback has rescued a native "no frame", captures go to the fallback
+#: FIRST for NATIVE_STICKY_SECONDS; then native is tried again, so a recovered
+#: SCK is back on the next setup. A sticky fallback that stops producing a
+#: frame drops straight back to native in the same call.
+NATIVE_STICKY_SECONDS = 300.0
+_native_sticky_since: float | None = None
+
+
+def _wrote(result: subprocess.CompletedProcess | None, output: str | Path) -> bool:
+    if result is None or result.returncode:
+        return False
+    try:
+        return Path(output).stat().st_size > 0
+    except OSError:
+        return False
 
 
 PROBE_REGION_POINTS = (0, 0, 8, 8)
@@ -396,6 +420,16 @@ def capture_probe() -> bool:
 
 def capture_region(box_points, output: str | Path) -> None:
     """Write one screen-point region to ``output`` as a PNG."""
+    global _native_sticky_since
+    now = time.monotonic()
+    if _native_sticky_since is not None and now - _native_sticky_since >= NATIVE_STICKY_SECONDS:
+        _native_sticky_since = None  # time to see whether SCK has recovered
+    if _native_sticky_since is not None and _fallback_available(now):
+        result = _capture_once(_capture_command(box_points, output, fallback=True))
+        _note_fallback(result)
+        if _wrote(result, output):
+            return
+        _native_sticky_since = None  # the fallback stopped working: native first again
     result = _capture_once(_capture_command(box_points, output, fallback=False))
     if result is not None and result.returncode == SCREEN_CAPTURE_FALLBACK_NEEDED:
         # ScreenCaptureKit can preflight successfully yet yield no image while
@@ -409,6 +443,11 @@ def capture_region(box_points, output: str | Path) -> None:
                 f"{FALLBACK_BREAKER_SECONDS:.0f}s")
         result = _capture_once(_capture_command(box_points, output, fallback=True))
         _note_fallback(result)
+        if _wrote(result, output):
+            _native_sticky_since = time.monotonic()
+            print(f"[shot] capture: sticky fallback (native timed out at "
+                  f"{time.strftime('%H:%M:%SZ', time.gmtime())}); CoreGraphics first "
+                  f"for {NATIVE_STICKY_SECONDS:.0f}s", flush=True)
     if result is None:
         raise CaptureUnavailable("native region capture timed out")
     if result.returncode:

@@ -24,7 +24,13 @@
 -- see CivvisControlSetup.lua for why they are prepended rather than included.
 
 local cfg = CivvisControlConfig or {};
-local PREFIX = "CIVVISJSON ";
+-- ★ Values that need no register of their own. Every top-level `local`
+-- holds a register for the whole main chunk, and Civ VI's Lua refuses a
+-- function past 200 registers (see register_budget_test.lua; pins 2ddcd5889
+-- and 66de612ed lost the whole agent at 212). Rarely used constants and
+-- per-run tables live here instead; add new ones here, not as top-level locals.
+CivvisK = {};
+CivvisK.PREFIX = "CIVVISJSON ";
 
 -- The major-civilization UI validates each action separately, then opens its
 -- named session (DiplomacyStatementSupport.lua:167; DiplomacyActionView.lua:
@@ -238,7 +244,7 @@ end;
 -- Per-city production names the engine has already rejected on this turn. This is
 -- deliberately turn-scoped: a strategic resource or prerequisite can change later,
 -- but retrying the same impossible choice in every blocker pass cannot help.
-local refusedByCity = {};
+CivvisK.refusedByCity = {};
 -- ⚠⚠ CITY LOSS IS NOT AN EVENT, AND IT IS THE CONSTRAINT ON EVERYTHING.
 --
 -- 36% of live runs reaching turn 150 end with ONE city, and **96% of those
@@ -338,7 +344,7 @@ local function emit(kind, payload)
 	-- written is the `state` the brain must answer, so the loop deadlocked waiting
 	-- for a line that was already on disk. Terminating it here fixes every reader
 	-- rather than relying on some later event to flush the earlier one.
-	local line = PREFIX .. encode(payload);
+	local line = CivvisK.PREFIX .. encode(payload);
 	pcall(function() print(line); end);
 	pcall(function() Automation.Log(line .. "\n"); end);
 	pcall(function() UI.DataError(line); end);
@@ -895,7 +901,7 @@ end
 -- This mod's own id, as written in CivvisControl.modinfo. Needed because
 -- resetting the game configuration also clears the enabled-mod list, and this
 -- mod is on it.
-local MOD_ID = "4d2c8b16-7e05-49af-a3c1-6b90d5f2e841";
+CivvisK.MOD_ID = "4d2c8b16-7e05-49af-a3c1-6b90d5f2e841";
 
 -- Put this mod back into the configuration after a reset. Skipping this
 -- produced the most confusing failure of the lot: a correctly configured
@@ -904,7 +910,7 @@ local MOD_ID = "4d2c8b16-7e05-49af-a3c1-6b90d5f2e841";
 -- thing that writes lines had been configured out of the game.
 local function reenableSelf()
 	return try(function()
-		local handle = Modding.GetModHandle(MOD_ID);
+		local handle = Modding.GetModHandle(CivvisK.MOD_ID);
 		if handle == nil then return "no handle"; end
 		Modding.EnableMod(handle, true);
 		return "enabled";
@@ -1386,7 +1392,7 @@ end
 -- Where each unit stood at the end of the last turn we looked, so "has this unit
 -- moved?" can be asked at all. Keyed by unit id, which is stable for the life of
 -- the unit.
-local lastSeenAt = {};
+CivvisK.lastSeenAt = {};
 -- How many consecutive turns a unit has held still while it still had movement.
 local idleTurns = {};
 
@@ -1407,10 +1413,10 @@ local idleTurns = {};
 -- `counts.settler < SettlersInFlight`, and `SettlersInFlight` is 1. So ONE
 -- stranded settler stops the empire ordering another, forever. That run ordered
 -- no settler between turns 51 and 134 and finished four cities behind.
-local STRANDED_SETTLER_TURNS = 12;
+CivvisK.STRANDED_SETTLER_TURNS = 12;
 
 local function settlerIsStranded(idle)
-	return (idle or 0) >= STRANDED_SETTLER_TURNS;
+	return (idle or 0) >= CivvisK.STRANDED_SETTLER_TURNS;
 end
 
 -- Exposed for the offline test only. ⚠ A BARE GLOBAL, never `_G.` — Civ 6's UI
@@ -1430,7 +1436,7 @@ local function trackIdleUnits(player)
 		local x = try(function() return unit:GetX(); end, -1);
 		local y = try(function() return unit:GetY(); end, -1);
 		local moves = try(function() return unit:GetMovesRemaining(); end, 0) or 0;
-		local was = lastSeenAt[uid];
+		local was = CivvisK.lastSeenAt[uid];
 		-- Movement left AND the same tile as last turn is the signal. A unit that
 		-- spent its movement is working, however little it achieved; a unit
 		-- handed a full allowance it never spends is stuck.
@@ -1439,13 +1445,13 @@ local function trackIdleUnits(player)
 		else
 			idleTurns[uid] = 0;
 		end
-		lastSeenAt[uid] = { x = x, y = y };
+		CivvisK.lastSeenAt[uid] = { x = x, y = y };
 	end);
 	-- Dead units must not keep their streaks: Civilization VI reuses unit ids,
 	-- and inheriting a stranded streak would make a fresh settler read stranded
 	-- the moment it was trained.
-	for uid in pairs(lastSeenAt) do
-		if not seen[uid] then lastSeenAt[uid] = nil; idleTurns[uid] = nil; end
+	for uid in pairs(CivvisK.lastSeenAt) do
+		if not seen[uid] then CivvisK.lastSeenAt[uid] = nil; idleTurns[uid] = nil; end
 	end
 end
 
@@ -1821,7 +1827,7 @@ end
 -- playing.
 local siteMemo = { turn = -1, sites = {} };
 -- Where each settler decided to go, kept across turns. See findSettleSite.
-local committedSite = {};
+CivvisK.committedSite = {};
 -- Sites the engine refused to move a given settler to.
 --
 -- ⚠ Only visible once `operate` started checking CanStartOperation WITH the
@@ -1858,7 +1864,7 @@ findSettleSite = function(player, pid, unit, turn)
 	-- while the empire was still on two cities. A destination is only worth
 	-- having if it survives the walk, so a committed site is kept until it stops
 	-- being legal or the settler stands on it.
-	local held = committedSite[id];
+	local held = CivvisK.committedSite[id];
 	if held ~= nil then
 		local plot = try(function() return Map.GetPlot(held.x, held.y); end);
 		local ux0 = try(function() return unit:GetX(); end, -1);
@@ -1873,7 +1879,7 @@ findSettleSite = function(player, pid, unit, turn)
 			siteMemo.sites[id] = plot;
 			return plot;
 		end
-		committedSite[id] = nil;
+		CivvisK.committedSite[id] = nil;
 	end
 
 	local ux = try(function() return unit:GetX(); end, -1);
@@ -2025,7 +2031,7 @@ findSettleSite = function(player, pid, unit, turn)
 	end
 	siteMemo.sites[id] = best or false;
 	if best ~= nil then
-		committedSite[id] = { x = best:GetX(), y = best:GetY() };
+		CivvisK.committedSite[id] = { x = best:GetX(), y = best:GetY() };
 		-- Keep a per-site event for the settler trace and live diagnosis.
 		emit("settle_choice", {
 			source = "search",
@@ -2068,7 +2074,7 @@ local function orderSettler(player, pid, unit, turn)
 		-- rather than re-offering a site it has already declined.
 		refusedSite[id] = refusedSite[id] or {};
 		refusedSite[id][px .. ":" .. py] = true;
-		committedSite[id] = nil;
+		CivvisK.committedSite[id] = nil;
 		siteMemo.sites[id] = nil;
 		local retry = findSettleSite(player, pid, unit, turn);
 		if retry ~= nil then
@@ -2604,7 +2610,7 @@ local assaultReady = false;
 local probesOut = 0;
 -- What the last probe decision actually resolved to, for the fires-check.
 local probeDest, probeKind = nil, nil;
-local warDeclared = {};
+CivvisK.warDeclared = {};
 -- Last turn a peace deal was asked of each target, so a standing MakePeace
 -- intent does not rebuild the working deal and re-open a session every turn
 -- against a rival who just declined. See the `peace` arm of `applyOrder`.
@@ -2779,10 +2785,10 @@ local function declareWar(player, pid, counts, turn)
 	local diplomacy = try(function() return player:GetDiplomacy(); end);
 	if diplomacy == nil then return blocked("no_diplomacy"); end
 	if try(function() return diplomacy:IsAtWarWith(target.player); end, false) then
-		warDeclared[target.player] = true;
+		CivvisK.warDeclared[target.player] = true;
 		return blocked("already_at_war");
 	end
-	if warDeclared[target.player] then return blocked("already_declared"); end
+	if CivvisK.warDeclared[target.player] then return blocked("already_declared"); end
 	if not try(function() return diplomacy:CanDeclareWarOn(target.player); end, true) then
 		-- Records the player id, because "cannot declare on 62" (the Free Cities slot)
 		-- and "cannot declare on 1" (a major civ) are completely different problems.
@@ -2796,7 +2802,7 @@ local function declareWar(player, pid, counts, turn)
 		UI.RequestPlayerOperation(pid, PlayerOperations.DIPLOMACY_DECLARE_WAR, params);
 	end);
 	if ok then
-		warDeclared[target.player] = true;
+		CivvisK.warDeclared[target.player] = true;
 		emit("war", { turn = turn, target = target.player, x = target.x, y = target.y,
 		              capital = target.capital, army = counts.military });
 	end
@@ -3963,11 +3969,11 @@ end
 -- This emits what the engine offers, once per city+district per run, and changes
 -- no order. When live runs show the existing plot among `offered`, the mapping in
 -- the produce arm is one line; if they show only fresh sites, it never ships.
-local probedRepairs = {};
+CivvisK.probedRepairs = {};
 local function probeDistrictRepair(city, districtName, asked, turn)
 	local key = tostring(try(function() return city:GetID(); end, -1)) .. districtName;
-	if probedRepairs[key] then return; end
-	probedRepairs[key] = true;
+	if CivvisK.probedRepairs[key] then return; end
+	CivvisK.probedRepairs[key] = true;
 	local row = try(function() return GameInfo.Districts[districtName]; end);
 	if row == nil then return; end
 	local have, hx, hy, pillaged = false, -1, -1, false;
@@ -4215,7 +4221,7 @@ end
 -- same order every tick is how one game logged two hundred settler requests
 -- in fifty turns: the queue read comes back empty for a few frames after a
 -- request, so the "queue is empty" test fires again and again.
-local lastBuild = {};
+CivvisK.lastBuild = {};
 
 -- Items the host's start-now predicate rejected in a city on this turn.
 --
@@ -4239,12 +4245,12 @@ local function driveProduction(player, turn, force)
 			return queue and queue:GetCurrentProductionTypeHash() or 0;
 		end, 0);
 		local cityId = try(function() return city:GetID(); end, -1);
-		local refused = refusedByCity[cityId];
+		local refused = CivvisK.refusedByCity[cityId];
 		if refused == nil or refused.turn ~= turn then
 			refused = { turn = turn };
-			refusedByCity[cityId] = refused;
+			CivvisK.refusedByCity[cityId] = refused;
 		end
-		local remembered = lastBuild[cityId];
+		local remembered = CivvisK.lastBuild[cityId];
 		-- The memo stops per-tick spam, but when the game says it is *blocked*
 		-- on production the whole point is to try again: an order that was
 		-- refused once must not lock the city out for the rest of the turn.
@@ -4303,7 +4309,7 @@ local function driveProduction(player, turn, force)
 						end);
 						if ok then
 							issued = issued + 1;
-							lastBuild[cityId] = { turn = turn, item = name };
+							CivvisK.lastBuild[cityId] = { turn = turn, item = name };
 							if civvisBuild[tostring(cityId) .. ":next"] == name then
 								civvisBuild[tostring(cityId) .. ":next"] = nil;
 							end
@@ -4404,7 +4410,7 @@ end
 -- instead — which still beats declining, because era score is what decides
 -- whether the next age is Golden or Dark, and a Dark Age is a standing penalty.
 -- So the rule is: always take one; take the expansion one when there is a choice.
-local DEDICATION_ORDER = {
+CivvisK.DEDICATION_ORDER = {
 	"COMMEMORATION_INFRASTRUCTURE",
 	"COMMEMORATION_RELIGIOUS",
 	"COMMEMORATION_SCIENTIFIC",
@@ -4456,10 +4462,10 @@ local function chooseDedication(player, pid)
 	local golden = try(function()
 		return Game.GetEras():HasGoldenAge(pid) or Game.GetEras():HasHeroicGoldenAge(pid);
 	end, false);
-	local order = DEDICATION_ORDER;
+	local order = CivvisK.DEDICATION_ORDER;
 	if not golden then
 		order = { "COMMEMORATION_SCIENTIFIC" };
-		for _, name in ipairs(DEDICATION_ORDER) do
+		for _, name in ipairs(CivvisK.DEDICATION_ORDER) do
 			if name ~= "COMMEMORATION_SCIENTIFIC" then order[#order + 1] = name; end
 		end
 	end
@@ -4515,7 +4521,7 @@ end
 -- The two `AssignCityState` governors are skipped because they cannot be posted
 -- to one of our own cities, and the Secret Societies ones do not exist in a
 -- standard game.
-local GOVERNOR_ORDER = {
+CivvisK.GOVERNOR_ORDER = {
 	"GOVERNOR_THE_BUILDER",
 	"GOVERNOR_THE_DEFENDER",
 	"GOVERNOR_THE_EDUCATOR",
@@ -4585,7 +4591,7 @@ end
 -- has query methods for this but their names differ between builds, and guessing
 -- a Civilization VI API has cost this project three failed fixes today, so the
 -- assignment we made is the assignment we remember.
-local governorPost = {};
+CivvisK.governorPost = {};
 -- CIVVIS appoints and posts a Governor as one semantic action. Firaxis's stock UI
 -- first submits APPOINT_GOVERNOR and waits for GovernorAppointed before it opens the
 -- assignment flow, so retain that target across the asynchronous engine boundary.
@@ -4609,7 +4615,7 @@ local function chooseGovernor(player, pid)
 	-- 1. Spend a title if one is going spare.
 	local appointed = nil;
 	if cfg.GovernorAppoint and try(function() return governors:CanAppoint(); end, false) then
-		for _, wanted in ipairs(GOVERNOR_ORDER) do
+		for _, wanted in ipairs(CivvisK.GOVERNOR_ORDER) do
 			local row = GameInfo.Governors[wanted];
 			if row ~= nil then
 				local held = try(function()
@@ -4661,7 +4667,7 @@ local function chooseGovernor(player, pid)
 	-- one faults can be identified without re-running both.
 	if cfg.GovernorAssign and assignOp ~= nil and cityParam ~= nil and playerParam ~= nil then
 		local taken = {};
-		for _, where in pairs(governorPost) do taken[where] = true; end
+		for _, where in pairs(CivvisK.governorPost) do taken[where] = true; end
 		local target, targetRank = nil, nil;
 		eachCity(player, function(city)
 			local id = try(function() return city:GetID(); end, -1);
@@ -4691,9 +4697,9 @@ local function chooseGovernor(player, pid)
 			end
 		end);
 		if target ~= nil then
-			for _, wanted in ipairs(GOVERNOR_ORDER) do
+			for _, wanted in ipairs(CivvisK.GOVERNOR_ORDER) do
 				local row = GameInfo.Governors[wanted];
-				if row ~= nil and governorPost[wanted] == nil
+				if row ~= nil and CivvisK.governorPost[wanted] == nil
 						and try(function() return governors:HasGovernor(row.Hash); end, false) then
 					local params = {};
 					params[govParam] = row.Index;
@@ -4703,7 +4709,7 @@ local function chooseGovernor(player, pid)
 						UI.RequestPlayerOperation(pid, assignOp, params);
 					end);
 					if ok then
-						governorPost[wanted] = target;
+						CivvisK.governorPost[wanted] = target;
 						posted = wanted;
 						break;
 					end
@@ -4905,7 +4911,7 @@ end
 -- recalled: `GetTokensToGive`, `CanGiveInfluence`, `CanGiveTokensToPlayer`,
 -- `GetTokensReceived`, `GetMostTokensReceived`, `GetSuzerain`, `CanLevyMilitary`,
 -- `GetLevyMilitaryCost`, and one `GIVE_INFLUENCE_TOKEN` request PER TOKEN.
-local MIN_ENVOY_TOKENS_SUZERAIN = 3;
+CivvisK.MIN_ENVOY_TOKENS_SUZERAIN = 3;
 
 -- Base/Assets/UI/PartialScreens/CityStates.lua:1429,1499 reads these
 -- permissions separately from IsAtWarWith (:1508). Do not guess legality
@@ -4957,13 +4963,13 @@ local envoyTally = { placed = 0, suzerainties = 0, levies = 0, met_minors = 0 };
 -- So: once we have paid a flip's worth into a claim and are STILL behind, the
 -- rival wants it more than the price says, and the next envoy is better spent
 -- anywhere else. Conceding is the whole point — matching is what lost 46.
-local ENVOY_CONTEST_STAKE = 6;
-local ENVOY_CONTEST_DEFICIT = 3;
+CivvisK.ENVOY_CONTEST_STAKE = 6;
+CivvisK.ENVOY_CONTEST_DEFICIT = 3;
 
 local function envoyIsALostAuction(minor)
 	-- Only ever true for ground somebody else is actively holding above us.
-	return (minor.mine or 0) >= ENVOY_CONTEST_STAKE
-		and (minor.need or 0) >= ENVOY_CONTEST_DEFICIT;
+	return (minor.mine or 0) >= CivvisK.ENVOY_CONTEST_STAKE
+		and (minor.need or 0) >= CivvisK.ENVOY_CONTEST_DEFICIT;
 end
 
 -- Exposed for the offline test only. ⚠ A BARE GLOBAL, never `_G.` — the UI Lua
@@ -5073,7 +5079,7 @@ local function chooseEnvoy(player, pid, turn)
 				-- already counts ours, so this reads 1 when we lead 2-2.
 				local need = 0;
 				if holder ~= pid then
-					need = math.max(MIN_ENVOY_TOKENS_SUZERAIN, most + 1) - mine;
+					need = math.max(CivvisK.MIN_ENVOY_TOKENS_SUZERAIN, most + 1) - mine;
 					if need < 1 then need = 1; end
 				else
 					suzerainties = suzerainties + 1;
@@ -6385,6 +6391,89 @@ CivvisUnitVisible = function(pid, unit)
 	end, false) == true;
 end;
 
+-- ★★ WHERE DOES A BOARD EXPORT SPEND ITS TIME?
+--
+-- A replan frame's `state` line reaches the relay ~0.2 s after its
+-- `replan_frame` line (median 0.219 s over 409 frames of
+-- civvis-20261004T171152Z), and `exportState` runs between them in one
+-- synchronous call. The gap barely moves while the line grows from 28 KB
+-- (t<60) to 122 KB (t>170), so it is not the JSON. Three frames a turn make
+-- it ~0.6 s of every turn. This RECORDS only: marks between the export's
+-- sections, one `export_timing` event per export with milliseconds per
+-- section. `os.rawclock()/os.clockpersecond()` is the high-resolution clock
+-- (both are in the shipped `os` table); `Automation.GetTime()` and `os.clock()`
+-- totals ride along so the clock itself can be checked. A global table, not
+-- locals: the main chunk and this function are near Lua's register ceiling.
+-- ★ REAL SECONDS FOR EVERY MOD TIMER. `UI.GetElapsedTime` is the only
+-- sub-second clock here (`os.rawclock` is absent: `export_timing` sections
+-- stay empty; `Automation.GetTime` and `os.clock` tick whole seconds), and the
+-- engine's debug `timescale` speeds it up (G95: 1.94x at `timescale 2`). So
+-- every duration the mod measures (the deal holds, the orphan net, the stall
+-- detector, end-turn pacing, combat vis) reads this clock instead: the UI
+-- clock divided by the commanded scale, rebased when the scale changes so it
+-- never jumps. At scale 1 it IS the UI clock. The other contexts read the
+-- same scale from `ExposedMembers.CivvisTimeScale` and divide their frame
+-- deltas by it (Heartbeat, AutoClose); see `CivvisQueue.checkTimescaleClock`.
+CivvisClock = { scale = 1, offset = 0 };
+CivvisClock.raw = function()
+	local ui = try(function() return UI.GetElapsedTime(); end, nil);
+	if type(ui) ~= "number" or ui ~= ui then return nil; end
+	return ui;
+end;
+CivvisClock.now = function()
+	local ui = CivvisClock.raw();
+	if ui == nil then return nil; end
+	return ui / CivvisClock.scale + CivvisClock.offset;
+end;
+CivvisClock.setScale = function(scale)
+	local ui = CivvisClock.raw();
+	if ui ~= nil then
+		CivvisClock.offset = ui / CivvisClock.scale + CivvisClock.offset - ui / scale;
+	end
+	CivvisClock.scale = scale;
+	return pcall(function() ExposedMembers.CivvisTimeScale = scale; end);
+end;
+
+CivvisExportClock = { marks = nil };
+CivvisExportClock.now = function()
+	local raw = try(function() return os.rawclock(); end, nil);
+	local per = try(function() return os.clockpersecond(); end, nil);
+	if type(raw) == "number" and type(per) == "number" and per > 0 then
+		return raw / per;
+	end
+	return nil;
+end;
+CivvisExportClock.begin = function()
+	CivvisExportClock.marks = {};
+	CivvisExportClock.auto0 = try(function() return Automation.GetTime(); end, nil);
+	CivvisExportClock.cpu0 = try(function() return os.clock(); end, nil);
+	CivvisExportClock.mark("start");
+end;
+CivvisExportClock.mark = function(name)
+	local marks = CivvisExportClock.marks;
+	if marks == nil then return; end
+	marks[#marks + 1] = { name = name, at = CivvisExportClock.now() };
+end;
+CivvisExportClock.report = function(turn, frame)
+	local marks = CivvisExportClock.marks;
+	CivvisExportClock.marks = nil;
+	if marks == nil or #marks < 2 then return; end
+	local function delta(t0, t1)
+		if type(t0) ~= "number" or type(t1) ~= "number" then return nil; end
+		return math.floor((t1 - t0) * 100000 + 0.5) / 100;
+	end
+	local sections = {};
+	for i = 2, #marks do
+		sections[marks[i].name] = delta(marks[i - 1].at, marks[i].at);
+	end
+	emit("export_timing", {
+		turn = turn, frame = frame, ms = sections,
+		total_ms = delta(marks[1].at, marks[#marks].at),
+		auto_total = delta(CivvisExportClock.auto0, try(function() return Automation.GetTime(); end, nil)),
+		cpu_total_ms = delta(CivvisExportClock.cpu0, try(function() return os.clock(); end, nil)),
+	});
+end;
+
 local function exportState(player, pid, turn, frame, eventKind)
 	-- Keep export-only helpers inside this function: the main chunk is near
 	-- Lua's local-variable ceiling.
@@ -6426,6 +6515,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		end);
 	end
 	if cfg.ExportState ~= true then return; end
+	CivvisExportClock.begin();
 
 	-- A met rival's detailed city list stays gated on actual map sight below.
 	-- These totals are different: they are the public standings a player can
@@ -6579,6 +6669,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 	-- that one city, so the mirror can set `captured_from` and the board
 	-- offers the same three choices the popup does. The `city` order kind in
 	-- `applyOrder` carries the answer back.
+	CivvisExportClock.mark("prelude");
 	local pendingCaptureId = try(function()
 		local pending = player:GetCities():GetNextCapturedCity();
 		return pending and pending:GetID() or nil;
@@ -7289,6 +7380,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 	-- stands still on. Worst measured run civvis-20260818T052156Z: fourteen
 	-- idle cultural people, sixteen matching empty slots, `empty_slots: 0`
 	-- on every one of them.
+	CivvisExportClock.mark("cities");
 	local gwSurvey = CivvisGreatWorks.survey(player, turn);
 
 	local units = {};
@@ -7577,8 +7669,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 		};
 	end);
 
+	CivvisExportClock.mark("units");
 	local suzerainCounts = publicSuzerainCounts();
 	local publicStats = publicEmpireStats(player, suzerainCounts);
+	CivvisExportClock.mark("public_stats");
 
 	-- Rivals: only what we have actually met, so the mirror never contains
 	-- knowledge the seat has not earned.
@@ -8158,6 +8252,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 	-- merely "cannot settle here" hid Kabul's city, army, Envoys and Suzerain from
 	-- both the mirror and the planner even while its banner was on screen.
 	local minors = {};
+	CivvisExportClock.mark("rivals");
 	for _, minor in ipairs(try(function() return PlayerManager.GetAliveMinors(); end, {})) do
 		pcall(function()
 			local mid = minor:GetID();
@@ -8370,6 +8465,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 	local techs, civics = {}, {};
 	local boosted_techs, boosted_civics = {}, {};
 	local research_quotes = {};
+	CivvisExportClock.mark("minors");
 	local ptechs = try(function() return player:GetTechs(); end);
 	if ptechs ~= nil then
 		for row in GameInfo.Technologies() do
@@ -8603,6 +8699,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 	-- CIVVIS re-makes from scratch every turn against a fact it was never told, and
 	-- while it is cheap in orders it is not cheap in belief: policy slots hang off the
 	-- government, and CIVVIS is choosing cards for a government it does not know it has.
+	CivvisExportClock.mark("techs_civics_projects");
 	local government = try(function()
 		local culture = player:GetCulture();
 		local index = culture:GetCurrentGovernment();
@@ -8895,6 +8992,7 @@ local function exportState(player, pid, turn, frame, eventKind)
         holyCity, holyCityObservation = CivvisReligionState.holyCity(playerReligion);
         holyCityObservation.religion_created = religionCreated;
     end
+	CivvisExportClock.mark("government_religion_policies");
 	emit(eventKind or "state", {
 		turn = turn,
 		-- 0 for the turn's opening board; N for the Nth mid-turn combat frame
@@ -9607,6 +9705,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 			return out;
 		end, nil),
 	});
+	CivvisExportClock.mark("state_table_and_emit");
+	CivvisExportClock.report(turn, frame);
 end
 
 
@@ -10864,8 +10964,29 @@ CivvisTrade.abandon = function(subject, why)
 	trade.unanswered = trade.unanswered + 1;
 	pcall(function() LuaEvents.CivvisDealSession(subject, false, 0); end);
 	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	-- `queued` is whether a rival's session to us is waiting behind this one
+	-- (the shipped HasNextQueuedSession, DiplomacyActionView.lua:2469): the
+	-- state every observed pending-deal freeze was left in.
 	emit("deal_session", { turn = turn, target = subject, phase = "unanswered", why = why,
-		kind = session.kind, unanswered = trade.unanswered });
+		kind = session.kind, unanswered = trade.unanswered, sent = session.sent,
+		queued = try(function()
+			return DiplomacyManager.HasQueuedSession(Game.GetLocalPlayer());
+		end, nil) });
+	-- ★★ A SENT ASK CLOSED UNANSWERED HOLDS THE TURN OPEN. The rival's verdict
+	-- still comes, as its own session to us; every observed pending-deal
+	-- wedge was that session arriving after our turn had ended (10-03, and
+	-- G72 civvis-20261004T185259Z t126: asked 19:04:17.211, closed unanswered
+	-- 0.53 s later, turn forced to end 0.5 s after that, Game Core waiting on
+	-- a GameUpdate forever, the game lost). Rival-initiated sessions that
+	-- arrive while our turn is open are processed normally, so keep it open
+	-- until the rival speaks or `DealAnswerHoldSeconds` pass. See
+	-- `CivvisTrade.holdsEndTurn`.
+	if session.sent and why == "session_closed" then
+		trade.turnHold = { turn = turn, target = subject,
+			at = CivvisClock.now() };
+		emit("deal_turn_hold", { turn = turn, target = subject, phase = "held",
+			seconds = tonumber(cfg.DealAnswerHoldSeconds) or 30 });
+	end
 	if not trade.disabled and trade.unanswered >= (cfg.DealSessionStandDown or 3) then
 		trade.disabled = true;
 		emit("deal_sessions_stood_down", { turn = turn, unanswered = trade.unanswered });
@@ -10881,6 +11002,13 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 	if pid == nil or pid < 0 or (fromPlayer ~= pid and toPlayer ~= pid) then return; end
 	local other = (fromPlayer == pid) and toPlayer or fromPlayer;
 	local trade = CivvisTrade;
+	-- The rival whose answer we are holding the turn for has spoken.
+	local hold = trade.turnHold;
+	if hold ~= nil and fromPlayer == hold.target then
+		trade.turnHold = nil;
+		emit("deal_turn_hold", { turn = hold.turn, target = hold.target,
+			phase = "released", why = "rival_spoke" });
+	end
 	local session = trade.sessions[other];
 	if session == nil then return; end
 	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
@@ -10899,11 +11027,31 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		-- The session is live: put the question. `sent` goes first so an
 		-- answer delivered from inside the send is read as the answer.
 		session.sent = true;
+		-- ★★★★ THE ANSWER IS WAITED FOR, NOT TIMED OUT. The rival evaluates
+		-- the question in the game core, behind every unit command this turn
+		-- already queued ("The AI will send, ACCEPT, REJECT, etc. as the
+		-- automatic evaluation of the deal occurs", DiplomacyActionView.lua:
+		-- 2582; the shipped screen has no timer and leaves the session open
+		-- until that statement lands). Late game that takes seconds: over 37
+		-- runs every one of 488 asks was answered, p99 4.9 s, max 14.7 s. The
+		-- 4-second opening hold closed the session first on exactly four of
+		-- them (G52 t216, t240 twice, G61 t216), and all four froze the game:
+		-- the rival's answer then opened its OWN `MAKE_DEAL` session to us,
+		-- which sat "Adding to pending" behind the closed one and was never
+		-- processed, so end turn waited until the wedge watchdog restarted
+		-- the game. The same t240 save survived when its answer beat the
+		-- ladder by a frame. Re-arm the hold for the answer window BEFORE the
+		-- send: an answer delivered inside the send closes the session, and
+		-- its release must be the last word the closer hears.
+		pcall(function()
+			LuaEvents.CivvisDealSession(other, true, cfg.DealAnswerHoldSeconds or 30);
+		end);
 		local ok = pcall(function()
 			DealManager.SendWorkingDeal(DealProposalAction[session.action], pid, other);
 		end);
 		emit("deal_session", { turn = turn, target = other, kind = session.kind,
-			action = session.action, session = sessionID or -1, phase = "asked", sent = ok });
+			action = session.action, session = sessionID or -1, phase = "asked", sent = ok,
+			hold = cfg.DealAnswerHoldSeconds or 30 });
 		if not ok then CivvisTrade.close(pid, other, "send_threw"); end
 		return;
 	end
@@ -11520,8 +11668,15 @@ CivvisLedger.onCombatVisBegin = function(kVisData)
 	local defender = try(function() return kVisData[CombatVisType.DEFENDER]; end);
 	local key = CivvisLedger.componentKey(attacker);
 	if key == nil then return; end
+	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
 	CivvisLedger.open[key] = {
 		turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1,
+		-- G90: the AI phase grew ~0.5 s per combat in its window (2.0 s with
+		-- none, 5.5 s with 6+). How long each visualization holds, and whether
+		-- it ran in our turn or the AI's, says whether that time is the combat
+		-- display or the AI's own thinking.
+		vis_at = CivvisClock.now(),
+		our_turn = try(function() return Players[pid]:IsTurnActive(); end, nil),
 		attacker = CivvisLedger.describe(attacker),
 		defender = CivvisLedger.describe(defender),
 		attacker_id = attacker, defender_id = defender,
@@ -11585,6 +11740,12 @@ CivvisLedger.onCombatVisEnd = function(kVisData)
 		ours = combat.attacker ~= nil and combat.attacker.player == pid,
 		against_us = combat.defender ~= nil and combat.defender.player == pid,
 		preview = preview,
+		vis_seconds = try(function()
+			local now = CivvisClock.now();
+			if type(now) ~= "number" or type(combat.vis_at) ~= "number" then return nil; end
+			return math.floor((now - combat.vis_at) * 1000 + 0.5) / 1000;
+		end, nil),
+		our_turn = combat.our_turn,
 	});
 end;
 
@@ -12367,7 +12528,7 @@ local function applyOrder(player, pid, row, turn)
 			end
 		end);
 		if ok then
-			warDeclared[subject] = true;
+			CivvisK.warDeclared[subject] = true;
 			-- ⚠ THE FIRES-CHECK FOR THE DECISION THAT DECIDES THE GAME. `declareWar`
 			-- emits this on the built-in path; without it here, a CIVVIS-declared war
 			-- appeared only as an anonymous `by.war = 1` count and the run's `war`
@@ -13916,10 +14077,10 @@ local function applyOrder(player, pid, row, turn)
 			return queue:CanProduce(row2.Hash, false, true);
 		end);
 		if not canOk or canStart ~= true then
-			local refused = refusedByCity[cityId];
+			local refused = CivvisK.refusedByCity[cityId];
 			if refused == nil or refused.turn ~= turn then
 				refused = { turn = turn };
-				refusedByCity[cityId] = refused;
+				CivvisK.refusedByCity[cityId] = refused;
 			end
 			refused[verb] = true;
 			emit("civvis_build_unplayable", {
@@ -15532,6 +15693,47 @@ CivvisCongressVoteBudget = function(favor, costs, maxVotes)
 	return host, host, standard;
 end
 
+-- ★★★ PACE THE BANK ACROSS THE SESSIONS A LEADER CAN WIN FROM.
+--
+-- The Favor a Diplomatic Victory ballot may spend. Every session from the
+-- denial floor used to spend the whole bank, and a self-claim below it did
+-- too. Three of the four live Diplomatic losses of 2026-10-04/05 then met the
+-- deciding session with nothing: civvis-20261005T030607Z (game 95) spent 112
+-- at t181 and 40 at t201 on B ballots the rivals won without us (29-6, 19-10),
+-- had 0 at t221, and lost there 6 votes to 4 -- three bought votes (12 Favor)
+-- would have turned it; T003728Z and T194303Z-cont1 cast only free votes at
+-- 18 and 19 points. Rivals turn on a leader themselves from about 15, so a
+-- bought vote matters most at match point. So: from `DiploVictoryMatchPoint`
+-- (18, one +2 from the win) the whole bank; from the denial floor, half;
+-- below it (the probe and the self-claim) only what is above
+-- `DiploVictoryClaimReserve` (120). Exported globally to stay below the
+-- chunk-local limit.
+--
+-- ★★ AND A BANK THAT IS DRAINING IS SPENT WHILE IT LASTS. `draining` is true
+-- when the bank stands lower than it did right after the last session: war
+-- grievances are taking Favor every turn, and whatever this ballot holds back
+-- is gone before the next one. Live King civvis-20261005T051413Z (game 102):
+-- 190 after t162, 171 at the t181 ballot, 80 at t201, 0 by t213; the ballot
+-- held its reserve and half-banks, cast a probe and two free votes, and the
+-- Aztecs took the +2 by a single vote at three sessions running (6-5, 5-4,
+-- 4-3) on their way from 5 to 20 DVP. Off with `DiploVictorySpendDraining =
+-- false`.
+CivvisCongressBallotBank = function(favor, leaderPoints, config, draining)
+	local bank = tonumber(favor) or 0;
+	local points = tonumber(leaderPoints) or 0;
+	config = type(config) == "table" and config or {};
+	if draining and config.DiploVictorySpendDraining ~= false then
+		return bank;
+	end
+	if points >= (tonumber(config.DiploVictoryMatchPoint) or 18) then
+		return bank;
+	end
+	if points >= (tonumber(config.DiploVictoryVoteFloor) or 12) then
+		return bank / 2;
+	end
+	return bank - (tonumber(config.DiploVictoryClaimReserve) or 120);
+end
+
 -- A ballot is verified against all three native selection fields, not just
 -- its size. WorldCongressPopup.lua:1915-1919 reads PlayerID, OptionChosen,
 -- and Votes; :1935-1940 reads ResolutionTarget for that same voter.
@@ -15580,7 +15782,7 @@ end;
 -- (`gp_activated` / `gp_moving` / `gp_idle`), so telemetry never presents it
 -- as CIVVIS's work.
 local gpPending = {};      -- unit id -> {x, y} last reported walk target
-local gpIdleReported = {}; -- unit id -> turn the last `idle` event was emitted
+CivvisK.gpIdleReported = {}; -- unit id -> turn the last `idle` event was emitted
 local gpApiMissing = false;
 
 local function greatPersonOf(unit)
@@ -15718,13 +15920,13 @@ local function orderGreatPerson(player, unit, id, turn)
 		if religionCreated ~= nil and religionCreated >= 0 and charges == 0
 				and commandUnit(unit, CMD["UNITCOMMAND_DELETE"], true) then
 			gpPending[id] = nil;
-			gpIdleReported[id] = turn;
+			CivvisK.gpIdleReported[id] = turn;
 			emit("gp", { turn = turn, unit = id, individual = individual,
 				class = class, action = "retired_founded_prophet" });
 			return "retired";
 		end
-		if gpIdleReported[id] == nil then
-			gpIdleReported[id] = turn;
+		if CivvisK.gpIdleReported[id] == nil then
+			CivvisK.gpIdleReported[id] = turn;
 			emit("gp", { turn = turn, unit = id, individual = individual,
 				class = class, action = "deferred_prophet" });
 		end
@@ -15853,9 +16055,9 @@ local function orderGreatPerson(player, unit, id, turn)
 	-- `empty_slots` rides along (absent when unknowable) so an idle Writer
 	-- with slots on the board reads as the driver's failure, not the empire's.
 	gpPending[id] = nil;
-	local before = gpIdleReported[id];
+	local before = CivvisK.gpIdleReported[id];
 	if before == nil or (turn - before) >= 25 then
-		gpIdleReported[id] = turn;
+		CivvisK.gpIdleReported[id] = turn;
 		emit("gp", { turn = turn, unit = id, individual = individual,
 			class = class, action = spaceTargets ~= nil and "reserved_space_boost" or "idle",
 			empty_slots = slotCount,
@@ -16086,6 +16288,80 @@ CivvisQueue.drain = function(player, pid, turn)
 				local moved_from_origin = #entry.rows == 0
 					and entry.origin ~= nil
 					and (ux ~= entry.origin.x or uy ~= entry.origin.y);
+				-- ★★★★ A WALK THE HOST CANNOT PATH IS A NO-OP NOW, NOT AFTER THE
+				-- GRACE. An opening MOVE_TO the host accepted with no path leaves
+				-- the unit on its origin, movement intact, with no completion event,
+				-- so the watch held the frame for the whole grace before `moveNoop`
+				-- named it `cannot_start` with `native.path_count` 0. Measured on
+				-- civvis-20261004T083931Z: 2,307 move_noop events, 564 of them caught
+				-- only at the 30-tick grace and 632 more at 11-29 ticks; queues that
+				-- ran the full grace were 12% of the game's wall clock. Ask the host's
+				-- own path (WorldInput.lua:961 `UnitManager.GetMoveToPathEx`, the same
+				-- read `noopEvidence` reports) once, eight ticks in (walks that do
+				-- start have left their origin by then; most queues settle within
+				-- five): one plot or none means the leg will not happen, and the
+				-- existing no-op answer (named `move_noop`, fallback step, re-armed
+				-- watch) runs at once. `capToTurn` already refuses a leg with no path
+				-- at issue; these had one then and lost it. A path the host cannot
+				-- be asked for (nil) decides nothing.
+				local unpathed = false;
+				if #entry.rows == 0 and entry.origin ~= nil and entry.expect ~= nil
+						and tostring(entry.opening_verb or "") == "MOVE_TO"
+						and not entry.path_probed and not entry.ready
+						and ux == entry.origin.x and uy == entry.origin.y
+						and entry.wait >= (tonumber(cfg.OrderQueueNoopProbeTicks) or 8)
+						and entry.wait < grace then
+					entry.path_probed = true;
+					local spentNow = moves ~= nil and moves <= 0;
+					local destination = try(function()
+						return Map.GetPlotIndex(entry.expect.x, entry.expect.y);
+					end, nil);
+					local path = destination ~= nil and try(function()
+						return UnitManager.GetMoveToPathEx(unit, destination);
+					end, nil) or nil;
+					if not spentNow and type(path) == "table" and type(path.plots) == "table" then
+						local n = 0;
+						for _ in pairs(path.plots) do n = n + 1; end
+						unpathed = n <= 1;
+					end
+					-- RECORD-ONLY: does a stalled operation ever step? G77
+					-- (civvis-20261004T201619Z): 22 of the 23 no-ops that held
+					-- their frame to the 30-tick grace as `unknown` were in
+					-- ACTIVITY_OPERATION. The accepted MOVE_TO was active, the
+					-- unit was still on its origin with its movement intact, and
+					-- the host's path ended this turn (~3.8 s each, ~90 s a game).
+					-- Cancelling such a leg here would recover that, but only if
+					-- these legs almost never step later. Mark them here, then
+					-- `stall_probe_resolved` (stepped) or the grace `move_noop`
+					-- (which carries `stall_probe`) says which. No decision reads it.
+					local attempt = CivvisBoard.moveAttempts[subject];
+					if not unpathed and not spentNow and attempt ~= nil and attempt.turn == turn
+							and attempt.moves ~= nil and moves ~= nil and moves >= attempt.moves
+							and ActivityTypes.ACTIVITY_OPERATION ~= nil
+							and try(function() return UnitManager.GetActivityType(unit); end, nil)
+								== ActivityTypes.ACTIVITY_OPERATION then
+						entry.stall_probe = entry.wait;
+						-- `StalledOperationRelease` answers the marked leg now,
+						-- through the same early no-op as an unpathed walk: the
+						-- grace would only have delayed the identical answer.
+						local release = cfg.StalledOperationRelease == true;
+						if release then unpathed = true; end
+						emit("stall_probe", { turn = turn, unit = subject,
+							unit_kind = unitTypeName(unit), tick = entry.wait, moves = moves,
+							from = { ux, uy }, want = { entry.expect.x, entry.expect.y },
+							released = release });
+					end
+				end
+				if entry.stall_probe ~= nil and not entry.stall_resolved and entry.origin ~= nil then
+					local attempt = CivvisBoard.moveAttempts[subject];
+					if ux ~= entry.origin.x or uy ~= entry.origin.y
+							or (moves ~= nil and attempt ~= nil and attempt.moves ~= nil
+								and moves < attempt.moves) then
+						entry.stall_resolved = true;
+						emit("stall_probe_resolved", { turn = turn, unit = subject,
+							outcome = "stepped", probe_tick = entry.stall_probe, tick = entry.wait });
+					end
+				end
 				-- Arrival is not the same as settlement on the live host. Civ VI can
 				-- place a unit on the requested plot while its MOVE_TO operation is
 				-- still active; a follow-up RequestOperation then returns successfully
@@ -16133,8 +16409,23 @@ CivvisQueue.drain = function(player, pid, turn)
 						});
 					end
 				end
+				-- ★★★★ AN OPERATION THAT CANNOT LAND THIS TURN DOES NOT HOLD IT.
+				-- The active-operation guard protects a follow-up while its unit
+				-- can still arrive. Past the grace period a unit that has not
+				-- reached its expectation is refused below by name either way
+				-- (`queue_prior_not_arrived`), so waiting on its operation only
+				-- ran the turn into `OrderQueueMaxTicks` — a multi-turn walk, or a
+				-- leftover path from an earlier frame, never deactivates before
+				-- the turn ends. Measured on civvis-20261004T083931Z t84: a Scout
+				-- whose frame-2 MOVE_TO could not start kept its frame-0 path
+				-- active, and its queued PILLAGE held the turn 37 s. Over 2026-10-03
+				-- and 04, such stalls were 18 of 489 queues in one game and
+				-- 5-24% of every game's wall clock. An arrived unit is unchanged:
+				-- the landed-path cancel above still owns that case.
+				local stuck_operation = active_operation and entry.expect ~= nil
+					and not arrived and entry.wait >= grace;
 				local ready = (entry.ready or arrived or spent or moved_from_origin
-					or entry.wait >= grace) and not active_operation;
+					or unpathed or entry.wait >= grace) and (not active_operation or stuck_operation);
 				-- A path can report its destination before Civ VI has finished
 				-- deactivating the asynchronous MOVE_TO. On the live host the
 				-- activity read can briefly say "awake" in that window, so an
@@ -16500,9 +16791,43 @@ end;
 -- Preserve native evidence before trying a fallback. A path can exist without
 -- ending on the requested plot, and an accepted request can remain active.
 -- WorldInput.lua:961 reads GetMoveToPathEx; UnitPanel.lua:2147 reads activity.
+-- The stock activity names (UnitActivities.artdef), lowercased, for a value
+-- from `UnitManager.GetActivityType`; the raw value as a string for one this
+-- list does not know, nil for nil. The same list and rule as the state
+-- export's unit `activity` (kept inline there for its install test), so a
+-- mirror row and a `move_noop` name an activity alike.
+CivvisBoard.activityName = function(kind)
+	if kind == nil then return nil; end
+	for _, label in ipairs({
+		"SLEEP", "HOLD", "OPERATION", "AWAKE",
+		"HEAL", "SENTRY", "INTERCEPT", "NO_ACTIVITY",
+		"BUILD", "DIG", "CUT", "REPAIR",
+		"SPREAD_RELIGION", "LAUNCH_INQUISITION",
+		"EVANGELIZE_BELIEF", "EXCAVATE", "DESIGNATE_PARK",
+		"FOUND_RELIGION",
+	}) do
+		local enum = label == "NO_ACTIVITY"
+			and ActivityTypes.NO_ACTIVITY
+			or ActivityTypes["ACTIVITY_" .. label];
+		if enum ~= nil and enum == kind then
+			return string.lower(label);
+		end
+	end
+	return tostring(kind);
+end;
+
+-- ⚠ G77 (civvis-20261004T201619Z): 22 of the 23 no-ops that waited the full
+-- grace as `unknown` (CanStartOperation true, path ending this turn, nothing
+-- stacked or hostile) carried native activity 1225574625, a value only 30 of
+-- the game's 1,217 no-ops had; the board had read those units `awake` or
+-- `operation` before the order. `activity_name` says which state the accepted
+-- leg left the unit in, an active operation that never steps or something else.
 CivvisBoard.noopEvidence = function(unit, x, y)
 	local evidence = {};
 	evidence.activity = tonumber(try(function() return UnitManager.GetActivityType(unit); end, nil));
+	evidence.activity_name = try(function()
+		return CivvisBoard.activityName(UnitManager.GetActivityType(unit));
+	end, nil);
 	local destination = try(function() return Map.GetPlotIndex(x, y); end, nil);
 	local path = try(function() return UnitManager.GetMoveToPathEx(unit, destination); end, nil);
 	if type(path) == "table" and type(path.plots) == "table" then
@@ -16602,11 +16927,14 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 	local afterFallback = attempt ~= nil and attempt.turn == turn and attempt.fallback == true;
 	local why = CivvisBoard.classifyNoop(player, pid, unit, ux, uy, wantX, wantY, moves);
 	CivvisBoard.stats.move_noop = CivvisBoard.stats.move_noop + 1;
+	local stalled = not entry.stall_resolved and entry.stall_probe or nil;
+	if stalled ~= nil then entry.stall_resolved = true; end
 	emit("move_noop", {
 		turn = turn, unit = subject, unit_kind = unitTypeName(unit),
 		from = { ux, uy }, want = { wantX, wantY }, moves = moves,
 		ticks = entry.wait, why = why, after_fallback = afterFallback,
 		native = CivvisBoard.noopEvidence(unit, wantX, wantY),
+		stall_probe = stalled,
 	});
 	if afterFallback then return false; end
 	local sent = CivvisBoard.fallbackStep(player, pid, unit, subject, ux, uy, wantX, wantY, turn, why);
@@ -16615,6 +16943,7 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 	entry.origin = { x = ux, y = uy };
 	entry.ready = false;
 	entry.wait = 0;
+	entry.path_probed = nil;
 	return true;
 end;
 
@@ -18096,10 +18425,14 @@ local function applyOrders(player, pid, turn, rows)
 	-- Consume only the recognized batch directive. Attach the policy to the
 	-- rows themselves so delayed strikes retain it without global frame state.
 	local survival = false;
+	local dialogueNoWar = false;
 	for i = #rows, 1, -1 do
 		local row = rows[i];
 		if row.kind == "combat_policy" and row.verb == "DOOMED_BLOW_VETO" then
 			survival = true;
+			table.remove(rows, i);
+		elseif row.kind == "combat_policy" and row.verb == "DIALOGUE_NEVER_DECLARES_WAR" then
+			dialogueNoWar = true;
 			table.remove(rows, i);
 		elseif row.kind == "observe" and row.verb == "AIR_ASSAULT" then
 			-- A failed spotting move or refused sortie changes no sight/damage,
@@ -18160,6 +18493,16 @@ local function applyOrders(player, pid, turn, rows)
 		emit("combat_policy_applied", {
 			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
 			policy = "DOOMED_BLOW_VETO",
+		});
+	end
+	-- The leader statement is answered in DiplomacyActionView's own context,
+	-- usually before this turn's first batch lands, so the batch renews a
+	-- one-turn lease there (CivvisControlAutoClose.lua) instead of a row flag.
+	if dialogueNoWar then
+		local leased = pcall(function() LuaEvents.CivvisDialogueNoWar(turn); end);
+		emit("combat_policy_applied", {
+			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
+			policy = "DIALOGUE_NEVER_DECLARES_WAR", leased = leased,
 		});
 	end
 	local shadowRows = 0;
@@ -18861,6 +19204,10 @@ local function beginTurn(player, pid, turn)
 		local review = wc:GetReview(pid);
 		if type(review) ~= "table" then return; end
 		local resolutions, signature = {}, {};
+		-- The largest block a rival cast for option A ("+2 to the target")
+		-- on the Diplomatic Victory resolution: the block an A ballot must
+		-- outvote to take the +2 (`wc_rival_block`, read by the ballot).
+		local rivalBlock = nil;
 		for i, r in pairs(review.Resolutions or {}) do
 			if type(i) == "number" and type(r) == "table" and r.Type ~= nil then
 				local info = GameInfo.Resolutions[r.Type];
@@ -18872,6 +19219,10 @@ local function beginTurn(player, pid, turn)
 						local votes = tonumber(sel.Votes) or 0;
 						local option = tonumber(sel.OptionChosen) or 0;
 						if option == 1 then a = a + votes; else b = b + votes; end
+						if rtype == "WC_RES_DIPLOVICTORY" and option == 1 and who ~= pid
+							and votes > (rivalBlock or 0) then
+							rivalBlock = votes;
+						end
 						local target = sel.ResolutionTarget;
 						voters[#voters + 1] = { player = who, option = option, votes = votes,
 							target = target };
@@ -18920,6 +19271,7 @@ local function beginTurn(player, pid, turn)
 				end
 			end
 		end
+		if rivalBlock ~= nil then envoyTally.wc_rival_block = rivalBlock; end
 		if #resolutions == 0 and #proposals == 0 then return; end
 		table.sort(signature);
 		local key = table.concat(signature, "|");
@@ -18935,6 +19287,9 @@ local function beginTurn(player, pid, turn)
 			end
 		end
 		local favorNow = tonumber(try(function() return player:GetFavor(); end, 0)) or 0;
+		-- The bank right after this session: the next ballot reads a lower
+		-- bank as a draining one (`CivvisCongressBallotBank`).
+		envoyTally.wc_review_favor = favorNow;
 		emit("wc_outcome", {
 			turn = turn, resolutions = resolutions, proposals = proposals, dvp = dvp,
 			favor = favorNow,
@@ -19137,7 +19492,11 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- query that deadlocked 20260730T110209Z — and the poll budgets below are
 	-- scaled by the same factor so every wall-clock allowance is unchanged.
 	local every = cfg.OrdersPollTicks or 2;
-	if awaiting.ticks % every ~= 0 then return false; end
+	-- `CivvisQueue.forcePoll` is set when `CivvisQueue.ordersLanded` found the
+	-- answer already in the channel: this tick reads it rather than waiting
+	-- for its turn.
+	if awaiting.ticks % every ~= 0 and not CivvisQueue.forcePoll then return false; end
+	CivvisQueue.forcePoll = false;
 	awaiting.polls = (awaiting.polls or 0) + 1;
 
 	-- ★★★★★ THE HEARTBEAT IS LOAD-BEARING. IT IS NOT DIAGNOSTICS.
@@ -19455,19 +19814,409 @@ function CivvisBoard.movementNotYetRestored(player, turn)
 	return true;
 end
 
+-- ★★ DOES THE HOST MAKE OUR END TURN WAIT, AND IS QUICK MOVEMENT LIVE?
+--
+-- `turn_retry_settled` cannot answer the first: it fires for any of our
+-- units settling while `Game.GetCurrentGameTurn()` still equals the retry
+-- turn, and that number does not change through the AI phase -- our units
+-- attacked or deactivated after our turn ended emit it too. Read against the
+-- engine's own `Player 0 set TurnActive 0` stamp, our turn ends within ~0.3 s
+-- of the last orders (G64-G67, 2026-10-04). Quick Movement reads 1 in
+-- UserOptions.txt, but the stock Options.lua copies it into the live
+-- UserConfiguration only on its own Confirm, and every queued order of
+-- ours waits on its unit's previous move settling.
+--
+-- This only RECORDS: per turn, how many requests the host refused and what
+-- the shipped predicates said at each (`UI.IsGameCoreBusy`, `UI.CanEndTurn`,
+-- `UI.IsProcessingMessages`, the first end-turn blocker), how long from the
+-- first request to our turn ending, and the live Quick Movement/Combat. One
+-- `end_turn_wait` per turn, from `LocalPlayerTurnEnd`. Sampled after the
+-- 0.25 s rate guard, so at most four reads a second; on `CivvisQueue`
+-- because the main chunk is at its local ceiling.
+CivvisQueue.noteEndTurnRequest = function(turn, now, forced)
+	local w = CivvisQueue.endTurnWait;
+	if w == nil or w.turn ~= turn then
+		w = { turn = turn, first = now, last = now, requests = 0, forced = 0,
+		      busy = 0, cannot = 0, processing = 0, blockers = {} };
+		CivvisQueue.endTurnWait = w;
+	end
+	w.requests = w.requests + 1;
+	w.last = now;
+	if forced then w.forced = w.forced + 1; end
+	if try(function() return UI.IsGameCoreBusy(); end, nil) == true then w.busy = w.busy + 1; end
+	if try(function() return UI.CanEndTurn(); end, nil) == false then w.cannot = w.cannot + 1; end
+	if try(function() return UI.IsProcessingMessages(); end, nil) == true then
+		w.processing = w.processing + 1;
+	end
+	local blocker = try(function()
+		return NotificationManager.GetFirstEndTurnBlocking(Game.GetLocalPlayer());
+	end, nil);
+	local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, nil);
+	if blocker ~= nil and blocker ~= none then
+		local key = tostring(blocker);
+		w.blockers[key] = (w.blockers[key] or 0) + 1;
+	end
+end;
+
+CivvisQueue.onLocalTurnEnd = function()
+	local w = CivvisQueue.endTurnWait;
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	if w == nil or w.turn ~= turn or w.emitted then return; end
+	w.emitted = true;
+	local now = CivvisClock.now();
+	w.ended_at = now;
+	local function since(t)
+		if type(now) ~= "number" or type(t) ~= "number" then return nil; end
+		return math.floor((now - t) * 1000 + 0.5) / 1000;
+	end
+	emit("end_turn_wait", {
+		turn = turn, requests = w.requests, forced = w.forced,
+		wait = since(w.first), after_last = since(w.last),
+		busy = w.busy, cannot = w.cannot, processing = w.processing,
+		blockers = w.blockers,
+		quick_movement = try(function() return UserConfiguration.IsQuickMovement(); end, nil),
+		quick_combat = try(function() return UserConfiguration.IsQuickCombat(); end, nil),
+		-- The UI clock at this moment: against the relay's wall-clock `utc`,
+		-- consecutive turns show whether the UI clock runs at real time (a
+		-- debug timescale could change that, and every mod timer runs on it).
+		ui_now = CivvisClock.raw(),
+		-- Locks still held by a UI context as our turn ends (the AutoClose
+		-- ledger); a normal turn ends with none.
+		held_locks = try(function() return ExposedMembers.CivvisEventLocks.count; end, nil),
+	});
+	pcall(CivvisQueue.checkTimescaleClock);
+end;
+
+-- ★★ THE APP CAN STOP DRIVING THE GAME AFTER OUR TURN ENDS. G84
+-- (civvis-20261004T223225Z) t117, twice from AutoSave_0116: our turn ended,
+-- `Player 2 set TurnActive 1`, then not one GameUpdate pass for two minutes.
+-- The watchdog's stack sample had the Game Core thread idle in
+-- pthread_cond_wait in every sample while WinMain kept rendering: a UI-side
+-- pause, not an engine loop. Nothing in the mod's record named it, and the
+-- watchdog took ~2 min to call it (a unit-blocker age rule that happened to
+-- fire). Today's 3,906 AI phases ran at most 14 s (p99 8 s), so
+-- `AiPhaseStallSeconds` (30) after our turn ended with the turn number
+-- unchanged is a stall. Say so once, with what the UI shows, from the HUD
+-- pulse, which keeps firing while the core waits. The wedge watchdog reads
+-- `ai_phase_stall` and hands the game over without waiting out its own clocks.
+CivvisQueue.checkAiPhaseStall = function()
+	local w = CivvisQueue.endTurnWait;
+	if w == nil or not w.emitted or w.stall_reported or type(w.ended_at) ~= "number" then
+		return false;
+	end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	if turn ~= w.turn then return false; end
+	local now = CivvisClock.now();
+	if type(now) ~= "number" or now ~= now or now < w.ended_at then return false; end
+	local waited = now - w.ended_at;
+	if waited < (tonumber(cfg.AiPhaseStallSeconds) or 30) then return false; end
+	w.stall_reported = true;
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	local active = {};
+	for _, p in ipairs(try(function() return PlayerManager.GetAliveIDs(); end, {}) or {}) do
+		if try(function() return Players[p]:IsTurnActive(); end, false) == true then
+			active[#active + 1] = p;
+		end
+	end
+	local sessions = {};
+	for _, p in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {}) or {}) do
+		if p ~= pid then
+			local id = try(function() return DiplomacyManager.FindOpenSessionID(pid, p); end, nil);
+			if type(id) == "number" then sessions[#sessions + 1] = { with = p, session = id }; end
+		end
+	end
+	-- ⚠ Built HERE, not at top level. As `CivvisQueue.STALL_VIEWS = {...}`
+	-- in the main chunk, its 20 items took that chunk from 199 to 212 peak
+	-- registers. Civ VI's Lua (Havok Script) refuses a function past 200, so
+	-- the whole agent failed to load, silently, on pins 2ddcd5889 and
+	-- 66de612ed (G86, G88). See register_budget_test.lua.
+	local views = {
+		"DiplomacyActionView", "DiplomacyDealView", "LeaderScene", "WorldCongressPopup",
+		"WorldCongressIntro", "WorldCongressBetweenTurns", "WonderBuiltPopup",
+		"NaturalWonderPopup", "EraCompletePopup", "EraReviewPopup", "HistoricMoments",
+		"TechCivicCompletedPopup", "BoostUnlockedPopup", "ProjectBuiltPopup",
+		"NaturalDisasterPopup", "InGamePopup", "DedicationPopup", "GreatWorkShowcase",
+		"RockBandMoviePopup", "EndGameMenu",
+	};
+	local visible = {};
+	for _, name in ipairs(views) do
+		local hidden = try(function()
+			return ContextPtr:LookUpControl("/InGame/" .. name):IsHidden();
+		end, nil);
+		if hidden == false then visible[#visible + 1] = name; end
+	end
+	-- The event-lock ledger the AutoClose contexts keep (see the shim): every
+	-- lock still held, with the context and turn that took it.
+	local held, overflow = {}, nil;
+	pcall(function()
+		local ledger = ExposedMembers.CivvisEventLocks;
+		for id, entry in pairs(ledger.held) do
+			held[#held + 1] = { id = id, ctx = entry.ctx, turn = entry.turn, at = entry.at };
+		end
+		overflow = ledger.overflow;
+	end);
+	emit("ai_phase_stall", {
+		turn = turn, waited = math.floor(waited * 10 + 0.5) / 10,
+		held_locks = held, lock_overflow = overflow,
+		core_busy = try(function() return UI.IsGameCoreBusy(); end, nil),
+		processing = try(function() return UI.IsProcessingMessages(); end, nil),
+		active_players = active, open_sessions = sessions, visible = visible,
+		queued = try(function() return DiplomacyManager.HasQueuedSession(pid); end, nil),
+	});
+	return true;
+end;
+
+-- ★ A DEBUG TIMESCALE FOR THE COMBAT VISUALIZATION THE GAME CORE WAITS ON.
+-- G93 (pin 7ee5812, 1,201 combats): every combat the player can see holds a
+-- serial CombatVis event for ~0.7 s even with QuickCombat live, and the
+-- AI phase waits on it: 300 s of 994 s of AI windows, plus ~330 s in our
+-- own turns, so ~10 min of that game. `DebugTimeScale` (default off) runs
+-- the engine console's `timescale N` through AutoProfiler.RunCommand, which
+-- exists in this context (`debug_api`, G94).
+-- It speeds the UI clock up too (G95: 1.94x, reverted after 10 s), so the
+-- mod's timers run on CivvisClock, which divides the scale back out, and the
+-- other contexts divide their frame deltas by the shared scale. Every turn
+-- end checks that this holds, over windows of at least 30 s of wall time
+-- (Automation.GetTime ticks whole seconds): CivvisClock against the wall
+-- clock within [0.85, 1.15]; the Heartbeat has seen the scale since it was
+-- set; no context that ticked since then read a different scale; and the
+-- Heartbeat's frame deltas are not ahead of the UI clock (<= 1.15) nor so far
+-- behind (< 0.7) that the timescale cannot be scaling them. Any failure reverts
+-- to `timescale 1`, and so does game end, so it never outlives the game.
+CivvisQueue.startTimescale = function(want)
+	want = tonumber(want);
+	if want == nil or want <= 1 or want > 8 or CivvisQueue.timescale ~= nil then return false; end
+	local ack = pcall(function() ExposedMembers.CivvisClockAck = { scale = {}, at = {} }; end);
+	local ran, result = false, "no shared table";
+	if ack then
+		ran, result = pcall(function()
+			return AutoProfiler.RunCommand("timescale " .. tostring(want));
+		end);
+	end
+	local ts = { want = want, applied = ran, applied_ui = CivvisClock.raw() };
+	CivvisQueue.timescale = ts;
+	emit("timescale", { phase = "applied", want = want, ran = ran, result = tostring(result) });
+	if not ran then return false; end
+	-- The command and the shared scale land in one call: no other UI context
+	-- runs between them.
+	if not CivvisClock.setScale(want) then
+		CivvisQueue.resetTimescale("scale_not_shared");
+		return false;
+	end
+	ts.ui0, ts.real0 = CivvisClock.raw(), CivvisClock.now();
+	ts.wall0 = try(function() return Automation.GetTime(); end, nil);
+	return true;
+end;
+
+CivvisQueue.resetTimescale = function(why)
+	local ts = CivvisQueue.timescale;
+	if ts == nil or not ts.applied or ts.reverted then return false; end
+	ts.reverted = true;
+	local ran, result = pcall(function() return AutoProfiler.RunCommand("timescale 1"); end);
+	-- A failed revert leaves the engine scaled, so the timers keep dividing.
+	if ran then CivvisClock.setScale(1); end
+	emit("timescale", { phase = "reverted", why = why, ran = ran, result = tostring(result) });
+	return ran;
+end;
+
+-- ★ AFTER THE LOAD, NOT DURING IT. Initialize runs in the middle of Civ VI's
+-- load (G102: agent loaded at +68 s, turn 1 at +81 s), and with `timescale 3`
+-- applied there the load ran ~10 s longer: Start Game -> turn 1 (net log,
+-- "Validating App Game Configuration" -> "InitialTurnProcessing=1") took 24,
+-- 21, 22 and 27 s in the four 3x games G99-G102, against 13-15 s at 1x and 2x
+-- (median 13 s over 45 games). So the scale is applied at the first
+-- LocalPlayerTurnBegin: every turn still runs at it, and the load runs at 1x.
+CivvisQueue.startPendingTimescale = function()
+	if not CivvisQueue.timescalePending then return false; end
+	CivvisQueue.timescalePending = false;
+	return CivvisQueue.startTimescale(cfg.DebugTimeScale);
+end;
+
+CivvisQueue.checkTimescaleClock = function()
+	local ts = CivvisQueue.timescale;
+	if ts == nil or not ts.applied or ts.reverted then return; end
+	local ui, real = CivvisClock.raw(), CivvisClock.now();
+	local wall = try(function() return Automation.GetTime(); end, nil);
+	if ui == nil or real == nil or type(wall) ~= "number" then return; end
+	if type(ts.wall0) ~= "number" or type(ts.ui0) ~= "number" or type(ts.real0) ~= "number" then
+		ts.ui0, ts.real0, ts.wall0 = ui, real, wall;
+		return;
+	end
+	local wallElapsed = wall - ts.wall0;
+	if wallElapsed < 30 then return; end
+	local function per(x) return math.floor(x / wallElapsed * 100 + 0.5) / 100; end
+	local scale = CivvisClock.scale;
+	local since = type(ts.applied_ui) == "number" and ts.applied_ui or 0;
+	local why, unscaled = nil, {};
+	local heartbeat = false;
+	pcall(function()
+		local ack = ExposedMembers.CivvisClockAck;
+		for name, at in pairs(ack.at) do
+			if type(at) == "number" and at >= since then
+				if name == "Heartbeat" then heartbeat = true; end
+				if ack.scale[name] ~= scale then unscaled[#unscaled + 1] = name; end
+			end
+		end
+	end);
+	local frame = try(function() return ExposedMembers.CivvisFrameClock; end, nil);
+	local frameRatio = nil;
+	if type(frame) == "table" and frame.scale == scale and type(frame.at) == "number"
+			and frame.at >= since then
+		frameRatio = tonumber(frame.ratio);
+	end
+	local realRatio = per(real - ts.real0);
+	emit("timescale_clock", {
+		ui_elapsed = math.floor((ui - ts.ui0) * 10 + 0.5) / 10,
+		wall_elapsed = wallElapsed, ratio = per(ui - ts.ui0), real_ratio = realRatio,
+		scale = scale, heartbeat = heartbeat, unscaled = unscaled, frame_ratio = frameRatio,
+	});
+	ts.ui0, ts.real0, ts.wall0 = ui, real, wall;
+	if realRatio > 1.15 or realRatio < 0.85 then
+		why = "real_clock_off";
+	elseif not heartbeat then
+		why = "heartbeat_unscaled";
+	elseif #unscaled > 0 then
+		why = "context_unscaled";
+	-- Frame deltas AHEAD of the UI clock would hurry the Heartbeat pulse and
+	-- the AutoClose holds, so the ceiling is tight. Behind it is the safe
+	-- side: G96 read 0.91-0.95 at 2x (a long frame's delta is capped, and at
+	-- 2x more frames are long), which only slows the pulses a little. The
+	-- floor catches deltas the timescale does not scale at all (0.5 at 2x).
+	elseif frameRatio ~= nil and frameRatio > 1.15 then
+		why = "frame_clock_off";
+	elseif frameRatio ~= nil and frameRatio < 0.7 then
+		-- Low is the safe side, and one long hitch can drag a single 10 s
+		-- window down (G96 t139: 0.80 between windows of ~1.0). Unscaled
+		-- deltas stay low in every window, so the second one in a row decides.
+		ts.slow_frames = (ts.slow_frames or 0) + 1;
+		if ts.slow_frames >= 2 then why = "frame_clock_off"; end
+	end
+	if frameRatio ~= nil and frameRatio >= 0.7 then ts.slow_frames = 0; end
+	if why ~= nil then CivvisQueue.resetTimescale(why); end
+end;
+
+-- Whether an unanswered deal ask still holds this turn open (see abandon).
+-- Bounded by `DealAnswerHoldSeconds` of the UI clock; a hold from another
+-- turn, or with no clock to bound it, is dropped rather than kept.
+CivvisTrade.holdsEndTurn = function(turn)
+	local hold = CivvisTrade.turnHold;
+	if hold == nil then return false; end
+	local now = CivvisClock.now();
+	local limit = tonumber(cfg.DealAnswerHoldSeconds) or 30;
+	if hold.turn ~= turn or type(now) ~= "number" or type(hold.at) ~= "number"
+			or now < hold.at or now - hold.at >= limit then
+		CivvisTrade.turnHold = nil;
+		emit("deal_turn_hold", { turn = hold.turn, target = hold.target,
+			phase = "released", why = hold.turn ~= turn and "turn_over" or "expired" });
+		return false;
+	end
+	if not hold.reported then
+		hold.reported = true;
+		emit("deal_turn_hold", { turn = turn, target = hold.target, phase = "holding" });
+	end
+	return true;
+end;
+
+-- ★★ A MAJOR'S SESSION THAT NOTHING ANSWERS HOLDS THE TURN FOREVER. G75
+-- (civvis-20261004T194303Z) t133: our peace asks to 2 and 3 made both open
+-- their own MAKE_DEAL session to us. 2's ran at once and was refused; 3's
+-- queued behind it (DiplomacyManager.csv "Adding To Queue", then "Processing
+-- Queued Statement" as its last row) and opened behind an action view the
+-- closer had already dismissed (`session: -1`), so no screen ever showed it.
+-- Civ then un-readied every end turn we sent: 772 `AppRequestTurnUnready`
+-- in 3.5 min, until the watchdog reloaded the autosave. Whatever path leaves
+-- a session open, the end turn bouncing for `OrphanSessionSeconds` (10) is the
+-- evidence, so ask the engine for any session still open with a major and
+-- answer it the shipped way: a rival's own session is refused as
+-- DiplomacyDealView.lua OnRefuseDeal(true) does (SendWorkingDeal REJECTED,
+-- then CloseSession), and one we opened is closed. If it is still open a
+-- second later, try AddResponse NEGATIVE, then a bare CloseSession; after that
+-- give up and say so once. An unanswered-deal hold (`holdsEndTurn`) is
+-- deliberate and is left alone.
+CivvisTrade.answerOrphanSessions = function(turn)
+	local trade = CivvisTrade;
+	local hold = trade.turnHold;
+	if hold ~= nil and hold.turn == turn then return; end
+	local w = CivvisQueue.endTurnWait;
+	local now = CivvisClock.now();
+	if w == nil or w.turn ~= turn or type(now) ~= "number" or type(w.first) ~= "number" then
+		return;
+	end
+	local waited = now - w.first;
+	if waited < (tonumber(cfg.OrphanSessionSeconds) or 10) then return; end
+	local seen = trade.orphans;
+	if seen == nil or seen.turn ~= turn then
+		seen = { turn = turn, sessions = {} };
+		trade.orphans = seen;
+	end
+	if seen.at ~= nil and now >= seen.at and now - seen.at < 1 then return; end
+	seen.at = now;
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if pid == nil or pid < 0 then return; end
+	for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+		local sessionID = other ~= pid and try(function()
+			return DiplomacyManager.FindOpenSessionID(pid, other);
+		end, nil) or nil;
+		if sessionID ~= nil then
+			local tries = (seen.sessions[sessionID] or 0) + 1;
+			seen.sessions[sessionID] = tries;
+			local owned = trade.sessions[other] ~= nil;
+			local info = try(function() return DiplomacyManager.GetSessionInfo(sessionID); end, nil);
+			local from = type(info) == "table" and info.FromPlayer or nil;
+			local theirs = from == other or (from == nil and not owned);
+			local how;
+			if tries == 1 and theirs then
+				how = "refused";
+				pcall(function()
+					DealManager.SendWorkingDeal(DealProposalAction.REJECTED, pid, other);
+				end);
+				pcall(function() DiplomacyManager.CloseSession(sessionID); end);
+			elseif tries == 1 or tries == 3 then
+				how = "closed";
+				pcall(function() DiplomacyManager.CloseSession(sessionID); end);
+			elseif tries == 2 then
+				how = "negative";
+				pcall(function() DiplomacyManager.AddResponse(sessionID, pid, "NEGATIVE"); end);
+			end
+			if how ~= nil then
+				local open = try(function() return DiplomacyManager.IsSessionIDOpen(sessionID); end, nil);
+				if owned and trade.sessions[other].peace_pending ~= nil then
+					trade.settlePeace(pid, other, "orphaned", true);
+				elseif owned then
+					trade.close(pid, other, "orphaned", true);
+				end
+				emit("orphan_session_answered", {
+					turn = turn, target = other, session = sessionID, owned = owned,
+					initiator = from, how = how, try = tries,
+					waited = math.floor(waited * 10 + 0.5) / 10, requests = w.requests,
+					still_open = open,
+					queued = try(function() return DiplomacyManager.HasQueuedSession(pid); end, nil),
+				});
+			elseif tries == 4 then
+				emit("orphan_session_stuck", { turn = turn, target = other, session = sessionID });
+			end
+		end
+	end
+end;
+
 -- Submission is not acceptance: the host may still be settling a movement.
 CivvisQueue.requestEndTurn = function(turn, parameters)
+	-- Before the sent-turn guard: a session can hold the turn in either state.
+	CivvisTrade.answerOrphanSessions(turn);
 	-- ActionPanel.lua:505-506 uses the same guard for automatic end turns.
 	-- Submission can already be pending while settlement/UI callbacks arrive.
 	-- A refusal clears the host flag, so later callbacks can still retry.
 	if try(function() return UI.HasSentTurnComplete(); end, false) == true then
 		return false;
 	end
+	-- Forced or not: the wedge needs only the turn to end under the reply.
+	if CivvisTrade.holdsEndTurn(turn) then return false; end
 	-- The completion flag can clear repeatedly while the host rejects a turn.
 	-- Native t208 logged 7,843 unready requests, up to 70 in one second. Bound
 	-- retries across ALL callbacks, not just the divided game-core tick. The
 	-- shipped PlotToolTip.lua:879 uses this clock for a seconds-based delay.
-	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	-- (In real seconds: see CivvisClock.)
+	local now = CivvisClock.now();
 	if type(now) == "number" and now == now and now >= 0 and now < math.huge then
 		local previous = CivvisQueue.endTurnSubmittedAt;
 		if CivvisQueue.endTurnSubmittedTurn == turn and previous ~= nil
@@ -19482,6 +20231,7 @@ CivvisQueue.requestEndTurn = function(turn, parameters)
 		CivvisQueue.endTurnSubmittedAt = now;
 	end
 	CivvisQueue.endTurnRetryTurn = turn;
+	CivvisQueue.noteEndTurnRequest(turn, now, parameters ~= nil);
 	if parameters == nil then
 		UI.RequestAction(ActionTypes.ACTION_ENDTURN);
 	else
@@ -19493,6 +20243,7 @@ local function tick()
 	if finished or inTick or cfg.Play == false then return; end
 	inTick = true;
 	CivvisQueue.controllerTicks = (CivvisQueue.controllerTicks or 0) + 1;
+	CivvisQueue.lastTickAt = CivvisClock.now();
 	local ok, err = pcall(function()
 		-- ★★★★ RETIRE, WHICH IS HOW A QUIT GAME GETS A RESULT AT ALL.
 		--
@@ -19788,14 +20539,20 @@ local function tick()
 						-- only matters at the sessions a leader can win from. Below
 						-- `DiploVictoryVoteFloor` points (12: four sessions of +2 from
 						-- twenty) the free vote is still cast against the leader and
-						-- nothing is spent; from there every session spends the bank.
+						-- nothing is spent; from there each session spends its share
+						-- of the bank (`CivvisCongressBallotBank`).
 						local floor = cfg.DiploVictoryVoteFloor or 12;
 						local maxVotes = tonumber(costs.MaxVotes) or 1;
 						-- Use the active game's host prices. Retain the Standard
 						-- comparison in the verdict for diagnosing pricing, without
 						-- limiting an Online ballot by a different speed's costs.
-						local budget, budgetHost, budgetStandard =
-							CivvisCongressVoteBudget(favor, costs, maxVotes);
+						-- See `CivvisCongressBallotBank`: the share of the
+						-- bank this session may spend.
+						local budget, budgetHost, budgetStandard = CivvisCongressVoteBudget(
+							CivvisCongressBallotBank(favor, leaderPoints, cfg,
+								tonumber(envoyTally.wc_review_favor) ~= nil
+									and favor < tonumber(envoyTally.wc_review_favor)),
+							costs, maxVotes);
 						envoyTally.ballot_budget =
 							{ host = budgetHost, standard = budgetStandard };
 						local n = 1;
@@ -19846,12 +20603,37 @@ local function tick()
 						-- Native t201 of civvis-20260927T132350Z-cont1: our 13
 						-- A/self votes joined the leader's 14 A votes against 18 B
 						-- votes; the leader, not us, received the +2 and won.
-						if ourIdx ~= nil and budget >= claim
-							and (tonumber(leaderPoints) or 0) < floor then
+						--
+						-- ★★★ AND FROM THE FLOOR, A CLAIM THAT OUTVOTES EVERY BLOCK.
+						-- Option A's +2 lands on whoever casts the largest A block,
+						-- and each rival votes A for itself: a B ballot against the
+						-- leader we picked does nothing to the rival with the
+						-- biggest block. Live King civvis-20261005T042226Z (game
+						-- 99) cast 10 B votes against Mapuche (15 DVP, picked on a
+						-- tie by score) at t221; option A won 14-10, Brazil's 8 A
+						-- votes for itself took the +2, and Brazil won on Diplomacy
+						-- at 222. Those 10 votes as an A claim were the biggest
+						-- block. So from the floor, when the session's share of the
+						-- bank buys `DiploVictoryOutvoteFactor` (2) times the largest
+						-- rival A block of the last session (`wc_rival_block`), the
+						-- ballot claims instead ("outvote"). The factor covers a
+						-- rival block that grew since (Brazil 4 -> 8); native t201
+						-- of T132350Z-cont1, our 13 against the leader's 14, stays a
+						-- denial. Off with `DiploVictoryOutvoteClaim = false`.
+						-- Below the floor too: game 102's Aztecs went 5 -> 10 -> 15
+						-- -> 20 with the leader by points under 12 at two of those
+						-- sessions, each +2 taken by a 4-6 vote block.
+						if ourIdx ~= nil and ((budget >= claim
+							and (tonumber(leaderPoints) or 0) < floor)
+							or (cfg.DiploVictoryOutvoteClaim ~= false
+								and tonumber(envoyTally.wc_rival_block) ~= nil
+								and budget >= (tonumber(cfg.DiploVictoryOutvoteFactor) or 2)
+									* math.max(tonumber(envoyTally.wc_rival_block), 1))) then
 							option = 1;
 							selection = ourIdx;
 							n = budget;
-							mode = "claim";
+							mode = (budget >= claim and (tonumber(leaderPoints) or 0) < floor)
+								and "claim" or "outvote";
 						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;
@@ -20662,17 +21444,55 @@ end
 -- queries the notification system and the turn state before deciding it has
 -- nothing to do -- so acting on all of them spends the game's own frame budget
 -- on asking whether there is anything to spend it on.
+-- ★★★ THE ANSWER WAITED FOR THE NEXT POLL, NOT FOR THE BRAIN.
+--
+-- With the relay and the decider fast, a board's orders are in the channel
+-- 0.06 s after the board leaves (median, G66 civvis-20261004T164910Z), but
+-- the poll above runs every `OrdersPollTicks` ticks of `TickEvery` publish
+-- batches, and a game sitting on its turn publishes slowly: the mod read
+-- them 0.27 s later (median; mean 0.41, p90 0.66) -- 85% of every frame's
+-- round trip, three frames a turn.
+--
+-- So while a board is out, each publish batch may PEEK at the channel's
+-- one-row `ready` marker -- the same query the poll starts with -- at most
+-- once per `OrdersPeekSeconds` of the UI clock (`requestEndTurn`'s clock).
+-- A hit runs the tick now and makes its poll read the answer. ⚠ The peek is
+-- wall-clock bounded, never per batch: a query on EVERY publish batch is
+-- what deadlocked civvis-20260730T110209Z, and 20 a second at most is two
+-- orders of magnitude short of that. The poll's own cadence, and the poll
+-- budgets counted in it, are untouched; a miss changes nothing.
+CivvisQueue.ordersLanded = function()
+	if cfg.Play == false or not cfg.CivvisDecides or awaiting.done
+			or awaiting.turn == nil or awaiting.turn < 0 then
+		return false;
+	end
+	local now = CivvisClock.now();
+	if type(now) ~= "number" or now ~= now then return false; end
+	local last = CivvisQueue.ordersPeekAt;
+	if last ~= nil and now >= last
+			and now - last < (tonumber(cfg.OrdersPeekSeconds) or 0.05) then
+		return false;
+	end
+	CivvisQueue.ordersPeekAt = now;
+	local ready = ordersReady(awaiting.turn, awaiting.frame or 0);
+	return ready ~= nil and ready >= 0;
+end;
+
 local function onGameCoreTick()
 	ensureStarted();
 	CivvisTrade.pollPeace();
 	ticksSeen = ticksSeen + 1;
-	if ticksSeen % (cfg.TickEvery or 16) ~= 0 then return; end
+	if ticksSeen % (cfg.TickEvery or 16) ~= 0 then
+		if not CivvisQueue.ordersLanded() then return; end
+		CivvisQueue.forcePoll = true;
+	end
 	ticksTaken = ticksTaken + 1;
 	tick();
 end
 
 local function onLocalPlayerTurnBegin()
 	ensureStarted();
+	pcall(CivvisQueue.startPendingTimescale);
 	CivvisTrade.pollPeace();
 	tick();
 end
@@ -20734,6 +21554,7 @@ CivvisQueue.onUiPulse = function(source)
 	local rejected = finished and "finished" or inTick and "in_tick"
 		or cfg.Play == false and "disabled" or not cfg.CivvisDecides and "standalone";
 	if rejected then CivvisQueue.noteUiPulse(source, rejected); return; end
+	pcall(CivvisQueue.checkAiPhaseStall);
 	local serial = CivvisQueue.controllerTicks or 0;
 	if CivvisQueue.lastUiTick ~= serial then
 		CivvisQueue.noteUiPulse(source, "observing");
@@ -20754,7 +21575,36 @@ CivvisQueue.onUiPulse = function(source)
 	CivvisQueue.lastUiTick = CivvisQueue.controllerTicks or 0;
 end;
 
+-- ★★ A QUIET GAME CORE HELD LANDED ORDERS ~1 S.
+--
+-- `CivvisQueue.ordersLanded` peeks from game-core publish batches, and so does
+-- the poll; while the core publishes nothing there is no tick to peek from.
+-- In G69 (civvis-20261004T180652Z, the peek's first game) every frame whose
+-- landed orders waited over 0.7 s was such a drought: no mod line at all for
+-- 0.7-1.1 s after the brain's write, mostly right after a combat frame (8 of
+-- 64 combat frames vs 3 of 85 replan frames); the 1 s UI pulse above never
+-- fired because the core resumed first. The HUD's per-frame clock does not
+-- stop with the core, so it raises `CivvisControlPeek` every
+-- `OrdersPeekSeconds` and this asks the same bounded peek -- one `ready` query
+-- per 50 ms shared with the publish-batch path, nothing at all unless a CIVVIS
+-- board is out. A hit ticks with the forced poll, exactly as a batch hit does.
+-- `orders_peek_wake` says how long the controller had gone without a tick.
+CivvisQueue.onPeekPulse = function()
+	if finished or inTick or cfg.Play == false or not cfg.CivvisDecides then return; end
+	if not CivvisQueue.ordersLanded() then return; end
+	local now = CivvisClock.now();
+	local last = CivvisQueue.lastTickAt;
+	emit("orders_peek_wake", {
+		turn = awaiting.turn, frame = awaiting.frame or 0,
+		since_tick = (type(now) == "number" and type(last) == "number")
+			and math.floor((now - last) * 1000 + 0.5) / 1000 or nil,
+	});
+	CivvisQueue.forcePoll = true;
+	tick();
+end;
+
 local function onTeamVictory(team, victoryType, eventID)
+	pcall(CivvisQueue.resetTimescale, "game_over");
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
 	local ourTeam = try(function()
 		return (pid ~= nil and pid >= 0) and Players[pid]:GetTeam() or -1;
@@ -20774,7 +21624,10 @@ end
 
 local function onPlayerDefeat(player, defeat, eventID)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
-	if player == pid then finished = true; end
+	if player == pid then
+		finished = true;
+		pcall(CivvisQueue.resetTimescale, "defeated");
+	end
 	emit("defeat", {
 		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
 		player = player, defeat = defeat, local_player = pid,
@@ -20950,9 +21803,23 @@ end;
 
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false });
+	-- RECORD-ONLY. Combat visualization is a serial event the game core waits
+	-- on (G93: +0.69 s of AI phase per visible combat, even with QuickCombat).
+	-- The engine's console has `timescale <value>`, and Firaxis's own
+	-- Automation_Profile.lua reaches console commands through
+	-- `AutoProfiler.RunCommand`. Whether that table exists in this context
+	-- decides whether a timescale arm is possible at all.
+	emit("debug_api", {
+		autoprofiler = try(function() return type(AutoProfiler); end, "error"),
+		run_command = try(function() return type(AutoProfiler.RunCommand); end, "error"),
+	});
+	-- The timescale waits for turn 1: see CivvisQueue.startPendingTimescale.
+	CivvisQueue.timescalePending = true;
 	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse); end);
+	pcall(function() LuaEvents.CivvisControlPeek.Add(CivvisQueue.onPeekPulse); end);
 	for name, handler in pairs({
 		LocalPlayerTurnBegin = onLocalPlayerTurnBegin,
+		LocalPlayerTurnEnd = function() CivvisQueue.onLocalTurnEnd(); end,
 		GameCoreEventPublishComplete = onGameCoreTick,
 		EndTurnBlockingChanged = onEndTurnBlockingChanged,
 		UnitMoveComplete = function(player, unitId) CivvisQueue.onUnitSettled(player, unitId); end,
@@ -20965,7 +21832,18 @@ function Initialize()
 		DiplomacyStatement = CivvisOnDiplomacyStatement,
 		DiplomacySessionClosed = CivvisOnDealSessionClosed,
 		EmergencyAvailable = CivvisOnAidEmergencyAvailable,
-		LoadGameViewStateDone = ensureStarted,
+		-- RECORD-ONLY: when the load view finished. Game start is the load
+		-- screen's `OnActivateButtonClicked`, and its StartGame action only
+		-- counts after `OnLoadGameViewStateDone` sets `m_isLoadComplete`
+		-- (Base/Assets/UI/FrontEnd/LoadScreen.lua:93-97, :459). ensureStarted
+		-- dismisses once, as soon as a turn exists; turn 1 then began 1.3-2.5 s
+		-- later in most games but 4.9, 10.0 and 17.1 s in others (G100, G99,
+		-- G93). This row against `actions` (the dismissal) and `seat` (turn 1)
+		-- says whether that wait is the load or a dismissal sent too early.
+		LoadGameViewStateDone = function()
+			emit("load_view_done", { ui_now = CivvisClock.raw() });
+			ensureStarted();
+		end,
 		TeamVictory = onTeamVictory,
 		PlayerDefeat = onPlayerDefeat,
 		-- The tactical ledger: see CivvisLedger.

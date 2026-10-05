@@ -24433,6 +24433,71 @@ fn a_live_embarked_settler_holds_without_a_naval_guard() {
     assert_ne!(native_game.units[&settler].pos, first_water);
 }
 
+/// See `naval_escort_patience`: an embarked Settler holds for its naval
+/// escort two turns, then crosses alone on a quiet sea, and keeps holding
+/// while a hostile ship is in reach.
+#[test]
+fn an_embarked_settler_crosses_alone_after_waiting_on_a_quiet_sea() {
+    let (mut game, source, target) = island_colony_game();
+    game.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    for uid in game.player_unit_ids(0) {
+        game.remove_unit(uid);
+    }
+    let probe = game.spawn_test_unit("settler", 0, source);
+    let first_water = game
+        .route_step(probe, target, 0)
+        .expect("the overseas route has a first water tile");
+    game.remove_unit(probe);
+    let settler = game.spawn_test_unit("settler", 0, first_water);
+    let land_guard = game.spawn_test_unit("warrior", 0, first_water);
+    let journey = |ai: &mut AdvancedAi| {
+        ai.enable_live_formationless_settler_shadow();
+        ai.enable_live_settler_capture_lessons();
+        ai.settler_targets.insert(settler, target);
+        ai.settler_escort_journeys.insert(settler, SettlerEscortJourney { home: source, target });
+        ai.settler_guards.insert(settler, land_guard);
+    };
+    let mut live = AdvancedAi::new();
+    journey(&mut live);
+    live.enable_naval_escort_patience();
+    let mut threatened = game.clone();
+    let mut wary = AdvancedAi::new();
+    journey(&mut wary);
+    wary.enable_naval_escort_patience();
+    let barbarian = threatened.players.iter().position(|p| p.is_barbarian).expect("a barbarian seat");
+    let raider_tile = threatened
+        .wdisk(first_water, 3)
+        .into_iter()
+        .find(|pos| *pos != first_water
+            && threatened.map.get(*pos).is_some_and(|tile| threatened.rules.is_water(tile))
+            && threatened.unit_ids_at(*pos).is_empty())
+        .expect("open water near the crossing");
+    threatened.spawn_test_unit("galley", barbarian, raider_tile);
+    assert!(AdvancedAi::hostile_ship_near(&threatened, 0, first_water, 6));
+    assert!(!AdvancedAi::hostile_ship_near(&game, 0, first_water, 6));
+
+    for turn in 0..2 {
+        assert!(
+            !live.settler_step_out_of_reach(&mut game, 0, settler, target),
+            "held on turn {turn} of its patience"
+        );
+        assert_eq!(game.units[&settler].pos, first_water);
+        game.turn += 1;
+    }
+    for _ in 0..3 {
+        assert!(!wary.settler_step_out_of_reach(&mut threatened, 0, settler, target));
+        threatened.turn += 1;
+    }
+    assert_eq!(threatened.units[&settler].pos, first_water, "a hostile ship in reach keeps the hold");
+    assert!(
+        live.settler_step_out_of_reach(&mut game, 0, settler, target),
+        "the third turn crosses alone on a quiet sea"
+    );
+    assert_ne!(game.units[&settler].pos, first_water);
+}
+
 /// Once a naval unit occupies the water layer and can mirror the next step,
 /// the live floor permits the embarked expedition to advance.
 #[test]
@@ -51214,4 +51279,139 @@ fn a_doomed_small_capture_is_razed_under_the_gene() {
     };
     assert!(build(false), "the shipped rules keep it");
     assert!(!build(true), "razed rather than handed back");
+}
+
+/// A living major whose cities we have never seen is a holdout at zero for
+/// `conversion-majority-alarm-2`, not skipped: skipped, the founder's
+/// progress read 100 off our own converted cities alone (Indonesia, live
+/// game 63, declared on at 0.74 times its power).
+#[test]
+fn an_unseen_major_is_an_unconverted_holdout() {
+    let mut game = Game::new(3, 40, 26, 8_402, 250, 0);
+    let faith = "Test Faith".to_string();
+    // Player 1 founded the faith; player 0 is ours, fully converted.
+    game.players[1].religion = Some(faith.clone());
+    for x in [10, 14] {
+        let city = game.found_city_for(0, (x, 10), None);
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .pressure
+            .insert(faith.clone(), 500.0);
+    }
+    game.found_city_for(1, (20, 10), None);
+    // Player 2 is alive but owns no city on our board.
+    for city in game.player_city_ids(2) {
+        game.cities.remove(&city);
+    }
+    assert!(game.players[2].alive);
+    assert!(game.player_city_ids(2).is_empty());
+    let mut ai = AdvancedAi::new();
+    ai.enable_conversion_majority_alarm_2();
+    assert_eq!(ai.conversion_majority_pressure(&game, 1), 0);
+}
+
+/// See `advanced/faith_veto.rs`: a faithless Domination seat enters the
+/// Prophet race once a rival faith holds two of four majors (the
+/// early-warning bar) and a slot is open, and only under the gene.
+#[test]
+fn a_rival_faith_at_the_bar_opens_the_prophet_race_for_a_faithless_conqueror() {
+    let mut game = Game::new_full(4, 34, 20, 76_108, 120, 0, false);
+    for pid in 0..3 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        let at = game.units[&settler].pos;
+        game.remove_unit(settler);
+        game.found_city_for(pid, at, None);
+    }
+    for tech in ["animal_husbandry", "mining"] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+    let capital = game.player_city_ids(0)[0];
+    let anchor = game.cities[&capital].pos;
+    found_nearby_test_city(&mut game, 0, anchor);
+    let faith = "Rival Faith".to_string();
+    game.players[1].religion = Some(faith.clone());
+    for pid in [1, 2] {
+        for city in game.player_city_ids(pid) {
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert(faith.clone(), 5_000.0);
+        }
+    }
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert!(!ai.faith_veto_due(&game, 0), "off");
+    ai.enable_found_against_a_rival_faith();
+    assert!(ai.faith_veto_due(&game, 0));
+    assert!(ai.prophet_race_enterable_for(&game, 0, Some(VictoryTarget::Domination)));
+    ai.advanced_research(&mut game, 0, &plan);
+    assert_eq!(game.players[0].research.as_deref(), Some("astrology"));
+    // No rival faith at the bar: no race.
+    let mut quiet = game.clone();
+    for city in quiet.player_city_ids(2) {
+        quiet.cities.get_mut(&city).unwrap().pressure.clear();
+    }
+    assert!(!ai.faith_veto_due(&quiet, 0));
+}
+
+/// See `AdvancedAi::breaker_commitment_holds`: a queued siege gun with
+/// production in it keeps its city's queue against the strategic scorer,
+/// unless the city is threatened or nothing is invested yet.
+#[test]
+fn a_reserved_gun_keeps_its_queue_against_the_scorer() {
+    let mut game = Game::new(2, 24, 16, 61_501, 200, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let city = game.player_city_ids(0)[0];
+    let gun = Item::Unit { unit: crate::name!("catapult") };
+    assert!(game.rules.units[&crate::name!("catapult")].siege);
+    {
+        let c = game.cities.get_mut(&city).unwrap();
+        c.queue = vec![gun.clone()];
+        c.production = 20.0;
+    }
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.breaker_commitment_holds(&game, city, &gun, &plan), "off by default");
+    ai.enable_breaker_keeps_its_queue();
+    assert!(ai.breaker_commitment_holds(&game, city, &gun, &plan));
+    let threatened = StrategicPlan { threatened_city: Some(city), ..plan.clone() };
+    assert!(!ai.breaker_commitment_holds(&game, city, &gun, &threatened), "a threatened city gives it up");
+    game.cities.get_mut(&city).unwrap().production = 0.0;
+    assert!(!ai.breaker_commitment_holds(&game, city, &gun, &plan), "nothing invested yet");
+    let horse = Item::Unit { unit: crate::name!("horseman") };
+    assert!(!ai.breaker_commitment_holds(&game, city, &horse, &plan), "not a gun");
+}
+
+#[test]
+fn dialogue_never_declares_war_is_a_native_opt_in_off_in_both_controllers() {
+    super::test_support::opt_in_off_in_both_controllers("dialogue-never-declares-war", |ai| {
+        ai.dialogue_never_declares_war_enabled()
+    });
 }

@@ -39,6 +39,14 @@ const RAID_HEAL: f64 = 0.8;
 /// The denial worth of taking a district's yields away from its owner, on
 /// top of its plunder, and the smaller worth of a pillaged improvement.
 const RAID_DISTRICT_DENIAL: f64 = 40.0;
+/// `raids-cut-tourism`: what pillaging a Theater Square of the rival whose
+/// culture clock the campaign is countering adds, on top of the district
+/// denial. Its Great Works yield no Tourism while the district stands
+/// pillaged. Live King civvis-20261003T115745Z (game 35) was at war with
+/// Hungary, the eventual culture winner, from turn 67 to its victory at
+/// 200 and pillaged five tiles, none a Theater Square; game 36 pillaged
+/// nothing in 93 turns at war with the Ottomans, who won on culture at 193.
+const RAID_TOURISM_DENIAL: f64 = 120.0;
 const RAID_IMPROVEMENT_DENIAL: f64 = 8.0;
 /// Each tile of distance from the objective costs this much: a raider that
 /// stays near the city is a capture body again next turn.
@@ -222,6 +230,15 @@ impl AdvancedAi {
                 .map
                 .get(tile)
                 .is_some_and(|t| t.improvement.is_none() && t.district.is_some());
+            // See `RAID_TOURISM_DENIAL`.
+            let tourism = self.raids_cut_tourism
+                && g.map.get(tile).is_some_and(|t| {
+                    t.district
+                        .is_some_and(|d| g.district_family(d) == "theater_square")
+                        && t.owner_city
+                            .and_then(|cid| g.cities.get(&cid))
+                            .is_some_and(|city| self.culture_clock_rival(g, city.owner))
+                });
             let before = (
                 board.players[pid].gold,
                 board.players[pid].research_overflow,
@@ -253,6 +270,7 @@ impl AdvancedAi {
                 } else {
                     RAID_IMPROVEMENT_DENIAL
                 }
+                + if tourism { RAID_TOURISM_DENIAL } else { 0.0 }
                 - f64::from(g.wdist(tile, objective)) * RAID_DISTANCE_COST;
             if value > 0.0
                 && best.as_ref().is_none_or(|(old, old_tile, _)| {
@@ -263,6 +281,20 @@ impl AdvancedAi {
             }
         }
         best
+    }
+}
+
+impl AdvancedAi {
+    /// `raids-cut-tourism`: whether `rival` is the culture clock a
+    /// Domination campaign counters: its race projected to finish soon
+    /// (`nearest_finish_culture_clock`), or its own best lane Culture at the
+    /// counter's bar.
+    pub(crate) fn culture_clock_rival(&self, g: &Game, rival: usize) -> bool {
+        self.nearest_finish_culture_clock(g, rival).is_some() || {
+            let pressure = self.rival_victory_pressure(g, rival);
+            pressure.strategy == GrandStrategy::Culture
+                && self.domination_counter_pressure(g, pressure)
+        }
     }
 }
 

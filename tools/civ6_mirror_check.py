@@ -134,13 +134,14 @@ UNIT_MODEL_FALLBACKS = {
     "barbarian_horse_archer": "barbarian_horse_archer",
     # Firaxis's Scythian Horse Archer shares the modeled Saka role.
     "horse_archer": "saka_horse_archer",
-    # Exact stock roles from Firaxis's UnitReplaces table. CIVVIS does not yet
-    # carry these unique specifications, but it must not erase the visible unit.
-    "scottish_highlander": "ranger",
-    "korean_hwacha": "field_cannon",
-    # Georgia's Khevsureti replaces Man-at-Arms. The live rival export omits
-    # base/class for it, so mirror the explicit bridge used by mirror.rs.
-    "georgian_khevsureti": "man_at_arms",
+    # Modeled uniques whose host spelling no qualifier-stripping reaches;
+    # mirror the explicit bridge in mirror.rs `civvis_unit_name`.
+    "scottish_highlander": "highlander",
+    "korean_hwacha": "hwacha",
+    "georgian_khevsureti": "khevsureti",
+    "english_seadog": "sea_dog",
+    "german_uboat": "u_boat",
+    "american_p51": "p51_mustang",
 }
 RESOURCE_RULES = json.loads(
     (Path(__file__).resolve().parent.parent / "data" / "resources.json").read_text()

@@ -140,6 +140,49 @@ fn counterfaith_cannot_finish_another_founders_victory() {
     assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
 }
 
+/// See `sanctuary_queue_held`: under the gene, walls at the head and a
+/// district that already holds production keep their city.
+#[test]
+fn a_held_queue_keeps_its_city_under_the_gene() {
+    let walls = Item::Building {
+        building: crate::name!("walls"),
+    };
+    let reserved = |held: Item, production: f64, gene: bool| {
+        let (mut g, mut ai, plan, home) = fixture();
+        if gene {
+            ai.enable_sanctuary_yields_a_held_queue();
+        }
+        let city = g.cities.get_mut(&home).unwrap();
+        city.queue = vec![held];
+        city.production = production;
+        ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+        g.cities[&home].queue.first().cloned()
+    };
+    let holy = |item: &Option<Item>| matches!(item, Some(Item::District { district, .. }) if district == "holy_site");
+    assert!(
+        holy(&reserved(walls.clone(), 0.0, false)),
+        "off, the sanctuary takes the walls' queue"
+    );
+    assert_eq!(
+        reserved(walls.clone(), 0.0, true),
+        Some(walls),
+        "the walls keep their queue"
+    );
+    let theater = Item::District {
+        district: crate::name!("theater_square"),
+        pos: (5, 5),
+    };
+    assert!(
+        holy(&reserved(theater.clone(), 0.0, true)),
+        "an unstarted district yields"
+    );
+    assert_eq!(
+        reserved(theater.clone(), 12.0, true),
+        Some(theater),
+        "a started one holds"
+    );
+}
+
 #[test]
 fn repeated_reservation_does_not_start_a_second_supplier() {
     let (mut g, ai, plan, home) = fixture();
@@ -162,6 +205,41 @@ fn repeated_reservation_does_not_start_a_second_supplier() {
             .count(),
         1
     );
+}
+
+#[test]
+fn one_sanctuary_does_not_chase_the_counterfaith_into_a_second_city() {
+    for gene in [false, true] {
+        let (mut g, mut ai, plan, home) = fixture();
+        if gene {
+            ai.enable_one_sanctuary();
+        }
+        ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+        assert!(g.cities[&home].queue.first().is_some_and(
+            |item| matches!(item, Item::District { district, .. } if district == "holy_site")
+        ));
+        // The supplier converts to the threat; another city takes up the
+        // counterfaith. Live King 20261004T094143Z: four cities by turn 98.
+        let other = g
+            .player_city_ids(0)
+            .into_iter()
+            .find(|cid| *cid != home)
+            .unwrap();
+        for (cid, faith) in [(home, "Buddhism"), (other, "Orthodoxy")] {
+            let city = g.cities.get_mut(&cid).unwrap();
+            city.pressure.clear();
+            city.pressure.insert(faith.into(), 1000.0);
+        }
+        let choice = ai.adopted_faith_sanctuary_choice(&g, 0, None);
+        if gene {
+            assert!(choice.is_none(), "{choice:?}");
+        } else {
+            assert!(matches!(
+                choice,
+                Some((cid, Item::District { district, .. })) if cid == other && district == "holy_site"
+            ));
+        }
+    }
 }
 
 #[test]

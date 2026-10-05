@@ -263,30 +263,25 @@ def orders_ledger(events_path: Path) -> dict | None:
     reported_by_turn: dict[int, int] = {}
     verified_by_turn: dict[int, int] = {}
     counted = False
-    with events_path.open() as handle:
-        for line in handle:
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
+    for event in events_of(events_path):
+        if event.get("ctx") != "agent":
+            continue
+        kind = event.get("kind")
+        turn = int(event.get("turn") or 0)
+        if kind == "turn":
+            if event.get("orders_seen") is None:
                 continue
-            if event.get("ctx") != "agent":
-                continue
-            kind = event.get("kind")
-            turn = int(event.get("turn") or 0)
-            if kind == "turn":
-                if event.get("orders_seen") is None:
-                    continue
-                counted = True
-                seen += int(event.get("orders_seen") or 0)
-                ok = event.get("orders_reported")
-                if ok is None:
-                    ok = event.get("orders_applied")
-                reported += int(ok or 0)
-                reported_by_turn[turn] = reported_by_turn.get(turn, 0) + int(ok or 0)
-            elif kind == "turn_verified":
-                counted = True
-                verified = int(event.get("orders_applied") or 0)
-                verified_by_turn[turn] = verified_by_turn.get(turn, 0) + verified
+            counted = True
+            seen += int(event.get("orders_seen") or 0)
+            ok = event.get("orders_reported")
+            if ok is None:
+                ok = event.get("orders_applied")
+            reported += int(ok or 0)
+            reported_by_turn[turn] = reported_by_turn.get(turn, 0) + int(ok or 0)
+        elif kind == "turn_verified":
+            counted = True
+            verified = int(event.get("orders_applied") or 0)
+            verified_by_turn[turn] = verified_by_turn.get(turn, 0) + verified
     if not counted:
         return None
     applied = sum(verified_by_turn.get(turn, ok)
@@ -341,33 +336,28 @@ def seat_autonomy(events_path: Path) -> dict | None:
         return None
     unit_orders = unit_orders_applied = engine_explored = guarded = 0
     saw_orders = False
-    with events_path.open(encoding="utf-8", errors="replace") as handle:
-        for line in handle:
-            try:
-                event = json.loads(line)
-            except (ValueError, TypeError):
-                continue          # a game can die mid-write; skip the tail
-            if not isinstance(event, dict) or event.get("kind") != "orders":
+    for event in events_of(events_path):
+        if not isinstance(event, dict) or event.get("kind") != "orders":
+            continue
+        saw_orders = True
+        for field, bucket in (("seen_by", "authored"), ("by", "applied")):
+            by_kind = event.get(field)
+            if not isinstance(by_kind, dict):
                 continue
-            saw_orders = True
-            for field, bucket in (("seen_by", "authored"), ("by", "applied")):
-                by_kind = event.get(field)
-                if not isinstance(by_kind, dict):
-                    continue
-                count = by_kind.get("unit")
-                if isinstance(count, int) and not isinstance(count, bool):
-                    if bucket == "authored":
-                        unit_orders += max(0, count)
-                    else:
-                        unit_orders_applied += max(0, count)
-            for name, target in (("explored", "explored"),
-                                 ("explore_guarded", "guarded")):
-                value = event.get(name)
-                if isinstance(value, int) and not isinstance(value, bool):
-                    if target == "explored":
-                        engine_explored += max(0, value)
-                    else:
-                        guarded += max(0, value)
+            count = by_kind.get("unit")
+            if isinstance(count, int) and not isinstance(count, bool):
+                if bucket == "authored":
+                    unit_orders += max(0, count)
+                else:
+                    unit_orders_applied += max(0, count)
+        for name, target in (("explored", "explored"),
+                             ("explore_guarded", "guarded")):
+            value = event.get(name)
+            if isinstance(value, int) and not isinstance(value, bool):
+                if target == "explored":
+                    engine_explored += max(0, value)
+                else:
+                    guarded += max(0, value)
     if not saw_orders:
         return None
     decided = unit_orders + engine_explored
@@ -424,50 +414,42 @@ def combat_totals(events_path: Path) -> dict | None:
 
     events = []
     local_player = None
-    with open_events(events_path) as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(event, dict):
-                continue
-            kind = event.get("kind")
-            if kind == "seat" and isinstance(event.get("local_player"), int):
-                local_player = event["local_player"]
-            if kind in ("combat", "unit_lost", "city_lost", "city_occupation", "found", "order_verified",
-                        "order_failed", "host_move", "move_noop", "move_fallback"):
-                events.append(event)
-            elif kind == "state":
-                # The first frame of each turn is the board a death turn began
-                # on. Preserve the treasury and visible threats used to
-                # classify roster disappearances as well as unit health.
-                # City rosters reconcile missing/repeated occupation callbacks;
-                # rivals link pre-capture identities, and `found` distinguishes
-                # a new settlement on a razed plot from a recapture.
-                units = event.get("units")
-                rivals = event.get("rivals")
-                events.append({
-                    "kind": "state",
-                    "turn": event.get("turn"),
-                    "frame": event.get("frame"),
-                    "gold": event.get("gold"),
-                    "hostiles": event.get("hostiles"),
-                    "cities": city_roster(event.get("cities")),
-                    "rivals": [
-                        {"player": rival.get("player"), "cities": city_roster(rival.get("cities"))}
-                        for rival in (rivals if isinstance(rivals, list) else [])
-                        if isinstance(rival, dict)
-                    ],
-                    "units": [
-                        {key: unit.get(key) for key in ("id", "kind", "x", "y", "hp", "combat", "ranged")}
-                        for unit in (units if isinstance(units, list) else [])
-                        if isinstance(unit, dict)
-                    ],
-                })
+    for event in events_of(events_path):
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("kind")
+        if kind == "seat" and isinstance(event.get("local_player"), int):
+            local_player = event["local_player"]
+        if kind in ("combat", "unit_lost", "city_lost", "city_occupation", "found", "order_verified",
+                    "order_failed", "host_move", "move_noop", "move_fallback"):
+            events.append(event)
+        elif kind == "state":
+            # The first frame of each turn is the board a death turn began
+            # on. Preserve the treasury and visible threats used to
+            # classify roster disappearances as well as unit health.
+            # City rosters reconcile missing/repeated occupation callbacks;
+            # rivals link pre-capture identities, and `found` distinguishes
+            # a new settlement on a razed plot from a recapture.
+            units = event.get("units")
+            rivals = event.get("rivals")
+            events.append({
+                "kind": "state",
+                "turn": event.get("turn"),
+                "frame": event.get("frame"),
+                "gold": event.get("gold"),
+                "hostiles": event.get("hostiles"),
+                "cities": city_roster(event.get("cities")),
+                "rivals": [
+                    {"player": rival.get("player"), "cities": city_roster(rival.get("cities"))}
+                    for rival in (rivals if isinstance(rivals, list) else [])
+                    if isinstance(rival, dict)
+                ],
+                "units": [
+                    {key: unit.get(key) for key in ("id", "kind", "x", "y", "hp", "combat", "ranged")}
+                    for unit in (units if isinstance(units, list) else [])
+                    if isinstance(unit, dict)
+                ],
+            })
     combat = civ6_tactics_ledger.combat_section(events, local_player)
     if combat is None:
         return None
@@ -526,33 +508,25 @@ def boost_totals(events_path: Path) -> dict | None:
     civics: list = []
     marks: dict = {}
     seen_state = False
-    with open_events(events_path) as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(event, dict) or event.get("kind") != "state":
-                continue
-            if not isinstance(event.get("techs"), list):
-                continue
-            seen_state = True
-            techs = [t for t in event["techs"] if isinstance(t, str)]
-            civics = [c for c in event.get("civics") or [] if isinstance(c, str)]
-            ever_boosted_techs.update(
-                t for t in event.get("boosted_techs") or [] if isinstance(t, str))
-            ever_boosted_civics.update(
-                c for c in event.get("boosted_civics") or [] if isinstance(c, str))
-            turn = event.get("turn")
-            if isinstance(turn, int):
-                for mark in BOOST_MARK_TURNS:
-                    key = f"t{mark}"
-                    if turn >= mark and key not in marks:
-                        marks[key] = _boost_counts(
-                            techs, civics, ever_boosted_techs, ever_boosted_civics)
+    for event in events_of(events_path):
+        if not isinstance(event, dict) or event.get("kind") != "state":
+            continue
+        if not isinstance(event.get("techs"), list):
+            continue
+        seen_state = True
+        techs = [t for t in event["techs"] if isinstance(t, str)]
+        civics = [c for c in event.get("civics") or [] if isinstance(c, str)]
+        ever_boosted_techs.update(
+            t for t in event.get("boosted_techs") or [] if isinstance(t, str))
+        ever_boosted_civics.update(
+            c for c in event.get("boosted_civics") or [] if isinstance(c, str))
+        turn = event.get("turn")
+        if isinstance(turn, int):
+            for mark in BOOST_MARK_TURNS:
+                key = f"t{mark}"
+                if turn >= mark and key not in marks:
+                    marks[key] = _boost_counts(
+                        techs, civics, ever_boosted_techs, ever_boosted_civics)
     if not seen_state or techs is None:
         return None
     totals = _boost_counts(techs, civics, ever_boosted_techs, ever_boosted_civics)
@@ -625,36 +599,28 @@ def tech_marks(events_path: Path) -> dict | None:
     """
     marks: dict = {}
     seen_state = False
-    with open_events(events_path) as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(event, dict) or event.get("kind") != "state":
-                continue
-            if not isinstance(event.get("techs"), list):
-                continue
-            seen_state = True
-            turn = event.get("turn")
-            if not isinstance(turn, int):
-                continue
-            for mark in BOOST_MARK_TURNS:
-                if turn >= mark and mark not in marks:
-                    rivals = [_rival_tech_count(r)
-                              for r in event.get("rivals") or []
-                              if isinstance(r, dict)]
-                    known = [n for n in rivals if n is not None]
-                    marks[mark] = {
-                        "techs": sum(1 for t in event["techs"]
-                                     if isinstance(t, str)),
-                        "rival_techs": max(known) if known else None,
-                    }
-            if len(marks) == len(BOOST_MARK_TURNS):
-                break
+    for event in events_of(events_path):
+        if not isinstance(event, dict) or event.get("kind") != "state":
+            continue
+        if not isinstance(event.get("techs"), list):
+            continue
+        seen_state = True
+        turn = event.get("turn")
+        if not isinstance(turn, int):
+            continue
+        for mark in BOOST_MARK_TURNS:
+            if turn >= mark and mark not in marks:
+                rivals = [_rival_tech_count(r)
+                          for r in event.get("rivals") or []
+                          if isinstance(r, dict)]
+                known = [n for n in rivals if n is not None]
+                marks[mark] = {
+                    "techs": sum(1 for t in event["techs"]
+                                 if isinstance(t, str)),
+                    "rival_techs": max(known) if known else None,
+                }
+        if len(marks) == len(BOOST_MARK_TURNS):
+            break
     return marks if seen_state else None
 
 
@@ -812,29 +778,21 @@ def culture_marks(events_path: Path) -> dict | None:
     """
     marks: dict = {}
     seen_state = False
-    with open_events(events_path) as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(event, dict) or event.get("kind") != "state":
-                continue
-            if "foreign_tourists" not in event:
-                continue
-            seen_state = True
-            turn = event.get("turn")
-            if not isinstance(turn, int):
-                continue
-            for mark in BOOST_MARK_TURNS:
-                if turn >= mark and mark not in marks:
-                    marks[mark] = _culture_race(
-                        event, event.get("rivals") or [])
-            if len(marks) == len(BOOST_MARK_TURNS):
-                break
+    for event in events_of(events_path):
+        if not isinstance(event, dict) or event.get("kind") != "state":
+            continue
+        if "foreign_tourists" not in event:
+            continue
+        seen_state = True
+        turn = event.get("turn")
+        if not isinstance(turn, int):
+            continue
+        for mark in BOOST_MARK_TURNS:
+            if turn >= mark and mark not in marks:
+                marks[mark] = _culture_race(
+                    event, event.get("rivals") or [])
+        if len(marks) == len(BOOST_MARK_TURNS):
+            break
     return marks if seen_state else None
 
 
@@ -940,33 +898,25 @@ def launch_marks(events_path: Path) -> dict | None:
     spaceport_turn = None
     first_seen: dict[str, int] = {}
     completed: set[str] = set()
-    with open_events(events_path) as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(event, dict) or event.get("kind") != "state":
-                continue
-            projects = event.get("science_projects")
-            if not isinstance(projects, list):
-                continue
-            seen_state = True
-            turn = event.get("turn")
-            if not isinstance(turn, int):
-                continue
-            if spaceport_turn is None and _has_spaceport(event):
-                spaceport_turn = turn
-            # The LAST board decides what counts; the first sighting of each
-            # stage dates it. A project cannot un-complete, so the last frame's
-            # set is the union of everything seen -- read from the frame anyway
-            # so a corrupt earlier line cannot inflate the count.
-            completed = _stages_completed(projects)
-            for stage in completed:
-                first_seen.setdefault(stage, turn)
+    for event in events_of(events_path):
+        if not isinstance(event, dict) or event.get("kind") != "state":
+            continue
+        projects = event.get("science_projects")
+        if not isinstance(projects, list):
+            continue
+        seen_state = True
+        turn = event.get("turn")
+        if not isinstance(turn, int):
+            continue
+        if spaceport_turn is None and _has_spaceport(event):
+            spaceport_turn = turn
+        # The LAST board decides what counts; the first sighting of each
+        # stage dates it. A project cannot un-complete, so the last frame's
+        # set is the union of everything seen -- read from the frame anyway
+        # so a corrupt earlier line cannot inflate the count.
+        completed = _stages_completed(projects)
+        for stage in completed:
+            first_seen.setdefault(stage, turn)
     if not seen_state:
         return None
     dated = [first_seen[s] for s in completed if s in first_seen]
@@ -997,6 +947,51 @@ def open_events(events_path: Path):
         import gzip
         return gzip.open(events_path, "rt")
     return events_path.open()
+
+
+#: The one parse `events_of` keeps: ((path, size, mtime_ns), values).
+_EVENTS_PARSED: tuple | None = None
+
+
+def events_of(events_path: Path) -> list:
+    """Every JSON value in a run's `events.jsonl` (or its gzipped copy), in
+    order, parsed once per file version and shared by every scan below.
+
+    ★ ONE PARSE, NOT ELEVEN. The run summary asks eleven questions of the
+    same file -- deals, orders, combat, boosts, the tech/culture/launch marks
+    -- and each one decoded every line of it again: 0.25-0.5 s apiece on a
+    58 MB late-game log (G64, civvis-20261004T153748Z), 4.4 s between Civ
+    exiting and `summary.json` while the next game waits to launch. The
+    cache is keyed on path, size and mtime, so an appended or replaced log is
+    read afresh, and it holds a single file, so a sweep over the whole ledger
+    never keeps more than one run in memory (281 MB for that log).
+
+    The values are exactly what each scan's own loop parsed: a line that is
+    blank or not JSON is skipped (the game can die mid-write), and a JSON
+    value that is not an object is kept, for the scans that check. Decoding
+    tolerates a bad byte the way `seat_autonomy` always did, rather than
+    letting one torn character abort every other question. The scans only
+    read these values; none may mutate them.
+    """
+    global _EVENTS_PARSED
+    stat = events_path.stat()
+    key = (str(events_path.resolve()), stat.st_size, stat.st_mtime_ns)
+    if _EVENTS_PARSED is not None and _EVENTS_PARSED[0] == key:
+        return _EVENTS_PARSED[1]
+    values = []
+    if events_path.suffix == ".gz":
+        import gzip
+        handle = gzip.open(events_path, "rt", encoding="utf-8", errors="replace")
+    else:
+        handle = events_path.open(encoding="utf-8", errors="replace")
+    with handle:
+        for line in handle:
+            try:
+                values.append(json.loads(line))
+            except ValueError:
+                continue
+    _EVENTS_PARSED = (key, values)
+    return values
 
 
 #: Where refusals land when the run's mod predates `refused_by` on the
@@ -1038,47 +1033,42 @@ def orders_by_kind(events_path: Path) -> dict | None:
         return kinds.setdefault(kind, {"seen": 0, "applied": 0, "refused": {}})
 
     counted = False
-    with open_events(events_path) as handle:
-        for line in handle:
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if event.get("kind") != "orders" or event.get("ctx") != "agent":
-                continue
-            counted = True
-            total = row("*")
-            total["seen"] += int(event.get("seen") or 0)
-            total["applied"] += int(event.get("applied") or 0)
-            by = event.get("by") if isinstance(event.get("by"), dict) else {}
-            seen_by = event.get("seen_by")
-            refused_by = event.get("refused_by")
+    for event in events_of(events_path):
+        if event.get("kind") != "orders" or event.get("ctx") != "agent":
+            continue
+        counted = True
+        total = row("*")
+        total["seen"] += int(event.get("seen") or 0)
+        total["applied"] += int(event.get("applied") or 0)
+        by = event.get("by") if isinstance(event.get("by"), dict) else {}
+        seen_by = event.get("seen_by")
+        refused_by = event.get("refused_by")
+        for kind, n in by.items():
+            row(str(kind))["applied"] += int(n or 0)
+        if isinstance(seen_by, dict):
+            for kind, n in seen_by.items():
+                row(str(kind))["seen"] += int(n or 0)
+        else:
             for kind, n in by.items():
-                row(str(kind))["applied"] += int(n or 0)
-            if isinstance(seen_by, dict):
-                for kind, n in seen_by.items():
-                    row(str(kind))["seen"] += int(n or 0)
-            else:
-                for kind, n in by.items():
-                    row(str(kind))["seen"] += int(n or 0)
-            refusals = event.get("refusals")
-            if isinstance(refusals, dict):
-                for reason, n in refusals.items():
-                    reasons = total["refused"]
+                row(str(kind))["seen"] += int(n or 0)
+        refusals = event.get("refusals")
+        if isinstance(refusals, dict):
+            for reason, n in refusals.items():
+                reasons = total["refused"]
+                reasons[str(reason)] = reasons.get(str(reason), 0) + int(n or 0)
+        if isinstance(refused_by, dict):
+            for kind, per_kind in refused_by.items():
+                if not isinstance(per_kind, dict):
+                    continue
+                reasons = row(str(kind))["refused"]
+                for reason, n in per_kind.items():
                     reasons[str(reason)] = reasons.get(str(reason), 0) + int(n or 0)
-            if isinstance(refused_by, dict):
-                for kind, per_kind in refused_by.items():
-                    if not isinstance(per_kind, dict):
-                        continue
-                    reasons = row(str(kind))["refused"]
-                    for reason, n in per_kind.items():
-                        reasons[str(reason)] = reasons.get(str(reason), 0) + int(n or 0)
-            elif isinstance(refusals, dict):
-                orphan = row(UNATTRIBUTED)
-                for reason, n in refusals.items():
-                    orphan["seen"] += int(n or 0)
-                    orphan["refused"][str(reason)] = (
-                        orphan["refused"].get(str(reason), 0) + int(n or 0))
+        elif isinstance(refusals, dict):
+            orphan = row(UNATTRIBUTED)
+            for reason, n in refusals.items():
+                orphan["seen"] += int(n or 0)
+                orphan["refused"][str(reason)] = (
+                    orphan["refused"].get(str(reason), 0) + int(n or 0))
     return kinds if counted else None
 
 
@@ -1109,31 +1099,26 @@ def postconditions_by_kind(events_path: Path) -> dict | None:
         return kinds.setdefault(kind, {"verified": 0, "failed": 0, "reasons": {}})
 
     counted = False
-    with open_events(events_path) as handle:
-        for line in handle:
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
+    for event in events_of(events_path):
+        if not isinstance(event, dict):
+            continue
+        event_kind = event.get("kind")
+        if event_kind not in ("order_verified", "order_failed"):
+            continue
+        counted = True
+        order_kind = event.get("order_kind")
+        if not isinstance(order_kind, str) or not order_kind or order_kind == "*":
+            order_kind = POSTCONDITION_UNATTRIBUTED
+        rows = [row("*"), row(order_kind)]
+        for target in rows:
+            if event_kind == "order_verified":
+                target["verified"] += 1
                 continue
-            if not isinstance(event, dict):
-                continue
-            event_kind = event.get("kind")
-            if event_kind not in ("order_verified", "order_failed"):
-                continue
-            counted = True
-            order_kind = event.get("order_kind")
-            if not isinstance(order_kind, str) or not order_kind or order_kind == "*":
-                order_kind = POSTCONDITION_UNATTRIBUTED
-            rows = [row("*"), row(order_kind)]
-            for target in rows:
-                if event_kind == "order_verified":
-                    target["verified"] += 1
-                    continue
-                target["failed"] += 1
-                reason = event.get("reason")
-                if not isinstance(reason, str) or not reason:
-                    reason = "unknown"
-                target["reasons"][reason] = target["reasons"].get(reason, 0) + 1
+            target["failed"] += 1
+            reason = event.get("reason")
+            if not isinstance(reason, str) or not reason:
+                reason = "unknown"
+            target["reasons"][reason] = target["reasons"].get(reason, 0) + 1
     return kinds if counted else None
 
 
@@ -1161,37 +1146,32 @@ def deal_totals(events_path: Path) -> dict | None:
               "closed": 0, "declined": 0, "expired": 0,
               "peace_accepted": 0, "peace_refused": 0}
     seen = False
-    with events_path.open() as handle:
-        for line in handle:
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            kind = event.get("kind")
-            if kind not in DEAL_KINDS:
-                continue
-            seen = True
-            if kind == "deal_session":
-                phase = event.get("phase")
-                if phase == "opening":
-                    totals["sessions_opened"] += 1
-                elif phase == "answered":
-                    totals["sessions_answered"] += 1
-                elif phase == "unanswered":
-                    totals["sessions_unanswered"] += 1
-            elif kind == "deal_closed":
-                totals["closed"] += 1
-            elif kind == "deal_declined":
-                totals["declined"] += 1
-            elif kind == "deal_expired":
-                totals["expired"] += 1
-            elif kind == "peace_response":
-                if event.get("accepted") is True:
-                    totals["peace_accepted"] += 1
-                else:
-                    totals["peace_refused"] += 1
-            elif kind == "deal_sessions_stood_down":
-                totals["stood_down"] = True
+    for event in events_of(events_path):
+        kind = event.get("kind")
+        if kind not in DEAL_KINDS:
+            continue
+        seen = True
+        if kind == "deal_session":
+            phase = event.get("phase")
+            if phase == "opening":
+                totals["sessions_opened"] += 1
+            elif phase == "answered":
+                totals["sessions_answered"] += 1
+            elif phase == "unanswered":
+                totals["sessions_unanswered"] += 1
+        elif kind == "deal_closed":
+            totals["closed"] += 1
+        elif kind == "deal_declined":
+            totals["declined"] += 1
+        elif kind == "deal_expired":
+            totals["expired"] += 1
+        elif kind == "peace_response":
+            if event.get("accepted") is True:
+                totals["peace_accepted"] += 1
+            else:
+                totals["peace_refused"] += 1
+        elif kind == "deal_sessions_stood_down":
+            totals["stood_down"] = True
     return totals if seen else None
 
 
@@ -1206,16 +1186,11 @@ def final_standing(events_path: Path) -> tuple[int, int] | None:
     if not events_path.is_file():
         return None
     last = None
-    with events_path.open() as handle:
-        for line in handle:
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if (event.get("kind") == "turn" and event.get("ctx") == "agent"
-                    and event.get("rival_best") is not None
-                    and event.get("score") is not None):
-                last = (int(event["score"]), int(event["rival_best"]))
+    for event in events_of(events_path):
+        if (event.get("kind") == "turn" and event.get("ctx") == "agent"
+                and event.get("rival_best") is not None
+                and event.get("score") is not None):
+            last = (int(event["score"]), int(event["rival_best"]))
     return last
 
 

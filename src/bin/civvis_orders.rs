@@ -47,6 +47,8 @@ use civvis::mirror;
 mod air_assault;
 #[path = "civvis_orders/air_assault_continuation.rs"]
 mod air_assault_continuation;
+#[path = "civvis_orders/formation_refusals.rs"]
+mod formation_refusals;
 
 fn arg_text(args: &[String], flag: &str) -> Option<String> {
     args.iter()
@@ -170,6 +172,36 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
         "rough_rider" => "AMERICAN_ROUGH_RIDER",
         "voi_chien" => "VIETNAMESE_VOI_CHIEN",
         "nihang" => "LAHORE_NIHANG",
+        "mamluk" => "ARABIAN_MAMLUK",
+        "sabum_kibittum" => "BABYLONIAN_SABUM_KIBITTUM",
+        "minas_geraes" => "BRAZILIAN_MINAS_GERAES",
+        "dromon" => "BYZANTINE_DROMON",
+        "mountie" => "CANADA_MOUNTIE",
+        "okihtcitaw" => "CREE_OKIHTCITAW",
+        "viking_longship" => "NORWEGIAN_LONGSHIP",
+        "sea_dog" => "ENGLISH_SEADOG",
+        "redcoat" => "ENGLISH_REDCOAT",
+        "garde_imperiale" => "FRENCH_GARDE_IMPERIALE",
+        "khevsureti" => "GEORGIAN_KHEVSURETI",
+        "u_boat" => "GERMAN_UBOAT",
+        "huszar" => "HUNGARY_HUSZAR",
+        "black_army" => "HUNGARY_BLACK_ARMY",
+        "warakaq" => "INCA_WARAKAQ",
+        "jong" => "INDONESIAN_JONG",
+        "domrey" => "KHMER_DOMREY",
+        "hwacha" => "KOREAN_HWACHA",
+        "hetairoi" => "MACEDONIAN_HETAIROI",
+        "malon_raider" => "MAPUCHE_MALON_RAIDER",
+        "hulche" => "MAYAN_HULCHE",
+        "berserker" => "NORWEGIAN_BERSERKER",
+        "barbary_corsair" => "OTTOMAN_BARBARY_CORSAIR",
+        "janissary" => "SULEIMAN_JANISSARY",
+        "immortal" => "PERSIAN_IMMORTAL",
+        "highlander" => "SCOTTISH_HIGHLANDER",
+        "conquistador" => "SPANISH_CONQUISTADOR",
+        "carolean" => "SWEDEN_CAROLEAN",
+        "impi" => "ZULU_IMPI",
+        "p51_mustang" => "AMERICAN_P51",
         "anti_air_gun" => "ANTIAIR_GUN",
         other => return format!("UNIT_{}", other.to_ascii_uppercase()),
     };
@@ -1412,6 +1444,9 @@ struct RefusalRecord {
 #[derive(Default)]
 struct HostOrderRefusals {
     seen: std::collections::BTreeMap<OrderIdentity, RefusalRecord>,
+    /// The turn of each order's latest failure, cleared when it is
+    /// verified. See `formation_refusals`.
+    failed_on: std::collections::BTreeMap<OrderIdentity, u32>,
     war_permissions: std::collections::BTreeMap<i64, bool>,
     typed_war_permissions: std::collections::BTreeMap<(i64, String), bool>,
 }
@@ -1473,8 +1508,10 @@ impl HostOrderRefusals {
                 // history: this order works.
                 Verdict::Verified => {
                     self.seen.remove(&identity);
+                    self.failed_on.remove(&identity);
                 }
                 Verdict::Failed(reason) => {
+                    self.failed_on.insert(identity.clone(), turn);
                     let record = self.seen.entry(identity).or_insert(RefusalRecord {
                         strikes: 0,
                         reason: reason.clone(),
@@ -1516,6 +1553,8 @@ impl HostOrderRefusals {
     fn sweep(&mut self, turn: u32) {
         self.seen
             .retain(|_, record| record.until.is_none_or(|until| turn < until));
+        self.failed_on
+            .retain(|_, failed| turn.saturating_sub(*failed) < ORDER_REFUSAL_COOLDOWN_TURNS);
     }
 }
 
@@ -1631,7 +1670,35 @@ fn defer_host_peace_retries(
 /// receiver lacks is how an accepted order becomes a silent no-op.
 #[cfg(test)]
 fn coalesce_unit_paths(orders: Vec<Order>, sequenced: bool) -> (Vec<Order>, usize, usize) {
-    coalesce_unit_paths_except(orders, sequenced, &Default::default())
+    coalesce_unit_paths_except(orders, sequenced, &Default::default(), &Default::default())
+}
+
+/// The centre tiles of every city we are at war with, in Civilization VI
+/// offset coordinates (the coordinates `Order::pos` carries).
+///
+/// ★★★★ A WALK THAT TAKES A CITY ENDS THERE. Live King 20261004T100903Z
+/// (G52), turn 191: the Siege of Mashhad left the city at 0 health behind
+/// fallen walls, CIVVIS moved its Helicopter in ("taken by the helicopter"),
+/// then the battle planner rotated the wounded Helicopter (77 hp) out to heal.
+/// `coalesce_unit_paths_except` folded the step INTO the city and the step OUT
+/// of it into one `MOVE_TO` to the healing tile, so the host flew the
+/// Helicopter past Mashhad and the city healed. Persia's capital stayed
+/// Persian.
+fn capture_tiles(state: &civvis::mirror::StateSnapshot) -> std::collections::BTreeSet<(i32, i32)> {
+    state
+        .rivals
+        .iter()
+        .filter(|rival| rival.at_war)
+        .flat_map(|rival| rival.cities.iter())
+        .chain(
+            state
+                .minors
+                .iter()
+                .filter(|minor| minor.at_war)
+                .flat_map(|minor| minor.cities.iter()),
+        )
+        .map(|city| (city.x, city.y))
+        .collect()
 }
 
 /// A wounded military unit near a known enemy must follow the planner's safe
@@ -1711,6 +1778,7 @@ fn coalesce_unit_paths_except(
     orders: Vec<Order>,
     sequenced: bool,
     local_routes: &std::collections::BTreeSet<i64>,
+    capture_tiles: &std::collections::BTreeSet<(i32, i32)>,
 ) -> (Vec<Order>, usize, usize) {
     // Per unit: where its kept order sits in `out`, and whether that order is still
     // an open walk (every order for the unit so far has been a MOVE_TO).
@@ -1739,9 +1807,12 @@ fn coalesce_unit_paths_except(
             continue;
         };
         let is_step = order.verb.as_deref() == Some("MOVE_TO") && order.pos.is_some();
+        // A step onto an enemy city takes it; whatever the unit does next
+        // must happen after the host has moved it in. See `capture_tiles`.
+        let takes_city = is_step && order.pos.is_some_and(|pos| capture_tiles.contains(&pos));
         match kept.get_mut(&subject) {
             None => {
-                kept.insert(subject, (out.len(), is_step));
+                kept.insert(subject, (out.len(), is_step && !takes_city));
                 out.push(order);
             }
             Some((index, open)) => {
@@ -1749,6 +1820,9 @@ fn coalesce_unit_paths_except(
                     // The walk continues: the host only needs its last hex.
                     out[*index].pos = order.pos;
                     coalesced += 1;
+                    if takes_city {
+                        *open = false;
+                    }
                 } else if sequenced {
                     // The mod queues this behind the unit's earlier orders and
                     // issues it once they have settled. A move after an act is
@@ -2580,6 +2654,33 @@ const FAVOR_SALE_MAX: f64 = 150.0;
 const FAVOR_SALE_CADENCE: u32 = 6;
 const FAVOR_SALE_PHASE: u32 = 3;
 const FAVOR_BUYER_DVP_MAX: i64 = 12;
+/// The Diplomatic Victory points at which any met rival makes the bank votes
+/// again: from then on no favor sells, ours or the planner's.
+///
+/// ★★★ THE VOTES REGISTER NOW, AND THE BANK WAS BEING SOLD. The note on
+/// [`plan_keeps_favor`] records a host that never honoured a purchased vote;
+/// the congress budget (`CivvisCongressVoteBudget` in the agent) has since
+/// cast them. Live King civvis-20261005T030607Z (game 95): "deny" ballots cast
+/// 3 votes against the Zulu for 112 favor at turn 181 and 40 at 201, and the
+/// Zulu went 16 -> 15 and 17 -> 15 DVP across those sessions. The bank was at
+/// 0 by 210 (grievances drain it), the turn 221 ballot could cast only free
+/// votes, and the Zulu took +5 at 222 and won. Between turns 87 and 177 this
+/// sale had sold sixteen blocks, about 600 favor, some of it to England, who
+/// finished on 16 DVP. Four is a fifth of the win, reached around the middle
+/// of a game: from then on the favor is the vote against the leader.
+const FAVOR_HOLD_DVP: i64 = 4;
+
+/// Whether the bank is held for the World Congress: a met rival has reached
+/// [`FAVOR_HOLD_DVP`]. `CIVVIS_SELL_IDLE_FAVOR=1` restores the old sale.
+fn favor_banked_for_votes(state: &civvis::mirror::StateSnapshot) -> bool {
+    let sell_anyway = std::env::var("CIVVIS_SELL_IDLE_FAVOR")
+        .is_ok_and(|value| !value.is_empty() && value != "0");
+    !sell_anyway
+        && state
+            .rivals
+            .iter()
+            .any(|rival| rival.dvp.unwrap_or(0) >= FAVOR_HOLD_DVP)
+}
 /// ★ Until 2026-08-24 the floor was a flat Gold a point; the engine's own
 /// book (`Game::favor_gold_value`, `1.1 + 0.14·era + 0.07·dvp`) says 1.7–3.0
 /// over a game, and the caller now passes it. Kept as the floor of floors.
@@ -2612,12 +2713,17 @@ fn plan_keeps_favor(plan: Option<(&str, Option<&str>)>) -> bool {
     plan.is_none()
 }
 
-/// Drop the planner's own favor sales when the plan means to cast that favor.
+/// Drop the planner's own favor sales when the plan means to cast that favor,
+/// or once a rival's DVP makes the bank votes ([`favor_banked_for_votes`]).
 /// `Game::quick_deals` quotes a ten-favor block to any partner two DVP richer,
-/// plan-blind; on a Diplomacy plan those ten points are two votes at the next
-/// session. Returns how many orders were held back.
-fn hold_planner_favor_sales(plan: Option<(&str, Option<&str>)>, orders: &mut Vec<Order>) -> usize {
-    if !plan_keeps_favor(plan) {
+/// plan-blind — a sale to a rival nearer the win than we are. Returns how many
+/// orders were held back.
+fn hold_planner_favor_sales(
+    plan: Option<(&str, Option<&str>)>,
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> usize {
+    if !plan_keeps_favor(plan) && !favor_banked_for_votes(state) {
         return 0;
     }
     let before = orders.len();
@@ -2669,6 +2775,9 @@ fn append_favor_sale_order(
     // stood here is gone with it — it could never be reached past this line.
     if plan.is_none() {
         return Some("favor_hold:no_plan");
+    }
+    if favor_banked_for_votes(state) {
+        return Some("favor_hold:contender");
     }
     if state.turn % FAVOR_SALE_CADENCE != FAVOR_SALE_PHASE {
         return Some("favor_hold:cadence");
@@ -3863,6 +3972,11 @@ fn decide(
         host_order_refusals,
     );
     air_assault::observe(ai, snapshot, state);
+    ai.set_refused_combinations(formation_refusals::refused_pairs(
+        &mirror_state.civ6_of,
+        state.turn,
+        host_order_refusals,
+    ));
     let (war_finishers, ai_actions_begin, air_assault_resumed) =
         air_assault_continuation.plan_frame(ai, &mut planned_game, state, &mirror_state.civ6_of);
     // Finishing attacks are translated explicitly below, including the reserve
@@ -4133,7 +4247,7 @@ fn decide(
     let plan_facts = plan
         .as_ref()
         .map(|report| (report.strategy, report.victory_target));
-    let held_favor_sales = hold_planner_favor_sales(plan_facts, &mut orders);
+    let held_favor_sales = hold_planner_favor_sales(plan_facts, state, &mut orders);
     if held_favor_sales > 0 {
         note_bits.push(format!(
             "favor_hold:planner_sales_dropped={held_favor_sales}"
@@ -4145,7 +4259,7 @@ fn decide(
         Some(why) => {
             // Only the holds worth a glance in the ledger: a bank sitting on
             // a plan that would sell it, with nobody to sell to.
-            if why == "favor_hold:no_buyer" {
+            if why == "favor_hold:no_buyer" || why == "favor_hold:contender" {
                 note_bits.push(why.to_string());
             }
         }
@@ -4396,7 +4510,7 @@ fn decide(
         note_bits.push(format!("wounded_local_routes={}", local_routes.len()));
     }
     let (causally_safe, deferred_unit_followups, coalesced_path_steps) =
-        coalesce_unit_paths_except(orders, sequenced, &local_routes);
+        coalesce_unit_paths_except(orders, sequenced, &local_routes, &capture_tiles(state));
     orders = causally_safe;
     if coalesced_path_steps > 0 {
         note_bits.push(format!("coalesced_path_steps={coalesced_path_steps}"));
@@ -4685,6 +4799,16 @@ fn decide(
             kind: "combat_policy",
             subject: None,
             verb: Some("DOOMED_BLOW_VETO".to_string()),
+            pos: None,
+        });
+    }
+    // A leader statement is answered by the AutoClose layer, often before this
+    // frame's orders land, so every batch renews a one-turn lease there.
+    if ai.dialogue_never_declares_war_enabled() {
+        orders.push(Order {
+            kind: "combat_policy",
+            subject: None,
+            verb: Some("DIALOGUE_NEVER_DECLARES_WAR".to_string()),
             pos: None,
         });
     }
@@ -5920,17 +6044,28 @@ fn ledger_evidence_and_states(
     path: &Path,
     turns: &[u32],
 ) -> (Vec<serde_json::Value>, Vec<civvis::mirror::StateSnapshot>) {
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = civvis::mirror::read_events(path) else {
         return (Vec::new(), Vec::new());
     };
     let mut evidence = Vec::new();
     let mut states = Vec::new();
-    for line in raw.lines() {
-        if !line.contains("\"state\"")
-            && !EVIDENCE_KINDS
-                .iter()
-                .any(|kind| line.contains(&format!("\"{kind}\"")))
-        {
+    // ★★★★ ONLY THE LINES THAT NAME A KIND WE KEEP, AND ONLY THEIR TURNS.
+    // This ran on the first frame of every turn and built a full
+    // `serde_json::Value` of EVERY state record of the run (hundreds of
+    // 100-300 KB records by turn 200) to keep the one or two turns asked for:
+    // the largest single cost of a late decider frame (2,080 of ~7,700 samples
+    // on a growing-log replay of civvis-20261003T164758Z t230-245). The lines
+    // are the same ones the old `contains` test kept, in file order; a record
+    // that spells only other integer turns cannot pass the `as_u64` check below.
+    let mut lines = civvis::mirror::line_ranges_containing(&raw, "\"state\"");
+    for kind in EVIDENCE_KINDS {
+        lines.extend(civvis::mirror::line_ranges_containing(&raw, &format!("\"{kind}\"")));
+    }
+    lines.sort_unstable();
+    lines.dedup();
+    for (start, end) in lines {
+        let line = &raw[start..end];
+        if !civvis::mirror::turn_may_be_any(line, turns) {
             continue;
         }
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
@@ -8301,6 +8436,9 @@ fn main() {
     let fresh_ai = args.iter().any(|a| a == "--fresh-ai");
     let war_from_plan = args.iter().any(|a| a == "--war-from-plan");
     let fresh_board = args.iter().any(|a| a == "--fresh-board");
+    // `CityFireMemory`'s kill switch: the flag or `CIVVIS_NO_CITY_FIRE_MEMORY=1`.
+    let city_fire_memory = !args.iter().any(|a| a == "--no-city-fire-memory")
+        && !civvis::mirror::CityFireMemory::disabled_by_env();
     let arm = DecisionArm {
         war_from_plan,
         forced_on: &forced_on,
@@ -8924,6 +9062,11 @@ fn main() {
             mirror_turns,
             frontier,
         );
+        // One frame has no earlier reading of a fogged city's fire; its
+        // seat's research still floors it. See `CityFireMemory`.
+        if city_fire_memory {
+            civvis::mirror::CityFireMemory::default().apply(&mut live.game);
+        }
         // One-shot: there is no next turn to be self-limiting against, so this starts
         // empty and every foreign choice is released once.
         let mut ours = std::collections::BTreeMap::new();
@@ -8986,6 +9129,9 @@ fn main() {
     // board. It must therefore survive `--fresh-board` just like the peace and
     // treasury handoffs above.
     let mut host_city_attack_cooldowns = HostCityAttackCooldowns::default();
+    // The export reads a rival city's fire only while it is in sight; the
+    // board rebuilt each turn keeps the last reading. See `CityFireMemory`.
+    let mut host_city_fire = civvis::mirror::CityFireMemory::default();
     // A city's strike is once per host turn and the export never says it was
     // spent; the decider's own earlier frames do. See `HostCityStrikes`.
     let mut host_city_strikes = HostCityStrikes::default();
@@ -9122,6 +9268,9 @@ fn main() {
                     }
                     board.carry_treasury_baseline(carried_treasury);
                     host_city_attack_cooldowns.apply(&mut board);
+                    if city_fire_memory {
+                        host_city_fire.apply(&mut board.game);
+                    }
                     host_city_strikes.apply(&mut board, state.turn);
                     host_air_strikes.apply(&mut board, state.turn);
                     host_move_refusals.apply(&mut board);
@@ -9153,6 +9302,9 @@ fn main() {
                                 frontier,
                             );
                             host_city_attack_cooldowns.apply(&mut fresh);
+                            if city_fire_memory {
+                                host_city_fire.apply(&mut fresh.game);
+                            }
                             host_city_strikes.apply(&mut fresh, state.turn);
                             host_air_strikes.apply(&mut fresh, state.turn);
                             host_move_refusals.apply(&mut fresh);
@@ -9176,6 +9328,9 @@ fn main() {
                         Some(existing) => {
                             existing.sync(&snapshot, &state, frontier);
                             host_city_attack_cooldowns.apply(existing);
+                            if city_fire_memory {
+                                host_city_fire.apply(&mut existing.game);
+                            }
                             host_city_strikes.apply(existing, state.turn);
                             host_air_strikes.apply(existing, state.turn);
                             host_move_refusals.apply(existing);
@@ -11065,7 +11220,7 @@ mod tests {
             unit_order(unit, "MOVE_TO", Some((6, 5))),
         ];
         let local = refusals.local_retry.keys().copied().collect();
-        let (orders, _, coalesced) = coalesce_unit_paths_except(retry_steps, true, &local);
+        let (orders, _, coalesced) = coalesce_unit_paths_except(retry_steps, true, &local, &Default::default());
         assert_eq!(coalesced, 0);
         assert_eq!(orders.len(), 2);
         state.frame = 1;
@@ -11936,6 +12091,49 @@ mod tests {
         );
         assert_eq!(volley.targets, 1);
         assert_eq!(volley.actions, old_volley.actions);
+    }
+
+    #[test]
+    fn dialogue_never_declares_war_rides_every_bridge_reply_only_when_selected() {
+        let directives = |enable: bool| {
+            let (snapshot, state) = local_barbarian_defense_board();
+            let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+            let mut ai = victory_lane("domination").unwrap();
+            if enable {
+                ai.enable_dialogue_never_declares_war();
+            }
+            let mut continuation = air_assault_continuation::Continuation::default();
+            let reply: serde_json::Value = serde_json::from_str(&decide(
+                &mut mirror,
+                &mut ai,
+                &snapshot,
+                &state,
+                default_decision_arm(),
+                DecisionMemory {
+                    ours: &mut std::collections::BTreeMap::new(),
+                    host_peace_retries: &mut HostPeaceRetries::default(),
+                    host_move_refusals: &mut HostMoveRefusals::default(),
+                    host_order_refusals: &mut HostOrderRefusals::default(),
+                    air_assault_continuation: &mut continuation,
+                },
+            ))
+            .unwrap();
+            reply["orders"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|order| {
+                    order["kind"] == "combat_policy"
+                        && order["verb"] == "DIALOGUE_NEVER_DECLARES_WAR"
+                })
+                .count()
+        };
+        assert_eq!(directives(false), 0, "off: the reply is unchanged");
+        assert_eq!(
+            directives(true),
+            1,
+            "on: every reply renews the AutoClose lease, strikes or not"
+        );
     }
 
     #[test]
@@ -14402,13 +14600,13 @@ mod tests {
                 unit_order(8, "MOVE_TO", Some((21, 8))),
             ]
         };
-        let (orders, deferred, coalesced) = coalesce_unit_paths_except(planned(), true, &local);
+        let (orders, deferred, coalesced) = coalesce_unit_paths_except(planned(), true, &local, &Default::default());
         assert_eq!(deferred, 0);
         assert_eq!(coalesced, 1, "healthy travel still coalesces");
         assert_eq!(orders[0].pos, Some((10, 9)));
         assert_eq!(orders[1].pos, Some((11, 8)));
         assert_eq!(orders[2].verb.as_deref(), Some("FORTIFY"));
-        let (old_host, deferred, _) = coalesce_unit_paths_except(planned(), false, &local);
+        let (old_host, deferred, _) = coalesce_unit_paths_except(planned(), false, &local, &Default::default());
         assert_eq!(deferred, 2);
         assert_eq!(
             old_host
@@ -15491,7 +15689,7 @@ mod tests {
         // The bank the live seat actually holds: 300 favor at t141 with three
         // met rivals — one rich, one richer but two points short of the
         // twenty-point win, one at war with us.
-        let state = StateSnapshot {
+        let contended = StateSnapshot {
             turn: 141,
             favor: Some(300.0),
             rivals: vec![
@@ -15519,15 +15717,43 @@ mod tests {
         };
         let science = Some(("science", None));
 
+        // A rival at 17 DVP makes the whole bank votes: nothing sells, ours
+        // or the planner's. See `FAVOR_HOLD_DVP`.
         let mut orders = Vec::new();
+        assert_eq!(
+            append_favor_sale_order(science, &contended, &mut orders, 2.0),
+            Some("favor_hold:contender")
+        );
+        assert!(orders.is_empty());
+        let mut quoted = vec![Order {
+            kind: "sell",
+            subject: Some(4),
+            verb: Some("FAVOR=10".to_string()),
+            pos: Some((10, 0)),
+        }];
+        assert_eq!(
+            hold_planner_favor_sales(science, &contended, &mut quoted),
+            1
+        );
+        assert!(quoted.is_empty());
+        let mut at_four = contended.clone();
+        at_four.rivals.retain(|rival| rival.player != 4);
+        at_four.rivals[0].dvp = Some(FAVOR_HOLD_DVP);
+        assert_eq!(
+            append_favor_sale_order(science, &at_four, &mut orders, 2.0),
+            Some("favor_hold:contender")
+        );
+
+        // Below it, the surplus sells as before.
+        let mut state = contended.clone();
+        state.rivals.retain(|rival| rival.player != 4);
         assert_eq!(
             append_favor_sale_order(science, &state, &mut orders, 2.0),
             None
         );
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].kind, "sell");
-        // Not the richest (Persia at 17 DVP would spend it on the win), not
-        // the one at war: the rich rival at 3 DVP.
+        // Not the one at war: the rich rival at 3 DVP.
         assert_eq!(orders[0].subject, Some(2));
         // 300 − 120 reserve = 180 surplus, capped at one block of 150, at a
         // floor of a gold a point.
@@ -15615,18 +15841,18 @@ mod tests {
                 pos: Some((56, 0)),
             },
         ];
-        assert_eq!(hold_planner_favor_sales(science, &mut planner), 0);
+        assert_eq!(hold_planner_favor_sales(science, &state, &mut planner), 0);
         assert_eq!(planner.len(), 2);
         // The diplomacy plan lets the planner's own quote stand now: those ten
         // points were held as "two votes at the next session", and the next
         // session cannot take them.
         assert_eq!(
-            hold_planner_favor_sales(Some(("diplomacy", None)), &mut planner),
+            hold_planner_favor_sales(Some(("diplomacy", None)), &state, &mut planner),
             0
         );
         assert_eq!(planner.len(), 2);
         // A seat with no plan report still holds: unknown intent is not licence.
-        assert_eq!(hold_planner_favor_sales(None, &mut planner), 1);
+        assert_eq!(hold_planner_favor_sales(None, &state, &mut planner), 1);
         assert_eq!(planner.len(), 1);
         assert_eq!(planner[0].verb.as_deref(), Some("RESOURCE_DYES=1"));
 

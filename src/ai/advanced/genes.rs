@@ -2396,6 +2396,9 @@ pub const GENES: &[Gene] = &[
     // the empire holds three cities: the capital trained eight Settlers by
     // turn 57 and opened no Campus until turn 66. See `BasicAi::capital_campus_first`.
     Gene { tag: "campus-before-harbor-2", field: "campus_before_harbor_2", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_harbor_2, disable: AdvancedAi::disable_campus_before_harbor_2 },
+    // Seven urgent counter declarations below parity took 0.14 cities in 40
+    // turns and lost all seven games. See `one_war::COUNTER_WAR_PARITY`.
+    Gene { tag: "counter-war-needs-parity", field: "counter_war_needs_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_war_needs_parity, disable: AdvancedAi::disable_counter_war_needs_parity },
     // The delegated city governor tried every district a city lacked before
     // any building: live King turn 100 held 15 of 45 Campuses without a
     // Library and 13 of 19 Commercial Hubs without a Market. See
@@ -2467,6 +2470,10 @@ pub const GENES: &[Gene] = &[
     // they stood at 400 again eight turns later. See
     // `siege_train::HELD_BREACH_WALL_SHARE`.
     Gene { tag: "siege-holds-a-breach", field: "siege_holds_a_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_holds_a_breach, disable: AdvancedAi::disable_siege_holds_a_breach },
+    // Live King 021048Z stood down Kwadukuza as "not pushed to a new low"
+    // while its new walls fell from 64 to 28. See
+    // `commitments::rebase_capture_on_new_walls`.
+    Gene { tag: "stall-rebases-on-new-walls", field: "stall_rebases_on_new_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_stall_rebases_on_new_walls, disable: AdvancedAi::disable_stall_rebases_on_new_walls },
     // Live King 115745Z sieged unwalled Pest with one Archer shot a turn
     // while ten bodies held in reserve; the city walled at turn 78. See
     // `objective_board::SIEGE_RANGED_FLOOR`.
@@ -2480,6 +2487,26 @@ pub const GENES: &[Gene] = &[
     // Live King 155014Z: 5 of 6 cities at their housing, no Granary, at t100;
     // see `BasicAi::granary_before_the_army`.
     Gene { tag: "granary-before-the-army", field: "granary_before_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_granary_before_the_army, disable: AdvancedAi::disable_granary_before_the_army },
+    // Live King 124613Z: 79 Settler-turns afloat waiting on one Galley; see
+    // `AdvancedAi::naval_escort_patience`.
+    Gene { tag: "naval-escort-patience", field: "naval_escort_patience", kind: Kind::HostOnly, enable: AdvancedAi::enable_naval_escort_patience, disable: AdvancedAi::disable_naval_escort_patience },
+    // Live King 160213Z: 69% of the siege army built more than 12 tiles from
+    // the objective; see `BasicAi::front_weighted_floor`.
+    Gene { tag: "front-weighted-floor", field: "front_weighted_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_front_weighted_floor, disable: AdvancedAi::disable_front_weighted_floor },
+    // Live King 235724Z: version 1 never bound (army 30-58% of its floor);
+    // see `BasicAi::front_weighted_floor_2`.
+    Gene { tag: "front-weighted-floor-2", field: "front_weighted_floor_2", kind: Kind::OptIn, enable: AdvancedAi::enable_front_weighted_floor_2, disable: AdvancedAi::disable_front_weighted_floor_2 },
+    // Live King 024614Z: reserved catapults displaced and built far from
+    // Lisbon; see `AdvancedAi::breaker_commitment_holds` and
+    // `siege_production.rs`.
+    Gene { tag: "breaker-keeps-its-queue", field: "breaker_keeps_its_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_keeps_its_queue, disable: AdvancedAi::disable_breaker_keeps_its_queue },
+    Gene { tag: "breaker-to-the-fastest", field: "breaker_to_the_fastest", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_to_the_fastest, disable: AdvancedAi::disable_breaker_to_the_fastest },
+    // Live King 205431Z: Bogota alternated a Holy Site and a Theater Square
+    // every frame from t251; see `BasicAi::activation_resume_waits`.
+    Gene { tag: "activation-resume-waits", field: "activation_resume_waits", kind: Kind::HostOnly, enable: AdvancedAi::enable_activation_resume_waits, disable: AdvancedAi::disable_activation_resume_waits },
+    // Live King 051413Z: Bogota switched the Art Museum and the Archaeological
+    // Museum every turn t187-t214; see `BasicAi::activation_keeps_its_building`.
+    Gene { tag: "activation-keeps-its-building", field: "activation_keeps_its_building", kind: Kind::HostOnly, enable: AdvancedAi::enable_activation_keeps_its_building, disable: AdvancedAi::disable_activation_keeps_its_building },
     // Live King 113755Z: Galleys and Quadriremes ahead of the walkers at
     // three cities; see `BasicAi::settler_before_the_navy`.
     Gene { tag: "settler-before-the-navy", field: "settler_before_the_navy", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_before_the_navy, disable: AdvancedAi::disable_settler_before_the_navy },
@@ -2523,6 +2550,15 @@ pub const GENES: &[Gene] = &[
     // tiles out for eighteen turns, each refusing any tile one archer could
     // reach. See `siege_train::STAGING_ESCORT_BODIES`.
     Gene { tag: "staging-gun-trusts-its-escort", field: "staging_gun_trusts_its_escort", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_trusts_its_escort, disable: AdvancedAi::disable_staging_gun_trusts_its_escort },
+    // Live King civvis-20261004T070716Z (game 49): the opening on Kyoto had
+    // its 4 Archers and 2 Warriors by turn 30, but a ClearCamp row and
+    // Destroy rows against raiders kept four of them home and it released
+    // at turn 40. See `AdvancedAi::conquest_force_member`.
+    Gene { tag: "opening-force-keeps-its-members", field: "opening_force_keeps_its_members", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_force_keeps_its_members, disable: AdvancedAi::disable_opening_force_keeps_its_members },
+    // Live King 131343Z lost on Technology to a rival with fourteen cities
+    // and twice our population that the campaign never touched. See
+    // `advanced/runaway_expander.rs`.
+    Gene { tag: "runaway-expander-counter", field: "runaway_expander_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_runaway_expander_counter, disable: AdvancedAi::disable_runaway_expander_counter },
     // A Builder priced a Mine at its printed +1 Production after
     // Apprenticeship made it +2. See `AdvancedAi::improvement_upgrades_count`.
     Gene { tag: "improvement-upgrades-count", field: "improvement_upgrades_count", kind: Kind::OptIn, enable: AdvancedAi::enable_improvement_upgrades_count, disable: AdvancedAi::disable_improvement_upgrades_count },
@@ -2540,6 +2576,169 @@ pub const GENES: &[Gene] = &[
     // 3.9 of 8.4 live cities sat at their housing cap at t100. See
     // `BasicAi::granary_before_the_army_2`.
     Gene { tag: "granary-before-the-army-2", field: "granary_before_the_army_2", kind: Kind::OptIn, enable: AdvancedAi::enable_granary_before_the_army_2, disable: AdvancedAi::disable_granary_before_the_army_2 },
+    // Research and civics aimed at the cheapest assault-plus-breaker package
+    // that beats the campaign target's defender and opens its wall tier, the
+    // civilization's unique unit preferred. Live King: our breaker arrived one
+    // wall tier late every tier (Trebuchet t105 vs Castles t76-88, Bombard
+    // t139 vs Siege Tactics t96-106) and no Llanero was ever trained. See
+    // `advanced/decisive_window.rs`.
+    Gene { tag: "decisive-window", field: "decisive_window", kind: Kind::OptIn, enable: AdvancedAi::enable_decisive_window, disable: AdvancedAi::disable_decisive_window },
+    // The build picker credits the civilization's own unique unit for the
+    // abilities its strength column omits, so the Llanero is trained over the
+    // Line Infantry, and the research scorer's +55 unique-unit credit reads
+    // `unique_to` (civs.json named one for 14 of 105 civilizations). See
+    // `BasicAi::unique_unit_preference`.
+    Gene { tag: "unique-unit-preference", field: "unique_unit_preference", kind: Kind::OptIn, enable: AdvancedAi::enable_unique_unit_preference, disable: AdvancedAi::disable_unique_unit_preference },
+    // Live King 20261004T094143Z (game 51) started religious-defense Holy
+    // Sites in four cities by turn 98 as each one changed faith, and G49 made
+    // thirty starts across six. See `AdvancedAi::adopted_faith_sanctuary_choice`.
+    Gene { tag: "one-sanctuary", field: "one_sanctuary", kind: Kind::OptIn, enable: AdvancedAi::enable_one_sanctuary, disable: AdvancedAi::disable_one_sanctuary },
+    // Live King 115745Z fought Hungary, the culture winner, for 133 turns and
+    // pillaged no Theater Square. See `air_surge::raids::RAID_TOURISM_DENIAL`.
+    Gene { tag: "raids-cut-tourism", field: "raids_cut_tourism", kind: Kind::OptIn, enable: AdvancedAi::enable_raids_cut_tourism, disable: AdvancedAi::disable_raids_cut_tourism },
+    // Live King 070716Z staged for walled Kyoto from turn 15 and ordered its
+    // first Catapult at 70, after the war began. See
+    // `siege_production::breaker_war_with`.
+    Gene { tag: "breaker-before-the-war", field: "breaker_before_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_before_the_war, disable: AdvancedAi::disable_breaker_before_the_war },
+    // Live King 083931Z stood down Lisbon's 300 walls after fifteen turns
+    // waiting on one Bombard while Artillery was unlocked. See
+    // `siege_production::SUPPLY_WALL_HP`.
+    Gene { tag: "breaker-supply-scales", field: "breaker_supply_scales", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales, disable: AdvancedAi::disable_breaker_supply_scales },
+    // Live King 20261004T111442Z (game 53): Madrid stood without walls from
+    // turn 44 to 66, 186-200 health, with five to eight units staged and
+    // "damage ready" — two Archers shot it and the melee held the ring, so it
+    // healed every turn and built walls. See `siege_train::breach_assault_blow`.
+    Gene { tag: "breach-assault", field: "breach_assault", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_assault, disable: AdvancedAi::disable_breach_assault },
+    // Live King 232618Z: unwalled The Hague at 95-134 health beside eleven
+    // staged units, horsemen three tiles out; the assault counted only melee
+    // already beside it. See `siege_train::closing_in`.
+    Gene { tag: "breach-assault-closes-in", field: "breach_assault_closes_in", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_assault_closes_in, disable: AdvancedAi::disable_breach_assault_closes_in },
+    // Version 1 measured -9.7 +/- 5.3 pp: only the capitals Domination
+    // needs, no displaced building. See `siege_production::SUPPLY_STRENGTH_WINDOW`.
+    Gene { tag: "breaker-supply-scales-2", field: "breaker_supply_scales_2", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales_2, disable: AdvancedAi::disable_breaker_supply_scales_2 },
+    // Live King 201619Z offered Gaul "one war at a time" peace at 843 power
+    // against 140; Gaul rebuilt to 911 and won on Religion. 223225Z offered
+    // it to Canada at 407 against 138 after taking Brantford. See
+    // `AdvancedAi::second_front_kept_when_winning`.
+    Gene { tag: "second-front-kept-when-winning", field: "second_front_kept_when_winning", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_kept_when_winning, disable: AdvancedAi::disable_second_front_kept_when_winning },
+    // Live King 232618Z offered the Netherlands that peace at 3.2 times with
+    // The Hague, its capital, the next objective, and declared again eight
+    // turns later. See `AdvancedAi::second_front_kept_when_winning_2`.
+    Gene { tag: "second-front-kept-when-winning-2", field: "second_front_kept_when_winning_2", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_kept_when_winning_2, disable: AdvancedAi::disable_second_front_kept_when_winning_2 },
+    // Live King 213648Z took Babylon's only known city at turn 81, at six
+    // times its power, and offered peace; Babylon held six cities at 207.
+    // See `one_war::unseen_prey`.
+    Gene { tag: "peace-waits-for-unseen-prey", field: "peace_waits_for_unseen_prey", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_unseen_prey, disable: AdvancedAi::disable_peace_waits_for_unseen_prey },
+    // Live King 212049Z left unwalled Viseu in Invest, damage ready in 3.2
+    // turns, for an urgent counter sixteen tiles away. See
+    // `one_war::front_siege_to_finish`.
+    Gene { tag: "front-finishes-its-siege", field: "front_finishes_its_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_front_finishes_its_siege, disable: AdvancedAi::disable_front_finishes_its_siege },
+    // Live King 212049Z made peace with the Zulu beside unwalled
+    // Umgungundlovu, a seized foothold, to declare on Portugal at even power.
+    // See `one_war::one_war_foothold_at_hand`.
+    Gene { tag: "peace-waits-for-the-foothold", field: "peace_waits_for_the_foothold", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_the_foothold, disable: AdvancedAi::disable_peace_waits_for_the_foothold },
+    // Live King 212049Z: Guayaquil's Holy Site and its walls traded the queue
+    // five times in five turns. See
+    // `adopted_faith_sanctuary::sanctuary_queue_held`.
+    Gene { tag: "sanctuary-yields-a-held-queue", field: "sanctuary_yields_a_held_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_sanctuary_yields_a_held_queue, disable: AdvancedAi::disable_sanctuary_yields_a_held_queue },
+    // Live King 205431Z held the Prophet race open from turn 30 to 60 and
+    // opened two Campuses, no Holy Site, at the campus-first steps. See
+    // `BasicAi::prophet_race_takes_a_district_slot`.
+    Gene { tag: "prophet-race-takes-a-district-slot", field: "prophet_race_takes_a_district_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_takes_a_district_slot, disable: AdvancedAi::disable_prophet_race_takes_a_district_slot },
+    // Live King 183907Z: our faithless cities were converted by passive
+    // pressure alone; game 70 left two religion slots open. See
+    // `advanced/faith_veto.rs`.
+    Gene { tag: "found-against-a-rival-faith", field: "found_against_a_rival_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_found_against_a_rival_faith, disable: AdvancedAi::disable_found_against_a_rival_faith },
+    // 19 of 29 live "Declaring war" lines on 2026-10-04 sent a denouncement;
+    // the staged army waited. See `strike_when_staged`.
+    Gene { tag: "domination-strikes-when-staged", field: "domination_strikes_when_staged", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_strikes_when_staged, disable: AdvancedAi::disable_domination_strikes_when_staged },
+    // Live King 174103Z stood down six Dutch objectives in 95 turns with the
+    // army still on the road. See `advanced/capture_march.rs`.
+    Gene { tag: "capture-waits-on-the-march", field: "capture_waits_on_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_waits_on_the_march, disable: AdvancedAi::disable_capture_waits_on_the_march },
+    // Live King 014503Z offered the Inca, its only war, Recovery peace at 321
+    // power against 202 with Qusqu the objective. See
+    // `one_war::recovery_keeps_the_war`.
+    Gene { tag: "recovery-keeps-a-winning-war", field: "recovery_keeps_a_winning_war", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_keeps_a_winning_war, disable: AdvancedAi::disable_recovery_keeps_a_winning_war },
+    // Live King 160213Z fought Germany for 92 turns without a capture while
+    // the at-war Maori held the capital it needed. See
+    // `one_war::stalled_front_swap`.
+    Gene { tag: "one-war-swaps-a-stalled-front", field: "one_war_swaps_a_stalled_front", kind: Kind::OptIn, enable: AdvancedAi::enable_one_war_swaps_a_stalled_front, disable: AdvancedAi::disable_one_war_swaps_a_stalled_front },
+    // Nine rout or turned-tide peace offers at 1.5 times our rival's power on
+    // 2026-10-04/05; three were followed by a war on the same rival within
+    // 25 turns. See `AdvancedAi::rout_spares_a_stronger_army`.
+    Gene { tag: "rout-spares-a-stronger-army", field: "rout_spares_a_stronger_army", kind: Kind::OptIn, enable: AdvancedAi::enable_rout_spares_a_stronger_army, disable: AdvancedAi::disable_rout_spares_a_stronger_army },
+    // Live King 122037Z held war on France "for staging" from turn 163 to its
+    // Culture win at 181, at 2 to 4 times its power. See
+    // `one_war::culture_counter_due`.
+    Gene { tag: "culture-counter-declares", field: "culture_counter_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_counter_declares, disable: AdvancedAi::disable_culture_counter_declares },
+    // Live King 003728Z offered Phoenicia, holder of Tyre, the last capital
+    // it lacked, "the war has stalled" peace at 1.6 times its power. See
+    // `one_war::last_capital_war_kept`.
+    Gene { tag: "last-capital-war-kept", field: "last_capital_war_kept", kind: Kind::OptIn, enable: AdvancedAi::enable_last_capital_war_kept, disable: AdvancedAi::disable_last_capital_war_kept },
+    // Live King 100903Z: two Rocket Artillery stood in Loja through the war
+    // on India, their Corps refused and re-planned every turn. Live-only: the
+    // refused set is empty off the bridge. See `advanced/formation_refusals.rs`.
+    Gene { tag: "formations-heed-refusals", field: "formations_heed_refusals", kind: Kind::OptIn, enable: AdvancedAi::enable_formations_heed_refusals, disable: AdvancedAi::disable_formations_heed_refusals },
+    // Live King 003728Z stayed at peace with Sumeria at 17 Diplomatic Victory
+    // points and 3 military while Persia won the Diplomatic Victory. See
+    // `one_war::diplomatic_contender`.
+    Gene { tag: "diplomatic-contender-kept", field: "diplomatic_contender_kept", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_contender_kept, disable: AdvancedAi::disable_diplomatic_contender_kept },
+    // Live King 021048Z aimed the army at Indonesia (13 points, 988 military)
+    // while at war with Portugal at 15 points and 172 military. See
+    // `one_war::diplomatic_contender_front`.
+    Gene { tag: "diplomatic-contender-kept-2", field: "diplomatic_contender_kept_2", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_contender_kept_2, disable: AdvancedAi::disable_diplomatic_contender_kept_2 },
+    // Live King civvis-20261004T122037Z (game 62): Yaroslavl's walls went
+    // 100 -> 84 in twelve turns while the journal read "shooters 6-16 wall a
+    // turn": nine archers within five tiles were counted, but the range-2
+    // band had room for few of them and those that fired shot units first.
+    // G64's Canberra read "6.9 turns" at turn 125 and fell at 148. See
+    // `siege_train::shooter_hits_walls`.
+    Gene { tag: "siege-counts-posted-shooters", field: "siege_counts_posted_shooters", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_counts_posted_shooters, disable: AdvancedAi::disable_siege_counts_posted_shooters },
+    // Live King 013110Z (game 91): Germany took Bogota at turn 42. Four
+    // defenders raised the pressure ratio's denominator, the Defend row
+    // lapsed at turn 40 with the capital at 20 of 200 and Germans
+    // adjacent, and its bodies went to Siege Munich. See
+    // `objective_board::capital_defense_contact`.
+    Gene { tag: "capital-defense-holds", field: "capital_defense_holds", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_defense_holds, disable: AdvancedAi::disable_capital_defense_holds },
+    // Live King civvis-20261005T003728Z (game 89): Mashhad held in Stage
+    // from turn 183 to 225; its guns, twelve to fourteen tiles out, stepped
+    // between two tiles every frame behind one of ours in a ridge's only gap.
+    // See `siege_train::siege_stage_step`.
+    Gene { tag: "staging-column-passes-through", field: "staging_column_passes_through", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_column_passes_through, disable: AdvancedAi::disable_staging_column_passes_through },
+    // Live King civvis-20261005T024614Z (game 94): fielded Catapults went to
+    // the Guayaquil anvil and heal rotations while Lisbon's siege held "for a
+    // wall-breaker on its way". See `objective_board::breaker_rows_ask`.
+    Gene { tag: "breakers-stay-with-the-siege", field: "breakers_stay_with_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_breakers_stay_with_the_siege, disable: AdvancedAi::disable_breakers_stay_with_the_siege },
+    // Live King civvis-20261005T033442Z (game 96) offered the Khmer, at 70%
+    // of the culture bar, "the war has stalled" peace at turn 207; their
+    // Tourism rose 240 -> 357 in the peace and they won on Culture at 223.
+    // See `one_war::stalled_peace_spares`.
+    Gene { tag: "stalled-peace-spares-the-counter", field: "stalled_peace_spares_the_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_peace_spares_the_counter, disable: AdvancedAi::disable_stalled_peace_spares_the_counter },
+    // Live King civvis-20261005T035848Z (game 97): version 1 opened the
+    // race's Holy Site in a 3.6-production city (about 15 turns) and all
+    // three religions were founded first. See
+    // `BasicAi::prophet_race_takes_a_district_slot_2`.
+    Gene { tag: "prophet-race-takes-a-district-slot-2", field: "prophet_race_takes_a_district_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_takes_a_district_slot_2, disable: AdvancedAi::disable_prophet_race_takes_a_district_slot_2 },
+    // Live King civvis-20261005T033442Z (game 96): Trebuchets marched alone
+    // into the reach of Khmer Cuirassiers seen the turn before and lost in
+    // the fog, and were one-shot at turns 145 and 146. See
+    // `siege_train::siege_stage_step`.
+    Gene { tag: "staging-gun-remembers-hostiles", field: "staging_gun_remembers_hostiles", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_remembers_hostiles, disable: AdvancedAi::disable_staging_gun_remembers_hostiles },
+    // Live King civvis-20261005T024614Z (game 94) opened its conquest on
+    // Lisbon at turn 9 with one city and released it at turn 40, "the commit
+    // deadline passed before the force ever assembled" -- the release in 9 of
+    // the last 24 live games. See `early_conquest::conquest_force_estimate`.
+    Gene { tag: "conquest-opening-needs-the-production", field: "conquest_opening_needs_the_production", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_opening_needs_the_production, disable: AdvancedAi::disable_conquest_opening_needs_the_production },
+    // Live King civvis-20261005T045443Z (game 101) planned Gwangju at 2.85
+    // times Korea's power, five techs behind; Hwachas (60) one-shot four
+    // Archers and the siege never brought the city under 181. See
+    // `city_campaign::war_bill_tier_factor`.
+    Gene { tag: "war-bill-prices-the-tier-gap", field: "war_bill_prices_the_tier_gap", kind: Kind::OptIn, enable: AdvancedAi::enable_war_bill_prices_the_tier_gap, disable: AdvancedAi::disable_war_bill_prices_the_tier_gap },
+    // Live King civvis-20261005T045443Z (game 101) went to war with Korea at
+    // t94 with no war order: AutoClose answered "too many troops near me" with
+    // CHOICE_NEGATIVE, a surprise war (150 grievances). 100 such flips in 49 of
+    // 74 October live games. See `CivvisControlAutoClose.lua`.
+    Gene { tag: "dialogue-never-declares-war", field: "dialogue_never_declares_war", kind: Kind::OptIn, enable: AdvancedAi::enable_dialogue_never_declares_war, disable: AdvancedAi::disable_dialogue_never_declares_war },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

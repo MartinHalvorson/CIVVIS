@@ -83,6 +83,12 @@ impl AdvancedAi {
         let Some((_, cid, item)) = best else {
             return;
         };
+        let item = self.base.race_takes_the_district_slot(g, pid, cid, item);
+        let theater = matches!(
+            &item,
+            crate::game::Item::District { district, .. }
+                if g.district_family(*district) == "theater_square"
+        );
         if g.apply(
             pid,
             &Action::Produce {
@@ -91,6 +97,7 @@ impl AdvancedAi {
             },
         )
         .is_ok()
+            && theater
         {
             think!(self.journal(), Economy, Decision,
                 "{} starts a Theater Square while our Culture trails", g.cities[&cid].name;

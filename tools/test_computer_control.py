@@ -228,6 +228,62 @@ class CensusPolicyTest(unittest.TestCase):
         self.assertEqual(cc.choose_dismissal(census[0]), "OK")
 
 
+class AbsentOwnersAreNotAskedFor(unittest.TestCase):
+    """A System Events lookup of an absent process takes ~2-3.6 s; skip them."""
+
+    NAMES = ("steam_osx, Civ6_Exe_Child, Finder, Steam, Civilization VI, Finder, "
+             "Steam, Civilization VI, missing value\n")
+
+    def test_one_query_names_every_process_three_ways(self) -> None:
+        with mock.patch.object(cc, "_osascript", return_value=mock.Mock(
+                returncode=0, stdout=self.NAMES, stderr="")) as run:
+            names = cc.running_process_names()
+        self.assertEqual(names, {"steam_osx", "Civ6_Exe_Child", "Finder", "Steam",
+                                 "Civilization VI"})
+        self.assertIn("{name, short name, displayed name} of every process",
+                      run.call_args.args[0])
+
+    def test_a_failed_query_says_unknown_not_empty(self) -> None:
+        with mock.patch.object(cc, "_osascript", return_value=mock.Mock(
+                returncode=1, stdout="", stderr="not authorised")):
+            self.assertIsNone(cc.running_process_names())
+        with mock.patch.object(cc, "_osascript",
+                               side_effect=subprocess.TimeoutExpired("osascript", 15)):
+            self.assertIsNone(cc.running_process_names())
+
+    def test_the_census_asks_only_owners_that_run(self) -> None:
+        asked = []
+        def fake_osascript(script, timeout=30.0):
+            if "of every process" in script:
+                return mock.Mock(returncode=0, stdout=self.NAMES, stderr="")
+            asked.append(script)
+            if "count windows" in script and "steam_osx" in script:
+                return mock.Mock(returncode=0, stdout="1\n", stderr="")
+            if "static text" in script and "steam_osx" in script:
+                return mock.Mock(returncode=0, stdout="Game configuration unavailable\n",
+                                 stderr="")
+            if "every button" in script and "steam_osx" in script:
+                return mock.Mock(returncode=0, stdout="OK\n", stderr="")
+            return mock.Mock(returncode=1, stdout="", stderr="no such process")
+        with mock.patch.object(cc, "_osascript", side_effect=fake_osascript):
+            census = cc.modal_census()
+        self.assertEqual([m["owner"] for m in census], ["steam_osx"])
+        for owner in ("CoreServicesUIAgent", "Problem Reporter",
+                      "UserNotificationCenter", "SecurityAgent"):
+            self.assertFalse(any(owner in script for script in asked),
+                             f"{owner} is not running and must not be asked for")
+
+    def test_without_the_name_list_every_owner_is_still_asked(self) -> None:
+        asked = []
+        def fake_osascript(script, timeout=30.0):
+            asked.append(script)
+            return mock.Mock(returncode=1, stdout="", stderr="unavailable")
+        with mock.patch.object(cc, "_osascript", side_effect=fake_osascript):
+            self.assertEqual(cc.modal_census(), [])
+        for owner in cc.KNOWN_MODALS:
+            self.assertTrue(any(f'process "{owner}"' in script for script in asked), owner)
+
+
 class GameProcessParseTest(unittest.TestCase):
     def test_child_and_stub_are_distinguished_from_real_ps_output(self) -> None:
         ps = ("  47272 Thu Aug  7 10:29:41 2026 /…/Civ6.app/Contents/MacOS/Civ6_Exe_Child\n"

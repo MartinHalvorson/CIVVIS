@@ -190,6 +190,14 @@ pub const NO_DEADLINE_HORIZON: f64 = 10.0;
 pub const DESTROY_ENGAGE_EXCHANGE: f64 = 1.5;
 /// A Defend deadline is never under this.
 pub const DEFEND_DEADLINE_FLOOR: u32 = 2;
+/// `capital-defense-holds`: a hostile military unit this close to a
+/// damaged city of ours keeps the city's Defend row on the board whatever
+/// the pressure ratio reads, and puts a capital we hold under attack. Live
+/// King civvis-20261005T013110Z (game 91): four defenders reached Bogota at
+/// turns 38-39, raised the ratio's friendly strength, and the Defend row
+/// lapsed at turn 40 with the capital at 20 of 200 and German units beside
+/// it; its bodies joined Siege Munich and Bogota fell at turn 42.
+pub const CAPITAL_DEFENSE_CONTACT: i32 = 2;
 /// Hostile units this close to each other are one force.
 pub const FORCE_LINK: i32 = 3;
 /// A Destroy force that has lost its exact row keeps its identity for a row
@@ -544,6 +552,19 @@ fn breaker_guns_wanted(city: &crate::game::City) -> usize {
     (city.wall_hp as usize).div_ceil(100).clamp(1, BREAKER_GUNS_MAX)
 }
 
+/// `breakers-stay-with-the-siege`: whether a walled Siege row on the board
+/// asks for guns. While one does, a siege gun is the walls' breaker and
+/// nothing else: a Defend, Relieve, Destroy, Escort or camp row takes it as
+/// strength and a body, and a gun is the weakest body there is. Live King
+/// civvis-20261005T024614Z (game 94) fielded Catapults at turn 103
+/// ("Reinforcing the campaign with catapult | the front at (11, 21) is 12
+/// tiles away") that went to the Guayaquil anvil and the heal rotations at
+/// (18-23, 29-31) while Lisbon's siege held for "a wall-breaker on its way".
+fn breaker_rows_ask(rows: &[Objective]) -> bool {
+    rows.iter()
+        .any(|row| row.kind == ObjectiveKind::Siege && row.requirement.siege > 0)
+}
+
 /// A unit's production cost at its hit points, in hammers.
 fn unit_value(g: &Game, uid: u32) -> f64 {
     let unit = &g.units[&uid];
@@ -772,6 +793,25 @@ impl AdvancedAi {
     ) -> bool {
         !self.battlefront_observation
             || (g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id))
+    }
+
+    /// `capital-defense-holds`: an observed hostile military unit at war with
+    /// us stands within [`CAPITAL_DEFENSE_CONTACT`] of `at`. The pressure
+    /// ratio a Defend row is gated on falls as our defenders arrive, so it
+    /// retires the row of a city that is still being taken; contact does not.
+    pub(super) fn capital_defense_contact(
+        &self,
+        g: &Game,
+        pid: usize,
+        at: Pos,
+        visible: &crate::world::TileBits,
+    ) -> bool {
+        g.units
+            .values()
+            .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
+            .filter(|unit| g.wdist(unit.pos, at) <= CAPITAL_DEFENSE_CONTACT)
+            .any(|unit| self.observed(g, pid, visible, unit))
     }
 
     /// Hostile military strength within `radius` of `at`, visible in the
@@ -1009,13 +1049,33 @@ impl AdvancedAi {
                 .city_health
                 .insert(*cid, (turn, health));
             let danger = self.city_pressure_with_belief(g, pid, *cid, visible);
-            if danger < BASTION_PRESSURE {
+            // `capital-defense-holds`: a damaged city with a hostile beside it
+            // keeps its row through the pressure gate, and a capital we hold
+            // with a hostile beside it, damaged or pressed, is an urgent
+            // Defend. Damage counts the walls: a walled city keeps its hit
+            // points whole until they fall. All three read false when off.
+            let contact =
+                self.capital_defense_holds && self.capital_defense_contact(g, pid, *pos, visible);
+            let damaged = self.capital_defense_holds
+                && (city.hp < super::CITY_MAX_HP || city.wall_hp < g.city_max_wall_hp(city));
+            if danger < BASTION_PRESSURE && !(contact && damaged) {
                 continue;
             }
+            let capital_under_attack =
+                city.is_capital && contact && (damaged || danger >= BASTION_PRESSURE);
             defended.insert(*cid);
             let hostile = self.hostile_strength_near(g, pid, *pos, THREAT_RELIEF_RADIUS, visible);
+            // `capital-defense-holds`: a damaged city answers for only the
+            // share of its strength its hit points still hold. Bogota at 20
+            // of 200 subtracted its full strength and asked for 24, two
+            // bodies, where at turns 38-39 it had asked for 50-56.
+            let own_strength = if damaged {
+                g.city_strength(*cid) * f64::from(city.hp.max(0)) / f64::from(super::CITY_MAX_HP)
+            } else {
+                g.city_strength(*cid)
+            };
             let need = ForceNeed {
-                strength: (hostile * DEFEND_MARGIN - g.city_strength(*cid)).max(0.0),
+                strength: (hostile * DEFEND_MARGIN - own_strength).max(0.0),
                 melee: 1,
                 ranged: 0,
                 siege: 0,
@@ -1057,7 +1117,7 @@ impl AdvancedAi {
                 land: true,
                 sea: false,
                 label: city.name.clone(),
-                urgent: false,
+                urgent: capital_under_attack,
             });
             // Relieve: what the units within reach cannot supply.
             let local: f64 = pool
@@ -1489,7 +1549,9 @@ impl AdvancedAi {
                 .map(|unit| unit.travel_turns(g, row.at, THREAT_RELIEF_RADIUS))
                 .min()
                 .unwrap_or(u32::MAX);
-            row.urgent = deadline <= relief;
+            // `capital-defense-holds` marks a capital under attack urgent at
+            // the row's creation; every other row is built not urgent.
+            row.urgent = row.urgent || deadline <= relief;
         }
         Self::order_board_rows(rows);
     }
@@ -1553,6 +1615,21 @@ impl AdvancedAi {
             .collect();
         for force in &mut forces {
             force.units.retain(|uid| pool_set.contains(uid));
+        }
+        // `breakers-stay-with-the-siege`: see `breaker_rows_ask`. A gun last
+        // turn's board sent elsewhere comes back to the pool for the siege.
+        let breakers_stay = self.breakers_stay_with_the_siege && breaker_rows_ask(&rows);
+        if breakers_stay {
+            for force in &mut forces {
+                if !matches!(
+                    force.objective_key,
+                    ObjectiveKey::Siege(_) | ObjectiveKey::Reserve
+                ) {
+                    force
+                        .units
+                        .retain(|uid| !facts.get(uid).is_some_and(|unit| unit.siege));
+                }
+            }
         }
         // Match forces to rows: by key, a Destroy by where it was aimed, the
         // Reserve always.
@@ -1670,6 +1747,10 @@ impl AdvancedAi {
                             // A scout is not a body for a fight.
                             continue;
                         }
+                        // See `breaker_rows_ask`.
+                        if breakers_stay && unit.siege && row.kind != ObjectiveKind::Siege {
+                            continue;
+                        }
                         let distance = g.wdist(unit.pos, row.at);
                         // See `SIEGE_MEMBER_STRIKE_REACH`.
                         if self.siege_force_keeps_its_members
@@ -1684,6 +1765,25 @@ impl AdvancedAi {
                             && assignment.get(uid).is_some_and(|current| {
                                 matches!(forces[*current].objective_key, ObjectiveKey::Siege(_))
                             })
+                        {
+                            continue;
+                        }
+                        // `opening-force-keeps-its-members`: the same rule for
+                        // the undeclared opening's strike force, which has no
+                        // row of its own and gathers as the Reserve. Live King
+                        // civvis-20261004T070716Z (game 49) had all six bodies
+                        // by turn 30; a ClearCamp row and Destroy rows against
+                        // raiders kept four at home, and Kyoto's opening
+                        // released at turn 40 with two at the rally.
+                        if !row.urgent
+                            && matches!(
+                                row.kind,
+                                ObjectiveKind::Destroy
+                                    | ObjectiveKind::Escort
+                                    | ObjectiveKind::ClearCamp
+                            )
+                            && distance > SIEGE_MEMBER_STRIKE_REACH
+                            && self.conquest_force_member(*uid)
                         {
                             continue;
                         }

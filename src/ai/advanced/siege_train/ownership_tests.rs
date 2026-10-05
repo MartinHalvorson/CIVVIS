@@ -266,3 +266,39 @@ fn a_healthy_siege_shooter_is_not_evacuated_off_its_post() {
     let (recovering, _, _) = turn(Some(SiegeStage::Stage));
     assert!(!recovering, "a Stage siege's healthy member is not evacuated");
 }
+
+/// See `assess_siege`: a Hold over a city still the enemy's is a capture the
+/// host never carried out (live King civvis-20261004T070716Z, Kyoto at turn
+/// 213). The assault resumes and the taker walks in.
+#[test]
+fn a_held_siege_over_an_enemy_city_resumes_the_capture() {
+    let (mut g, city) = walled_city();
+    let ring = ring_of(&g, city)
+        .into_iter()
+        .find(|p| g.city_at(*p).is_none() && !g.rules.is_water(g.map.get(*p).unwrap()))
+        .unwrap();
+    let warrior = g.spawn_unit("warrior", 0, ring);
+    {
+        let target = g.cities.get_mut(&city).unwrap();
+        target.hp = 1;
+        target.wall_hp = 0;
+    }
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.force_groups = vec![group(&g, warrior, city)];
+    // The board's capture of an earlier frame that the host never made.
+    ai.sieges.insert(
+        city,
+        Siege {
+            stage: SiegeStage::Hold,
+            taker: None,
+            entered: g.turn.saturating_sub(1),
+            assessed: g.turn.saturating_sub(1),
+            posts: Default::default(),
+            short_since: None,
+        },
+    );
+    let plan = plan_against(&g, city);
+    let _ = ai.siege_doctrine_step(&mut g, 0, warrior, &plan);
+    assert_eq!(g.cities[&city].owner, 0, "the taker walks into the city");
+}

@@ -11,6 +11,9 @@ part of it off so a run can be compared against one that had it.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
+import tempfile
 import pathlib
 import re
 import shutil
@@ -140,6 +143,67 @@ class MoveFallbackConfigTests(unittest.TestCase):
     def test_the_switch_reaches_the_baked_mod_config(self) -> None:
         self.assertIs(self._config(move_fallback=True)["MoveFallback"], True)
         self.assertIs(self._config(move_fallback=False)["MoveFallback"], False)
+
+    def test_stalled_operation_release_is_off_unless_asked(self) -> None:
+        self.assertIn(self._config()["StalledOperationRelease"], (None, False))
+        self.assertIs(self._config(stalled_operation_release=True)["StalledOperationRelease"], True)
+        source = pathlib.Path(civ6_play.__file__).read_text(encoding="utf-8")
+        flag = source[source.index('ap.add_argument("--stalled-operation-release"'):]
+        flag = flag[: flag.index(")\n")]
+        self.assertIn('action="store_true", default=False', flag)
+        arms = source[source.index('"mod_arms": {'):]
+        arms = arms[: arms.index("},")]
+        self.assertIn('"StalledOperationRelease": getattr(args, "stalled_operation_release", False),', arms)
+
+    def test_the_played_tree_can_arm_the_release_by_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "live-mod-arms.txt"
+            args = SimpleNamespace(stalled_operation_release=False)
+            self.assertEqual(civ6_play.apply_tree_mod_arms(args, path), [])
+            self.assertIs(args.stalled_operation_release, False)
+            path.write_text("# arms for this pin\nstalled-operation-release, no-such-arm\n",
+                            encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                applied = civ6_play.apply_tree_mod_arms(args, path)
+            self.assertEqual(applied, ["stalled-operation-release"])
+            self.assertIs(args.stalled_operation_release, True)
+            self.assertIn("unknown arm 'no-such-arm' ignored", err.getvalue())
+            self.assertIs(self._config(stalled_operation_release=args.stalled_operation_release)
+                          ["StalledOperationRelease"], True)
+
+    def test_the_debug_timescale_arm_carries_its_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "live-mod-arms.txt"
+            path.write_text("debug-timescale-2\n", encoding="utf-8")
+            args = SimpleNamespace(debug_timescale=None)
+            self.assertEqual(civ6_play.apply_tree_mod_arms(args, path), ["debug-timescale-2"])
+            self.assertEqual(args.debug_timescale, 2.0)
+        self.assertIsNone(self._config()["DebugTimeScale"])
+        self.assertEqual(self._config(debug_timescale=2.0)["DebugTimeScale"], 2.0)
+        source = pathlib.Path(civ6_play.__file__).read_text(encoding="utf-8")
+        arms = source[source.index('"mod_arms": {'):]
+        arms = arms[: arms.index("},")]
+        self.assertIn('"DebugTimeScale": getattr(args, "debug_timescale", None),', arms)
+
+    def test_the_faster_timescale_arms_carry_their_values_and_the_last_wins(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "live-mod-arms.txt"
+            for name, value in (("debug-timescale-3", 3.0), ("debug-timescale-4", 4.0)):
+                path.write_text(name + "\n", encoding="utf-8")
+                args = SimpleNamespace(debug_timescale=None)
+                self.assertEqual(civ6_play.apply_tree_mod_arms(args, path), [name])
+                self.assertEqual(args.debug_timescale, value)
+            path.write_text("debug-timescale-2\ndebug-timescale-3\n", encoding="utf-8")
+            args = SimpleNamespace(debug_timescale=None)
+            civ6_play.apply_tree_mod_arms(args, path)
+            self.assertEqual(args.debug_timescale, 3.0)
+
+    def test_main_applies_the_tree_arms_right_after_parsing(self) -> None:
+        source = pathlib.Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertIn("    args = ap.parse_args(raw_argv)\n    apply_tree_mod_arms(args)\n", source)
+        self.assertEqual(civ6_play.TREE_MOD_ARMS_FILE,
+                         pathlib.Path(civ6_play.__file__).resolve().parent.parent
+                         / "deploy" / "live-mod-arms.txt")
 
     def test_the_switch_is_on_by_default_and_withholdable(self) -> None:
         parser = argparse.ArgumentParser()

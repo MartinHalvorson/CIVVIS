@@ -87,10 +87,21 @@ impl AdvancedAi {
         // See `rival_lead_goal`: the lead becomes the explorer's held goal,
         // so its routing, threat checks and dead-goal retirement still apply.
         if let Some(goal) = self.rival_lead_goal(g, pid, uid) {
+            let fresh = self
+                .base
+                .explore_goal
+                .borrow()
+                .get(&uid)
+                .is_none_or(|(held, _)| *held != goal);
             self.base
                 .explore_goal
                 .borrow_mut()
                 .insert(uid, (goal, g.turn));
+            if fresh {
+                think!(self.journal(), Military, Detail,
+                    "{} {uid} looks for an unseen rival's cities", g.units[&uid].kind;
+                    "a met major's ground at {goal:?} has no city we know of; the lead scout heads for the fog beside it"; goal);
+            }
         }
         let acted = self.explorer_turn(g, pid, uid)?;
         if acted && g.units.get(&uid).is_some_and(|unit| unit.pos != before) {

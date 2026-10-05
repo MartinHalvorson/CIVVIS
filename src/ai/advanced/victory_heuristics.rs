@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 /// The science reading at which a Domination army answers a rival's launch
 /// chain: the Moon Landing (`rival_victory_pressure`'s 45).
-const DOMINATION_SCIENCE_COUNTER: i32 = 45;
+pub(super) const DOMINATION_SCIENCE_COUNTER: i32 = 45;
 
 const SCIENCE_VICTORY_TECH_CHAIN: [&str; 5] = [
     "rocketry",
@@ -133,6 +133,8 @@ impl AdvancedAi {
         let pressure = self.rival_victory_pressure(g, rival);
         self.domination_counter_pressure(g, pressure)
             || self.domination_faithless_conversion_counter(g, pid, rival, pressure)
+            // See `one_war::culture_lane_threat`.
+            || self.culture_lane_threat(g, rival)
     }
     /// The next irreducible Science milestone. An explicit or adaptive
     /// Science plan can still honour a declared rush or a war breakthrough,
@@ -433,6 +435,10 @@ impl AdvancedAi {
             {
                 clocks.push((rival, launches));
             }
+            // `runaway-expander-counter`: see `advanced/runaway_expander.rs`.
+            if let Some(runaway) = self.runaway_expander_clock(g, pid, rival) {
+                clocks.push((rival, runaway));
+            }
             // `denial-nearest-finish`: a culture race near its finish, read
             // by how soon it ends. See `advanced/denial_nearest_finish.rs`.
             if let Some(culture) = self.nearest_finish_culture_clock(g, rival).filter(|clock| {
@@ -489,6 +495,27 @@ impl AdvancedAi {
                     && Self::capture_completes_domination(g, pid, city.id)
             })
             .map(|city| city.id)
+    }
+
+    /// The rival we are at war with, and its capital, when taking that
+    /// capital completes Domination. `domination_finish` otherwise looks only
+    /// at the rival the denial layer names. Live King
+    /// civvis-20261004T160213Z (game 65) took Aachen at turn 218, leaving
+    /// the Maori capital as the last one Domination needed. The Maori, at war
+    /// with us, held 3 cities at 59 to 125 power against our 2,800, and 16
+    /// Diplomatic Victory points. The denial layer still named Germany, so
+    /// the campaign stayed on Frankfurt and Cologne.
+    pub(super) fn domination_finish_at_war(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+        g.players
+            .iter()
+            .filter(|rival| {
+                rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
+            })
+            .filter(|rival| g.is_at_war(pid, rival.id))
+            .find_map(|rival| {
+                self.domination_finishing_capital_for(g, pid, rival.id)
+                    .map(|city| (rival.id, city))
+            })
     }
 
     /// Rank required capitals inside the selected front as well as globally.
@@ -768,10 +795,14 @@ mod tests {
         let plan = science_plan(game.turn);
         ai.advanced_research(&mut game, 0, &plan);
 
-        assert_eq!(
-            game.players[0].research.as_deref(),
-            Some("bronze_working"),
-            "an explicit Science target must clear an unfinished Ancient era before its Rocketry beeline"
+        // Any unfinished Ancient node is the backfill. This used to name
+        // Bronze Working, which won the scorer only because its lookahead
+        // counted other civilizations' Iron Working uniques (the Kongo Shield
+        // Bearer, Hypaspist and Toa); counted honestly, Irrigation edges it.
+        let picked = game.players[0].research.clone().expect("a research pick");
+        assert!(
+            picked != "rocketry" && game.rules.techs[picked.as_str()].era == 0,
+            "an explicit Science target must clear an unfinished Ancient era before its Rocketry beeline, not {picked}"
         );
     }
 

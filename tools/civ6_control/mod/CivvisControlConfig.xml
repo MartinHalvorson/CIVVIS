@@ -116,6 +116,21 @@
 		<Row SourceGroup="Game" SourceId="RULESET" SourceValue="CIVVIS_DEFAULT_RULESET"
 			 TargetGroup="Game" TargetId="GAME_SPEED_TYPE" TargetValue="CIVVIS_DEFAULT_SPEED"
 			 Hash="1" Static="1"/>
+		<!-- The map script and size the same way. Their Parameter defaults above
+		     lose to the reset just like difficulty and speed did, so every game
+		     scrolled the map picker and the size dropdown by screenshot (25-40 s,
+		     more when a capture hiccups). Map/MAP_SCRIPT is set by this mechanism
+		     in shipped data (NapoleonScenario_Config.xml, a string, no hash);
+		     Map/MAP_SIZE is hashed like its Parameter row (SetupParameters.xml).
+		     A static write skips the UI's MapSize_ValueChanged, which is what
+		     resets majors and city-states for the size, so civ6_play's
+		     `setup_drift` refuses any seat whose counts are not the size's. -->
+		<Row SourceGroup="Game" SourceId="RULESET" SourceValue="CIVVIS_DEFAULT_RULESET"
+			 TargetGroup="Map" TargetId="MAP_SCRIPT" TargetValue="CIVVIS_DEFAULT_MAP"
+			 Static="1"/>
+		<Row SourceGroup="Game" SourceId="RULESET" SourceValue="CIVVIS_DEFAULT_RULESET"
+			 TargetGroup="Map" TargetId="MAP_SIZE" TargetValue="CIVVIS_DEFAULT_MAP_SIZE"
+			 Hash="1" Static="1"/>
 		<!-- Defaults alone do not replace the Online speed's 250-turn clock on
 		     the direct Create Game path. The in-game SetMaxTurns(650) changes
 		     GameConfiguration but leaves Game.GetMaxGameTurns() at 250. Apply

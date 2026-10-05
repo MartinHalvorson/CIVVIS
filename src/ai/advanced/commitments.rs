@@ -349,6 +349,16 @@ impl CommitmentLedger {
             .collect();
     }
 
+    /// `stall-rebases-on-new-walls`: the open capture's best reading starts
+    /// again at `reading`, its stall streak cleared.
+    pub(super) fn rebase_capture(&mut self, turn: u32, reading: i32) {
+        if let Some(c) = self.open.get_mut(&(Kind::Capture, Owner::Empire)) {
+            c.best = reading;
+            c.best_turn = turn;
+            c.stalled_streak = 0;
+        }
+    }
+
     pub fn open_for(&self, kind: Kind, owner: Owner) -> Option<&Commitment> {
         self.open.get(&(kind, owner))
     }
@@ -781,6 +791,41 @@ struct CaptureReading {
 }
 
 impl AdvancedAi {
+    /// `stall-rebases-on-new-walls`: when the capture objective's wall pool
+    /// grows, its best reading starts again from the walled city, so walls
+    /// knocked down count as the new lows they are. The reading is hit points
+    /// plus walls; a city that builds walls mid-siege jumps above the best
+    /// it showed unwalled, and nothing short of breaching past that old best
+    /// counted as progress. Live King civvis-20261005T021048Z (game 93) had
+    /// Kwadukuza at 184 unwalled by turn 132; it built walls, the army took
+    /// them from 64 to 28 of 100 over turns 136-140, and the siege was stood
+    /// down at 140 as "not pushed to a new low", which opened "the war has
+    /// stalled" peace at 145.
+    pub(super) fn rebase_capture_on_new_walls(&mut self, g: &Game, cid: u32, reading: i32) {
+        if !self.stall_rebases_on_new_walls {
+            return;
+        }
+        let Some(city) = g.cities.get(&cid) else {
+            return;
+        };
+        let walls = g.city_max_wall_hp(city);
+        let raised = self
+            .capture_walls_seen
+            .is_some_and(|(pos, seen)| pos == city.pos && walls > seen);
+        let open = self
+            .commitments
+            .open_for(Kind::Capture, Owner::Empire)
+            .is_some_and(|c| c.target == Target::City(cid));
+        if raised && open {
+            self.commitments.rebase_capture(g.turn, reading);
+            think!(self.journal(), Military, Detail,
+                   "The siege of {} starts its reading again from the new walls", city.name;
+                   "the wall pool grew to {walls}; walls knocked down from here are progress";
+                   city.pos);
+        }
+        self.capture_walls_seen = Some((city.pos, walls));
+    }
+
     /// The end-of-turn reading. Called once per acting turn, after the unit
     /// pass and before `EndTurn`, so `Unit::acted` still says what each unit
     /// did this turn.
@@ -797,6 +842,25 @@ impl AdvancedAi {
                     && g.rules.units[unit.kind].class == "military"
                     && g.wdist(unit.pos, at) <= CAPTURE_PRESENCE_RADIUS
             })
+        };
+        // `capture-waits-on-the-march`: see `advanced/capture_march.rs`.
+        let march_target = self
+            .war_plan
+            .as_ref()
+            .map(|plan| plan.objective_city)
+            .or_else(|| {
+                self.plan
+                    .as_ref()
+                    .filter(|plan| plan.strategy == GrandStrategy::Conquest)
+                    .and_then(|plan| plan.target_city)
+            });
+        let marching = march_target
+            .filter(|cid| self.capture_marching(g, pid, *cid))
+            .map(|cid| (cid, "while its army marches in"));
+        let march_note = |cid: u32| {
+            marching
+                .filter(|(city, _)| *city == cid)
+                .map(|(_, why)| why)
         };
         let appointed = self.war_plan.as_ref().and_then(|plan| {
             let city = g.cities.get(&plan.objective_city)?;
@@ -818,7 +882,10 @@ impl AdvancedAi {
                 declared,
                 present: declared && presence(g, city.pos),
                 waiting: declared
-                    .then(|| self.capture_waits_on_the_train(g, pid, plan.objective_city))
+                    .then(|| {
+                        self.capture_waits_on_the_train(g, pid, plan.objective_city)
+                            .or_else(|| march_note(plan.objective_city))
+                    })
                     .flatten(),
             })
         });
@@ -845,7 +912,10 @@ impl AdvancedAi {
                 declared,
                 present: declared && presence(g, city.pos),
                 waiting: declared
-                    .then(|| self.capture_waits_on_the_train(g, pid, cid))
+                    .then(|| {
+                        self.capture_waits_on_the_train(g, pid, cid)
+                            .or_else(|| march_note(cid))
+                    })
                     .flatten(),
             })
         });
@@ -940,6 +1010,10 @@ impl AdvancedAi {
             holds: &holds,
             price: &price,
         };
+        // `stall-rebases-on-new-walls`: see `rebase_capture_on_new_walls`.
+        if let Some(w) = war.as_ref() {
+            self.rebase_capture_on_new_walls(g, w.city, w.reading);
+        }
         let ledger = &mut self.commitments;
         ledger.reconcile_units(g, pid, Kind::Settle, &self.settler_targets, &ctx);
         ledger.reconcile_units(g, pid, Kind::Improve, &self.builder_targets, &ctx);
@@ -2269,6 +2343,101 @@ mod tests {
         println!("gene counters:");
         for (key, n) in &gene_counters {
             println!("  {key:<40}{n}");
+        }
+    }
+
+    /// See `advanced/capture_march.rs`: a declared objective whose nearest
+    /// land soldier keeps closing in is not stood down as "nobody went"
+    /// under `capture-waits-on-the-march`.
+    #[test]
+    fn a_marching_army_keeps_its_objective() {
+        for gene in [false, true] {
+            let (mut game, target) = conquest_fixture();
+            let goal = game.cities[&target].pos;
+            let mut ai = AdvancedAi::new();
+            ai.enable_capture_go_or_stand_down();
+            if gene {
+                ai.enable_capture_waits_on_the_march();
+            }
+            aim(&mut ai, &game, target);
+            // A soldier ten tiles out, stepped one tile closer each turn.
+            let start = game
+                .wdisk(goal, 10)
+                .into_iter()
+                .find(|pos| {
+                    game.wdist(*pos, goal) == 10
+                        && !game.rules.is_water(&game.map.tiles[pos])
+                        && game.units_at(*pos).is_empty()
+                })
+                .expect("land ten tiles out");
+            let walker = game.spawn_test_unit("warrior", 0, start);
+            for _ in 0..=CAPTURE_GO_TURNS {
+                ai.reconcile_commitments(&mut game, 0);
+                let here = game.units[&walker].pos;
+                let step = game.nbrs(here).into_iter().find(|pos| {
+                    game.wdist(*pos, goal) < game.wdist(here, goal)
+                        && game.wdist(*pos, goal) > CAPTURE_PRESENCE_RADIUS
+                        && game
+                            .map
+                            .tiles
+                            .get(pos)
+                            .is_some_and(|tile| !game.rules.is_water(tile))
+                        && game.units_at(*pos).is_empty()
+                        && game.city_at(*pos).is_none()
+                });
+                if let Some(step) = step {
+                    game.relocate(walker, step);
+                }
+                game.turn += 1;
+            }
+            assert_eq!(
+                ai.capture_stood_down.contains_key(&target),
+                !gene,
+                "gene {gene}: a marching army is not 'nobody went'"
+            );
+        }
+    }
+
+    /// See `rebase_capture_on_new_walls`: under the gene, walls built
+    /// mid-siege and then knocked down count as new lows, so the siege that
+    /// is breaking them is not stood down as stalled.
+    #[test]
+    fn new_walls_knocked_down_are_progress_under_the_gene() {
+        for gene in [false, true] {
+            let (mut game, target) = conquest_fixture();
+            let goal = game.cities[&target].pos;
+            let beside = game
+                .nbrs(goal)
+                .into_iter()
+                .find(|pos| {
+                    !game.rules.is_water(&game.map.tiles[pos]) && game.units_at(*pos).is_empty()
+                })
+                .expect("a land hex beside the objective");
+            game.spawn_test_unit("warrior", 0, beside);
+            let mut ai = AdvancedAi::new();
+            ai.enable_capture_go_or_stand_down_2();
+            if gene {
+                ai.enable_stall_rebases_on_new_walls();
+            }
+            aim(&mut ai, &game, target);
+            // Two unwalled readings, then walls that fall ten a turn.
+            for round in 0..(4 + STALL_TURNS + CAPTURE_STALL_TURNS) {
+                if round == 2 {
+                    std::sync::Arc::make_mut(&mut game.observed_city_max_wall_hp)
+                        .insert(target, 100);
+                }
+                if round >= 2 {
+                    let walls = 100 - 10 * (round as i32 - 2);
+                    game.cities.get_mut(&target).unwrap().wall_hp = walls.max(0);
+                }
+                ai.reconcile_commitments(&mut game, 0);
+                game.turn += 1;
+            }
+            assert_eq!(
+                ai.capture_stood_down.contains_key(&target),
+                !gene,
+                "gene {gene}: falling new walls are not a stalled siege"
+            );
         }
     }
 }

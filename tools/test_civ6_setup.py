@@ -54,6 +54,7 @@ GRAPHICS_OPTIONS = """Version 10
 [Video]
 PerformanceImpact 2
 MSAA 2
+VSync 0
 [Shadows]
 EnableShadows 1
 [CloudShadows]
@@ -86,13 +87,16 @@ class TheVerificationOptionsAreAppliedInPlace(unittest.TestCase):
                                     "AutoSaveKeepCount": ("10", 50),
                                     "AutoSaveFrequency": ("5", 1)},
                 "GraphicsOptions.txt": {"EnableShadows": ("1", 0),
-                                        "EnableCloudShadows": ("1", 0)},
+                                        "EnableCloudShadows": ("1", 0),
+                                        "VSync": ("0", 1)},
             })
             self.assertEqual(env.read_option(user / "AppOptions.txt", "PlayIntroVideo"), "0")
             self.assertEqual(env.read_option(user / "AppOptions.txt", "AcceptedUnknownDevice"), "1")
             self.assertEqual(env.read_option(user / "AppOptions.txt", "AcceptedOutdatedDriver"), "1")
             self.assertEqual(env.read_option(user / "GraphicsOptions.txt", "EnableShadows"), "0")
             self.assertEqual(env.read_option(user / "GraphicsOptions.txt", "EnableCloudShadows"), "0")
+            # A VSync A/B block written back on exit is pinned back before launch.
+            self.assertEqual(env.read_option(user / "GraphicsOptions.txt", "VSync"), "1")
             # The cuts are cosmetic and stay cosmetic: what the game plays is untouched.
             self.assertEqual(env.read_option(user / "UserOptions.txt", "QuickCombat"), "1")
             self.assertEqual(env.read_option(user / "UserOptions.txt", "GameEffectsLogLevel"), "2")
@@ -113,7 +117,8 @@ class TheVerificationOptionsAreAppliedInPlace(unittest.TestCase):
             user = write_user_dir(Path(tmp), graphics="Version 10\n[Shadows]\nEnableShadows 1\n")
             applied = civ6_setup.apply_verification(user)
             self.assertEqual(applied["GraphicsOptions.txt"],
-                             {"EnableShadows": ("1", 0), "EnableCloudShadows": (None, 0)})
+                             {"EnableShadows": ("1", 0), "EnableCloudShadows": (None, 0),
+                              "VSync": (None, 1)})
             self.assertNotIn("EnableCloudShadows", (user / "GraphicsOptions.txt").read_text())
 
     def test_a_file_the_game_has_not_written_is_skipped(self) -> None:

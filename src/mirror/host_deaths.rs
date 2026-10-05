@@ -15,7 +15,15 @@ pub(super) struct HostDeaths(BTreeMap<(usize, i64), HostUnitDeath>);
 
 impl HostDeaths {
     pub(super) fn observe(&mut self, line: &str) {
-        if !line.contains("\"combat\"") {
+        // ★★★★★ MATCH THE EVENT KIND, NOT THE WORD. `"combat"` is also a key in
+        // every exported unit, so the old `contains("\"combat\"")` sent every
+        // state record (100-300 KB each, ~690 by turn 220) through a full
+        // `serde_json::Value` build on every frame, only to read `kind` and
+        // discard it. Profiled on a t220 frame of civvis-20261003T164758Z that
+        // was a third of the decider's CPU. On that run's 96 MB log the old
+        // filter passed 1,418 lines and this one passes exactly its 730 combat
+        // events; the `kind` check below still decides.
+        if !super::json_may_have_value(line, "\"kind\"", "\"combat\"") {
             return;
         }
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {

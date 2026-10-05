@@ -159,6 +159,12 @@ required-features = ["closed-experiments"]
 libm = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
+# Substring search over the live run log (`mirror::lines_containing`). The
+# decider re-reads a ~100 MB events.jsonl every frame, and std's `str::contains`
+# runs scalar Two-Way on aarch64: 1,238 of 1,647 samples of that reader on a
+# t220 frame. `memmem` is the SIMD searcher serde_json already links (same
+# 2.x in Cargo.lock), so this adds no new code to the build.
+memchr = "2"
 
 # mimalloc replaces the platform allocator in every native binary. This is not a
 # micro-optimization aimed at a leaf share, and the distinction matters, because

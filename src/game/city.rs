@@ -7652,6 +7652,14 @@ impl Game {
                 if repair == "district" {
                     tile.pillaged
                 } else {
+                    // ★★★ A PILLAGED PREREQUISITE IS REPAIRED FIRST. The host
+                    // refuses a Coal Power Plant repair while the Factory it
+                    // requires is still pillaged ("This building requires a
+                    // Factory building."). Live King 20261004T083931Z: Caracas
+                    // lost its Workshop, Factory and Coal Power Plant at turn
+                    // 144; the plant was the cheapest repair, so the city chose
+                    // it and the host refused it every turn from 147 to 205,
+                    // 59 turns with an empty queue.
                     city.pillaged_buildings
                         .iter()
                         .any(|built| *built == *repair)
@@ -7660,7 +7668,10 @@ impl Game {
                                 tile.district.is_some_and(|district| {
                                     self.district_is_family(district, family)
                                 })
-                            })
+                            }) && !building
+                                .requires
+                                .iter()
+                                .any(|required| city.pillaged_buildings.contains(required))
                         })
                 }
             }

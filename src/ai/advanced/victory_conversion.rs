@@ -997,6 +997,12 @@ impl AdvancedAi {
         // once the city is low (see `finishing_blow` below).
         let mut finishing_blow = 0.0_f64;
         let counts_what_fires = self.siege_budget_counts_what_fires;
+        // `siege-counts-posted-shooters`: a shooter with no firing post fires
+        // nothing, and one with a hostile unit in reach shoots that first
+        // while the walls stand. See `siege_train::posted_shooters`.
+        let posted = self
+            .siege_counts_posted_shooters
+            .then(|| super::siege_train::posted_shooters(g, pid, cid, force));
         for uid in force {
             let Some(unit) = g
                 .units
@@ -1037,6 +1043,10 @@ impl AdvancedAi {
                 attack += g.promotion_effect(unit, "ranged_vs_district") - 17.0;
             }
             let damage = expected_damage(attack, g.city_strength(cid));
+            let shooter = posted.is_some() && super::siege_train::is_siege_shooter(g, *uid);
+            if shooter && posted.as_ref().is_some_and(|(posted, _)| !posted.contains(uid)) {
+                continue;
+            }
             if counts_what_fires && !ranged {
                 // The train holds melee on the ring until a blow pays
                 // (`siege_blow`): against a healthy city that is the last
@@ -1049,6 +1059,8 @@ impl AdvancedAi {
             // the wall damage that would make the siege ready to invest.
             let wall_multiplier = if spec.siege {
                 1.0
+            } else if shooter && posted.as_ref().is_some_and(|(_, walls)| !walls.contains(uid)) {
+                0.0
             } else if ranged {
                 0.5
             } else if super::siege_train::melee_wall_attack_allowed(g, pid, *uid, cid) {

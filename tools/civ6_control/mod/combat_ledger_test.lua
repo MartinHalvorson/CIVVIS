@@ -84,6 +84,7 @@ Players = setmetatable({}, { __index = function(_, pid)
 	return {
 		GetTreasury = function() return { GetGoldBalance = function() return host.gold end } end,
 		IsBarbarian = function() return pid == 63 end,
+		IsTurnActive = function() return host.turn_active end,
 		GetDistricts = function() return { FindID = function(_, districtID)
 			local d = host.districts[pid .. ":" .. districtID]
 			if d == nil or d.gone then return nil end
@@ -158,6 +159,35 @@ check("damage to attacker read back", has(combat, '"damage_to_attacker":0'), tru
 check("defender not killed", has(combat, '"defender_killed":false'), true)
 check("the strike's preview rides on the combat", has(combat, '"preview":{') and has(combat, '"damage_to_defender":31'), true)
 check("ours flagged", has(combat, '"ours":true'), true)
+
+-- 2b. How long the visualization held, and whose turn it ran in (G90: the AI
+-- phase grew ~0.5 s per combat in its window).
+local visClock = 10.0
+UI.GetElapsedTime = function() return visClock end
+host.turn_active = false
+ledger.onCombatVisBegin({ attacker = id(0, 7), defender = id(63, 900) })
+visClock = 10.35
+ledger.onCombatVisEnd({ attacker = id(0, 7), defender = id(63, 900) })
+combat = lastEvent("combat")
+check("the visualization's duration is recorded", has(combat, '"vis_seconds":0.35'), true)
+check("…and that it ran outside our turn", has(combat, '"our_turn":false'), true)
+host.turn_active = true
+ledger.onCombatVisBegin({ attacker = id(0, 7), defender = id(63, 900) })
+visClock = 11.0
+ledger.onCombatVisEnd({ attacker = id(0, 7), defender = id(63, 900) })
+check("…or inside it", has(lastEvent("combat"), '"our_turn":true'), true)
+-- At a 2x debug timescale the UI clock runs twice as fast, and the duration
+-- is still REAL seconds, so it compares with games that ran at 1x.
+local realClock = rawget(_G, "CivvisClock")
+realClock.setScale(2)
+visClock = 20.0
+ledger.onCombatVisBegin({ attacker = id(0, 7), defender = id(63, 900) })
+visClock = 20.7
+ledger.onCombatVisEnd({ attacker = id(0, 7), defender = id(63, 900) })
+check("at 2x, 0.7 UI seconds of visualization are 0.35 real", has(lastEvent("combat"), '"vis_seconds":0.35'), true)
+realClock.scale, realClock.offset = 1, 0
+UI.GetElapsedTime = nil
+host.turn_active = nil
 
 -- 3 + 4. Their warrior hits back and dies to our counter next combat; deltas recorded.
 ledger.onCombatVisBegin({ attacker = id(63, 900), defender = id(0, 7) })

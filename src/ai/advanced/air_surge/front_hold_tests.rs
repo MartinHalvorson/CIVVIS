@@ -184,6 +184,54 @@ fn a_stalled_war_against_the_armed_surge_target_is_not_offered_peace() {
     assert!(!offers(true), "the surge's own front keeps its war");
 }
 
+/// `stalled-peace-spares-the-counter`: a stalled war on the rival closest to
+/// winning is not offered the fatigue peace. Live King civvis-20261005T033442Z
+/// (game 96) offered the Khmer, at 70% of the culture bar, "the war has
+/// stalled" peace at turn 207 and lost to their Culture at 223.
+#[test]
+fn a_stalled_war_on_the_rival_closest_to_winning_is_not_offered_peace() {
+    let offers = |spare: bool| {
+        let (mut g, mut ai, target) = fixture();
+        at_war(&mut g);
+        for pos in [(36, 20), (36, 21), (35, 20), (35, 21)] {
+            g.spawn_test_unit("cuirassier", 1, pos);
+        }
+        // Rival 1's faith holds every city: its religious clock is urgent.
+        g.players[1].religion = Some("islam".to_string());
+        for city in g.cities.values_mut() {
+            city.pressure.clear();
+            city.pressure.insert("islam".to_string(), 10_000.0);
+        }
+        g.players[0].gold = 0.0;
+        g.players[0].gold_per_turn = -11.0;
+        ai.enable_peace_when_war_does_not_pay();
+        if spare {
+            ai.enable_stalled_peace_spares_the_counter();
+        }
+        ai.major_war_since = Some(g.turn - 40);
+        ai.last_campaign_progress = g.turn - 40;
+        ai.air_surge_plan = None;
+        ai.air_surge_status = AirSurgeStatus::default();
+        assert!(
+            ai.urgent_victory_threat(&g, 1),
+            "fixture: rival 1 is close to winning"
+        );
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(target),
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: g.turn,
+            rush: false,
+        };
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        ai.peace_offers.contains(&1)
+    };
+    assert!(offers(false), "the control: the stalled war is offered peace");
+    assert!(!offers(true), "the war on the rival closest to winning is kept");
+}
+
 /// Live King civvis-20261004T025448Z: the conquest opening declared on Spain
 /// at turn 51, and at 81 the fatigue clause offered "the war has stalled"
 /// peace with 9 bodies on Barcelona's ring. The opening's war is ended only by

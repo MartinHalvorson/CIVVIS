@@ -338,3 +338,55 @@ version 1 (16 pairs): t100 population +4.06 (z +4.16), cities +0.88
 against no Campus gene comes to about +5 Science and +0.9 techs at t100, with
 population, cities, civics and culture flat. `builder-before-the-army-2`
 (drought only) against version 1: games last 8.1 turns longer (z +2.27).
+
+## Housing: `granary-before-the-army` (not armed)
+
+At t100 our cities held 4-5 citizens against the rivals' 7-9, and many sat at
+their housing cap. Game 41 (155014Z) had 5 of 6 cities at housing and no
+Granary. `first-granary-reserve-3` arms two Granary steps. The stock
+`housing_reserve_item` comes after the floor and the Settler. The advanced
+reserve runs ahead of the strategic scorer, which a delegated live seat never
+reaches. `granary-before-the-army` moves the stock step ahead of the floor,
+behind the Monument and the capital Settler, yielding to a due Settler.
+
+The 16-pair domination probe against the live bundle bought +2.1 citizens at
+t100 (z +2.48). It paid 23 Science (z −2.38), 0.87 Libraries (z −2.04) and
+1.9 districts at t150, because the Granary step displaces
+`campus-before-the-army-2`. Replays bind rarely: 0 and 3 of 10 housing-bound
+idle turns, and in game 41 the siege reservation claimed the idle capital
+first. The gene is not armed.
+
+Dry sites (base housing 2) numbered 2-3 per weak game against none in game
+26. The site scorer already prices water three ways: the growth forecast,
+`(housing − 2) × 4`, and an early dry-site penalty. This reads as map
+scarcity, not a missing term.
+
+## `campus-before-the-army-3` (not armed) and version 2 confirmed
+
+Version 3 carries the chain on to the University and the Research Lab.
+Against version 2 it scored −51 (z −1.87), with Science −12, Culture −10 and
+Gold −8.6 at t150. A 72-game confirmation screen of the armed version 2
+(seeds 31004000) gave +1.1 pp (z +0.26). The earlier 24-game −14.7 pp
+(z −2.90) was noise.
+
+## Where the economy stands (2026-10-04 early UTC)
+
+Armed from game 36/37 on: `builder-before-the-army-2`, `campus-before-the-army-2`,
+`settler-before-the-navy`, `policy-deck-hysteresis-2`, plus `culture-defense-theater`
+(with the Campus and Settler gates) and `upkeep-reserve`.
+
+| game | t100 cities / pop | t100 Science vs best | later |
+|---|---|---|---|
+| 37 (131343Z) | 9 / 40 | 72 vs 95 (0.76) | 138 vs 174 at t150; Technology loss t238 to a 15-city, 200-pop runaway |
+| 44 (025448Z) | 8 / 42 | 59 vs 69 (0.85) | **191 vs 133 at t175, Science lead**; Culture loss t194 to Nubia |
+| 46 (033533Z) | 9 / 52 | 71 vs 106 (0.67) | lost 2 cities by t150, 69 vs 179 |
+
+The t100 economy is no longer what loses these games. Game 44 led Science, ran
++67 Gold a turn and had no bankrupt turns. Its own domestic Tourists (75-77)
+sat at the culture bar. It still lost the culture race to Nubia, whom the
+campaign had targeted from t130. Nubia grew from 5 to 9 cities while our
+sieges stood in Stage with nothing staged. Across today's runs, 26 Siege
+streaks lasted 8 or more turns with "0 of N units staged". The force shrinks
+on about one staging turn in three everywhere (the drain), but the empty
+streaks carry larger forces than average. So they are a convergence problem
+for the siege lane, and the next lever is there, not in the economy.

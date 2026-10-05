@@ -642,3 +642,254 @@ fn an_escorted_staging_gun_marches_under_one_raider() {
         assert_eq!(closer, trusts, "the gun marches only under the gene");
     }
 }
+
+/// See `siege_route_step`: a gun on land whose dry approach to its post is
+/// walled by its own soldiers does not embark onto the water beside it,
+/// where `disembark_step` would land it again next turn (Ray, game 52). It
+/// walks through its screen along the shore instead.
+#[test]
+fn a_posted_gun_never_embarks_around_its_own_screen() {
+    let (mut g, cid, gun, _, _) = crowded_approach();
+    g.players[0].techs.insert(crate::name!("shipbuilding"));
+    let target = g.cities[&cid].pos;
+    let start = g.units[&gun].pos;
+    for x in start.0..=target.0 {
+        let tile = g.map.tiles.get_mut(&(x, target.1 - 1)).unwrap();
+        tile.terrain = crate::name!("coast");
+    }
+    let post = (target.0 - 3, target.1);
+    let water = |g: &Game, pos: Pos| g.rules.is_water(g.map.get(pos).unwrap());
+    // Fixture: the plain route around the screen leads across the water.
+    let wet = g.route_step(gun, post, 0).expect("a route by water");
+    assert!(water(&g, wet), "fixture: the open route embarks at {wet:?}");
+    assert_eq!(
+        siege_route_step(&g, 0, gun, post, target),
+        None,
+        "on land, the post route keeps to land"
+    );
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.approach(&mut g, 0, gun, post, target);
+    let now = g.units[&gun].pos;
+    assert!(!water(&g, now), "the gun stands on dry ground: {now:?}");
+    assert!(!g.is_embarked(&g.units[&gun]));
+}
+
+/// See `siege_posts_keeping`: a melee unit still walking in keeps last
+/// turn's ring post while it stays free and reachable, rather than taking
+/// whichever tile the spread-first order prefers this turn (the Siege Tower
+/// carrier at Yaroslavl, game 62). An occupied post is given up.
+#[test]
+fn a_walking_unit_keeps_last_turns_ring_post() {
+    let (mut g, cid) = super::tests::walled_city();
+    let ring = super::tests::ring_of(&g, cid);
+    let start = super::tests::at_distance(&g, cid, 3)[0];
+    let walker = g.spawn_unit("warrior", 0, start);
+    let city = CityView::of(&g, cid).unwrap();
+    let fresh = siege_posts(&g, 0, &city, &[walker], None)[&walker];
+    let kept = ring
+        .iter()
+        .copied()
+        .find(|pos| *pos != fresh && siege_route_step(&g, 0, walker, *pos, city.pos).is_some())
+        .expect("another reachable ring tile");
+    let previous = BTreeMap::from([(walker, kept)]);
+    assert_eq!(
+        siege_posts_keeping(&g, 0, &city, &[walker], None, &previous)[&walker],
+        kept
+    );
+    // Taken by someone else, the old post gives way to this turn's choice.
+    g.spawn_unit("warrior", 0, kept);
+    assert_ne!(
+        siege_posts_keeping(&g, 0, &city, &[walker], None, &previous)[&walker],
+        kept
+    );
+}
+
+/// A one-tile defile toward the city with one of ours in its gap, and a
+/// single open pocket beside the marching gun's start. The router may stop
+/// only on its first step, so from the start it turns into the pocket, which
+/// is no nearer the city, and from the pocket it turns back. Live King
+/// civvis-20261005T003728Z (game 89): Mashhad's guns stepped between two
+/// tiles behind a ridge for turns. `in_pocket` starts the gun in the pocket.
+fn defile_with_a_pocket(in_pocket: bool) -> (Game, u32, u32, u32, Pos, Pos) {
+    let (mut g, cid) = walled_city();
+    let target = g.cities[&cid].pos;
+    let start = (target.0 - 7, target.1);
+    let occupied = (target.0 - 6, target.1);
+    let pocket = (start.0, start.1 + 1);
+    for tile in g.map.tiles.values_mut() {
+        let lane = tile.pos.1 == target.1 && (start.0..=target.0).contains(&tile.pos.0);
+        tile.terrain = if lane || tile.pos == pocket {
+            crate::name!("grassland")
+        } else {
+            crate::name!("mountain")
+        };
+        tile.feature = None;
+        tile.hills = false;
+    }
+    let gun = g.spawn_unit("catapult", 0, if in_pocket { pocket } else { start });
+    let screen = g.spawn_unit("swordsman", 0, occupied);
+    (g, cid, gun, screen, start, pocket)
+}
+
+/// Without the gene the march step goes into the pocket, and from the
+/// pocket back; with `staging-column-passes-through` the gun crosses its own
+/// screen and stands nearer the city, the screen unmoved.
+#[test]
+fn staging_column_crosses_the_friend_in_the_gap_instead_of_stepping_aside() {
+    let (g, cid, gun, _, start, pocket) = defile_with_a_pocket(false);
+    let target = g.cities[&cid].pos;
+    assert_eq!(march_step(&g, gun, target, STAGING_FAR), Some(pocket));
+    assert!(
+        g.wdist(pocket, target) >= g.wdist(start, target),
+        "the pocket is no nearer"
+    );
+    let (g, _, gun, _, start, _) = defile_with_a_pocket(true);
+    assert_eq!(
+        march_step(&g, gun, target, STAGING_FAR),
+        Some(start),
+        "the two-cycle"
+    );
+
+    let run = |gene: bool| {
+        let (mut g, cid, gun, screen, _, _) = defile_with_a_pocket(false);
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        let mut ai = AdvancedAi::new();
+        ai.enable_siege_train();
+        if gene {
+            ai.enable_staging_column_passes_through();
+        }
+        let screen_pos = g.units[&screen].pos;
+        ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+        assert_eq!(g.units[&screen].pos, screen_pos, "the screen stays put");
+        (g.units[&gun].pos, g.wdist(g.units[&gun].pos, city.pos))
+    };
+    let (off_pos, off_distance) = run(false);
+    assert_eq!(off_pos, pocket, "without the gene the march steps aside");
+    let (on_pos, on_distance) = run(true);
+    assert!(
+        on_distance < off_distance && on_distance > CITY_STRIKE_RANGE,
+        "the gene crosses the screen to a nearer tile outside the city's reach: {on_pos:?} at {on_distance}"
+    );
+}
+
+/// With an open lane the march step already closes; the gene leaves the
+/// turn exactly as it was.
+#[test]
+fn staging_column_gene_leaves_an_open_march_alone() {
+    let run = |gene: bool| {
+        let (mut g, cid, gun, screen, _, _) = defile_with_a_pocket(false);
+        g.remove_unit(screen);
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        let mut ai = AdvancedAi::new();
+        ai.enable_siege_train();
+        if gene {
+            ai.enable_staging_column_passes_through();
+        }
+        ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+        (g.units[&gun].pos, g.units[&gun].moves_left.to_bits())
+    };
+    let (on, off) = (run(true), run(false));
+    assert_eq!(on, off);
+}
+
+/// An open Stage march for a lone Trebuchet, nine tiles from the walled
+/// city, with a Cuirassier the seat saw `age` turns ago five tiles past the
+/// march's next step and not on the board now.
+fn march_past_a_remembered_cuirassier(age: u32) -> (Game, u32, u32, Pos, Pos, AdvancedAi) {
+    let (mut g, cid) = walled_city();
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    g.at_war.insert((0, 1));
+    g.turn = 50;
+    let target = g.cities[&cid].pos;
+    let start = (target.0 - 9, target.1);
+    let gun = g.spawn_unit("trebuchet", 0, start);
+    let next = march_step(&g, gun, target, STAGING_FAR).expect("an open march");
+    assert!(g.wdist(next, target) < g.wdist(start, target));
+    let seen_at = (next.0, next.1 + 5);
+    assert_eq!(g.wdist(seen_at, next), 5);
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.hostile_last_seen.insert(
+        424_242,
+        super::super::RememberedHostile {
+            pos: seen_at,
+            when: g.turn - age,
+            owner: 1,
+            kind: crate::name!("cuirassier"),
+        },
+    );
+    (g, cid, gun, start, next, ai)
+}
+
+/// Live King civvis-20261005T033442Z (game 96): Khmer Cuirassiers seen at
+/// turn 144 were in the fog at 145, the Stage march read 0 to 7 danger, and
+/// two lone Trebuchets walked into their reach and were one-shot. Off, the
+/// march takes its step; with `staging-gun-remembers-hostiles` the gun holds
+/// short of the remembered Cuirassier's reach.
+#[test]
+fn a_staging_gun_holds_short_of_a_cuirassier_it_saw_last_turn() {
+    let run = |gene: bool| {
+        let (mut g, cid, gun, _, _, mut ai) = march_past_a_remembered_cuirassier(1);
+        if gene {
+            ai.enable_staging_gun_remembers_hostiles();
+        }
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+        g.units[&gun].pos
+    };
+    let (_, _, gun, start, next, ai) = march_past_a_remembered_cuirassier(1);
+    let _ = (gun, ai);
+    assert_eq!(run(false), next, "off, nothing on the board says danger");
+    let held = run(true);
+    assert_eq!(held, start, "on, the gun holds short of the remembered reach");
+}
+
+/// A sighting older than `REMEMBERED_STRIKER_TURNS` steers nothing: the
+/// gene's march is the plain march.
+#[test]
+fn an_older_sighting_leaves_the_staging_march_alone() {
+    let run = |gene: bool| {
+        let (mut g, cid, gun, _, _, mut ai) = march_past_a_remembered_cuirassier(2);
+        if gene {
+            ai.enable_staging_gun_remembers_hostiles();
+        }
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+        (g.units[&gun].pos, g.units[&gun].moves_left.to_bits())
+    };
+    assert_eq!(run(true), run(false));
+}
+
+/// A remembered hostile still in sight is the danger field's own; the
+/// remembered list leaves it out so one Cuirassier is never priced twice. Out
+/// of sight, its blow is the one-shot that killed the Trebuchets.
+#[test]
+fn a_remembered_hostile_in_sight_is_not_counted_twice() {
+    let (mut g, _, gun, start, _, mut ai) = march_past_a_remembered_cuirassier(1);
+    let beside = (start.0 + 1, start.1);
+    let cuirassier = g.spawn_unit("cuirassier", 1, beside);
+    let record = ai.hostile_last_seen.remove(&424_242).unwrap();
+    ai.hostile_last_seen.insert(cuirassier as i64, record);
+    assert!(
+        ai.remembered_strikers(&g, 0, gun).is_empty(),
+        "a hostile in sight is left to the danger field"
+    );
+    g.remove_unit(cuirassier);
+    let strikers = ai.remembered_strikers(&g, 0, gun);
+    assert_eq!(strikers.len(), 1);
+    assert_eq!(strikers[0].reach, 8, "four moves for the turn since, four to strike");
+    assert!(
+        strikers[0].blow > 80.0,
+        "a Cuirassier's blow on a Trebuchet is a one-shot: {}",
+        strikers[0].blow
+    );
+}

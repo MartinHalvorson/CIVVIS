@@ -15,6 +15,49 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from civ6_control import install  # noqa: E402
 
 
+class InstalledScriptSizeTest(unittest.TestCase):
+    """Civ VI silently dropped a 1,050,464-byte agent (G86, pin 2ddcd5889)."""
+
+    # The live settings prelude measured 2,706 bytes; allow three times that.
+    PRELUDE_ALLOWANCE = 8 * 1024
+    HEADROOM = 16 * 1024
+
+    def test_every_installed_script_keeps_sixteen_kib_of_headroom(self) -> None:
+        for name in install.SCRIPTS:
+            source = (install.MOD_SOURCE / name).read_text()
+            size = len(install.installed_lua(source).encode("utf-8")) + self.PRELUDE_ALLOWANCE
+            self.assertLess(size, install.LUA_SIZE_KNOWN_GOOD - self.HEADROOM,
+                            f"{name} installs at ~{size} bytes")
+
+    def test_stripping_keeps_every_code_line_in_order(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        code = [line for line in source.splitlines()
+                if line.strip() and not line.lstrip().startswith("--")]
+        self.assertEqual(install.installed_lua(source).splitlines(), code)
+        self.assertLess(len(install.installed_lua(source)), len(source) * 3 // 4)
+
+    def test_a_trailing_comment_and_a_string_with_dashes_survive(self) -> None:
+        source = 'local a = 1 -- kept\n-- dropped\n\nlocal b = "--not a comment"\n'
+        self.assertEqual(install.installed_lua(source),
+                         'local a = 1 -- kept\nlocal b = "--not a comment"\n')
+
+    def test_a_file_with_a_long_bracket_is_left_whole(self) -> None:
+        source = "local s = [[\n-- inside a long string\n]]\n-- comment\n"
+        self.assertEqual(install.installed_lua(source), source)
+
+    def test_the_installer_refuses_a_script_above_the_known_good_size(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = Path(tmp) / "mod"
+            mod.mkdir()
+            big = "local x = 1\n" * (install.LUA_SIZE_KNOWN_GOOD // 12 + 10)
+            (mod / "CivvisControlAgent.lua").write_text(big)
+            with patch.object(install, "MOD_SOURCE", mod), \
+                    patch.object(install, "check_syntax", return_value=None):
+                with self.assertRaises(SystemExit) as raised:
+                    install._write_mod(Path(tmp) / "out", {})
+            self.assertIn("known to load", str(raised.exception))
+
+
 class ProtectedInstallTest(unittest.TestCase):
     def test_hud_heartbeat_is_installed_configured_and_connected(self) -> None:
         import xml.etree.ElementTree as ET
@@ -1239,7 +1282,10 @@ class ProtectedInstallTest(unittest.TestCase):
         # `CivvisCongressVoteBudget` and the ask takes the smaller.
         self.assertIn('if rtype == "WC_RES_DIPLOVICTORY" then', voter)
         self.assertIn("option = 2;", voter)
-        self.assertIn("CivvisCongressVoteBudget(favor, costs, maxVotes)", voter)
+        # The bank is paced (`CivvisCongressBallotBank`) before it is priced.
+        self.assertIn("CivvisCongressVoteBudget(\n", voter)
+        self.assertIn("CivvisCongressBallotBank(favor, leaderPoints, cfg,", voter)
+        self.assertIn("CivvisCongressBallotBank = function(favor, leaderPoints, config, draining)", source)
         self.assertIn("CivvisCongressVoteBudget = function(favor, costs, maxVotes)", source)
         budget = source.split("CivvisCongressVoteBudget = function(favor, costs, maxVotes)", 1)[1].split("\nend", 1)[0]
         self.assertIn("tonumber(costs[host]) <= bank", budget)
@@ -1271,22 +1317,26 @@ class ProtectedInstallTest(unittest.TestCase):
         arm = voter.split('if rtype == "WC_RES_DIPLOVICTORY" then', 1)[1].split("elseif r.TargetType", 1)[0]
         self.assertIn("local claim = tonumber(cfg.DiploVictoryClaimVotes) or 12;", arm)
         self.assertIn("if tonumber(t) == pid then ourIdx = idx; end", arm)
-        self.assertIn("if ourIdx ~= nil and budget >= claim", arm)
-        self.assertIn("and (tonumber(leaderPoints) or 0) < floor then", arm)
-        claim = arm.index("if ourIdx ~= nil and budget >= claim")
+        # Below the floor the large-bank claim; from it, the claim that
+        # outvotes the last session's largest rival A block ("outvote").
+        self.assertIn("if ourIdx ~= nil and ((budget >= claim", arm)
+        self.assertIn("and (tonumber(leaderPoints) or 0) < floor)", arm)
+        self.assertIn("envoyTally.wc_rival_block", arm)
+        claim = arm.index("if ourIdx ~= nil and ((budget >= claim")
         tail = arm[claim:]
         self.assertIn("option = 1;", tail)
         self.assertIn("selection = ourIdx;", tail)
         self.assertIn("n = budget;", tail)
-        self.assertIn('mode = "claim";', tail)
+        self.assertIn('and "claim" or "outvote";', tail)
         # The guarded claim still follows budget selection and precedes commit.
         gate = arm.index("if (tonumber(leaderPoints) or 0) >= floor then")
         commit = arm.index("votes = n;")
         self.assertLess(gate, claim)
         self.assertLess(claim, commit)
-        # The bank is measured once, against both cost tables, before any gate.
-        self.assertIn("CivvisCongressVoteBudget(favor, costs, maxVotes)", arm)
-        budgetCall = arm.index("CivvisCongressVoteBudget(favor, costs, maxVotes)")
+        # The bank is paced and measured once, against both cost tables,
+        # before any gate.
+        self.assertIn("CivvisCongressBallotBank(favor, leaderPoints, cfg,", arm)
+        budgetCall = arm.index("CivvisCongressBallotBank(favor, leaderPoints, cfg,")
         self.assertLess(budgetCall, gate)
         # And the mode is reported on every ballot row.
         self.assertIn("return cast, spent, nil, leader, leaderPoints, leaderScore, mode;", voter)
@@ -1731,6 +1781,22 @@ class ProtectedInstallTest(unittest.TestCase):
         )
         self.assertIn("<DefaultValue>Continents.lua</DefaultValue>", rendered)
         self.assertIn("<DefaultValue>MAPSIZE_SMALL</DefaultValue>", rendered)
+        # Static, like difficulty and speed, so Create Game opens on the
+        # requested map instead of the picker being driven by screenshot.
+        self.assertIn(
+            'SourceId="RULESET" SourceValue="RULESET_EXPANSION_2"\n'
+            '\t\t\t TargetGroup="Map" TargetId="MAP_SCRIPT" '
+            'TargetValue="Continents.lua"\n'
+            '\t\t\t Static="1"',
+            rendered,
+        )
+        self.assertIn(
+            'SourceId="RULESET" SourceValue="RULESET_EXPANSION_2"\n'
+            '\t\t\t TargetGroup="Map" TargetId="MAP_SIZE" '
+            'TargetValue="MAPSIZE_SMALL"\n'
+            '\t\t\t Hash="1" Static="1"',
+            rendered,
+        )
         self.assertIn("<DefaultValue>650</DefaultValue>", rendered)
         self.assertIn("<DefaultValue>TURNLIMIT_CUSTOM</DefaultValue>", rendered)
         self.assertIn(

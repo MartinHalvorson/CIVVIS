@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections import Counter
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -39,6 +40,20 @@ class LogTail:
         self.path = path or (env.logs_dir() / "Automation.log")
         self.offset = 0
         self.partial = ""
+        # The unterminated tail already relayed whole, so the newline that
+        # completes it later does not relay it twice. See `poll`.
+        self.delivered: str | None = None
+
+    @staticmethod
+    def _decode(line: str) -> dict | None:
+        index = line.find(PREFIX)
+        if index < 0:
+            return None
+        try:
+            event = json.loads(line[index + len(PREFIX):])
+        except json.JSONDecodeError:
+            return None
+        return event if isinstance(event, dict) else None
 
     def poll(self) -> list[dict]:
         if not self.path.is_file():
@@ -50,6 +65,7 @@ class LogTail:
             # offset, which would skip the whole of the new run.
             self.offset = 0
             self.partial = ""
+            self.delivered = None
         if size == self.offset:
             return []
         with self.path.open("r", errors="replace") as handle:
@@ -61,13 +77,31 @@ class LogTail:
         self.partial = lines.pop()  # keep any half-written trailing line
         events = []
         for line in lines:
-            index = line.find(PREFIX)
-            if index < 0:
-                continue
-            try:
-                events.append(json.loads(line[index + len(PREFIX):]))
-            except json.JSONDecodeError:
-                continue
+            if self.delivered is not None:
+                held, self.delivered = self.delivered, None
+                if line == held:
+                    continue  # relayed whole while it waited for this newline
+            event = self._decode(line)
+            if event is not None:
+                events.append(event)
+        # ★★ THE GAME HOLDS ITS LAST RECORD'S NEWLINE UNTIL THE NEXT RECORD.
+        # `Automation.Log` writes each record's line break only when the next
+        # record arrives, so whatever was logged last waits as `partial` until
+        # something else is logged: two `await` polls reach this process in the
+        # same instant, and a replan frame's `state` -- the last line of its
+        # export -- reached the brain ~0.2 s after it was written (median 0.219 s
+        # after its `replan_frame` over 409 frames of civvis-20261004T171152Z,
+        # 0.000 once #3921 happened to log `export_timing` right behind it). A
+        # JSON object cannot parse until its final brace is written, so a
+        # prefixed tail that parses whole IS the complete record: relay it now
+        # and drop it when its newline arrives. A half-written tail still fails
+        # to parse and waits, exactly as before.
+        if self.partial and self.partial != self.delivered \
+                and self.partial.rstrip().endswith("}"):
+            event = self._decode(self.partial)
+            if event is not None:
+                events.append(event)
+                self.delivered = self.partial
         return events
 
 
@@ -158,11 +192,58 @@ def turns_left_seconds(first_turn: int | None, first_turn_at: float,
     return remaining * (elapsed / turns_done)
 
 
+class GameLiveness:
+    """Whether the game still runs, without a `ps` on every relay pass.
+
+    ★ THE RELAY READ NOTHING WHILE `ps` RAN. `follow` asked `env.game_pids()`
+    on every 0.25 s pass, and the tail is read only between passes. `ps`
+    lists every process on the host; at load ~100 it occasionally took
+    seconds (`[env] ps did not answer in 10s` once in each of G70 and G71),
+    and a `sample` of the relay found its main thread blocked in child-process
+    waits 40% of a 15 s window. Boards the brain was waiting for sat in the
+    log meanwhile: ~2% of `state` lines reached the relay over 1 s late,
+    30-40 s a game.
+
+    The pids the last listing returned are checked with `os.kill(pid, 0)`, a
+    syscall, and `ps` runs only when there is no listing, when every listed
+    pid has gone (the exit is confirmed by a real listing, exactly as
+    before), or every `relist_s` to pick up a new process.
+    """
+
+    def __init__(self, relist_s: float = 10.0, clock=time.monotonic):
+        self.relist_s = relist_s
+        self.clock = clock
+        self.known: list[int] = []
+        self.listed_at: float | None = None
+
+    @staticmethod
+    def _running(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except OSError:
+            return False
+        return True
+
+    def alive(self) -> bool:
+        now = self.clock()
+        fresh = self.listed_at is not None and now - self.listed_at < self.relist_s
+        if fresh and any(self._running(pid) for pid in self.known):
+            return True
+        self.known = list(env.game_pids())
+        self.listed_at = now
+        return bool(self.known)
+
+
 def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
            stop_when=None, each_poll=None, stall_s: float | None = 600.0,
            frozen_s: float | None = None, pause_when=None,
            finish_turn: int | None = None,
-           ceiling_s: float | None = None) -> str:
+           ceiling_s: float | None = None,
+           read_s: float | None = None) -> str:
     """Pump events to ``on_event`` until ``stop_when`` says so or time runs out.
 
     Returns a short reason string. The game exiting is reported as its own
@@ -175,6 +256,17 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
     to frames -- so a browser window taking focus stops the game dead. That
     looked exactly like a machine under load, and cost a run that sat on turn
     15 for ten minutes with nothing wrong in any log.
+
+    ★★★ ``read_s`` SPLITS THE RELAY FROM THE UPKEEP. Each pass also asks
+    ``ps`` whether the game lives (28 ms), ``ioreg`` whether the console is
+    locked (13 ms) and ``each_poll`` to keep focus, so the 0.25 s pass ran
+    every 0.32 s, and a board the mod wrote sat 0.16 s on average in
+    ``Automation.log`` before it reached ``events.jsonl`` -- on every frame,
+    three a turn late in a game, where the decider itself now answers in
+    0.17 s (G61, civvis-20261004T140744Z, t170-215). With ``read_s`` below ``poll_s``
+    the sleep between passes is spent relaying the tail every ``read_s``;
+    the upkeep and both watchdogs keep their ``poll_s`` cadence. ``None``
+    keeps the single-cadence loop exactly as it was.
 
     ``stall_s`` and ``frozen_s`` are two DIFFERENT deaths and both are needed:
 
@@ -214,6 +306,7 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
     now = time.monotonic()
     deadline = now + timeout_s
     ceiling = now + (ceiling_s if ceiling_s is not None else timeout_s)
+    liveness = GameLiveness()
     last_event = now
     # Silence is not the only way a run dies. A wedged popup can keep emitting
     # state from one turn forever, so track actual turn progress separately.
@@ -224,6 +317,36 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
     first_turn, first_turn_at = None, now
     last_poll = now
     was_paused = False
+
+    def consume() -> bool:
+        """Relay whatever the tail holds; True once ``stop_when`` matched."""
+        nonlocal last_event, last_turn, last_turn_at, first_turn, first_turn_at
+        for event in tail.poll():
+            on_event(event)
+            last_event = time.monotonic()
+            turn = event.get("turn") if isinstance(event, dict) else None
+            if isinstance(turn, int) and (last_turn is None or turn > last_turn):
+                last_turn, last_turn_at = turn, last_event
+                if first_turn is None:
+                    first_turn, first_turn_at = turn, last_event
+            if stop_when is not None and stop_when(event):
+                return True
+        return False
+
+    def relay(seconds: float) -> bool:
+        """Wait ``seconds``, relaying the tail every ``read_s`` meanwhile."""
+        if read_s is None or read_s <= 0 or read_s >= seconds:
+            time.sleep(seconds)
+            return False
+        until = time.monotonic() + seconds
+        while True:
+            left = until - time.monotonic()
+            if left <= 0:
+                return False
+            time.sleep(min(read_s, left))
+            if consume():
+                return True
+
     while True:
         now = time.monotonic()
         paused = bool(pause_when is not None and pause_when())
@@ -250,17 +373,9 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
             # is in the endgame -- victory screens, the final score -- so give it
             # what the ceiling allows and let the two watchdogs end it.
             deadline = ceiling if needed <= 0 else min(now + needed, ceiling)
-        for event in tail.poll():
-            on_event(event)
-            last_event = time.monotonic()
-            turn = event.get("turn") if isinstance(event, dict) else None
-            if isinstance(turn, int) and (last_turn is None or turn > last_turn):
-                last_turn, last_turn_at = turn, last_event
-                if first_turn is None:
-                    first_turn, first_turn_at = turn, last_event
-            if stop_when is not None and stop_when(event):
-                return "stopped"
-        if not env.game_pids():
+        if consume():
+            return "stopped"
+        if not liveness.alive():
             for event in tail.poll():
                 on_event(event)
             return "game exited"
@@ -270,7 +385,8 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
         # would have burned the whole timeout. A live process is not a live
         # game, and a stalled attempt costs the next one its slot.
         if paused:
-            time.sleep(poll_s)
+            if relay(poll_s):
+                return "stopped"
             continue
         if stall_s is not None and time.monotonic() - last_event > stall_s:
             return f"stalled: no event for {stall_s:.0f}s"
@@ -284,7 +400,8 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
                     f"{frozen_s:.0f}s while events kept arriving")
         if each_poll is not None:
             each_poll()
-        time.sleep(poll_s)
+        if relay(poll_s):
+            return "stopped"
 
 
 if __name__ == "__main__":

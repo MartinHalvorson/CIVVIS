@@ -166,3 +166,60 @@ fn a_domination_land_war_sends_spare_cavalry_raiding() {
         }
     }
 }
+
+/// See `RAID_TOURISM_DENIAL`: against the countered culture rival, a raid
+/// takes its Theater Square over a Campus beside it.
+#[test]
+fn a_raid_on_the_culture_rival_takes_its_theater_square() {
+    let (mut g, mut ai, target) = fixture();
+    ai.deny_leaders = true;
+    let mut place = |g: &mut Game, pos: Pos, district: &str| {
+        let tile = g.map.tiles.get_mut(&pos).unwrap();
+        tile.owner_city = Some(target);
+        tile.district = Some(crate::name::Name::new(district));
+        tile.improvement = None;
+        tile.pillaged = false;
+        let city = g.cities.get_mut(&target).unwrap();
+        if !city.owned_tiles.contains(&pos) {
+            city.owned_tiles.push(pos);
+        }
+        city.districts.insert(crate::name::Name::new(district), pos);
+    };
+    place(&mut g, (19, 11), "campus");
+    place(&mut g, (19, 13), "theater_square");
+    let raider = g.spawn_test_unit("cavalry", 0, (16, 12));
+    // The rival is one visitor from its culture victory.
+    let stats = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats);
+    stats.insert(
+        0,
+        crate::game::ObservedPublicEmpireStats {
+            domestic_tourists: Some(20),
+            foreign_tourists: Some(0),
+            ..Default::default()
+        },
+    );
+    stats.insert(
+        1,
+        crate::game::ObservedPublicEmpireStats {
+            domestic_tourists: Some(20),
+            foreign_tourists: Some(19),
+            ..Default::default()
+        },
+    );
+    assert!(ai.culture_clock_rival(&g, 1), "fixture: the culture clock");
+    let pick = |ai: &AdvancedAi, g: &Game| {
+        ai.air_surge_best_raid(g, 0, raider, (22, 12))
+            .map(|(_, tile, _)| tile)
+    };
+    assert_eq!(
+        pick(&ai, &g),
+        Some((19, 11)),
+        "the control: the Campus pays more"
+    );
+    ai.enable_raids_cut_tourism();
+    assert_eq!(
+        pick(&ai, &g),
+        Some((19, 13)),
+        "the Theater Square under the gene"
+    );
+}

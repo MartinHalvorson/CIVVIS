@@ -164,3 +164,45 @@ fn a_breached_city_keeps_a_corridor_clear_for_its_taker() {
         None
     );
 }
+
+/// Live King civvis-20261004T070716Z (game 49): Nagoya's catapults stood
+/// within reach of a levied city-state's walled district and were shot
+/// dead. A firing post another hostile city can strike is the last resort.
+#[test]
+fn a_gun_is_not_posted_in_another_hostile_citys_strike() {
+    let (mut g, cid) = walled_city();
+    let target = g.cities[&cid].pos;
+    for pos in g.wdisk(target, 6) {
+        if let Some(tile) = g.map.tiles.get_mut(&pos) {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+        }
+    }
+    let gun = g.spawn_unit("catapult", 0, at_distance(&g, cid, 3)[0]);
+    let first = siege_posts(&g, 0, &CityView::of(&g, cid).unwrap(), &[gun], None)[&gun];
+    assert!(g.wdist(first, target) <= 2, "fixture: a firing post");
+    // A third empire's walled city two tiles beyond that post.
+    let third = g
+        .wring(first, 2)
+        .into_iter()
+        .filter(|pos| {
+            g.wdist(*pos, target) >= 4
+                && g.map.get(*pos).is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
+        })
+        .min()
+        .expect("a site beyond the post");
+    if g.players.len() < 3 {
+        return;
+    }
+    let other = g.found_city_for(2, third, None);
+    g.cities.get_mut(&other).unwrap().wall_hp = 100;
+    g.at_war.insert((0, 2));
+    g.at_war.insert((2, 0));
+    let chosen = siege_posts(&g, 0, &CityView::of(&g, cid).unwrap(), &[gun], None)[&gun];
+    assert!(g.wdist(chosen, target) <= 2, "still a firing post on the target");
+    assert!(
+        g.wdist(chosen, third) > CITY_STRIKE_RANGE,
+        "the post stands out of the third city's strike: {chosen:?} vs {third:?}"
+    );
+}

@@ -3633,9 +3633,18 @@ mod tests {
         // `GranColombia_Maya_Units.xml` and `GranColombia_Maya_Expansion2.xml`
         // rows. The native host offers it for Horses, while an unmodeled
         // Cuirassier plan had no buildable land capturer for its bomber siege.
+        // Moved again by completing the unique-unit roster from the installed
+        // database: 32 shipped civilization and leader uniques (the Immortal,
+        // Mamluk, Impi, Conquistador, Janissary, Redcoat, Garde Imperiale,
+        // Huszar, Black Army, Hwacha, Domrey, Khevsureti, Berserker,
+        // Carolean, Digger, Mountie, Hetairoi and their naval and air peers)
+        // were absent, so those civilizations could never train theirs and
+        // their rivals' read as the stock role. Rows are the loader's
+        // `Units`/`UnitReplaces`/`UnitUpgrades`/`Units_XP2.ResourceCost`
+        // values; abilities beyond the stat line are not modelled.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:57fd8a818d0d5472"
+            "fnv1a64:964ac50a10c94a96"
         );
     }
 
@@ -4279,6 +4288,37 @@ mod tests {
             ("samurai", "musketman"),
             ("varu", "cuirassier"),
             ("voi_chien", "field_cannon"),
+            ("mamluk", "cuirassier"),
+            ("digger", "mechanized_infantry"),
+            ("sabum_kibittum", "swordsman"),
+            ("minas_geraes", "missile_cruiser"),
+            ("dromon", "frigate"),
+            ("okihtcitaw", "skirmisher"),
+            ("viking_longship", "caravel"),
+            ("sea_dog", "submarine"),
+            ("redcoat", "infantry"),
+            ("garde_imperiale", "infantry"),
+            ("khevsureti", "musketman"),
+            ("u_boat", "nuclear_submarine"),
+            ("huszar", "helicopter"),
+            ("black_army", "cavalry"),
+            ("warakaq", "ranger"),
+            ("jong", "battleship"),
+            ("domrey", "bombard"),
+            ("hwacha", "machine_gun"),
+            ("hetairoi", "knight"),
+            ("malon_raider", "cavalry"),
+            ("hulche", "crossbowman"),
+            ("de_zeven_provincien", "battleship"),
+            ("berserker", "musketman"),
+            ("barbary_corsair", "submarine"),
+            ("janissary", "line_infantry"),
+            ("immortal", "man_at_arms"),
+            ("highlander", "spec_ops"),
+            ("conquistador", "line_infantry"),
+            ("carolean", "at_crew"),
+            ("impi", "pike_and_shot"),
+            ("p51_mustang", "jet_fighter"),
         ]
         .into_iter()
         .collect();
@@ -4316,7 +4356,7 @@ mod tests {
         let rules = Rules::embedded();
         assert_eq!(rules.techs.len(), 77);
         assert_eq!(rules.civics.len(), 61);
-        assert_eq!(rules.units.len(), 102);
+        assert_eq!(rules.units.len(), 134);
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);
