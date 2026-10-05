@@ -2866,6 +2866,9 @@ pub const GENES: &[Gene] = &[
     // power, Canberra behind 200 walls, failed the 100-wall gate. See
     // `one_war::capital_prey_walls`.
     Gene { tag: "capital-prey-scales-the-walls", field: "capital_prey_scales_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_prey_scales_the_walls, disable: AdvancedAi::disable_capital_prey_scales_the_walls },
+    // 91 faith-counter declarations of October 4-5 took 9 cities against 8
+    // of 39 other wars. See `one_war::faith_at_match_point`.
+    Gene { tag: "faith-counter-waits-for-match-point", field: "faith_counter_waits_for_match_point", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_counter_waits_for_match_point, disable: AdvancedAi::disable_faith_counter_waits_for_match_point },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

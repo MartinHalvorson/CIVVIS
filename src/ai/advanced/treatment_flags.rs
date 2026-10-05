@@ -5913,6 +5913,17 @@ impl AdvancedAi {
         self.capital_prey_scales_the_walls = false;
     }
 
+    /// Opt-in gene `faith-counter-waits-for-match-point`; see
+    /// [`Self::faith_counter_waits_for_match_point`].
+    pub fn enable_faith_counter_waits_for_match_point(&mut self) {
+        self.faith_counter_waits_for_match_point = true;
+    }
+
+    /// The twin of `enable_faith_counter_waits_for_match_point`.
+    pub fn disable_faith_counter_waits_for_match_point(&mut self) {
+        self.faith_counter_waits_for_match_point = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

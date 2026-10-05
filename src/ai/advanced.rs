@@ -5913,6 +5913,10 @@ pub struct AdvancedAi {
     /// the stock Ilkum commitment would hold Urban Planning out again.
     colonization_earns_its_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `faith-counter-waits-for-match-point`: a faith taking our cities is
+    /// declared on without a staged siege only at the religion lane's match
+    /// point. See `one_war::faith_at_match_point`.
+    faith_counter_waits_for_match_point: bool,
     /// `find-the-capital`: a Domination plan cannot finish while a needed
     /// rival's original capital has never been seen. Live King
     /// civvis-20261005T081917Z (game 112) held Amsterdam and Xanadu from
@@ -9295,6 +9299,7 @@ impl AdvancedAi {
             colonization_earns_its_slot: false,
             colonization_earns_its_slot_2: false,
             // ---- append: e-f ----------------------------------------
+            faith_counter_waits_for_match_point: false,
             find_the_capital: false,
             front_finishes_its_capital: false,
             front_needs_a_declarable_rival: false,

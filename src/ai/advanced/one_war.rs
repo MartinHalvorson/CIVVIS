@@ -1047,6 +1047,38 @@ impl AdvancedAi {
         self.faith_counter(g, pid, rival)
             && g.military_power(pid)
                 >= self.second_front_ratio(rival) * g.military_power(rival).max(1.0)
+            // See `faith_at_match_point`.
+            && (!self.faith_counter_waits_for_match_point || self.faith_at_match_point(g, rival))
+    }
+
+    /// `faith-counter-waits-for-match-point`: whether `rival`'s faith holds
+    /// every living major but one, the religion lane's match point. The
+    /// faithless counter's early warning is half the majors, and on a
+    /// four-major map the founder and our own converted majority make that
+    /// half from the first missionary: 96 of the 128 declarations of October
+    /// 4-5 were on a rival whose faith our cities followed, 91 of them
+    /// measured against their first objective. Those wars made contact (3
+    /// land units within two tiles) in 33 and took the city in 9, against 20
+    /// and 8 of the other 39; 36 of the 91 aimed past nine tiles of our
+    /// nearest city. Nor did they hold the faith back: 20 turns on, our
+    /// cities on it had fallen in 36, risen in 23 and held in 37, and about
+    /// twelve Religious defeats came on October 4 with the counter live. Under
+    /// the gene the declaration skips its staged siege only at match point;
+    /// before it the counter still names the campaign target, and the
+    /// ordinary readiness gates decide the war.
+    pub(crate) fn faith_at_match_point(&self, g: &Game, rival: usize) -> bool {
+        let living = g
+            .players
+            .iter()
+            .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
+            .count() as i32;
+        let pressure = self.rival_victory_pressure(g, rival);
+        let progress = if pressure.strategy == GrandStrategy::Religion {
+            pressure.progress
+        } else {
+            self.lane_progress_table(g, rival)[2]
+        };
+        living > 1 && progress >= 100 * (living - 1) / living
     }
 
     /// `culture-counter-declares`: whether a Domination seat declares on

@@ -1520,3 +1520,21 @@ fn a_collapsed_prey_capital_may_stand_behind_more_wall_under_the_gene() {
     assert_eq!(ai.capital_prey_walls(40.0, 400.0), 150);
     assert_eq!(ai.capital_prey_walls(60.0, 400.0), CAPITAL_PREY_WALLS);
 }
+
+/// See `faith_at_match_point`: under the gene, a faith holding half the
+/// majors (the founder and our cities) waits for a staged siege; one holding
+/// all but one is declared on as before.
+#[test]
+fn a_faith_counter_waits_for_match_point_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    ai.one_war_observe(&g, 0);
+    assert!(ai.faith_counter_due(&g, 0, 2), "off");
+    ai.enable_faith_counter_waits_for_match_point();
+    assert!(!ai.faith_at_match_point(&g, 2));
+    assert!(!ai.faith_counter_due(&g, 0, 2), "two majors of four");
+    convert(&mut g, &[0, 1, 2]);
+    assert!(ai.faith_at_match_point(&g, 2));
+    assert!(ai.faith_counter_due(&g, 0, 2), "three of four");
+}
