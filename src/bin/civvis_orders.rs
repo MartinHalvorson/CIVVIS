@@ -7694,8 +7694,16 @@ fn verify_order_with_context(
             let appointed = order.kind == "governor_appoint"
                 && governors(after).iter().any(|g| g.kind == verb)
                 && !governors(before).iter().any(|g| g.kind == verb);
+            // A neutralized Governor cannot take a post, so its refusal says
+            // nothing about the order: no strike toward the refusal cooldown.
+            let neutralized = governors(before)
+                .iter()
+                .chain(governors(after).iter())
+                .any(|g| g.kind == verb && g.neutralized_turns > 0);
             if seated || appointed {
                 Verdict::Verified
+            } else if neutralized {
+                Verdict::Unverifiable
             } else if order.kind == "governor_appoint" {
                 failed("not_appointed".to_string())
             } else {
@@ -19369,6 +19377,17 @@ mod order_postcondition_tests {
         assert_eq!(
             check(&appoint, &before, &none, &[]),
             failed("not_appointed")
+        );
+
+        // Neutralized by a spy: the post cannot stick, and no strike counts.
+        let mut neutralized = frame(26);
+        neutralized.governors = Some(vec![StateGovernor {
+            neutralized_turns: 2,
+            ..governor(-1)
+        }]);
+        assert_eq!(
+            check(&assign, &before, &neutralized, &[]),
+            Verdict::Unverifiable
         );
     }
 

@@ -8965,6 +8965,50 @@ fn live_governor_adapter_posts_an_idle_appointee_without_a_new_title() {
     }));
 }
 
+/// A neutralized Governor is not reposted until it recovers: every refused
+/// request is a strike toward the bridge's ten-turn refusal cooldown.
+#[test]
+fn live_governor_adapter_waits_for_a_neutralized_governor() {
+    let mut game = Game::new_full(1, 24, 16, 7_111, 200, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let city = game.player_city_ids(0)[0];
+    game.players[0].governor_roster.insert(
+        "moksha".to_string(),
+        GovernorState {
+            city: None,
+            assigned_turn: game.turn,
+            disabled_until: game.turn + 2,
+            promotions: BTreeSet::new(),
+        },
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Religion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.live_governor_assignment_adapter = true;
+    ai.strategic_governors(&mut game, 0, &plan);
+    assert_eq!(game.players[0].governor_roster["moksha"].city, None);
+
+    game.players[0]
+        .governor_roster
+        .get_mut("moksha")
+        .unwrap()
+        .disabled_until = game.turn;
+    ai.strategic_governors(&mut game, 0, &plan);
+    assert_eq!(game.players[0].governor_roster["moksha"].city, Some(city));
+}
+
 #[test]
 fn governor_path_stays_focused_when_strategy_changes_between_titles() {
     let mut game = Game::new_full(1, 24, 16, 7_112, 200, 0, false);
