@@ -44248,20 +44248,56 @@ impl AdvancedAi {
                 break;
             }
             let mut best: Option<(f64, Action)> = None;
+            let mut readings: Vec<(&'static str, f64)> = Vec::new();
             for action in candidates {
                 let mut next = g.speculative_clone();
                 if next.apply(pid, &action).is_err() {
                     continue;
                 }
                 let value = self.city_disposition_value(g, &next, pid, strategy, &action);
+                readings.push((Self::disposition_word(&action), value));
                 if best.as_ref().is_none_or(|(old, _)| value > *old + 1e-9) {
                     best = Some((value, action));
                 }
             }
             let Some((_, action)) = best else { break };
+            // Every keep/raze/liberate is journaled with what decided it: on
+            // October 4-5 the live seat razed 23 captured cities and kept 27
+            // without a line saying why, and a razed city never reaches the
+            // state export, so its Loyalty could not be read afterwards.
+            if self.journal().wants(crate::reasoning::Level::Decision) {
+                if let Action::KeepCity { city }
+                | Action::RazeCity { city }
+                | Action::LiberateCity { city } = &action
+                {
+                    if let Some(captured) = g.cities.get(city) {
+                        let delta = Self::population_loyalty_delta(g, pid, *city);
+                        let values = readings
+                            .iter()
+                            .map(|(word, value)| format!("{word} {value:.0}"))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        think!(self.journal(), Military, Decision,
+                               "Captured {}: {}", captured.name, Self::disposition_word(&action);
+                               "population {}, Loyalty {:.0} at {:+.1} a turn from population pressure; values {}",
+                               captured.pop, captured.loyalty, delta, values;
+                               captured.pos);
+                    }
+                }
+            }
             if g.apply(pid, &action).is_err() {
                 break;
             }
+        }
+    }
+
+    /// The journal's word for a city disposition.
+    fn disposition_word(action: &Action) -> &'static str {
+        match action {
+            Action::KeepCity { .. } => "keep",
+            Action::RazeCity { .. } => "raze",
+            Action::LiberateCity { .. } => "liberate",
+            _ => "other",
         }
     }
 
