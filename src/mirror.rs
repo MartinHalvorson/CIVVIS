@@ -3571,6 +3571,11 @@ pub struct StateRival {
     pub foreign_tourists: f64,
     #[serde(default = "unknown_metric")]
     pub domestic_tourists: f64,
+    /// The engine's own turns until this major wins on Culture
+    /// (`GetCulture():GetTurnsUntilVictory()`, WorldRankings.lua:1678): `-1`
+    /// when it reports none, NaN (absent) on an older export.
+    #[serde(default = "unknown_metric")]
+    pub culture_turns_to_victory: f64,
     #[serde(default = "unknown_metric")]
     pub gold: f64,
     #[serde(default = "unknown_metric")]
@@ -4243,6 +4248,11 @@ pub struct StateSnapshot {
     pub foreign_tourists: f64,
     #[serde(default = "unknown_metric")]
     pub domestic_tourists: f64,
+    /// The engine's own turns until this major wins on Culture
+    /// (`GetCulture():GetTurnsUntilVictory()`, WorldRankings.lua:1678): `-1`
+    /// when it reports none, NaN (absent) on an older export.
+    #[serde(default = "unknown_metric")]
+    pub culture_turns_to_victory: f64,
     /// Our tourism per turn as the host reports it (`GetStats():GetTourism()`,
     /// the accessor already used for each rival). `None` on an older export.
     /// The mirror writes it into `Game::observed_tourism_per_turn`, and it is
@@ -4738,6 +4748,10 @@ fn apply_rival_public_economy(
         // record is the player's `science_projects` below.
         observed.foreign_tourists = count(rival.foreign_tourists);
         observed.domestic_tourists = count(rival.domestic_tourists);
+        observed.culture_turns_to_victory = rival
+            .culture_turns_to_victory
+            .is_finite()
+            .then_some(rival.culture_turns_to_victory);
     }
     // The rival's majority religion, by the CIVVIS name its founded religion
     // takes (`civvis_religion_name`): `Game::majority_religion_of` reads it
@@ -6611,6 +6625,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "strategic_resources",
         "strategic_resource_income",
         "foreign_tourists", "domestic_tourists",
+        "culture_turns_to_victory",
         "tourism_per_turn",
         "cities_following_religion",
         "military",
@@ -6767,6 +6782,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "science_victory_points_needed",
         "foreign_tourists",
         "domestic_tourists",
+        "culture_turns_to_victory",
         // Both border fields: `open_borders` had crossed since the buy lane
         // shipped and filed `schema:rival.open_borders` on every live turn.
         "open_borders",
@@ -11675,6 +11691,10 @@ fn apply_observed_host_metrics(
             .or_default();
         observed.foreign_tourists = count(state.foreign_tourists);
         observed.domestic_tourists = count(state.domestic_tourists);
+        observed.culture_turns_to_victory = state
+            .culture_turns_to_victory
+            .is_finite()
+            .then_some(state.culture_turns_to_victory);
         // Match the local player's World Rankings science lane to the host
         // instead of treating its reconstructed fifty-light-year trip as fact.
         observed.science_victory_points = (state.science_victory_points.is_finite()

@@ -2824,6 +2824,10 @@ pub const GENES: &[Gene] = &[
     // Bombers took its walls from 400 to 153. See
     // `siege_train::air_breach_walls`.
     Gene { tag: "breach-reads-the-air", field: "breach_reads_the_air", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_reads_the_air, disable: AdvancedAi::disable_breach_reads_the_air },
+    // Live King civvis-20261005T065548Z (game 107) countered France, which
+    // read closer to a Culture Victory, and Babylon won on Culture at 206.
+    // See `denial_nearest_finish::engine_culture_clock`.
+    Gene { tag: "culture-reads-the-engine-clock", field: "culture_reads_the_engine_clock", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_reads_the_engine_clock, disable: AdvancedAi::disable_culture_reads_the_engine_clock },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

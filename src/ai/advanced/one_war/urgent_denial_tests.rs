@@ -1372,3 +1372,32 @@ fn a_captured_city_state_city_funds_the_congress_under_a_diplomatic_threat() {
         "no Diplomatic threat"
     );
 }
+
+/// See `engine_culture_clock`: under the gene, the host's own turns to a
+/// Culture Victory replace the projected finish and the tourist-ratio
+/// pressure; a reported "none" caps the pressure; no reading keeps both.
+#[test]
+fn the_engine_culture_clock_replaces_the_tourist_ratio_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    let set = |g: &mut Game, turns: Option<f64>| {
+        std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
+            .entry(2)
+            .or_default()
+            .culture_turns_to_victory = turns;
+    };
+    set(&mut g, Some(3.0));
+    assert_eq!(ai.engine_culture_pressure(&g, 2, 40), 40, "off");
+    assert_eq!(
+        ai.projected_culture_finish(&g, 2),
+        None,
+        "off: no curve yet"
+    );
+    ai.enable_culture_reads_the_engine_clock();
+    assert_eq!(ai.projected_culture_finish(&g, 2), Some(3.0));
+    assert_eq!(ai.engine_culture_pressure(&g, 2, 40), 98);
+    set(&mut g, Some(-1.0));
+    assert_eq!(ai.projected_culture_finish(&g, 2), None, "no path");
+    assert_eq!(ai.engine_culture_pressure(&g, 2, 70), 50);
+    set(&mut g, None);
+    assert_eq!(ai.engine_culture_pressure(&g, 2, 70), 70, "no reading");
+}

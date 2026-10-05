@@ -5815,6 +5815,17 @@ impl AdvancedAi {
         self.breach_reads_the_air = false;
     }
 
+    /// Opt-in gene `culture-reads-the-engine-clock`; see
+    /// [`Self::culture_reads_the_engine_clock`].
+    pub fn enable_culture_reads_the_engine_clock(&mut self) {
+        self.culture_reads_the_engine_clock = true;
+    }
+
+    /// The twin of `enable_culture_reads_the_engine_clock`.
+    pub fn disable_culture_reads_the_engine_clock(&mut self) {
+        self.culture_reads_the_engine_clock = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

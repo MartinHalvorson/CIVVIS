@@ -65,6 +65,11 @@ pub(super) const CULTURE_CURVE_MIN_SPAN: u32 = 8;
 /// the 22 October culture losses' last readings.
 pub(crate) const CULTURE_OBSERVED_BAR: f64 = 0.92;
 
+/// `culture-reads-the-engine-clock`: the culture pressure a rival keeps
+/// when the host reports no path to its Culture Victory, below the urgency
+/// bars.
+pub(crate) const ENGINE_NO_PATH_CULTURE_CAP: i32 = 50;
+
 impl AdvancedAi {
     /// One reading per living rival per turn: its foreign tourists and the
     /// largest domestic count among the others, which it must pass.
@@ -106,6 +111,39 @@ impl AdvancedAi {
     /// along their geometric growth over the recorded window. `None` without
     /// [`CULTURE_CURVE_MIN_SPAN`] standard turns of readings, without
     /// visitors to project, or while the bar keeps pace.
+    /// `culture-reads-the-engine-clock`: the host's own turns to `rival`'s
+    /// Culture Victory (`GetTurnsUntilVictory`, the World Rankings screen's
+    /// clock): `Some(Some(turns))` on a path, `Some(None)` when the engine
+    /// reports none, `None` without the gene or the reading. Our tourist ratio
+    /// misreads the race: it compares visitors with the largest staycation,
+    /// and staycations fall as the leader draws their tourists away. Every one
+    /// of the 22 October culture losses fired below 100% of it, and live King
+    /// civvis-20261005T065548Z (game 107) read France at 59-75% against
+    /// Babylon's 50-68% over turns 201-203, turned the counter on France at
+    /// 202, and Babylon won on Culture at 206.
+    pub(super) fn engine_culture_clock(&self, g: &Game, rival: usize) -> Option<Option<f64>> {
+        if !self.culture_reads_the_engine_clock {
+            return None;
+        }
+        let turns = g.culture_turns_to_victory(rival)?;
+        Some((turns >= 0.0).then_some(turns))
+    }
+
+    /// `culture-reads-the-engine-clock`: `raw`, the tourist-ratio culture
+    /// pressure, replaced by the engine's clock when it reports one -- 100 at
+    /// a finish now, 75 at [`DENIAL_FINISH_HORIZON`] turns, the reading
+    /// `nearest_finish_culture_clock` gives a projection -- and held under
+    /// [`ENGINE_NO_PATH_CULTURE_CAP`] when the engine reports no path.
+    pub(crate) fn engine_culture_pressure(&self, g: &Game, rival: usize, raw: i32) -> i32 {
+        match self.engine_culture_clock(g, rival) {
+            None => raw,
+            Some(None) => raw.min(ENGINE_NO_PATH_CULTURE_CAP),
+            Some(Some(turns)) => (100.0 - turns * 100.0 / (4.0 * DENIAL_FINISH_HORIZON))
+                .round()
+                .clamp(0.0, 100.0) as i32,
+        }
+    }
+
     pub(super) fn projected_culture_finish(&self, g: &Game, rival: usize) -> Option<f64> {
         self.projected_culture_finish_at(g, rival, 1.0)
     }
@@ -130,6 +168,10 @@ impl AdvancedAi {
     /// Turns until `rival`'s foreign tourists pass `scale` times the bar,
     /// as [`Self::projected_culture_finish`] reads it at 1.0.
     fn projected_culture_finish_at(&self, g: &Game, rival: usize, scale: f64) -> Option<f64> {
+        // See `engine_culture_clock`: the host's own turns, at any scale.
+        if let Some(clock) = self.engine_culture_clock(g, rival) {
+            return clock;
+        }
         let history = self.culture_curves.get(&rival)?;
         let (first_turn, first_foreign, first_bar) = *history.first()?;
         let (last_turn, foreign, bar) = *history.last()?;

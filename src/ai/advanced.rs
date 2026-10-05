@@ -5318,6 +5318,10 @@ pub struct AdvancedAi {
     /// `breaker-to-the-fastest`; see `siege_production.rs`.
     breaker_to_the_fastest: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-reads-the-engine-clock`: the culture clocks and the culture
+    /// pressure read the host's own turns to a Culture Victory when observed.
+    /// See `denial_nearest_finish::engine_culture_clock`.
+    culture_reads_the_engine_clock: bool,
     /// `capital-prey-opens-a-front-2`: version one, and the prey also takes
     /// the campaign at peace, and a deeply collapsed prey reaches past the
     /// declaration range. See `one_war::capital_prey_reaches_far`.
@@ -9116,6 +9120,7 @@ impl AdvancedAi {
             breaker_keeps_its_queue: false,
             breaker_to_the_fastest: false,
             // ---- append: c-d ----------------------------------------
+            culture_reads_the_engine_clock: false,
             capital_prey_opens_a_front_2: false,
             capital_prey_noted: BTreeMap::new(),
             culture_finish_at_the_observed_bar: false,
@@ -12264,7 +12269,12 @@ impl AdvancedAi {
                 .max()
                 .unwrap_or(1)
                 .max(1);
-            (100 * g.foreign_tourists(pid) / culture_target).clamp(0, 100) as i32
+            // See `engine_culture_pressure`.
+            self.engine_culture_pressure(
+                g,
+                pid,
+                (100 * g.foreign_tourists(pid) / culture_target).clamp(0, 100) as i32,
+            )
         });
 
         let (converted, living_religious_rivals) = self.religious_conversion_tally(g, pid);
@@ -12439,7 +12449,12 @@ impl AdvancedAi {
                     .max(1);
                 (
                     *pid,
-                    (100 * g.foreign_tourists(*pid) / target).clamp(0, 100) as i32,
+                    // See `engine_culture_pressure`.
+                    self.engine_culture_pressure(
+                        g,
+                        *pid,
+                        (100 * g.foreign_tourists(*pid) / target).clamp(0, 100) as i32,
+                    ),
                 )
             })
             .collect()

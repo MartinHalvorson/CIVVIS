@@ -1182,7 +1182,12 @@ impl AdvancedAi {
             .max()
             .unwrap_or(1)
             .max(1);
-        (100 * g.foreign_tourists(rival) / bar).clamp(0, 100) as i32
+        // See `engine_culture_pressure`.
+        self.engine_culture_pressure(
+            g,
+            rival,
+            (100 * g.foreign_tourists(rival) / bar).clamp(0, 100) as i32,
+        )
     }
 
     /// `culture-counter-declares`: whether a Domination seat counts `rival`'s

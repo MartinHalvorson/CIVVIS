@@ -232,6 +232,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-faith-reservation` | off (unmeasured) | Enable `culture-faith-reservation` for measurement. | 1 \| 1 |
 | `culture-finish-at-the-observed-bar` | off (unmeasured) | Opt-in gene `culture-finish-at-the-observed-bar`; see `Self::culture_finish_at_the_observed_bar`. | 1 \| 1 |
 | `culture-lane-forecast-2` | off (unmeasured) | Version 2 of the Culture clock forecast: project secular and religious Tourism through each rival's current international modifiers. | 1 \| 2 |
+| `culture-reads-the-engine-clock` | off (unmeasured) | Opt-in gene `culture-reads-the-engine-clock`; see `Self::culture_reads_the_engine_clock`. | 1 \| 1 |
 | `culture-tourism-payback` | off (unmeasured) | Enable `culture-tourism-payback` for measurement. | 1 \| 1 |
 | `decisive-window` | off (unmeasured) | Opt-in gene `decisive-window`; see `Self::decisive_window`. | 1 \| 1 |
 | `declaration-waits-for-the-breaker` | off (unmeasured) | Opt-in gene `declaration-waits-for-the-breaker`; see `Self::declaration_waits_for_the_breaker`. | 1 \| 1 |
