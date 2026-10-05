@@ -3,7 +3,7 @@
 //! civvis-20261005T051413Z (game 102) held four fit Bombards three tiles
 //! from walled Toronto from turn 137 to 145; not one fired in twenty turns.
 
-use super::tests::{at_distance, walled_city};
+use super::tests::{at_distance, plan_against, walled_city};
 use super::*;
 
 /// `walled_city` on open grassland, at war, its walls at full strength.
@@ -217,4 +217,156 @@ fn a_gun_with_no_post_or_already_in_range_is_not_barred() {
     investing(&mut ai, cid, &[(gun, lanes[0].1)]);
     g.relocate(gun, lanes[0].1);
     assert!(!ai.gun_barred_from_its_post(&g, 0, gun, &city, &[]));
+}
+
+/// `march_past_a_remembered_cuirassier`'s board: a lone Trebuchet nine tiles
+/// from the walled city, a Cuirassier seen last turn five tiles past the
+/// march's next step and in the fog now.
+fn march_past_a_remembered_cuirassier() -> (Game, u32, u32, Pos, Pos, AdvancedAi) {
+    let (mut g, cid) = walled_city();
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    g.at_war.insert((0, 1));
+    g.turn = 50;
+    let target = g.cities[&cid].pos;
+    let start = (target.0 - 9, target.1);
+    let gun = g.spawn_unit("trebuchet", 0, start);
+    let next = march_step(&g, gun, target, STAGING_FAR).expect("an open march");
+    let seen_at = (next.0, next.1 + 5);
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_staging_gun_remembers_hostiles();
+    ai.hostile_last_seen.insert(
+        424_242,
+        super::super::RememberedHostile {
+            pos: seen_at,
+            when: g.turn - 1,
+            owner: 1,
+            kind: crate::name!("cuirassier"),
+        },
+    );
+    (g, cid, gun, start, next, ai)
+}
+
+/// Fit Trebuchets marching in the band past the staging ring (six to eight
+/// tiles out), away from the lone gun's lane.
+fn marching_guns(g: &mut Game, cid: u32, count: usize) -> Vec<u32> {
+    let target = g.cities[&cid].pos;
+    let mut tiles: Vec<Pos> = (STAGING_FAR + 1..=STAGING_FAR + 3)
+        .flat_map(|distance| at_distance(g, cid, distance))
+        .filter(|pos| pos.0 > target.0)
+        .collect();
+    tiles.sort_unstable();
+    tiles
+        .into_iter()
+        .take(count)
+        .map(|pos| g.spawn_unit("trebuchet", 0, pos))
+        .collect()
+}
+
+#[test]
+fn guns_marching_together_share_a_remembered_hostiles_one_strike() {
+    let (g, _, gun, _, _, ai) = march_past_a_remembered_cuirassier();
+    let blow = ai.remembered_strikers(&g, 0, gun)[0].blow;
+    let limit = (100.0 - STAGING_GUN_HP_RESERVE) / STAGING_GUN_REPLY_TURNS;
+    assert!(blow > limit, "fixture: one gun alone holds short");
+    let together = (blow / limit).floor() as usize + 1;
+    for gene in [false, true] {
+        let (mut g, cid, gun, start, _, mut ai) = march_past_a_remembered_cuirassier();
+        marching_guns(&mut g, cid, together);
+        if gene {
+            ai.enable_guns_enter_together();
+        }
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        assert_eq!(
+            ai.staging_fog_terms(&g, 0, &city, gun).0,
+            if gene { together as f64 } else { 1.0 },
+            "the lone gun nine out is past the band; the others share"
+        );
+        ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+        let at = g.units[&gun].pos;
+        if gene {
+            // The gun nine tiles out is not in the band itself, so the share
+            // is the others'; with them it reads under the limit and walks.
+            assert_ne!(at, start, "the shared strike lets it march");
+        } else {
+            assert_eq!(at, start, "alone it holds short");
+        }
+    }
+}
+
+#[test]
+fn two_guns_on_the_ring_drop_a_hostile_seen_only_last_turn() {
+    let (mut g, cid, gun, start, _, mut ai) = march_past_a_remembered_cuirassier();
+    let ring: Vec<Pos> = at_distance(&g, cid, STAGING_FAR)
+        .into_iter()
+        .filter(|pos| pos.0 > g.cities[&cid].pos.0)
+        .take(2)
+        .collect();
+    for pos in ring {
+        g.spawn_unit("trebuchet", 0, pos);
+    }
+    let city = CityView::of(&g, cid).unwrap();
+    let plan = plan_against(&g, cid);
+    let mut off = ai.clone();
+    ai.enable_guns_enter_together();
+    assert_eq!(ai.staging_fog_terms(&g, 0, &city, gun), (2.0, true));
+    assert_eq!(off.staging_fog_terms(&g, 0, &city, gun), (1.0, false));
+    let mut g_off = g.clone();
+    off.siege_stage_step(&mut g_off, 0, gun, &city, &plan);
+    assert_eq!(g_off.units[&gun].pos, start, "off: still held short");
+    ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+    assert_ne!(
+        g.units[&gun].pos, start,
+        "on: the stale sighting no longer holds it"
+    );
+}
+
+#[test]
+fn a_reserve_gun_at_a_walled_siege_joins_it_under_the_gene() {
+    let (mut g, cid) = open_walled_city();
+    let target = g.cities[&cid].pos;
+    let melee: Vec<u32> = at_distance(&g, cid, 3)
+        .into_iter()
+        .take(3)
+        .map(|pos| g.spawn_unit("swordsman", 0, pos))
+        .collect();
+    let gun = g.spawn_unit("catapult", 0, at_distance(&g, cid, 4)[0]);
+    let siege = ForceGroup {
+        id: melee[0],
+        domain: ForceDomain::Land,
+        units: melee.clone(),
+        anchor: target,
+        objective: target,
+        focus_target: Some(target),
+        posture: super::super::ForcePosture::Advance,
+        readiness: 1.0,
+        local_strength_ratio: 2.0,
+    };
+    // The Reserve holds well away from any city it could besiege.
+    let rally = (target.0 - 20, target.1);
+    let reserve = ForceGroup {
+        id: gun,
+        domain: ForceDomain::Land,
+        units: vec![gun],
+        anchor: rally,
+        objective: rally,
+        focus_target: None,
+        posture: super::super::ForcePosture::Muster,
+        readiness: 1.0,
+        local_strength_ratio: 1.0,
+    };
+    let plan = plan_against(&g, cid);
+    let view = CityView::of(&g, cid).unwrap();
+    for gene in [false, true] {
+        let mut ai = train(gene);
+        ai.force_groups = vec![siege.clone(), reserve.clone()];
+        assert_eq!(ai.siege_city_of(&g, 0, &plan, &reserve), None, "fixture");
+        let force = ai.siege_force(&g, 0, &view, &plan, &siege);
+        assert_eq!(force.contains(&gun), gene);
+    }
 }
