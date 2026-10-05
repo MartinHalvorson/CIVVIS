@@ -142,3 +142,100 @@ fn a_staging_gun_reads_the_shared_danger_only_under_the_gene() {
         "the shared reading never holds a gun further out: {outcomes:?}"
     );
 }
+
+/// The readiness test reads the mustered train as it would stand on the
+/// ring. Live King game 168 (civvis-20261005T222327Z) armed the gene with a
+/// test that counted the mustered bill but read the breakers and the damage
+/// budget within five tiles: with the whole train at the muster line
+/// neither saw anyone, `no_breaker` held, and the sieges sat in Stage 172
+/// siege-turns against 13 in Invest and Reduce.
+fn mustered_train(with_breaker: bool) -> (Game, u32, AdvancedAi, ForceGroup, StrategicPlan) {
+    let (mut g, cid) = walled_city();
+    let city = g.cities[&cid].pos;
+    for tile in g.map.tiles.values_mut() {
+        if tile.pos != city {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+        }
+    }
+    g.map_script = crate::setup::MapScript::Pangaea;
+    g.turn = 30;
+    g.at_war.insert((0, 1));
+    let spots = super::tests::at_distance(&g, cid, 7);
+    let mut units: Vec<u32> = spots
+        .iter()
+        .take(3)
+        .map(|pos| g.spawn_unit("modern_armor", 0, *pos))
+        .collect();
+    if with_breaker {
+        units.push(g.spawn_unit("catapult", 0, spots[3]));
+    }
+    let group = ForceGroup {
+        id: units[0],
+        domain: ForceDomain::Land,
+        units: units.clone(),
+        anchor: g.units[&units[0]].pos,
+        objective: city,
+        focus_target: None,
+        posture: super::super::ForcePosture::Advance,
+        readiness: 1.0,
+        local_strength_ratio: 2.0,
+    };
+    let plan = plan_against(&g, cid);
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_siege_needs_a_breaker();
+    ai.enable_siege_positive_damage_budget();
+    ai.enable_stage_musters_out_of_reach();
+    ai.force_groups.push(group.clone());
+    ai.sieges.insert(
+        cid,
+        Siege {
+            stage: SiegeStage::Stage,
+            taker: None,
+            entered: 29,
+            assessed: 29,
+            posts: BTreeMap::new(),
+            short_since: None,
+        },
+    );
+    (g, cid, ai, group, plan)
+}
+
+#[test]
+fn a_gathered_train_with_a_breaker_reads_ready_to_close() {
+    let (g, cid, mut ai, group, plan) = mustered_train(true);
+    let city = CityView::of(&g, cid).unwrap();
+    assert!(city.wall_hp > 0, "fixture: walls stand");
+    let force = ai.siege_force(&g, 0, &city, &plan, &group);
+    assert!(
+        force.iter().all(|uid| g.wdist(g.units[uid].pos, city.pos) > STAGING_FAR),
+        "fixture: the whole train musters beyond the ring"
+    );
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(
+        ai.stage_muster_ready.get(&cid).copied(),
+        Some(true),
+        "a mustered train that meets the bill with a breaker closes"
+    );
+}
+
+#[test]
+fn a_gathered_train_without_a_breaker_waits_until_its_patience_runs_out() {
+    let (mut g, cid, mut ai, group, plan) = mustered_train(false);
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(
+        ai.stage_muster_ready.get(&cid).copied(),
+        Some(false),
+        "nothing opens the walls: the train holds at the muster line"
+    );
+    g.turn = 29 + g.standard_duration(MUSTER_PATIENCE_TURNS) + 1;
+    ai.sieges.get_mut(&cid).unwrap().assessed = g.turn - 1;
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(
+        ai.stage_muster_ready.get(&cid).copied(),
+        Some(true),
+        "a muster that meets the bill never pins the train out for good"
+    );
+}
