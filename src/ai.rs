@@ -13377,19 +13377,7 @@ impl BasicAi {
             if let Some(item) = Self::plaza_building_item(g, pid, cid) {
                 return Some(item);
             }
-            let prophet_race_open = self.enter_prophet_race
-                && !self.skip_prophet_race
-                && g.players[pid].religion.is_none()
-                && !g.cities.values().any(|other| {
-                    other.owner == pid
-                        && (g.city_has_district_family(other, crate::name!("holy_site"))
-                            || matches!(
-                                other.queue.first(),
-                                Some(Item::District { district, .. })
-                                    if g.district_family(*district) == "holy_site"
-                            ))
-                });
-            if !prophet_race_open {
+            if !self.plaza_prophet_race_open(g, pid) {
                 if let Some(item) = Self::plaza_item(g, pid, cid) {
                     return Some(item);
                 }
@@ -16053,13 +16041,36 @@ impl BasicAi {
         city.owner == pid
             && city.is_capital
             && city.original_owner == pid
+            && Self::plaza_absent(g, pid)
+    }
+
+    /// `plaza-in-the-district-list`: no city of ours holds a Government
+    /// Plaza or has one first in its queue.
+    pub(crate) fn plaza_absent(g: &Game, pid: usize) -> bool {
+        !g.cities.values().any(|other| {
+            other.owner == pid
+                && (g.city_has_district_family(other, crate::name!("government_plaza"))
+                    || matches!(
+                        other.queue.first(),
+                        Some(Item::District { district, .. })
+                            if g.district_family(*district) == "government_plaza"
+                    ))
+        })
+    }
+
+    /// `plaza-in-the-district-list`: a Prophet race the empire has entered
+    /// but not yet started a Holy Site for goes ahead of the Plaza.
+    pub(crate) fn plaza_prophet_race_open(&self, g: &Game, pid: usize) -> bool {
+        self.enter_prophet_race
+            && !self.skip_prophet_race
+            && g.players[pid].religion.is_none()
             && !g.cities.values().any(|other| {
                 other.owner == pid
-                    && (g.city_has_district_family(other, crate::name!("government_plaza"))
+                    && (g.city_has_district_family(other, crate::name!("holy_site"))
                         || matches!(
                             other.queue.first(),
                             Some(Item::District { district, .. })
-                                if g.district_family(*district) == "government_plaza"
+                                if g.district_family(*district) == "holy_site"
                         ))
             })
     }
@@ -16071,6 +16082,12 @@ impl BasicAi {
         if !Self::plaza_wanted_here(g, pid, cid) {
             return None;
         }
+        Self::plaza_site_item(g, pid, cid)
+    }
+
+    /// `plaza-in-the-district-list`: a Government Plaza for `cid` on its
+    /// highest-yield site (ties to the lowest tile), if it can produce one.
+    pub(crate) fn plaza_site_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
         let plaza = Self::civ_district(g, pid, "government_plaza");
         g.district_sites(cid, plaza)
             .into_iter()
