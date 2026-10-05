@@ -591,6 +591,37 @@ class AttachSummaryTests(unittest.TestCase):
         record.assert_called_once_with(run_dir / "summary.json")
         publish.assert_called_once_with(run_dir.name, run_dir.parent)
 
+    def test_the_finished_run_publishes_in_a_detached_background_process(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "civvis-background-publish"
+            run_dir.mkdir()
+            with patch.object(civ6_play.subprocess, "Popen") as popen:
+                civ6_play.publish_run_in_background(run_dir)
+            command = popen.call_args.args[0]
+            kwargs = popen.call_args.kwargs
+            self.assertEqual(Path(command[1]).name, "civ6_ladder.py")
+            self.assertEqual(command[2:], ["--runs", str(run_dir.parent),
+                                           "publish-run", run_dir.name])
+            # Its own session (no lane signal reaches it), no pipe back to us
+            # (a caller reading our stdout must not wait for it), a log beside
+            # the run.
+            self.assertTrue(kwargs["start_new_session"])
+            self.assertIs(kwargs["stdin"], civ6_play.subprocess.DEVNULL)
+            self.assertIs(kwargs["stderr"], civ6_play.subprocess.STDOUT)
+            self.assertTrue(kwargs["close_fds"])
+            self.assertTrue((run_dir / "ledger-publish.log").is_file())
+            with patch.object(civ6_play.subprocess, "Popen", side_effect=OSError("no fork")):
+                self.assertIsNone(civ6_play.publish_run_in_background(run_dir))
+
+    def test_main_publishes_in_the_background_and_still_records_in_process(self):
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        tail = source[source.index('summary = with_diagnostic(summary, run_dir / "summary.json")\n'
+                                   '    (run_dir / "summary.json").write_text('):]
+        tail = tail[: tail.index("\ndef ")]
+        self.assertIn("civ6_ladder.record_summary(run_dir / \"summary.json\")", tail)
+        self.assertIn("publish_run_in_background(run_dir)", tail)
+        self.assertNotIn("civ6_ladder.publish_run(", tail)
+
     def test_attached_summary_keeps_native_retirement_payload(self):
         args = SimpleNamespace(
             tag="civvis-attach-retirement",
