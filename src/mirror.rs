@@ -4294,6 +4294,13 @@ pub struct StateSnapshot {
     /// this empire alone.
     #[serde(default)]
     pub world_era: Option<i64>,
+    /// `Game.GetEras():GetNextEraCountdown()`: the turns left AFTER this one in
+    /// the world era (0 on its last turn), negative before the countdown has
+    /// started. `None` on an older export. The model's
+    /// `Game::world_era_countdown_end` is derived from it; without it that
+    /// deadline existed only in the simulator, so `age-closer-2` never fired live.
+    #[serde(default)]
+    pub era_countdown: Option<i64>,
     #[serde(default)]
     pub dark_age: Option<bool>,
     #[serde(default)]
@@ -6618,7 +6625,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // The age. `the_schema_allowlists_cover_every_declared_field` fails if a
         // StateSnapshot field is missing here.
         "era_score", "era_score_baseline", "normal_age_threshold",
-        "golden_age_threshold", "world_era", "dark_age", "golden_age",
+        "golden_age_threshold", "world_era", "era_countdown", "dark_age", "golden_age",
         "heroic_golden_age", "dedications", "dedication_choices", "resolutions",
         "congress_turns_left",
         // The host's climate and its trade-route projections (2026-08-26).
@@ -10037,6 +10044,24 @@ fn apply_player_ages(game: &mut crate::game::Game, state: &StateSnapshot) {
         // past its end is clamped rather than allowed to index out of range.
         game.world_era = (era as usize).min(crate::rules::ERA_NAMES.len() - 1);
     }
+    apply_era_countdown(game, state.era_countdown);
+}
+
+/// The host's era countdown as the model's `world_era_countdown_end`: the turn
+/// on which `Game::process_eras` opens the next era. The simulator advances the
+/// era at the start of turn `end`, so the old era's last turn is `end - 1`;
+/// Firaxis counts 0 on that last turn, hence `turn + countdown + 1`. A negative
+/// countdown (not started) clears it: the countdown always runs for
+/// `NEXT_ERA_COUNTDOWN_TURNS` once it starts, so an unstarted era cannot end
+/// inside `age-closer-2`'s window. An older export (`None`) leaves the model's
+/// own value alone.
+fn apply_era_countdown(game: &mut crate::game::Game, countdown: Option<i64>) {
+    let Some(countdown) = countdown else {
+        return;
+    };
+    game.world_era_countdown_end = u32::try_from(countdown)
+        .ok()
+        .map(|left| game.turn.saturating_add(left).saturating_add(1));
 }
 
 /// A Firaxis `COMMEMORATION_*` type as CIVVIS's dedication id — the same pairing

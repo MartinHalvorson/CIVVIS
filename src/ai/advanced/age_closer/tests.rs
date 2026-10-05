@@ -281,3 +281,53 @@ fn a_verified_closer_takes_priority_over_a_stronger_ordinary_purchase() {
     assert_eq!(bought(&g, "engineer"), 1);
     assert_eq!(g.players[0].era_score, 13);
 }
+
+/// The deadline the gene reads only ever came from the simulator's own
+/// `process_eras`; a live board, rebuilt from the host every turn, carried
+/// `None`, so this gene could never fire live. The host's era countdown now
+/// crosses (`era_countdown`), and a rebuilt board in the era's last turns
+/// opens the window while one in mid-era does not.
+#[test]
+fn a_rebuilt_live_board_carries_the_hosts_era_deadline_into_the_window() {
+    use crate::mirror::{rebuild_from_state, Snapshot, StateCity, StateSnapshot, TilesChunk};
+    let chunk: TilesChunk = serde_json::from_value(serde_json::json!({
+        "turn": 92, "width": 8, "height": 8, "chunk": 1,
+        "plots": [{"x": 3, "y": 3, "t": "TERRAIN_GRASS", "o": 0, "w": false, "i": false,
+                   "rv": 0, "ri": false, "cl": -1, "p": false, "rp": false, "np": false,
+                   "vis": false}],
+    }))
+    .unwrap();
+    let snapshot = Snapshot::from_chunks(&[chunk]);
+    let board = |countdown: i64| {
+        let state = StateSnapshot {
+            turn: 92,
+            world_era: Some(3),
+            era_score: Some(40),
+            normal_age_threshold: Some(43),
+            era_countdown: Some(countdown),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Bogotá".to_string(),
+                x: 3,
+                y: 3,
+                pop: 6,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        rebuild_from_state(&snapshot, &state, 4, 1, 250, 0).game
+    };
+    let ai = candidate();
+    let last_turns = board(1);
+    assert_eq!(last_turns.world_era_countdown_end, Some(94));
+    assert_eq!(ai.age_closing_deadline(&last_turns, 0), Some(94));
+    let mid_era = board(9);
+    assert_eq!(mid_era.world_era_countdown_end, Some(102));
+    assert_eq!(ai.age_closing_deadline(&mid_era, 0), None);
+    let not_started = board(-1);
+    assert_eq!(not_started.world_era_countdown_end, None);
+    assert_eq!(ai.age_closing_deadline(&not_started, 0), None);
+    // Off, the same last-turns board reads no deadline at all.
+    assert_eq!(AdvancedAi::new().age_closing_deadline(&last_turns, 0), None);
+}

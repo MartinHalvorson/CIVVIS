@@ -1455,6 +1455,46 @@ fn firaxis_era_score_and_age_thresholds_reach_the_board() {
 }
 
 #[test]
+fn the_host_era_countdown_becomes_the_models_era_deadline() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 92,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: vec![host_grass(3, 3)],
+    }]);
+    let state = |countdown: Option<i64>| StateSnapshot {
+        turn: 92,
+        world_era: Some(2),
+        era_countdown: countdown,
+        cities: vec![StateCity {
+            id: 65_536,
+            name: "Roma".to_string(),
+            x: 3,
+            y: 3,
+            pop: 6,
+            capital: true,
+            ..StateCity::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    let end = |countdown: Option<i64>| {
+        rebuild_from_state(&snapshot, &state(countdown), 4, 1, 250, 0)
+            .game
+            .world_era_countdown_end
+    };
+    // Firaxis counts 0 on the era's last turn; `Game::process_eras` opens the
+    // next era at the START of `world_era_countdown_end`, so the last acting
+    // turn of the old era is `end - 1`.
+    assert_eq!(end(Some(0)), Some(93));
+    assert_eq!(end(Some(2)), Some(95));
+    // Not started: no deadline the model could act on.
+    assert_eq!(end(Some(-1)), None);
+    // An older export says nothing: the rebuilt board invents no deadline.
+    assert_eq!(end(None), None);
+}
+
+#[test]
 fn an_unanswered_era_getter_leaves_the_board_alone() {
     let snapshot = Snapshot::from_chunks(&[TilesChunk {
         turn: 40,

@@ -9226,6 +9226,14 @@ local function exportState(player, pid, turn, frame, eventKind)
 			return Game.GetEras():GetPlayerGoldenAgeThreshold(pid);
 		end, -1),
 		world_era = try(function() return Game.GetEras():GetCurrentEra(); end, -1),
+		-- The world era's countdown, as the shipped EraProgressPanel reads it:
+		-- turns left AFTER this one, 0 on the era's last turn, negative before
+		-- the countdown starts. The mirror turns it into the model's
+		-- `world_era_countdown_end`, which only the simulator set, so
+		-- `age-closer-2` (buy the Great Person that closes a Dark Age in the
+		-- era's last turns) could never see a deadline live. One scalar read
+		-- per export; nil when the host cannot answer.
+		era_countdown = try(function() return Game.GetEras():GetNextEraCountdown(); end, nil),
 		dark_age = try(function() return Game.GetEras():HasDarkAge(pid); end, nil),
 		golden_age = try(function() return Game.GetEras():HasGoldenAge(pid); end, nil),
 		heroic_golden_age = try(function()
