@@ -1234,6 +1234,16 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("GetTouristsTo()", source)
         self.assertIn("GetStaycationers()", source)
 
+    def test_the_harness_quit_is_confirmed_by_the_agent(self) -> None:
+        # The menu quit raises UserRequestClose; in game the stock handler opens
+        # an "are you sure" modal that only a screenshot-read click answered
+        # (civvis-20261005T123242Z: SIGTERM 28 s after the hold). The agent
+        # answers it with the modal's own Yes, while it plays.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn("UserRequestClose = function()", source)
+        self.assertIn("if cfg.Play ~= false then pcall(function() Events.UserConfirmedClose(); end); end",
+                      source)
+
     def test_the_spy_missions_reach_the_host(self) -> None:
         # The engine models twelve missions and the AI aims them at the denial
         # target; none could be sent, and `Game::spies` was empty besides.
