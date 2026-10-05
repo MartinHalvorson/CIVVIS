@@ -7335,6 +7335,38 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `stall-waits-for-the-breach`: a siege train still gathering on its
+    /// staging ring around the breaker it waited for is not a siege that is
+    /// not winning. `siege_mustering` counts its window from the turn the
+    /// train entered Stage, so a muster whose window the breaker wait had
+    /// already spent read every turn after the gun came as stalled, and
+    /// `capture-go-or-stand-down-2` stood it down six turns later. Under the
+    /// gene the muster after a breaker wait gets its own
+    /// `siege_train::BREAKER_WAIT_TURNS`, counted from the last turn the
+    /// capture held for that breaker, while a breaker stands in the train.
+    /// Live King civvis-20261005T174615Z (game 148): Mikisiw-Wacîhk staged
+    /// from turn 83, waited for a breaker to turn 106, read "1 gun(s) fit,
+    /// damage ready false" from 107 and was stood down at 112 with 10 of 16
+    /// units staged; the army re-staged on Pihtokahanapiwiyin from 4 of 15
+    /// and was back at Mikisiw-Wacîhk at 145 with no capture between. And a
+    /// siege that steps forward (Stage to Invest, on to Reduce and Take)
+    /// starts its stall reading again from where the city stands, at most
+    /// once a stall window: the reading's best can predate walls the city
+    /// healed behind, so wall hits never read as new lows. Live King
+    /// civvis-20261005T181436Z (game 150) stood Karkar down at turn 92 on
+    /// the turn its train stepped into Invest with 9 of 11 staged, two guns
+    /// fit and "damage ready true with 5.9 turns / 14.6 endurance"; over the
+    /// 10-04/05 control runs 15 of 30 such stand-downs fell on a turn the
+    /// siege read damage ready. See `commitments::muster_after_the_breaker`
+    /// and `commitments::rebase_capture_on_a_forward_step`. Off by default.
+    stall_waits_for_the_breach: bool,
+    /// `stall-waits-for-the-breach`: the capture objective's tile and the
+    /// last turn the capture held for a breaker on its way.
+    stall_breaker_waited: Option<(crate::Pos, u32)>,
+    /// `stall-waits-for-the-breach`: the capture objective's tile, the rank
+    /// of the siege stage last read there, and the turn a forward step last
+    /// restarted the stall reading. See `rebase_capture_on_a_forward_step`.
+    stall_stage_seen: Option<(crate::Pos, u8, Option<u32>)>,
     /// `second-front-waits-for-its-war`: a second front we are not yet at
     /// war with does not take the plan's target from a running war that still
     /// holds a city within the declaration range. The Board writes Siege rows
@@ -9705,6 +9737,9 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            stall_waits_for_the_breach: false,
+            stall_breaker_waited: None,
+            stall_stage_seen: None,
             second_front_waits_for_its_war: false,
             siege_members_use_their_moves: false,
             science_ladder_reads_the_clock: false,

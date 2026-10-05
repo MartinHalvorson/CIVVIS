@@ -3021,6 +3021,13 @@ pub const GENES: &[Gene] = &[
     // against 350, was routed, took nothing, and lost to its religion. See
     // `one_war::faith_counter_has_the_edge`.
     Gene { tag: "faith-counter-needs-the-edge", field: "faith_counter_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_counter_needs_the_edge, disable: AdvancedAi::disable_faith_counter_needs_the_edge },
+    // Live King G148 stood Mikisiw-Wacîhk down at turn 112, five turns after
+    // its first fit gun came, with 10 of 16 staged, and was back there at
+    // 145; G150 stood Karkar down at 92 on the turn its train stepped into
+    // Invest reading "damage ready true". See
+    // `commitments::muster_after_the_breaker` and
+    // `commitments::rebase_capture_on_a_forward_step`.
+    Gene { tag: "stall-waits-for-the-breach", field: "stall_waits_for_the_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_stall_waits_for_the_breach, disable: AdvancedAi::disable_stall_waits_for_the_breach },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

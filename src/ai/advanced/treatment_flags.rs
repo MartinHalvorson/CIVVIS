@@ -6324,6 +6324,17 @@ impl AdvancedAi {
         self.faith_counter_needs_the_edge = false;
     }
 
+    /// Opt-in gene `stall-waits-for-the-breach`; see
+    /// [`Self::stall_waits_for_the_breach`].
+    pub fn enable_stall_waits_for_the_breach(&mut self) {
+        self.stall_waits_for_the_breach = true;
+    }
+
+    /// The twin of `enable_stall_waits_for_the_breach`.
+    pub fn disable_stall_waits_for_the_breach(&mut self) {
+        self.stall_waits_for_the_breach = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
