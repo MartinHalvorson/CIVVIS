@@ -11653,8 +11653,15 @@ CivvisLedger.onCombatVisBegin = function(kVisData)
 	local defender = try(function() return kVisData[CombatVisType.DEFENDER]; end);
 	local key = CivvisLedger.componentKey(attacker);
 	if key == nil then return; end
+	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
 	CivvisLedger.open[key] = {
 		turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1,
+		-- G90: the AI phase grew ~0.5 s per combat in its window (2.0 s with
+		-- none, 5.5 s with 6+). How long each visualization holds, and whether
+		-- it ran in our turn or the AI's, says whether that time is the combat
+		-- display or the AI's own thinking.
+		vis_at = try(function() return UI.GetElapsedTime(); end, nil),
+		our_turn = try(function() return Players[pid]:IsTurnActive(); end, nil),
 		attacker = CivvisLedger.describe(attacker),
 		defender = CivvisLedger.describe(defender),
 		attacker_id = attacker, defender_id = defender,
@@ -11723,6 +11730,12 @@ CivvisLedger.onCombatVisEnd = function(kVisData)
 		ours = combat.attacker ~= nil and combat.attacker.player == pid,
 		against_us = combat.defender ~= nil and combat.defender.player == pid,
 		preview = preview,
+		vis_seconds = try(function()
+			local now = UI.GetElapsedTime();
+			if type(now) ~= "number" or type(combat.vis_at) ~= "number" then return nil; end
+			return math.floor((now - combat.vis_at) * 1000 + 0.5) / 1000;
+		end, nil),
+		our_turn = combat.our_turn,
 	});
 end;
 
