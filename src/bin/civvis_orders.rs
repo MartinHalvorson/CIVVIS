@@ -1515,6 +1515,13 @@ impl HostOrderRefusals {
                     self.failed_on.remove(&identity);
                 }
                 Verdict::Failed(reason) => {
+                    // One strike per order a turn: a replan frame re-sends the
+                    // same order, and its refusal is the same answer again,
+                    // not another turn of it. Counting frames struck an order
+                    // out inside one turn -- live King civvis-20261005T141932Z
+                    // (game 135) sent Victor's post in three frames of turn 142
+                    // and could not send it again until 152.
+                    let struck_this_turn = self.failed_on.get(&identity) == Some(&turn);
                     self.failed_on.insert(identity.clone(), turn);
                     let record = self.seen.entry(identity).or_insert(RefusalRecord {
                         strikes: 0,
@@ -1522,7 +1529,9 @@ impl HostOrderRefusals {
                         until: None,
                     });
                     if record.reason == *reason {
-                        record.strikes += 1;
+                        if !struck_this_turn {
+                            record.strikes += 1;
+                        }
                     } else {
                         // A different answer is a different problem. The host
                         // is not standing on one refusal, so the count starts
@@ -19947,6 +19956,34 @@ mod order_postcondition_tests {
         );
     }
 
+    /// Replan frames re-send an order within a turn; their refusals are one
+    /// strike, so only three turns of the same answer strike it out.
+    #[test]
+    fn three_replans_in_one_turn_are_one_strike() {
+        let issued = order(
+            "governor_assign",
+            Some(196_610),
+            Some("GOVERNOR_THE_DEFENDER"),
+            Some((0, -1)),
+        );
+        let mut refusals = HostOrderRefusals::default();
+        let frames = vec![refused(&issued, "not_assigned"); 3];
+        refusals.observe(&frames, 1);
+        assert_eq!(
+            refusals.withheld(&wire(&issued), 2),
+            None,
+            "one turn, one strike"
+        );
+        refusals.observe(&frames, 2);
+        assert_eq!(
+            refusals.withheld(&wire(&issued), 3),
+            None,
+            "two turns, two strikes"
+        );
+        refusals.observe(&frames, 3);
+        assert_eq!(refusals.withheld(&wire(&issued), 4), Some("not_assigned"));
+    }
+
     /// A genuinely transient block does not answer the same way three turns
     /// running, which is what makes the reason comparison a sufficient test.
     #[test]
@@ -20052,14 +20089,14 @@ mod order_postcondition_tests {
         // Record the closed window through the real export filter, even with
         // no selected orders. Each refused declaration used the same target.
         withhold_refused_orders(Vec::new(), &state, &mut refusals);
-        for _ in 0..ORDER_REFUSAL_STRIKES {
+        for back in (0..ORDER_REFUSAL_STRIKES).rev() {
             refusals.observe(
                 &[
                     refused(&war, "not_at_war"),
                     refused(&other_war, "not_at_war"),
                     refused(&step, "did_not_move"),
                 ],
-                98,
+                98 - back,
             );
         }
         assert!(refusals.withheld(&wire(&war), 99).is_some());
@@ -20076,8 +20113,8 @@ mod order_postcondition_tests {
         assert_eq!(withheld.len(), 2);
         // A new failure while the host continues to report permission is
         // still a real problem: do not bypass the ordinary retry bound.
-        for _ in 0..ORDER_REFUSAL_STRIKES {
-            refusals.observe(&[refused(&war, "not_at_war")], 99);
+        for back in (0..ORDER_REFUSAL_STRIKES).rev() {
+            refusals.observe(&[refused(&war, "not_at_war")], 99 - back);
         }
         state.turn = 100;
         let (allowed, withheld) = withhold_refused_orders(vec![wire(&war)], &state, &mut refusals);
@@ -20143,14 +20180,14 @@ mod order_postcondition_tests {
         };
         let mut refusals = HostOrderRefusals::default();
         refusals.observe_war_permissions(&state);
-        for _ in 0..ORDER_REFUSAL_STRIKES {
+        for back in (0..ORDER_REFUSAL_STRIKES).rev() {
             refusals.observe(
                 &[
                     refused(&formal, "cannot_declare"),
                     refused(&surprise, "cannot_declare"),
                     refused(&other, "cannot_declare"),
                 ],
-                53,
+                53 - back,
             );
         }
         state.rivals[0].can_declare = Some(true);
@@ -20169,8 +20206,8 @@ mod order_postcondition_tests {
         refusals.observe_war_permissions(&state);
         assert!(refusals.withheld(&wire(&formal), 54).is_none());
         assert!(refusals.withheld(&wire(&other), 54).is_some());
-        for _ in 0..ORDER_REFUSAL_STRIKES {
-            refusals.observe(&[refused(&formal, "cannot_declare")], 54);
+        for back in (0..ORDER_REFUSAL_STRIKES).rev() {
+            refusals.observe(&[refused(&formal, "cannot_declare")], 54 - back);
         }
         refusals.observe_war_permissions(&state);
         assert!(
