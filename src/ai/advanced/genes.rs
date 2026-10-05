@@ -2952,6 +2952,7 @@ pub const GENES: &[Gene] = &[
     // live frame-0 MOVE_TOs were one tile. See `march_moves`.
     Gene { tag: "march-uses-its-moves", field: "march_uses_its_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_march_uses_its_moves, disable: AdvancedAi::disable_march_uses_its_moves },
     Gene { tag: "guns-grind-the-walls", field: "guns_grind_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_grind_the_walls, disable: AdvancedAi::disable_guns_grind_the_walls },
+    Gene { tag: "breach-support-reads-the-wall-tier", field: "breach_support_reads_the_wall_tier", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_support_reads_the_wall_tier, disable: AdvancedAi::disable_breach_support_reads_the_wall_tier },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

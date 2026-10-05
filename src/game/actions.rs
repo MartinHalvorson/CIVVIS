@@ -3221,6 +3221,20 @@ impl Game {
             "siege_tower" => "siege_support_immunity",
             _ => return false,
         };
+        // `breach-support-reads-the-wall-tier`: a mirrored city shows its wall
+        // pool, not its buildings. Each tier adds 100 to the pool (Ancient,
+        // Medieval, Renaissance), so a pool of 200 stands behind Medieval
+        // Walls, which a ram cannot work on, and 300 behind Renaissance Walls,
+        // which a tower cannot. Live King civvis-20261005T152615Z (game 139)
+        // sent a Siege Tower to Mikisiw-Wacihk's 300/300 walls six times.
+        if self.observed_wall_tier_rules {
+            if let Some(max) = self.observed_city_max_wall_hp.get(&cid) {
+                let immune_from = if kind == "battering_ram" { 200 } else { 300 };
+                if *max >= immune_from {
+                    return false;
+                }
+            }
+        }
         self.city_building_effect(city, immunity) <= 0.0
     }
 

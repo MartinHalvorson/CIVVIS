@@ -211,3 +211,62 @@ fn siege_support_allows_effective_infantry_breaches() {
         }
     }
 }
+
+/// `breach-support-reads-the-wall-tier`: a mirrored rival city carries its
+/// wall pool, not its wall buildings, so with the rule off a Siege Tower read
+/// as working on Renaissance Walls (live King civvis-20261005T152615Z, game
+/// 139, Mikisiw-Wacihk 300/300) and a Battering Ram on Medieval Walls. With it
+/// on, the observed pool names the tier.
+#[test]
+fn a_mirrored_wall_pool_names_the_tier_supports_cannot_work_on() {
+    for (pool, ram_works, tower_works) in [
+        (100, true, true),
+        (200, false, true),
+        (300, false, false),
+        (400, false, false),
+    ] {
+        let (mut g, cid) = walled_city();
+        // The mirror's view: no wall buildings, only the observed pool.
+        g.cities.get_mut(&cid).unwrap().buildings.clear();
+        std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, pool);
+        g.cities.get_mut(&cid).unwrap().wall_hp = pool;
+        assert!(
+            g.city_allows_siege_support(cid, "battering_ram"),
+            "off, pool {pool}"
+        );
+        assert!(
+            g.city_allows_siege_support(cid, "siege_tower"),
+            "off, pool {pool}"
+        );
+        g.observed_wall_tier_rules = true;
+        assert_eq!(
+            g.city_allows_siege_support(cid, "battering_ram"),
+            ram_works,
+            "ram, pool {pool}"
+        );
+        assert_eq!(
+            g.city_allows_siege_support(cid, "siege_tower"),
+            tower_works,
+            "tower, pool {pool}"
+        );
+    }
+}
+
+/// The seat sets the rule on its board each turn from the gene; a native
+/// game's empty observed pool leaves its buildings in charge either way.
+#[test]
+fn the_wall_tier_rule_follows_the_gene_and_leaves_native_walls_alone() {
+    let (mut g, cid) = walled_city();
+    g.cities.get_mut(&cid).unwrap().buildings =
+        vec![crate::name!("walls"), crate::name!("medieval_walls")];
+    g.observed_wall_tier_rules = true;
+    assert!(!g.city_allows_siege_support(cid, "battering_ram"));
+    assert!(g.city_allows_siege_support(cid, "siege_tower"));
+
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.breach_support_reads_the_wall_tier);
+    ai.enable_breach_support_reads_the_wall_tier();
+    assert!(ai.breach_support_reads_the_wall_tier);
+    ai.disable_breach_support_reads_the_wall_tier();
+    assert!(!ai.breach_support_reads_the_wall_tier);
+}
