@@ -15217,6 +15217,7 @@ impl LiveMirror {
                     // multi-item queue.  Clear even when the item is absent: a
                     // finished build is an empty queue in the real game, not the
                     // last thing CIVVIS happened to see.
+                    let had_assigned_production = !live.queue.is_empty();
                     live.queue.clear();
                     if let Some(item) = queued {
                         live.queue.push(item);
@@ -15228,6 +15229,13 @@ impl LiveMirror {
                     }
                     if city.production_progress.is_finite() && city.production_progress >= 0.0 {
                         live.production = city.production_progress;
+                    } else if had_assigned_production && live.queue.is_empty() {
+                        // A vanished head's old work is not observed overflow.
+                        // Keeping it would credit that completed item again when
+                        // an idle city resumes a paused district. This discards
+                        // stale assigned work, not an explicitly observed idle
+                        // balance; actual native overflow remains unknown.
+                        live.production = 0.0;
                     }
                     // Same translation as the rebuild path, and for the same reason:
                     // an untranslated name here panics `rules.buildings[..]` later.

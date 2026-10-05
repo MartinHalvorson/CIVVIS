@@ -156,6 +156,56 @@ fn active_head_without_menu_progress_does_not_retain_a_paused_credit() {
 }
 
 #[test]
+fn finished_defender_does_not_become_unobserved_overflow_for_a_paused_district() {
+    let (snapshot, mut state) = fixture();
+    let mut mirror = build(&snapshot, &state);
+    let cid = mirror.cid_of[&7];
+    state.cities[0].producing = None;
+    state.cities[0].production_progress = -1.0;
+    mirror.sync(&snapshot, &state, 0);
+    assert!(mirror.game.cities[&cid].queue.is_empty());
+    // Native overflow is unavailable, not observed to be zero. The defender's
+    // old assigned 16 is nevertheless not evidence of free production.
+    assert_eq!(mirror.game.cities[&cid].production, 0.0);
+    assert_eq!(mirror.game.item_invested_production(cid, &campus()), 40.0);
+    assert_eq!(
+        mirror.game.item_remaining_cost_for_city(0, cid, &campus()),
+        33.0
+    );
+    let mut model = mirror.game.clone();
+    model
+        .apply(
+            0,
+            &crate::game::Action::Produce {
+                city: cid,
+                item: campus(),
+            },
+        )
+        .unwrap();
+    assert_eq!(model.cities[&cid].production, 40.0);
+    assert_eq!(model.item_remaining_cost_for_city(0, cid, &campus()), 33.0);
+}
+
+#[test]
+fn explicitly_observed_idle_production_is_not_discarded() {
+    let (snapshot, mut state) = fixture();
+    let mut mirror = build(&snapshot, &state);
+    let cid = mirror.cid_of[&7];
+    state.cities[0].producing = None;
+    state.cities[0].production_progress = 5.0;
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.game.cities[&cid].production, 5.0);
+    assert_eq!(
+        mirror.game.item_remaining_cost_for_city(0, cid, &campus()),
+        28.0
+    );
+    // A subsequent missing reading does not erase a known unassigned balance.
+    state.cities[0].production_progress = -1.0;
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.game.cities[&cid].production, 5.0);
+}
+
+#[test]
 fn native_work_uses_native_cost_and_invalid_prices_do_not_replace_it() {
     let (snapshot, mut state) = fixture();
     let mut mirror = build(&snapshot, &state);
