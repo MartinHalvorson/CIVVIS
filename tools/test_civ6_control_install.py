@@ -1282,7 +1282,10 @@ class ProtectedInstallTest(unittest.TestCase):
         # `CivvisCongressVoteBudget` and the ask takes the smaller.
         self.assertIn('if rtype == "WC_RES_DIPLOVICTORY" then', voter)
         self.assertIn("option = 2;", voter)
-        self.assertIn("CivvisCongressVoteBudget(favor, costs, maxVotes)", voter)
+        # The bank is paced (`CivvisCongressBallotBank`) before it is priced.
+        self.assertIn("CivvisCongressVoteBudget(\n", voter)
+        self.assertIn("CivvisCongressBallotBank(favor, leaderPoints, cfg), costs, maxVotes)", voter)
+        self.assertIn("CivvisCongressBallotBank = function(favor, leaderPoints, config)", source)
         self.assertIn("CivvisCongressVoteBudget = function(favor, costs, maxVotes)", source)
         budget = source.split("CivvisCongressVoteBudget = function(favor, costs, maxVotes)", 1)[1].split("\nend", 1)[0]
         self.assertIn("tonumber(costs[host]) <= bank", budget)
@@ -1327,9 +1330,10 @@ class ProtectedInstallTest(unittest.TestCase):
         commit = arm.index("votes = n;")
         self.assertLess(gate, claim)
         self.assertLess(claim, commit)
-        # The bank is measured once, against both cost tables, before any gate.
-        self.assertIn("CivvisCongressVoteBudget(favor, costs, maxVotes)", arm)
-        budgetCall = arm.index("CivvisCongressVoteBudget(favor, costs, maxVotes)")
+        # The bank is paced and measured once, against both cost tables,
+        # before any gate.
+        self.assertIn("CivvisCongressBallotBank(favor, leaderPoints, cfg), costs, maxVotes)", arm)
+        budgetCall = arm.index("CivvisCongressBallotBank(favor, leaderPoints, cfg), costs, maxVotes)")
         self.assertLess(budgetCall, gate)
         # And the mode is reported on every ballot row.
         self.assertIn("return cast, spent, nil, leader, leaderPoints, leaderScore, mode;", voter)

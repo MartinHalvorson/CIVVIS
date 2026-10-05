@@ -109,7 +109,10 @@ end
 
 -- Recorded t201: our 13 A/self votes joined the rival's 14 A votes, beating
 -- the other rivals' 18 B/leader votes. A selected player 3, who reached 21 DVP.
-ballot("native t201", 314, 17, nil, 2, "deny", 13)
+-- `CivvisCongressBallotBank` paces the bank: below match point (18) a denial
+-- spends half of it (157 of 314 buys 9 votes), keeping the rest for the
+-- session a leader can win from.
+ballot("native t201", 314, 17, nil, 2, "deny", 9)
 -- With the other recorded votes held fixed, the selected denial joins B.
 -- This is a ballot counterfactual, not proof of a changed native game outcome.
 local ours = requests[1]
@@ -117,11 +120,18 @@ local optionA = 14 + (ours.option == 1 and ours.votes or 0)
 local optionB = 18 + (ours.option == 2 and ours.votes or 0)
 check("recorded rivals plus our denial choose B", optionB > optionA, true)
 
-ballot("native t181", 569, 15, nil, 2, "deny", 17)
-ballot("floor boundary", 314, 12, nil, 2, "deny", 13)
-ballot("claim below floor", 556, 11, nil, 1, "claim", 17)
-ballot("explicit later floor", 314, 17, 18, 1, "claim", 13)
-ballot("small denial bank", 12, 17, nil, 2, "deny", 3)
+ballot("native t181", 569, 15, nil, 2, "deny", 12)
+ballot("floor boundary", 314, 12, nil, 2, "deny", 9)
+-- At match point the whole bank goes.
+ballot("match point", 314, 18, nil, 2, "deny", 13)
+ballot("match point plus", 569, 19, nil, 2, "deny", 17)
+-- A self-claim spends only what is above the 120 reserve (436 buys 15).
+ballot("claim below floor", 556, 11, nil, 1, "claim", 15)
+-- With the floor moved to 18, 314 less the reserve buys 10 votes: short of a
+-- twelve-vote claim, so the session probes with three.
+ballot("explicit later floor", 314, 17, 18, 2, "probe", 3)
+ballot("explicit later floor, large bank", 556, 17, 18, 1, "claim", 15)
+ballot("small denial bank", 12, 17, nil, 2, "deny", 2)
 ballot("free denial", 0, 17, nil, 2, "free", 1)
 
 if failures > 0 then os.exit(1) end

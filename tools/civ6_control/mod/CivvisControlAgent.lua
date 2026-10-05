@@ -15693,6 +15693,34 @@ CivvisCongressVoteBudget = function(favor, costs, maxVotes)
 	return host, host, standard;
 end
 
+-- ★★★ PACE THE BANK ACROSS THE SESSIONS A LEADER CAN WIN FROM.
+--
+-- The Favor a Diplomatic Victory ballot may spend. Every session from the
+-- denial floor used to spend the whole bank, and a self-claim below it did
+-- too. Three of the four live Diplomatic losses of 2026-10-04/05 then met the
+-- deciding session with nothing: civvis-20261005T030607Z (game 95) spent 112
+-- at t181 and 40 at t201 on B ballots the rivals won without us (29-6, 19-10),
+-- had 0 at t221, and lost there 6 votes to 4 -- three bought votes (12 Favor)
+-- would have turned it; T003728Z and T194303Z-cont1 cast only free votes at
+-- 18 and 19 points. Rivals turn on a leader themselves from about 15, so a
+-- bought vote matters most at match point. So: from `DiploVictoryMatchPoint`
+-- (18, one +2 from the win) the whole bank; from the denial floor, half;
+-- below it (the probe and the self-claim) only what is above
+-- `DiploVictoryClaimReserve` (120). Exported globally to stay below the
+-- chunk-local limit.
+CivvisCongressBallotBank = function(favor, leaderPoints, config)
+	local bank = tonumber(favor) or 0;
+	local points = tonumber(leaderPoints) or 0;
+	config = type(config) == "table" and config or {};
+	if points >= (tonumber(config.DiploVictoryMatchPoint) or 18) then
+		return bank;
+	end
+	if points >= (tonumber(config.DiploVictoryVoteFloor) or 12) then
+		return bank / 2;
+	end
+	return bank - (tonumber(config.DiploVictoryClaimReserve) or 120);
+end
+
 -- A ballot is verified against all three native selection fields, not just
 -- its size. WorldCongressPopup.lua:1915-1919 reads PlayerID, OptionChosen,
 -- and Votes; :1935-1940 reads ResolutionTarget for that same voter.
@@ -20459,14 +20487,17 @@ local function tick()
 						-- only matters at the sessions a leader can win from. Below
 						-- `DiploVictoryVoteFloor` points (12: four sessions of +2 from
 						-- twenty) the free vote is still cast against the leader and
-						-- nothing is spent; from there every session spends the bank.
+						-- nothing is spent; from there each session spends its share
+						-- of the bank (`CivvisCongressBallotBank`).
 						local floor = cfg.DiploVictoryVoteFloor or 12;
 						local maxVotes = tonumber(costs.MaxVotes) or 1;
 						-- Use the active game's host prices. Retain the Standard
 						-- comparison in the verdict for diagnosing pricing, without
 						-- limiting an Online ballot by a different speed's costs.
-						local budget, budgetHost, budgetStandard =
-							CivvisCongressVoteBudget(favor, costs, maxVotes);
+						-- See `CivvisCongressBallotBank`: the share of the
+						-- bank this session may spend.
+						local budget, budgetHost, budgetStandard = CivvisCongressVoteBudget(
+							CivvisCongressBallotBank(favor, leaderPoints, cfg), costs, maxVotes);
 						envoyTally.ballot_budget =
 							{ host = budgetHost, standard = budgetStandard };
 						local n = 1;
