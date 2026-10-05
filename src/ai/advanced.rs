@@ -6729,6 +6729,11 @@ pub struct AdvancedAi {
     /// culture rival at `air_surge::raids::RAID_TOURISM_DENIAL` more. Off by
     /// default.
     raids_cut_tourism: bool,
+    /// `rout-spares-a-stronger-army`: neither the rout nor the turned-tide
+    /// peace is offered to a rival we outgun
+    /// `one_war::ONE_WAR_SECOND_FRONT_RATIO` times over. See `one_war_peace`.
+    /// Off by default.
+    rout_spares_a_stronger_army: bool,
     /// `runaway-expander-counter`: a rival outgrowing us reads as a
     /// Domination counter clock. See `advanced/runaway_expander.rs`. Off by
     /// default.
@@ -9070,6 +9075,7 @@ impl AdvancedAi {
             prophet_race_takes_a_district_slot: false,
             refused_combinations: BTreeSet::new(),
             raids_cut_tourism: false,
+            rout_spares_a_stronger_army: false,
             runaway_expander_counter: false,
             raze_doomed_capture: false,
             policy_deck_hysteresis: false,

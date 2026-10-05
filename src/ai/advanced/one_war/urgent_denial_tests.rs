@@ -907,3 +907,28 @@ fn a_faith_holding_our_majority_is_religious_for_the_power_floor() {
         assert!(!ai.counter_war_hopeless(&free, 0, 2));
     }
 }
+
+/// See `rout_spares_a_stronger_army`: under the gene, a rout window against a
+/// rival we outgun 1.5 times over offers no peace; below the margin it does.
+#[test]
+fn a_rout_spares_a_stronger_army_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(1));
+    while g.military_power(0) < ONE_WAR_SECOND_FRONT_RATIO * g.military_power(1) {
+        g.spawn_test_unit("modern_armor", 0, (8, 13));
+    }
+    assert!(g.military_power(0) < ONE_WAR_WINNING_RATIO * g.military_power(1));
+    ai.one_war.as_mut().unwrap().window = VecDeque::from([(g.turn, ONE_WAR_ROUT_NET)]);
+    let mut row = 2;
+    let rout = Some(OneWarPeace::Rout);
+    assert_eq!(ai.one_war_peace(&g, 0, 1), rout, "off");
+    ai.enable_rout_spares_a_stronger_army();
+    assert_eq!(ai.one_war_peace(&g, 0, 1), None, "1.5 times over");
+    while g.military_power(0) >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(1) {
+        g.spawn_test_unit("modern_armor", 1, (16, row));
+        row += 1;
+    }
+    assert_eq!(ai.one_war_peace(&g, 0, 1), rout, "under the margin");
+}

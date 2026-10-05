@@ -5322,6 +5322,17 @@ impl AdvancedAi {
         self.one_war_swaps_a_stalled_front = false;
     }
 
+    /// Opt-in gene `rout-spares-a-stronger-army`; see
+    /// [`Self::rout_spares_a_stronger_army`].
+    pub fn enable_rout_spares_a_stronger_army(&mut self) {
+        self.rout_spares_a_stronger_army = true;
+    }
+
+    /// The twin of `enable_rout_spares_a_stronger_army`.
+    pub fn disable_rout_spares_a_stronger_army(&mut self) {
+        self.rout_spares_a_stronger_army = false;
+    }
+
     /// Opt-in gene `culture-counter-declares`; see
     /// [`Self::culture_counter_declares`].
     pub fn enable_culture_counter_declares(&mut self) {

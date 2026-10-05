@@ -2641,6 +2641,10 @@ pub const GENES: &[Gene] = &[
     // the at-war Maori held the capital it needed. See
     // `one_war::stalled_front_swap`.
     Gene { tag: "one-war-swaps-a-stalled-front", field: "one_war_swaps_a_stalled_front", kind: Kind::OptIn, enable: AdvancedAi::enable_one_war_swaps_a_stalled_front, disable: AdvancedAi::disable_one_war_swaps_a_stalled_front },
+    // Nine rout or turned-tide peace offers at 1.5 times our rival's power on
+    // 2026-10-04/05; three were followed by a war on the same rival within
+    // 25 turns. See `AdvancedAi::rout_spares_a_stronger_army`.
+    Gene { tag: "rout-spares-a-stronger-army", field: "rout_spares_a_stronger_army", kind: Kind::OptIn, enable: AdvancedAi::enable_rout_spares_a_stronger_army, disable: AdvancedAi::disable_rout_spares_a_stronger_army },
     // Live King 122037Z held war on France "for staging" from turn 163 to its
     // Culture win at 181, at 2 to 4 times its power. See
     // `one_war::culture_counter_due`.

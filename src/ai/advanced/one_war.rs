@@ -1269,6 +1269,19 @@ impl AdvancedAi {
         if self.one_war_still_winning(g, pid, other) {
             return None;
         }
+        // `rout-spares-a-stronger-army`: a bad window at this margin is a
+        // tactical loss, not a lost war. Live King civvis-20261005T003728Z
+        // (game 89) offered Persia "the last window was a rout" peace at turn
+        // 90 at 362 power against 229 and was denouncing Persia for the next
+        // war at 92; T131543Z offered Russia the same at 615 against 410 and
+        // declared on it again at 126, T232618Z India at 605 against 329 and
+        // again at 159. If the losses go on, the margin falls and peace opens.
+        if self.rout_spares_a_stronger_army
+            && g.military_power(pid)
+                >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(other).max(1.0)
+        {
+            return None;
+        }
         if front.window_net() <= ONE_WAR_ROUT_NET {
             return Some(OneWarPeace::Rout);
         }
