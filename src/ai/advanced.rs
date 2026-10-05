@@ -13652,6 +13652,18 @@ impl AdvancedAi {
                 against the strongest rival's {strongest_rival:.0}; \
                 best lane {} at {}% progress",
                cities.len(), victory.strategy.as_str(), victory.progress);
+        // Name the rival a counter answers: "countering a rival close to
+        // winning" alone left live King civvis-20261005T143823Z (game 136)
+        // unreadable -- 40 turns of the counter from turn 132 while the army
+        // stayed on Canada, and the Netherlands won on Culture at 179.
+        if let Some((rival, _)) = actionable_denial.filter(|_| because.starts_with("countering")) {
+            let culture = self.rival_culture_pressures(g);
+            let pressure =
+                self.rival_victory_pressure_with_culture(g, rival, culture.get(&rival).copied());
+            think!(self.journal(), Strategy, Strategy,
+                   "Countering {}", g.players[rival].civ;
+                   "its {} race reads {}%", pressure.strategy.as_str(), pressure.progress);
+        }
         if let Some(city) = threatened_city.and_then(|id| g.cities.get(&id)) {
             think!(self.journal(), Strategy, Strategy,
                    "{} is under threat", city.name;
