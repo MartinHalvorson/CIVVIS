@@ -5577,6 +5577,16 @@ impl AdvancedAi {
         self.conquest_opening_needs_the_production = false;
     }
 
+    /// Opt-in gene `stage-march-keeps-to-land`; see
+    /// [`Self::stage_march_keeps_to_land`].
+    pub fn enable_stage_march_keeps_to_land(&mut self) {
+        self.stage_march_keeps_to_land = true;
+    }
+
+    /// The twin of `enable_stage_march_keeps_to_land`.
+    pub fn disable_stage_march_keeps_to_land(&mut self) {
+        self.stage_march_keeps_to_land = false;
+    }
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

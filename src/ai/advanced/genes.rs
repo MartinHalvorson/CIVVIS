@@ -2726,6 +2726,13 @@ pub const GENES: &[Gene] = &[
     // deadline passed before the force ever assembled" -- the release in 9 of
     // the last 24 live games. See `early_conquest::conquest_force_estimate`.
     Gene { tag: "conquest-opening-needs-the-production", field: "conquest_opening_needs_the_production", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_opening_needs_the_production, disable: AdvancedAi::disable_conquest_opening_needs_the_production },
+    // Live King civvis-20261005T045443Z (game 101): the Wak Kab'nal guns
+    // stood 14-18 tiles out from turn 150 to 227, the end of the record,
+    // stepping into the coast and back each turn: the strait was 10-15 tiles,
+    // the land road 51-57, and `come-ashore` landed every embarked unit at
+    // home the next turn.
+    // See `siege_train::StageMarch`.
+    Gene { tag: "stage-march-keeps-to-land", field: "stage_march_keeps_to_land", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_march_keeps_to_land, disable: AdvancedAi::disable_stage_march_keeps_to_land },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
