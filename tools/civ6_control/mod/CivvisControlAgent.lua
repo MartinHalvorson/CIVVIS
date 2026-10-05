@@ -16942,7 +16942,9 @@ CivvisQueue.drain = function(player, pid, turn)
 				elseif ready and CivvisQueue.dropWatch(subject, entry) then
 					-- The opening walk has landed; nothing follows it.
 				elseif ready and entry.expect ~= nil and not arrived and not spent
-						and entry.wait < grace then
+						and entry.wait < grace and not cannot_land then
+					-- (A walk the host's path lands on a later turn cannot be the
+					-- one that arrives later this tick: `cannot_land` above.)
 					-- An operation-ended event can precede the host's move
 					-- callbacks. On turn 204 a tank was still on its origin when
 					-- MOVE_TO looked like a no-op, but reached the requested tile
