@@ -212,6 +212,43 @@ impl AdvancedAi {
             })
             && !self.rival_reachable_by_land(g, pid, rival)
     }
+
+    /// `blocker-becomes-the-target`: the major whose closed borders shut the
+    /// road of a siege stood down for want of one, while that stand-down
+    /// holds: alive, met, at peace with us and a legal campaign target,
+    /// holding an original capital we need (a Domination objective in its own
+    /// right), and passing the version-2 declaration edge
+    /// (`declaration_edge_2`) whether or not that gene is armed. A war on it
+    /// opens the road (`siege_road_reopened`) and is Domination progress.
+    /// `None` with the gene off, under another victory target, or when no
+    /// such blocker stands; the lowest player id of several.
+    pub(crate) fn road_blocker_front(&self, g: &Game, pid: usize) -> Option<usize> {
+        if !self.blocker_becomes_the_target
+            || self.active_victory_target(g) != Some(super::VictoryTarget::Domination)
+        {
+            return None;
+        }
+        self.siege_road_closed
+            .iter()
+            .filter(|(city, closed)| closed.seat == pid && self.capture_stood_down_holds(g, **city))
+            .filter_map(|(_, closed)| closed.blocker)
+            .filter(|blocker| {
+                *blocker != pid
+                    && g.players.get(*blocker).is_some_and(|player| {
+                        player.alive && !player.is_minor && !player.is_barbarian
+                    })
+                    && !g.is_at_war(pid, *blocker)
+                    && self.campaign_target_legal(g, pid, *blocker)
+                    && g.cities.values().any(|city| {
+                        city.owner == *blocker
+                            && city.is_capital
+                            && city.original_owner != pid
+                            && !g.same_team(pid, city.original_owner)
+                    })
+                    && self.declaration_edge_2(g, pid, *blocker).passes()
+            })
+            .min()
+    }
 }
 
 /// The owner whose closed borders shut `uid`'s land road to the staging ring
@@ -413,5 +450,111 @@ mod tests {
             !on.capture_stood_down.contains_key(&target),
             "one of three held is not the train"
         );
+    }
+
+    fn front(target: usize, turn: u32) -> crate::ai::advanced::one_war::OneWarFront {
+        crate::ai::advanced::one_war::OneWarFront {
+            target,
+            since: turn,
+            ledger: (0, 0, 0, 0),
+            window: std::collections::VecDeque::new(),
+            tide_against_since: None,
+            city_health: std::collections::BTreeMap::new(),
+            sieges_advancing: 0,
+            closure_wanted_since: None,
+        }
+    }
+
+    /// `blocker-becomes-the-target`: the screen whose closed borders shut the
+    /// stood-down siege's road -- weak, met, at peace and holding its own
+    /// original capital -- is named as the war that opens the road, and the
+    /// one-war gate admits it as the second front beside the cut-off war.
+    /// With the gene off nothing is named, and a war on the screen (the road
+    /// open) or a screen at strength names nothing either.
+    #[test]
+    fn a_weak_blocker_holding_a_capital_becomes_the_second_front() {
+        let (mut game, target, soldier) = strip();
+        game.record_contact(0, 1);
+        game.record_contact(0, 2);
+        let screen_capital = game.player_city_ids(1)[0];
+        assert!(game.cities[&screen_capital].is_capital, "fixture: the screen's capital");
+        for pos in [(6, 5), (6, 7)] {
+            game.spawn_test_unit("warrior", 0, pos);
+        }
+        let hold = StageMarch::Hold { wet: 30 };
+        for gene in [false, true] {
+            let mut ai = ai(true, &game, target);
+            if gene {
+                ai.enable_blocker_becomes_the_target();
+            }
+            ai.disable_capital_prey_opens_a_front();
+            ai.disable_capital_prey_opens_a_front_2();
+            ai.enable_one_war_at_a_time();
+            ai.one_war = Some(front(2, game.turn));
+            let mut g = game.clone();
+            run(&mut ai, &mut g, target, soldier, hold, ROAD_HOLD_TURNS);
+            assert!(ai.capture_stood_down_holds(&g, target), "the road stand-down holds");
+            assert!(ai.declaration_edge_2(&g, 0, 1).passes(), "fixture: the screen is weak");
+            if gene {
+                assert_eq!(ai.road_blocker_front(&g, 0), Some(1), "gene on: the screen is named");
+                assert_eq!(ai.one_war_second_front(&g, 0), Some(1), "and opens the second front");
+                // A war on the screen opens the road: nothing is named any more.
+                let mut opened = g.clone();
+                opened.at_war.insert((0, 1));
+                opened.at_war.insert((1, 0));
+                assert_eq!(ai.road_blocker_front(&opened, 0), None, "at war: the road is open");
+            } else {
+                assert_eq!(ai.road_blocker_front(&g, 0), None, "gene off: nothing is named");
+                assert_ne!(ai.one_war_second_front(&g, 0), Some(1), "gene off: no second front on the screen");
+            }
+        }
+    }
+
+    /// `blocker-becomes-the-target`: a screen at strength -- out-producing
+    /// nothing and short of the version-2 edge -- is not named, nor is a
+    /// screen without an original capital.
+    #[test]
+    fn a_blocker_short_of_the_edge_or_without_a_capital_is_not_named() {
+        let (mut game, target, soldier) = strip();
+        game.record_contact(0, 1);
+        game.record_contact(0, 2);
+        let hold = StageMarch::Hold { wet: 30 };
+
+        // At strength: the screen fields more than half our power.
+        let mut strong = game.clone();
+        for pos in [(19, 5), (19, 7), (17, 5), (17, 7)] {
+            strong.spawn_test_unit("warrior", 1, pos);
+        }
+        let mut ai_strong = ai(true, &strong, target);
+        ai_strong.enable_blocker_becomes_the_target();
+        run(&mut ai_strong, &mut strong, target, soldier, hold, ROAD_HOLD_TURNS);
+        assert!(ai_strong.capture_stood_down_holds(&strong, target));
+        assert!(!ai_strong.declaration_edge_2(&strong, 0, 1).passes(), "fixture: short of the edge");
+        assert_eq!(ai_strong.road_blocker_front(&strong, 0), None);
+
+        // Weak, but its capital is not an original capital of a rival we need:
+        // the screen's city is ours by origin.
+        let screen = game.player_city_ids(1)[0];
+        game.cities.get_mut(&screen).unwrap().original_owner = 0;
+        let mut ai_nocap = ai(true, &game, target);
+        ai_nocap.enable_blocker_becomes_the_target();
+        let mut g = game.clone();
+        run(&mut ai_nocap, &mut g, target, soldier, hold, ROAD_HOLD_TURNS);
+        assert!(ai_nocap.capture_stood_down_holds(&g, target));
+        assert_eq!(ai_nocap.road_blocker_front(&g, 0), None);
+    }
+
+    /// `blocker-becomes-the-target` is a registered, reversible opt-in.
+    #[test]
+    fn blocker_becomes_the_target_is_a_reversible_opt_in() {
+        let mut ai = AdvancedAi::new();
+        assert!(!ai.blocker_becomes_the_target);
+        ai.enable_blocker_becomes_the_target();
+        assert!(ai.blocker_becomes_the_target);
+        ai.disable_blocker_becomes_the_target();
+        assert!(!ai.blocker_becomes_the_target);
+        assert!(super::super::GENES
+            .iter()
+            .any(|gene| gene.tag == "blocker-becomes-the-target" && gene.opt_in()));
     }
 }

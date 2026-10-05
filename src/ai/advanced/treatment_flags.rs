@@ -6403,6 +6403,17 @@ impl AdvancedAi {
         self.stranded_settler_leaves_the_corridor = false;
     }
 
+    /// Opt-in gene `blocker-becomes-the-target`; see
+    /// [`Self::road_blocker_front`].
+    pub fn enable_blocker_becomes_the_target(&mut self) {
+        self.blocker_becomes_the_target = true;
+    }
+
+    /// The twin of `enable_blocker_becomes_the_target`.
+    pub fn disable_blocker_becomes_the_target(&mut self) {
+        self.blocker_becomes_the_target = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

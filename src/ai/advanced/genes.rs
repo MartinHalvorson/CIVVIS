@@ -3069,6 +3069,13 @@ pub const GENES: &[Gene] = &[
     // empire held two cities at t60. See
     // `settler_never_idles::settler_stranded`.
     Gene { tag: "stranded-settler-leaves-the-corridor", field: "stranded_settler_leaves_the_corridor", kind: Kind::OptIn, enable: AdvancedAi::enable_stranded_settler_leaves_the_corridor, disable: AdvancedAi::disable_stranded_settler_leaves_the_corridor },
+    // `blocker-becomes-the-target`: the major whose closed borders shut a
+    // stood-down siege's road, when it passes the version-2 declaration edge
+    // and holds an original capital, becomes the war (a second front, or the
+    // campaign target at peace), declared on without a staged siege. 13 of
+    // 50 border-blocked windows on 10-04/05 were shut by such a major; we
+    // warred it later in 3. See `advanced/siege_road.rs`.
+    Gene { tag: "blocker-becomes-the-target", field: "blocker_becomes_the_target", kind: Kind::OptIn, enable: AdvancedAi::enable_blocker_becomes_the_target, disable: AdvancedAi::disable_blocker_becomes_the_target },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

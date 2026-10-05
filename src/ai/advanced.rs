@@ -5378,6 +5378,19 @@ pub struct AdvancedAi {
     /// civvis-20261005T080337Z (G111) missed a Normal Age by ONE point with a
     /// 650-gold reserve (10 cities) against banks of 378-485. Off by default.
     age_closer_spends_the_reserve: bool,
+    /// `blocker-becomes-the-target`: when `siege-target-needs-a-road` stands
+    /// a siege down for a major's closed borders, and that major passes the
+    /// version-2 declaration edge and holds an original capital, it becomes
+    /// the war: a second front beside the cut-off war, or the campaign's
+    /// target at peace, declared on without a staged siege (the army already
+    /// stands at its border). Over the 10-04/05 control runs 13 of 50
+    /// border-blocked siege windows (9 of the 19 the border dominated, 1,149
+    /// blocked unit-turns) were shut by such a major; we warred it later in 3.
+    /// Live King civvis-20261005T205644Z (game 163) stood Addis Ababa and
+    /// Harar down behind the Aztecs' borders at turns 169-170, 135 Aztec
+    /// military against our 1,622, and never declared on them. See
+    /// `advanced/siege_road.rs`. Off by default.
+    blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
     /// `declaration-needs-the-edge-2`: version 2 of `declaration-needs-the-edge`.
     /// A plain staged declaration passes at
@@ -9489,6 +9502,7 @@ impl AdvancedAi {
             breaker_keeps_its_queue: false,
             breaker_to_the_fastest: false,
             age_closer_spends_the_reserve: false,
+            blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
             declaration_needs_the_edge_2: false,
             contender_at_peace_is_the_target: false,
@@ -14011,6 +14025,8 @@ impl AdvancedAi {
                                 .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
                                 .map(|(rival, _)| rival)
                         })
+                        // See `road_blocker_front` (`blocker-becomes-the-target`).
+                        .or_else(|| self.road_blocker_front(g, pid))
                         // A secured capital advances the Domination campaign
                         // to another capital owner, even when its frontier
                         // must be taken first. Otherwise prefer an eligible
@@ -22704,9 +22720,15 @@ impl AdvancedAi {
         // waives the war ratio but not the floor under it, and a staged bill
         // does not stand in for it either.
         let below_counter_floor = urgent_denial && self.counter_war_hopeless(g, pid, target);
+        // See `road_blocker_front` (`blocker-becomes-the-target`): the army
+        // already stands at the border the war opens, and the blocker has
+        // passed the version-2 edge, so no staged siege or Board bill is
+        // asked of it.
+        let road_opening = self.road_blocker_front(g, pid) == Some(target);
         let ready = !below_counter_floor
             && (urgent_denial
                 || faith_counter_due
+                || road_opening
                 || if let Some(verdict) = &policy {
                     verdict.is_ok()
                 } else if rushing {
@@ -22817,13 +22839,15 @@ impl AdvancedAi {
             }
         }
         let staged = staged && edge;
+        let road_opening_ready = !staged && road_opening;
         if close_enough
             && ready
             && (staged
                 || air_ready
                 || religion_counter_ready
                 || culture_counter_ready
-                || overwhelming_ready)
+                || overwhelming_ready
+                || road_opening_ready)
         {
             // `coalition_before_war`: invite the target's neighbours to a
             // joint war first, and hold while an answer is due. See
@@ -22862,6 +22886,8 @@ impl AdvancedAi {
                         "the war lets the army condemn the faith taking our cities, before any siege is staged"
                     } else if overwhelming_ready {
                         "an overwhelming army needs no staged siege: the war writes the Siege row that brings it to the ring"
+                    } else if road_opening_ready {
+                        "its closed borders shut the road to a siege we stood down, and the war opens it"
                     } else {
                         "the army is staged within reach of the first objective"
                     };

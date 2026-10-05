@@ -2559,6 +2559,14 @@ impl AdvancedAi {
         if let Some(prey) = self.capital_prey_beside_the_front(g, pid, Some(front)).0 {
             return Some(prey);
         }
+        // See `road_blocker_front` (`blocker-becomes-the-target`): the weak
+        // major whose closed borders shut the front's road opens it.
+        if let Some(blocker) = self
+            .road_blocker_front(g, pid)
+            .filter(|blocker| *blocker != front)
+        {
+            return Some(blocker);
+        }
         // See `diplomatic_contender`: the Diplomatic Victory leader we crush
         // opens the second front at once, the front's refusal or not.
         if let Some(leader) = self.diplomatic_contender_leader(g, pid).filter(|leader| {
