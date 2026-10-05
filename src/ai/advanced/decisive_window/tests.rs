@@ -503,3 +503,74 @@ fn readiness_builds_the_wing_behind_urban_defenses() {
     ai.disable_decisive_window();
     assert_eq!(ai.decisive_air_wing_bombers(&g, 0), AIR_SURGE_LAUNCH_BOMBERS);
 }
+
+/// `breaker-research-first`: an unmined Niter deposit is no Bombard. With
+/// neither stock nor income the window prices another breaker, and the
+/// Bombard comes back once Niter is in hand (live G136: Military Engineering
+/// at t87 for a Bombard, no Niter income until t142).
+#[test]
+fn breaker_research_first_needs_the_resource_in_hand() {
+    let (mut g, mut ai, plan) = board("Gran Colombia");
+    learn(&mut g, 1, &["siege_tactics", "gunpowder", "military_tactics"]);
+    learn(
+        &mut g,
+        0,
+        &["printing", "castles", "gunpowder", "animal_husbandry", "military_engineering"],
+    );
+    g.players[0].strategic_resources.insert(name!("horses"), 40.0);
+    let capital = g.player_city_ids(0)[0];
+    let centre = g.cities[&capital].pos;
+    let deposit = *g.cities[&capital]
+        .owned_tiles
+        .iter()
+        .find(|pos| **pos != centre)
+        .expect("a worked tile");
+    g.map.tiles.get_mut(&deposit).unwrap().resource = Some(name!("niter"));
+    assert_eq!(g.strategic_stockpile(0, name!("niter")), 0.0);
+    assert_eq!(g.strategic_resource_rate(0, "niter"), 0.0);
+
+    let off = ai
+        .decisive_window_within(&g, 0, &plan, f64::INFINITY)
+        .expect("a window");
+    assert_eq!(off.breaker, Some(name!("bombard")), "{off:?}");
+    ai.enable_breaker_research_first();
+    let on = ai
+        .decisive_window_within(&g, 0, &plan, f64::INFINITY)
+        .expect("a window");
+    assert_ne!(on.breaker, Some(name!("bombard")), "{on:?}");
+
+    g.players[0].strategic_resources.insert(name!("niter"), 20.0);
+    let supplied = ai
+        .decisive_window_within(&g, 0, &plan, f64::INFINITY)
+        .expect("a window");
+    assert_eq!(supplied.breaker, Some(name!("bombard")), "{supplied:?}");
+}
+
+/// `breaker-research-first`: while a siege is held for its wall-breaker,
+/// "modernize the standing army" does not take a technology that unlocks no
+/// breaker (live G136: Gunpowder, Metal Casting's path and Ballistics at
+/// t93-t103 while Victoria waited 77 turns), and a breaker technology is
+/// never blocked.
+#[test]
+fn modernization_yields_while_a_siege_waits_for_its_breaker() {
+    let (g, mut ai, plan) = board("Gran Colombia");
+    let city = g.cities[&plan.target_city.unwrap()].pos;
+    let musket = name!("gunpowder");
+    let bombard = name!("metal_casting");
+    assert!(!ai.modernization_yields_to_the_breaker(&g, 0, musket), "gene off");
+    ai.enable_breaker_research_first();
+    assert!(!ai.modernization_yields_to_the_breaker(&g, 0, musket), "no siege held");
+    ai.siege_breaker_waits.insert(
+        city,
+        super::super::siege_train::BreakerWait {
+            since: g.turn - 3,
+            last: g.turn,
+            nearest: 12,
+            nearest_turn: g.turn - 3,
+        },
+    );
+    assert!(ai.modernization_yields_to_the_breaker(&g, 0, musket));
+    assert!(!ai.modernization_yields_to_the_breaker(&g, 0, bombard), "a breaker tech");
+    ai.siege_breaker_waits.get_mut(&city).unwrap().last = g.turn - 5;
+    assert!(!ai.modernization_yields_to_the_breaker(&g, 0, musket), "a stale hold");
+}

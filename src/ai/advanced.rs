@@ -5059,6 +5059,12 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `breaker-research-first`: decisive-window prices a unit's strategic
+    /// resource (a visible one needs stock or income; a hidden one adds its
+    /// revealing technology and a premium), and "modernize the standing
+    /// army" yields while a siege is held for a wall-breaker. See
+    /// `advanced/decisive_window.rs`.
+    breaker_research_first: bool,
     /// `breaker-reads-the-march`: the wall-breaker reservation prices a gun's
     /// road at the speed live guns actually close on a siege. See
     /// `siege_production::BREAKER_MARCH_FACTOR`.
@@ -9268,6 +9274,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            breaker_research_first: false,
             breaker_reads_the_march: false,
             breach_reads_the_air: false,
             breach_counts_nearby_guns: false,
@@ -16700,7 +16707,11 @@ impl AdvancedAi {
             let opening_archery_goal = self.opening_archery_goal(g, pid);
             let defensive_walls_goal = self.defensive_walls_research_goal(g, pid, plan);
             let standing_army_fuel_goal = self.standing_army_fuel_goal(g, pid);
-            let wartime_modernization_goal = self.wartime_modernization_tech(g, pid);
+            // `breaker-research-first`: no non-breaker upgrade while a siege
+            // is held for its wall-breaker. See `advanced/decisive_window.rs`.
+            let wartime_modernization_goal = self
+                .wartime_modernization_tech(g, pid)
+                .filter(|tech| !self.modernization_yields_to_the_breaker(g, pid, *tech));
             let production_technology_goal = self.named_production_technology_goal(g, pid, plan);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
             let domination_campus_goal = self.domination_campus_unlock_goal(g, pid);

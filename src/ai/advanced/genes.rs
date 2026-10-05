@@ -2982,6 +2982,12 @@ pub const GENES: &[Gene] = &[
     // armed games' siege bills ran a median 1.74x the rival's WHOLE military
     // at >=2x power (0.99x before). See `AdvancedAi::campaign_city_requirement`.
     Gene { tag: "tier-gap-priced-once", field: "tier_gap_priced_once", kind: Kind::OptIn, enable: AdvancedAi::enable_tier_gap_priced_once, disable: AdvancedAi::disable_tier_gap_priced_once },
+    // Live King G136: decisive-window took Military Engineering at t87 for a
+    // Bombard with no Niter income until t142, and "modernize the army"
+    // spent t93-t103 on Field Cannons while the Victoria siege waited 77
+    // turns for a breaker. Resources priced; modernization yields while a
+    // siege is held for its breaker. See `advanced/decisive_window.rs`.
+    Gene { tag: "breaker-research-first", field: "breaker_research_first", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_research_first, disable: AdvancedAi::disable_breaker_research_first },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
