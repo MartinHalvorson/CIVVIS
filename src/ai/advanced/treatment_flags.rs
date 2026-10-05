@@ -6001,6 +6001,17 @@ impl AdvancedAi {
         self.conquest_opening_stays_near = false;
     }
 
+    /// Opt-in gene `stale-swap-reads-the-march`; see
+    /// [`Self::stale_swap_reads_the_march`].
+    pub fn enable_stale_swap_reads_the_march(&mut self) {
+        self.stale_swap_reads_the_march = true;
+    }
+
+    /// The twin of `enable_stale_swap_reads_the_march`.
+    pub fn disable_stale_swap_reads_the_march(&mut self) {
+        self.stale_swap_reads_the_march = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

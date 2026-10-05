@@ -434,3 +434,80 @@ fn domination_retargets_untouched_distant_city_to_the_armys_front() {
         "an open city already damaged keeps its siege"
     );
 }
+
+/// `stale-swap-reads-the-march`: live King civvis-20261005T124739Z (game
+/// 130) held walled Delhi, India's capital, at an army median of 15-20 tiles
+/// while walled Jabalpur stood 4 tiles from our city. Every distance gate of
+/// the stale swap passed; the capital's bonus failed the value margin.
+#[test]
+fn a_distant_capital_yields_to_a_near_city_when_the_army_body_is_far() {
+    let mut g = Game::new_full(2, 64, 40, 91_031, 650, 0, false);
+    for unit in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(unit);
+    }
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+    }
+    g.found_city_for(0, (6, 12), None);
+    g.found_city_for(0, (20, 14), None);
+    let capital = g.found_city_for(1, (28, 12), Some("Distant Capital".to_string()));
+    let nearer = g.found_city_for(1, (13, 12), Some("Near Walls".to_string()));
+    for city in [capital, nearer] {
+        let target = g.cities.get_mut(&city).unwrap();
+        target.buildings.extend([
+            crate::name!("walls"),
+            crate::name!("medieval_walls"),
+            crate::name!("renaissance_walls"),
+        ]);
+        let wall_hp = g.city_max_wall_hp(&g.cities[&city]);
+        g.cities.get_mut(&city).unwrap().wall_hp = wall_hp;
+    }
+    g.spawn_test_unit("tank", 0, (11, 12));
+    g.current = 0;
+    g.turn = 200;
+    g.record_contact(0, 1);
+    g.at_war.insert((0, 1));
+    g.players[0].explored.extend(g.map.tiles.keys().copied());
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_siege_commitment();
+    ai.belief.observe(&g, 0);
+    assert!(g.cities[&capital].is_capital);
+
+    // The gene off, the capital's bonus holds the stale march.
+    assert_eq!(
+        ai.stale_domination_objective_city(&g, 0, capital, GrandStrategy::Conquest),
+        None
+    );
+    // On, the army's body 17 tiles out releases it for the city beside it.
+    ai.enable_stale_swap_reads_the_march();
+    assert_eq!(
+        ai.stale_domination_objective_city(&g, 0, capital, GrandStrategy::Conquest),
+        Some(nearer)
+    );
+
+    // A body within 16 tiles keeps the margin: two tanks 12 tiles out make
+    // the median 12, every distance gate still passes, and the capital holds.
+    let closer: Vec<u32> = (0..2)
+        .map(|_| g.spawn_test_unit("tank", 0, (16, 12)))
+        .collect();
+    assert_eq!(
+        ai.stale_domination_objective_city(&g, 0, capital, GrandStrategy::Conquest),
+        None,
+        "an army body within the march keeps the capital"
+    );
+    for uid in closer {
+        g.remove_unit(uid);
+    }
+
+    // A unit on the old approach keeps the siege, gene or not.
+    let screen = g.spawn_test_unit("tank", 0, (24, 12));
+    assert_eq!(
+        ai.stale_domination_objective_city(&g, 0, capital, GrandStrategy::Conquest),
+        None,
+        "a unit already within the siege reach keeps the committed objective"
+    );
+    g.remove_unit(screen);
+}

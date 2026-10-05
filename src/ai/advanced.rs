@@ -7208,6 +7208,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `stale-swap-reads-the-march`: a committed objective the field army's
+    /// body stands far from yields to a nearer city of the same rival without
+    /// the value margin. See `stale_domination_objective_city`.
+    stale_swap_reads_the_march: bool,
     /// `second-front-keeps-its-war`: a second front the plan named keeps its
     /// war against the one-war peace for ten standard turns. See
     /// `one_war::second_front_recently_named`.
@@ -9501,6 +9505,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            stale_swap_reads_the_march: false,
             second_front_keeps_its_war: false,
             stage_march_keeps_to_land: false,
             stalled_peace_spares_the_counter: false,
@@ -12952,6 +12957,26 @@ impl AdvancedAi {
             return None;
         }
         let prior_value = self.campaign_city_value(g, pid, prior, strategy);
+        // `stale-swap-reads-the-march`: when the army's BODY (its median
+        // unit) stands `2 * DOMINATION_FIRST_CAPTURE_MARCH` or more from the
+        // old objective, the march itself is the cost the value margin never
+        // priced, and a capital's bonus no longer holds it. Live King
+        // civvis-20261005T124739Z (game 130) aimed at Delhi, India's walled
+        // capital, from turn 144: army median 15-20 tiles, 0 of 10-12 units
+        // staged, while walled Jabalpur stood 4 tiles from our city with our
+        // nearest unit 3 away -- every distance gate below passed and the
+        // 180-point capital bonus failed the margin. Only 2 of the 43 live
+        // runs of October 5 ever took this swap.
+        let march_stale = self.stale_swap_reads_the_march && {
+            let mut distances: Vec<i32> = army
+                .iter()
+                .map(|uid| g.wdist(g.units[uid].pos, prior.pos))
+                .collect();
+            distances.sort_unstable();
+            distances
+                .get(distances.len() / 2)
+                .is_some_and(|median| *median >= 2 * DOMINATION_FIRST_CAPTURE_MARCH)
+        };
         let visible = g.player_vision_frame(pid);
         g.cities
             .values()
@@ -12972,7 +12997,7 @@ impl AdvancedAi {
                 let value = self.campaign_city_value(g, pid, city, strategy);
                 (distance <= DOMINATION_FIRST_CAPTURE_MARCH
                     && prior_distance - distance >= STALE_DOMINATION_MARCH_GAIN
-                    && value + STALE_DOMINATION_VALUE_GAIN < prior_value)
+                    && (march_stale || value + STALE_DOMINATION_VALUE_GAIN < prior_value))
                     .then_some((value, distance, city.id))
             })
             .min_by(|left, right| {

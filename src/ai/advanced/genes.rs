@@ -2896,6 +2896,10 @@ pub const GENES: &[Gene] = &[
     // at 0-40 Favor while holding 200-1,000 Gold, and rivals paid us about
     // 5.5 Gold a point. See `append_favor_buy_order` in `civvis_orders`.
     Gene { tag: "favor-bought-before-congress", field: "favor_bought_before_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_favor_bought_before_congress, disable: AdvancedAi::disable_favor_bought_before_congress },
+    // Live King civvis-20261005T124739Z (game 130): Delhi held the campaign
+    // at an army median of 15-20 tiles while walled Jabalpur stood 4 from our
+    // city. See `stale_domination_objective_city`.
+    Gene { tag: "stale-swap-reads-the-march", field: "stale_swap_reads_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_stale_swap_reads_the_march, disable: AdvancedAi::disable_stale_swap_reads_the_march },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
