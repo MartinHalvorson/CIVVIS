@@ -118,3 +118,31 @@ after all existing emergency/project/chop/repair decisions. If invalid, clear
 it and resume ordinary work. All consumed-map strength and safety gates stay
 the same; no fresh games before early executed work and positive P75 on both
 difficulties.
+
+
+## V2 validation and remaining competitiveness gap
+
+Source `552c1ae87` passes nine local O0 feature fixtures, three toggle guards,
+14 append-policy tests and cargo fmt. Its GitHub native suite passes 4,611
+tests with 50 skipped, plus documentation and developer-tool checks; all
+other runtime/quality/cost checks are green. Collaboration policy still has
+the four recorded experimental-toggle reachability failures. No local full
+V2 native suite or production strength result is claimed. The normal O3
+library build remains live; no V2 games have started.
+
+A read-only audit of all eight archived controls decomposes the T75 gap.
+Emperor averages 7.25 focal cities versus four for the strongest native rival;
+mean per-game population per city is 3.23 versus 7.44. Deity averages 5.25
+versus 4.75 cities, with 3.86 versus 10.54 citizens per city. Focal net Food
+per city averages 1.91 on Deity versus 10.40 for its strongest rival; three
+focal cities per map are within one population of housing, with only 1.75
+granaries per map versus 4.25 for the rival. Net Food here subtracts two
+Food per citizen and does not model growth modifiers or Settler diversion.
+Rivals receive native +40%/+80% Production handicaps, with no Food yield
+handicap; no value is normalized away in the reported production metric.
+These are consumed-map descriptive averages, not causal evidence or a new
+strength trial. More cities alone does not close this gap, and no small
+Builder routing gain can establish the whole goal of high-level production
+competitiveness. The next wider investigation must address city population,
+housing, food surplus and productive worker execution without repeating the
+rejected broad Food-priority and fixed-opening-order changes.
