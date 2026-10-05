@@ -2423,6 +2423,14 @@ pub struct BasicAi {
     /// Set from `AdvancedAi` by the opt-in gene
     /// `prophet-race-takes-a-district-slot`.
     pub(crate) prophet_race_takes_a_district_slot: bool,
+    /// Version 2 of the gene above: the race's Holy Site goes to the city
+    /// that builds it soonest (`race_site_city`), ahead of that city's
+    /// campus-first step, and no other city's Campus or Theater slot is
+    /// taken for it. Live King civvis-20261005T035848Z (game 97): version 1
+    /// opened the site in Barinas at turn 32, 54 production at 3.6 a turn
+    /// (about 15 turns), and all three religions were founded without us;
+    /// the Cree won on Religion at 135 with 560 of our Faith unspent.
+    pub(crate) prophet_race_takes_a_district_slot_2: bool,
     /// Build a building that MAKES SCIENCE before one that does not.
     ///
     /// Buildings are picked cheapest-first, and that order is deliberate policy
@@ -5475,6 +5483,7 @@ impl BasicAi {
             skip_prophet_race: false,
             enter_prophet_race: false,
             prophet_race_takes_a_district_slot: false,
+            prophet_race_takes_a_district_slot_2: false,
             science_building_first: false,
             housing_reserve: false,
             campus_before_harbor: false,
@@ -5965,6 +5974,7 @@ impl BasicAi {
             skip_prophet_race: false,
             enter_prophet_race: false,
             prophet_race_takes_a_district_slot: false,
+            prophet_race_takes_a_district_slot_2: false,
             science_building_first: false,
             housing_reserve: false,
             campus_before_harbor: false,
@@ -12548,6 +12558,23 @@ impl BasicAi {
                 return Some(builder);
             }
         }
+        // `prophet-race-takes-a-district-slot-2`: the race's Holy Site in the
+        // city that builds it soonest. See `race_site_city`.
+        if self.prophet_race_takes_a_district_slot_2
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+        {
+            if let Some((site_city, holy_site)) = self.race_site_city(g, pid) {
+                if site_city == cid {
+                    think!(self.journal, Cities, Decision,
+                           "{} opens the Holy Site for the Great Prophet race", g.cities[&cid].name;
+                           "it builds the site soonest of the empire's cities; {} of {} religions founded",
+                           g.religions_founded(), g.max_religions());
+                    return Some(holy_site);
+                }
+            }
+        }
         if self.campus_before_the_army && !self.minor && !self.barb && !emergency_defense {
             if let Some(item) = Self::campus_before_the_army_item(g, pid, cid, n_cities, false) {
                 return Some(self.race_takes_the_district_slot(g, pid, cid, item));
@@ -14915,24 +14942,17 @@ impl BasicAi {
                 if matches!(g.district_family(*district).as_str(), "campus" | "theater_square")
         );
         if !specialty
-            || !self.prophet_race_takes_a_district_slot
-            || !self.enter_prophet_race
-            || self.skip_prophet_race
-            || g.players[pid].religion.is_some()
-            || g.religions_founded() >= g.max_religions()
+            || !(self.prophet_race_takes_a_district_slot
+                || self.prophet_race_takes_a_district_slot_2)
+            || !self.race_open_without_a_site(g, pid)
         {
             return item;
         }
-        let site_reserved = g.cities.values().any(|other| {
-            other.owner == pid
-                && (g.city_has_district_family(other, crate::name!("holy_site"))
-                    || matches!(
-                        other.queue.first(),
-                        Some(Item::District { district, .. })
-                            if g.district_family(*district) == "holy_site"
-                    ))
-        });
-        if site_reserved {
+        // Version 2: only the city that builds the site soonest gives up
+        // its slot. See `race_site_city`.
+        if self.prophet_race_takes_a_district_slot_2
+            && self.race_site_city(g, pid).map(|(city, _)| city) != Some(cid)
+        {
             return item;
         }
         match Self::first_district_item(g, pid, cid, "holy_site") {
@@ -14950,6 +14970,47 @@ impl BasicAi {
             }
             None => item,
         }
+    }
+
+    /// Whether the Great Prophet race is open to this seat
+    /// (`enter-the-prophet-race-2`), a slot is left, and no city of the
+    /// empire holds or is building a Holy Site.
+    fn race_open_without_a_site(&self, g: &Game, pid: usize) -> bool {
+        self.enter_prophet_race
+            && !self.skip_prophet_race
+            && g.players[pid].religion.is_none()
+            && g.religions_founded() < g.max_religions()
+            && !g.cities.values().any(|other| {
+                other.owner == pid
+                    && (g.city_has_district_family(other, crate::name!("holy_site"))
+                        || matches!(
+                            other.queue.first(),
+                            Some(Item::District { district, .. })
+                                if g.district_family(*district) == "holy_site"
+                        ))
+            })
+    }
+
+    /// `prophet-race-takes-a-district-slot-2`: while the race is open
+    /// without a site, the city of the empire that builds its Holy Site in
+    /// the fewest turns, with that site; ties go to the lower city id.
+    /// `None` when the race is closed or no city can build one within
+    /// `FIRST_CAMPUS_MAX_TURNS`.
+    fn race_site_city(&self, g: &Game, pid: usize) -> Option<(u32, Item)> {
+        if !self.race_open_without_a_site(g, pid) {
+            return None;
+        }
+        g.player_city_ids(pid)
+            .into_iter()
+            .filter_map(|city| {
+                let item = Self::first_district_item(g, pid, city, "holy_site")?;
+                let turns = g.host_production_turns(city, &item).unwrap_or_else(|| {
+                    g.item_cost_for(pid, &item) / g.city_yields(city).production.max(0.5)
+                });
+                Some((turns, city, item))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+            .map(|(_, city, item)| (city, item))
     }
 
     /// The gates of the delegated governor's Settler step, shared with the
@@ -23874,6 +23935,75 @@ mod tests {
             family(&pick(&game, true, true)),
             "campus",
             "one Holy Site is enough"
+        );
+    }
+
+    /// See `prophet_race_takes_a_district_slot_2`: the race's Holy Site goes
+    /// to the city that builds it soonest, ahead of its own campus step, and
+    /// a slower city keeps its Campus. Live King civvis-20261005T035848Z
+    /// (game 97) opened the site in a 3.6-production city.
+    #[test]
+    fn the_prophet_race_site_goes_to_the_fastest_city() {
+        let (mut game, capital) = founded_capital_fixture("RACESITE2", 91_844);
+        game.cities.get_mut(&capital).unwrap().pop = 4;
+        let (x, y) = game.cities[&capital].pos;
+        let second = game.found_city_for(0, (x + 7, y), None);
+        game.cities.get_mut(&second).unwrap().pop = 4;
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            second,
+            crate::rules::Yields {
+                production: 4.0,
+                ..Default::default()
+            },
+        );
+        for city in [capital, second] {
+            for position in game.nbrs(game.cities[&city].pos) {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("plains");
+                tile.feature = None;
+            }
+        }
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("writing"));
+        game.players[0].techs.insert(crate::name!("astrology"));
+        assert!(
+            game.city_yields(capital).production > game.city_yields(second).production,
+            "fixture: the capital is the faster city"
+        );
+        let pick = |game: &Game, cid: u32, v1: bool, v2: bool| {
+            let mut ai = BasicAi::new();
+            ai.campus_before_the_army = true;
+            ai.enter_prophet_race = true;
+            ai.prophet_race_takes_a_district_slot = v1;
+            ai.prophet_race_takes_a_district_slot_2 = v2;
+            ai.pick_item(game, 0, cid, 2, 0, 3, 1, 0, 0, 0, 0)
+        };
+        let family = |item: &Option<Item>| match item {
+            Some(Item::District { district, .. }) => district.as_str().to_string(),
+            other => format!("{other:?}"),
+        };
+        assert_eq!(
+            family(&pick(&game, capital, false, true)),
+            "holy_site",
+            "the faster city opens the site"
+        );
+        assert_ne!(
+            family(&pick(&game, second, false, true)),
+            "holy_site",
+            "the slower city keeps its own pick"
+        );
+        // Closed race: nothing changes.
+        let mut ai = BasicAi::new();
+        ai.prophet_race_takes_a_district_slot_2 = true;
+        assert!(
+            ai.race_site_city(&game, 0).is_none(),
+            "a closed race names no city"
+        );
+        ai.enter_prophet_race = true;
+        assert_eq!(
+            ai.race_site_city(&game, 0).map(|(city, _)| city),
+            Some(capital)
         );
     }
 

@@ -5542,6 +5542,19 @@ impl AdvancedAi {
         self.stalled_peace_spares_the_counter = false;
     }
 
+    /// Opt-in gene `prophet-race-takes-a-district-slot-2`; see
+    /// [`Self::prophet_race_takes_a_district_slot_2`].
+    pub fn enable_prophet_race_takes_a_district_slot_2(&mut self) {
+        self.prophet_race_takes_a_district_slot_2 = true;
+        self.base.prophet_race_takes_a_district_slot_2 = true;
+    }
+
+    /// The twin of `enable_prophet_race_takes_a_district_slot_2`.
+    pub fn disable_prophet_race_takes_a_district_slot_2(&mut self) {
+        self.prophet_race_takes_a_district_slot_2 = false;
+        self.base.prophet_race_takes_a_district_slot_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

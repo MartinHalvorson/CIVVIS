@@ -6752,6 +6752,10 @@ pub struct AdvancedAi {
     /// `naval-escort-patience`.
     naval_escort_patience: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `prophet-race-takes-a-district-slot-2`: the race's Holy Site in the
+    /// city that builds it soonest. See
+    /// `BasicAi::prophet_race_takes_a_district_slot_2`. Off by default.
+    prophet_race_takes_a_district_slot_2: bool,
     /// `peace-waits-for-unseen-prey`: a beaten rival whose cities are all in
     /// the fog is not offered peace. See `one_war::unseen_prey`. Off by
     /// default.
@@ -9147,6 +9151,7 @@ impl AdvancedAi {
             one_sanctuary: false,
             naval_escort_patience: false,
             // ---- append: p-r ----------------------------------------
+            prophet_race_takes_a_district_slot_2: false,
             peace_waits_for_unseen_prey: false,
             peace_waits_for_the_foothold: false,
             prophet_race_takes_a_district_slot: false,

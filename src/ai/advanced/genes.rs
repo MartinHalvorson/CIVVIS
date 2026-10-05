@@ -2711,6 +2711,11 @@ pub const GENES: &[Gene] = &[
     // Tourism rose 240 -> 357 in the peace and they won on Culture at 223.
     // See `one_war::stalled_peace_spares`.
     Gene { tag: "stalled-peace-spares-the-counter", field: "stalled_peace_spares_the_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_peace_spares_the_counter, disable: AdvancedAi::disable_stalled_peace_spares_the_counter },
+    // Live King civvis-20261005T035848Z (game 97): version 1 opened the
+    // race's Holy Site in a 3.6-production city (about 15 turns) and all
+    // three religions were founded first. See
+    // `BasicAi::prophet_race_takes_a_district_slot_2`.
+    Gene { tag: "prophet-race-takes-a-district-slot-2", field: "prophet_race_takes_a_district_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_takes_a_district_slot_2, disable: AdvancedAi::disable_prophet_race_takes_a_district_slot_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
