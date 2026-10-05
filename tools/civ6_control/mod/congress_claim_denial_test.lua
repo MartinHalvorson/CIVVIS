@@ -239,6 +239,14 @@ tally.wc_dvp_won = 1
 -- The largest block held by a rival far behind the leader is no contender's.
 tally.wc_rival_blocks = { [1] = 9, [3] = 4 }
 redirect("a non-contender's block is not bought", 371, 15, 2, 3, "deny", 10)
+-- Tied blocks: the contender's (player 3, on 12) is the one to beat, 5 plus
+-- 2. Half of 227 buys the eight a claim needs; half of 150 buys six, and
+-- player 1's block (8 points, counted at three of five) takes the +2 with
+-- five. Reading the lower id's block as the top found no contender and
+-- denied.
+tally.wc_rival_blocks = { [1] = 5, [3] = 5 }
+redirect("tied blocks: a claim over the contender", 227, 12, 1, 0, "outvote", 8)
+redirect("tied blocks: the contender's is the one to beat", 150, 12, 1, 1, "redirect", 5)
 -- Off by configuration.
 tally.wc_rival_blocks = { [3] = 9, [1] = 4, [2] = 5 }
 config.DiploVictoryRedirect = false

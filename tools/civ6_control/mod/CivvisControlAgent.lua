@@ -16029,10 +16029,16 @@ CivvisCongressRedirect = function(blocks, candidates, pid, budget, maxVotes, con
 		points[tonumber(c.id) or -1] = p;
 		if p > lead then lead = p; end
 	end
+	-- The block the +2 goes to; on a tie, the contender with more points --
+	-- game 124 (T111622Z) t201 read Norway (5 points) and the Zulu leader
+	-- (9) at 5 votes each, picked the lower id, and stood down while the
+	-- Zulu took the +2.
 	local top, topVotes = nil, 0;
 	for who, votes in pairs(blocks) do
 		local id, v = tonumber(who), tonumber(votes) or 0;
-		if id ~= nil and id ~= pid and (v > topVotes or (v == topVotes and top ~= nil and id < top)) then
+		local pi, pt = points[id] or 0, top ~= nil and points[top] or 0;
+		if id ~= nil and id ~= pid and (v > topVotes or (v == topVotes and top ~= nil
+			and (pi > pt or (pi == pt and id < top)))) then
 			top, topVotes = id, v;
 		end
 	end
