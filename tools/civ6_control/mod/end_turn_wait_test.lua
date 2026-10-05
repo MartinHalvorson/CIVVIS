@@ -267,6 +267,7 @@ check("…processing samples", has(w, '"processing":1'), true)
 check("…the blocker by type", has(w, '"blockers":{"5":1}'), true)
 check("…the live Quick Movement", has(w, '"quick_movement":false'), true)
 check("…the live Quick Combat", has(w, '"quick_combat":true'), true)
+check("…and the UI clock at turn end", has(w, '"ui_now":11.25'), true)
 
 -- 2. Once per turn: a second turn-end callback for the same turn is silent.
 handlers.LocalPlayerTurnEnd()
