@@ -6266,6 +6266,17 @@ impl AdvancedAi {
         self.second_front_waits_for_its_war = false;
     }
 
+    /// Opt-in gene `prophet-race-earns-its-points`; see
+    /// [`Self::reserve_race_shrine`] and [`Self::race_wants_revelation`].
+    pub fn enable_prophet_race_earns_its_points(&mut self) {
+        self.prophet_race_earns_its_points = true;
+    }
+
+    /// The twin of `enable_prophet_race_earns_its_points`.
+    pub fn disable_prophet_race_earns_its_points(&mut self) {
+        self.prophet_race_earns_its_points = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

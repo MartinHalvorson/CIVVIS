@@ -2994,6 +2994,9 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "breaker-research-first", field: "breaker_research_first", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_research_first, disable: AdvancedAi::disable_breaker_research_first },
     Gene { tag: "breach-support-reads-the-wall-tier", field: "breach_support_reads_the_wall_tier", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_support_reads_the_wall_tier, disable: AdvancedAi::disable_breach_support_reads_the_wall_tier },
     Gene { tag: "second-front-waits-for-its-war", field: "second_front_waits_for_its_war", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_waits_for_its_war, disable: AdvancedAi::disable_second_front_waits_for_its_war },
+    // The race's Holy Site builds its Shrine and Revelation takes the
+    // wildcard while a Prophet is open. See `advanced/prophet_race_points.rs`.
+    Gene { tag: "prophet-race-earns-its-points", field: "prophet_race_earns_its_points", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_earns_its_points, disable: AdvancedAi::disable_prophet_race_earns_its_points },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
