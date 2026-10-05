@@ -6468,6 +6468,11 @@ pub struct AdvancedAi {
     /// 10.0 unimproved hills at t100.
     improvement_upgrades_count: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `melee-storms-an-open-city`: against a city with no standing walls the
+    /// assault opens when the force's blows take it within `STORM_TURNS`
+    /// past its heal, and the reserved taker joins it. See
+    /// `siege_train::assault_pays`.
+    melee_storms_an_open_city: bool,
     /// `last-capital-war-kept`: no peace with the holder of the last original
     /// capital Domination needs. See `one_war::last_capital_war_kept`. Off
     /// by default.
@@ -9248,6 +9253,7 @@ impl AdvancedAi {
             industrial_hub: false,
             improvement_upgrades_count: false,
             // ---- append: l-o ----------------------------------------
+            melee_storms_an_open_city: false,
             last_capital_war_kept: false,
             one_war_swaps_a_stalled_front: false,
             monument_first: false,

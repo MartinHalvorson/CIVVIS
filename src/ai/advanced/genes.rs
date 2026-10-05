@@ -2799,6 +2799,12 @@ pub const GENES: &[Gene] = &[
     // the city's whole blow (~108 against a Bombard) on each gun. See
     // `siege_train::entry_group`.
     Gene { tag: "guns-enter-together", field: "guns_enter_together", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_enter_together, disable: AdvancedAi::disable_guns_enter_together },
+    // Live King civvis-20261005T074521Z (game 110): Tarsus stood without
+    // walls in Invest and Reduce from turn 67 to 73, "damage ready" in about
+    // two turns, while its only melee beside it was the reserved taker, which
+    // never struck a healthy city; the city went 200 -> 191 and built walls at
+    // 74. See `siege_train::assault_pays`.
+    Gene { tag: "melee-storms-an-open-city", field: "melee_storms_an_open_city", kind: Kind::OptIn, enable: AdvancedAi::enable_melee_storms_an_open_city, disable: AdvancedAi::disable_melee_storms_an_open_city },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

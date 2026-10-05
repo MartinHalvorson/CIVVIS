@@ -5747,6 +5747,17 @@ impl AdvancedAi {
     pub fn disable_guns_enter_together(&mut self) {
         self.guns_enter_together = false;
     }
+    /// Opt-in gene `melee-storms-an-open-city`; see
+    /// [`Self::melee_storms_an_open_city`].
+    pub fn enable_melee_storms_an_open_city(&mut self) {
+        self.melee_storms_an_open_city = true;
+    }
+
+    /// The twin of `enable_melee_storms_an_open_city`.
+    pub fn disable_melee_storms_an_open_city(&mut self) {
+        self.melee_storms_an_open_city = false;
+    }
+
 
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
