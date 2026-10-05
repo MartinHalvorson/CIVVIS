@@ -333,7 +333,14 @@ ContextPtr = liveContext
 -- when the scale changes); every turn end checks that over >= 30 s windows
 -- and reverts on any disagreement; game end reverts too.
 local agentSource = io.open(here .. "/CivvisControlAgent.lua"):read("*a")
-check("Initialize asks for the timescale", has(agentSource, "pcall(CivvisQueue.startTimescale, cfg.DebugTimeScale);"), true)
+check("Initialize only marks the timescale pending", has(agentSource, "CivvisQueue.timescalePending = true;"), true)
+check("…turn begin starts it, after the load", has(agentSource,
+	"\tensureStarted();\n\tpcall(CivvisQueue.startPendingTimescale);"), true)
+queue.timescalePending = nil
+check("nothing pending, nothing starts", queue.startPendingTimescale(), false)
+queue.timescalePending = true
+pcall(queue.startPendingTimescale)
+check("a pending start runs once", queue.timescalePending, false)
 check("turn end checks the clock", has(agentSource, "\tpcall(CivvisQueue.checkTimescaleClock);\nend;"), true)
 check("victory reverts it", has(agentSource, 'pcall(CivvisQueue.resetTimescale, "game_over");'), true)
 check("our defeat reverts it", has(agentSource, 'pcall(CivvisQueue.resetTimescale, "defeated");'), true)
