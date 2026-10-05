@@ -2409,6 +2409,9 @@ pub const GENES: &[Gene] = &[
     // third to a half of the strongest rival's and the bred district order
     // always ranks the Theater Square last. See `BasicAi::culture_defense_theater`.
     Gene { tag: "culture-defense-theater", field: "culture_defense_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_defense_theater, disable: AdvancedAi::disable_culture_defense_theater },
+    // Live King 2026-10-05: 11 of 55 housing-bound cities at t75 built the
+    // reservation's Theater instead of a Granary; see `culture_defense.rs`.
+    Gene { tag: "culture-defense-theater-2", field: "culture_defense_theater_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_defense_theater_2, disable: AdvancedAi::disable_culture_defense_theater_2 },
     // V3 carries version one's housing rule into the delegated city governor,
     // where most live builds are placed, and follows the Granary with an
     // Aqueduct while the city stays housing-bound.
@@ -2739,6 +2742,156 @@ pub const GENES: &[Gene] = &[
     // CHOICE_NEGATIVE, a surprise war (150 grievances). 100 such flips in 49 of
     // 74 October live games. See `CivvisControlAutoClose.lua`.
     Gene { tag: "dialogue-never-declares-war", field: "dialogue_never_declares_war", kind: Kind::OptIn, enable: AdvancedAi::enable_dialogue_never_declares_war, disable: AdvancedAi::disable_dialogue_never_declares_war },
+    // Live King civvis-20261005T053701Z (game 103) declared on the Maori at
+    // turn 74 with Opango behind 100 walls and its Catapult 17 tiles out;
+    // the walls stood at 200 by 78 and the city fell at 118. See
+    // `siege_train::declaration_breaker_at_hand`.
+    Gene { tag: "declaration-waits-for-the-breaker", field: "declaration_waits_for_the_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_waits_for_the_breaker, disable: AdvancedAi::disable_declaration_waits_for_the_breaker },
+    // Live King civvis-20261005T053701Z (game 103) left the Inca, at 12
+    // military against ~600 with Qusqu behind 100 walls nine tiles from
+    // Guayaquil, at peace from turn 95 to 125 while it fought the Maori and
+    // Vietnam. See `one_war::capital_prey_beside_the_front`.
+    Gene { tag: "capital-prey-opens-a-front", field: "capital_prey_opens_a_front", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_prey_opens_a_front, disable: AdvancedAi::disable_capital_prey_opens_a_front },
+    // Live King civvis-20261005T060002Z (game 104) aimed its campaign at
+    // Greece, at peace and out of declaration range, from turn 147 to 182+
+    // with no Siege row to fight. See `one_war::declarable_in_reach`.
+    Gene { tag: "front-needs-a-declarable-rival", field: "front_needs_a_declarable_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_front_needs_a_declarable_rival, disable: AdvancedAi::disable_front_needs_a_declarable_rival },
+    // Live King civvis-20261005T060002Z (game 104) staged Canberra,
+    // Australia's original capital and last city, at turns 85-90, damage
+    // ready in 4.2 turns; an urgent counter took the army to Norway at 91
+    // and Canberra had no siege again for sixty turns. See
+    // `one_war::front_capital_to_finish`.
+    Gene { tag: "front-finishes-its-capital", field: "front_finishes_its_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_front_finishes_its_capital, disable: AdvancedAi::disable_front_finishes_its_capital },
+    // The same game's counter was Norway's Orthodoxy, holding three majors
+    // while all our cities kept Buddhism. See
+    // `one_war::religious_threat_spares_the_front`.
+    Gene { tag: "religious-threat-spares-the-front", field: "religious_threat_spares_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_threat_spares_the_front, disable: AdvancedAi::disable_religious_threat_spares_the_front },
+    // 58 live games of October 4-5 bounced the campaign A -> B -> A within
+    // ten turns 89 times, 53 of them while countering a rival close to
+    // winning. See `victory_heuristics::actionable_victory_denial_with_culture_pressures`.
+    Gene { tag: "denial-keeps-its-rival", field: "denial_keeps_its_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_keeps_its_rival, disable: AdvancedAi::disable_denial_keeps_its_rival },
+    // All 22 October culture losses fired with the winner below the
+    // exported bar (median 94%). See
+    // `denial_nearest_finish::projected_culture_finish_at`.
+    Gene { tag: "culture-finish-at-the-observed-bar", field: "culture_finish_at_the_observed_bar", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_finish_at_the_observed_bar, disable: AdvancedAi::disable_culture_finish_at_the_observed_bar },
+    // G104 (civvis-20261005T060002Z) Siege of Sparta: the air-assault barrier
+    // withheld frame 0's ground orders, the frame-0 plan's watch and path
+    // trail survived, and the next turn barred a step the host was never sent
+    // (Rocket Artillery idle t216-223; another "going nowhere" t236). A step
+    // our own column held at frame start is congestion, not a refusal either.
+    // See `advanced/own_column.rs`.
+    Gene { tag: "own-column-is-not-a-refusal", field: "own_column_is_not_a_refusal", kind: Kind::OptIn, enable: AdvancedAi::enable_own_column_is_not_a_refusal, disable: AdvancedAi::disable_own_column_is_not_a_refusal },
+    // Live King civvis-20261005T045443Z (game 101): the Wak Kab'nal guns
+    // stood 14-18 tiles out from turn 150 to 227, the end of the record,
+    // stepping into the coast and back each turn: the strait was 10-15 tiles,
+    // the land road 51-57, and `come-ashore` landed every embarked unit at
+    // home the next turn.
+    // See `siege_train::StageMarch`.
+    Gene { tag: "stage-march-keeps-to-land", field: "stage_march_keeps_to_land", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_march_keeps_to_land, disable: AdvancedAi::disable_stage_march_keeps_to_land },
+    // Live King civvis-20261005T051413Z (game 102): Toronto's breach reading
+    // counted only its own force's guns and read 0 while three healthy
+    // Bombards of Uruk's force stood at its ring. See
+    // `siege_train::nearby_gun_city`.
+    Gene { tag: "breach-counts-nearby-guns", field: "breach_counts_nearby_guns", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_counts_nearby_guns, disable: AdvancedAi::disable_breach_counts_nearby_guns },
+    // 70 October live games offered peace at three times the rival's power
+    // or more 239 times, every one white; 20 were accepted. See
+    // `PEACE_CITY_ASK_RATIO` and `CivvisPeaceCityAsk` in the agent.
+    Gene { tag: "peace-asks-a-city", field: "peace_asks_a_city", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_asks_a_city, disable: AdvancedAi::disable_peace_asks_a_city },
+    // Live King civvis-20261005T080337Z (game 111) declared no war through
+    // turn 200 with Spain at 49 military against 1,080 and Madrid behind 100
+    // walls 21 tiles out. See `one_war::capital_prey_reaches_far`.
+    Gene { tag: "capital-prey-opens-a-front-2", field: "capital_prey_opens_a_front_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_prey_opens_a_front_2, disable: AdvancedAi::disable_capital_prey_opens_a_front_2 },
+    // Live King civvis-20261005T080337Z (game 111): the surge reached Strike
+    // on urgent Persia by turn 185 and handed the war to a ground declaration
+    // that waited on staging to 200. See `air_surge::air_surge_opening`.
+    Gene { tag: "air-surge-strikes-through-urgency", field: "air_surge_strikes_through_urgency", kind: Kind::OptIn, enable: AdvancedAi::enable_air_surge_strikes_through_urgency, disable: AdvancedAi::disable_air_surge_strikes_through_urgency },
+    // Live King civvis-20261005T081917Z (game 112) lost Xanadu, Mongolia's
+    // capital, to Loyalty five turns after taking it, with no Loyalty card
+    // and its Governor unestablished. See `one_war::bleeding_capital`.
+    Gene { tag: "bleeding-capital-loyalty", field: "bleeding_capital_loyalty", kind: Kind::OptIn, enable: AdvancedAi::enable_bleeding_capital_loyalty, disable: AdvancedAi::disable_bleeding_capital_loyalty },
+    // Live King civvis-20261005T081917Z (game 112) kept Singapore at turn
+    // 191 with Kongo on 15 points and lost on Diplomacy at 202 by one vote's
+    // Favor. See `one_war::liberation_funds_the_congress`.
+    Gene { tag: "liberation-funds-the-congress", field: "liberation_funds_the_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_liberation_funds_the_congress, disable: AdvancedAi::disable_liberation_funds_the_congress },
+    // Live King civvis-20261005T051413Z (game 102): four fit Bombards stood
+    // three tiles from walled Toronto from turn 137 to 145, one tile outside
+    // their range, and never fired: every post inside the strike ring read
+    // the city's whole blow (~108 against a Bombard) on each gun. See
+    // `siege_train::entry_group`.
+    Gene { tag: "guns-enter-together", field: "guns_enter_together", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_enter_together, disable: AdvancedAi::disable_guns_enter_together },
+    // Live King civvis-20261005T060002Z (game 104): Sparta's breach reading
+    // counted land guns only and held "nothing to open the walls" while our
+    // Bombers took its walls from 400 to 153. See
+    // `siege_train::air_breach_walls`.
+    Gene { tag: "breach-reads-the-air", field: "breach_reads_the_air", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_reads_the_air, disable: AdvancedAi::disable_breach_reads_the_air },
+    // Live King civvis-20261005T065548Z (game 107) countered France, which
+    // read closer to a Culture Victory, and Babylon won on Culture at 206.
+    // See `denial_nearest_finish::engine_culture_clock`.
+    Gene { tag: "culture-reads-the-engine-clock", field: "culture_reads_the_engine_clock", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_reads_the_engine_clock, disable: AdvancedAi::disable_culture_reads_the_engine_clock },
+    // Live King civvis-20261005T083500Z (game 113) offered Spain rout peace
+    // at turn 216 at 1.16 times its power and named it the counter's second
+    // front at 218. See `one_war::rout_spares_the_counter`.
+    Gene { tag: "rout-spares-the-counter", field: "rout_spares_the_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_rout_spares_the_counter, disable: AdvancedAi::disable_rout_spares_the_counter },
+    // Live King civvis-20261005T080337Z (G111) missed a Normal Age by one era
+    // point: `age-closer-2`'s window opened (era end t107, countdown read live)
+    // but the gold operating reserve (650 at 10 cities) priced every closer
+    // out. See `AdvancedAi::age_closer_spends_the_reserve`.
+    Gene { tag: "age-closer-spends-the-reserve", field: "age_closer_spends_the_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_age_closer_spends_the_reserve, disable: AdvancedAi::disable_age_closer_spends_the_reserve },
+    // Live King civvis-20261005T074521Z (game 110): Tarsus stood without
+    // walls in Invest and Reduce from turn 67 to 73, "damage ready" in about
+    // two turns, while its only melee beside it was the reserved taker, which
+    // never struck a healthy city; the city went 200 -> 191 and built walls at
+    // 74. See `siege_train::assault_pays`.
+    Gene { tag: "melee-storms-an-open-city", field: "melee_storms_an_open_city", kind: Kind::OptIn, enable: AdvancedAi::enable_melee_storms_an_open_city, disable: AdvancedAi::disable_melee_storms_an_open_city },
+    // Live King civvis-20261005T081917Z (game 112) held two of three
+    // rival original capitals from turn 138 and never saw Kongo's: its
+    // border was sealed and the passage purchase held on a 28 Gold book
+    // against a 30 Gold minimum. See `find_the_capital`.
+    Gene { tag: "find-the-capital", field: "find_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_find_the_capital, disable: AdvancedAi::disable_find_the_capital },
+    // 8 of 31 captures in ten live King games (October 5) were lost the very
+    // next turn: G105 Vancouver 151 -> 152, walked into by one Pike and Shot
+    // with ten of 22 staged; G112 Xanadu flipped to loyalty in five turns at
+    // -13.5 a turn; G114 Curitiba sat at walls 0, health 1 with its body six
+    // to twelve tiles out. See `siege_train::capture_hold`.
+    Gene { tag: "capture-holds-the-ring", field: "capture_holds_the_ring", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_holds_the_ring, disable: AdvancedAi::disable_capture_holds_the_ring },
+    // Live King civvis-20261005T084952Z (game 114) bombed Curitiba to walls
+    // 0, city 1 at turn 196 with no body able to walk in; it healed to 20.
+    // See `air_city_assault::air_assault_followup_routed`.
+    Gene { tag: "air-volley-needs-a-road", field: "air_volley_needs_a_road", kind: Kind::OptIn, enable: AdvancedAi::enable_air_volley_needs_a_road, disable: AdvancedAi::disable_air_volley_needs_a_road },
+    // Live King civvis-20261005T093932Z (game 117) lost eleven siege guns
+    // from turn 137, most to one blow of a hostile seen at turn start. See
+    // `advanced/guns_stay_out_of_reach.rs`.
+    Gene { tag: "guns-stay-out-of-reach", field: "guns_stay_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach, disable: AdvancedAi::disable_guns_stay_out_of_reach },
+    // Live King civvis-20261005T101841Z (game 120): Australia at 7% of our
+    // power, Canberra behind 200 walls, failed the 100-wall gate. See
+    // `one_war::capital_prey_walls`.
+    Gene { tag: "capital-prey-scales-the-walls", field: "capital_prey_scales_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_prey_scales_the_walls, disable: AdvancedAi::disable_capital_prey_scales_the_walls },
+    // 91 faith-counter declarations of October 4-5 took 9 cities against 8
+    // of 39 other wars. See `one_war::faith_at_match_point`.
+    Gene { tag: "faith-counter-waits-for-match-point", field: "faith_counter_waits_for_match_point", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_counter_waits_for_match_point, disable: AdvancedAi::disable_faith_counter_waits_for_match_point },
+    // Live King civvis-20261005T103704Z (game 121) read America at 4 for
+    // one turn and declared on it. See `one_war::steady_rival_power`.
+    Gene { tag: "prey-reads-a-steady-power", field: "prey_reads_a_steady_power", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_reads_a_steady_power, disable: AdvancedAi::disable_prey_reads_a_steady_power },
+    // Live King civvis-20261005T111622Z (game 124) declared on Norway at
+    // turn 105 and offered it one-war peace the same turn. See
+    // `one_war::second_front_recently_named`.
+    Gene { tag: "second-front-keeps-its-war", field: "second_front_keeps_its_war", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_keeps_its_war, disable: AdvancedAi::disable_second_front_keeps_its_war },
+    // Live King civvis-20261005T110504Z (game 123) held its Catholic
+    // counterweight and spread Protestantism, the winner's faith, in its own
+    // cities. See `adopted_faith_sanctuary::stronger_faith_than`.
+    Gene { tag: "counterweight-faith-is-no-threat", field: "counterweight_faith_is_no_threat", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_faith_is_no_threat, disable: AdvancedAi::disable_counterweight_faith_is_no_threat },
+    // 315 Recovery-clause peace offers of October 4-5 came from spells with
+    // a median of 2 turns; 7 were accepted at 1.5 times the rival's power.
+    // See `one_war::recovery_peace_ready`.
+    Gene { tag: "recovery-peace-waits", field: "recovery_peace_waits", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_peace_waits, disable: AdvancedAi::disable_recovery_peace_waits },
+    // Live King civvis-20261005T114715Z (game 126): the culture counter's
+    // surprise war drained 184 Favor to 0 while Sweden rose to 17 points. See
+    // `one_war::favor_spares_surprise`.
+    Gene { tag: "favor-spares-the-surprise-war", field: "favor_spares_the_surprise_war", kind: Kind::OptIn, enable: AdvancedAi::enable_favor_spares_the_surprise_war, disable: AdvancedAi::disable_favor_spares_the_surprise_war },
+    // Live King openings of 2026-10-04/05: 4 of 7 named ten or fewer tiles
+    // from the capital took their city, 0 of 42 named further out. See
+    // `early_conquest::CONQUEST_NEAR_REACH_TILES`.
+    Gene { tag: "conquest-opening-stays-near", field: "conquest_opening_stays_near", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_opening_stays_near, disable: AdvancedAi::disable_conquest_opening_stays_near },
     // builder-before-the-army-3 armed, 56 live games: 21 unimproved worked
     // tiles against 17 improved at t100 in the middle half; ten-city empires
     // at the five-Builder cap. See `BasicAi::builder_cap_is_one_per_city`.

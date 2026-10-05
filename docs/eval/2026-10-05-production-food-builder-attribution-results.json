@@ -1,0 +1,239 @@
+{
+  "scope": "Pure Farm attribution on static after-walk baselines; no enacted jobs, capture safety or strength claim",
+  "records": 24,
+  "input_boards_unchanged": true,
+  "positive_cases": [
+    {
+      "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008702-control-view-t75.json",
+      "turn": 75,
+      "after_worked": [
+        [
+          14,
+          16
+        ],
+        [
+          15,
+          17
+        ],
+        [
+          16,
+          17
+        ]
+      ],
+      "amenities": -2,
+      "before_walk_worked": [
+        [
+          15,
+          17
+        ],
+        [
+          16,
+          17
+        ],
+        [
+          17,
+          16
+        ]
+      ],
+      "before_worked": [
+        [
+          15,
+          17
+        ],
+        [
+          16,
+          17
+        ],
+        [
+          17,
+          16
+        ]
+      ],
+      "builder": 422,
+      "builder_position": [
+        16,
+        16
+      ],
+      "charges": 3,
+      "city": 348,
+      "city_after": {
+        "culture": 0.585,
+        "faith": 0.0,
+        "food": 8.0,
+        "gold": 0.0,
+        "production": 3.9000000000000004,
+        "science": 0.9750000000000001
+      },
+      "city_before": {
+        "culture": 0.585,
+        "faith": 0.0,
+        "food": 8.0,
+        "gold": 0.0,
+        "production": 3.25,
+        "science": 0.9750000000000001
+      },
+      "city_before_walk": {
+        "culture": 0.585,
+        "faith": 0.0,
+        "food": 8.0,
+        "gold": 0.0,
+        "production": 3.25,
+        "science": 0.9750000000000001
+      },
+      "destination": [
+        16,
+        17
+      ],
+      "food_bank": 15.350000000000001,
+      "food_change": 0.0,
+      "fresh_allowance_for_static_price": false,
+      "guard_at_destination_in_input": true,
+      "housing": 5.0,
+      "nearest_foreign_military_distance_in_observation": 1,
+      "population": 3,
+      "production_change": 0.6500000000000004,
+      "raw_food_surplus": 2.0,
+      "science_change": 0.0,
+      "scope": "Successful Farm on static native decision-board clone; not an executed job or future capture-safety proof",
+      "tile_before_walk": {
+        "culture": 0.0,
+        "faith": 0.0,
+        "food": 2.0,
+        "gold": 0.0,
+        "production": 0.0,
+        "science": 0.0
+      },
+      "tile_delta": {
+        "culture": 0.0,
+        "faith": 0.0,
+        "food": 1.0,
+        "gold": 0.0,
+        "production": 0.0,
+        "science": 0.0
+      }
+    },
+    {
+      "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008703-control-view-t25.json",
+      "turn": 25,
+      "after_worked": [
+        [
+          24,
+          25
+        ],
+        [
+          25,
+          22
+        ],
+        [
+          25,
+          23
+        ],
+        [
+          26,
+          22
+        ]
+      ],
+      "amenities": 0,
+      "before_walk_worked": [
+        [
+          24,
+          23
+        ],
+        [
+          24,
+          25
+        ],
+        [
+          25,
+          22
+        ],
+        [
+          25,
+          23
+        ]
+      ],
+      "before_worked": [
+        [
+          24,
+          23
+        ],
+        [
+          24,
+          25
+        ],
+        [
+          25,
+          22
+        ],
+        [
+          25,
+          23
+        ]
+      ],
+      "builder": 194,
+      "builder_position": [
+        23,
+        24
+      ],
+      "charges": 3,
+      "city": 75,
+      "city_after": {
+        "culture": 4.2,
+        "faith": 4.0,
+        "food": 10.0,
+        "gold": 5.0,
+        "production": 11.0,
+        "science": 4.0
+      },
+      "city_before": {
+        "culture": 3.2,
+        "faith": 4.0,
+        "food": 10.0,
+        "gold": 5.0,
+        "production": 10.0,
+        "science": 4.0
+      },
+      "city_before_walk": {
+        "culture": 3.2,
+        "faith": 4.0,
+        "food": 10.0,
+        "gold": 5.0,
+        "production": 10.0,
+        "science": 4.0
+      },
+      "destination": [
+        24,
+        25
+      ],
+      "food_bank": 6.0,
+      "food_change": 0.0,
+      "fresh_allowance_for_static_price": true,
+      "guard_at_destination_in_input": false,
+      "housing": 6.0,
+      "nearest_foreign_military_distance_in_observation": 1,
+      "population": 4,
+      "production_change": 1.0,
+      "raw_food_surplus": 2.0,
+      "science_change": 0.0,
+      "scope": "Successful Farm on static native decision-board clone; not an executed job or future capture-safety proof",
+      "tile_before_walk": {
+        "culture": 0.0,
+        "faith": 0.0,
+        "food": 2.0,
+        "gold": 0.0,
+        "production": 0.0,
+        "science": 0.0
+      },
+      "tile_delta": {
+        "culture": 0.0,
+        "faith": 0.0,
+        "food": 1.0,
+        "gold": 0.0,
+        "production": 0.0,
+        "science": 0.0
+      }
+    }
+  ],
+  "positive_walk_effects": 0,
+  "fresh_samples_played": 0
+}

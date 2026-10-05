@@ -1,3 +1,18 @@
+-- ⚠ lupa's Lua 5.1.5 (the local runner) barriers the CLOSURE in
+-- lua_setupvalue, not the shared UpVal, so a value written into an upvalue the
+-- collector has already marked can be freed while still referenced: the merge
+-- 7bd809bdb crashed order_queue_test 6/6 (SIGSEGV/BUS/ABRT/TRAP, varying) right
+-- after its agent reload, and heap layout decided which tree crashed (-4f
+-- root-caused it, 2026-10-05). A full collection first leaves nothing marked.
+-- Harmless under the real lua5.1 CI runs.
+do
+	local setupvalue = debug.setupvalue
+	debug.setupvalue = function(...)
+		collectgarbage("collect")
+		return setupvalue(...)
+	end
+end
+
 -- Run: lua5.1 tools/civ6_control/mod/congress_claim_denial_test.lua
 -- Exercise the production ballot with the losing native t201 bank and leader.
 local here = arg[0]:match("(.*)/[^/]*$") or "."
@@ -22,7 +37,10 @@ local function upvalue(fn, key, replacement)
     error("missing upvalue " .. key)
 end
 local tick = upvalue(CivvisQueue.onUiPulse, "tick")
-local config = { Play = true, CivvisDecides = false, CounterResolutions = false }
+-- `ParticipationDenial` is off for the Diplomatic Victory checks below and
+-- exercised by its own case at the end.
+local config = { Play = true, CivvisDecides = false, CounterResolutions = false,
+    ParticipationDenial = false }
 upvalue(tick, "cfg", config)
 local hooks = {}
 Events = setmetatable({ WorldCongressStage1 = { Add = function(fn) hooks.stage = fn end } },
@@ -171,6 +189,113 @@ ballot("drain spending off", 171, 8, nil, 1, "outvote", 5)
 config.DiploVictorySpendDraining = nil
 tally.wc_rival_block = nil
 tally.wc_review_favor = nil
+
+-- `CivvisParticipationDenialOption`: with the leader on 19, the Migration
+-- Treaty -- whose leader votes A on itself -- draws three B votes on the
+-- leader from what the Diplomatic Victory ballot leaves (569 - 544 = 25), and
+-- the Diplomatic Victory ballot is unchanged. The Trade Treaty, with no record
+-- of the leader's vote, keeps its free vote.
+config.ParticipationDenial = nil
+requests, submits = {}, 0
+bank, leaderPoints = 569, 19
+config.DiploVictoryVoteFloor = nil
+local _, deniedSpent = vote(0)
+check("participation denial leaves the diplomatic ballot", requests[1].votes, 17)
+check("participation denial option", requests[2].option, 2)
+check("participation denial names the leader", requests[2].selection, 3)
+check("participation denial votes", requests[2].votes, 3)
+check("participation denial cost", deniedSpent, costs[16] + costs[2])
+check("participation denial leaves an unknown vote free", requests[3].votes, 1)
+config.ParticipationDenial = false
+
+-- See `CivvisCongressRedirect`. Game 118 (T095215Z) t202: Macedon (here
+-- player 3, on 15 points) cast 9 A votes for itself at t182, Gaul (player 1,
+-- 8 points) 4 and Portugal (player 2, 8) 5. Half of 371 buys 10 votes: short
+-- of the 13 a claim needs over 9 plus a quarter, enough to lift Gaul's block
+-- (counted at three of its four) past 12. Ties on points and votes go to the
+-- lower id.
+local function redirect(name, favor, points, option, selection, mode, votes)
+    requests, submits = {}, 0
+    bank, leaderPoints = favor, points
+    config.DiploVictoryVoteFloor = nil
+    local _, spent, _, _, _, _, actualMode = vote(0)
+    check(name .. " mode", actualMode, mode)
+    check(name .. " option", requests[1].option, option)
+    check(name .. " target", requests[1].selection, selection)
+    check(name .. " votes", requests[1].votes, votes)
+    check(name .. " cost", spent, costs[votes - 1])
+end
+tally.wc_rival_blocks = { [3] = 9, [1] = 4, [2] = 5 }
+tally.wc_dvp_won = 1
+redirect("game 118 t202 hands the +2 to Gaul", 371, 15, 1, 1, "redirect", 10)
+-- A bank that buys the block plus a quarter claims it for us, at that count.
+tally.wc_rival_blocks = { [3] = 4, [1] = 2 }
+redirect("a small block is outvoted for us", 439, 15, 1, 0, "outvote", 7)
+-- A session the rivals carried on B is left to the denial.
+tally.wc_rival_blocks = { [3] = 9, [1] = 4, [2] = 5 }
+tally.wc_dvp_won = 2
+redirect("after a B session the denial stands", 371, 15, 2, 3, "deny", 10)
+tally.wc_dvp_won = 1
+-- The largest block held by a rival far behind the leader is no contender's.
+tally.wc_rival_blocks = { [1] = 9, [3] = 4 }
+redirect("a non-contender's block is not bought", 371, 15, 2, 3, "deny", 10)
+-- Tied blocks: the contender's (player 3, on 12) is the one to beat, 5 plus
+-- 2. Half of 227 buys the eight a claim needs; half of 150 buys six, and
+-- player 1's block (8 points, counted at three of five) takes the +2 with
+-- five. Reading the lower id's block as the top found no contender and
+-- denied.
+tally.wc_rival_blocks = { [1] = 5, [3] = 5 }
+redirect("tied blocks: a claim over the contender", 227, 12, 1, 0, "outvote", 8)
+redirect("tied blocks: the contender's is the one to beat", 150, 12, 1, 1, "redirect", 5)
+-- Off by configuration.
+tally.wc_rival_blocks = { [3] = 9, [1] = 4, [2] = 5 }
+config.DiploVictoryRedirect = false
+redirect("redirect off", 371, 15, 2, 3, "deny", 10)
+config.DiploVictoryRedirect = nil
+tally.wc_rival_blocks = nil
+tally.wc_dvp_won = nil
+
+-- See `CivvisCultureEmbargoVotes`. The culture leader (player 3) draws 90
+-- visitors against a bar of 100: the counter's Trade Policy ballot buys
+-- eight B votes on it (no recorded A total: 6 + 2) from what the probe left
+-- (314 - 12), 112 Favor; below the bar it keeps the one free vote.
+config.CounterResolutions = nil
+local function culture(id, visitors, domestic)
+    Players[id].GetCulture = function() return {
+        GetTouristsTo = function() return visitors end,
+        GetStaycationers = function() return domestic end,
+    } end
+end
+culture(1, 0, 100); culture(2, 0, 100); culture(3, 90, 10)
+requests, submits = {}, 0
+bank, leaderPoints = 314, 8
+config.DiploVictoryVoteFloor = nil
+local _, embargoSpent = vote(0)
+check("culture embargo option", requests[3].option, 2)
+check("culture embargo names the culture leader", requests[3].selection, 3)
+check("culture embargo votes", requests[3].votes, 8)
+check("culture embargo cost", embargoSpent, costs[2] + costs[7])
+check("the migration counter keeps its free vote", requests[2].votes, 1)
+-- A recorded A total of 3 asks for five.
+tally.wc_last_a = { WC_RES_TRADE_TREATY = 3 }
+requests, submits = {}, 0
+vote(0)
+check("culture embargo outvotes the recorded block", requests[3].votes, 5)
+tally.wc_last_a = nil
+-- Under the bar, the free vote.
+culture(3, 60, 10)
+requests, submits = {}, 0
+vote(0)
+check("culture embargo waits for the bar", requests[3].votes, 1)
+-- Off by configuration.
+culture(3, 90, 10)
+config.CultureEmbargo = false
+requests, submits = {}, 0
+vote(0)
+check("culture embargo off", requests[3].votes, 1)
+config.CultureEmbargo = nil
+for id = 1, 3 do Players[id].GetCulture = nil end
+config.CounterResolutions = false
 
 if failures > 0 then os.exit(1) end
 print("all Congress claim/denial checks passed")

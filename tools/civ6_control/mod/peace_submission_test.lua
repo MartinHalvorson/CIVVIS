@@ -290,7 +290,7 @@ local peaceAt = assert(src:find('if kind == "peace" then', 1, true))
 local delegationAt = assert(src:find('if kind == "delegation" then', peaceAt, true))
 local peaceArm = src:sub(peaceAt, delegationAt - 1)
 check("peace arm calls tested submitter", peaceArm:find(
-	"pcall(submitMajorPeaceDeal, subject, asked, x)", 1, true) ~= nil, true)
+	"pcall(submitMajorPeaceDeal, subject, asked, x, askCity)", 1, true) ~= nil, true)
 check("peace arm does not reopen a deal session",
 	peaceArm:find("DiplomacyManager.RequestSession", 1, true) == nil, true)
 check("submitter uses Firaxis normal proposal",

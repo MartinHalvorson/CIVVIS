@@ -1,0 +1,24 @@
+{
+  "frozen_at": "2026-10-04T23:28:25.780883+00:00",
+  "source": "c8247d492def93329e35d085442668685cdcbc89",
+  "purpose": "Consumed coverage diagnosis only; no fresh strength samples",
+  "configuration": "Public AdvancedAi::targeting(Domination), enable_live_bridge; both arms reweight current public weights. Stock adaptive rivals, native 4p 60x38 Pangaea Online 150 Gran Colombia, focal handicap-exempt. No private pin or genome read.",
+  "treatment": "Only public open3 changes from Monument (5) to Settler (3); all other numerical weights and policy deck read back unchanged. First Settler, Builder and Scout repair retained.",
+  "consumed_diagnostics": {
+    "emperor": [
+      61008600,
+      61008601,
+      61008602,
+      61008603
+    ],
+    "deity": [
+      61008700,
+      61008701,
+      61008702,
+      61008703
+    ]
+  },
+  "continuation_gate": "Actual additional early Settler/city coverage; consumed T75 Production positive at both difficulties, no lower T75 survival, science at least 90% at each difficulty. Every assigned consumed pair reported; no fresh-strength claim.",
+  "fresh_samples_played": 0,
+  "actual_Firaxis_verification": false
+}

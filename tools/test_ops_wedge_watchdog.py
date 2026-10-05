@@ -292,16 +292,19 @@ class SilenceIsAFasterWedgeSignal(unittest.TestCase):
 
     def test_the_silence_limit_and_its_confirmations_are_named_knobs(self):
         source = self._source()
-        self.assertIn("SILENCE_S=${CIVVIS_WEDGE_SILENCE_S:-120}", source)
+        self.assertIn("SILENCE_S=${CIVVIS_WEDGE_SILENCE_S:-60}", source)
         self.assertIn("SILENCE_CONFIRM=${CIVVIS_WEDGE_SILENCE_CONFIRM:-2}", source)
 
     def test_the_limit_clears_the_longest_healthy_silence_ever_measured(self):
-        """81.2 s was the worst, and that cause is being removed. 120 s keeps a
-        margin without spending five minutes on a dead game."""
+        """81.2 s was the 2026-09-02 worst (capture stalls, removed by #3089).
+        After the headroom governor and the order-queue stall fix (#3893), 66k
+        gaps in civvis-20261004T094143Z / 100903Z / 100903Z-cont1 peaked at
+        14.8 s with none over 30 s; 60 s keeps a 4x margin over that, and the
+        forced-end-turn proof still has to fail before a restart."""
         source = self._source()
         limit = int(re.search(r"SILENCE_S=\$\{CIVVIS_WEDGE_SILENCE_S:-(\d+)\}",
                               source).group(1))
-        self.assertGreaterEqual(limit, 100, "must clear the 81.2 s worst case")
+        self.assertGreaterEqual(limit, 45, "must clear the 14.8 s healthy worst case 3x over")
         self.assertLessEqual(limit, 240, "or it saves nothing over the turn rule")
 
     def test_silence_only_ever_lowers_the_bar(self):

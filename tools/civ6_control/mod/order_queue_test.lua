@@ -1,3 +1,18 @@
+-- ⚠ lupa's Lua 5.1.5 (the local runner) barriers the CLOSURE in
+-- lua_setupvalue, not the shared UpVal, so a value written into an upvalue the
+-- collector has already marked can be freed while still referenced: the merge
+-- 7bd809bdb crashed order_queue_test 6/6 (SIGSEGV/BUS/ABRT/TRAP, varying) right
+-- after its agent reload, and heap layout decided which tree crashed (-4f
+-- root-caused it, 2026-10-05). A full collection first leaves nothing marked.
+-- Harmless under the real lua5.1 CI runs.
+do
+	local setupvalue = debug.setupvalue
+	debug.setupvalue = function(...)
+		collectgarbage("collect")
+		return setupvalue(...)
+	end
+end
+
 -- The per-unit order queue: a unit's later orders wait for its earlier ones.
 --
 -- ⚠ Loads the SHIPPED `CivvisControlAgent.lua` and drives its own
@@ -394,20 +409,34 @@ UnitManager.GetMoveToPathEx = function(unit)
 	for i = 1, n do plots[i] = i end
 	return { plots = plots, turns = {} };
 end
+host.paths[153] = 4
 host.units[145] = { id = 145, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
 host.units[146] = { id = 146, kind = "UNIT_WARRIOR", x = 4, y = 4, moves = 2 }
 host.units[147] = { id = 147, kind = "UNIT_WARRIOR", x = 7, y = 7, moves = 2 }
+host.units[153] = { id = 153, kind = "UNIT_WARRIOR", x = 10, y = 10, moves = 2, active_operation = true }
 applyOrders(player, PID, 7, {
 	row(145, "MOVE_TO", 3, 1), row(146, "MOVE_TO", 6, 4), row(147, "MOVE_TO", 9, 7),
+	row(153, "MOVE_TO", 12, 10),
 })
-host.paths[145] = 1
-for _ = 1, 7 do queue.drain(player, PID, 7) end
-check("no probe before the probe tick", queue.pendingCount(), 3)
+-- Both lose their path after issue. 145 sits idle: the host dropped the
+-- request (G113: 464 of 525 `cannot_start` no-ops, all `awake`/`sentry`), so
+-- it is answered at tick 2. 153 is in an operation, where the stalled-
+-- operation release lives, so it waits for the probe tick as before.
+host.paths[145], host.paths[153] = 1, 1
 queue.drain(player, PID, 7)
-check("an unpathed walk is answered at the probe tick", queue.pendingCount(), 2)
+check("no probe on the first tick", queue.pendingCount(), 4)
+queue.drain(player, PID, 7)
+check("a dropped request is answered at tick 2", queue.pendingCount(), 3)
 local noop = lastEvent("move_noop") or ""
 check("the early no-op is named for its unit", noop:find('"unit":145', 1, true) ~= nil, true)
-check("the early no-op reports its tick", noop:find('"ticks":8', 1, true) ~= nil, true)
+check("the early no-op reports its tick", noop:find('"ticks":2', 1, true) ~= nil, true)
+for _ = 3, 7 do queue.drain(player, PID, 7) end
+check("a unit in an operation is not probed early", queue.pendingCount(), 3)
+queue.drain(player, PID, 7)
+check("…it is answered at the probe tick", queue.pendingCount(), 2)
+noop = lastEvent("move_noop") or ""
+check("…named for its unit", noop:find('"unit":153', 1, true) ~= nil, true)
+check("…at tick 8", noop:find('"ticks":8', 1, true) ~= nil, true)
 for _ = 1, 20 do queue.drain(player, PID, 7) end
 check("a pathed walk and an unaskable host keep waiting", queue.pendingCount(), 2)
 UnitManager.GetMoveToPathEx = nil
@@ -470,6 +499,52 @@ check("each mark resolves once", countEvents("stall_probe_resolved"), 1)
 UnitManager.GetMoveToPathEx = nil
 Map.GetPlotIndex = nil
 host.paths = nil
+
+-- 2e. WorldInput.lua:884 does not ask for a movement path while the game
+-- core is busy. An accepted request can transiently have no queryable path
+-- before the host actually walks it; that is not an early no-op verdict.
+reset()
+host.units[148] = { id = 148, kind = "UNIT_BOMBARD", x = 1, y = 1, moves = 3 }
+host.busy, host.path_queries = false, 0
+UI.IsGameCoreBusy = function() return host.busy end
+Map.GetPlotIndex = function(x, y) return y * 100 + x end
+UnitManager.GetMoveToPathEx = function()
+	host.path_queries = host.path_queries + 1
+	local plots = host.busy and {} or { 101, 102, 103 }
+	return { plots = plots, turns = {} }
+end
+applyOrders(player, PID, 7, { row(148, "MOVE_TO", 3, 1) })
+host.busy = true
+local beforeProbe = host.path_queries
+local beforeNoop = lastEvent("move_noop")
+for _ = 1, 8 do queue.drain(player, PID, 7) end
+check("a busy core does not answer the early path probe", host.path_queries, beforeProbe)
+check("a busy core keeps the opening watch", queue.pendingCount(), 1)
+check("a busy core is not labelled an early no-op", lastEvent("move_noop"), beforeNoop)
+host.busy = false
+queue.drain(player, PID, 7)
+check("the probe is retried when the core is idle", host.path_queries > beforeProbe, true)
+check("a restored path keeps waiting for arrival", queue.pendingCount(), 1)
+host.arrive(148)
+queue.drain(player, PID, 7)
+check("the deferred opening watch releases on arrival", queue.pendingCount(), 0)
+
+-- A core that stays busy does not create an unbounded queue: the existing
+-- grace/turn cap still owns the terminal answer. Record busy in its evidence
+-- so the verdict is not mistaken for an idle host's authoritative no-path.
+reset()
+host.units[149] = { id = 149, kind = "UNIT_BOMBARD", x = 1, y = 1, moves = 3 }
+host.busy = false
+applyOrders(player, PID, 7, { row(149, "MOVE_TO", 3, 1) })
+host.busy = true
+for _ = 1, 30 do queue.drain(player, PID, 7) end
+check("a permanently busy opening watch remains bounded", queue.pendingCount(), 0)
+check("the bounded verdict records a busy game core",
+	(lastEvent("move_noop") or ""):find('"core_busy":true', 1, true) ~= nil, true)
+host.busy = false
+UnitManager.GetMoveToPathEx = nil
+Map.GetPlotIndex = nil
+UI.IsGameCoreBusy = nil
 
 -- 3. A refused first order takes its follow-ups with it, by name.
 reset()

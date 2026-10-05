@@ -104,11 +104,14 @@ def installed_lua(source: str) -> str:
     """The script as installed: blank and comment-only lines dropped.
 
     A file with any Lua long bracket (`[[`, `[=[`) is left whole, because a
-    line inside a long string or long comment is not what it looks like.
+    line inside a long string or long comment is not what it looks like. So
+    is a file with any line ending in a backslash: a quoted string continued
+    onto a line that starts with `--` would lose that line.
     Every other line is kept byte-for-byte, so the code is unchanged; only
     line numbers move, and nothing in the mod reads its own line numbers.
     """
-    if _LONG_BRACKET.search(source):
+    if _LONG_BRACKET.search(source) or any(
+            line.rstrip("\r\n").endswith("\\") for line in source.splitlines()):
         return source
     return "".join(line for line in source.splitlines(keepends=True)
                    if line.strip() and not line.lstrip().startswith("--"))

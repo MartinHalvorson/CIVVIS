@@ -1,0 +1,8 @@
+61005700: turn 151, winner Some(1), alive true
+61005701: turn 107, winner Some(2), alive true
+61005702: turn 92, winner Some(3), alive false
+61005703: turn 87, winner Some(2), alive true
+61005704: turn 151, winner Some(2), alive true
+61005705: turn 151, winner Some(1), alive true
+61005706: turn 151, winner Some(2), alive true
+61005707: turn 151, winner Some(3), alive true

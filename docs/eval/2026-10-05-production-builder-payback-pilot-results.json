@@ -1,0 +1,1810 @@
+{
+  "recorded_at": "2026-10-04T22:52:47.465452+00:00",
+  "phase": "pilot",
+  "native_only": true,
+  "actual_Firaxis_verification": false,
+  "difficulties": {
+    "emperor": {
+      "pairs": 4,
+      "control_mean_t75_production": 53.675,
+      "control_mean_t75_science": 27.5625,
+      "control_mean_t75_cumulative_production": 1816.5875,
+      "control_t75_survival": 4,
+      "control_mean_t75_rival_ratio": 0.5064732113821252,
+      "control_mean_t50_production": 31.974999999999998,
+      "candidate_mean_t75_production": 53.675,
+      "candidate_mean_t75_science": 27.5625,
+      "candidate_mean_t75_cumulative_production": 1816.5875,
+      "candidate_t75_survival": 4,
+      "candidate_mean_t75_rival_ratio": 0.5064732113821252,
+      "candidate_mean_t50_production": 31.974999999999998,
+      "paired_change_percent": 0.0,
+      "gate_pass": false,
+      "games": [
+        {
+          "seed": 61008600,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 19.0,
+                "rival_production": 29.5,
+                "science": 6.5,
+                "culture": 8.5,
+                "cumulative_production": 229.7,
+                "cities": 3.0,
+                "population": 5.0,
+                "productive_improvements": 0.0,
+                "builders": 1.0,
+                "military_power": 61.1
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 19.0,
+                "rival_production": 29.5,
+                "science": 6.5,
+                "culture": 8.5,
+                "cumulative_production": 229.7,
+                "cities": 3.0,
+                "population": 5.0,
+                "productive_improvements": 0.0,
+                "builders": 1.0,
+                "military_power": 61.1
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 31.7,
+                "rival_production": 47.6,
+                "science": 14.8,
+                "culture": 17.12,
+                "cumulative_production": 855.0,
+                "cities": 5.0,
+                "population": 13.0,
+                "productive_improvements": 2.0,
+                "builders": 4.0,
+                "military_power": 291.25
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 31.7,
+                "rival_production": 47.6,
+                "science": 14.8,
+                "culture": 17.12,
+                "cumulative_production": 855.0,
+                "cities": 5.0,
+                "population": 13.0,
+                "productive_improvements": 2.0,
+                "builders": 4.0,
+                "military_power": 291.25
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 50.9,
+                "rival_production": 82.7,
+                "science": 26.9,
+                "culture": 27.0,
+                "cumulative_production": 1894.8,
+                "cities": 8.0,
+                "population": 24.0,
+                "productive_improvements": 4.0,
+                "builders": 7.0,
+                "military_power": 449.15
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 50.9,
+                "rival_production": 82.7,
+                "science": 26.9,
+                "culture": 27.0,
+                "cumulative_production": 1894.8,
+                "cities": 8.0,
+                "population": 24.0,
+                "productive_improvements": 4.0,
+                "builders": 7.0,
+                "military_power": 449.15
+              }
+            },
+            "100": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 113.1,
+                "rival_production": 165.6,
+                "science": 54.0,
+                "culture": 31.04,
+                "cumulative_production": 3857.7,
+                "cities": 10.0,
+                "population": 39.0,
+                "productive_improvements": 18.0,
+                "builders": 7.0,
+                "military_power": 759.81
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 113.1,
+                "rival_production": 165.6,
+                "science": 54.0,
+                "culture": 31.04,
+                "cumulative_production": 3857.7,
+                "cities": 10.0,
+                "population": 39.0,
+                "productive_improvements": 18.0,
+                "builders": 7.0,
+                "military_power": 759.81
+              }
+            },
+            "125": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 155.7,
+                "rival_production": 224.5,
+                "science": 94.8015,
+                "culture": 31.77,
+                "cumulative_production": 7222.2,
+                "cities": 10.0,
+                "population": 51.0,
+                "productive_improvements": 32.0,
+                "builders": 11.0,
+                "military_power": 1088.8
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 155.7,
+                "rival_production": 224.5,
+                "science": 94.8015,
+                "culture": 31.77,
+                "cumulative_production": 7222.2,
+                "cities": 10.0,
+                "population": 51.0,
+                "productive_improvements": 32.0,
+                "builders": 11.0,
+                "military_power": 1088.8
+              }
+            },
+            "150": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 210.3,
+                "rival_production": 411.4,
+                "science": 143.95,
+                "culture": 41.01,
+                "cumulative_production": 11805.2,
+                "cities": 10.0,
+                "population": 66.0,
+                "productive_improvements": 39.0,
+                "builders": 11.0,
+                "military_power": 1333.42
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 210.3,
+                "rival_production": 411.4,
+                "science": 143.95,
+                "culture": 41.01,
+                "cumulative_production": 11805.2,
+                "cities": 10.0,
+                "population": 66.0,
+                "productive_improvements": 39.0,
+                "builders": 11.0,
+                "military_power": 1333.42
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "final_turn": 151,
+              "final_alive": true,
+              "winner": 3,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 11005,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 5005
+            },
+            "candidate": {
+              "final_turn": 151,
+              "final_alive": true,
+              "winner": 3,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 11005,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 5005
+            }
+          },
+          "actions_byte_identical": true,
+          "final_world_byte_identical": true
+        },
+        {
+          "seed": 61008601,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 17.0,
+                "rival_production": 39.1,
+                "science": 5.5,
+                "culture": 5.1,
+                "cumulative_production": 189.6,
+                "cities": 3.0,
+                "population": 7.0,
+                "productive_improvements": 1.0,
+                "builders": 1.0,
+                "military_power": 55.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 17.0,
+                "rival_production": 39.1,
+                "science": 5.5,
+                "culture": 5.1,
+                "cumulative_production": 189.6,
+                "cities": 3.0,
+                "population": 7.0,
+                "productive_improvements": 1.0,
+                "builders": 1.0,
+                "military_power": 55.0
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 37.3,
+                "rival_production": 68.9,
+                "science": 10.05,
+                "culture": 10.89,
+                "cumulative_production": 841.7,
+                "cities": 4.0,
+                "population": 15.0,
+                "productive_improvements": 3.0,
+                "builders": 1.0,
+                "military_power": 171.5
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 37.3,
+                "rival_production": 68.9,
+                "science": 10.05,
+                "culture": 10.89,
+                "cumulative_production": 841.7,
+                "cities": 4.0,
+                "population": 15.0,
+                "productive_improvements": 3.0,
+                "builders": 1.0,
+                "military_power": 171.5
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 71.8,
+                "rival_production": 118.0,
+                "science": 31.85,
+                "culture": 18.71,
+                "cumulative_production": 2153.2,
+                "cities": 8.0,
+                "population": 26.0,
+                "productive_improvements": 13.0,
+                "builders": 1.0,
+                "military_power": 264.65
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 71.8,
+                "rival_production": 118.0,
+                "science": 31.85,
+                "culture": 18.71,
+                "cumulative_production": 2153.2,
+                "cities": 8.0,
+                "population": 26.0,
+                "productive_improvements": 13.0,
+                "builders": 1.0,
+                "military_power": 264.65
+              }
+            },
+            "100": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              }
+            },
+            "125": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              }
+            },
+            "150": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "final_turn": 96,
+              "final_alive": true,
+              "winner": 2,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 3021,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 0
+            },
+            "candidate": {
+              "final_turn": 96,
+              "final_alive": true,
+              "winner": 2,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 3021,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 0
+            }
+          },
+          "actions_byte_identical": true,
+          "final_world_byte_identical": true
+        },
+        {
+          "seed": 61008602,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 12.6,
+                "rival_production": 33.1,
+                "science": 3.95,
+                "culture": 2.17,
+                "cumulative_production": 173.9,
+                "cities": 2.0,
+                "population": 4.0,
+                "productive_improvements": 0.0,
+                "builders": 1.0,
+                "military_power": 39.8
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 12.6,
+                "rival_production": 33.1,
+                "science": 3.95,
+                "culture": 2.17,
+                "cumulative_production": 173.9,
+                "cities": 2.0,
+                "population": 4.0,
+                "productive_improvements": 0.0,
+                "builders": 1.0,
+                "military_power": 39.8
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 31.4,
+                "rival_production": 72.0,
+                "science": 10.2,
+                "culture": 13.72,
+                "cumulative_production": 647.1,
+                "cities": 4.0,
+                "population": 11.0,
+                "productive_improvements": 2.0,
+                "builders": 2.0,
+                "military_power": 211.2
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 31.4,
+                "rival_production": 72.0,
+                "science": 10.2,
+                "culture": 13.72,
+                "cumulative_production": 647.1,
+                "cities": 4.0,
+                "population": 11.0,
+                "productive_improvements": 2.0,
+                "builders": 2.0,
+                "military_power": 211.2
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 45.0,
+                "rival_production": 116.8,
+                "science": 33.0,
+                "culture": 21.6,
+                "cumulative_production": 1523.65,
+                "cities": 6.0,
+                "population": 22.0,
+                "productive_improvements": 3.0,
+                "builders": 2.0,
+                "military_power": 453.65
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 45.0,
+                "rival_production": 116.8,
+                "science": 33.0,
+                "culture": 21.6,
+                "cumulative_production": 1523.65,
+                "cities": 6.0,
+                "population": 22.0,
+                "productive_improvements": 3.0,
+                "builders": 2.0,
+                "military_power": 453.65
+              }
+            },
+            "100": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              }
+            },
+            "125": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              }
+            },
+            "150": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "final_turn": 94,
+              "final_alive": true,
+              "winner": 3,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 3857,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 0
+            },
+            "candidate": {
+              "final_turn": 94,
+              "final_alive": true,
+              "winner": 3,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 3857,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 0
+            }
+          },
+          "actions_byte_identical": true,
+          "final_world_byte_identical": true
+        },
+        {
+          "seed": 61008603,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 12.7,
+                "rival_production": 30.8,
+                "science": 4.45,
+                "culture": 3.47,
+                "cumulative_production": 189.9,
+                "cities": 2.0,
+                "population": 5.0,
+                "productive_improvements": 0.0,
+                "builders": 1.0,
+                "military_power": 68.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 12.7,
+                "rival_production": 30.8,
+                "science": 4.45,
+                "culture": 3.47,
+                "cumulative_production": 189.9,
+                "cities": 2.0,
+                "population": 5.0,
+                "productive_improvements": 0.0,
+                "builders": 1.0,
+                "military_power": 68.0
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 27.5,
+                "rival_production": 71.9,
+                "science": 10.4,
+                "culture": 13.56,
+                "cumulative_production": 691.2,
+                "cities": 5.0,
+                "population": 14.0,
+                "productive_improvements": 0.0,
+                "builders": 2.0,
+                "military_power": 123.15
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 27.5,
+                "rival_production": 71.9,
+                "science": 10.4,
+                "culture": 13.56,
+                "cumulative_production": 691.2,
+                "cities": 5.0,
+                "population": 14.0,
+                "productive_improvements": 0.0,
+                "builders": 2.0,
+                "military_power": 123.15
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 47.0,
+                "rival_production": 112.8,
+                "science": 18.5,
+                "culture": 21.3,
+                "cumulative_production": 1694.7,
+                "cities": 7.0,
+                "population": 21.0,
+                "productive_improvements": 6.0,
+                "builders": 6.0,
+                "military_power": 469.4
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 47.0,
+                "rival_production": 112.8,
+                "science": 18.5,
+                "culture": 21.3,
+                "cumulative_production": 1694.7,
+                "cities": 7.0,
+                "population": 21.0,
+                "productive_improvements": 6.0,
+                "builders": 6.0,
+                "military_power": 469.4
+              }
+            },
+            "100": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 101.0,
+                "rival_production": 146.6,
+                "science": 32.0,
+                "culture": 45.0,
+                "cumulative_production": 3559.7,
+                "cities": 10.0,
+                "population": 40.0,
+                "productive_improvements": 12.0,
+                "builders": 5.0,
+                "military_power": 700.3
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 101.0,
+                "rival_production": 146.6,
+                "science": 32.0,
+                "culture": 45.0,
+                "cumulative_production": 3559.7,
+                "cities": 10.0,
+                "population": 40.0,
+                "productive_improvements": 12.0,
+                "builders": 5.0,
+                "military_power": 700.3
+              }
+            },
+            "125": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 155.0,
+                "rival_production": 189.4,
+                "science": 81.5,
+                "culture": 73.1,
+                "cumulative_production": 6982.7,
+                "cities": 10.0,
+                "population": 57.0,
+                "productive_improvements": 31.0,
+                "builders": 6.0,
+                "military_power": 762.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 155.0,
+                "rival_production": 189.4,
+                "science": 81.5,
+                "culture": 73.1,
+                "cumulative_production": 6982.7,
+                "cities": 10.0,
+                "population": 57.0,
+                "productive_improvements": 31.0,
+                "builders": 6.0,
+                "military_power": 762.0
+              }
+            },
+            "150": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 239.2,
+                "rival_production": 354.2,
+                "science": 112.5,
+                "culture": 104.1,
+                "cumulative_production": 12037.6,
+                "cities": 10.0,
+                "population": 77.0,
+                "productive_improvements": 69.0,
+                "builders": 12.0,
+                "military_power": 954.84
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 239.2,
+                "rival_production": 354.2,
+                "science": 112.5,
+                "culture": 104.1,
+                "cumulative_production": 12037.6,
+                "cities": 10.0,
+                "population": 77.0,
+                "productive_improvements": 69.0,
+                "builders": 12.0,
+                "military_power": 954.84
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "final_turn": 151,
+              "final_alive": true,
+              "winner": 1,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 7971,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 1971
+            },
+            "candidate": {
+              "final_turn": 151,
+              "final_alive": true,
+              "winner": 1,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 7971,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 1971
+            }
+          },
+          "actions_byte_identical": true,
+          "final_world_byte_identical": true
+        }
+      ]
+    },
+    "deity": {
+      "pairs": 4,
+      "control_mean_t75_production": 36.875,
+      "control_mean_t75_science": 22.125,
+      "control_mean_t75_cumulative_production": 1558.0875,
+      "control_t75_survival": 4,
+      "control_mean_t75_rival_ratio": 0.1624928778601117,
+      "control_mean_t50_production": 29.375,
+      "candidate_mean_t75_production": 36.875,
+      "candidate_mean_t75_science": 22.125,
+      "candidate_mean_t75_cumulative_production": 1558.0875,
+      "candidate_t75_survival": 4,
+      "candidate_mean_t75_rival_ratio": 0.1624928778601117,
+      "candidate_mean_t50_production": 29.375,
+      "paired_change_percent": 0.0,
+      "gate_pass": false,
+      "games": [
+        {
+          "seed": 61008700,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 12.6,
+                "rival_production": 61.2,
+                "science": 3.8,
+                "culture": 3.69,
+                "cumulative_production": 245.45,
+                "cities": 2.0,
+                "population": 3.0,
+                "productive_improvements": 3.0,
+                "builders": 0.0,
+                "military_power": 42.9
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 12.6,
+                "rival_production": 61.2,
+                "science": 3.8,
+                "culture": 3.69,
+                "cumulative_production": 245.45,
+                "cities": 2.0,
+                "population": 3.0,
+                "productive_improvements": 3.0,
+                "builders": 0.0,
+                "military_power": 42.9
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 20.3,
+                "rival_production": 139.4,
+                "science": 9.75,
+                "culture": 6.51,
+                "cumulative_production": 707.6,
+                "cities": 2.0,
+                "population": 6.0,
+                "productive_improvements": 4.0,
+                "builders": 1.0,
+                "military_power": 123.9
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 20.3,
+                "rival_production": 139.4,
+                "science": 9.75,
+                "culture": 6.51,
+                "cumulative_production": 707.6,
+                "cities": 2.0,
+                "population": 6.0,
+                "productive_improvements": 4.0,
+                "builders": 1.0,
+                "military_power": 123.9
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 28.3,
+                "rival_production": 247.8,
+                "science": 25.3,
+                "culture": 10.28,
+                "cumulative_production": 1317.4,
+                "cities": 4.0,
+                "population": 12.0,
+                "productive_improvements": 4.0,
+                "builders": 2.0,
+                "military_power": 153.55
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 28.3,
+                "rival_production": 247.8,
+                "science": 25.3,
+                "culture": 10.28,
+                "cumulative_production": 1317.4,
+                "cities": 4.0,
+                "population": 12.0,
+                "productive_improvements": 4.0,
+                "builders": 2.0,
+                "military_power": 153.55
+              }
+            },
+            "100": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 44.0,
+                "rival_production": 430.6,
+                "science": 36.0,
+                "culture": 11.8,
+                "cumulative_production": 2199.1,
+                "cities": 5.0,
+                "population": 16.0,
+                "productive_improvements": 6.0,
+                "builders": 3.0,
+                "military_power": 266.6
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 44.0,
+                "rival_production": 430.6,
+                "science": 36.0,
+                "culture": 11.8,
+                "cumulative_production": 2199.1,
+                "cities": 5.0,
+                "population": 16.0,
+                "productive_improvements": 6.0,
+                "builders": 3.0,
+                "military_power": 266.6
+              }
+            },
+            "125": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 9.1,
+                "rival_production": 918.1,
+                "science": 7.8,
+                "culture": 3.03,
+                "cumulative_production": 2716.0,
+                "cities": 2.0,
+                "population": 8.0,
+                "productive_improvements": 6.0,
+                "builders": 0.0,
+                "military_power": 185.2
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 9.1,
+                "rival_production": 918.1,
+                "science": 7.8,
+                "culture": 3.03,
+                "cumulative_production": 2716.0,
+                "cities": 2.0,
+                "population": 8.0,
+                "productive_improvements": 6.0,
+                "builders": 0.0,
+                "military_power": 185.2
+              }
+            },
+            "150": {
+              "control": {
+                "reached": true,
+                "alive": false,
+                "production": -0.0,
+                "rival_production": 1589.7,
+                "science": -0.0,
+                "culture": -0.0,
+                "cumulative_production": 2731.85,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 6.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": false,
+                "production": -0.0,
+                "rival_production": 1589.7,
+                "science": -0.0,
+                "culture": -0.0,
+                "cumulative_production": 2731.85,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 6.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "final_turn": 151,
+              "final_alive": false,
+              "winner": 2,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 3282,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 0
+            },
+            "candidate": {
+              "final_turn": 151,
+              "final_alive": false,
+              "winner": 2,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 3282,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 0
+            }
+          },
+          "actions_byte_identical": true,
+          "final_world_byte_identical": true
+        },
+        {
+          "seed": 61008701,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 16.3,
+                "rival_production": 63.0,
+                "science": 4.4,
+                "culture": 6.24,
+                "cumulative_production": 230.2,
+                "cities": 2.0,
+                "population": 5.0,
+                "productive_improvements": 2.0,
+                "builders": 1.0,
+                "military_power": 50.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 16.3,
+                "rival_production": 63.0,
+                "science": 4.4,
+                "culture": 6.24,
+                "cumulative_production": 230.2,
+                "cities": 2.0,
+                "population": 5.0,
+                "productive_improvements": 2.0,
+                "builders": 1.0,
+                "military_power": 50.0
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 28.7,
+                "rival_production": 98.9,
+                "science": 10.8,
+                "culture": 10.12,
+                "cumulative_production": 843.7,
+                "cities": 5.0,
+                "population": 14.0,
+                "productive_improvements": 3.0,
+                "builders": 2.0,
+                "military_power": 208.8
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 28.7,
+                "rival_production": 98.9,
+                "science": 10.8,
+                "culture": 10.12,
+                "cumulative_production": 843.7,
+                "cities": 5.0,
+                "population": 14.0,
+                "productive_improvements": 3.0,
+                "builders": 2.0,
+                "military_power": 208.8
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 51.4,
+                "rival_production": 180.6,
+                "science": 37.4,
+                "culture": 21.46,
+                "cumulative_production": 1904.8,
+                "cities": 7.0,
+                "population": 27.0,
+                "productive_improvements": 4.0,
+                "builders": 7.0,
+                "military_power": 334.48
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 51.4,
+                "rival_production": 180.6,
+                "science": 37.4,
+                "culture": 21.46,
+                "cumulative_production": 1904.8,
+                "cities": 7.0,
+                "population": 27.0,
+                "productive_improvements": 4.0,
+                "builders": 7.0,
+                "military_power": 334.48
+              }
+            },
+            "100": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 71.0,
+                "rival_production": 292.6,
+                "science": 48.1,
+                "culture": 26.68,
+                "cumulative_production": 3407.4,
+                "cities": 7.0,
+                "population": 34.0,
+                "productive_improvements": 7.0,
+                "builders": 7.0,
+                "military_power": 540.08
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 71.0,
+                "rival_production": 292.6,
+                "science": 48.1,
+                "culture": 26.68,
+                "cumulative_production": 3407.4,
+                "cities": 7.0,
+                "population": 34.0,
+                "productive_improvements": 7.0,
+                "builders": 7.0,
+                "military_power": 540.08
+              }
+            },
+            "125": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              }
+            },
+            "150": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "final_turn": 110,
+              "final_alive": true,
+              "winner": 2,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 4336,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 0
+            },
+            "candidate": {
+              "final_turn": 110,
+              "final_alive": true,
+              "winner": 2,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 4336,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 0
+            }
+          },
+          "actions_byte_identical": true,
+          "final_world_byte_identical": true
+        },
+        {
+          "seed": 61008702,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 15.6,
+                "rival_production": 62.5,
+                "science": 5.4,
+                "culture": 4.44,
+                "cumulative_production": 199.3,
+                "cities": 2.0,
+                "population": 5.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 67.6
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 15.6,
+                "rival_production": 62.5,
+                "science": 5.4,
+                "culture": 4.44,
+                "cumulative_production": 199.3,
+                "cities": 2.0,
+                "population": 5.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 67.6
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 37.7,
+                "rival_production": 121.8,
+                "science": 9.95,
+                "culture": 8.97,
+                "cumulative_production": 726.9,
+                "cities": 5.0,
+                "population": 15.0,
+                "productive_improvements": 2.0,
+                "builders": 1.0,
+                "military_power": 101.7
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 37.7,
+                "rival_production": 121.8,
+                "science": 9.95,
+                "culture": 8.97,
+                "cumulative_production": 726.9,
+                "cities": 5.0,
+                "population": 15.0,
+                "productive_improvements": 2.0,
+                "builders": 1.0,
+                "military_power": 101.7
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 29.7,
+                "rival_production": 214.9,
+                "science": 12.6,
+                "culture": 8.46,
+                "cumulative_production": 1507.15,
+                "cities": 4.0,
+                "population": 18.0,
+                "productive_improvements": 2.0,
+                "builders": 4.0,
+                "military_power": 119.3
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 29.7,
+                "rival_production": 214.9,
+                "science": 12.6,
+                "culture": 8.46,
+                "cumulative_production": 1507.15,
+                "cities": 4.0,
+                "population": 18.0,
+                "productive_improvements": 2.0,
+                "builders": 4.0,
+                "military_power": 119.3
+              }
+            },
+            "100": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 32.2,
+                "rival_production": 375.0,
+                "science": 16.736,
+                "culture": 12.15,
+                "cumulative_production": 2301.0,
+                "cities": 4.0,
+                "population": 20.0,
+                "productive_improvements": 2.0,
+                "builders": 1.0,
+                "military_power": 278.73
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 32.2,
+                "rival_production": 375.0,
+                "science": 16.736,
+                "culture": 12.15,
+                "cumulative_production": 2301.0,
+                "cities": 4.0,
+                "population": 20.0,
+                "productive_improvements": 2.0,
+                "builders": 1.0,
+                "military_power": 278.73
+              }
+            },
+            "125": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 11.0,
+                "rival_production": 654.4,
+                "science": 7.0,
+                "culture": 7.8,
+                "cumulative_production": 2872.4,
+                "cities": 1.0,
+                "population": 6.0,
+                "productive_improvements": 2.0,
+                "builders": 0.0,
+                "military_power": 237.5
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 11.0,
+                "rival_production": 654.4,
+                "science": 7.0,
+                "culture": 7.8,
+                "cumulative_production": 2872.4,
+                "cities": 1.0,
+                "population": 6.0,
+                "productive_improvements": 2.0,
+                "builders": 0.0,
+                "military_power": 237.5
+              }
+            },
+            "150": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 5.5,
+                "rival_production": 1138.0,
+                "science": 2.0,
+                "culture": 1.1,
+                "cumulative_production": 2931.65,
+                "cities": 1.0,
+                "population": 4.0,
+                "productive_improvements": 2.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 5.5,
+                "rival_production": 1138.0,
+                "science": 2.0,
+                "culture": 1.1,
+                "cumulative_production": 2931.65,
+                "cities": 1.0,
+                "population": 4.0,
+                "productive_improvements": 2.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "final_turn": 151,
+              "final_alive": true,
+              "winner": 1,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 3350,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 0
+            },
+            "candidate": {
+              "final_turn": 151,
+              "final_alive": true,
+              "winner": 1,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 3350,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 0
+            }
+          },
+          "actions_byte_identical": true,
+          "final_world_byte_identical": true
+        },
+        {
+          "seed": 61008703,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 12.7,
+                "rival_production": 81.8,
+                "science": 4.45,
+                "culture": 3.47,
+                "cumulative_production": 148.7,
+                "cities": 2.0,
+                "population": 5.0,
+                "productive_improvements": 0.0,
+                "builders": 1.0,
+                "military_power": 36.6
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 12.7,
+                "rival_production": 81.8,
+                "science": 4.45,
+                "culture": 3.47,
+                "cumulative_production": 148.7,
+                "cities": 2.0,
+                "population": 5.0,
+                "productive_improvements": 0.0,
+                "builders": 1.0,
+                "military_power": 36.6
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 30.8,
+                "rival_production": 163.4,
+                "science": 9.35,
+                "culture": 9.41,
+                "cumulative_production": 665.7,
+                "cities": 3.0,
+                "population": 14.0,
+                "productive_improvements": 2.0,
+                "builders": 1.0,
+                "military_power": 61.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 30.8,
+                "rival_production": 163.4,
+                "science": 9.35,
+                "culture": 9.41,
+                "cumulative_production": 665.7,
+                "cities": 3.0,
+                "population": 14.0,
+                "productive_improvements": 2.0,
+                "builders": 1.0,
+                "military_power": 61.0
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 38.1,
+                "rival_production": 337.3,
+                "science": 13.2,
+                "culture": 12.82,
+                "cumulative_production": 1503.0,
+                "cities": 5.0,
+                "population": 22.0,
+                "productive_improvements": 2.0,
+                "builders": 1.0,
+                "military_power": 261.65
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 38.1,
+                "rival_production": 337.3,
+                "science": 13.2,
+                "culture": 12.82,
+                "cumulative_production": 1503.0,
+                "cities": 5.0,
+                "population": 22.0,
+                "productive_improvements": 2.0,
+                "builders": 1.0,
+                "military_power": 261.65
+              }
+            },
+            "100": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 51.3,
+                "rival_production": 465.5,
+                "science": 14.4,
+                "culture": 17.28,
+                "cumulative_production": 2636.3,
+                "cities": 5.0,
+                "population": 24.0,
+                "productive_improvements": 3.0,
+                "builders": 5.0,
+                "military_power": 388.35
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 51.3,
+                "rival_production": 465.5,
+                "science": 14.4,
+                "culture": 17.28,
+                "cumulative_production": 2636.3,
+                "cities": 5.0,
+                "population": 24.0,
+                "productive_improvements": 3.0,
+                "builders": 5.0,
+                "military_power": 388.35
+              }
+            },
+            "125": {
+              "control": {
+                "reached": true,
+                "alive": false,
+                "production": -0.0,
+                "rival_production": 782.3,
+                "science": -0.0,
+                "culture": -0.0,
+                "cumulative_production": 3402.2,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 4.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": false,
+                "production": -0.0,
+                "rival_production": 782.3,
+                "science": -0.0,
+                "culture": -0.0,
+                "cumulative_production": 3402.2,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 4.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              }
+            },
+            "150": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "culture": 0.0,
+                "cumulative_production": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0,
+                "military_power": 0.0
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "final_turn": 146,
+              "final_alive": false,
+              "winner": 2,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 3045,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 0
+            },
+            "candidate": {
+              "final_turn": 146,
+              "final_alive": false,
+              "winner": 2,
+              "builder_reservations": [],
+              "reservations_before_t75": 0,
+              "journal_thoughts": 3045,
+              "journal_gap_or_loss": false,
+              "ring_evicted_already_drained": 0
+            }
+          },
+          "actions_byte_identical": true,
+          "final_world_byte_identical": true
+        }
+      ]
+    }
+  },
+  "raw_sha256": {
+    "civvis-production-builder-payback-paired-deity-61008700-candidate-actions.json": "3edc4a61b80444b8182c3480ac08dfcbe0486f7f7f77d3aa7c222170ccef3c36",
+    "civvis-production-builder-payback-paired-deity-61008700-candidate-cities.jsonl": "a92dfc432dff2ee453ae2b3f524066c817a5ac3df397885d3c36fba4d5a3912f",
+    "civvis-production-builder-payback-paired-deity-61008700-candidate-final.json": "17f68b9272eda525c616ed2a12c0b3d34b59e927cf615a6a40b8aeec00ad64d4",
+    "civvis-production-builder-payback-paired-deity-61008700-candidate-setup.json": "c045903edcec8be16541fe5f4a17a80e91d121ae866471214634776817aa11ed",
+    "civvis-production-builder-payback-paired-deity-61008700-candidate-thoughts.jsonl": "12194ec890db41021dfca0e3475939f0d0b3333986f25c73ed70b925a1937e65",
+    "civvis-production-builder-payback-paired-deity-61008700-control-actions.json": "3edc4a61b80444b8182c3480ac08dfcbe0486f7f7f77d3aa7c222170ccef3c36",
+    "civvis-production-builder-payback-paired-deity-61008700-control-cities.jsonl": "a92dfc432dff2ee453ae2b3f524066c817a5ac3df397885d3c36fba4d5a3912f",
+    "civvis-production-builder-payback-paired-deity-61008700-control-final.json": "17f68b9272eda525c616ed2a12c0b3d34b59e927cf615a6a40b8aeec00ad64d4",
+    "civvis-production-builder-payback-paired-deity-61008700-control-setup.json": "2f97b56ba617b03fc0b5ce8c1ab0d8bc4d2ecdf23195032fdf7c8f1b2b004c6d",
+    "civvis-production-builder-payback-paired-deity-61008700-control-thoughts.jsonl": "12194ec890db41021dfca0e3475939f0d0b3333986f25c73ed70b925a1937e65",
+    "civvis-production-builder-payback-paired-deity-61008701-candidate-actions.json": "500245cbbd3b1b6f0653d7685616b49d8a3d4be1a17a4f5bf5e419b11a3da6bf",
+    "civvis-production-builder-payback-paired-deity-61008701-candidate-cities.jsonl": "de8675e99f8a0c6754ef635550cc42a04598c10bce6d8ad8959965d85e350570",
+    "civvis-production-builder-payback-paired-deity-61008701-candidate-final.json": "304f67696bc248694ef71949015e136109f0215ca8a1f039bf596d1596f1aa64",
+    "civvis-production-builder-payback-paired-deity-61008701-candidate-setup.json": "40cdde19987c0cc1ec06f56de8f787e5fcf25f0eb2e944cf799ff9f34ac88aae",
+    "civvis-production-builder-payback-paired-deity-61008701-candidate-thoughts.jsonl": "2f4294d34c086451c8cb92c1bf774bfb177583be057b4c1d8ac105ce51a5fe1e",
+    "civvis-production-builder-payback-paired-deity-61008701-control-actions.json": "500245cbbd3b1b6f0653d7685616b49d8a3d4be1a17a4f5bf5e419b11a3da6bf",
+    "civvis-production-builder-payback-paired-deity-61008701-control-cities.jsonl": "de8675e99f8a0c6754ef635550cc42a04598c10bce6d8ad8959965d85e350570",
+    "civvis-production-builder-payback-paired-deity-61008701-control-final.json": "304f67696bc248694ef71949015e136109f0215ca8a1f039bf596d1596f1aa64",
+    "civvis-production-builder-payback-paired-deity-61008701-control-setup.json": "1d942fd72f109a8994e9fe2956b306f9e316db0ecc7af1129023772de197babf",
+    "civvis-production-builder-payback-paired-deity-61008701-control-thoughts.jsonl": "2f4294d34c086451c8cb92c1bf774bfb177583be057b4c1d8ac105ce51a5fe1e",
+    "civvis-production-builder-payback-paired-deity-61008702-candidate-actions.json": "8f72b205342e34a6abf14af7bb5af3c3dc62209b623eec66ce24d55c2f655c0b",
+    "civvis-production-builder-payback-paired-deity-61008702-candidate-cities.jsonl": "627f029a3c8dbe2f8848a6cfc69be96d5aeeb34c0f1f2cdc3b83cefdc535ddda",
+    "civvis-production-builder-payback-paired-deity-61008702-candidate-final.json": "254521e6c5084d4e2f93cdf24a08108a8654f688310f6d4ee8d6325dbeece973",
+    "civvis-production-builder-payback-paired-deity-61008702-candidate-setup.json": "d2325d3f02c09b3e13d4b913a41a1c3903e60bd12f132d89970bcb24569895ac",
+    "civvis-production-builder-payback-paired-deity-61008702-candidate-thoughts.jsonl": "9322d63ffc416230553d278550c88d099055f3d40f85d74cf250a1c3296eebb8",
+    "civvis-production-builder-payback-paired-deity-61008702-control-actions.json": "8f72b205342e34a6abf14af7bb5af3c3dc62209b623eec66ce24d55c2f655c0b",
+    "civvis-production-builder-payback-paired-deity-61008702-control-cities.jsonl": "627f029a3c8dbe2f8848a6cfc69be96d5aeeb34c0f1f2cdc3b83cefdc535ddda",
+    "civvis-production-builder-payback-paired-deity-61008702-control-final.json": "254521e6c5084d4e2f93cdf24a08108a8654f688310f6d4ee8d6325dbeece973",
+    "civvis-production-builder-payback-paired-deity-61008702-control-setup.json": "0acc4577726be41d9da01b391989d6b0439864f7f6b38c2b67f48930068eb57e",
+    "civvis-production-builder-payback-paired-deity-61008702-control-thoughts.jsonl": "9322d63ffc416230553d278550c88d099055f3d40f85d74cf250a1c3296eebb8",
+    "civvis-production-builder-payback-paired-deity-61008703-candidate-actions.json": "ef645029791e3dcfb56996f494fb570e9984714c17c9e9335052ca2540d9d8e2",
+    "civvis-production-builder-payback-paired-deity-61008703-candidate-cities.jsonl": "867505080983318666f8c0272c9db6b9330e9ac781f989a99cb2e5966738fd2c",
+    "civvis-production-builder-payback-paired-deity-61008703-candidate-final.json": "60c84ee40699952f5983995118b201b605db4c9cca916125d45edb34bc03de83",
+    "civvis-production-builder-payback-paired-deity-61008703-candidate-setup.json": "92737e0de54422599b5d3d08fd0617ba7c5af27b5343a52d303ea2de29a68524",
+    "civvis-production-builder-payback-paired-deity-61008703-candidate-thoughts.jsonl": "c2acb51de5caa7c862d57855198704e41ab1d7e5a30176cfbf6bfb7964ed6f9a",
+    "civvis-production-builder-payback-paired-deity-61008703-control-actions.json": "ef645029791e3dcfb56996f494fb570e9984714c17c9e9335052ca2540d9d8e2",
+    "civvis-production-builder-payback-paired-deity-61008703-control-cities.jsonl": "867505080983318666f8c0272c9db6b9330e9ac781f989a99cb2e5966738fd2c",
+    "civvis-production-builder-payback-paired-deity-61008703-control-final.json": "60c84ee40699952f5983995118b201b605db4c9cca916125d45edb34bc03de83",
+    "civvis-production-builder-payback-paired-deity-61008703-control-setup.json": "ced1719c3e355b9bf46e921903c5faa76a98dce0358efac3b2a3c2b53028c463",
+    "civvis-production-builder-payback-paired-deity-61008703-control-thoughts.jsonl": "c2acb51de5caa7c862d57855198704e41ab1d7e5a30176cfbf6bfb7964ed6f9a",
+    "civvis-production-builder-payback-paired-emperor-61008600-candidate-actions.json": "96a9c973f0c9e7e11d8aeea3ce7172d2618c95defd34e7a286635eec57d83e2c",
+    "civvis-production-builder-payback-paired-emperor-61008600-candidate-cities.jsonl": "cc22f80ac58bd3357c3971f9ef707fa008663b2c865f6815e5e994d78712cd3d",
+    "civvis-production-builder-payback-paired-emperor-61008600-candidate-final.json": "ef480d63184affad41c4460fecd98087232ee4692c354c3f5d3cc1019ec4fea0",
+    "civvis-production-builder-payback-paired-emperor-61008600-candidate-setup.json": "4eee616319548b6498fe0a7bf693e114e9c8c6ade075b5f3e34a01ad1ea540fd",
+    "civvis-production-builder-payback-paired-emperor-61008600-candidate-thoughts.jsonl": "daa1c5021aebd0c85933e91eabedbff269188ea57c25fa48a5d3b768b2aa3e5a",
+    "civvis-production-builder-payback-paired-emperor-61008600-control-actions.json": "96a9c973f0c9e7e11d8aeea3ce7172d2618c95defd34e7a286635eec57d83e2c",
+    "civvis-production-builder-payback-paired-emperor-61008600-control-cities.jsonl": "cc22f80ac58bd3357c3971f9ef707fa008663b2c865f6815e5e994d78712cd3d",
+    "civvis-production-builder-payback-paired-emperor-61008600-control-final.json": "ef480d63184affad41c4460fecd98087232ee4692c354c3f5d3cc1019ec4fea0",
+    "civvis-production-builder-payback-paired-emperor-61008600-control-setup.json": "7cd66c3951737a6987b9b6cc7d6c9ff30ea18faf235a36b42f8f415ef61981b4",
+    "civvis-production-builder-payback-paired-emperor-61008600-control-thoughts.jsonl": "98e0cd8aea13a487aacec2b6e57307a5c66f6c179d8e0d9b80e5c2e782df7dfe",
+    "civvis-production-builder-payback-paired-emperor-61008601-candidate-actions.json": "53c9bf6017a9f2663f049248efacb74050727662084d13a4b14a0ce074c98bf1",
+    "civvis-production-builder-payback-paired-emperor-61008601-candidate-cities.jsonl": "96c24d60061268c2b0fcf324a828bbd34665b340e79c3b792b4108630158b6f6",
+    "civvis-production-builder-payback-paired-emperor-61008601-candidate-final.json": "478d28fd9d91b2fd9f09ee17753b8be6ea382d4fa5f8f1567bc49867f314dcbb",
+    "civvis-production-builder-payback-paired-emperor-61008601-candidate-setup.json": "035b6a21b98cb62ae38165dd85db9c956df508c2fd338b3863d7f6dc2895698f",
+    "civvis-production-builder-payback-paired-emperor-61008601-candidate-thoughts.jsonl": "6ef4b9b27236d3e2c4275c0102d7c7a6658d7e40cde5af10a0197985e337b84e",
+    "civvis-production-builder-payback-paired-emperor-61008601-control-actions.json": "53c9bf6017a9f2663f049248efacb74050727662084d13a4b14a0ce074c98bf1",
+    "civvis-production-builder-payback-paired-emperor-61008601-control-cities.jsonl": "96c24d60061268c2b0fcf324a828bbd34665b340e79c3b792b4108630158b6f6",
+    "civvis-production-builder-payback-paired-emperor-61008601-control-final.json": "478d28fd9d91b2fd9f09ee17753b8be6ea382d4fa5f8f1567bc49867f314dcbb",
+    "civvis-production-builder-payback-paired-emperor-61008601-control-setup.json": "f91069eba77ccef13fdbe8968e8c2893324357d3dd0a5a6935d1400e650a6767",
+    "civvis-production-builder-payback-paired-emperor-61008601-control-thoughts.jsonl": "6ef4b9b27236d3e2c4275c0102d7c7a6658d7e40cde5af10a0197985e337b84e",
+    "civvis-production-builder-payback-paired-emperor-61008602-candidate-actions.json": "ee677d69f46bb09769f7475240dfd41919597bbe64cd3496ba323d3cb3efb42b",
+    "civvis-production-builder-payback-paired-emperor-61008602-candidate-cities.jsonl": "d17e003ea1311d304a173773f03097d6baac7ed15d8614e82c06c0f12df6fbc0",
+    "civvis-production-builder-payback-paired-emperor-61008602-candidate-final.json": "0c77863d8ae06923124d81de0bc3231458f9644ff7bb88c270cba312784cdbcc",
+    "civvis-production-builder-payback-paired-emperor-61008602-candidate-setup.json": "5c9053a515bfe068384446561ef658375f00a324e98fd6f3a75919c96aba7379",
+    "civvis-production-builder-payback-paired-emperor-61008602-candidate-thoughts.jsonl": "b9f2fadeae906e1c9526d55f9135a5410a21c63891776961038e792df709d3b5",
+    "civvis-production-builder-payback-paired-emperor-61008602-control-actions.json": "ee677d69f46bb09769f7475240dfd41919597bbe64cd3496ba323d3cb3efb42b",
+    "civvis-production-builder-payback-paired-emperor-61008602-control-cities.jsonl": "d17e003ea1311d304a173773f03097d6baac7ed15d8614e82c06c0f12df6fbc0",
+    "civvis-production-builder-payback-paired-emperor-61008602-control-final.json": "0c77863d8ae06923124d81de0bc3231458f9644ff7bb88c270cba312784cdbcc",
+    "civvis-production-builder-payback-paired-emperor-61008602-control-setup.json": "719c400c9b555ebafee0e591a5b1efea0c51a550bd0a4528397aebc061a1fde2",
+    "civvis-production-builder-payback-paired-emperor-61008602-control-thoughts.jsonl": "b9f2fadeae906e1c9526d55f9135a5410a21c63891776961038e792df709d3b5",
+    "civvis-production-builder-payback-paired-emperor-61008603-candidate-actions.json": "decaa637a26a51d18ed83d1adb02ad9e60d456ac679aff041254e89071459921",
+    "civvis-production-builder-payback-paired-emperor-61008603-candidate-cities.jsonl": "bd59373627d9f6afd881713dbfc19230b857cf3b29bd05d00b58a63e08124c94",
+    "civvis-production-builder-payback-paired-emperor-61008603-candidate-final.json": "9eff62fb2d51ca01b8c6c6e3b469749bfa8ddb29b0a7f3ee35741c028d2f0334",
+    "civvis-production-builder-payback-paired-emperor-61008603-candidate-setup.json": "492347ca8f78d2dcef9610bc512b2247ab8ca0b9039998f244eb38c9a0475f47",
+    "civvis-production-builder-payback-paired-emperor-61008603-candidate-thoughts.jsonl": "650ac26d814c51c7da6dcce5172f3b6fc2a1bb93c29566917a6dde406dae90ab",
+    "civvis-production-builder-payback-paired-emperor-61008603-control-actions.json": "decaa637a26a51d18ed83d1adb02ad9e60d456ac679aff041254e89071459921",
+    "civvis-production-builder-payback-paired-emperor-61008603-control-cities.jsonl": "bd59373627d9f6afd881713dbfc19230b857cf3b29bd05d00b58a63e08124c94",
+    "civvis-production-builder-payback-paired-emperor-61008603-control-final.json": "9eff62fb2d51ca01b8c6c6e3b469749bfa8ddb29b0a7f3ee35741c028d2f0334",
+    "civvis-production-builder-payback-paired-emperor-61008603-control-setup.json": "441038fecb211b950832ce63db979ddfc50269482be38fbf5fe2899b0776b5b8",
+    "civvis-production-builder-payback-paired-emperor-61008603-control-thoughts.jsonl": "650ac26d814c51c7da6dcce5172f3b6fc2a1bb93c29566917a6dde406dae90ab",
+    "civvis-production-builder-payback-pilot-deity-candidate.csv": "2cd00f35b95e790f1aec76ec1a9fc719f3ce3967d5d2dd8bdcc0590122c33205",
+    "civvis-production-builder-payback-pilot-deity-candidate.log": "337ba3ad76bf8ba1baae569507f7c36059c75d9b3c9ba0e37e58d281b9c074b7",
+    "civvis-production-builder-payback-pilot-deity-control.csv": "2cd00f35b95e790f1aec76ec1a9fc719f3ce3967d5d2dd8bdcc0590122c33205",
+    "civvis-production-builder-payback-pilot-deity-control.log": "337ba3ad76bf8ba1baae569507f7c36059c75d9b3c9ba0e37e58d281b9c074b7",
+    "civvis-production-builder-payback-pilot-emperor-candidate.csv": "61b676cff6a40ce33da5deec530b654bbc2660ff85d98a74b8026dfb86b9aac8",
+    "civvis-production-builder-payback-pilot-emperor-candidate.log": "55fe21b3d31f44496537208f3af03bac66ac4c6dd3a3ef1eafd8f166d7eb6e58",
+    "civvis-production-builder-payback-pilot-emperor-control.csv": "61b676cff6a40ce33da5deec530b654bbc2660ff85d98a74b8026dfb86b9aac8",
+    "civvis-production-builder-payback-pilot-emperor-control.log": "55fe21b3d31f44496537208f3af03bac66ac4c6dd3a3ef1eafd8f166d7eb6e58"
+  },
+  "all_action_and_final_worlds_byte_identical": true,
+  "pilot_gate": false
+}

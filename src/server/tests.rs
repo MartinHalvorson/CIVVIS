@@ -10530,6 +10530,7 @@ fn unified_war_plan_crosses_the_json_and_browser_contract() {
         assessed_turn: 37,
         peace_offers: Vec::new(),
         peace_routed: Vec::new(),
+        peace_asks_city: Vec::new(),
         forces: Vec::new(),
         war: Some(crate::ai::WarPlanReport {
             enabled: true,

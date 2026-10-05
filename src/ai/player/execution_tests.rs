@@ -83,6 +83,103 @@ fn rejected_financial_trade_does_not_discard_the_armys_shot() {
 }
 
 #[test]
+fn rejected_peace_offer_preserves_builder_work_and_the_armys_shot() {
+    let (mut g, city, target, gun) = battle();
+    let job = g.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|pos| *pos != g.cities[&city].pos && g.unit_ids_at(*pos).is_empty())
+        .unwrap();
+    for pos in g.cities[&city].owned_tiles.clone() {
+        g.map.tiles.get_mut(&pos).unwrap().resource = None;
+    }
+    g.map.tiles.get_mut(&job).unwrap().hills = true;
+    g.cities.get_mut(&city).unwrap().pop = 2;
+    g.players[0].techs.insert(crate::name!("mining"));
+    assert!(g.city_citizen_plan(city).worked_tiles.contains(&job));
+    let builder = g.spawn_unit("builder", 0, job);
+    let charges = g.units[&builder].charges;
+    let production = g.city_yields(city).production;
+    let gold = g.players[0].gold;
+    let deals = g.pending_deals.len();
+    let rejected = Action::ProposeDeal {
+        player: 2,
+        give_gold: 0.0,
+        request_gold: 0.0,
+        open_borders: false,
+        friendship: false,
+        peace: true,
+        alliance: None,
+    };
+    assert_eq!(
+        g.clone().apply(0, &rejected).unwrap_err(),
+        "invalid diplomatic deal"
+    );
+    let actions = [
+        (0, rejected),
+        (
+            0,
+            Action::Improve {
+                unit: builder,
+                improvement: crate::name!("mine"),
+            },
+        ),
+        (
+            0,
+            Action::Ranged {
+                unit: gun,
+                target: g.units[&target].pos,
+            },
+        ),
+    ];
+    assert!(execute_frame(
+        &mut g,
+        0,
+        &Default::default(),
+        actions.iter()
+    ));
+    assert_eq!(g.players[0].counters["player:refused"], 1);
+    assert_eq!(g.map.tiles[&job].improvement, Some(crate::name!("mine")));
+    assert_eq!(g.units[&builder].charges, charges - 1);
+    assert!(g.city_yields(city).production > production);
+    assert!(g.units[&target].hp < 1000);
+    assert_eq!(g.pending_deals.len(), deals);
+    assert_eq!(g.players[0].gold, gold);
+    assert!(g.is_at_war(0, 1));
+    assert!(!g.is_at_war(0, 2));
+}
+
+#[test]
+fn rejected_access_proposal_creates_no_access_and_keeps_the_armys_shot() {
+    let (mut g, _, target, gun) = battle();
+    // Early Empire closes the recipient's borders. The proposer still
+    // lacks the civic needed for a bilateral access proposal.
+    g.players[2].civics.insert(crate::name!("early_empire"));
+    g.players[0].civics.remove(&crate::name!("early_empire"));
+    assert!(g.enforces_borders(2));
+    assert!(!g.has_open_borders(0, 2));
+    let rejected = Action::ProposeDeal {
+        player: 2,
+        give_gold: 0.0,
+        request_gold: 0.0,
+        open_borders: true,
+        friendship: false,
+        peace: false,
+        alliance: None,
+    };
+    assert_eq!(
+        g.clone().apply(0, &rejected).unwrap_err(),
+        "invalid diplomatic deal"
+    );
+    let deals = g.pending_deals.len();
+    batch(&mut g, rejected, gun, target);
+    assert!(g.units[&target].hp < 1000);
+    assert!(!g.has_open_borders(0, 2));
+    assert_eq!(g.pending_deals.len(), deals);
+}
+
+#[test]
 fn rejected_movement_still_invalidates_the_tactical_tail() {
     let (mut g, _, target, gun) = battle();
     batch(

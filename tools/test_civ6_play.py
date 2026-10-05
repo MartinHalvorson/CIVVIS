@@ -22,6 +22,12 @@ from unittest.mock import call, patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_play
+
+try:
+    import PIL  # noqa: F401
+    _HAVE_PIL = True
+except ImportError:
+    _HAVE_PIL = False
 from civ6_control import orders  # noqa: E402
 
 try:
@@ -3927,6 +3933,7 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         Image.new("RGB", (3456, 2234), (10, 10, 10)).save(shot)
         return shot
 
+    @unittest.skipUnless(_HAVE_PIL, "Pillow is not installed")
     def test_a_window_read_maps_its_boxes_back_to_the_full_capture(self) -> None:
         seen = {}
 
@@ -3952,6 +3959,7 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         self.assertAlmostEqual(box["width"], 0.1 * 1744 / 3456)
         self.assertAlmostEqual(box["height"], 0.1 * 1116 / 2234)
 
+    @unittest.skipUnless(_HAVE_PIL, "Pillow is not installed")
     def test_window_and_full_reads_are_cached_apart(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             shot = self._window_shot(Path(temporary))

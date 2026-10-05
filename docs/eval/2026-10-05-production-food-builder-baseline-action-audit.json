@@ -1,0 +1,192 @@
+{
+  "scope": "Models combine walk and Farm; actions from next world-turn frame. Repeated models are not distinct completed jobs.",
+  "cases": [
+    {
+      "difficulty": "emperor",
+      "seed": 61008602,
+      "turn": 33,
+      "builder": 142,
+      "destination": [
+        23,
+        9
+      ],
+      "model_combined_walk_farm_production_change": 2.0,
+      "actual_actions_in_next_world_frame": [
+        [
+          0,
+          {
+            "to": [
+              24,
+              9
+            ],
+            "type": "move",
+            "unit": 142
+          }
+        ],
+        [
+          0,
+          {
+            "to": [
+              25,
+              8
+            ],
+            "type": "move",
+            "unit": 142
+          }
+        ]
+      ]
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008602,
+      "turn": 34,
+      "builder": 142,
+      "destination": [
+        23,
+        9
+      ],
+      "model_combined_walk_farm_production_change": 1.0,
+      "actual_actions_in_next_world_frame": [
+        [
+          0,
+          {
+            "improvement": "pasture",
+            "type": "improve",
+            "unit": 142
+          }
+        ]
+      ]
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008702,
+      "turn": 63,
+      "builder": 397,
+      "destination": [
+        15,
+        12
+      ],
+      "model_combined_walk_farm_production_change": 0.9000000000000004,
+      "actual_actions_in_next_world_frame": []
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008702,
+      "turn": 65,
+      "builder": 397,
+      "destination": [
+        15,
+        12
+      ],
+      "model_combined_walk_farm_production_change": 0.8999999999999995,
+      "actual_actions_in_next_world_frame": []
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008702,
+      "turn": 66,
+      "builder": 397,
+      "destination": [
+        15,
+        12
+      ],
+      "model_combined_walk_farm_production_change": 0.8999999999999995,
+      "actual_actions_in_next_world_frame": []
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008702,
+      "turn": 67,
+      "builder": 397,
+      "destination": [
+        15,
+        12
+      ],
+      "model_combined_walk_farm_production_change": 0.8999999999999995,
+      "actual_actions_in_next_world_frame": []
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008702,
+      "turn": 68,
+      "builder": 397,
+      "destination": [
+        15,
+        12
+      ],
+      "model_combined_walk_farm_production_change": 0.8999999999999995,
+      "actual_actions_in_next_world_frame": [
+        [
+          0,
+          {
+            "to": [
+              15,
+              11
+            ],
+            "type": "move",
+            "unit": 397
+          }
+        ],
+        [
+          0,
+          {
+            "to": [
+              14,
+              12
+            ],
+            "type": "move",
+            "unit": 397
+          }
+        ]
+      ]
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008702,
+      "turn": 72,
+      "builder": 422,
+      "destination": [
+        16,
+        17
+      ],
+      "model_combined_walk_farm_production_change": 0.6500000000000004,
+      "actual_actions_in_next_world_frame": []
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008702,
+      "turn": 73,
+      "builder": 422,
+      "destination": [
+        16,
+        17
+      ],
+      "model_combined_walk_farm_production_change": 0.6500000000000004,
+      "actual_actions_in_next_world_frame": []
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008702,
+      "turn": 74,
+      "builder": 422,
+      "destination": [
+        16,
+        17
+      ],
+      "model_combined_walk_farm_production_change": 0.6500000000000004,
+      "actual_actions_in_next_world_frame": []
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008703,
+      "turn": 70,
+      "builder": 442,
+      "destination": [
+        24,
+        25
+      ],
+      "model_combined_walk_farm_production_change": 1.0,
+      "actual_actions_in_next_world_frame": []
+    }
+  ]
+}

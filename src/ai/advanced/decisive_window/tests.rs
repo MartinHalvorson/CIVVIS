@@ -458,3 +458,48 @@ fn overwhelming_power_reduces_the_window_to_a_breaker() {
     );
     assert!(crushing.turns <= even.turns, "{crushing:?} vs {even:?}");
 }
+
+/// An unlocked Bomber opens Urban Defenses as the air surge's four-plane
+/// wing: against a 115-strength city two Bombers fall short of 400 walls but
+/// four do not, so a crushing army holding Bombers has an open window rather
+/// than a Jet Bomber chase (live G104 researched toward Stealth Technology
+/// at t177 with Bombers in hand since t158).
+#[test]
+fn an_unlocked_bomber_wing_opens_urban_defenses() {
+    let (mut g, ai, plan) = board("Gran Colombia");
+    learn(&mut g, 1, &["steel"]);
+    let target = plan.target_city.unwrap();
+    std::sync::Arc::make_mut(&mut g.observed_city_strength).insert(target, 115.0);
+    learn(&mut g, 0, &["advanced_flight", "military_science", "animal_husbandry"]);
+    for resource in ["horses", "aluminum", "niter", "oil"] {
+        g.players[0].strategic_resources.insert(Name::new(resource), 60.0);
+    }
+    let home = g.cities[&g.player_city_ids(0)[0]].pos;
+    for _ in 0..12 {
+        g.spawn_test_unit("line_infantry", 0, home);
+    }
+    let window = ai
+        .decisive_window_within(&g, 0, &plan, f64::INFINITY)
+        .expect("a window");
+    assert_eq!(window.wall_tier, 4, "{window:?}");
+    assert!(window.power_ratio >= OVERWHELMING_POWER, "{window:?}");
+    assert_eq!(window.breaker, Some(name!("bomber")), "{window:?}");
+    assert!(window.open(), "nothing left to research: {window:?}");
+}
+
+/// Research and builds agree: the readiness pass builds the air surge's
+/// whole wing when the campaign target stands behind Urban Defenses, the
+/// case the window sizes Bombers as that wing, and keeps its launch pair
+/// otherwise or with the gene off (live G104 stopped at two Bombers).
+#[test]
+fn readiness_builds_the_wing_behind_urban_defenses() {
+    use super::super::air_surge::{AIR_SURGE_BOMBERS, AIR_SURGE_LAUNCH_BOMBERS};
+    let (mut g, mut ai, plan) = board("Gran Colombia");
+    ai.plan = Some(plan.clone());
+    learn(&mut g, 1, &["castles"]);
+    assert_eq!(ai.decisive_air_wing_bombers(&g, 0), AIR_SURGE_LAUNCH_BOMBERS);
+    learn(&mut g, 1, &["steel"]);
+    assert_eq!(ai.decisive_air_wing_bombers(&g, 0), AIR_SURGE_BOMBERS);
+    ai.disable_decisive_window();
+    assert_eq!(ai.decisive_air_wing_bombers(&g, 0), AIR_SURGE_LAUNCH_BOMBERS);
+}

@@ -1,3 +1,18 @@
+-- ⚠ lupa's Lua 5.1.5 (the local runner) barriers the CLOSURE in
+-- lua_setupvalue, not the shared UpVal, so a value written into an upvalue the
+-- collector has already marked can be freed while still referenced: the merge
+-- 7bd809bdb crashed order_queue_test 6/6 (SIGSEGV/BUS/ABRT/TRAP, varying) right
+-- after its agent reload, and heap layout decided which tree crashed (-4f
+-- root-caused it, 2026-10-05). A full collection first leaves nothing marked.
+-- Harmless under the real lua5.1 CI runs.
+do
+	local setupvalue = debug.setupvalue
+	debug.setupvalue = function(...)
+		collectgarbage("collect")
+		return setupvalue(...)
+	end
+end
+
 -- Exercise the shipped stage-event / popup-callback submission ordering.
 -- Native WorldCongressPopup.lua:2222-2271 sends votes from OnAccept, after
 -- popup setup. This test does not model native acceptance: ballot verdicts

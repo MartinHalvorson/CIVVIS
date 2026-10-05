@@ -1,0 +1,508 @@
+diff --git a/src/ai/advanced.rs b/src/ai/advanced.rs
+index 4686fed8a..7963b08e9 100644
+--- a/src/ai/advanced.rs
++++ b/src/ai/advanced.rs
+@@ -7335,6 +7335,7 @@ mod live_gp_commitment;
+ /// unescorted Settlers and Builders, unpillaged tiles — taken by movement
+ /// and closed by peace. See `advanced/opportunistic_war.rs`.
+ mod opportunistic_war;
++mod production_growth_payback;
+ /// A short, defender-only declaration shock. See
+ /// `advanced/surprise_defense.rs`.
+ mod surprise_defense;
+@@ -26999,6 +27000,33 @@ impl AdvancedAi {
+                     }
+                 }
+             }
++            // An early growth foundation must repay its production cost;
++            // population alone does not justify displacing the ordinary bid.
++            if committed.is_none() {
++                if let Some((item, returned, cost)) =
++                    self.profitable_growth_foundation(g, pid, cid, plan)
++                {
++                    if g.apply(
++                        pid,
++                        &Action::Produce {
++                            city: cid,
++                            item: item.clone(),
++                        },
++                    )
++                    .is_ok()
++                    {
++                        if self.journal().wants(crate::reasoning::Level::Decision) {
++                            let city_name = g.cities[&cid].name.clone();
++                            think!(self.journal(), Economy, Decision,
++                                "{} invests in {}", city_name, Self::plain_item(&item);
++                                "the short growth forecast returns {returned:.1} Production against a {cost:.1} remaining bill");
++                        }
++                        counts.add_item(g, &item);
++                        self.clear_idle_production_streak(cid);
++                        continue;
++                    }
++                }
++            }
+             // A named lane compounds a repayable industrial foundation
+             // before discretionary Spies, extra districts and projects. The
+             // preceding survival, research, growth and income reservations
+diff --git a/src/ai/advanced/production_growth_payback.rs b/src/ai/advanced/production_growth_payback.rs
+new file mode 100644
+index 000000000..71087484e
+--- /dev/null
++++ b/src/ai/advanced/production_growth_payback.rs
+@@ -0,0 +1,182 @@
++//! Reserve early housing only when its projected Production repays the bill.
++//!
++//! Compare construction with waiting on independent board clones. Recompute
++//! citizen assignments, consumption, housing and amenity allocation as the
++//! target grows; measure the whole empire so displaced luxuries are not free.
++//! Other cities, research, borders, improvements and military actions remain
++//! fixed. This is a short investment forecast, not a future-game simulation.
++
++use super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
++use crate::game::{Game, Item};
++
++/// A growth investment must return its Production within sixty cost-scaled
++/// Standard turns (thirty Online), including its construction time.
++const GROWTH_PRODUCTION_WINDOW: f64 = 60.0;
++const GROWTH_RETURN_MARGIN: f64 = 1.10;
++
++struct GrowthProjection {
++    production: f64,
++    population: i32,
++    completed: bool,
++}
++
++fn growth_production_projection(
++    original: &Game,
++    pid: usize,
++    cid: u32,
++    item: Option<&Item>,
++    window: u32,
++) -> Option<GrowthProjection> {
++    let mut g = original.clone();
++    let mut bill = item.map_or(0.0, |i| original.item_remaining_cost_for_city(pid, cid, i));
++    if !bill.is_finite() || bill < 0.0 {
++        return None;
++    }
++    let city = g.cities.get_mut(&cid)?;
++    city.queue.clear();
++    if let Some(item) = item {
++        city.queue.push(item.clone());
++    }
++    let mut production = 0.0;
++    let mut completed = item.is_none();
++    for step in 0..window {
++        // City income is paid at the beginning of its next player turn.
++        // Expire known timed effects at that boundary before reading yields.
++        g.turn = original.turn.saturating_add(step).saturating_add(1);
++        let (earned, food, construction) = {
++            let _memo = g.query_memo();
++            let city = &g.cities[&cid];
++            let yields = g.city_yields(cid);
++            let food = g.city_growth_surplus(
++                pid,
++                cid,
++                yields.food,
++                g.city_housing(city),
++                g.city_amenity_surplus(city),
++            );
++            let construction = yields.production * g.item_prod_mult(pid, cid, city.queue.first());
++            let earned: f64 = g
++                .player_city_ids(pid)
++                .iter()
++                .map(|id| g.city_yields(*id).production)
++                .sum();
++            (earned, food, construction)
++        };
++        if !earned.is_finite() || !food.is_finite() || !construction.is_finite() {
++            return None;
++        }
++        production += earned;
++        // process_city accrues this turn's food before completing production.
++        // A Granary completed here changes assignments and growth next turn.
++        let need = g.growth_cost(g.cities[&cid].pop);
++        let city = g.cities.get_mut(&cid)?;
++        city.food += food;
++        if city.food >= need {
++            city.food -= need;
++            city.pop += 1;
++        } else if city.food < 0.0 {
++            city.food = 0.0;
++            city.pop = (city.pop - 1).max(1);
++        }
++        if !completed {
++            bill -= construction;
++            if bill <= 0.0 {
++                let Item::Building { building } = item? else {
++                    return None;
++                };
++                city.buildings.push(*building);
++                city.queue.clear();
++                city.production = 0.0;
++                completed = true;
++            }
++        }
++    }
++    Some(GrowthProjection {
++        production,
++        population: g.cities[&cid].pop,
++        completed,
++    })
++}
++
++impl AdvancedAi {
++    pub(super) fn profitable_growth_foundation(
++        &self,
++        g: &Game,
++        pid: usize,
++        cid: u32,
++        plan: &StrategicPlan,
++    ) -> Option<(Item, f64, f64)> {
++        // The current experiment prices the actual Domination seat. Other
++        // lanes and adaptive production retain their existing investment bids.
++        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
++            || plan.strategy == GrandStrategy::Recovery
++            || g.turn > g.standard_duration(140)
++        {
++            return None;
++        }
++        let city = g.cities.get(&cid)?;
++        let granary = crate::name!("granary");
++        let item = Item::Building { building: granary };
++        let cities = g.player_city_ids(pid);
++        if cities.len() < 2
++            || city.owner != pid
++            || !city.queue.is_empty()
++            || city.buildings.contains(&granary)
++            || plan.threatened_city == Some(cid)
++            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
++            || city.loyalty < 75.0
++            || g.city_amenity_surplus(city) < 0
++            || g.players[pid].gold_per_turn < g.rules.buildings[granary].maintenance
++            || !g.can_produce(pid, cid, &item)
++            || cities.iter().any(|id| g.cities[id].queue.contains(&item))
++        {
++            return None;
++        }
++        let fielded = g
++            .player_unit_ids(pid)
++            .iter()
++            .filter(|uid| {
++                let spec = &g.rules.units[g.units[uid].kind.as_str()];
++                spec.class == "military"
++                    && spec.domain.as_deref().unwrap_or("land") == "land"
++                    && (spec.strength > 0.0 || spec.ranged_strength > 0.0)
++            })
++            .count();
++        if fielded < cities.len()
++            || g.units.iter().any(|(uid, unit)| {
++                g.is_at_war(pid, unit.owner)
++                    && g.unit_visible_to(*uid, pid)
++                    && g.map.distance(unit.pos, city.pos) <= 3
++                    && g.rules.units[unit.kind.as_str()].class == "military"
++            })
++            || (city.is_capital
++                && plan.strategy == GrandStrategy::Expansion
++                && cities.len() < plan.desired_cities
++                && self.counts(g, pid).settlers == 0)
++        {
++            return None;
++        }
++        let window = g.game_speed.scale(GROWTH_PRODUCTION_WINDOW).ceil() as u32;
++        let window = if g.max_turns > 0 {
++            window.min(g.max_turns.saturating_sub(g.turn))
++        } else {
++            window
++        };
++        let cost = g.item_remaining_cost_for_city(pid, cid, &item);
++        let control = growth_production_projection(g, pid, cid, None, window)?;
++        let candidate = growth_production_projection(g, pid, cid, Some(&item), window)?;
++        let gain = candidate.production - control.production;
++        if candidate.completed
++            && candidate.population >= control.population
++            && gain > 0.0
++            && gain >= cost * GROWTH_RETURN_MARGIN
++        {
++            Some((item, gain, cost))
++        } else {
++            None
++        }
++    }
++}
++
++#[cfg(test)]
++mod tests;
+diff --git a/src/ai/advanced/production_growth_payback/tests.rs b/src/ai/advanced/production_growth_payback/tests.rs
+new file mode 100644
+index 000000000..e3356f810
+--- /dev/null
++++ b/src/ai/advanced/production_growth_payback/tests.rs
+@@ -0,0 +1,268 @@
++use super::*;
++use crate::game::{Action, GameOptions};
++use std::collections::BTreeSet;
++use std::sync::Arc;
++
++fn board() -> (Game, u32, StrategicPlan) {
++    let mut options = GameOptions::new(2, 32, 20, 61006499, 250, 0);
++    options.speed = "online".into();
++    options.barbarians = false;
++    options.disaster_intensity = 0;
++    options.handicap_exempt = BTreeSet::from([0]);
++    let mut g = Game::new_with(options);
++    for pid in 0..2 {
++        g.current = pid;
++        let settler = g
++            .player_unit_ids(pid)
++            .into_iter()
++            .find(|u| g.units[u].kind == "settler")
++            .unwrap();
++        g.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
++    }
++    g.current = 0;
++    let cid = g.player_city_ids(0)[0];
++    let center = g.cities[&cid].pos;
++    let second = g
++        .map
++        .tiles
++        .values()
++        .find(|t| {
++            !g.rules.is_water(t)
++                && t.terrain != "mountain"
++                && t.owner_city.is_none()
++                && g.map.distance(t.pos, center) >= 7
++        })
++        .unwrap()
++        .pos;
++    g.found_city_for(0, second, None);
++    g.players[0].techs.extend([
++        crate::name!("pottery"),
++        crate::name!("mining"),
++        crate::name!("apprenticeship"),
++    ]);
++    for city in g.player_city_ids(0) {
++        let center = g.cities[&city].pos;
++        let positions: Vec<_> = g
++            .map
++            .tiles
++            .keys()
++            .copied()
++            .filter(|p| g.map.distance(*p, center) <= 3)
++            .collect();
++        for pos in positions {
++            let tile = g.map.tiles.get_mut(&pos).unwrap();
++            tile.owner_city = Some(city);
++            tile.terrain = crate::name!("grassland");
++            tile.feature = None;
++            tile.hills = pos != center;
++            tile.resource = None;
++            tile.improvement = (pos != center).then_some(crate::name!("mine"));
++            tile.pillaged = false;
++        }
++        let c = g.cities.get_mut(&city).unwrap();
++        c.pop = 4;
++        c.food = 0.0;
++        c.loyalty = 100.0;
++        let current = g.city_housing(&g.cities[&city]);
++        Arc::make_mut(&mut g.observed_city_housing_adjustments).insert(city, 4.0 - current);
++        let current = g.city_amenity_surplus(&g.cities[&city]);
++        Arc::make_mut(&mut g.observed_city_amenity_adjustments).insert(city, 10 - current);
++    }
++    for kind in ["warrior", "warrior", "builder", "trader"] {
++        g.spawn_test_unit(kind, 0, center);
++    }
++    g.players[0].gold_per_turn = 20.0;
++    g.turn = 35;
++    let plan = StrategicPlan {
++        strategy: GrandStrategy::Conquest,
++        target_player: None,
++        target_city: None,
++        threatened_city: None,
++        desired_cities: 2,
++        assessed_turn: g.turn,
++        rush: false,
++    };
++    (g, cid, plan)
++}
++
++fn granary() -> Item {
++    Item::Building {
++        building: crate::name!("granary"),
++    }
++}
++
++#[test]
++fn production_growth_projection_matches_actual_growth_and_completion() {
++    let (mut original, cid, _) = board();
++    // This comparison isolates the target city's recurrence; the forecast
++    // deliberately holds other populations fixed. Keep the other city at
++    // zero housing so actual EndTurn also leaves its population unchanged.
++    let other = original
++        .player_city_ids(0)
++        .into_iter()
++        .find(|id| *id != cid)
++        .unwrap();
++    let adjustment = original.observed_city_housing_adjustments[&other];
++    let housing = original.city_housing(&original.cities[&other]);
++    Arc::make_mut(&mut original.observed_city_housing_adjustments)
++        .insert(other, adjustment - housing);
++    for investment in [None, Some(granary())] {
++        let predicted =
++            growth_production_projection(&original, 0, cid, investment.as_ref(), 16).unwrap();
++        let mut actual = original.clone();
++        if let Some(item) = &investment {
++            actual
++                .apply(
++                    0,
++                    &Action::Produce {
++                        city: cid,
++                        item: item.clone(),
++                    },
++                )
++                .unwrap();
++        }
++        let mut production = 0.0;
++        for _ in 0..16 {
++            production += actual
++                .player_city_ids(0)
++                .iter()
++                .map(|id| actual.city_yields(*id).production)
++                .sum::<f64>();
++            actual.apply(0, &Action::EndTurn).unwrap();
++            actual.apply(1, &Action::EndTurn).unwrap();
++        }
++        assert_eq!(predicted.population, actual.cities[&cid].pop);
++        assert!(
++            (predicted.production - production).abs() < 1e-6,
++            "{} != {production}",
++            predicted.production
++        );
++        if investment.is_some() {
++            assert_eq!(
++                predicted.completed,
++                actual.cities[&cid]
++                    .buildings
++                    .contains(&crate::name!("granary"))
++            );
++        }
++    }
++}
++
++#[test]
++fn production_growth_reserves_real_return_and_reaches_the_governor() {
++    let (mut g, cid, plan) = board();
++    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
++    let before = g.cities[&cid].clone();
++    let (item, gain, cost) = ai
++        .profitable_growth_foundation(&g, 0, cid, &plan)
++        .expect("productive future citizens repay the build");
++    assert_eq!(item, granary());
++    assert!(gain >= cost * GROWTH_RETURN_MARGIN);
++    assert_eq!(g.cities[&cid].pop, before.pop);
++    assert_eq!(g.cities[&cid].food, before.food);
++    assert_eq!(g.cities[&cid].queue, before.queue);
++    let mut ai = ai;
++    ai.advanced_production(&mut g, 0, &plan, false);
++    assert_eq!(g.cities[&cid].queue.first(), Some(&granary()));
++}
++
++#[test]
++fn production_growth_does_not_buy_population_without_production() {
++    let (mut g, cid, plan) = board();
++    let center = g.cities[&cid].pos;
++    let positions: Vec<_> = g
++        .map
++        .tiles
++        .keys()
++        .copied()
++        .filter(|p| g.map.distance(*p, center) <= 3)
++        .collect();
++    for pos in positions {
++        let tile = g.map.tiles.get_mut(&pos).unwrap();
++        tile.hills = false;
++        tile.improvement = None;
++    }
++    let a = growth_production_projection(&g, 0, cid, None, 30).unwrap();
++    let b = growth_production_projection(&g, 0, cid, Some(&granary()), 30).unwrap();
++    assert!(b.population > a.population);
++    assert!(b.production <= a.production + 1e-6);
++    assert!(AdvancedAi::targeting(VictoryTarget::Domination)
++        .profitable_growth_foundation(&g, 0, cid, &plan)
++        .is_none());
++}
++
++#[test]
++fn production_growth_preserves_threats_queues_and_expansion() {
++    let (base, cid, plan) = board();
++    for reason in [
++        "threat",
++        "recent",
++        "queue",
++        "other_granary",
++        "expansion",
++        "income",
++        "late",
++        "army",
++    ] {
++        let mut g = base.clone();
++        let mut plan = plan.clone();
++        match reason {
++            "threat" => plan.threatened_city = Some(cid),
++            "recent" => g.cities.get_mut(&cid).unwrap().last_attacked = g.turn - 1,
++            "queue" => g.cities.get_mut(&cid).unwrap().queue.push(Item::Unit {
++                unit: crate::name!("warrior"),
++            }),
++            "other_granary" => {
++                let other = g
++                    .player_city_ids(0)
++                    .into_iter()
++                    .find(|id| *id != cid)
++                    .unwrap();
++                g.cities.get_mut(&other).unwrap().queue.push(granary());
++            }
++            "expansion" => {
++                plan.strategy = GrandStrategy::Expansion;
++                plan.desired_cities = 4;
++            }
++            "income" => g.players[0].gold_per_turn = -1.0,
++            "late" => g.turn = g.max_turns - 1,
++            "army" => {
++                let ids: Vec<_> = g
++                    .player_unit_ids(0)
++                    .into_iter()
++                    .filter(|id| g.rules.units[g.units[id].kind.as_str()].class == "military")
++                    .collect();
++                for id in ids {
++                    g.remove_unit(id);
++                }
++                let other = g
++                    .player_city_ids(0)
++                    .into_iter()
++                    .find(|id| *id != cid)
++                    .unwrap();
++                g.cities.get_mut(&other).unwrap().queue.push(Item::Unit {
++                    unit: crate::name!("warrior"),
++                });
++            }
++            _ => unreachable!(),
++        }
++        assert!(
++            AdvancedAi::targeting(VictoryTarget::Domination)
++                .profitable_growth_foundation(&g, 0, cid, &plan)
++                .is_none(),
++            "{reason}"
++        );
++    }
++    for target in [
++        VictoryTarget::Science,
++        VictoryTarget::Culture,
++        VictoryTarget::Score,
++    ] {
++        assert!(AdvancedAi::targeting(target)
++            .profitable_growth_foundation(&base, 0, cid, &plan)
++            .is_none());
++    }
++    assert!(AdvancedAi::new()
++        .profitable_growth_foundation(&base, 0, cid, &plan)
++        .is_none());
++}

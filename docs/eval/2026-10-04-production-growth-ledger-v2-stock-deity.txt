@@ -1,0 +1,1 @@
+61007100: turn 151, winner Some(1), alive true

@@ -1,0 +1,32 @@
+{
+  "archived_at": "2026-10-04T18:32:03.626269+00:00",
+  "decision": "Do not retain runtime policy: no action or world changes across eight properly enabled live-focal consumed-seed diagnostic pairs",
+  "baseline": "8ece0460541b09da9a09dba65b903183cb935e30",
+  "runtime_source": "256b2c4e2a76203917017f8178494c475ca518c4",
+  "archived_source_with_corrected_fixture": "2fdc5f04c",
+  "patch": "2026-10-04-production-growth-capacity-prototype.patch",
+  "patch_format": "git diff --unified=0; apply with --unidiff-zero",
+  "patch_sha256": "ad316489c2ab63fdc776822e5944cf6cfee5ff86cfda4068e2de7015d519261b",
+  "patch_application_check": "git apply --check --unidiff-zero against immutable baseline archive passed",
+  "fresh_strength_samples": 0,
+  "confirmation_samples": 0,
+  "prospective_ranges_not_reserved_or_played": {
+    "pilot_emperor": [
+      61007400,
+      61007403
+    ],
+    "pilot_deity": [
+      61007500,
+      61007503
+    ],
+    "confirmation_emperor": [
+      61007600,
+      61007611
+    ],
+    "confirmation_deity": [
+      61007700,
+      61007707
+    ]
+  },
+  "actual_Firaxis_verification": false
+}

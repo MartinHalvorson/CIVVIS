@@ -163,6 +163,44 @@ UI.ReferenceCurrentEvent()
 check("without ExposedMembers the ref row still appears", lastRow("event_lock"):find('"op":"ref","id":9,"held":-1', 1, true) ~= nil, true)
 check("…and the install names the missing table", lastRow("event_ledger"):find('"exposed":"nil"', 1, true) ~= nil, true)
 
+-- Havok Script's sandbox has no rawequal (G89, 2026-10-05: every context
+-- reported `threw` after a swap that had worked). The install must neither
+-- need it nor misreport a working proxy.
+local savedRawequal = rawequal
+rawequal = nil
+local sandboxBacking = {
+	ReferenceCurrentEvent = function() return 81 end,
+	ReleaseEventID = function() return true end,
+	GetElapsedTime = function() return 2 end,
+}
+local sandboxUI = newproxy(true)
+getmetatable(sandboxUI).__index = sandboxBacking
+UI = sandboxUI
+ExposedMembers = {}
+load()
+check("without rawequal a userdata UI still installs the proxy",
+	lastRow("event_ledger"):find('"installed":true,"how":"proxy","ui_type":"userdata"', 1, true) ~= nil, true)
+check("…and records locks", (UI.ReferenceCurrentEvent() == 81) and ExposedMembers.CivvisEventLocks.held[81] ~= nil, true)
+rawequal = savedRawequal
+
+-- A raising install reports the error text and the real UI type.
+UI = { ReferenceCurrentEvent = function() return 1 end, ReleaseEventID = function() return true end }
+local brokenType = type
+local typeCalls = 0
+type = function(v)
+	if v == UI then
+		typeCalls = typeCalls + 1
+		if typeCalls == 1 then error("probe \"quoted\" failure") end
+	end
+	return brokenType(v)
+end
+load()
+type = brokenType
+local threw = lastRow("event_ledger")
+check("a raising install says it threw, with the error text", threw:find('"why":"threw: ', 1, true) ~= nil, true)
+check("…with quotes made JSON-safe", threw:find("probe 'quoted' failure", 1, true) ~= nil, true)
+check("…and the real UI type", threw:find('"ui_type":"table"', 1, true) ~= nil, true)
+
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
 	os.exit(1)

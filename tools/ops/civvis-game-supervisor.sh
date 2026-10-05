@@ -1025,5 +1025,24 @@ while true; do
     consecutive_failures=1
   fi
 
-  sleep 10
+  # >>> boundary pause
+  # ★ A GAME THAT PLAYED NEEDS NO FLAT 10 s BEFORE THE NEXT ONE. This sleep
+  # was ~all of the "cycle played -> starting" step (10-11 s per boundary,
+  # 2026-10-04): the pin's git checks and no-op release build take 0.16 s.
+  # After turns were played, wait only for Civ VI to leave the process table
+  # (the `Civ6_Exe(_Child)?` match the lane uses), bounded at 10 s, then 2 s
+  # for Steam to register the exit before the next launch. A Civ still up at
+  # the bound is not waited on here: an operator-opened game falls through to
+  # the next cycle's outside-Civ handling. A start that played nothing keeps
+  # the flat 10 s so a failing start cannot spin.
+  if (( played_games > 0 )); then
+    for _ in {1..10}; do
+      pgrep -x "Civ6_Exe(_Child)?" >/dev/null 2>&1 || break
+      sleep 1
+    done
+    sleep 2
+  else
+    sleep 10
+  fi
+  # <<< boundary pause
 done

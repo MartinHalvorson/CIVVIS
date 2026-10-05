@@ -45,7 +45,7 @@ impl AdvancedAi {
                 .into_iter()
                 .filter(|uid| g.rules.units[g.units[uid].kind].promotion_class == "air_bomber")
                 .count()
-                < AIR_SURGE_LAUNCH_BOMBERS
+                < self.decisive_air_wing_bombers(g, pid)
             // Last: it prices every city's pressure, and every gate above is
             // a read that usually settles the answer first.
             && self.threatened_city(g, pid).is_none()
@@ -124,7 +124,7 @@ impl AdvancedAi {
                 }
                 let upkeep = g.rules.units[*unit].maintenance;
                 let deficit = (upkeep - g.players[pid].gold_per_turn).max(0.0);
-                (bombers < AIR_SURGE_LAUNCH_BOMBERS
+                (bombers < self.decisive_air_wing_bombers(g, pid)
                     && Self::air_surge_metal_ready(g, pid)
                     && g.players[pid].gold >= 40.0 + deficit * 6.0)
                     .then_some(AIR_SURGE_BOMBER_VALUE - turns * 8.0)

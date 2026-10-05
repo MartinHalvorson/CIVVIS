@@ -65,7 +65,68 @@ impl AdvancedAi {
                 best = Some((dominated, converted, faith.to_owned()));
             }
         }
-        best.map(|(_, _, faith)| faith)
+        let threat = best.map(|(_, _, faith)| faith);
+        // See `stronger_faith_than`.
+        if self.counterweight_faith_is_no_threat {
+            if let Some(stronger) = threat
+                .as_deref()
+                .and_then(|faith| Self::stronger_faith_than(g, pid, faith))
+            {
+                return Some(stronger);
+            }
+        }
+        threat
+    }
+
+    /// `counterweight-faith-is-no-threat`: a living founder's faith other than
+    /// `faith`, present in at least one of our cities, that holds more of the
+    /// other majors (beyond its founder and us) than `faith` does -- the
+    /// most such majors, then the most of our cities. A faith holding our
+    /// majority is then our counterweight against it, not the threat. Live
+    /// King civvis-20261005T110504Z (game 123): Catholicism, France's faith,
+    /// held 6-7 of our 10 cities from turn 108, blocking the Netherlands'
+    /// Protestantism (which held Vietnam); the threat then read Catholicism,
+    /// so the Catholic spreaders held from turn 121 to 141, and Protestant
+    /// Missionaries bought in Caracas at 124, 130 and 136 as the
+    /// "counterfaith" spread Protestantism in our own cities. Our cities
+    /// went 7 Catholic at 128 to 7 Protestant at 142 and 10 of 10 at 153; the
+    /// Netherlands won on Religion at 166.
+    pub(super) fn stronger_faith_than(g: &Game, pid: usize, faith: &str) -> Option<String> {
+        let majors: Vec<(usize, Option<&str>)> = g
+            .players
+            .iter()
+            .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
+            .map(|p| (p.id, p.religion.as_deref()))
+            .collect();
+        let dominated = |faith: &str| -> usize {
+            let founder = majors
+                .iter()
+                .find(|(_, founded)| *founded == Some(faith))
+                .map(|(id, _)| *id);
+            majors
+                .iter()
+                .filter(|(id, _)| {
+                    *id != pid && Some(*id) != founder && g.civ_follows_religion(*id, faith)
+                })
+                .count()
+        };
+        let ours = dominated(faith);
+        let home = g.player_city_ids(pid);
+        majors
+            .iter()
+            .filter(|(id, _)| *id != pid)
+            .filter_map(|(_, founded)| *founded)
+            .filter(|other| *other != faith)
+            .filter_map(|other| {
+                let held = home
+                    .iter()
+                    .filter(|cid| g.city_religion(&g.cities[cid]) == Some(other))
+                    .count();
+                let reach = dominated(other);
+                (held > 0 && reach > ours).then_some((reach, held, other))
+            })
+            .max_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(b.2.cmp(a.2)))
+            .map(|(_, _, other)| other.to_owned())
     }
 
     /// Rebuilding our religious veto must not complete another founder's win.

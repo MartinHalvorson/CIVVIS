@@ -1,0 +1,18 @@
+{
+  "seed": 61007901,
+  "difficulty": "deity",
+  "exit_code": 0,
+  "reference_arm": "#3932 candidate",
+  "equality": {
+    "actions": {
+      "identical": true,
+      "sha256": "17e26bde98d84c0ec97002e8dd2da99401ab9473e0008e04d46ee1277bd4547d"
+    },
+    "final": {
+      "identical": true,
+      "sha256": "c1b4968e7ff70084632c4931a8b995715505faf1546ea62e31d37a54a1f04a34"
+    }
+  },
+  "fresh_strength_samples": 0,
+  "actual_Firaxis_verification": false
+}

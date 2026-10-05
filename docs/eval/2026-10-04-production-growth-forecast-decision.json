@@ -1,0 +1,50 @@
+{
+  "accepted": false,
+  "checks": [
+    {
+      "difficulty": "emperor",
+      "turn": 75,
+      "production_gain_at_least_3pct": false,
+      "relative_production_nonnegative": false,
+      "science_culture_cities_army_each_above_minus_5pct": false,
+      "more_pairs_higher_than_lower": false
+    },
+    {
+      "difficulty": "emperor",
+      "turn": 100,
+      "production_gain_at_least_3pct": false,
+      "relative_production_nonnegative": false,
+      "science_culture_cities_army_each_above_minus_5pct": true,
+      "more_pairs_higher_than_lower": false
+    },
+    {
+      "difficulty": "emperor",
+      "cumulative_production_nonnegative_at_100": false,
+      "no_extra_eliminations": true,
+      "no_fewer_wins": true
+    },
+    {
+      "difficulty": "deity",
+      "turn": 75,
+      "production_gain_at_least_3pct": false,
+      "relative_production_nonnegative": true,
+      "science_culture_cities_army_each_above_minus_5pct": false,
+      "more_pairs_higher_than_lower": false
+    },
+    {
+      "difficulty": "deity",
+      "turn": 100,
+      "production_gain_at_least_3pct": false,
+      "relative_production_nonnegative": true,
+      "science_culture_cities_army_each_above_minus_5pct": false,
+      "more_pairs_higher_than_lower": false
+    },
+    {
+      "difficulty": "deity",
+      "cumulative_production_nonnegative_at_100": false,
+      "no_extra_eliminations": true,
+      "no_fewer_wins": true
+    }
+  ],
+  "reason": "Early mean Production declined on both difficulties at both primary checkpoints; neither difficulty had a higher Production pair at turn 75."
+}

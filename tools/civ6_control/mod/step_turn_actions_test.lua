@@ -400,7 +400,13 @@ check("archer: the queue drains before the turn is released", settleTurn(player,
 check("archer: the shot rode the queue and landed", ops(7, "UNITOPERATION_RANGE_ATTACK"), 1)
 check("archer: shot issued AFTER the step", host.ops[#host.ops].op, "UNITOPERATION_RANGE_ATTACK")
 check("archer: nothing refused", has(lastEvent("orders_queue"), '"refused":0'), true)
-check("archer: the strike opens a frame", settleTurn(player, PID, 13, function() end), false)
+local combatFramesBefore = count("combat_frame")
+check("archer: accepted shot holds the next frame", settleTurn(player, PID, 13, function() end), false)
+check("archer: no snapshot of an unfinished shot", count("combat_frame"), combatFramesBefore)
+-- The fake host records requests, not combat. Deliver the exact matching
+-- completion here; strike_frame_settlement_test drives the real callback.
+rawget(_G, "CivvisFrames").finishStrikeCombat(PID, 7, 13, 4, 2)
+check("archer: the completed strike opens a frame", settleTurn(player, PID, 13, function() end), false)
 check("archer: …a combat frame", has(lastEvent("combat_frame"), '"reason":"strike"'), true)
 answer(13, 1, {})
 check("archer: an empty frame answer settles the turn", settle(13, 5), true)

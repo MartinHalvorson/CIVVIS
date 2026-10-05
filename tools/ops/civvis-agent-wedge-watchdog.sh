@@ -78,6 +78,18 @@ PROGRESS_TURN_SKEW=${CIVVIS_WEDGE_PROGRESS_TURN_SKEW:-1}
 # silence in these runs is 25s. So two minutes of total silence is a wedge,
 # with a 40s margin over the worst thing any of these games did while alive.
 #
+# ★★★★ ONE MINUTE SINCE 2026-10-04. Two more causes of long live gaps are gone:
+# the starved host (Civ at 7-10% CPU under load 110+, fixed by the headroom
+# governor) and the order-queue stall (#3893: a follow-up held to
+# `OrderQueueMaxTicks`, 31-62 s; it is what the 55-62 s gaps of
+# civvis-20261003T135713Z t207-234 were). Over 66k gaps in the first games with
+# both fixes (civvis-20261004T094143Z, 100903Z, 100903Z-cont1) the longest was
+# 14.8 s and none reached 30 s, so 60 s keeps a 4x margin. The proof below is
+# unchanged, which bounds a false alarm: the forced end turn has to fail before
+# anything restarts, and on a live game it will not. Worth ~60 s of every real
+# freeze; the lane was running about one a game (deal sessions left pending to
+# us, civvis-20261004T100903Z t216 and t240).
+#
 # ⚠ IT LOWERS THE BAR; IT DOES NOT SKIP THE PROOF. A silent run still has to
 # fail the same forced end turn as any other: `nudge_end_turn`, wait
 # `NUDGE_SETTLE_S`, ask again, and restart only if nothing moved. This buys
@@ -99,7 +111,7 @@ PROGRESS_TURN_SKEW=${CIVVIS_WEDGE_PROGRESS_TURN_SKEW:-1}
 # `blocked ENDTURN_BLOCKING_UNITS` to 32 more. That is the desktop-rescue
 # capture stall in its escalated form, and it is #3089's to remove, not this
 # rule's to detect. The five-sample turn rule below still owns that class.
-SILENCE_S=${CIVVIS_WEDGE_SILENCE_S:-120}
+SILENCE_S=${CIVVIS_WEDGE_SILENCE_S:-60}
 SILENCE_CONFIRM=${CIVVIS_WEDGE_SILENCE_CONFIRM:-2}
 
 # ★★★★★ STANDING DOWN IS NOT THE SAME AS LOOKING AWAY.
@@ -504,6 +516,24 @@ PY_STOPPED
       && (( blocker_count >= BLOCKER_STREAK )); then
     restart_attempt "$tag repeating unit blocker ${blocker_name} at t${blocker_turn} (${blocker_count} sightings)" \
       "$climb_pid" "$play_pid" "$tag" "$blocker_turn"
+    strikes=0
+    reset_progress
+    continue
+  fi
+
+  # The mod names an AI phase that never handed the turn back (`ai_phase_stall`,
+  # 30 s after our turn ended): G84 t117 sat two minutes with the game core
+  # idle before the unit-blocker rule above happened to fire. Act on the
+  # mod's own verdict now instead of waiting out the silence clocks below.
+  stall_signal=""
+  if [[ -f "$STATE_READER" ]]; then
+    stall_signal=$(python3 "$STATE_READER" --ai-stall "$RUNS/$tag/events.jsonl" 2>/dev/null || true)
+  fi
+  stall_turn=""; stall_waited=""
+  [[ -n "$stall_signal" ]] && read -r stall_turn stall_waited <<< "$stall_signal"
+  if [[ "$stall_turn" =~ '^[0-9]+$' ]]; then
+    restart_attempt "$tag AI PHASE STALL at t${stall_turn} (no turn ${stall_waited}s after ours ended)" \
+      "$climb_pid" "$play_pid" "$tag" "$stall_turn"
     strikes=0
     reset_progress
     continue

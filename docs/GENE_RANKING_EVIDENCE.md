@@ -185,12 +185,18 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `age-closer-2` | off (unmeasured) | Verify a patronage purchase closes a Normal Age near its deadline. | 1 \| 2 |
+| `age-closer-spends-the-reserve` | off (unmeasured) | Opt-in gene `age-closer-spends-the-reserve`; see `Self::age_closer_spends_the_reserve`. | 1 \| 1 |
+| `air-surge-strikes-through-urgency` | off (unmeasured) | Opt-in gene `air-surge-strikes-through-urgency`; see `Self::air_surge_strikes_through_urgency`. | 1 \| 1 |
+| `air-volley-needs-a-road` | off (unmeasured) | Opt-in gene `air-volley-needs-a-road`; see `Self::air_volley_needs_a_road`. | 1 \| 1 |
 | `beeline-orders-by-value` | off (unmeasured) | `beeline-orders-by-value`: a forced research or civic goal walks its prerequisites by value, not by printed price. | 1 \| 1 |
 | `befriend-the-strongest` | off (unmeasured) | `befriend-the-strongest`: offer a friendship-only deal to the strongest neighbour at peace. | 1 \| 1 |
+| `bleeding-capital-loyalty` | off (unmeasured) | Opt-in gene `bleeding-capital-loyalty`; see `Self::bleeding_capital_loyalty`. | 1 \| 1 |
 | `boost-planner-builds` | off (unmeasured) | `boost-planner-builds`: the boost planner serves `building:` triggers. | 1 \| 1 |
 | `boosted-bargain-first-3` | off (unmeasured) | `boosted-bargain-first-3`: a one-turn boosted technology may interrupt a peaceful lane beeline that is not about to land its target; the other versions stand down. | 2 \| 3 |
 | `breach-assault` | off (unmeasured) | Opt-in gene `breach-assault`; see `Self::breach_assault`. | 1 \| 1 |
 | `breach-assault-closes-in` | off (unmeasured) | Opt-in gene `breach-assault-closes-in`; see `Self::breach_assault_closes_in`. | 1 \| 1 |
+| `breach-counts-nearby-guns` | off (unmeasured) | Opt-in gene `breach-counts-nearby-guns`; see `Self::breach_counts_nearby_guns`. | 1 \| 1 |
+| `breach-reads-the-air` | off (unmeasured) | Opt-in gene `breach-reads-the-air`; see `Self::breach_reads_the_air`. | 1 \| 1 |
 | `breaker-before-the-war` | off (unmeasured) | Opt-in gene `breaker-before-the-war`; see `Self::breaker_before_the_war`. | 1 \| 1 |
 | `breaker-keeps-its-queue` | off (unmeasured) | The strategic scorer does not displace a queued siege unit that holds production while its city is not threatened. | 1 \| 1 |
 | `breaker-supply-scales` | off (unmeasured) | Opt-in gene `breaker-supply-scales`; see `Self::breaker_supply_scales`. | — \| 2 |
@@ -211,22 +217,33 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-before-the-army-3` | off (unmeasured) | `campus-before-the-army-3`: version 2, on through the University and the Research Lab. | — \| 3 |
 | `capital-campaign-router` | off (unmeasured) | Enable `capital-campaign-router` for measurement. | 1 \| 1 |
 | `capital-defense-holds` | off (unmeasured) | Opt-in gene `capital-defense-holds`; see `Self::capital_defense_contact`. | 1 \| 1 |
+| `capital-prey-opens-a-front` | off (unmeasured) | Opt-in gene `capital-prey-opens-a-front`; see `Self::capital_prey_opens_a_front`. | — \| 2 |
+| `capital-prey-opens-a-front-2` | off (unmeasured) | Opt-in gene `capital-prey-opens-a-front-2`; see `Self::capital_prey_opens_a_front_2`. | — \| 2 |
+| `capital-prey-scales-the-walls` | off (unmeasured) | Opt-in gene `capital-prey-scales-the-walls`; see `Self::capital_prey_scales_the_walls`. | 1 \| 1 |
 | `capture-hold-chain` | off (unmeasured) | Enable `capture-hold-chain` for measurement. | 1 \| 1 |
+| `capture-holds-the-ring` | off (unmeasured) | Opt-in gene `capture-holds-the-ring`; see `Self::capture_holds_the_ring`. | 1 \| 1 |
 | `capture-waits-on-the-march` | off (unmeasured) | Opt-in gene `capture-waits-on-the-march`; see `Self::capture_waits_on_the_march`. | 1 \| 1 |
 | `colonization-earns-its-slot` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot`; see `Self::colonization_earns_its_slot`. | — \| 2 |
 | `colonization-earns-its-slot-2` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot-2`; see `Self::colonization_earns_its_slot_2`. | — \| 2 |
 | `connect-the-luxury-2` | off (unmeasured) | Research a first-copy luxury only when it can relieve an Amenity deficit after a legal, affordable unlock. | 1 \| 2 |
 | `conquest-opening-needs-the-production` | off (unmeasured) | Opt-in gene `conquest-opening-needs-the-production`; see `Self::conquest_force_estimate`. | 1 \| 1 |
+| `conquest-opening-stays-near` | off (unmeasured) | Opt-in gene `conquest-opening-stays-near`; see `Self::conquest_opening_stays_near`. | 1 \| 1 |
 | `conquest-takes-the-soft-city` | off (unmeasured) | `conquest-takes-the-soft-city`: rank the early conquest target by what can be taken before what is worth most. | 1 \| 1 |
 | `counter-culture-by-conquest` | off (unmeasured) | `counter-culture-by-conquest`: answer a culture leader with war aimed at its Great Works. | 1 \| 1 |
 | `counter-war-needs-parity` | off (unmeasured) | Opt-in gene `counter-war-needs-parity`; see `Self::counter_war_needs_parity`. | 1 \| 1 |
+| `counterweight-faith-is-no-threat` | off (unmeasured) | Opt-in gene `counterweight-faith-is-no-threat`; see `Self::counterweight_faith_is_no_threat`. | 1 \| 1 |
 | `culture-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 2 \| 3 |
 | `culture-counter-declares` | off (unmeasured) | Opt-in gene `culture-counter-declares`; see `Self::culture_counter_declares`. | 1 \| 1 |
-| `culture-defense-theater` | off (unmeasured) | A Theater Square while the empire's Culture trails the strongest rival's: claimed for one idle city ahead of the delegated governor (`reserve_culture_defense_theater`), and in the delegated governor ahead of the Harbor. | 1 \| 1 |
+| `culture-defense-theater` | off (unmeasured) | A Theater Square while the empire's Culture trails the strongest rival's: claimed for one idle city ahead of the delegated governor (`reserve_culture_defense_theater`), and in the delegated governor ahead of the Harbor. | — \| 2 |
+| `culture-defense-theater-2` | off (unmeasured) | `culture-defense-theater-2`: version 1, but the reservation leaves a housing-bound city whose next housing is a Granary to the governor. | — \| 2 |
 | `culture-faith-reservation` | off (unmeasured) | Enable `culture-faith-reservation` for measurement. | 1 \| 1 |
+| `culture-finish-at-the-observed-bar` | off (unmeasured) | Opt-in gene `culture-finish-at-the-observed-bar`; see `Self::culture_finish_at_the_observed_bar`. | 1 \| 1 |
 | `culture-lane-forecast-2` | off (unmeasured) | Version 2 of the Culture clock forecast: project secular and religious Tourism through each rival's current international modifiers. | 1 \| 2 |
+| `culture-reads-the-engine-clock` | off (unmeasured) | Opt-in gene `culture-reads-the-engine-clock`; see `Self::culture_reads_the_engine_clock`. | 1 \| 1 |
 | `culture-tourism-payback` | off (unmeasured) | Enable `culture-tourism-payback` for measurement. | 1 \| 1 |
 | `decisive-window` | off (unmeasured) | Opt-in gene `decisive-window`; see `Self::decisive_window`. | 1 \| 1 |
+| `declaration-waits-for-the-breaker` | off (unmeasured) | Opt-in gene `declaration-waits-for-the-breaker`; see `Self::declaration_waits_for_the_breaker`. | 1 \| 1 |
+| `denial-keeps-its-rival` | off (unmeasured) | Opt-in gene `denial-keeps-its-rival`; see `Self::denial_keeps_its_rival`. | 1 \| 1 |
 | `denial-nearest-finish` | off (unmeasured) | Opt-in gene `denial-nearest-finish`; see `Self::denial_nearest_finish`. | 1 \| 1 |
 | `denial-needs-a-road` | off (unmeasured) | Opt-in gene `denial-needs-a-road`; see `Self::denial_needs_a_road`. | 1 \| 1 |
 | `denial-outranks-expansion` | off (unmeasured) | A rival close to winning is answered before the lane's expansion rule. | 1 \| 1 |
@@ -243,17 +260,24 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `domination-specializes-earlier` | off (unmeasured) | `domination-specializes-earlier`: an assigned Domination lane leaves its development half at 40% of the clock. | 1 \| 1 |
 | `domination-strikes-when-staged` | off (unmeasured) | Opt-in gene `domination-strikes-when-staged`; see `Self::domination_strikes_when_staged`. | 1 \| 1 |
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |
+| `faith-counter-waits-for-match-point` | off (unmeasured) | Opt-in gene `faith-counter-waits-for-match-point`; see `Self::faith_counter_waits_for_match_point`. | 1 \| 1 |
+| `favor-spares-the-surprise-war` | off (unmeasured) | Opt-in gene `favor-spares-the-surprise-war`; see `Self::favor_spares_the_surprise_war`. | 1 \| 1 |
+| `find-the-capital` | off (unmeasured) | Opt-in gene `find-the-capital`; see `Self::find_the_capital`. | 1 \| 1 |
 | `first-granary-reserve-2` | off (unmeasured) | Reserve a Granary only when its housing accelerates the next citizen within the construction and growth budget. | 1 \| 3 |
 | `first-granary-reserve-3` | off (unmeasured) | `first-granary-reserve-3`: version one's rule (population within one of housing, no Granary) reaches the delegated city governor too, and an Aqueduct follows the Granary while the city is still housing-bound. | 1 \| 3 |
 | `formations-heed-refusals` | off (unmeasured) | Opt-in gene `formations-heed-refusals`; see `Self::formations_heed_refusals`. | 1 \| 1 |
 | `found-against-a-rival-faith` | off (unmeasured) | Opt-in gene `found-against-a-rival-faith`; see `Self::found_against_a_rival_faith`. | 1 \| 1 |
+| `front-finishes-its-capital` | off (unmeasured) | Opt-in gene `front-finishes-its-capital`; see `Self::front_finishes_its_capital`. | 1 \| 1 |
 | `front-finishes-its-siege` | off (unmeasured) | Opt-in gene `front-finishes-its-siege`; see `Self::front_finishes_its_siege`. | 1 \| 1 |
+| `front-needs-a-declarable-rival` | off (unmeasured) | Opt-in gene `front-needs-a-declarable-rival`; see `Self::front_needs_a_declarable_rival`. | 1 \| 1 |
 | `front-weighted-floor` | off (unmeasured) | The delegated governor's military floor builds where the unit reaches the campaign's target city soonest. | — \| 2 |
 | `front-weighted-floor-2` | off (unmeasured) | `front-weighted-floor-2`: while the floor is unmet, a city near the campaign's target builds the floor's unit ahead of its economy steps. | — \| 2 |
 | `government-ladder-3` | off (unmeasured) | Choose a government by its remaining civic cost per extra policy slot, reserving time to use the upgrade. | 2 \| 3 |
 | `granary-before-the-army` | off (unmeasured) | The delegated city governor's housing reserve (Granary, else Aqueduct) ahead of the military floor. | — \| 2 |
 | `granary-before-the-army-2` | off (unmeasured) | Version 2 of `granary-before-the-army`; see `BasicAi::granary_before_the_army_2`. | — \| 2 |
 | `great-work-completion-value` | off (unmeasured) | Enable `great-work-completion-value` for measurement. | 1 \| 1 |
+| `guns-enter-together` | off (unmeasured) | Opt-in gene `guns-enter-together`; see `Self::guns_enter_together`. | 1 \| 1 |
+| `guns-stay-out-of-reach` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach`; see `Self::guns_stay_out_of_reach`. | 1 \| 1 |
 | `hostile-memory-3` | off (unmeasured) | Version three also revises stale sightings when their forecast area is fully visible, using only the unit facts recorded at observation. | 1 \| 3 |
 | `housing-research-2` | off (unmeasured) | Research housing that the capped cities can actually build. | 1 \| 2 |
 | `improvement-upgrades-count` | off (unmeasured) | Opt-in gene `improvement-upgrades-count`; see `Self::improvement_upgrades_count`. | 1 \| 1 |
@@ -265,25 +289,34 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `lane-delegates-production` | off (unmeasured) | Until the development half ends, an assigned lane's cities take the unassigned seat's production dispatch. | — \| 2 |
 | `lane-delegates-production-2` | off (unmeasured) | Version two: an assigned lane's cities take the unassigned seat's production dispatch for the whole game. | — \| 2 |
 | `last-capital-war-kept` | off (unmeasured) | Opt-in gene `last-capital-war-kept`; see `Self::last_capital_war_kept`. | 1 \| 1 |
+| `liberation-funds-the-congress` | off (unmeasured) | Opt-in gene `liberation-funds-the-congress`; see `Self::liberation_funds_the_congress`. | 1 \| 1 |
+| `melee-storms-an-open-city` | off (unmeasured) | Opt-in gene `melee-storms-an-open-city`; see `Self::melee_storms_an_open_city`. | 1 \| 1 |
 | `monument-first` | off (unmeasured) | A city's Monument ahead of the military floor and the Settler step in the delegated city governor. | 1 \| 1 |
 | `one-sanctuary` | off (unmeasured) | Opt-in gene `one-sanctuary`; see `Self::one_sanctuary`. | 1 \| 1 |
 | `one-war-swaps-a-stalled-front` | off (unmeasured) | Opt-in gene `one-war-swaps-a-stalled-front`; see `Self::one_war_swaps_a_stalled_front`. | 1 \| 1 |
 | `opening-force-keeps-its-members` | off (unmeasured) | Opt-in gene `opening-force-keeps-its-members`; see `Self::opening_force_keeps_its_members`. | 1 \| 1 |
+| `own-column-is-not-a-refusal` | off (unmeasured) | Opt-in gene `own-column-is-not-a-refusal`; see `Self::own_column_is_not_a_refusal`. | 1 \| 1 |
+| `peace-asks-a-city` | off (unmeasured) | Opt-in gene `peace-asks-a-city`; see `Self::peace_asks_a_city`. | 1 \| 1 |
 | `peace-waits-for-the-foothold` | off (unmeasured) | Opt-in gene `peace-waits-for-the-foothold`; see `Self::peace_waits_for_the_foothold`. | 1 \| 1 |
 | `peace-waits-for-unseen-prey` | off (unmeasured) | Opt-in gene `peace-waits-for-unseen-prey`; see `Self::peace_waits_for_unseen_prey`. | 1 \| 1 |
 | `policy-deck-hysteresis` | off (unmeasured) | The policy deck keeps the maintenance relief the host held at the turn's start and the Amenity repair card while it is what keeps a city content. | — \| 2 |
 | `policy-deck-hysteresis-2` | off (unmeasured) | `policy-deck-hysteresis-2`: version 1, and a held relief stays while the income does not cover its discount, and the emergency's relief may evict a lower-ranked wanted military card. | — \| 2 |
+| `prey-reads-a-steady-power` | off (unmeasured) | Opt-in gene `prey-reads-a-steady-power`; see `Self::prey_reads_a_steady_power`. | 1 \| 1 |
 | `prophet-race-takes-a-district-slot` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot`; see `Self::prophet_race_takes_a_district_slot`. | — \| 2 |
 | `prophet-race-takes-a-district-slot-2` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot-2`; see `Self::prophet_race_takes_a_district_slot_2`. | — \| 2 |
 | `raids-cut-tourism` | off (unmeasured) | Opt-in gene `raids-cut-tourism`; see `Self::raids_cut_tourism`. | 1 \| 1 |
 | `ranged-hp-reserve` | off (unmeasured) | A ranged unit keeps `RANGED_HP_RESERVE` in hand against the lethal pool. | 1 \| 1 |
 | `raze-a-doomed-capture` | off (unmeasured) | Opt-in gene `raze-a-doomed-capture`; see `Self::raze_doomed_capture`. | 1 \| 1 |
 | `recovery-keeps-a-winning-war` | off (unmeasured) | Opt-in gene `recovery-keeps-a-winning-war`; see `Self::recovery_keeps_a_winning_war`. | 1 \| 1 |
+| `recovery-peace-waits` | off (unmeasured) | Opt-in gene `recovery-peace-waits`; see `Self::recovery_peace_waits`. | 1 \| 1 |
 | `reinforce-before-stall` | off (unmeasured) | Enable `reinforce-before-stall` for measurement. | 1 \| 1 |
+| `religious-threat-spares-the-front` | off (unmeasured) | Opt-in gene `religious-threat-spares-the-front`; see `Self::religious_threat_spares_the_front`. | 1 \| 1 |
 | `research-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 1 \| 3 |
 | `rout-spares-a-stronger-army` | off (unmeasured) | Opt-in gene `rout-spares-a-stronger-army`; see `Self::rout_spares_a_stronger_army`. | 1 \| 1 |
+| `rout-spares-the-counter` | off (unmeasured) | Opt-in gene `rout-spares-the-counter`; see `Self::rout_spares_the_counter`. | 1 \| 1 |
 | `runaway-expander-counter` | off (unmeasured) | Opt-in gene `runaway-expander-counter`; see `Self::runaway_expander_counter`. | 1 \| 1 |
 | `sanctuary-yields-a-held-queue` | off (unmeasured) | Opt-in gene `sanctuary-yields-a-held-queue`; see `Self::sanctuary_yields_a_held_queue`. | 1 \| 1 |
+| `second-front-keeps-its-war` | off (unmeasured) | Opt-in gene `second-front-keeps-its-war`; see `Self::second_front_keeps_its_war`. | 1 \| 1 |
 | `second-front-kept-when-winning` | off (unmeasured) | Opt-in gene `second-front-kept-when-winning`; see `Self::second_front_kept_when_winning`. | — \| 2 |
 | `second-front-kept-when-winning-2` | off (unmeasured) | Opt-in gene `second-front-kept-when-winning-2`; see `Self::second_front_kept_when_winning_2`. | — \| 2 |
 | `settler-before-distant-raiders` | off (unmeasured) | A due Settler before the barbarian-defense build while no hostile stands within three tiles. | 1 \| 1 |
@@ -299,6 +332,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-rally-holds` | off (unmeasured) | Opt-in gene `siege-rally-holds`; see `Self::siege_rally_holds`. | 1 \| 1 |
 | `siege-ranged-floor` | off (unmeasured) | Opt-in gene `siege-ranged-floor`; see `Self::siege_ranged_floor`. | 1 \| 1 |
 | `siege-train-scales-with-walls` | off (unmeasured) | Opt-in gene `siege-train-scales-with-walls`; see `Self::siege_train_scales_with_walls`. | 1 \| 1 |
+| `stage-march-keeps-to-land` | off (unmeasured) | Opt-in gene `stage-march-keeps-to-land`; see `Self::stage_march_keeps_to_land`. | 1 \| 1 |
 | `staging-column-passes-through` | off (unmeasured) | Opt-in gene `staging-column-passes-through`; see `Self::staging_column_passes_through`. | 1 \| 1 |
 | `staging-gun-remembers-hostiles` | off (unmeasured) | Opt-in gene `staging-gun-remembers-hostiles`; see `Self::staging_gun_remembers_hostiles`. | 1 \| 1 |
 | `staging-gun-trusts-its-escort` | off (unmeasured) | Opt-in gene `staging-gun-trusts-its-escort`; see `Self::staging_gun_trusts_its_escort`. | 1 \| 1 |

@@ -425,7 +425,7 @@ type Blows = Arc<Vec<(Option<u32>, f64)>>;
 /// The tag on a structure's blow source: a city id with this bit set is its
 /// City Center's strike, and with [`ENCAMPMENT_SOURCE`] set as well, its
 /// Encampment's.
-const STRUCTURE_SOURCE: u32 = 1 << 31;
+pub(super) const STRUCTURE_SOURCE: u32 = 1 << 31;
 const ENCAMPMENT_SOURCE: u32 = 1 << 30;
 
 /// The danger field for one frame of the board: what every visible hostile
@@ -588,6 +588,36 @@ impl DangerField {
         }
         let blows = self.contributions(tile, uid);
         self.shared_reading(blows.iter().copied())
+    }
+
+    /// `guns-enter-together`: the reading for one of `entering` siege guns
+    /// stepping into a walled city's strike ring together. A City Center or
+    /// an Encampment strikes once a turn, so its blow is charged once across
+    /// the group (or across the units already in its reach, when that share
+    /// is smaller); every unit's blow and every movement hazard is charged as
+    /// the rotation charges it, and the reading never falls under the
+    /// strongest single unit's blow. Live King civvis-20261005T051413Z
+    /// (game 102): four fit Bombards stood three tiles from walled Toronto
+    /// for nine turns because each post read the city's whole blow, ~108.
+    pub(super) fn group_entry_danger(&mut self, tile: Pos, uid: u32, entering: usize) -> f64 {
+        let group = 1.0 / entering.max(1) as f64;
+        let blows = self.contributions(tile, uid);
+        let (mut total, mut strongest_unit) = (0.0_f64, 0.0_f64);
+        for (source, blow) in blows.iter() {
+            let share = source.and_then(|id| self.shares.get(&id).copied());
+            match source {
+                Some(id) if id & STRUCTURE_SOURCE != 0 => {
+                    total += blow * share.map_or(group, |share| share.min(group));
+                }
+                _ => {
+                    total += blow * share.unwrap_or(1.0);
+                    if source.is_some() {
+                        strongest_unit = strongest_unit.max(*blow);
+                    }
+                }
+            }
+        }
+        total.max(strongest_unit)
     }
 
     /// Every blow that would land on `uid` standing unfortified on `tile`

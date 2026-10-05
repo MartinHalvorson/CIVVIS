@@ -1,0 +1,1272 @@
+{
+  "emperor": {
+    "outcomes": {
+      "control": {
+        "games": 12,
+        "wins": 0,
+        "eliminated": 0,
+        "raw": [
+          {
+            "seed": 61005600,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61005601,
+            "turn": 89,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61005602,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61005603,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005604,
+            "turn": 139,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61005605,
+            "turn": 115,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61005606,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61005607,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61005608,
+            "turn": 101,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005609,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61005610,
+            "turn": 117,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005611,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          }
+        ]
+      },
+      "candidate": {
+        "games": 12,
+        "wins": 0,
+        "eliminated": 0,
+        "raw": [
+          {
+            "seed": 61005600,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61005601,
+            "turn": 89,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61005602,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61005603,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005604,
+            "turn": 148,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61005605,
+            "turn": 115,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61005606,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61005607,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          },
+          {
+            "seed": 61005608,
+            "turn": 101,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005609,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61005610,
+            "turn": 117,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005611,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          }
+        ]
+      }
+    },
+    "checkpoints": [
+      {
+        "turn": 25,
+        "matched_games": 12,
+        "matched_seeds": [
+          61005600,
+          61005601,
+          61005602,
+          61005603,
+          61005604,
+          61005605,
+          61005606,
+          61005607,
+          61005608,
+          61005609,
+          61005610,
+          61005611
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 12.525,
+          "candidate": 12.525,
+          "change_pct": 0.0
+        },
+        "cumulative_production": {
+          "control": 188.33333333333334,
+          "candidate": 188.33333333333334,
+          "change_pct": 0.0
+        },
+        "science": {
+          "control": 4.679166666666666,
+          "candidate": 4.679166666666666,
+          "change_pct": 0.0
+        },
+        "culture": {
+          "control": 4.3308333333333335,
+          "candidate": 4.3308333333333335,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 1.6666666666666667,
+          "candidate": 1.6666666666666667,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 5.083333333333333,
+          "candidate": 5.083333333333333,
+          "change_pct": 0.0
+        },
+        "industrial_zones": {
+          "control": 0.0,
+          "candidate": 0.0,
+          "change_pct": null
+        },
+        "workshops": {
+          "control": 0.0,
+          "candidate": 0.0,
+          "change_pct": null
+        },
+        "builders": {
+          "control": 0.6666666666666666,
+          "candidate": 0.6666666666666666,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 0,
+          "equal": 12
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.3169665997352037,
+            "games": 12
+          },
+          "candidate": {
+            "mean": 0.3169665997352037,
+            "games": 12
+          }
+        }
+      },
+      {
+        "turn": 50,
+        "matched_games": 12,
+        "matched_seeds": [
+          61005600,
+          61005601,
+          61005602,
+          61005603,
+          61005604,
+          61005605,
+          61005606,
+          61005607,
+          61005608,
+          61005609,
+          61005610,
+          61005611
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 25.95,
+          "candidate": 25.95,
+          "change_pct": 0.0
+        },
+        "cumulative_production": {
+          "control": 656.7708333333334,
+          "candidate": 656.7708333333334,
+          "change_pct": 0.0
+        },
+        "science": {
+          "control": 10.900333333333334,
+          "candidate": 10.900333333333334,
+          "change_pct": 0.0
+        },
+        "culture": {
+          "control": 10.9,
+          "candidate": 10.9,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 3.4166666666666665,
+          "candidate": 3.4166666666666665,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 13.0,
+          "candidate": 13.0,
+          "change_pct": 0.0
+        },
+        "industrial_zones": {
+          "control": 0.0,
+          "candidate": 0.0,
+          "change_pct": null
+        },
+        "workshops": {
+          "control": 0.0,
+          "candidate": 0.0,
+          "change_pct": null
+        },
+        "builders": {
+          "control": 1.0833333333333333,
+          "candidate": 1.0833333333333333,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 0,
+          "equal": 12
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.3373276731884527,
+            "games": 12
+          },
+          "candidate": {
+            "mean": 0.3373276731884527,
+            "games": 12
+          }
+        }
+      },
+      {
+        "turn": 75,
+        "matched_games": 12,
+        "matched_seeds": [
+          61005600,
+          61005601,
+          61005602,
+          61005603,
+          61005604,
+          61005605,
+          61005606,
+          61005607,
+          61005608,
+          61005609,
+          61005610,
+          61005611
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 47.19166666666666,
+          "candidate": 47.44166666666666,
+          "change_pct": 0.5297545470598575
+        },
+        "cumulative_production": {
+          "control": 1588.1916666666666,
+          "candidate": 1588.8583333333333,
+          "change_pct": 0.0419764616991003
+        },
+        "science": {
+          "control": 24.8495,
+          "candidate": 24.682833333333335,
+          "change_pct": -0.6707043065923401
+        },
+        "culture": {
+          "control": 18.9275,
+          "candidate": 18.9275,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 4.833333333333333,
+          "candidate": 4.833333333333333,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 22.166666666666668,
+          "candidate": 22.166666666666668,
+          "change_pct": 0.0
+        },
+        "industrial_zones": {
+          "control": 0.25,
+          "candidate": 0.3333333333333333,
+          "change_pct": 33.33333333333333
+        },
+        "workshops": {
+          "control": 0.16666666666666666,
+          "candidate": 0.16666666666666666,
+          "change_pct": 0.0
+        },
+        "builders": {
+          "control": 1.6666666666666667,
+          "candidate": 1.75,
+          "change_pct": 5.000000000000004
+        },
+        "production_pairs": {
+          "higher": 1,
+          "lower": 0,
+          "equal": 11
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.3935275142035105,
+            "games": 12
+          },
+          "candidate": {
+            "mean": 0.39780268419643594,
+            "games": 12
+          }
+        }
+      },
+      {
+        "turn": 100,
+        "matched_games": 11,
+        "matched_seeds": [
+          61005600,
+          61005602,
+          61005603,
+          61005604,
+          61005605,
+          61005606,
+          61005607,
+          61005608,
+          61005609,
+          61005610,
+          61005611
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61005601
+          ],
+          "candidate": [
+            61005601
+          ]
+        },
+        "production": {
+          "control": 79.33636363636363,
+          "candidate": 81.37272727272727,
+          "change_pct": 2.5667468775065982
+        },
+        "cumulative_production": {
+          "control": 3162.4727272727273,
+          "candidate": 3197.909090909091,
+          "change_pct": 1.1205270904240727
+        },
+        "science": {
+          "control": 44.706818181818186,
+          "candidate": 45.211363636363636,
+          "change_pct": 1.1285648924812985
+        },
+        "culture": {
+          "control": 25.879545454545454,
+          "candidate": 25.916818181818183,
+          "change_pct": 0.14402388688856682
+        },
+        "cities": {
+          "control": 5.909090909090909,
+          "candidate": 6.0,
+          "change_pct": 1.538461538461533
+        },
+        "population": {
+          "control": 31.636363636363637,
+          "candidate": 31.818181818181817,
+          "change_pct": 0.5747126436781658
+        },
+        "industrial_zones": {
+          "control": 2.272727272727273,
+          "candidate": 2.4545454545454546,
+          "change_pct": 7.999999999999985
+        },
+        "workshops": {
+          "control": 1.3636363636363635,
+          "candidate": 1.5454545454545454,
+          "change_pct": 13.33333333333333
+        },
+        "builders": {
+          "control": 2.4545454545454546,
+          "candidate": 2.3636363636363638,
+          "change_pct": -3.703703703703698
+        },
+        "production_pairs": {
+          "higher": 3,
+          "lower": 1,
+          "equal": 7
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.4185549909391802,
+            "games": 11
+          },
+          "candidate": {
+            "mean": 0.4244671471021673,
+            "games": 11
+          }
+        }
+      },
+      {
+        "turn": 125,
+        "matched_games": 8,
+        "matched_seeds": [
+          61005600,
+          61005602,
+          61005603,
+          61005604,
+          61005606,
+          61005607,
+          61005609,
+          61005611
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61005601,
+            61005605,
+            61005608,
+            61005610
+          ],
+          "candidate": [
+            61005601,
+            61005605,
+            61005608,
+            61005610
+          ]
+        },
+        "production": {
+          "control": 121.3125,
+          "candidate": 113.64375,
+          "change_pct": -6.321483771251934
+        },
+        "cumulative_production": {
+          "control": 6032.375,
+          "candidate": 6048.25,
+          "change_pct": 0.26316334776932404
+        },
+        "science": {
+          "control": 75.08125,
+          "candidate": 73.471859375,
+          "change_pct": -2.1435320069924324
+        },
+        "culture": {
+          "control": 31.24875,
+          "candidate": 30.996875,
+          "change_pct": -0.8060322412896559
+        },
+        "cities": {
+          "control": 6.875,
+          "candidate": 6.375,
+          "change_pct": -7.272727272727275
+        },
+        "population": {
+          "control": 42.5,
+          "candidate": 40.5,
+          "change_pct": -4.705882352941182
+        },
+        "industrial_zones": {
+          "control": 4.0,
+          "candidate": 4.0,
+          "change_pct": 0.0
+        },
+        "workshops": {
+          "control": 3.5,
+          "candidate": 3.625,
+          "change_pct": 3.571428571428581
+        },
+        "builders": {
+          "control": 4.0,
+          "candidate": 4.0,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 1,
+          "lower": 3,
+          "equal": 4
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.38877457125737536,
+            "games": 8
+          },
+          "candidate": {
+            "mean": 0.3505572884360282,
+            "games": 8
+          }
+        }
+      },
+      {
+        "turn": 150,
+        "matched_games": 7,
+        "matched_seeds": [
+          61005600,
+          61005602,
+          61005603,
+          61005606,
+          61005607,
+          61005609,
+          61005611
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61005601,
+            61005604,
+            61005605,
+            61005608,
+            61005610
+          ],
+          "candidate": [
+            61005601,
+            61005604,
+            61005605,
+            61005608,
+            61005610
+          ]
+        },
+        "production": {
+          "control": 153.84285714285716,
+          "candidate": 160.49285714285713,
+          "change_pct": 4.322592626984845
+        },
+        "cumulative_production": {
+          "control": 9518.7,
+          "candidate": 9631.07142857143,
+          "change_pct": 1.1805333561455633
+        },
+        "science": {
+          "control": 78.34764285714286,
+          "candidate": 87.41071428571429,
+          "change_pct": 11.567765280567288
+        },
+        "culture": {
+          "control": 38.47571428571429,
+          "candidate": 39.830714285714286,
+          "change_pct": 3.5217020012623834
+        },
+        "cities": {
+          "control": 7.285714285714286,
+          "candidate": 7.571428571428571,
+          "change_pct": 3.9215686274509887
+        },
+        "population": {
+          "control": 50.0,
+          "candidate": 51.285714285714285,
+          "change_pct": 2.57142857142858
+        },
+        "industrial_zones": {
+          "control": 4.857142857142857,
+          "candidate": 4.714285714285714,
+          "change_pct": -2.941176470588225
+        },
+        "workshops": {
+          "control": 3.857142857142857,
+          "candidate": 4.0,
+          "change_pct": 3.703703703703698
+        },
+        "builders": {
+          "control": 6.142857142857143,
+          "candidate": 6.428571428571429,
+          "change_pct": 4.651162790697683
+        },
+        "production_pairs": {
+          "higher": 1,
+          "lower": 2,
+          "equal": 4
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.34391389552390816,
+            "games": 7
+          },
+          "candidate": {
+            "mean": 0.36069655408938395,
+            "games": 7
+          }
+        }
+      }
+    ]
+  },
+  "deity": {
+    "outcomes": {
+      "control": {
+        "games": 8,
+        "wins": 0,
+        "eliminated": 1,
+        "raw": [
+          {
+            "seed": 61005700,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61005701,
+            "turn": 107,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005702,
+            "turn": 92,
+            "winner": "Some(3)",
+            "alive": false
+          },
+          {
+            "seed": 61005703,
+            "turn": 87,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005704,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005705,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61005706,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005707,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": true
+          }
+        ]
+      },
+      "candidate": {
+        "games": 8,
+        "wins": 0,
+        "eliminated": 1,
+        "raw": [
+          {
+            "seed": 61005700,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61005701,
+            "turn": 107,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005702,
+            "turn": 92,
+            "winner": "Some(3)",
+            "alive": false
+          },
+          {
+            "seed": 61005703,
+            "turn": 87,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005704,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005705,
+            "turn": 151,
+            "winner": "Some(1)",
+            "alive": true
+          },
+          {
+            "seed": 61005706,
+            "turn": 151,
+            "winner": "Some(2)",
+            "alive": true
+          },
+          {
+            "seed": 61005707,
+            "turn": 151,
+            "winner": "Some(3)",
+            "alive": true
+          }
+        ]
+      }
+    },
+    "checkpoints": [
+      {
+        "turn": 25,
+        "matched_games": 8,
+        "matched_seeds": [
+          61005700,
+          61005701,
+          61005702,
+          61005703,
+          61005704,
+          61005705,
+          61005706,
+          61005707
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 10.225,
+          "candidate": 10.225,
+          "change_pct": 0.0
+        },
+        "cumulative_production": {
+          "control": 178.85,
+          "candidate": 178.85,
+          "change_pct": 0.0
+        },
+        "science": {
+          "control": 3.9000000000000004,
+          "candidate": 3.9000000000000004,
+          "change_pct": 0.0
+        },
+        "culture": {
+          "control": 2.99,
+          "candidate": 2.99,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 1.375,
+          "candidate": 1.375,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 3.625,
+          "candidate": 3.625,
+          "change_pct": 0.0
+        },
+        "industrial_zones": {
+          "control": 0.0,
+          "candidate": 0.0,
+          "change_pct": null
+        },
+        "workshops": {
+          "control": 0.0,
+          "candidate": 0.0,
+          "change_pct": null
+        },
+        "builders": {
+          "control": 0.625,
+          "candidate": 0.625,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 0,
+          "equal": 8
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.16756710722165163,
+            "games": 8
+          },
+          "candidate": {
+            "mean": 0.16756710722165163,
+            "games": 8
+          }
+        }
+      },
+      {
+        "turn": 50,
+        "matched_games": 8,
+        "matched_seeds": [
+          61005700,
+          61005701,
+          61005702,
+          61005703,
+          61005704,
+          61005705,
+          61005706,
+          61005707
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 21.3125,
+          "candidate": 21.3125,
+          "change_pct": 0.0
+        },
+        "cumulative_production": {
+          "control": 576.8875,
+          "candidate": 576.8875,
+          "change_pct": 0.0
+        },
+        "science": {
+          "control": 8.68125,
+          "candidate": 8.68125,
+          "change_pct": 0.0
+        },
+        "culture": {
+          "control": 9.09625,
+          "candidate": 9.09625,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 2.75,
+          "candidate": 2.75,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 8.625,
+          "candidate": 8.625,
+          "change_pct": 0.0
+        },
+        "industrial_zones": {
+          "control": 0.0,
+          "candidate": 0.0,
+          "change_pct": null
+        },
+        "workshops": {
+          "control": 0.0,
+          "candidate": 0.0,
+          "change_pct": null
+        },
+        "builders": {
+          "control": 1.0,
+          "candidate": 1.0,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 0,
+          "equal": 8
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.20242418881589416,
+            "games": 8
+          },
+          "candidate": {
+            "mean": 0.20242418881589416,
+            "games": 8
+          }
+        }
+      },
+      {
+        "turn": 75,
+        "matched_games": 8,
+        "matched_seeds": [
+          61005700,
+          61005701,
+          61005702,
+          61005703,
+          61005704,
+          61005705,
+          61005706,
+          61005707
+        ],
+        "missing_checkpoint": {
+          "control": [],
+          "candidate": []
+        },
+        "production": {
+          "control": 32.6875,
+          "candidate": 32.6875,
+          "change_pct": 0.0
+        },
+        "cumulative_production": {
+          "control": 1301.8375,
+          "candidate": 1301.8375,
+          "change_pct": 0.0
+        },
+        "science": {
+          "control": 15.50625,
+          "candidate": 15.50625,
+          "change_pct": 0.0
+        },
+        "culture": {
+          "control": 12.30375,
+          "candidate": 12.30375,
+          "change_pct": 0.0
+        },
+        "cities": {
+          "control": 3.0,
+          "candidate": 3.0,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 13.375,
+          "candidate": 13.375,
+          "change_pct": 0.0
+        },
+        "industrial_zones": {
+          "control": 0.0,
+          "candidate": 0.0,
+          "change_pct": null
+        },
+        "workshops": {
+          "control": 0.0,
+          "candidate": 0.0,
+          "change_pct": null
+        },
+        "builders": {
+          "control": 1.125,
+          "candidate": 1.125,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 0,
+          "lower": 0,
+          "equal": 8
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.17056305092365245,
+            "games": 8
+          },
+          "candidate": {
+            "mean": 0.17056305092365245,
+            "games": 8
+          }
+        }
+      },
+      {
+        "turn": 100,
+        "matched_games": 6,
+        "matched_seeds": [
+          61005700,
+          61005701,
+          61005704,
+          61005705,
+          61005706,
+          61005707
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61005702,
+            61005703
+          ],
+          "candidate": [
+            61005702,
+            61005703
+          ]
+        },
+        "production": {
+          "control": 57.96666666666667,
+          "candidate": 60.5,
+          "change_pct": 4.370327774583083
+        },
+        "cumulative_production": {
+          "control": 2654.458333333333,
+          "candidate": 2684.3083333333334,
+          "change_pct": 1.1245232078107792
+        },
+        "science": {
+          "control": 29.588833333333334,
+          "candidate": 30.937833333333334,
+          "change_pct": 4.559152382937248
+        },
+        "culture": {
+          "control": 18.0225,
+          "candidate": 17.701666666666668,
+          "change_pct": -1.7801821796827988
+        },
+        "cities": {
+          "control": 3.8333333333333335,
+          "candidate": 3.8333333333333335,
+          "change_pct": 0.0
+        },
+        "population": {
+          "control": 21.5,
+          "candidate": 21.5,
+          "change_pct": 0.0
+        },
+        "industrial_zones": {
+          "control": 1.5,
+          "candidate": 1.6666666666666667,
+          "change_pct": 11.111111111111116
+        },
+        "workshops": {
+          "control": 0.6666666666666666,
+          "candidate": 0.8333333333333334,
+          "change_pct": 25.00000000000002
+        },
+        "builders": {
+          "control": 1.5,
+          "candidate": 1.5,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 1,
+          "lower": 1,
+          "equal": 4
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.18159572117349904,
+            "games": 6
+          },
+          "candidate": {
+            "mean": 0.19113707771871924,
+            "games": 6
+          }
+        }
+      },
+      {
+        "turn": 125,
+        "matched_games": 5,
+        "matched_seeds": [
+          61005700,
+          61005704,
+          61005705,
+          61005706,
+          61005707
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61005701,
+            61005702,
+            61005703
+          ],
+          "candidate": [
+            61005701,
+            61005702,
+            61005703
+          ]
+        },
+        "production": {
+          "control": 68.48,
+          "candidate": 75.16,
+          "change_pct": 9.754672897196247
+        },
+        "cumulative_production": {
+          "control": 4562.18,
+          "candidate": 4616.57,
+          "change_pct": 1.1921932058796214
+        },
+        "science": {
+          "control": 39.2738,
+          "candidate": 42.235,
+          "change_pct": 7.539886641985238
+        },
+        "culture": {
+          "control": 22.273,
+          "candidate": 24.435,
+          "change_pct": 9.706819916490804
+        },
+        "cities": {
+          "control": 3.4,
+          "candidate": 3.6,
+          "change_pct": 5.882352941176472
+        },
+        "population": {
+          "control": 24.8,
+          "candidate": 26.6,
+          "change_pct": 7.258064516129026
+        },
+        "industrial_zones": {
+          "control": 2.0,
+          "candidate": 2.4,
+          "change_pct": 19.999999999999996
+        },
+        "workshops": {
+          "control": 1.8,
+          "candidate": 2.2,
+          "change_pct": 22.222222222222232
+        },
+        "builders": {
+          "control": 3.0,
+          "candidate": 3.0,
+          "change_pct": 0.0
+        },
+        "production_pairs": {
+          "higher": 1,
+          "lower": 1,
+          "equal": 3
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.14454404255958558,
+            "games": 5
+          },
+          "candidate": {
+            "mean": 0.14921870388473765,
+            "games": 5
+          }
+        }
+      },
+      {
+        "turn": 150,
+        "matched_games": 5,
+        "matched_seeds": [
+          61005700,
+          61005704,
+          61005705,
+          61005706,
+          61005707
+        ],
+        "missing_checkpoint": {
+          "control": [
+            61005701,
+            61005702,
+            61005703
+          ],
+          "candidate": [
+            61005701,
+            61005702,
+            61005703
+          ]
+        },
+        "production": {
+          "control": 69.94,
+          "candidate": 78.18,
+          "change_pct": 11.781527023162731
+        },
+        "cumulative_production": {
+          "control": 6256.1900000000005,
+          "candidate": 6491.08,
+          "change_pct": 3.7545215218847128
+        },
+        "science": {
+          "control": 34.2,
+          "candidate": 37.985,
+          "change_pct": 11.067251461988302
+        },
+        "culture": {
+          "control": 20.974,
+          "candidate": 22.033,
+          "change_pct": 5.0491084199485226
+        },
+        "cities": {
+          "control": 3.2,
+          "candidate": 3.6,
+          "change_pct": 12.5
+        },
+        "population": {
+          "control": 25.2,
+          "candidate": 27.8,
+          "change_pct": 10.317460317460325
+        },
+        "industrial_zones": {
+          "control": 2.2,
+          "candidate": 2.4,
+          "change_pct": 9.090909090909083
+        },
+        "workshops": {
+          "control": 2.0,
+          "candidate": 2.2,
+          "change_pct": 10.000000000000009
+        },
+        "builders": {
+          "control": 1.4,
+          "candidate": 1.6,
+          "change_pct": 14.285714285714302
+        },
+        "production_pairs": {
+          "higher": 1,
+          "lower": 1,
+          "equal": 3
+        },
+        "production_to_strongest_rival": {
+          "control": {
+            "mean": 0.0910932500298232,
+            "games": 5
+          },
+          "candidate": {
+            "mean": 0.09215413595090936,
+            "games": 5
+          }
+        }
+      }
+    ]
+  }
+}

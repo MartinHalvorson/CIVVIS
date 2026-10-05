@@ -1,0 +1,4 @@
+61006400: turn 151, winner Some(3), alive true
+61006401: turn 151, winner Some(2), alive true
+61006402: turn 151, winner Some(3), alive true
+61006403: turn 86, winner Some(3), alive true

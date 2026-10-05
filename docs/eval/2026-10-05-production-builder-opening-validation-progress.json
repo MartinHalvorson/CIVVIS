@@ -1,0 +1,86 @@
+{
+  "recorded_at": "2026-10-04T21:47:48.292555+00:00",
+  "compile_check": {
+    "source": "3a30ec6e9",
+    "command": "CARGO_TARGET_DIR=/tmp/civvis-production-builder-opening-check-target CARGO_BUILD_JOBS=4 cargo check --tests --locked",
+    "exit_code": 0,
+    "scope": "Initial candidate before prerequisite/main merges; inherited warning in untouched civilian_safety.rs"
+  },
+  "initial_full_attempts": [
+    {
+      "session": 87181,
+      "exit_code": 130,
+      "reason": "Stopped own build before changing source to merge the three newly integrated host-orders files; no tests executed"
+    },
+    {
+      "session": 85656,
+      "exit_code": 130,
+      "reason": "Stopped own build after policy CI identified the new receipt name as filed under the wrong alphabetical append range; no tests executed"
+    },
+    {
+      "session": 39239,
+      "exit_code": 130,
+      "reason": "Stopped own build before fixture repair after CI showed all four new fixtures fail during founding, before exercising reservation behavior"
+    }
+  ],
+  "policy_failure": {
+    "run": 37237137141,
+    "source": "a0810dedc",
+    "failure": "Two append-range assertions for higher_level_builder_reservation under a-b. Renamed the receipt to builder_workforce_reservation; admission and execution logic unchanged.",
+    "local_regression_command": "python3 -m unittest discover -s tools -p 'test_treatment_append_points.py'",
+    "local_regression_result": {
+      "passed": 14,
+      "failed": 0,
+      "exit_code": 0
+    }
+  },
+  "current_full_suite": {
+    "source": "47386e0f0",
+    "command": "CARGO_TARGET_DIR=/tmp/civvis-production-builder-opening-target CARGO_BUILD_JOBS=8 cargo test --profile ci --locked -- --test-threads=4",
+    "passed": 4591,
+    "failed": 0,
+    "ignored": 54,
+    "exit_code": 0
+  },
+  "fresh_strength_samples_played": 8,
+  "actual_Firaxis_verification": false,
+  "initial_ci": {
+    "run": 37237137175,
+    "source": "a0810dedc",
+    "passed": 698,
+    "failed": 4,
+    "skipped": 50,
+    "not_run": 3889,
+    "failure": "Fixture rival city (27,10) is outside the axial map. Correct to verified on-map (23,10). No runtime behavior edit."
+  },
+  "fast_focused": {
+    "command": "CARGO_PROFILE_CI_OPT_LEVEL=0 CARGO_PROFILE_CI_DEBUG=0 CARGO_TARGET_DIR=/tmp/civvis-production-builder-opening-focused-target CARGO_BUILD_JOBS=2 cargo test --profile ci --locked --lib higher_level_strategy::builder_commitment_tests -- --test-threads=4",
+    "passed": 4,
+    "failed": 0,
+    "exit_code": 0,
+    "scope": "Fast fixture/behavior regression feedback; opt-level 0, not the optimized comparison build or full native suite"
+  },
+  "quality": {
+    "command": "CARGO_TARGET_DIR=/tmp/civvis-production-builder-opening-check-target CARGO_BUILD_JOBS=4 python3 tools/rust_quality.py --base origin/main --head HEAD",
+    "exit_code": 0,
+    "result": "Five changed Rust files formatted and warning-free"
+  },
+  "optimized_focused": {
+    "command": "/tmp/civvis-production-builder-opening-target/ci/deps/civvis-f3c68e33949d14e4 ai::advanced::higher_level_strategy::builder_commitment_tests --test-threads=4",
+    "passed": 4,
+    "failed": 0,
+    "exit_code": 0
+  },
+  "comparison_library_equals_full_suite_library": true,
+  "comparison_library_sha256": "6402e835d9807b5a6426f6efa2169547aee37fb886218b5578de477ef8bab3c3",
+  "corrected_ci": {
+    "source": "47386e0f0",
+    "run": 37238229903,
+    "result": "success",
+    "Rust_tests_passed": 4591,
+    "Rust_tests_skipped": 50,
+    "doc_examples_ignored": 4
+  },
+  "pilot_gate": "failed: all eight paired games byte-identical, both difficulty means unchanged",
+  "confirmation_played": 0
+}

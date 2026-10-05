@@ -60,6 +60,31 @@ pub(super) const CULTURE_CURVE_WINDOW: u32 = 20;
 /// curve is projected: a few turns of tourism is noise.
 pub(super) const CULTURE_CURVE_MIN_SPAN: u32 = 8;
 
+/// `culture-finish-at-the-observed-bar`: the share of the exported bar at
+/// which a culture race is read as finished. Just under the median (94%) of
+/// the 22 October culture losses' last readings.
+pub(crate) const CULTURE_OBSERVED_BAR: f64 = 0.92;
+
+/// `culture-reads-the-engine-clock`: the culture pressure a rival keeps
+/// when the host reports no path to its Culture Victory, below the urgency
+/// bars.
+pub(crate) const ENGINE_NO_PATH_CULTURE_CAP: i32 = 50;
+
+/// `culture-reads-the-engine-clock`: the turns over which the earliest
+/// projected finish of the engine's valid readings is kept.
+pub(crate) const ENGINE_CLOCK_WINDOW: u32 = 5;
+
+/// `culture-reads-the-engine-clock`: the visiting tourists under which the
+/// engine's clock reads "no path". The host projects one turn's tourist gain
+/// against a bar it holds still, and early domestic counts are single
+/// digits: live King civvis-20261005T101841Z (game 120) read Cree at 15 and
+/// 14 turns on turns 70 and 72 with 2-3 visitors against our 6-7 and
+/// declared a surprise war at 1.17 times their power "close enough to winning
+/// that waiting loses it". Of the 66 readings of 0-30 turns in the October
+/// 4-5 runs, every one of the 28 followed by that rival's Culture Victory
+/// came with 20 or more visitors; the floor removes 17 of the 38 others.
+pub(crate) const ENGINE_CLOCK_MIN_TOURISTS: i64 = 20;
+
 impl AdvancedAi {
     /// One reading per living rival per turn: its foreign tourists and the
     /// largest domestic count among the others, which it must pass.
@@ -101,7 +126,128 @@ impl AdvancedAi {
     /// along their geometric growth over the recorded window. `None` without
     /// [`CULTURE_CURVE_MIN_SPAN`] standard turns of readings, without
     /// visitors to project, or while the bar keeps pace.
+    /// `culture-reads-the-engine-clock`: the host's own turns to `rival`'s
+    /// Culture Victory (`GetTurnsUntilVictory`, the World Rankings screen's
+    /// clock): `Some(Some(turns))` on a path, `Some(None)` when the engine
+    /// reports none, `None` without the gene or the reading. Our tourist ratio
+    /// misreads the race: it compares visitors with the largest staycation,
+    /// and staycations fall as the leader draws their tourists away. Every one
+    /// of the 22 October culture losses fired below 100% of it, and live King
+    /// civvis-20261005T065548Z (game 107) read France at 59-75% against
+    /// Babylon's 50-68% over turns 201-203, turned the counter on France at
+    /// 202, and Babylon won on Culture at 206.
+    ///
+    /// The reading is a one-turn rate projection: -1 on a turn whose tourist
+    /// gain does not close the gap, and a value that swings with each integer
+    /// step (-d0 matched them to the foreign-tourist steps). Game 116
+    /// (civvis-20261005T092839Z) read Brazil at 53, 51, 13, 7, -1, 21, -1 over
+    /// turns 160-166 and won at 175. So the clock is the earliest projected
+    /// finish turn (turn read plus turns reported) among the valid readings of
+    /// the last [`ENGINE_CLOCK_WINDOW`] turns, counted down to this turn -- the
+    /// best recent pace, early rather than late for a denial clock -- and
+    /// "none" once the window holds no valid reading. Under
+    /// [`ENGINE_CLOCK_MIN_TOURISTS`] visitors the clock reads "none" whatever
+    /// the host projects.
+    pub(super) fn engine_culture_clock(&self, g: &Game, rival: usize) -> Option<Option<f64>> {
+        if !self.culture_reads_the_engine_clock {
+            return None;
+        }
+        let reading = g.culture_turns_to_victory(rival)?;
+        if g.foreign_tourists(rival) < ENGINE_CLOCK_MIN_TOURISTS {
+            return Some(None);
+        }
+        let mut finishes: Vec<(u32, f64)> = self
+            .engine_culture_finish
+            .get(&rival)
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|(turn, _)| {
+                *turn != g.turn && g.turn.saturating_sub(*turn) <= ENGINE_CLOCK_WINDOW
+            })
+            .collect();
+        if reading >= 0.0 {
+            finishes.push((g.turn, f64::from(g.turn) + reading));
+        }
+        let finish = finishes
+            .iter()
+            .map(|(_, finish)| *finish)
+            .min_by(f64::total_cmp);
+        Some(finish.map(|finish| (finish - f64::from(g.turn)).max(0.0)))
+    }
+
+    /// `culture-reads-the-engine-clock`: record each living rival's valid
+    /// engine reading for this turn as its projected finish turn, keeping
+    /// [`ENGINE_CLOCK_WINDOW`] turns of them. A reading under
+    /// [`ENGINE_CLOCK_MIN_TOURISTS`] visitors is not kept.
+    pub(super) fn record_engine_culture_clock(&mut self, g: &Game, pid: usize) {
+        if !self.culture_reads_the_engine_clock {
+            return;
+        }
+        for rival in g
+            .players
+            .iter()
+            .filter(|player| player.id != pid && player.alive && !player.is_minor)
+            .map(|player| player.id)
+            .collect::<Vec<_>>()
+        {
+            let history = self.engine_culture_finish.entry(rival).or_default();
+            history.retain(|(turn, _)| {
+                *turn != g.turn && g.turn.saturating_sub(*turn) <= ENGINE_CLOCK_WINDOW
+            });
+            if let Some(turns) = g
+                .culture_turns_to_victory(rival)
+                .filter(|turns| *turns >= 0.0)
+                .filter(|_| g.foreign_tourists(rival) >= ENGINE_CLOCK_MIN_TOURISTS)
+            {
+                history.push((g.turn, f64::from(g.turn) + turns));
+            }
+        }
+    }
+
+    /// `culture-reads-the-engine-clock`: `raw`, the tourist-ratio culture
+    /// pressure, replaced by the engine's clock when it reports one -- 100 at
+    /// a finish now, 75 at [`DENIAL_FINISH_HORIZON`] turns, the reading
+    /// `nearest_finish_culture_clock` gives a projection -- and held under
+    /// [`ENGINE_NO_PATH_CULTURE_CAP`] when the engine reports no path.
+    pub(crate) fn engine_culture_pressure(&self, g: &Game, rival: usize, raw: i32) -> i32 {
+        match self.engine_culture_clock(g, rival) {
+            None => raw,
+            Some(None) => raw.min(ENGINE_NO_PATH_CULTURE_CAP),
+            Some(Some(turns)) => (100.0 - turns * 100.0 / (4.0 * DENIAL_FINISH_HORIZON))
+                .round()
+                .clamp(0.0, 100.0) as i32,
+        }
+    }
+
     pub(super) fn projected_culture_finish(&self, g: &Game, rival: usize) -> Option<f64> {
+        self.projected_culture_finish_at(g, rival, 1.0)
+    }
+
+    /// `culture-finish-at-the-observed-bar`: the finish a clock weighing a
+    /// march against a culture race should read — at [`CULTURE_OBSERVED_BAR`]
+    /// of the exported bar under the gene, at the bar otherwise. Every one of
+    /// the 22 culture losses of October 4-5 fired with the winner's last
+    /// reading of foreign tourists below the largest other domestic count:
+    /// median 94%, 79% to 99% (civvis-20261005T061801Z: Canada 183 against
+    /// our 194; T063500Z: Scythia 179 against Scotland's 188). The urgency
+    /// gates keep the exported bar.
+    pub(super) fn observed_culture_finish(&self, g: &Game, rival: usize) -> Option<f64> {
+        let scale = if self.culture_finish_at_the_observed_bar {
+            CULTURE_OBSERVED_BAR
+        } else {
+            1.0
+        };
+        self.projected_culture_finish_at(g, rival, scale)
+    }
+
+    /// Turns until `rival`'s foreign tourists pass `scale` times the bar,
+    /// as [`Self::projected_culture_finish`] reads it at 1.0.
+    fn projected_culture_finish_at(&self, g: &Game, rival: usize, scale: f64) -> Option<f64> {
+        // See `engine_culture_clock`: the host's own turns, at any scale.
+        if let Some(clock) = self.engine_culture_clock(g, rival) {
+            return clock;
+        }
         let history = self.culture_curves.get(&rival)?;
         let (first_turn, first_foreign, first_bar) = *history.first()?;
         let (last_turn, foreign, bar) = *history.last()?;
@@ -112,13 +258,14 @@ impl AdvancedAi {
         {
             return None;
         }
-        if foreign >= bar {
+        let target = bar.max(1) as f64 * scale;
+        if foreign as f64 >= target {
             return Some(0.0);
         }
         let growth = ((foreign as f64 / first_foreign as f64).ln()
             - (bar.max(1) as f64 / first_bar.max(1) as f64).ln())
             / f64::from(span);
-        (growth > 0.0).then(|| (bar as f64 / foreign as f64).ln() / growth)
+        (growth > 0.0).then(|| (target / foreign as f64).ln() / growth)
     }
 
     /// The culture clock a Domination army answers when `rival`'s race is

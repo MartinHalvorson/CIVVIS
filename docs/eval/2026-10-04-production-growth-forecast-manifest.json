@@ -1,0 +1,250 @@
+{
+  "created_before_native_play_at": "2026-10-04T11:39:59.316000+00:00",
+  "control_source": "c351dca598cbe30abef98ed4b3405e8b3cf7aba9",
+  "control_runtime_source": "afba14116415131f730a462dff4e1d7811aced93",
+  "control_library_sha256": "6418026abe8e14ae7756c55d24d2f24162e810bc50caacda04c844a8878a21c4",
+  "candidate": "PR 3900 frozen prototype, commit and binary hashes recorded before play",
+  "hypothesis": "Reserve at most one Granary when a thirty Online turn fixed-board projection returns 110% of its remaining Production cost; preserve existing higher-priority survival/research/growth/income bids.",
+  "protocol": {
+    "players": 4,
+    "map": "pangaea",
+    "width": 60,
+    "height": 38,
+    "city_states": 6,
+    "speed": "online",
+    "turn_cap": 150,
+    "victories": "all",
+    "focal_civ": "Gran Colombia",
+    "focal_target": "domination",
+    "handicap_exempt": [
+      0
+    ],
+    "rivals": "unchanged AdvancedAi::fleet",
+    "barbarian_difficulty": "same as major difficulty",
+    "checkpoints": [
+      25,
+      50,
+      75,
+      100,
+      125,
+      150
+    ],
+    "columns": [
+      "seed",
+      "turn",
+      "cities",
+      "production",
+      "rival_production",
+      "science",
+      "culture",
+      "gold",
+      "cumulative_production",
+      "alive",
+      "winner",
+      "population",
+      "granaries",
+      "housing_bound",
+      "housing_bound_without_granary",
+      "amenity_short_cities",
+      "builders",
+      "military_power",
+      "rival_cities",
+      "rival_population"
+    ]
+  },
+  "pilot": {
+    "emperor": {
+      "first_seed": 61006400,
+      "count": 4
+    },
+    "deity": {
+      "first_seed": 61006500,
+      "count": 4
+    }
+  },
+  "confirmation": {
+    "emperor": {
+      "first_seed": 61006600,
+      "count": 12
+    },
+    "deity": {
+      "first_seed": 61006700,
+      "count": 8
+    }
+  },
+  "acceptance": "Require an early production improvement at turns 75 and 100 on both difficulties in fresh confirmation, improved production relative to strongest rival, and no material science/culture/expansion/survival regression. No AI-parity claim from a Granary forecast or conditional late checkpoints. Reject runtime if evidence is negative; retain all outcomes and missing checkpoints.",
+  "validation": {
+    "status": "complete",
+    "focused_unoptimized": {
+      "passed": 4,
+      "failed": 0,
+      "command": "CARGO_TARGET_DIR=target/growth-check CARGO_PROFILE_CI_OPT_LEVEL=0 cargo test --profile ci --locked --lib production_growth_",
+      "source": "50594d440"
+    },
+    "quality": {
+      "passed": true,
+      "base": "c351dca598cbe30abef98ed4b3405e8b3cf7aba9",
+      "head": "f9975f48d"
+    },
+    "prototype_full_optimized": {
+      "passed": 4552,
+      "ignored": 54,
+      "source": "50594d440",
+      "command": "cargo test --profile ci --locked",
+      "suite_rows": [
+        [
+          4300,
+          50
+        ],
+        [
+          14,
+          0
+        ],
+        [
+          217,
+          0
+        ],
+        [
+          17,
+          0
+        ],
+        [
+          4,
+          0
+        ],
+        [
+          0,
+          4
+        ]
+      ]
+    },
+    "final_full_optimized": {
+      "passed": 4548,
+      "ignored": 54,
+      "source": "cc7911f8908a12d08c1ce4f54eb481bda373c732",
+      "command": "cargo test --profile ci --locked",
+      "suite_rows": [
+        [
+          4296,
+          50
+        ],
+        [
+          14,
+          0
+        ],
+        [
+          217,
+          0
+        ],
+        [
+          17,
+          0
+        ],
+        [
+          4,
+          0
+        ],
+        [
+          0,
+          4
+        ]
+      ]
+    },
+    "final_quality": {
+      "passed": true,
+      "base": "f57abec5e369e9a95f7f6bf47a197c646b14a3f3",
+      "head": "cc7911f89"
+    }
+  },
+  "notes": [
+    "Both arms use the same harness and CI profile libraries. Treatment is runtime change only; no opt-in Granary policy is enabled.",
+    "Forecast holds other city populations and actions fixed. Native games test effects outside this approximation.",
+    "Real Firaxis controller and private gene profile are untouched."
+  ],
+  "prototype_commit": "f9975f48db721ce4bb99c32e507f0a36b0a9246c",
+  "probe_sha256": "38e0473df9b66e951a8b12762253bb5a2347dee7c98fe92ec72d26894db9608f",
+  "control_binary_sha256": "6a9a9794d1cff1ac561788f2e3abd1e1315f351887c56040f7fa1064bd9a3095",
+  "control_link_note": "Archived serde_derive dynamic library was missing from the preserved dependency bundle; added the matching dependency from this task CI build. Baseline runtime library remains unchanged.",
+  "control_proc_macro_sha256": "d7f302f4fa4627ff707ba1f0131a44c3023c5f836fa8d1bfb5206175c3aae910",
+  "compile_args": [
+    "--edition=2021",
+    "-O",
+    "-C",
+    "debug-assertions=on"
+  ],
+  "treatment_scope": "Default runtime guard applies to explicit Domination seats. This harness has only focal seat 0 explicitly targeted; AdvancedAi::fleet constructs adaptive rivals, so their production policy is unchanged. Strongest-rival Production is still measured independently in each arm to capture interactions.",
+  "numeric_gate_recorded_before_candidate_play_at": "2026-10-04T11:54:46.564439+00:00",
+  "acceptance_numeric": {
+    "confirmation_mean_production_change_pct_min_at_75_and_100_both_difficulties": 3,
+    "confirmation_mean_production_to_strongest_rival_change_pct_min_at_75_and_100_both_difficulties": 0,
+    "confirmation_cumulative_production_change_pct_min_at_100_both_difficulties": 0,
+    "confirmation_science_culture_cities_military_power_change_pct_min_at_75_and_100_both_difficulties": -5,
+    "confirmation_more_production_pairs_than_lower_at_75_and_100": true,
+    "confirmation_eliminations_no_more_than_control": true,
+    "confirmation_wins_no_fewer_than_control": true,
+    "pilot_stop": "Stop if every paired recorded checkpoint is identical, or Deity mean Production falls at least 5% at both turns 75 and 100. Otherwise run the fixed confirmation batch without changing the policy."
+  },
+  "frozen_runtime_source": "50594d440ca93dd9ddf926698a87456ea5ba2781",
+  "candidate_library_sha256": "2b41c3c4508045d5ec42f447c8d591c25f96de340ebda5920b94dfc9530f7f77",
+  "candidate_dependency_sha256": {
+    "libquote-e94315914580abd1.rlib": "49d266cb0b426141a382464dca58ffca0a9a07bf9263bcc46c30a650836a6f43",
+    "liblibm-5ee0467b56344aa1.rlib": "f8b977db76e23af41c4fa0413dd9837b5ae61b9fded1beb696328e326bac7e37",
+    "libserde_core-d8b9cb9d7eda75e3.rlib": "1480d09f0b0f8a9f76cb7fbd740c1a87a030d641d8b4a8347f9a6b23d394e963",
+    "libsyn-3854ff36265737a1.rlib": "a66fd194dc2f4a26ba9db90898a01c0d735d7dea6d3d0261bb6331fa6c9cbb75",
+    "libcc-306998902a309339.rlib": "78ab97890e958b744b3e729a3e57bde8648bdad7874a0e538f5ab338ff85c8df",
+    "libzmij-db1726fcbad03e10.rlib": "087ecf77c66cc9d9f6a71ef4c393bf87194fd96ce7c57921adea7f9d598086d7",
+    "libserde_json-133b453207d4c7d8.rlib": "8b58ca647cacc953a7e27f1a6f9c58ee4cacea6f497fc62079f730e3278b434f",
+    "libproc_macro2-b1baaf8ea9e1f1c6.rlib": "ed525c0441a4b562466f32e95b8bb5d0e3346af66dd811b2436f72366f66a927",
+    "libshlex-2ad7c2fa1558f084.rlib": "e415292c6f4f3bac21b7b2157507dbbb4850f64096b3041c37ea9062ea549639",
+    "libfind_msvc_tools-6ea7281740f42015.rlib": "47bf306f740c2612626613b603188d3edc78182bdc2500741010227e536c9daf",
+    "libmimalloc-4b1d0a8b44717daa.rlib": "4a6f3058d8007eaf87e4f45092ce4c4d1973f997ad78d2eef70d15a4b82733bf",
+    "libitoa-e05d252acce1b140.rlib": "a6646b819797de97bb0c378b156845db0afc2a6063b593e8f63b9832b1f2514d",
+    "libcivvis-b90f6ce0986a0c6d.rlib": "2b41c3c4508045d5ec42f447c8d591c25f96de340ebda5920b94dfc9530f7f77",
+    "libserde-99734557989d9f5b.rlib": "69b95a788025e7176baca572ef64d06cd1e5efc9afe1d7dcc28256b4fcb27915",
+    "libmemchr-2c696892a3f93ce4.rlib": "368df0dfa2b64ec29c8262593b4b92847a63910dc8f8dcdadaf32121ba2627ce",
+    "liblibmimalloc_sys-2c7708222b09358b.rlib": "a15c99f910b4128197ff3754f0215bb74ac597751c797495f86233a3f636ff98",
+    "libunicode_ident-00ff4f24fa63cdb3.rlib": "213612d4f31af086ad59b78928decf6df7085d84281f675bf6f082d95eae6f04",
+    "libserde_derive-15fd15435ae91cdd.dylib": "52aeecbfdf5ad80c68c8f33dd49779e9a7db68db0064c2e64d3ba1e34c218c8f",
+    "libmimalloc.a": "b487d87ba491d654abedd660322b18d5f0732dc246e189e651e9fbdd9c7ec1b8"
+  },
+  "frozen_before_candidate_play_at": "2026-10-04T12:02:11.295783+00:00",
+  "candidate_build_note": "CI-profile library built from this task worktree using a dedicated native target directory. Runtime src inputs match frozen_runtime_source; build started before the checkpoint commit, so embedded Git metadata can name the preceding head.",
+  "candidate_binary_sha256": "61f6a3c237797aeb29bb9eced08585f1dfaed06441be74f106dba0bd01cdf90f",
+  "pilot_completed_at": "2026-10-04T12:06:57.392295+00:00",
+  "decision": "Reject runtime prototype: confirmation lowers early Production at both primary checkpoints on both difficulties.",
+  "native_completed_at": "2026-10-04T12:16:18.743189+00:00",
+  "completed_games": 56,
+  "confirmation_runtime_unchanged": true,
+  "ci_prototype_source": "50594d440",
+  "ci_prototype_all_checks_success": true,
+  "runtime_prototype_removed": true,
+  "final_runtime_inputs_match_origin_main": true,
+  "final_main_merged": "f57abec5e369e9a95f7f6bf47a197c646b14a3f3",
+  "compiler": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: aarch64-apple-darwin\nrelease: 1.97.1\nLLVM version: 22.1.6\n",
+  "ledger_sha256": "e86a761d3fc5d51f3d41b289c5b7275810fe5adbbe2a85581d32833ad3e05a45",
+  "artifact_sha256": {
+    "2026-10-04-production-growth-forecast-confirmation-deity-candidate.csv": "3a7c3bc41e043a0efbdb160753a1f29a40c4994c155ba2fc2b3701ad6af2e765",
+    "2026-10-04-production-growth-forecast-confirmation-deity-candidate.txt": "070fff027a3747d12b9c1002380c17c5d84f2df5c46bae82c1bf6b14a22a33bf",
+    "2026-10-04-production-growth-forecast-confirmation-deity-control.csv": "840f16662005ac2fbb3f419990be3e65bf87d77cde68a10d5c0fe80e97065f18",
+    "2026-10-04-production-growth-forecast-confirmation-deity-control.txt": "c6049558df9709a32863fb84fe95fb9a492ebed41eaa621114b250ab0ca5ad7a",
+    "2026-10-04-production-growth-forecast-confirmation-emperor-candidate.csv": "c85206fa780c27dd5caa897b505f5fed4429629ff05dc0ceddcd206ef4b73417",
+    "2026-10-04-production-growth-forecast-confirmation-emperor-candidate.txt": "bc9fabc123219ecce8661cb5ba1dd3e1be8fa485ed9dbc39034e382915255977",
+    "2026-10-04-production-growth-forecast-confirmation-emperor-control.csv": "e19c0dc4d1520b330c3fc823a1ebcc9fcdeba8d9e73efc6cad94a230c805ea28",
+    "2026-10-04-production-growth-forecast-confirmation-emperor-control.txt": "283d6ed51c757558a7669c77993f7950e3acb887d40486c81fe227868529452e",
+    "2026-10-04-production-growth-forecast-confirmation-summary.json": "aba1282dbafd7559bf753463242599969b37aabc68a6d7398773f98f686eec81",
+    "2026-10-04-production-growth-forecast-decision.json": "8b8a2541979205fe083d43a5d4bf164641a94db15f00afc568c1df4d8d4e7831",
+    "2026-10-04-production-growth-forecast-pilot-deity-candidate.csv": "5d5b28a3d4e1777675c19d88f45ec344716b865faea517095d5f80419879611c",
+    "2026-10-04-production-growth-forecast-pilot-deity-candidate.txt": "ea4679048899bdfd1ea7547c4abd53323d82e918fff739bbdd892f817bca82bc",
+    "2026-10-04-production-growth-forecast-pilot-deity-control.csv": "9355fd5dd973797aa90c32bec1b2025c61763c67cc100cd496715f88ddbec5fc",
+    "2026-10-04-production-growth-forecast-pilot-deity-control.txt": "a72f16177cceffeb807ecd38b9ab58b6eeed972aae7db4f883a91ebe546f8336",
+    "2026-10-04-production-growth-forecast-pilot-emperor-candidate.csv": "4a81bfe35173e7d45e4070ff457a4a98202adb888a504323b1e2f07b65be3ccd",
+    "2026-10-04-production-growth-forecast-pilot-emperor-candidate.txt": "791b120af7cb0d1f2ab8c499f90f00e1fb7cf052afe4392e9c2ce0ef4336a2cb",
+    "2026-10-04-production-growth-forecast-pilot-emperor-control.csv": "4a81bfe35173e7d45e4070ff457a4a98202adb888a504323b1e2f07b65be3ccd",
+    "2026-10-04-production-growth-forecast-pilot-emperor-control.txt": "791b120af7cb0d1f2ab8c499f90f00e1fb7cf052afe4392e9c2ce0ef4336a2cb",
+    "2026-10-04-production-growth-forecast-pilot-summary.json": "dc535956c694ec6f7af70d46a30501030d7f700650ad629972e6036708072103",
+    "2026-10-04-production-growth-forecast-probe.rs": "38e0473df9b66e951a8b12762253bb5a2347dee7c98fe92ec72d26894db9608f",
+    "2026-10-04-production-growth-forecast-prototype.patch": "9029c32fa2549ac5f77a39cc037b88c10571845f32681b37e730c0fc4a56cf3a",
+    "2026-10-04-production-growth-forecast-summarize.py": "a2b5555ff6f37de7e7ee79afaecb0d7471a577299ab4d25ce8fcdf445c5073b2",
+    "2026-10-04-production-growth-forecast.md": "34918988d73210455421ca0de040433c34b54e6eaacffc2b09728098a4c892d3"
+  }
+}

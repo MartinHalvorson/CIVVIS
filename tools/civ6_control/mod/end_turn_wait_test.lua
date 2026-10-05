@@ -272,6 +272,7 @@ check("…the blocker by type", has(w, '"blockers":{"5":1}'), true)
 check("…the live Quick Movement", has(w, '"quick_movement":false'), true)
 check("…the live Quick Combat", has(w, '"quick_combat":true'), true)
 check("…and the UI clock at turn end", has(w, '"ui_now":11.25'), true)
+check("…and the timescale the turn ran at", has(w, '"scale":1'), true)
 
 -- 2. Once per turn: a second turn-end callback for the same turn is silent.
 handlers.LocalPlayerTurnEnd()
@@ -532,6 +533,51 @@ queue.startTimescale(2)
 check("game end reverts", queue.resetTimescale("game_over"), true)
 check("…with the reason", has(lastTimescale(), '"why":"game_over"'), true)
 check("…once", queue.resetTimescale("game_over"), false)
+
+-- The in-game A/B: two scales alternate in blocks of turns, each switch a
+-- console command plus a clock rebase that restarts the check's window.
+fresh()
+check("source: the pending start prefers the A/B", has(agentSource,
+	"return CivvisQueue.startTimescaleAB(cfg.DebugTimeScaleAB, cfg.DebugTimeScaleABTurns);"), true)
+check("source: every turn begin picks the block's scale", has(agentSource,
+	"pcall(CivvisQueue.timescaleBlock, try(function() return Game.GetCurrentGameTurn(); end, nil));"), true)
+check("a nonsense A/B is refused", queue.startTimescaleAB("3", 10), false)
+check("…so is a scale out of range", queue.startTimescaleAB("3,9", 10), false)
+check("…and nothing ran", #commands, 0)
+now, wallNow = 1000.0, 20000
+check("an A/B starts at its first scale", queue.startTimescaleAB("3,4", 10), true)
+check("…the console command", commands[1], "timescale 3")
+queue.timescaleBlock(1)
+check("turns 1-9 stay at the first scale", #commands, 1)
+now = 1030.0  -- 10 real seconds at 3x
+local before = clock.now()
+queue.timescaleBlock(10)
+check("turn 10 switches to the second scale", commands[2], "timescale 4")
+check("…the clock divides by it", clock.scale, 4)
+check("…without a jump", clock.now(), before)
+check("…every context is told", ExposedMembers.CivvisTimeScale, 4)
+check("…journaled with its turn", has(lastTimescale(), '"phase":"ab_switch"'), true)
+now, wallNow = 1070.0, 20010
+check("40 UI seconds at 4x are 10 real", clock.now(), before + 10)
+-- The check's window restarted at the switch (wall 20000): 120 UI-s in 30
+-- wall-s at 4x reads real_ratio 1, not a mix of the two scales.
+now, wallNow = 1150.0, 20030
+ack("Heartbeat", 4)
+queue.checkTimescaleClock()
+check("the window after a switch reads one scale", has(events("timescale_clock")[#events("timescale_clock")], '"real_ratio":1,'), true)
+queue.timescaleBlock(15)
+check("the same block does not switch again", #commands, 2)
+queue.timescaleBlock(20)
+check("turn 20 switches back", commands[3], "timescale 3")
+revertThrows = false
+AutoProfiler.RunCommand = function(cmd) if cmd == "timescale 4" then error("refused") end; commands[#commands + 1] = cmd end
+queue.timescaleBlock(30)
+check("a refused switch reverts the timescale", has(lastTimescale(), '"why":"ab_switch_failed"'), true)
+check("…to real time", clock.scale, 1)
+queue.timescaleBlock(40)
+check("…and the A/B stops", commands[#commands], "timescale 1")
+queue.timescaleAB = nil
+AutoProfiler = { RunCommand = function(cmd) commands[#commands + 1] = cmd end }
 
 -- A raising RunCommand: journaled, never applied, nothing to revert.
 fresh()

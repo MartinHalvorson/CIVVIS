@@ -84,18 +84,20 @@ class LogTail:
             event = self._decode(line)
             if event is not None:
                 events.append(event)
-        # ★★ THE GAME HOLDS ITS LAST RECORD'S NEWLINE UNTIL THE NEXT RECORD.
-        # `Automation.Log` writes each record's line break only when the next
-        # record arrives, so whatever was logged last waits as `partial` until
-        # something else is logged: two `await` polls reach this process in the
-        # same instant, and a replan frame's `state` -- the last line of its
-        # export -- reached the brain ~0.2 s after it was written (median 0.219 s
-        # after its `replan_frame` over 409 frames of civvis-20261004T171152Z,
-        # 0.000 once #3921 happened to log `export_timing` right behind it). A
-        # JSON object cannot parse until its final brace is written, so a
-        # prefixed tail that parses whole IS the complete record: relay it now
-        # and drop it when its newline arrives. A half-written tail still fails
-        # to parse and waits, exactly as before.
+        # ★ A COMPLETE RECORD LEFT WITHOUT ITS NEWLINE IS RELAYED NOW.
+        # Some records sit in the file unterminated until something else is
+        # logged (the AutoClose context's lines, up to 1.4 s measured
+        # 2026-10-04). A JSON object cannot parse until its final brace is
+        # written, so a prefixed tail that parses whole IS the complete record:
+        # relay it now and drop it when its newline arrives. A half-written tail
+        # still fails to parse and waits, exactly as before.
+        #
+        # ⚠ This does NOT release the agent's last record. The game holds that
+        # record in memory and writes it -- newline and all -- only when the
+        # next record is logged (in-file, G72: `export_timing` lands with the
+        # record after it 73% of the time), so it never reaches this file as a
+        # partial. What releases a board is the agent logging a record right
+        # behind it: see `CivvisExportClock.report` in CivvisControlAgent.lua.
         if self.partial and self.partial != self.delivered \
                 and self.partial.rstrip().endswith("}"):
             event = self._decode(self.partial)

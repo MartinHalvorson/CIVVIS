@@ -209,19 +209,76 @@ class ExitConfirmationWiringTests(unittest.TestCase):
         cannot get through it, and `quit_game` — rightly refusing to SIGKILL a
         process that owns the save files — leaves the lane stalled for an
         operator. Measured twice on 2026-09-10."""
-        alive = [[4242], [4242], [4242], []]
+        now, clock, sleep = self._clock()
+        answered = []
+
+        def confirm():
+            answered.append(now[0])
+            return True
 
         def pids():
-            return alive.pop(0) if alive else []
+            return [] if answered else [4242]   # the modal holds it until answered
 
         with mock.patch.object(civ6_env, "game_pids", side_effect=pids), \
              mock.patch.object(civ6_env, "request_macos_quit", return_value=True), \
-             mock.patch.object(civ6_env, "confirm_exit_dialog",
-                               return_value=True) as confirm, \
+             mock.patch.object(civ6_env, "confirm_exit_dialog", side_effect=confirm), \
              mock.patch.object(civ6_env.os, "kill") as kill, \
-             mock.patch("time.sleep"):
+             mock.patch("time.time", side_effect=clock), \
+             mock.patch("time.sleep", side_effect=sleep):
             self.assertTrue(civ6_env.quit_game(timeout_s=20.0))
-        confirm.assert_called_once_with()
+        self.assertEqual(len(answered), 1)
+        kill.assert_not_called()
+
+    def _clock(self):
+        """A fake time.time that advances only when the code under test sleeps."""
+        now = [1000.0]
+
+        def sleep(seconds):
+            now[0] += seconds
+
+        return now, (lambda: now[0]), sleep
+
+    def test_a_game_that_leaves_by_itself_is_never_photographed(self):
+        """The end-of-game quit closes the game unasked; the confirmation look
+        is a screenshot that can stall ~15 s, so it waits EXIT_CONFIRM_AFTER_S."""
+        now, clock, sleep = self._clock()
+
+        def pids():
+            return [4242] if now[0] < 1002.0 else []   # gone 2 s after the quit
+
+        with mock.patch.object(civ6_env, "game_pids", side_effect=pids), \
+             mock.patch.object(civ6_env, "request_macos_quit", return_value=True), \
+             mock.patch.object(civ6_env, "confirm_exit_dialog") as confirm, \
+             mock.patch.object(civ6_env.os, "kill") as kill, \
+             mock.patch("time.time", side_effect=clock), \
+             mock.patch("time.sleep", side_effect=sleep):
+            self.assertTrue(civ6_env.quit_game(timeout_s=20.0))
+        confirm.assert_not_called()
+        kill.assert_not_called()
+
+    def test_a_game_still_up_after_the_settle_is_looked_at_once_a_second(self):
+        """A modal that is not found yet is looked for again a second later,
+        never on every 0.2 s poll, and is answered inside the menu window."""
+        now, clock, sleep = self._clock()
+        answered = []
+
+        def confirm():
+            answered.append(now[0])
+            return len(answered) == 3   # found on the third look
+
+        def pids():
+            return [4242] if len(answered) < 3 else []
+
+        with mock.patch.object(civ6_env, "game_pids", side_effect=pids), \
+             mock.patch.object(civ6_env, "request_macos_quit", return_value=True), \
+             mock.patch.object(civ6_env, "confirm_exit_dialog", side_effect=confirm), \
+             mock.patch.object(civ6_env.os, "kill") as kill, \
+             mock.patch("time.time", side_effect=clock), \
+             mock.patch("time.sleep", side_effect=sleep):
+            self.assertTrue(civ6_env.quit_game(timeout_s=20.0))
+        self.assertEqual(len(answered), 3)
+        self.assertGreaterEqual(answered[0] - 1000.0, civ6_env.EXIT_CONFIRM_AFTER_S)
+        self.assertGreaterEqual(answered[1] - answered[0], 1.0)
         kill.assert_not_called()
 
     def test_the_confirmation_is_never_asked_when_the_menu_quit_was_refused(self):

@@ -4593,6 +4593,10 @@ pub struct ObservedPublicEmpireStats {
     pub foreign_tourists: Option<usize>,
     #[serde(default)]
     pub domestic_tourists: Option<usize>,
+    /// The engine's own turns until this major wins on Culture
+    /// (`GetTurnsUntilVictory`); a negative reading means it reports none.
+    #[serde(default)]
+    pub culture_turns_to_victory: Option<f64>,
     /// Two more of that screen's own lane numbers: the religion lane's cities
     /// following this seat's religion (`GetNumCitiesFollowingReligion`, which
     /// counts cities the seat has never seen) and the domination lane's
@@ -24710,7 +24714,7 @@ impl Game {
             .unwrap_or(0)
     }
 
-    fn air_operation_origin(&self, uid: u32) -> Pos {
+    pub(crate) fn air_operation_origin(&self, uid: u32) -> Pos {
         let unit = &self.units[&uid];
         unit.air_patrol_pos.unwrap_or(unit.pos)
     }
@@ -26909,6 +26913,15 @@ impl Game {
         let separate_military_layers = spec.class == "military"
             && (spec.domain.as_deref() == Some("sea")) != (ospec.domain.as_deref() == Some("sea"));
         !separate_military_layers
+    }
+
+    /// Whether two units on the board would contest one stacking layer if they
+    /// stood on the same tile. False for an unknown id.
+    pub fn units_share_stacking_layer(&self, unit: u32, other: u32) -> bool {
+        let (Some(a), Some(b)) = (self.units.get(&unit), self.units.get(&other)) else {
+            return false;
+        };
+        self.shares_stacking_layer(&self.rules.units[a.kind], &self.rules.units[b.kind])
     }
 
     /// Whether this unit may **end its movement** on `pos`.
@@ -31287,6 +31300,15 @@ impl Game {
             .values()
             .filter(|city| self.city_religion(city) == Some(religion))
             .count()
+    }
+
+    /// The host's own turns until `pid` wins on Culture, when observed: see
+    /// `ObservedPublicEmpireStats::culture_turns_to_victory`. A native game
+    /// has none.
+    pub fn culture_turns_to_victory(&self, pid: usize) -> Option<f64> {
+        self.observed_public_empire_stats
+            .get(&pid)
+            .and_then(|stats| stats.culture_turns_to_victory)
     }
 
     pub fn domestic_tourists(&self, pid: usize) -> i64 {

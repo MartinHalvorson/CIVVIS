@@ -1,0 +1,23 @@
+{
+  "frozen_at": "2026-10-05T01:50:27.303975+00:00",
+  "purpose": "Passive whole-turn coverage of immediate city production from Food Farm/citizen reassignment; no treatment",
+  "configuration": "Public targeted Domination live bridge, stock adaptive rivals, 4p60x38Pangaea Online150 six citystates Gran Colombia focal, focal handicap-exempt; unchanged public weights; escort checked off",
+  "consumed_controls": {
+    "emperor": [
+      61008600,
+      61008601,
+      61008602,
+      61008603
+    ],
+    "deity": [
+      61008700,
+      61008701,
+      61008702,
+      61008703
+    ]
+  },
+  "observer": "Evaluate the same static Farm model on player_decision_view(0) each world-turn start. Record actual clone tile/city yields and citizen reassignment, structural fresh-allowance cases, input guards and known native hostile reach. Original AI makes every decision. No projected hostile-memory or complete next-turn safety is promised.",
+  "equivalence_gate": "All eight action histories and final saves must match preceding controls byte for byte; complete assigned executions and errors before interpreting coverage",
+  "fresh_samples_played": 0,
+  "actual_Firaxis_verification": false
+}

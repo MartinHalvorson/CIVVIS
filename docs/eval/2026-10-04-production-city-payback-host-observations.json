@@ -1,0 +1,2545 @@
+{
+  "source_run": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261004T070716Z-cont1",
+  "state_selection": "First complete state of each requested turn; read-only archived observations; another writer controls this game.",
+  "checkpoints": [
+    {
+      "turn": 75,
+      "techs": [
+        "TECH_POTTERY",
+        "TECH_ANIMAL_HUSBANDRY",
+        "TECH_MINING",
+        "TECH_SAILING",
+        "TECH_ASTROLOGY",
+        "TECH_ARCHERY",
+        "TECH_WRITING",
+        "TECH_MASONRY",
+        "TECH_BRONZE_WORKING",
+        "TECH_THE_WHEEL",
+        "TECH_CURRENCY",
+        "TECH_HORSEBACK_RIDING",
+        "TECH_IRON_WORKING",
+        "TECH_SHIPBUILDING",
+        "TECH_ENGINEERING",
+        "TECH_MACHINERY"
+      ],
+      "policies": [
+        "POLICY_CONSCRIPTION",
+        "POLICY_DISCIPLINE",
+        "POLICY_NATURAL_PHILOSOPHY",
+        "POLICY_URBAN_PLANNING"
+      ],
+      "cities": [
+        {
+          "id": 65536,
+          "name": "Bogot\u00e1",
+          "pop": 6,
+          "yields": {
+            "culture": 6.79688,
+            "faith": 1,
+            "food": 14,
+            "gold": 7,
+            "production": 12,
+            "science": 11
+          },
+          "yield_sources": {
+            "culture": "+3 from Modifiers\n+1.7 from Population\n+2 from Buildings\n +1 from Palace\n +1 from Monument",
+            "faith": "+1 from Modifiers",
+            "food": "+14 from Worked Tiles",
+            "gold": "+5 from Buildings\n +5 from Palace\n+2 from Worked Tiles",
+            "production": "+1 from Modifiers\n+2 from Buildings\n +2 from Palace\n+9 from Worked Tiles",
+            "science": "+6 from Districts\n +6 from Campus\n+3 from Population\n+2 from Buildings\n +2 from Palace"
+          },
+          "housing": 7,
+          "housing_growth_mult": 0.5,
+          "food_surplus": 2,
+          "growth_turns": 26,
+          "amenities": 4,
+          "amenities_needed": 3,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_PALACE",
+            "BUILDING_WALLS"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 24,
+              "y": 30
+            },
+            {
+              "complete": false,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_THEATER",
+              "wall_damage": 0,
+              "x": 23,
+              "y": 30
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 100,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 30
+            }
+          ],
+          "producing": "DISTRICT_THEATER",
+          "production_turns": 5,
+          "industry_quotes": [
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 3
+            },
+            {
+              "t": "BUILDING_WATER_MILL",
+              "c": 40,
+              "p": 4
+            }
+          ]
+        },
+        {
+          "id": 131073,
+          "name": "Guayaquil",
+          "pop": 3,
+          "yields": {
+            "culture": 2.89844,
+            "faith": 0,
+            "food": 8,
+            "gold": 2,
+            "production": 6,
+            "science": 2.5
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+0.8 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+8 from Worked Tiles",
+            "gold": "+2 from Worked Tiles",
+            "production": "+1 from Modifiers\n+5 from Worked Tiles",
+            "science": "+1.5 from Population\n+1 from Worked Tiles"
+          },
+          "housing": 3,
+          "housing_growth_mult": 0.25,
+          "food_surplus": 2,
+          "growth_turns": 17,
+          "amenities": 4,
+          "amenities_needed": 2,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 18,
+              "y": 32
+            }
+          ],
+          "producing": "UNIT_SETTLER",
+          "production_turns": 22,
+          "industry_quotes": [
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 6
+            }
+          ]
+        },
+        {
+          "id": 196610,
+          "name": "Caracas",
+          "pop": 3,
+          "yields": {
+            "culture": 2.89844,
+            "faith": 0,
+            "food": 8,
+            "gold": 7,
+            "production": 4,
+            "science": 1.5
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+0.8 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+8 from Worked Tiles",
+            "gold": "+7 from Worked Tiles",
+            "production": "+1 from Modifiers\n+3 from Worked Tiles",
+            "science": "+1.5 from Population"
+          },
+          "housing": 4,
+          "housing_growth_mult": 0.5,
+          "food_surplus": 2,
+          "growth_turns": 14,
+          "amenities": 3,
+          "amenities_needed": 2,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_WALLS"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 100,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 34
+            }
+          ],
+          "producing": "UNIT_SETTLER",
+          "production_turns": 32,
+          "industry_quotes": [
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 8
+            }
+          ]
+        },
+        {
+          "id": 262147,
+          "name": "Quito",
+          "pop": 3,
+          "yields": {
+            "culture": 2.89844,
+            "faith": 0,
+            "food": 9,
+            "gold": 7,
+            "production": 7,
+            "science": 1.5
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+0.8 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+1 from Buildings\n +1 from Granary\n+8 from Worked Tiles",
+            "gold": "+7 from Worked Tiles",
+            "production": "+1 from Modifiers\n+6 from Worked Tiles",
+            "science": "+1.5 from Population"
+          },
+          "housing": 4,
+          "housing_growth_mult": 0.5,
+          "food_surplus": 3,
+          "growth_turns": 4,
+          "amenities": 3,
+          "amenities_needed": 2,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_GRANARY"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 25,
+              "y": 29
+            }
+          ],
+          "producing": "UNIT_CATAPULT",
+          "production_turns": 3,
+          "industry_quotes": []
+        },
+        {
+          "id": 327684,
+          "name": "Popay\u00e1n",
+          "pop": 2,
+          "yields": {
+            "culture": 2.59766,
+            "faith": 0,
+            "food": 5,
+            "gold": 2,
+            "production": 6,
+            "science": 2
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+0.5 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+5 from Worked Tiles",
+            "gold": "+2 from Worked Tiles",
+            "production": "+1 from Modifiers\n+5 from Worked Tiles",
+            "science": "+1 from Population\n+1 from Worked Tiles"
+          },
+          "housing": 5,
+          "housing_growth_mult": 1,
+          "food_surplus": 1,
+          "growth_turns": 1,
+          "amenities": 2,
+          "amenities_needed": 1,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 27,
+              "y": 33
+            }
+          ],
+          "producing": "UNIT_CATAPULT",
+          "production_turns": 5,
+          "industry_quotes": [
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 6
+            },
+            {
+              "t": "BUILDING_WATER_MILL",
+              "c": 40,
+              "p": 7
+            }
+          ]
+        },
+        {
+          "id": 393221,
+          "name": "Cuenca",
+          "pop": 2,
+          "yields": {
+            "culture": 2.59766,
+            "faith": 0,
+            "food": 5,
+            "gold": 0,
+            "production": 6,
+            "science": 2
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+0.5 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+5 from Worked Tiles",
+            "gold": "",
+            "production": "+1 from Modifiers\n+5 from Worked Tiles",
+            "science": "+1 from Population\n+1 from Worked Tiles"
+          },
+          "housing": 2,
+          "housing_growth_mult": 0.25,
+          "food_surplus": 1,
+          "growth_turns": 39,
+          "amenities": 2,
+          "amenities_needed": 1,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 26
+            }
+          ],
+          "producing": "UNIT_CATAPULT",
+          "production_turns": 7,
+          "industry_quotes": [
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 6
+            }
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "player": 1,
+          "leader": "LEADER_HOJO",
+          "public_stats": {
+            "city_count": 4,
+            "food": 68,
+            "nuclear_devices": 0,
+            "population": 24,
+            "production": 46.4922,
+            "suzerain_count": 2,
+            "thermonuclear_devices": 0,
+            "wonder_count": 3
+          }
+        },
+        {
+          "player": 2,
+          "leader": "LEADER_ROBERT_THE_BRUCE",
+          "public_stats": {
+            "city_count": 4,
+            "food": 64,
+            "nuclear_devices": 0,
+            "population": 22,
+            "production": 65.1445,
+            "suzerain_count": 1,
+            "thermonuclear_devices": 0,
+            "wonder_count": 0
+          }
+        },
+        {
+          "player": 3,
+          "leader": "LEADER_PEDRO",
+          "public_stats": {
+            "city_count": 4,
+            "food": 76,
+            "nuclear_devices": 0,
+            "population": 28,
+            "production": 46.4961,
+            "suzerain_count": 2,
+            "thermonuclear_devices": 0,
+            "wonder_count": 1
+          }
+        }
+      ]
+    },
+    {
+      "turn": 100,
+      "techs": [
+        "TECH_POTTERY",
+        "TECH_ANIMAL_HUSBANDRY",
+        "TECH_MINING",
+        "TECH_SAILING",
+        "TECH_ASTROLOGY",
+        "TECH_IRRIGATION",
+        "TECH_ARCHERY",
+        "TECH_WRITING",
+        "TECH_MASONRY",
+        "TECH_BRONZE_WORKING",
+        "TECH_THE_WHEEL",
+        "TECH_CURRENCY",
+        "TECH_HORSEBACK_RIDING",
+        "TECH_IRON_WORKING",
+        "TECH_SHIPBUILDING",
+        "TECH_CONSTRUCTION",
+        "TECH_ENGINEERING",
+        "TECH_APPRENTICESHIP",
+        "TECH_MACHINERY",
+        "TECH_STIRRUPS",
+        "TECH_MILITARY_ENGINEERING",
+        "TECH_GUNPOWDER"
+      ],
+      "policies": [
+        "POLICY_CONSCRIPTION",
+        "POLICY_PROFESSIONAL_ARMY",
+        "POLICY_COLONIZATION",
+        "POLICY_CHARISMATIC_LEADER",
+        "POLICY_NATURAL_PHILOSOPHY",
+        "POLICY_SERFDOM"
+      ],
+      "cities": [
+        {
+          "id": 65536,
+          "name": "Bogot\u00e1",
+          "pop": 7,
+          "yields": {
+            "culture": 9.09766,
+            "faith": 1,
+            "food": 19,
+            "gold": 13,
+            "production": 14,
+            "science": 15.5
+          },
+          "yield_sources": {
+            "culture": "+3 from Modifiers\n+1 from Outgoing Trade Routes\n+1 from Districts\n +1 from Theater Square\n+2 from Population\n+2 from Buildings\n +1 from Palace\n +1 from Monument",
+            "faith": "+1 from Modifiers",
+            "food": "+1 from Buildings\n +1 from Granary\n+18 from Worked Tiles",
+            "gold": "+6 from Outgoing Trade Routes\n+5 from Buildings\n +5 from Palace\n+2 from Worked Tiles",
+            "production": "+2 from Buildings\n +2 from Palace\n+12 from Worked Tiles",
+            "science": "+8 from Districts\n +8 from Campus\n+3.5 from Population\n+4 from Buildings\n +2 from Library\n +2 from Palace"
+          },
+          "housing": 11,
+          "housing_growth_mult": 1,
+          "food_surplus": 5,
+          "growth_turns": 1,
+          "amenities": 4,
+          "amenities_needed": 4,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_PALACE",
+            "BUILDING_GRANARY",
+            "BUILDING_LIBRARY",
+            "BUILDING_WALLS"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 24,
+              "y": 30
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_THEATER",
+              "wall_damage": 0,
+              "x": 23,
+              "y": 30
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 100,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 30
+            }
+          ],
+          "producing": "UNIT_BUILDER",
+          "production_turns": 3,
+          "industry_quotes": [
+            {
+              "t": "DISTRICT_INDUSTRIAL_ZONE",
+              "c": 102,
+              "p": 8
+            },
+            {
+              "t": "BUILDING_WATER_MILL",
+              "c": 40,
+              "p": 3
+            }
+          ]
+        },
+        {
+          "id": 131073,
+          "name": "Guayaquil",
+          "pop": 4,
+          "yields": {
+            "culture": 3.19922,
+            "faith": 0,
+            "food": 9,
+            "gold": 2,
+            "production": 8,
+            "science": 3
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+1.1 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+9 from Worked Tiles",
+            "gold": "+2 from Worked Tiles",
+            "production": "+8 from Worked Tiles",
+            "science": "+2 from Population\n+1 from Worked Tiles"
+          },
+          "housing": 6,
+          "housing_growth_mult": 1,
+          "food_surplus": 1,
+          "growth_turns": 17,
+          "amenities": 2,
+          "amenities_needed": 2,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 18,
+              "y": 32
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_AQUEDUCT",
+              "wall_damage": 0,
+              "x": 17,
+              "y": 31
+            },
+            {
+              "complete": false,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 17,
+              "y": 30
+            }
+          ],
+          "producing": "DISTRICT_CAMPUS",
+          "production_turns": 9,
+          "industry_quotes": [
+            {
+              "t": "DISTRICT_INDUSTRIAL_ZONE",
+              "c": 102,
+              "p": 13
+            },
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 4
+            }
+          ]
+        },
+        {
+          "id": 196610,
+          "name": "Caracas",
+          "pop": 4,
+          "yields": {
+            "culture": 3.19922,
+            "faith": 0,
+            "food": 8,
+            "gold": 9,
+            "production": 6,
+            "science": 2
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+1.1 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+8 from Worked Tiles",
+            "gold": "+9 from Worked Tiles",
+            "production": "+6 from Worked Tiles",
+            "science": "+2 from Population"
+          },
+          "housing": 8,
+          "housing_growth_mult": 1,
+          "food_surplus": 0,
+          "growth_turns": -1,
+          "amenities": 2,
+          "amenities_needed": 2,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_WALLS"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 100,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 34
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_AQUEDUCT",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 33
+            }
+          ],
+          "producing": "UNIT_SETTLER",
+          "production_turns": 3,
+          "industry_quotes": [
+            {
+              "t": "DISTRICT_INDUSTRIAL_ZONE",
+              "c": 102,
+              "p": 17
+            },
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 6
+            }
+          ]
+        },
+        {
+          "id": 262147,
+          "name": "Quito",
+          "pop": 4,
+          "yields": {
+            "culture": 4.19922,
+            "faith": 0,
+            "food": 10,
+            "gold": 7,
+            "production": 13,
+            "science": 6
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+1 from Districts\n +1 from Theater Square\n+1.1 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+1 from Buildings\n +1 from Granary\n+9 from Worked Tiles",
+            "gold": "+7 from Worked Tiles",
+            "production": "+13 from Worked Tiles",
+            "science": "+4 from Districts\n +4 from Campus\n+2 from Population"
+          },
+          "housing": 4,
+          "housing_growth_mult": 0.25,
+          "food_surplus": 2,
+          "growth_turns": 24,
+          "amenities": 2,
+          "amenities_needed": 2,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_GRANARY"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_THEATER",
+              "wall_damage": 0,
+              "x": 26,
+              "y": 30
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 25,
+              "y": 30
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 25,
+              "y": 29
+            }
+          ],
+          "producing": "UNIT_TREBUCHET",
+          "production_turns": 3,
+          "industry_quotes": []
+        },
+        {
+          "id": 327684,
+          "name": "Popay\u00e1n",
+          "pop": 4,
+          "yields": {
+            "culture": 3.19922,
+            "faith": 0,
+            "food": 12,
+            "gold": 2,
+            "production": 15,
+            "science": 7
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+1.1 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+5 from Outgoing Trade Routes\n+7 from Worked Tiles",
+            "gold": "+2 from Worked Tiles",
+            "production": "+1 from Outgoing Trade Routes\n+14 from Worked Tiles",
+            "science": "+2 from Districts\n +2 from Campus\n+2 from Population\n+2 from Buildings\n +2 from Library\n+1 from Worked Tiles"
+          },
+          "housing": 5,
+          "housing_growth_mult": 0.5,
+          "food_surplus": 4,
+          "growth_turns": 5,
+          "amenities": 2,
+          "amenities_needed": 2,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_LIBRARY"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 27,
+              "y": 33
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 26,
+              "y": 33
+            }
+          ],
+          "producing": "UNIT_TREBUCHET",
+          "production_turns": 3,
+          "industry_quotes": [
+            {
+              "t": "DISTRICT_INDUSTRIAL_ZONE",
+              "c": 102,
+              "p": 7
+            },
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 3
+            },
+            {
+              "t": "BUILDING_WATER_MILL",
+              "c": 40,
+              "p": 3
+            }
+          ]
+        },
+        {
+          "id": 393221,
+          "name": "Cuenca",
+          "pop": 2,
+          "yields": {
+            "culture": 2.59766,
+            "faith": 0,
+            "food": 5,
+            "gold": 0,
+            "production": 8,
+            "science": 9
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+0.5 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+5 from Worked Tiles",
+            "gold": "",
+            "production": "+8 from Worked Tiles",
+            "science": "+6 from Districts\n +6 from Campus\n+1 from Population\n+2 from Buildings\n +2 from Library"
+          },
+          "housing": 2,
+          "housing_growth_mult": 0.25,
+          "food_surplus": 1,
+          "growth_turns": 14,
+          "amenities": 1,
+          "amenities_needed": 1,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_LIBRARY"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 27
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 26
+            }
+          ],
+          "producing": "UNIT_SETTLER",
+          "production_turns": 11,
+          "industry_quotes": [
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 4
+            }
+          ]
+        },
+        {
+          "id": 458758,
+          "name": "Cartagena de Indias",
+          "pop": 2,
+          "yields": {
+            "culture": 0.539062,
+            "faith": 0,
+            "food": 5,
+            "gold": 0,
+            "production": 8.10156,
+            "science": 0.902344
+          },
+          "yield_sources": {
+            "culture": "+0.5 from Population\n-10(-0) from Amenities",
+            "faith": "-10(+0) from Amenities",
+            "food": "+5 from Worked Tiles",
+            "gold": "-10(+0) from Amenities",
+            "production": "+9 from Worked Tiles\n-10(-0.8) from Amenities",
+            "science": "+1 from Population\n-10(-0) from Amenities"
+          },
+          "housing": 3,
+          "housing_growth_mult": 0.5,
+          "food_surplus": 1,
+          "growth_turns": 6,
+          "amenities": 0,
+          "amenities_needed": 1,
+          "happiness_yield_mult": -10,
+          "buildings": [],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 29,
+              "y": 29
+            },
+            {
+              "complete": false,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_HOLY_SITE",
+              "wall_damage": 0,
+              "x": 28,
+              "y": 29
+            }
+          ],
+          "producing": "UNIT_MAN_AT_ARMS",
+          "production_turns": 4,
+          "industry_quotes": [
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 4
+            }
+          ]
+        },
+        {
+          "id": 524295,
+          "name": "Valencia de Carabobo",
+          "pop": 2,
+          "yields": {
+            "culture": 0.539062,
+            "faith": 0,
+            "food": 6,
+            "gold": 0,
+            "production": 3.60156,
+            "science": 0.902344
+          },
+          "yield_sources": {
+            "culture": "+0.5 from Population\n-10(-0) from Amenities",
+            "faith": "-10(+0) from Amenities",
+            "food": "+6 from Worked Tiles",
+            "gold": "-10(+0) from Amenities",
+            "production": "+4 from Worked Tiles\n-10(-0.3) from Amenities",
+            "science": "+1 from Population\n-10(-0) from Amenities"
+          },
+          "housing": 3,
+          "housing_growth_mult": 0.5,
+          "food_surplus": 2,
+          "growth_turns": 10,
+          "amenities": 0,
+          "amenities_needed": 1,
+          "happiness_yield_mult": -10,
+          "buildings": [],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 32,
+              "y": 24
+            },
+            {
+              "complete": false,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_HOLY_SITE",
+              "wall_damage": 0,
+              "x": 31,
+              "y": 23
+            }
+          ],
+          "producing": "DISTRICT_HOLY_SITE",
+          "production_turns": 22,
+          "industry_quotes": [
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 9
+            }
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "player": 1,
+          "leader": "LEADER_HOJO",
+          "public_stats": {
+            "city_count": 4,
+            "food": 85,
+            "nuclear_devices": 0,
+            "population": 30,
+            "production": 74.4961,
+            "suzerain_count": 2,
+            "thermonuclear_devices": 0,
+            "wonder_count": 3
+          }
+        },
+        {
+          "player": 2,
+          "leader": "LEADER_ROBERT_THE_BRUCE",
+          "public_stats": {
+            "city_count": 6,
+            "food": 85,
+            "nuclear_devices": 0,
+            "population": 33,
+            "production": 111.992,
+            "suzerain_count": 2,
+            "thermonuclear_devices": 0,
+            "wonder_count": 3
+          }
+        },
+        {
+          "player": 3,
+          "leader": "LEADER_PEDRO",
+          "public_stats": {
+            "city_count": 5,
+            "food": 104,
+            "nuclear_devices": 0,
+            "population": 36,
+            "production": 65.7969,
+            "suzerain_count": 2,
+            "thermonuclear_devices": 0,
+            "wonder_count": 2
+          }
+        }
+      ]
+    },
+    {
+      "turn": 125,
+      "techs": [
+        "TECH_POTTERY",
+        "TECH_ANIMAL_HUSBANDRY",
+        "TECH_MINING",
+        "TECH_SAILING",
+        "TECH_ASTROLOGY",
+        "TECH_IRRIGATION",
+        "TECH_ARCHERY",
+        "TECH_WRITING",
+        "TECH_MASONRY",
+        "TECH_BRONZE_WORKING",
+        "TECH_THE_WHEEL",
+        "TECH_CELESTIAL_NAVIGATION",
+        "TECH_CURRENCY",
+        "TECH_HORSEBACK_RIDING",
+        "TECH_IRON_WORKING",
+        "TECH_SHIPBUILDING",
+        "TECH_MATHEMATICS",
+        "TECH_CONSTRUCTION",
+        "TECH_ENGINEERING",
+        "TECH_MILITARY_TACTICS",
+        "TECH_APPRENTICESHIP",
+        "TECH_MACHINERY",
+        "TECH_EDUCATION",
+        "TECH_STIRRUPS",
+        "TECH_MILITARY_ENGINEERING",
+        "TECH_BANKING",
+        "TECH_GUNPOWDER",
+        "TECH_METAL_CASTING",
+        "TECH_BALLISTICS",
+        "TECH_BUTTRESS"
+      ],
+      "policies": [
+        "POLICY_CONSCRIPTION",
+        "POLICY_FEUDAL_CONTRACT",
+        "POLICY_AESTHETICS",
+        "POLICY_CHARISMATIC_LEADER",
+        "POLICY_NATURAL_PHILOSOPHY",
+        "POLICY_URBAN_PLANNING"
+      ],
+      "cities": [
+        {
+          "id": 65536,
+          "name": "Bogot\u00e1",
+          "pop": 10,
+          "yields": {
+            "culture": 12.6641,
+            "faith": 8.10156,
+            "food": 26,
+            "gold": 12.6016,
+            "production": 20.7031,
+            "science": 18.9023
+          },
+          "yield_sources": {
+            "culture": "+3 from Theater Square Festival\n+3 from Modifiers\n+1 from Outgoing Trade Routes\n+2 from Districts\n +2 from Theater Square\n+3 from Population\n+2 from Buildings\n +1 from Palace\n +1 from Monument\n-10(-1.4) from Amenities",
+            "faith": "+1 from Modifiers\n+3 from Districts\n +3 from Holy Site\n+3 from Buildings\n +3 from Shrine\n+2 from Worked Tiles\n-10(-0.8) from Amenities",
+            "food": "+5 from Buildings\n +1 from Water Mill\n +3 from Shrine\n +1 from Granary\n+21 from Worked Tiles",
+            "gold": "+7 from Outgoing Trade Routes\n+5 from Buildings\n +5 from Palace\n+2 from Worked Tiles\n-10(-1.3) from Amenities",
+            "production": "+1 from Modifiers\n+3 from Buildings\n +1 from Water Mill\n +2 from Palace\n+19 from Worked Tiles\n-10(-2.2) from Amenities",
+            "science": "+1 from Modifiers\n+8 from Districts\n +8 from Campus\n+5 from Population\n+5 from Buildings\n +3 from Library\n +2 from Palace\n+2 from Worked Tiles\n-10(-2) from Amenities"
+          },
+          "housing": 15,
+          "housing_growth_mult": 1,
+          "food_surplus": 6,
+          "growth_turns": 9,
+          "amenities": 4,
+          "amenities_needed": 5,
+          "happiness_yield_mult": -10,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_PALACE",
+            "BUILDING_GRANARY",
+            "BUILDING_LIBRARY",
+            "BUILDING_SHRINE",
+            "BUILDING_WALLS",
+            "BUILDING_WATER_MILL"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_HOLY_SITE",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 31
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 24,
+              "y": 30
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_THEATER",
+              "wall_damage": 0,
+              "x": 23,
+              "y": 30
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 100,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 30
+            }
+          ],
+          "producing": "PROJECT_ENHANCE_DISTRICT_THEATER",
+          "production_turns": 2,
+          "industry_quotes": [
+            {
+              "t": "DISTRICT_INDUSTRIAL_ZONE",
+              "c": 119,
+              "p": 6
+            }
+          ]
+        },
+        {
+          "id": 131073,
+          "name": "Guayaquil",
+          "pop": 5,
+          "yields": {
+            "culture": 3.5,
+            "faith": 2,
+            "food": 13,
+            "gold": 5,
+            "production": 11,
+            "science": 3.5
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+1.5 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "+2 from Districts\n + 2 from having 1 district.",
+            "food": "+1 from Buildings\n +1 from Granary\n+12 from Worked Tiles",
+            "gold": "+5 from Worked Tiles",
+            "production": "+1 from Modifiers\n+10 from Worked Tiles",
+            "science": "+2.5 from Population\n+1 from Worked Tiles"
+          },
+          "housing": 11,
+          "housing_growth_mult": 1,
+          "food_surplus": 3,
+          "growth_turns": 2,
+          "amenities": 3,
+          "amenities_needed": 3,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_GRANARY",
+            "BUILDING_WALLS"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 100,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 18,
+              "y": 32
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_DIPLOMATIC_QUARTER",
+              "wall_damage": 0,
+              "x": 17,
+              "y": 32
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_AQUEDUCT",
+              "wall_damage": 0,
+              "x": 17,
+              "y": 31
+            },
+            {
+              "complete": false,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 17,
+              "y": 30
+            }
+          ],
+          "producing": null,
+          "production_turns": -1,
+          "industry_quotes": []
+        },
+        {
+          "id": 196610,
+          "name": "Caracas",
+          "pop": 4,
+          "yields": {
+            "culture": 2.88281,
+            "faith": 0,
+            "food": 10,
+            "gold": 6.30078,
+            "production": 6.30078,
+            "science": 1.80078
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+1.1 from Population\n+1 from Buildings\n +1 from Monument\n-10(-0.3) from Amenities",
+            "faith": "-10(+0) from Amenities",
+            "food": "+10 from Worked Tiles",
+            "gold": "+7 from Worked Tiles\n-10(-0.6) from Amenities",
+            "production": "+1 from Modifiers\n+6 from Worked Tiles\n-10(-0.6) from Amenities",
+            "science": "+2 from Population\n-10(-0.1) from Amenities"
+          },
+          "housing": 9,
+          "housing_growth_mult": 1,
+          "food_surplus": 2,
+          "growth_turns": 9,
+          "amenities": 1,
+          "amenities_needed": 2,
+          "happiness_yield_mult": -10,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_WALLS"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 100,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 34
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_AQUEDUCT",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 33
+            },
+            {
+              "complete": false,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_HOLY_SITE",
+              "wall_damage": 0,
+              "x": 21,
+              "y": 33
+            }
+          ],
+          "producing": "DISTRICT_HOLY_SITE",
+          "production_turns": 10,
+          "industry_quotes": [
+            {
+              "t": "DISTRICT_INDUSTRIAL_ZONE",
+              "c": 119,
+              "p": 19
+            },
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 6
+            }
+          ]
+        },
+        {
+          "id": 262147,
+          "name": "Quito",
+          "pop": 4,
+          "yields": {
+            "culture": 7.27734,
+            "faith": 0,
+            "food": 10,
+            "gold": 7,
+            "production": 14,
+            "science": 9
+          },
+          "yield_sources": {
+            "culture": "+2 from Theater Square Festival\n+1 from Modifiers\n+2 from Districts\n +2 from Theater Square\n+1.1 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+1 from Buildings\n +1 from Granary\n+9 from Worked Tiles",
+            "gold": "+7 from Worked Tiles",
+            "production": "+1 from Modifiers\n+13 from Worked Tiles",
+            "science": "+4 from Districts\n +4 from Campus\n+2 from Population\n+3 from Buildings\n +3 from Library"
+          },
+          "housing": 4,
+          "housing_growth_mult": 0.25,
+          "food_surplus": 2,
+          "growth_turns": 1,
+          "amenities": 2,
+          "amenities_needed": 2,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_GRANARY",
+            "BUILDING_LIBRARY"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_THEATER",
+              "wall_damage": 0,
+              "x": 26,
+              "y": 30
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 25,
+              "y": 30
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 25,
+              "y": 29
+            }
+          ],
+          "producing": "PROJECT_ENHANCE_DISTRICT_THEATER",
+          "production_turns": 1,
+          "industry_quotes": []
+        },
+        {
+          "id": 327684,
+          "name": "Popay\u00e1n",
+          "pop": 6,
+          "yields": {
+            "culture": 10.1211,
+            "faith": 0,
+            "food": 20,
+            "gold": 3,
+            "production": 19,
+            "science": 11
+          },
+          "yield_sources": {
+            "culture": "+4.3 from Theater Square Festival\n+1 from Modifiers\n+2 from Districts\n +2 from Theater Square\n+1.7 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+6 from Outgoing Trade Routes\n+2 from Buildings\n +1 from Water Mill\n +1 from Granary\n+12 from Worked Tiles",
+            "gold": "+3 from Worked Tiles",
+            "production": "+1 from Modifiers\n+1 from Outgoing Trade Routes\n+1 from Buildings\n +1 from Water Mill\n+16 from Worked Tiles",
+            "science": "+4 from Districts\n +4 from Campus\n+3 from Population\n+3 from Buildings\n +3 from Library\n+1 from Worked Tiles"
+          },
+          "housing": 7,
+          "housing_growth_mult": 0.5,
+          "food_surplus": 8,
+          "growth_turns": 3,
+          "amenities": 3,
+          "amenities_needed": 3,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_GRANARY",
+            "BUILDING_LIBRARY",
+            "BUILDING_WATER_MILL"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 27,
+              "y": 33
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 26,
+              "y": 33
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_THEATER",
+              "wall_damage": 0,
+              "x": 27,
+              "y": 32
+            }
+          ],
+          "producing": "PROJECT_ENHANCE_DISTRICT_THEATER",
+          "production_turns": 3,
+          "industry_quotes": []
+        },
+        {
+          "id": 393221,
+          "name": "Cuenca",
+          "pop": 3,
+          "yields": {
+            "culture": 2.89844,
+            "faith": 0,
+            "food": 7,
+            "gold": 0,
+            "production": 12,
+            "science": 13.2812
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+0.8 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+1 from Buildings\n +1 from Granary\n+6 from Worked Tiles",
+            "gold": "",
+            "production": "+1 from Modifiers\n+11 from Worked Tiles",
+            "science": "+1.7 from Campus Research Grants\n+6 from Districts\n +6 from Campus\n+1.5 from Population\n+3 from Buildings\n +3 from Library\n+1 from Worked Tiles"
+          },
+          "housing": 4,
+          "housing_growth_mult": 0.5,
+          "food_surplus": 1,
+          "growth_turns": 10,
+          "amenities": 2,
+          "amenities_needed": 2,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_GRANARY",
+            "BUILDING_LIBRARY"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 27
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 26
+            }
+          ],
+          "producing": "PROJECT_ENHANCE_DISTRICT_CAMPUS",
+          "production_turns": 5,
+          "industry_quotes": []
+        },
+        {
+          "id": 458758,
+          "name": "Cartagena de Indias",
+          "pop": 3,
+          "yields": {
+            "culture": 2.89844,
+            "faith": 0,
+            "food": 8,
+            "gold": 0,
+            "production": 11,
+            "science": 1.5
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+0.8 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+1 from Buildings\n +1 from Granary\n+7 from Worked Tiles",
+            "gold": "",
+            "production": "+1 from Modifiers\n+10 from Worked Tiles",
+            "science": "+1.5 from Population"
+          },
+          "housing": 6,
+          "housing_growth_mult": 1,
+          "food_surplus": 2,
+          "growth_turns": 1,
+          "amenities": 2,
+          "amenities_needed": 2,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_GRANARY",
+            "BUILDING_WALLS"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 100,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 29,
+              "y": 29
+            },
+            {
+              "complete": false,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_HOLY_SITE",
+              "wall_damage": 0,
+              "x": 28,
+              "y": 29
+            }
+          ],
+          "producing": "UNIT_CUIRASSIER",
+          "production_turns": 4,
+          "industry_quotes": []
+        },
+        {
+          "id": 524295,
+          "name": "Valencia de Carabobo",
+          "pop": 4,
+          "yields": {
+            "culture": 1.19922,
+            "faith": 0,
+            "food": 13,
+            "gold": 1,
+            "production": 5,
+            "science": 2
+          },
+          "yield_sources": {
+            "culture": "+1.1 from Population",
+            "faith": "",
+            "food": "+13 from Worked Tiles",
+            "gold": "+1 from Worked Tiles",
+            "production": "+1 from Modifiers\n+4 from Worked Tiles",
+            "science": "+2 from Population"
+          },
+          "housing": 4,
+          "housing_growth_mult": 0.25,
+          "food_surplus": 5,
+          "growth_turns": 11,
+          "amenities": 2,
+          "amenities_needed": 2,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_WALLS"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 100,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 32,
+              "y": 24
+            },
+            {
+              "complete": false,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_HOLY_SITE",
+              "wall_damage": 0,
+              "x": 31,
+              "y": 23
+            }
+          ],
+          "producing": "UNIT_CUIRASSIER",
+          "production_turns": 14,
+          "industry_quotes": [
+            {
+              "t": "DISTRICT_INDUSTRIAL_ZONE",
+              "c": 119,
+              "p": 24
+            },
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 7
+            }
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "player": 1,
+          "leader": "LEADER_HOJO",
+          "public_stats": {
+            "city_count": 5,
+            "food": 95,
+            "nuclear_devices": 0,
+            "population": 37,
+            "production": 89.5938,
+            "suzerain_count": 1,
+            "thermonuclear_devices": 0,
+            "wonder_count": 3
+          }
+        },
+        {
+          "player": 2,
+          "leader": "LEADER_ROBERT_THE_BRUCE",
+          "public_stats": {
+            "city_count": 6,
+            "food": 123,
+            "nuclear_devices": 0,
+            "population": 51,
+            "production": 150.09,
+            "suzerain_count": 1,
+            "thermonuclear_devices": 0,
+            "wonder_count": 5
+          }
+        },
+        {
+          "player": 3,
+          "leader": "LEADER_PEDRO",
+          "public_stats": {
+            "city_count": 5,
+            "food": 122,
+            "nuclear_devices": 0,
+            "population": 49,
+            "production": 78.0938,
+            "suzerain_count": 2,
+            "thermonuclear_devices": 0,
+            "wonder_count": 3
+          }
+        }
+      ]
+    },
+    {
+      "turn": 150,
+      "techs": [
+        "TECH_POTTERY",
+        "TECH_ANIMAL_HUSBANDRY",
+        "TECH_MINING",
+        "TECH_SAILING",
+        "TECH_ASTROLOGY",
+        "TECH_IRRIGATION",
+        "TECH_ARCHERY",
+        "TECH_WRITING",
+        "TECH_MASONRY",
+        "TECH_BRONZE_WORKING",
+        "TECH_THE_WHEEL",
+        "TECH_CELESTIAL_NAVIGATION",
+        "TECH_CURRENCY",
+        "TECH_HORSEBACK_RIDING",
+        "TECH_IRON_WORKING",
+        "TECH_SHIPBUILDING",
+        "TECH_MATHEMATICS",
+        "TECH_CONSTRUCTION",
+        "TECH_ENGINEERING",
+        "TECH_MILITARY_TACTICS",
+        "TECH_APPRENTICESHIP",
+        "TECH_MACHINERY",
+        "TECH_EDUCATION",
+        "TECH_STIRRUPS",
+        "TECH_MILITARY_ENGINEERING",
+        "TECH_CARTOGRAPHY",
+        "TECH_MASS_PRODUCTION",
+        "TECH_BANKING",
+        "TECH_GUNPOWDER",
+        "TECH_SQUARE_RIGGING",
+        "TECH_ASTRONOMY",
+        "TECH_METAL_CASTING",
+        "TECH_INDUSTRIALIZATION",
+        "TECH_SCIENTIFIC_THEORY",
+        "TECH_BALLISTICS",
+        "TECH_BUTTRESS"
+      ],
+      "policies": [
+        "POLICY_CONSCRIPTION",
+        "POLICY_LOGISTICS",
+        "POLICY_COLONIZATION",
+        "POLICY_CHARISMATIC_LEADER",
+        "POLICY_LIBERALISM",
+        "POLICY_NATURAL_PHILOSOPHY"
+      ],
+      "cities": [
+        {
+          "id": 65536,
+          "name": "Bogot\u00e1",
+          "pop": 12,
+          "yields": {
+            "culture": 22.5977,
+            "faith": 9,
+            "food": 28,
+            "gold": 10,
+            "production": 24,
+            "science": 22
+          },
+          "yield_sources": {
+            "culture": "+3 from Modifiers\n+4 from GreatWorks\n+2 from Districts\n +2 from Theater Square\n+3.5 from Population\n+8 from Buildings\n +4 from Amphitheater\n +2 from Shrine\n +1 from Palace\n +1 from Monument\n+2 from Worked Tiles",
+            "faith": "+1 from Modifiers\n+3 from Districts\n +3 from Holy Site\n+3 from Buildings\n +3 from Shrine\n+2 from Worked Tiles",
+            "food": "+3 from Outgoing Trade Routes\n+2 from Buildings\n +1 from Water Mill\n +1 from Granary\n+23 from Worked Tiles",
+            "gold": "+3 from Districts\n +3 from Commercial Hub\n+5 from Buildings\n +5 from Palace\n+2 from Worked Tiles",
+            "production": "+2 from Outgoing Trade Routes\n+3 from Buildings\n +1 from Water Mill\n +2 from Palace\n+19 from Worked Tiles",
+            "science": "+1 from Modifiers\n+8 from Districts\n +8 from Campus\n+6 from Population\n+5 from Buildings\n +3 from Library\n +2 from Palace\n+2 from Worked Tiles"
+          },
+          "housing": 13,
+          "housing_growth_mult": 0.5,
+          "food_surplus": 4,
+          "growth_turns": 2,
+          "amenities": 6,
+          "amenities_needed": 6,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_PALACE",
+            "BUILDING_GRANARY",
+            "BUILDING_LIBRARY",
+            "BUILDING_SHRINE",
+            "BUILDING_WALLS",
+            "BUILDING_WATER_MILL",
+            "BUILDING_AMPHITHEATER"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_HOLY_SITE",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 31
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 24,
+              "y": 30
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_THEATER",
+              "wall_damage": 0,
+              "x": 23,
+              "y": 30
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 100,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 30
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_COMMERCIAL_HUB",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 29
+            }
+          ],
+          "producing": "UNIT_CUIRASSIER",
+          "production_turns": 6,
+          "industry_quotes": []
+        },
+        {
+          "id": 131073,
+          "name": "Guayaquil",
+          "pop": 8,
+          "yields": {
+            "culture": 4.39844,
+            "faith": 4,
+            "food": 18,
+            "gold": 12,
+            "production": 16,
+            "science": 5
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+2.3 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "+4 from Districts\n + 4 from having 2 districts.",
+            "food": "+1 from Buildings\n +1 from Granary\n+17 from Worked Tiles",
+            "gold": "+12 from Worked Tiles",
+            "production": "+16 from Worked Tiles",
+            "science": "+4 from Population\n+1 from Worked Tiles"
+          },
+          "housing": 11,
+          "housing_growth_mult": 1,
+          "food_surplus": 2,
+          "growth_turns": 18,
+          "amenities": 4,
+          "amenities_needed": 4,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_GRANARY",
+            "BUILDING_WALLS"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 100,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 18,
+              "y": 32
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_DIPLOMATIC_QUARTER",
+              "wall_damage": 0,
+              "x": 17,
+              "y": 32
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_AQUEDUCT",
+              "wall_damage": 0,
+              "x": 17,
+              "y": 31
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 17,
+              "y": 30
+            }
+          ],
+          "producing": "UNIT_CUIRASSIER",
+          "production_turns": 2,
+          "industry_quotes": [
+            {
+              "t": "DISTRICT_INDUSTRIAL_ZONE",
+              "c": 82,
+              "p": 6
+            }
+          ]
+        },
+        {
+          "id": 196610,
+          "name": "Caracas",
+          "pop": 6,
+          "yields": {
+            "culture": 5.79688,
+            "faith": 4,
+            "food": 12,
+            "gold": 16,
+            "production": 15,
+            "science": 3
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+1.7 from Population\n+3 from Buildings\n +2 from Shrine\n +1 from Monument",
+            "faith": "+1 from Districts\n +1 from Holy Site\n+3 from Buildings\n +3 from Shrine",
+            "food": "+12 from Worked Tiles",
+            "gold": "+16 from Worked Tiles",
+            "production": "+15 from Worked Tiles",
+            "science": "+3 from Population"
+          },
+          "housing": 9,
+          "housing_growth_mult": 1,
+          "food_surplus": 0,
+          "growth_turns": -1,
+          "amenities": 3,
+          "amenities_needed": 3,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_SHRINE",
+            "BUILDING_WALLS"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 100,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 34
+            },
+            {
+              "complete": false,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 21,
+              "y": 34
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_AQUEDUCT",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 33
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_HOLY_SITE",
+              "wall_damage": 0,
+              "x": 21,
+              "y": 33
+            }
+          ],
+          "producing": "DISTRICT_CAMPUS",
+          "production_turns": 1,
+          "industry_quotes": [
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 3
+            }
+          ]
+        },
+        {
+          "id": 262147,
+          "name": "Quito",
+          "pop": 4,
+          "yields": {
+            "culture": 6.19922,
+            "faith": 0,
+            "food": 7,
+            "gold": 11,
+            "production": 11,
+            "science": 11
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+1 from Districts\n +1 from Theater Square\n+1.1 from Population\n+1 from Buildings\n +1 from Monument\n+2 from Worked Tiles",
+            "faith": "",
+            "food": "+1 from Buildings\n +1 from Granary\n+6 from Worked Tiles",
+            "gold": "+11 from Worked Tiles",
+            "production": "+11 from Worked Tiles",
+            "science": "+4 from Districts\n +4 from Campus\n+2 from Population\n+3 from Buildings\n +3 from Library\n+2 from Worked Tiles"
+          },
+          "housing": 4,
+          "housing_growth_mult": 0.25,
+          "food_surplus": -1,
+          "growth_turns": -1,
+          "amenities": 2,
+          "amenities_needed": 2,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_GRANARY",
+            "BUILDING_LIBRARY"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_THEATER",
+              "wall_damage": 0,
+              "x": 26,
+              "y": 30
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 25,
+              "y": 30
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 25,
+              "y": 29
+            }
+          ],
+          "producing": null,
+          "production_turns": -1,
+          "industry_quotes": []
+        },
+        {
+          "id": 327684,
+          "name": "Popay\u00e1n",
+          "pop": 8,
+          "yields": {
+            "culture": 8.39844,
+            "faith": 0,
+            "food": 16,
+            "gold": 19,
+            "production": 20,
+            "science": 20
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+1 from Outgoing Trade Routes\n+3 from Districts\n +3 from Theater Square\n+2.3 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+2 from Buildings\n +1 from Water Mill\n +1 from Granary\n+14 from Worked Tiles",
+            "gold": "+13 from Outgoing Trade Routes\n+6 from Worked Tiles",
+            "production": "+1 from Buildings\n +1 from Water Mill\n+19 from Worked Tiles",
+            "science": "+4 from Districts\n +4 from Campus\n+4 from Population\n+9 from Buildings\n +6 from University\n +3 from Library\n+3 from Worked Tiles"
+          },
+          "housing": 8,
+          "housing_growth_mult": 0.25,
+          "food_surplus": 0,
+          "growth_turns": -1,
+          "amenities": 4,
+          "amenities_needed": 4,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_GRANARY",
+            "BUILDING_LIBRARY",
+            "BUILDING_WATER_MILL",
+            "BUILDING_UNIVERSITY"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 27,
+              "y": 33
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 26,
+              "y": 33
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_THEATER",
+              "wall_damage": 0,
+              "x": 27,
+              "y": 32
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_ENTERTAINMENT_COMPLEX",
+              "wall_damage": 0,
+              "x": 26,
+              "y": 32
+            }
+          ],
+          "producing": null,
+          "production_turns": -1,
+          "industry_quotes": []
+        },
+        {
+          "id": 393221,
+          "name": "Cuenca",
+          "pop": 3,
+          "yields": {
+            "culture": 2.60938,
+            "faith": 0,
+            "food": 7,
+            "gold": 1.80078,
+            "production": 11.7031,
+            "science": 10.3516
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+0.8 from Population\n+1 from Buildings\n +1 from Monument\n-10(-0.2) from Amenities",
+            "faith": "-10(+0) from Amenities",
+            "food": "+1 from Buildings\n +1 from Granary\n+6 from Worked Tiles",
+            "gold": "+2 from Districts\n +2 from Commercial Hub\n-10(-0.1) from Amenities",
+            "production": "+13 from Worked Tiles\n-10(-1.2) from Amenities",
+            "science": "+6 from Districts\n +6 from Campus\n+1.5 from Population\n+3 from Buildings\n +3 from Library\n+1 from Worked Tiles\n-10(-1.1) from Amenities"
+          },
+          "housing": 4,
+          "housing_growth_mult": 0.5,
+          "food_surplus": 1,
+          "growth_turns": 24,
+          "amenities": 1,
+          "amenities_needed": 2,
+          "happiness_yield_mult": -10,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_GRANARY",
+            "BUILDING_LIBRARY"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CAMPUS",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 27
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 26
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_COMMERCIAL_HUB",
+              "wall_damage": 0,
+              "x": 22,
+              "y": 24
+            }
+          ],
+          "producing": null,
+          "production_turns": -1,
+          "industry_quotes": []
+        },
+        {
+          "id": 458758,
+          "name": "Cartagena de Indias",
+          "pop": 4,
+          "yields": {
+            "culture": 3.19922,
+            "faith": 0,
+            "food": 10,
+            "gold": 0,
+            "production": 8,
+            "science": 2
+          },
+          "yield_sources": {
+            "culture": "+1 from Modifiers\n+1.1 from Population\n+1 from Buildings\n +1 from Monument",
+            "faith": "",
+            "food": "+1 from Buildings\n +1 from Granary\n+9 from Worked Tiles",
+            "gold": "",
+            "production": "+8 from Worked Tiles",
+            "science": "+2 from Population"
+          },
+          "housing": 6,
+          "housing_growth_mult": 1,
+          "food_surplus": 2,
+          "growth_turns": 11,
+          "amenities": 2,
+          "amenities_needed": 2,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_GRANARY",
+            "BUILDING_WALLS"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 100,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 29,
+              "y": 29
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_HOLY_SITE",
+              "wall_damage": 0,
+              "x": 28,
+              "y": 29
+            },
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": true,
+              "type": "DISTRICT_HARBOR",
+              "wall_damage": 0,
+              "x": 30,
+              "y": 28
+            }
+          ],
+          "producing": "UNIT_TREBUCHET",
+          "production_turns": 11,
+          "industry_quotes": []
+        },
+        {
+          "id": 524295,
+          "name": "Valencia de Carabobo",
+          "pop": 6,
+          "yields": {
+            "culture": 1.79688,
+            "faith": 0,
+            "food": 21,
+            "gold": 3,
+            "production": 7,
+            "science": 4
+          },
+          "yield_sources": {
+            "culture": "+1.7 from Population",
+            "faith": "",
+            "food": "+1 from Buildings\n +1 from Granary\n+20 from Worked Tiles",
+            "gold": "+3 from Worked Tiles",
+            "production": "+7 from Worked Tiles",
+            "science": "+3 from Population\n+1 from Worked Tiles"
+          },
+          "housing": 6,
+          "housing_growth_mult": 0.25,
+          "food_surplus": 9,
+          "growth_turns": 13,
+          "amenities": 3,
+          "amenities_needed": 3,
+          "happiness_yield_mult": 0,
+          "buildings": [
+            "BUILDING_GRANARY",
+            "BUILDING_WALLS"
+          ],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 100,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 32,
+              "y": 24
+            },
+            {
+              "complete": false,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_HOLY_SITE",
+              "wall_damage": 0,
+              "x": 31,
+              "y": 23
+            }
+          ],
+          "producing": "UNIT_CUIRASSIER",
+          "production_turns": 8,
+          "industry_quotes": [
+            {
+              "t": "DISTRICT_INDUSTRIAL_ZONE",
+              "c": 82,
+              "p": 12
+            }
+          ]
+        },
+        {
+          "id": 589832,
+          "name": "Cuman\u00e1",
+          "pop": 2,
+          "yields": {
+            "culture": 1.44141,
+            "faith": 0,
+            "food": 5,
+            "gold": 8.10156,
+            "production": 2.70312,
+            "science": 1.80078
+          },
+          "yield_sources": {
+            "culture": "+0.5 from Population\n+1 from Worked Tiles\n-10(-0.1) from Amenities",
+            "faith": "-10(+0) from Amenities",
+            "food": "+5 from Worked Tiles",
+            "gold": "+9 from Worked Tiles\n-10(-0.8) from Amenities",
+            "production": "+3 from Worked Tiles\n-10(-0.2) from Amenities",
+            "science": "+1 from Population\n+1 from Worked Tiles\n-10(-0.1) from Amenities"
+          },
+          "housing": 5,
+          "housing_growth_mult": 1,
+          "food_surplus": 1,
+          "growth_turns": 10,
+          "amenities": 0,
+          "amenities_needed": 1,
+          "happiness_yield_mult": -10,
+          "buildings": [],
+          "districts": [
+            {
+              "complete": true,
+              "damage": 0,
+              "max_damage": 200,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_CITY_CENTER",
+              "wall_damage": 0,
+              "x": 26,
+              "y": 25
+            },
+            {
+              "complete": false,
+              "damage": 0,
+              "max_damage": 0,
+              "max_wall_damage": 0,
+              "pillaged": false,
+              "type": "DISTRICT_HARBOR",
+              "wall_damage": 0,
+              "x": 27,
+              "y": 24
+            }
+          ],
+          "producing": "DISTRICT_HARBOR",
+          "production_turns": 27,
+          "industry_quotes": [
+            {
+              "t": "BUILDING_GRANARY",
+              "c": 32,
+              "p": 12
+            }
+          ]
+        }
+      ],
+      "rivals": [
+        {
+          "player": 1,
+          "leader": "LEADER_HOJO",
+          "public_stats": {
+            "city_count": 5,
+            "food": 117,
+            "nuclear_devices": 0,
+            "population": 44,
+            "production": 118.992,
+            "suzerain_count": 1,
+            "thermonuclear_devices": 0,
+            "wonder_count": 6
+          }
+        },
+        {
+          "player": 2,
+          "leader": "LEADER_ROBERT_THE_BRUCE",
+          "public_stats": {
+            "city_count": 7,
+            "food": 154,
+            "nuclear_devices": 0,
+            "population": 63,
+            "production": 230.188,
+            "suzerain_count": 0,
+            "thermonuclear_devices": 0,
+            "wonder_count": 7
+          }
+        },
+        {
+          "player": 3,
+          "leader": "LEADER_PEDRO",
+          "public_stats": {
+            "city_count": 6,
+            "food": 147,
+            "nuclear_devices": 0,
+            "population": 55,
+            "production": 114.887,
+            "suzerain_count": 2,
+            "thermonuclear_devices": 0,
+            "wonder_count": 3
+          }
+        }
+      ]
+    }
+  ]
+}

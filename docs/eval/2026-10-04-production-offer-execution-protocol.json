@@ -1,0 +1,78 @@
+{
+  "frozen_at": "2026-10-04T20:14:10.048988+00:00",
+  "treatment": "Only native observed-player executor continues independent orders after a refused ProposeDeal and requests the usual re-observation after the batch; no AI weights or Builder safety edits",
+  "configuration": "Public targeted Domination enable_live_bridge(), fixed stock adaptive rivals, native simulation, 4 players, 60x38 Pangaea, Online speed, max turn 150, focal Gran Colombia, randomized rival civs, pid0 handicap-exempt, identical paired seed/difficulty/options",
+  "consumed_diagnostics": {
+    "emperor": [
+      61007000,
+      61007001,
+      61007002,
+      61007003
+    ],
+    "deity": [
+      61007100,
+      61007101,
+      61007102,
+      61007103
+    ]
+  },
+  "fresh_pilot": {
+    "emperor": [
+      61007800,
+      61007801,
+      61007802,
+      61007803
+    ],
+    "deity": [
+      61007900,
+      61007901,
+      61007902,
+      61007903
+    ]
+  },
+  "unused_confirmation": {
+    "emperor": [
+      61008000,
+      61008001,
+      61008002,
+      61008003,
+      61008004,
+      61008005,
+      61008006,
+      61008007,
+      61008008,
+      61008009,
+      61008010,
+      61008011
+    ],
+    "deity": [
+      61008100,
+      61008101,
+      61008102,
+      61008103,
+      61008104,
+      61008105,
+      61008106,
+      61008107,
+      61008108,
+      61008109,
+      61008110,
+      61008111
+    ]
+  },
+  "primary_metric": "Paired mean focal Production at T75, reported separately for Emperor and Deity; dead or ended-before-T75 seat counts as zero in fresh aggregate",
+  "secondary_metrics": [
+    "Cumulative focal Production through T75",
+    "Focal/rival highest Production ratio at T75",
+    "Alive at T75 and at game end",
+    "Focal Production at T50, T100 and T150",
+    "Focal science and military power at T75",
+    "Recorded productive improvements and Builder gold buys",
+    "Final winner"
+  ],
+  "sampling_rule": "Freeze both binaries and exact source/dependency/compile metadata before any new treatment or fresh-strength game. Consumed seed runs are diagnostic only. Report every assigned seed and terminal result. Pilot and confirmation remain separate; no pooling for a confirmation claim.",
+  "confirmation_rule": "Play the untouched confirmation only if pilot mean T75 Production is positive at both difficulties and T75 survival is not worse; otherwise record the observed pilot and investigate without claiming a production improvement.",
+  "correctness_integration_gate": "Regression tests, full native Rust suite, incremental Rust quality, green PR and live ship. This is a correctness repair with no learned parameter; strength claims require the separate prospective measurements.",
+  "actual_Firaxis_verification": false,
+  "fresh_strength_samples_played_at_freeze": 0
+}

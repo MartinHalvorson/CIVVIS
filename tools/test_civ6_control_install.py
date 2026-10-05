@@ -45,6 +45,10 @@ class InstalledScriptSizeTest(unittest.TestCase):
         source = "local s = [[\n-- inside a long string\n]]\n-- comment\n"
         self.assertEqual(install.installed_lua(source), source)
 
+    def test_a_file_with_a_backslash_continued_string_is_left_whole(self) -> None:
+        source = 'local s = "first\\\n-- part of the string"\n-- comment\n'
+        self.assertEqual(install.installed_lua(source), source)
+
     def test_the_installer_refuses_a_script_above_the_known_good_size(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             mod = Path(tmp) / "mod"
@@ -1110,6 +1114,10 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("other:GetCulture():GetTouristsTo();", block)
         self.assertIn("domestic_tourists = try(function()", block)
         self.assertIn("other:GetCulture():GetStaycationers();", block)
+        # The engine's own culture-victory clock, read as WorldRankings.lua:1678
+        # does (the method may be absent: -1 then).
+        self.assertIn("culture_turns_to_victory = try(function()", block)
+        self.assertIn("(culture.GetTurnsUntilVictory and culture:GetTurnsUntilVictory()) or -1", block)
 
     def test_unit_captured_is_registered_and_names_the_captor_for_our_units_only(self) -> None:
         """A settler taken by the barbarians must be told apart from one founding a city.

@@ -1,0 +1,114 @@
+{
+  "verified_at": "2026-10-04T19:06:26.970596+00:00",
+  "final_native_source_head": "3b78020137ec3165ec4b31f48127e97b4d3be31a",
+  "source_equivalence": {
+    "recorded_at": "2026-10-04T18:50:49.795390+00:00",
+    "scope": "Final archive has the exact same native source, locked Cargo files and rules data as baseline and merged current main",
+    "tree_object_ids": {
+      "8ece0460541b09da9a09dba65b903183cb935e30": {
+        "src": "2b6cf63aa85b0767f16d7e11c6613b37a07ba192",
+        "Cargo.toml": "19d563301d1c1654d3c794174afee0acf1ee3a8d",
+        "Cargo.lock": "e624ab9f956636ac13fe57f854b66c3a92a4b496",
+        "data": "6c33754ebe15462d24f039a860889cf33483877c"
+      },
+      "b39f8f5b0": {
+        "src": "2b6cf63aa85b0767f16d7e11c6613b37a07ba192",
+        "Cargo.toml": "19d563301d1c1654d3c794174afee0acf1ee3a8d",
+        "Cargo.lock": "e624ab9f956636ac13fe57f854b66c3a92a4b496",
+        "data": "6c33754ebe15462d24f039a860889cf33483877c"
+      },
+      "3b7802013": {
+        "src": "2b6cf63aa85b0767f16d7e11c6613b37a07ba192",
+        "Cargo.toml": "19d563301d1c1654d3c794174afee0acf1ee3a8d",
+        "Cargo.lock": "e624ab9f956636ac13fe57f854b66c3a92a4b496",
+        "data": "6c33754ebe15462d24f039a860889cf33483877c"
+      }
+    }
+  },
+  "final_full_suite": {
+    "command": "cargo test --profile ci --locked -- --test-threads=4",
+    "exit_code": 0,
+    "passed": 4563,
+    "failed": 0,
+    "ignored": 54,
+    "per_suite_counts": [
+      [
+        4311,
+        0,
+        50
+      ],
+      [
+        14,
+        0,
+        0
+      ],
+      [
+        217,
+        0,
+        0
+      ],
+      [
+        17,
+        0,
+        0
+      ],
+      [
+        4,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        4
+      ]
+    ],
+    "log_sha256": "fb7f86faa5081e00ee22fa0b9ab4c5792e8dcb99473178ee66c8b58395c9073b"
+  },
+  "final_quality": {
+    "command": "python3 tools/rust_quality.py --base origin/main --head HEAD",
+    "exit_code": 0,
+    "head": "3b78020137ec3165ec4b31f48127e97b4d3be31a",
+    "log_sha256": "df3baa88260b16f6ffedd032ff267768c0e2cd04627869491f399e875c6dc8bb"
+  },
+  "prototype_local": {
+    "recorded_at": "2026-10-04T18:54:19.725707+00:00",
+    "source": "2fdc5f04c",
+    "scope": "Full prototype library run; stopped before bin/doc stages due to one existing server timing failure",
+    "command": "cargo test --profile ci --locked -- --test-threads=4",
+    "exit_code": 101,
+    "library_passed": 4316,
+    "library_failed": 1,
+    "library_ignored": 50,
+    "focused_tests_passed": [
+      "growth_capacity_forecasts_future_workers_without_changing_host_observations",
+      "growth_capacity_does_not_buy_population_without_production",
+      "growth_capacity_prices_mild_amenity_deficits_and_maintenance_runway",
+      "growth_capacity_preserves_threats_queues_and_expansion",
+      "growth_capacity_reserves_real_return_and_reaches_the_governor",
+      "growth_capacity_projection_matches_actual_growth_and_completion"
+    ],
+    "failure": "server::tests::a_page_holding_the_current_turn_waits_for_the_next_one: http_get returned None. Its helper has a 20-second read timeout; the captured failure does not distinguish I/O causes.",
+    "isolated_exact_repeat": {
+      "command": "frozen prototype test binary server::tests::a_page_holding_the_current_turn_waits_for_the_next_one --exact --test-threads=1",
+      "exit_code": 0,
+      "passed": 1,
+      "test_binary_sha256": "608aea2301f2d796b9ded7508211a48ffd96aa5f0b2500271458162ba152e336"
+    },
+    "sha256": {
+      "civvis-production-growth-capacity-full-tests.txt": "bb1c8f04adc03d08aa6cc597f62933b9c4b96ed7e13004a9ad21aa7ba40788ef",
+      "civvis-production-growth-capacity-prototype-server-repeat.txt": "41898efea314b7d695bd9445845cb3d7dc39fe102a7b823d8b2e2003032cd39f"
+    },
+    "final_full_suite_is_separate": true
+  },
+  "prototype_ci": {
+    "head": "2fdc5f04c",
+    "job_url": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/37224025825/job/111499870866",
+    "status": "completed",
+    "conclusion": "success"
+  },
+  "runtime_policy_removed": true,
+  "fresh_strength_samples": 0,
+  "actual_Firaxis_verification": false,
+  "durable_validation": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/capacity/validation"
+}

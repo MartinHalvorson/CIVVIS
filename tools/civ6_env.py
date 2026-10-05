@@ -315,6 +315,21 @@ def confirm_exit_dialog() -> bool:
         return False
 
 
+#: ★ HOW LONG THE MENU QUIT GETS TO CLOSE THE GAME BY ITSELF before the exit
+#: confirmation is looked for. From the end-of-game screen, where every live
+#: game quits, there is no confirmation: 12 of 12 games on 2026-10-05 exited
+#: with it never answered and no SIGTERM refused. But the look came 1 s in, and
+#: it is a screenshot plus two OCR passes; while systemstatusd spins a capture
+#: times out, and 8 of those 12 spent ~15 s on a failed exit-dialog shot. The
+#: 11:16Z game (civvis-20261005T110504Z) exited mid-shot, which then ran on
+#: 3.3 s after the process was gone. The pid is polled every 0.2 s meanwhile.
+EXIT_CONFIRM_AFTER_S = 3.0
+#: The whole menu-quit window, looks included, before the SIGTERM path. Wider
+#: than the old 5 s so a game that does raise the modal still gets several
+#: looks after the settle above.
+NATIVE_QUIT_WINDOW_S = 8.0
+
+
 def quit_game(timeout_s: float = 20.0) -> bool:
     """Stop the game if it is running. True when nothing is left running.
 
@@ -331,22 +346,28 @@ def quit_game(timeout_s: float = 20.0) -> bool:
     # fallback; this is not a second, unbounded shutdown attempt.
     deadline = time.time() + timeout_s
     if request_macos_quit():
-        native_deadline = min(deadline, time.time() + 5.0)
+        quit_at = time.time()
+        native_deadline = min(deadline, quit_at + NATIVE_QUIT_WINDOW_S)
+        next_look = quit_at + EXIT_CONFIRM_AFTER_S
         asked = False
+        looks = 0
         while time.time() < native_deadline:
             if not game_pids():
+                print(f"[env] the game exited {time.time() - quit_at:.1f}s after the "
+                      f"menu quit ({looks} confirmation look(s))", flush=True)
                 return True
             # The menu quit raises a confirmation when it is used from inside a
-            # game or the Create Game screen. Answer it once, on the first pass
-            # that still finds the process alive, after a settle for the modal
-            # to render. Without this the loop waits out its whole window for a
-            # click nobody sends, the SIGTERM below cannot cross the modal, and
+            # game or the Create Game screen. Answer it once the game has had
+            # `EXIT_CONFIRM_AFTER_S` to leave by itself, and again each second
+            # while it stays. Without this the loop waits out its whole window for
+            # a click nobody sends, the SIGTERM below cannot cross the modal, and
             # the lane stalls for an operator.
-            if not asked:
-                time.sleep(1.0)
+            if not asked and time.time() >= next_look:
+                looks += 1
                 asked = confirm_exit_dialog()
+                next_look = time.time() + 1.0
                 continue
-            time.sleep(0.5)
+            time.sleep(0.2)
     for pid in game_pids():
         try:
             os.kill(pid, signal.SIGTERM)

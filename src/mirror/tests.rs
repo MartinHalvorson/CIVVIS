@@ -50,6 +50,9 @@ fn a_unique_unit_resolves_through_its_noun() {
 
 use super::*;
 
+#[path = "tests/paused_district_progress.rs"]
+mod paused_district_progress;
+
 fn plot(x: i32, y: i32, t: &str) -> Plot {
     Plot {
         x,
@@ -13539,7 +13542,7 @@ fn host_state_step_list_is_the_recorded_order() {
         ]
     );
 
-    let finish = ["player_ages", "record_host_observed"];
+    let finish = ["player_ages", "district_progress", "record_host_observed"];
     assert_eq!(rebuild(HostPhase::Finish), finish);
     assert_eq!(sync(HostPhase::Finish), finish);
 }

@@ -1,0 +1,394 @@
+diff --git a/src/ai/advanced/gold_and_cards.rs b/src/ai/advanced/gold_and_cards.rs
+index d39f1be6d..1042e15b6 100644
+--- a/src/ai/advanced/gold_and_cards.rs
++++ b/src/ai/advanced/gold_and_cards.rs
+@@ -415,0 +416,3 @@ impl AdvancedAi {
++        if self.productive_builder_purchase(g, pid, reserve) {
++            return true;
++        }
+diff --git a/src/ai/advanced/production_compounding.rs b/src/ai/advanced/production_compounding.rs
+index 224b2d77d..0d2e312de 100644
+--- a/src/ai/advanced/production_compounding.rs
++++ b/src/ai/advanced/production_compounding.rs
+@@ -10 +10 @@ use super::{AdvancedAi, ChainRung, GrandStrategy, StrategicPlan, VictoryTarget};
+-use crate::game::{Game, Item};
++use crate::game::{Action, Game, Item};
+@@ -11,0 +12 @@ use crate::rules::{BuildingSpec, Yields};
++use crate::think;
+@@ -148,0 +150,159 @@ impl AdvancedAi {
++
++    /// Purchase productive worker coverage without taking a construction queue.
++    /// The forecast credits nearby charges generously; actual work and survival
++    /// must still be measured in paired games rather than inferred from it.
++    pub(super) fn productive_builder_purchase(
++        &self,
++        g: &mut Game,
++        pid: usize,
++        reserve: f64,
++    ) -> bool {
++        let Some((cid, price, gain)) = self.productive_builder_purchase_candidate(g, pid, reserve)
++        else {
++            return false;
++        };
++        let action = Action::Buy {
++            city: cid,
++            unit: crate::name!("builder"),
++            formation: 0,
++            currency: "gold".into(),
++        };
++        if g.apply(pid, &action).is_err() {
++            return false;
++        }
++        if self.journal().wants(crate::reasoning::Level::Decision) {
++            let city_name = &g.cities[&cid].name;
++            think!(self.journal(), Economy, Decision,
++                "Buying productive Builder coverage for {city_name}";
++                "{price:.0} Gold, retaining a {reserve:.0} reserve; {gain:.1} worked-tile Production forecast after nearby charge credits");
++        }
++        true
++    }
++
++    fn productive_builder_purchase_candidate(
++        &self,
++        g: &Game,
++        pid: usize,
++        reserve: f64,
++    ) -> Option<(u32, f64, f64)> {
++        if self.victory_target != Some(VictoryTarget::Domination)
++            || self.base.minor
++            || self.base.barb
++            || g.turn > g.standard_duration(160)
++            || g.players[pid].gold_per_turn <= 0.0
++            || self.plan.as_ref().is_none_or(|plan| {
++                plan.strategy == GrandStrategy::Recovery || plan.threatened_city.is_some()
++            })
++            || g.players.iter().enumerate().any(|(other, player)| {
++                other != pid
++                    && player.alive
++                    && !player.is_minor
++                    && !player.is_barbarian
++                    && g.is_at_war(pid, other)
++            })
++        {
++            return None;
++        }
++        let _memo = g.query_memo();
++        let cities = g.player_city_ids(pid);
++        if cities.len() < 2 || self.counts(g, pid).builders == 0 {
++            return None;
++        }
++        let units = g.player_unit_ids(pid);
++        let defenders = units
++            .iter()
++            .filter(|uid| {
++                let spec = &g.rules.units[&g.units[uid].kind];
++                spec.class == "military" && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
++            })
++            .count();
++        if defenders < cities.len() {
++            return None;
++        }
++        let builder = Item::Unit {
++            unit: crate::name!("builder"),
++        };
++        let due = g.standard_duration(10) as f64;
++        let window = g.turn_limit().map_or(g.standard_duration(30), |limit| {
++            g.standard_duration(30).min(limit.saturating_sub(g.turn))
++        }) as f64;
++        let earning = (window - due).max(0.0);
++        let mut best: Option<(u32, f64, f64)> = None;
++        for cid in &cities {
++            let city = &g.cities[cid];
++            if city.loyalty < 75.0
++                || g.city_amenity_surplus(city) < 0
++                || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
++                || self.base.barbarian_local_alarm_for_controller(g, pid, *cid)
++                || g.purchase_is_blocked(*cid, &builder)
++            {
++                continue;
++            }
++            let Some(price) = g.unit_purchase_cost(pid, *cid, "builder", "gold") else {
++                continue;
++            };
++            if g.players[pid].gold + f64::EPSILON < reserve + price
++                || g.players[pid].gold_per_turn * due < price
++            {
++                continue;
++            }
++            let mut gains: Vec<_> = g
++                .city_citizen_plan(*cid)
++                .worked_tiles
++                .into_iter()
++                .filter_map(|pos| {
++                    let tile = g.map.get(pos)?;
++                    if pos == city.pos
++                        || tile.owner_city != Some(*cid)
++                        || tile.improvement.is_some()
++                        || tile.district.is_some()
++                        || g.wdist(city.pos, pos) > 3
++                    {
++                        return None;
++                    }
++                    let gain = g
++                        .valid_improvements(pid, pos)
++                        .into_iter()
++                        .filter(|name| {
++                            let spec = &g.rules.improvements[name];
++                            spec.builder_buildable && !spec.removes_feature
++                        })
++                        .map(|name| g.improvement_yield_change(pid, pos, name).production)
++                        .fold(0.0, f64::max);
++                    (gain > 0.0).then_some(gain)
++                })
++                .collect();
++            gains.sort_by(|a, b| b.total_cmp(a));
++            let mut credited: usize = units
++                .iter()
++                .filter_map(|uid| {
++                    let unit = &g.units[uid];
++                    (unit.kind == "builder" && g.wdist(unit.pos, city.pos) <= 6)
++                        .then_some(unit.charges.max(0) as usize)
++                })
++                .sum();
++            for origin in &cities {
++                let launch = &g.cities[origin];
++                if matches!(launch.queue.first(), Some(Item::Unit { unit }) if unit == "builder")
++                    && g.wdist(launch.pos, city.pos) <= 6
++                    && self.production_build_turns(g, pid, *origin, &builder) <= due
++                {
++                    credited += g.builder_charges(pid).max(0) as usize
++                        + g.governor_effect(pid, *origin, "builder_charges").max(0.0) as usize;
++                }
++            }
++            let bought_charges = g.builder_charges(pid).max(0) as usize
++                + g.governor_effect(pid, *cid, "builder_charges").max(0.0) as usize;
++            let gain: f64 = gains.into_iter().skip(credited).take(bought_charges).sum();
++            if gain < 3.0 || earning * gain < 1.25 * g.item_cost_for_city(pid, *cid, &builder) {
++                continue;
++            }
++            if best.as_ref().is_none_or(|(old_cid, old_price, old_gain)| {
++                gain / price > old_gain / old_price
++                    || (gain / price == old_gain / old_price && cid < old_cid)
++            }) {
++                best = Some((*cid, price, gain));
++            }
++        }
++        best
++    }
+@@ -152,0 +313,3 @@ mod tests;
++
++#[cfg(test)]
++mod treasury_tests;
+diff --git a/src/ai/advanced/production_compounding/treasury_tests.rs b/src/ai/advanced/production_compounding/treasury_tests.rs
+new file mode 100644
+index 000000000..8e119d531
+--- /dev/null
++++ b/src/ai/advanced/production_compounding/treasury_tests.rs
+@@ -0,0 +1,207 @@
++use super::*;
++use crate::setup::GameSpeed;
++use std::sync::Arc;
++
++fn board() -> (Game, AdvancedAi, u32, u32) {
++    let mut g = Game::new_full(2, 32, 22, 610_068_499, 250, 0, false);
++    g.game_speed = GameSpeed::Online;
++    for uid in g.units.keys().copied().collect::<Vec<_>>() {
++        g.remove_unit(uid);
++    }
++    for tile in g.map.tiles.values_mut() {
++        tile.terrain = crate::name!("grassland");
++        tile.hills = true;
++        tile.feature = None;
++        tile.resource = None;
++        tile.improvement = None;
++        tile.district = None;
++        tile.pillaged = false;
++    }
++    let first = g.found_city_for(0, (5, 5), None);
++    let second = g.found_city_for(0, (19, 5), None);
++    let rival = g.found_city_for(1, (22, 16), None);
++    g.spawn_test_unit("warrior", 1, g.cities[&rival].pos);
++    for cid in [first, second] {
++        let city = g.cities.get_mut(&cid).unwrap();
++        city.queue.clear();
++        city.pop = 3;
++        let worked = city
++            .owned_tiles
++            .iter()
++            .copied()
++            .filter(|pos| *pos != city.pos)
++            .take(3)
++            .collect();
++        Arc::make_mut(&mut g.observed_city_worked_tiles).insert(cid, worked);
++        Arc::make_mut(&mut g.observed_city_amenity_adjustments).insert(cid, 2);
++        g.spawn_test_unit("warrior", 0, g.cities[&cid].pos);
++    }
++    let builder = g.spawn_test_unit("builder", 0, g.cities[&first].pos);
++    g.players[0]
++        .techs
++        .extend([crate::name!("mining"), crate::name!("apprenticeship")]);
++    g.players[0].gold = 500.0;
++    g.players[0].gold_per_turn = 60.0;
++    g.turn = 40;
++    g.current = 0;
++    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
++    ai.plan = Some(StrategicPlan {
++        strategy: GrandStrategy::Expansion,
++        target_player: None,
++        target_city: None,
++        threatened_city: None,
++        desired_cities: 2,
++        assessed_turn: 40,
++        rush: false,
++    });
++    assert!(g.city_amenity_surplus(&g.cities[&second]) >= 0);
++    assert!(
++        ai.productive_builder_purchase_candidate(&g, 0, 120.0)
++            .is_some(),
++        "positive fixture: cities={:?}, price={:?}, worked={:?}",
++        g.player_city_ids(0),
++        g.unit_purchase_cost(0, second, "builder", "gold"),
++        g.city_citizen_plan(second).worked_tiles
++    );
++    (g, ai, second, builder)
++}
++
++#[test]
++fn actual_purchase_services_distant_work_without_spending_queue_progress_or_reserve() {
++    let (mut g, ai, city, _) = board();
++    g.cities.get_mut(&city).unwrap().queue = vec![Item::Building {
++        building: crate::name!("granary"),
++    }];
++    g.cities.get_mut(&city).unwrap().production = 5.0;
++    let queue = g.cities[&city].queue.clone();
++    let price = g.unit_purchase_cost(0, city, "builder", "gold").unwrap();
++    let before = serde_json::to_value(&g).unwrap();
++    let choice = ai
++        .productive_builder_purchase_candidate(&g, 0, 120.0)
++        .unwrap();
++    assert_eq!(choice.0, city);
++    assert!(choice.2 >= 6.0);
++    assert_eq!(
++        serde_json::to_value(&g).unwrap(),
++        before,
++        "preflight is read-only"
++    );
++    assert!(ai.young_empire_purchase(&mut g, 0, 120.0));
++    assert_eq!(g.players[0].gold, 500.0 - price);
++    assert!(g.players[0].gold >= 120.0);
++    assert_eq!(g.cities[&city].queue, queue);
++    assert_eq!(g.cities[&city].production, 5.0);
++    assert_eq!(
++        g.player_unit_ids(0)
++            .iter()
++            .filter(|uid| g.units[uid].kind == "builder")
++            .count(),
++        2
++    );
++    assert!(
++        !ai.productive_builder_purchase(&mut g, 0, 120.0),
++        "new local charges cover the existing jobs"
++    );
++}
++
++#[test]
++fn coverage_credits_field_charges_and_a_queued_builder_that_arrives_soon() {
++    let (mut g, ai, city, _) = board();
++    g.spawn_test_unit("builder", 0, g.cities[&city].pos);
++    assert!(ai
++        .productive_builder_purchase_candidate(&g, 0, 120.0)
++        .is_none());
++    let (mut g, ai, city, _) = board();
++    let item = Item::Unit {
++        unit: crate::name!("builder"),
++    };
++    let cost = g.item_cost_for_city(0, city, &item);
++    g.cities.get_mut(&city).unwrap().queue = vec![item];
++    g.cities.get_mut(&city).unwrap().production = cost - 1.0;
++    assert!(ai
++        .productive_builder_purchase_candidate(&g, 0, 120.0)
++        .is_none());
++}
++
++#[test]
++fn insufficient_cash_income_and_actual_safety_keep_the_gold() {
++    for case in 0..8 {
++        let (mut g, mut ai, city, _) = board();
++        match case {
++            0 => {
++                g.players[0].gold =
++                    120.0 + g.unit_purchase_cost(0, city, "builder", "gold").unwrap() - 1.0
++            }
++            1 => g.players[0].gold_per_turn = 1.0,
++            2 => ai.plan.as_mut().unwrap().threatened_city = Some(city),
++            3 => ai.plan.as_mut().unwrap().strategy = GrandStrategy::Recovery,
++            4 => {
++                g.at_war.insert((0, 1));
++            }
++            5 => g.turn = g.standard_duration(160) + 1,
++            6 => {
++                ai.victory_target = None;
++            }
++            7 => {
++                g.player_unit_ids(0)
++                    .iter()
++                    .filter(|uid| g.units[uid].kind == "warrior")
++                    .copied()
++                    .collect::<Vec<_>>()
++                    .into_iter()
++                    .for_each(|uid| g.remove_unit(uid));
++            }
++            _ => unreachable!(),
++        }
++        let before = serde_json::to_value(&g).unwrap();
++        assert!(
++            !ai.productive_builder_purchase(&mut g, 0, 120.0),
++            "guard case {case}"
++        );
++        assert_eq!(
++            serde_json::to_value(&g).unwrap(),
++            before,
++            "guard case {case}"
++        );
++    }
++}
++
++#[test]
++fn purchased_builder_completes_a_real_worked_mine() {
++    let (mut g, ai, city, _) = board();
++    let pos = g.observed_city_worked_tiles[&city][0];
++    let before = g.modeled_tile_yields(pos).production;
++    let gain = g
++        .improvement_yield_change(0, pos, crate::name!("mine"))
++        .production;
++    assert!(ai.productive_builder_purchase(&mut g, 0, 120.0));
++    let builder = g
++        .player_unit_ids(0)
++        .into_iter()
++        .find(|uid| g.units[uid].kind == "builder" && g.units[uid].pos == g.cities[&city].pos)
++        .unwrap();
++    g.apply(
++        0,
++        &Action::Move {
++            unit: builder,
++            to: pos,
++        },
++    )
++    .unwrap();
++    g.apply(0, &Action::EndTurn).unwrap();
++    while g.current != 0 {
++        let pid = g.current;
++        g.apply(pid, &Action::EndTurn).unwrap();
++    }
++    let city_before = g.city_yields_model(city).production;
++    g.apply(
++        0,
++        &Action::Improve {
++            unit: builder,
++            improvement: crate::name!("mine"),
++        },
++    )
++    .unwrap();
++    assert!((g.modeled_tile_yields(pos).production - before - gain).abs() < 1e-9);
++    assert!((g.city_yields_model(city).production - city_before - gain).abs() < 1e-9);
++}

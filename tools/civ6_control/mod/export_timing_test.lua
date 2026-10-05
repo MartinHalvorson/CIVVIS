@@ -301,6 +301,22 @@ for _, needle in ipairs(order) do
 	check("exportState: " .. needle .. " in order", i ~= nil, true)
 	at = i or at
 end
+-- 5. The record after the state is LOAD-BEARING: the game writes its latest
+-- log record only when the next one is logged, so the report must follow the
+-- state unconditionally -- only the final mark and comments between them.
+local stateAt = body:find('emit(eventKind or "state", {', 1, true)
+local closeAt = body:find("\n\t});\n", stateAt, true)
+local reportAt = body:find("CivvisExportClock.report(turn, frame);", closeAt, true)
+local between = body:sub(closeAt + 5, reportAt - 1)
+local code = {}
+for line in between:gmatch("[^\n]+") do
+	local trimmed = line:match("^%s*(.-)%s*$")
+	if trimmed ~= "" and trimmed:sub(1, 2) ~= "--" then code[#code + 1] = trimmed end
+end
+check("only the final mark sits between the state and its releasing record",
+	#code == 1 and code[1] == 'CivvisExportClock.mark("state_table_and_emit");', true)
+check("…and the report is the export's last statement",
+	body:sub(reportAt):match("^CivvisExportClock%.report%(turn, frame%);%s*$") ~= nil, true)
 check("…begin after the ExportState guard",
 	body:find("if cfg.ExportState ~= true then return; end", 1, true)
 		< body:find("CivvisExportClock.begin();", 1, true), true)

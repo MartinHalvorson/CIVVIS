@@ -1069,3 +1069,596 @@ fn a_crushed_contender_at_war_takes_the_front_under_version_two() {
     ai.one_war_observe(&g, 0);
     assert_eq!(ai.one_war_front(), Some(1), "under the bar");
 }
+
+/// See `capital_prey_beside_the_front`: under the gene, the weakest rival
+/// beside the front whose own capital stands open within reach is named; a
+/// walled capital or a real army leaves it a near miss, and a war on such a
+/// rival is kept (`capital_prey_kept`). Live King civvis-20261005T053701Z
+/// (game 103) left the Inca, at 12 military against ~600, at peace.
+#[test]
+fn a_collapsed_rivals_open_capital_opens_a_front_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    assert_eq!(
+        ai.capital_prey_beside_the_front(&g, 0, Some(1)).0,
+        None,
+        "off"
+    );
+    assert!(!ai.capital_prey_kept(&g, 0, 2), "off");
+    ai.enable_capital_prey_opens_a_front();
+    // Player 3, at peace with no army, is weaker than player 2's warrior.
+    assert_eq!(ai.capital_prey_beside_the_front(&g, 0, Some(1)).0, Some(3));
+    assert!(ai.capital_prey_kept(&g, 0, 2), "the war on a prey is kept");
+    assert!(!ai.capital_prey_kept(&g, 0, 3), "no war, nothing to keep");
+    let capital = g
+        .cities
+        .values()
+        .find(|city| city.owner == 3 && city.is_capital)
+        .map(|city| city.id)
+        .unwrap();
+    g.cities.get_mut(&capital).unwrap().wall_hp = CAPITAL_PREY_WALLS + 100;
+    let (prey, near) = ai.capital_prey_beside_the_front(&g, 0, Some(1));
+    assert_eq!(
+        prey,
+        Some(2),
+        "a walled capital at peace waits; the war's prey stays"
+    );
+    assert!(near.contains(&(3, "walls")));
+    g.cities.get_mut(&capital).unwrap().wall_hp = 0;
+    for y in [2, 3, 4] {
+        g.spawn_test_unit("modern_armor", 3, (32, y));
+    }
+    let (prey, near) = ai.capital_prey_beside_the_front(&g, 0, Some(1));
+    assert_eq!(prey, Some(2));
+    assert!(near.contains(&(3, "power")));
+}
+
+/// See `declarable_in_reach`: a rival is declarable while a city of theirs is
+/// within the declaration range; moved out of it, it is not. Live King
+/// civvis-20261005T060002Z (game 104) aimed its campaign at Greece, out of
+/// range and at peace, from turn 147 to 182+.
+#[test]
+fn a_second_front_needs_a_city_within_declaration_range() {
+    let (mut g, ai) = two_fronts();
+    assert!(ai.declarable_in_reach(&g, 0, 3));
+    for city in g.cities.values_mut().filter(|city| city.owner == 3) {
+        city.pos = (26, 0);
+    }
+    assert!(!ai.declarable_in_reach(&g, 0, 3));
+}
+
+/// See `front_capital_to_finish`: under the gene, an urgent counter already
+/// at war waits for a fresh siege of the front's original capital behind
+/// light walls, even in Stage; heavy walls or a stale stage release it.
+#[test]
+fn the_front_finishes_its_capital_before_an_urgent_counter() {
+    use crate::ai::advanced::siege_train::{Siege, SiegeStage};
+    let front_after = |gene: bool, walls: i32, entered_ago: u32| {
+        let (mut g, mut ai) = two_fronts();
+        convert(&mut g, &[0, 1, 2]);
+        assert!(ai.urgent_victory_threat(&g, 2));
+        if gene {
+            ai.enable_front_finishes_its_capital();
+        }
+        let capital = g.player_city_ids(1)[0];
+        assert!(g.cities[&capital].is_capital);
+        g.cities.get_mut(&capital).unwrap().wall_hp = walls;
+        let siege = Siege {
+            stage: SiegeStage::Stage,
+            taker: None,
+            entered: g.turn - entered_ago,
+            assessed: g.turn,
+            posts: Default::default(),
+            short_since: None,
+        };
+        ai.sieges.insert(capital, siege);
+        ai.one_war_observe(&g, 0);
+        ai.one_war_front()
+    };
+    assert_eq!(front_after(false, 100, 2), Some(2), "off");
+    assert_eq!(
+        front_after(true, 100, 2),
+        Some(1),
+        "Canberra's walls, staged"
+    );
+    assert_eq!(front_after(true, 200, 2), Some(2), "heavier walls");
+    assert_eq!(
+        front_after(true, 100, FRONT_CAPITAL_FINISH_TURNS + 1),
+        Some(2),
+        "a stale stage"
+    );
+    // Any other city of the front holds it once breached past Stage.
+    let other_after = |stage: SiegeStage| {
+        let (mut g, mut ai) = two_fronts();
+        let town = g.found_city_for(1, (14, 18), None);
+        convert(&mut g, &[0, 1, 2]);
+        assert!(ai.urgent_victory_threat(&g, 2));
+        ai.enable_front_finishes_its_capital();
+        assert!(!g.cities[&town].is_capital);
+        g.cities.get_mut(&town).unwrap().wall_hp = 28;
+        let siege = Siege {
+            stage,
+            taker: None,
+            entered: g.turn - 1,
+            assessed: g.turn,
+            posts: Default::default(),
+            short_since: None,
+        };
+        ai.sieges.insert(town, siege);
+        ai.one_war_observe(&g, 0);
+        ai.one_war_front()
+    };
+    assert_eq!(
+        other_after(SiegeStage::Invest),
+        Some(1),
+        "Pharsalos at 28 walls, investing"
+    );
+    assert_eq!(
+        other_after(SiegeStage::Stage),
+        Some(2),
+        "a town still staging"
+    );
+}
+
+/// See `religious_threat_spares_the_front`: under the gene, a religious clock
+/// does not take the front while our cities keep our own faith.
+#[test]
+fn a_religious_clock_spares_the_front_while_we_keep_our_faith() {
+    let front_after = |gene: bool, ours_converted: bool| {
+        let (mut g, mut ai) = two_fronts();
+        g.players[0].religion = Some("taoism".to_string());
+        if ours_converted {
+            convert(&mut g, &[0, 1, 2, 3]);
+        } else {
+            convert(&mut g, &[1, 2, 3]);
+        }
+        assert!(ai.urgent_victory_threat(&g, 2));
+        if gene {
+            ai.enable_religious_threat_spares_the_front();
+        }
+        ai.one_war_observe(&g, 0);
+        ai.one_war_front()
+    };
+    assert_eq!(front_after(false, false), Some(2), "off");
+    assert_eq!(front_after(true, false), Some(1), "we keep taoism");
+    assert_eq!(
+        front_after(true, true),
+        Some(2),
+        "their faith holds our majority"
+    );
+}
+
+/// See `denial_keeps_its_rival`: an incumbent that no longer counts holds
+/// nothing, and the incumbent that leads stays.
+#[test]
+fn the_counter_keeps_its_rival_only_while_it_still_counts() {
+    let (mut g, mut ai) = two_fronts();
+    convert(&mut g, &[0, 1, 2]);
+    let counter = Some((2, GrandStrategy::Conquest));
+    assert_eq!(ai.actionable_victory_denial(&g, 0), counter);
+    ai.enable_denial_keeps_its_rival();
+    ai.denial_incumbent = Some(3);
+    assert_eq!(
+        ai.actionable_victory_denial(&g, 0),
+        counter,
+        "a stale incumbent"
+    );
+    ai.denial_incumbent = Some(2);
+    assert_eq!(
+        ai.actionable_victory_denial(&g, 0),
+        counter,
+        "the incumbent leads"
+    );
+    ai.disable_denial_keeps_its_rival();
+    assert_eq!(ai.denial_incumbent, None);
+}
+
+/// See `peace_asks_city_from_strength`: under the gene, a white offer from
+/// three times the rival's power asks for a town; a routed front, or a rival
+/// near our strength, gets the white peace.
+#[test]
+fn a_peace_from_strength_asks_for_a_town_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    assert!(!ai.peace_asks_city_from_strength(&g, 0, 2), "off");
+    ai.enable_peace_asks_a_city();
+    assert!(
+        ai.peace_asks_city_from_strength(&g, 0, 2),
+        "a warrior against armor"
+    );
+    ai.peace_routed.insert(2);
+    assert!(!ai.peace_asks_city_from_strength(&g, 0, 2), "routed");
+    ai.peace_routed.clear();
+    let mut row = 2;
+    while g.military_power(0) >= super::super::PEACE_CITY_ASK_RATIO * g.military_power(2) {
+        g.spawn_test_unit("modern_armor", 2, (24, row));
+        row += 1;
+    }
+    assert!(
+        !ai.peace_asks_city_from_strength(&g, 0, 2),
+        "under three times"
+    );
+}
+
+/// See `capital_prey_beside_the_front`: version two names a prey at peace,
+/// with no war burning; version one only beside a front.
+#[test]
+fn version_two_names_a_capital_prey_at_peace() {
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.clear();
+    ai.enable_capital_prey_opens_a_front();
+    assert_eq!(
+        ai.capital_prey_beside_the_front(&g, 0, None).0,
+        None,
+        "version one"
+    );
+    ai.enable_capital_prey_opens_a_front_2();
+    assert_eq!(
+        ai.capital_prey_beside_the_front(&g, 0, None).0,
+        Some(1),
+        "the weakest met rival, its capital eight tiles out"
+    );
+}
+
+/// See `capital_prey_reaches_far`: a prey at most a tenth of our military
+/// reaches past the declaration range to its own original capital; a
+/// stronger rival, or another tile, does not.
+#[test]
+fn a_deeply_collapsed_prey_reaches_past_the_declaration_range() {
+    let (mut g, mut ai) = two_fronts();
+    let capital = g
+        .cities
+        .values()
+        .find(|city| city.owner == 3 && city.is_capital)
+        .map(|city| city.pos)
+        .unwrap();
+    assert!(!ai.capital_prey_reaches_far(&g, 0, 3, capital), "off");
+    ai.enable_capital_prey_opens_a_front_2();
+    assert!(ai.capital_prey_reaches_far(&g, 0, 3, capital));
+    assert!(
+        !ai.capital_prey_reaches_far(&g, 0, 3, (capital.0, capital.1 + 2)),
+        "not its capital"
+    );
+    let mut row = 2;
+    while g.military_power(3) <= CAPITAL_PREY_DEEP_POWER * g.military_power(0) {
+        g.spawn_test_unit("modern_armor", 3, (32, row));
+        row += 1;
+    }
+    assert!(
+        !ai.capital_prey_reaches_far(&g, 0, 3, capital),
+        "more than a tenth"
+    );
+}
+
+/// See `bleeding_capital`: a captured original capital under the runway is
+/// bleeding; a healthy one is not.
+#[test]
+fn a_captured_capital_near_its_flip_is_bleeding() {
+    let (mut g, ai) = two_fronts();
+    let capital = g
+        .cities
+        .values()
+        .find(|city| city.owner == 1 && city.is_capital)
+        .map(|city| city.id)
+        .unwrap();
+    g.cities.get_mut(&capital).unwrap().owner = 0;
+    g.cities.get_mut(&capital).unwrap().loyalty = 4.0;
+    assert_eq!(ai.bleeding_capital(&g, 0), Some(capital));
+    g.cities.get_mut(&capital).unwrap().loyalty = 50.0;
+    assert_eq!(ai.bleeding_capital(&g, 0), None);
+}
+
+/// See `liberation_funds_the_congress`: a captured city-state city is
+/// liberated for its Favor while a rival reaches the Diplomatic floor; a
+/// major's city, or no Diplomatic threat, keeps the ordinary disposition.
+#[test]
+fn a_captured_city_state_city_funds_the_congress_under_a_diplomatic_threat() {
+    let (mut g, mut ai) = two_fronts();
+    // Player 3 stands in for a city-state whose city we took.
+    let town = g.player_city_ids(3)[0];
+    g.players[3].is_minor = true;
+    g.cities.get_mut(&town).unwrap().owner = 0;
+    let major_town = g.player_city_ids(1)[0];
+    g.cities.get_mut(&major_town).unwrap().owner = 0;
+    g.players[2].dvp = LIBERATION_DVP_FLOOR;
+    assert!(!ai.liberation_funds_the_congress(&g, 0, town), "off");
+    ai.enable_liberation_funds_the_congress();
+    assert!(ai.liberation_funds_the_congress(&g, 0, town));
+    assert!(
+        !ai.liberation_funds_the_congress(&g, 0, major_town),
+        "a major's city"
+    );
+    g.players[2].dvp = LIBERATION_DVP_FLOOR - 1;
+    assert!(
+        !ai.liberation_funds_the_congress(&g, 0, town),
+        "no Diplomatic threat"
+    );
+    // A town of an eliminated major revives it; its capital never goes back.
+    g.players[2].dvp = LIBERATION_DVP_FLOOR;
+    let dead_town = g.found_city_for(1, (14, 18), None);
+    g.cities.get_mut(&dead_town).unwrap().owner = 0;
+    g.cities.get_mut(&dead_town).unwrap().is_capital = false;
+    g.players[1].alive = false;
+    assert!(
+        ai.liberation_funds_the_congress(&g, 0, dead_town),
+        "revives the eliminated"
+    );
+    assert!(
+        !ai.liberation_funds_the_congress(&g, 0, major_town),
+        "never its capital"
+    );
+}
+
+/// See `engine_culture_clock`: under the gene, the host's own turns to a
+/// Culture Victory replace the projected finish and the tourist-ratio
+/// pressure; a reported "none" caps the pressure; no reading keeps both.
+#[test]
+fn the_engine_culture_clock_replaces_the_tourist_ratio_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    let set = |g: &mut Game, turns: Option<f64>| {
+        let stats = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
+            .entry(2)
+            .or_default();
+        stats.culture_turns_to_victory = turns;
+        stats.foreign_tourists = Some(40);
+    };
+    set(&mut g, Some(3.0));
+    assert_eq!(ai.engine_culture_pressure(&g, 2, 40), 40, "off");
+    assert_eq!(
+        ai.projected_culture_finish(&g, 2),
+        None,
+        "off: no curve yet"
+    );
+    ai.enable_culture_reads_the_engine_clock();
+    assert_eq!(ai.projected_culture_finish(&g, 2), Some(3.0));
+    assert_eq!(ai.engine_culture_pressure(&g, 2, 40), 98);
+    set(&mut g, Some(-1.0));
+    assert_eq!(ai.projected_culture_finish(&g, 2), None, "no path");
+    assert_eq!(ai.engine_culture_pressure(&g, 2, 70), 50);
+    set(&mut g, None);
+    assert_eq!(ai.engine_culture_pressure(&g, 2, 70), 70, "no reading");
+    // Game 120's Cree at turn 70: 15 turns on 3 visitors is no path.
+    set(&mut g, Some(15.0));
+    assert_eq!(ai.projected_culture_finish(&g, 2), Some(15.0));
+    std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
+        .entry(2)
+        .or_default()
+        .foreign_tourists = Some(3);
+    assert_eq!(ai.projected_culture_finish(&g, 2), None, "under the floor");
+    assert_eq!(ai.engine_culture_pressure(&g, 2, 40), 40);
+    ai.record_engine_culture_clock(&g, 0);
+    assert!(ai.engine_culture_finish.get(&2).is_none_or(Vec::is_empty));
+}
+
+/// See `rout_spares_the_counter`: under the gene, a rout window against the
+/// urgent rival we hold at parity or better offers no peace; a rival
+/// stronger than us still gets it.
+#[test]
+fn a_rout_spares_the_rival_we_are_countering_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    convert(&mut g, &[0, 1, 2]);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(2), "the urgent rival is the front");
+    let mut row = 2;
+    while g.military_power(0) >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(2) {
+        g.spawn_test_unit("modern_armor", 2, (23, row));
+        row += 1;
+    }
+    assert!(
+        g.military_power(0) >= g.military_power(2),
+        "fixture: still at parity"
+    );
+    ai.one_war.as_mut().unwrap().window = VecDeque::from([(g.turn, ONE_WAR_ROUT_NET)]);
+    let rout = Some(OneWarPeace::Rout);
+    assert_eq!(ai.one_war_peace(&g, 0, 2), rout, "off");
+    ai.enable_rout_spares_the_counter();
+    assert_eq!(ai.one_war_peace(&g, 0, 2), None, "the counter is spared");
+    while g.military_power(0) >= g.military_power(2) {
+        g.spawn_test_unit("modern_armor", 2, (23, row));
+        row += 1;
+    }
+    assert_eq!(ai.one_war_peace(&g, 0, 2), rout, "a stronger rival");
+}
+
+/// See `engine_culture_clock`: the clock is the earliest projected finish of
+/// the valid readings in the window, through the -1 readings between them,
+/// and "none" once the window holds no valid reading.
+#[test]
+fn the_engine_culture_clock_takes_the_earliest_recent_finish() {
+    let (mut g, mut ai) = two_fronts();
+    ai.enable_culture_reads_the_engine_clock();
+    let read = |g: &mut Game, ai: &mut AdvancedAi, turn: u32, turns: f64| {
+        g.turn = turn;
+        let stats = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
+            .entry(2)
+            .or_default();
+        stats.culture_turns_to_victory = Some(turns);
+        stats.foreign_tourists = Some(40);
+        ai.record_engine_culture_clock(g, 0);
+    };
+    // Game 116's Brazil, turns 160-166.
+    read(&mut g, &mut ai, 160, 53.0);
+    read(&mut g, &mut ai, 161, 51.0);
+    read(&mut g, &mut ai, 162, 13.0);
+    read(&mut g, &mut ai, 163, 7.0);
+    // Finishes 213, 212, 175, 170: the earliest, 170, is seven turns out.
+    assert_eq!(ai.engine_culture_clock(&g, 2), Some(Some(7.0)));
+    read(&mut g, &mut ai, 164, -1.0);
+    assert_eq!(
+        ai.engine_culture_clock(&g, 2),
+        Some(Some(6.0)),
+        "through -1"
+    );
+    read(&mut g, &mut ai, 170, -1.0);
+    assert_eq!(
+        ai.engine_culture_clock(&g, 2),
+        Some(None),
+        "too long without a reading"
+    );
+}
+
+/// See `capital_prey_walls`: under the gene a prey with no army may stand
+/// behind Medieval walls, never more; one near our power bound keeps the
+/// Ancient bar.
+#[test]
+fn a_collapsed_prey_capital_may_stand_behind_more_wall_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    ai.enable_capital_prey_opens_a_front();
+    let capital = g
+        .cities
+        .values()
+        .find(|city| city.owner == 3 && city.is_capital)
+        .map(|city| city.id)
+        .unwrap();
+    g.cities.get_mut(&capital).unwrap().wall_hp = CAPITAL_PREY_WALLS + 100;
+    let (_, near) = ai.capital_prey_beside_the_front(&g, 0, Some(1));
+    assert!(near.contains(&(3, "walls")), "off");
+    ai.enable_capital_prey_scales_the_walls();
+    assert_eq!(ai.capital_prey_beside_the_front(&g, 0, Some(1)).0, Some(3));
+    g.cities.get_mut(&capital).unwrap().wall_hp = CAPITAL_PREY_MAX_WALLS + 100;
+    let (_, near) = ai.capital_prey_beside_the_front(&g, 0, Some(1));
+    assert!(near.contains(&(3, "walls")), "past the Medieval bar");
+    assert_eq!(ai.capital_prey_walls(0.0, 400.0), CAPITAL_PREY_MAX_WALLS);
+    assert_eq!(ai.capital_prey_walls(40.0, 400.0), 150);
+    assert_eq!(ai.capital_prey_walls(60.0, 400.0), CAPITAL_PREY_WALLS);
+}
+
+/// See `faith_at_match_point`: under the gene, a faith holding half the
+/// majors (the founder and our cities) waits for a staged siege; one holding
+/// all but one is declared on as before.
+#[test]
+fn a_faith_counter_waits_for_match_point_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    ai.one_war_observe(&g, 0);
+    assert!(ai.faith_counter_due(&g, 0, 2), "off");
+    ai.enable_faith_counter_waits_for_match_point();
+    assert!(!ai.faith_at_match_point(&g, 2));
+    assert!(!ai.faith_counter_due(&g, 0, 2), "two majors of four");
+    convert(&mut g, &[0, 1, 2]);
+    assert!(ai.faith_at_match_point(&g, 2));
+    assert!(ai.faith_counter_due(&g, 0, 2), "three of four");
+}
+
+/// See `steady_rival_power`: under the gene, a rival whose army vanished from
+/// the reading this turn is read at its strength of the turns before, so its
+/// capital is no prey; the gene off reads the turn alone.
+#[test]
+fn a_one_turn_collapse_opens_no_prey_front_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    ai.enable_capital_prey_opens_a_front();
+    let army: Vec<u32> = (2..8)
+        .map(|y| g.spawn_test_unit("modern_armor", 3, (32, y)))
+        .collect();
+    let strong = g.military_power(3);
+    ai.enable_prey_reads_a_steady_power();
+    ai.record_rival_power(&g, 0);
+    for uid in army {
+        g.remove_unit(uid);
+    }
+    g.turn += 1;
+    ai.record_rival_power(&g, 0);
+    assert!(g.military_power(3) < strong);
+    assert_eq!(ai.steady_rival_power(&g, 3), strong);
+    // Player 2, at war with a lone warrior, is the prey that remains.
+    let (prey, near) = ai.capital_prey_beside_the_front(&g, 0, Some(1));
+    assert_ne!(prey, Some(3), "the reading of a turn ago stands");
+    assert!(near.contains(&(3, "power")));
+    // Past the memory the low reading is the rival's, the weakest prey.
+    g.turn += PREY_POWER_MEMORY_TURNS;
+    ai.record_rival_power(&g, 0);
+    assert_eq!(ai.capital_prey_beside_the_front(&g, 0, Some(1)).0, Some(3));
+    ai.disable_prey_reads_a_steady_power();
+    assert_eq!(ai.steady_rival_power(&g, 3), g.military_power(3), "off");
+}
+
+/// See `second_front_recently_named`: a faith counter named the second front
+/// and was declared on; when our converted city turns back the next turn,
+/// the gene keeps the war for its memory, and only then offers the one-war
+/// peace. The gene off offers it at once.
+#[test]
+fn a_named_second_front_keeps_its_war_under_the_gene() {
+    let run = |gene: bool| -> (Option<OneWarPeace>, Option<OneWarPeace>) {
+        let (mut g, mut ai) = two_fronts();
+        if gene {
+            ai.enable_second_front_keeps_its_war();
+        }
+        g.at_war.remove(&(0, 2));
+        convert(&mut g, &[0, 2]);
+        ai.one_war_observe(&g, 0);
+        assert_eq!(ai.one_war_second_front(&g, 0), Some(2));
+        // The declaration lands; our cities turn back from its faith.
+        g.at_war.insert((0, 2));
+        convert(&mut g, &[2]);
+        g.turn += 1;
+        ai.one_war_observe(&g, 0);
+        assert_eq!(ai.one_war_front(), Some(1));
+        let soon = ai.one_war_peace(&g, 0, 2);
+        g.turn += g.standard_duration(SECOND_FRONT_MEMORY_TURNS) + 1;
+        ai.one_war_observe(&g, 0);
+        (soon, ai.one_war_peace(&g, 0, 2))
+    };
+    assert_eq!(run(false).0, Some(OneWarPeace::SecondFront), "off");
+    let (soon, later) = run(true);
+    assert_eq!(soon, None, "the named second front keeps its war");
+    assert_eq!(later, Some(OneWarPeace::SecondFront), "past the memory");
+}
+
+/// See `recovery_peace_ready`: under the gene the Recovery clause's peace
+/// waits for the Recovery plan to stand its patience; a return to Conquest
+/// ends the spell.
+#[test]
+fn recovery_peace_waits_for_a_standing_recovery_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    assert!(ai.recovery_peace_ready(&g), "off");
+    ai.enable_recovery_peace_waits();
+    assert!(!ai.recovery_peace_ready(&g), "no Recovery yet");
+    let mut plan = ai.plan.clone().unwrap();
+    plan.strategy = GrandStrategy::Recovery;
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.recovery_peace_ready(&g), "a fresh spell");
+    g.turn += RECOVERY_PEACE_PATIENCE;
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(ai.recovery_peace_ready(&g), "a standing spell");
+    plan.strategy = GrandStrategy::Conquest;
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.recovery_peace_ready(&g), "the spell ended");
+}
+
+/// See `favor_spares_surprise`: with a rival on 18 Diplomatic Victory points
+/// the urgent war on it opens by denouncement under the gene, a surprise war
+/// with it off; no contender, or a faith at match point, keeps the surprise.
+#[test]
+fn favor_spares_the_surprise_war_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    g.players[2].dvp = 18;
+    assert!(
+        ai.urgent_victory_threat(&g, 2),
+        "fixture: an urgent Diplomatic clock"
+    );
+    let surprise = |g: &Game, ai: &AdvancedAi| {
+        matches!(
+            ai.preferred_war_opening(g, 0, 2),
+            Some(crate::game::Action::DeclareWar { .. })
+        )
+    };
+    let denounce = |g: &Game, ai: &AdvancedAi| {
+        matches!(
+            ai.preferred_war_opening(g, 0, 2),
+            Some(crate::game::Action::Denounce { .. })
+        )
+    };
+    assert!(!ai.favor_spares_surprise(&g, 0, 2), "off");
+    assert!(surprise(&g, &ai), "off: the surprise war");
+    ai.enable_favor_spares_the_surprise_war();
+    assert!(ai.favor_spares_surprise(&g, 0, 2));
+    assert!(denounce(&g, &ai), "the denouncement first");
+    // No rival at the bar: the surprise war stands.
+    g.players[2].dvp = FAVOR_SURPRISE_DVP - 1;
+    assert!(!ai.favor_spares_surprise(&g, 0, 2));
+    // A faith at match point is a clock nearly out.
+    g.players[3].dvp = FAVOR_SURPRISE_DVP;
+    convert(&mut g, &[0, 1, 2]);
+    assert!(ai.faith_at_match_point(&g, 2));
+    assert!(!ai.favor_spares_surprise(&g, 0, 2));
+}

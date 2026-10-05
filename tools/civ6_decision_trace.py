@@ -45,6 +45,11 @@ def record_decision(run_dir: Path, payload: dict, binary: str) -> dict:
               "binary_on_disk_sha256": _binary_digest(filename, identity),
               "decision": decision, "orders": payload["orders"],
               "execution_status": "not_observed"}
+    if "input_capture" in payload:
+        validate_input_capture(payload["input_capture"])
+        # Preserve the ordered read frontiers, including failures. The receipt
+        # hashes this descriptor, not the external archive's contents.
+        record["input_capture"] = payload["input_capture"]
     encoded = json.dumps(record, sort_keys=True, separators=(",", ":"), allow_nan=False)
     record["sha256"] = hashlib.sha256(encoded.encode()).hexdigest()
     with (Path(run_dir) / "decisions.jsonl").open("a", encoding="utf-8") as stream:
@@ -52,6 +57,80 @@ def record_decision(run_dir: Path, payload: dict, binary: str) -> dict:
         stream.flush()
         os.fsync(stream.fileno())
     return record
+
+
+def validate_input_capture(capture: dict) -> None:
+    """Validate the opt-in descriptor without treating capture as execution."""
+    if not isinstance(capture, dict) or type(capture.get("schema")) is not int or capture["schema"] != 1:
+        raise ValueError("invalid input capture schema")
+    if type(capture.get("complete")) is not bool or not isinstance(capture.get("reads"), list):
+        raise ValueError("invalid input capture completeness or reads")
+    if capture.get("archive") != "bytes.bin" or capture.get("index") != "snapshots.jsonl":
+        raise ValueError("invalid input capture filenames")
+    for key in ("directory", "source"):
+        if not isinstance(capture.get(key), str) or not Path(capture[key]).is_absolute():
+            raise ValueError("input capture paths must be absolute")
+    if (capture["complete"] and capture.get("error") is not None) or (not capture["complete"] and not isinstance(capture.get("error"), str)):
+        raise ValueError("input capture error disagrees with completeness")
+    for read in capture["reads"]:
+        if not isinstance(read, dict) or type(read.get("count")) is not int or read["count"] < 1:
+            raise ValueError("invalid input capture read count")
+        if set(read) == {"snapshot_id", "count"}:
+            if type(read["snapshot_id"]) is not int or read["snapshot_id"] < 0:
+                raise ValueError("invalid input capture snapshot id")
+        elif set(read) != {"error", "count"} or not isinstance(read["error"], str):
+            raise ValueError("invalid input capture read")
+
+
+def captured_input(capture: dict, snapshot_id: int) -> bytes:
+    """Reconstruct one actual read, not a guessed decision-wide file prefix.
+
+    Structural checks detect missing/truncated evidence, not same-length byte
+    tampering. Archive integrity hashes can be sealed separately after a run.
+    Later index rows can still be appending; only read through the requested ID.
+    """
+    validate_input_capture(capture)
+    if not capture["complete"]:
+        raise ValueError("input capture is incomplete")
+    if type(snapshot_id) is not int or snapshot_id < 0 or not any(read.get("snapshot_id") == snapshot_id for read in capture["reads"]):
+        raise ValueError("snapshot is not a read in this decision")
+    directory = Path(capture["directory"])
+    rows, offset = [], 0
+    with (directory / capture["index"]).open(encoding="utf-8") as index:
+        for line in index:
+            row = json.loads(line)
+            if not isinstance(row, dict) or set(row) != {"id", "parent", "offset", "append_bytes", "total_bytes"}:
+                raise ValueError("invalid input snapshot row")
+            for key in ("id", "offset", "append_bytes", "total_bytes"):
+                if type(row[key]) is not int or row[key] < 0:
+                    raise ValueError("invalid input snapshot integer")
+            parent = row["parent"]
+            if row["id"] != len(rows) or row["offset"] != offset or (parent is not None and (type(parent) is not int or not 0 <= parent < len(rows))):
+                raise ValueError("invalid input snapshot sequence")
+            before = 0 if parent is None else rows[parent]["total_bytes"]
+            if row["total_bytes"] != before + row["append_bytes"]:
+                raise ValueError("invalid input snapshot length")
+            offset += row["append_bytes"]
+            rows.append(row)
+            if row["id"] == snapshot_id:
+                break
+    if len(rows) <= snapshot_id:
+        raise ValueError("missing input snapshot")
+    chain, current = [], snapshot_id
+    while current is not None:
+        chain.append(rows[current])
+        current = rows[current]["parent"]
+    chunks = []
+    with (directory / capture["archive"]).open("rb") as archive:
+        if os.fstat(archive.fileno()).st_size < offset:
+            raise ValueError("truncated input archive")
+        for row in reversed(chain):
+            archive.seek(row["offset"])
+            chunk = archive.read(row["append_bytes"])
+            if len(chunk) != row["append_bytes"]:
+                raise ValueError("truncated input archive")
+            chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def exact_fact(expected, actual):

@@ -1,0 +1,1760 @@
+{
+  "scope": "Pure after-walk improvement models; all legal Builder improvement kinds on owned reachable worked and unworked tiles. Not accepted work, strength or future safety.",
+  "records": 24,
+  "parent_boards_unchanged": true,
+  "fresh_samples_played": 0,
+  "difficulties": {
+    "emperor": {
+      "legal_models": 83,
+      "positive_production_models": 27,
+      "positive_unworked_models": 10,
+      "assignment_change_positive_models": [
+        {
+          "turn": 75,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008600-control-view-t75.json",
+          "after_worked": [
+            [
+              14,
+              12
+            ],
+            [
+              15,
+              10
+            ],
+            [
+              15,
+              11
+            ]
+          ],
+          "amenities": 0,
+          "before_walk_worked": [
+            [
+              15,
+              10
+            ],
+            [
+              15,
+              11
+            ],
+            [
+              16,
+              11
+            ]
+          ],
+          "before_worked": [
+            [
+              15,
+              10
+            ],
+            [
+              15,
+              11
+            ],
+            [
+              16,
+              11
+            ]
+          ],
+          "builder": 202,
+          "builder_position": [
+            13,
+            12
+          ],
+          "charges": 2,
+          "city": 189,
+          "city_after": {
+            "culture": 2.9,
+            "faith": 1.0,
+            "food": 5.0,
+            "gold": 0.0,
+            "production": 6.0,
+            "science": 2.5
+          },
+          "city_before": {
+            "culture": 2.9,
+            "faith": 1.0,
+            "food": 7.0,
+            "gold": 0.0,
+            "production": 5.0,
+            "science": 2.5
+          },
+          "city_before_walk": {
+            "culture": 2.9,
+            "faith": 1.0,
+            "food": 7.0,
+            "gold": 0.0,
+            "production": 5.0,
+            "science": 2.5
+          },
+          "destination": [
+            14,
+            12
+          ],
+          "food_bank": 2.8499999999999996,
+          "food_change": -2.0,
+          "fresh_allowance_for_static_price": true,
+          "guard_at_destination_in_input": false,
+          "housing": 2.5,
+          "improvement": "mine",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 5,
+          "population": 3,
+          "production_change": 1.0,
+          "raw_food_surplus": 1.0,
+          "resource": null,
+          "science_change": 0.0,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 0.0,
+            "gold": 0.0,
+            "production": 1.0,
+            "science": 0.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 0.0,
+            "gold": 0.0,
+            "production": 1.0,
+            "science": 0.0
+          },
+          "worked_in_input": false
+        },
+        {
+          "turn": 75,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008600-control-view-t75.json",
+          "after_worked": [
+            [
+              5,
+              19
+            ],
+            [
+              6,
+              15
+            ],
+            [
+              7,
+              15
+            ]
+          ],
+          "amenities": 0,
+          "before_walk_worked": [
+            [
+              5,
+              19
+            ],
+            [
+              6,
+              15
+            ],
+            [
+              7,
+              17
+            ]
+          ],
+          "before_worked": [
+            [
+              5,
+              19
+            ],
+            [
+              6,
+              15
+            ],
+            [
+              7,
+              17
+            ]
+          ],
+          "builder": 295,
+          "builder_position": [
+            7,
+            16
+          ],
+          "charges": 2,
+          "city": 51,
+          "city_after": {
+            "culture": 5.9,
+            "faith": 7.0,
+            "food": 6.0,
+            "gold": 7.0,
+            "production": 11.0,
+            "science": 6.5
+          },
+          "city_before": {
+            "culture": 5.9,
+            "faith": 7.0,
+            "food": 7.0,
+            "gold": 7.0,
+            "production": 10.0,
+            "science": 6.5
+          },
+          "city_before_walk": {
+            "culture": 5.9,
+            "faith": 7.0,
+            "food": 7.0,
+            "gold": 7.0,
+            "production": 10.0,
+            "science": 6.5
+          },
+          "destination": [
+            7,
+            15
+          ],
+          "food_bank": 13.149999999999999,
+          "food_change": -1.0,
+          "fresh_allowance_for_static_price": true,
+          "guard_at_destination_in_input": false,
+          "housing": 4.0,
+          "improvement": "mine",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 2,
+          "population": 3,
+          "production_change": 1.0,
+          "raw_food_surplus": 1.0,
+          "resource": null,
+          "science_change": 0.0,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 1.0,
+            "gold": 0.0,
+            "production": 2.0,
+            "science": 0.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 0.0,
+            "gold": 0.0,
+            "production": 1.0,
+            "science": 0.0
+          },
+          "worked_in_input": false
+        },
+        {
+          "turn": 75,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008600-control-view-t75.json",
+          "after_worked": [
+            [
+              10,
+              12
+            ]
+          ],
+          "amenities": -1,
+          "before_walk_worked": [
+            [
+              8,
+              13
+            ]
+          ],
+          "before_worked": [
+            [
+              8,
+              13
+            ]
+          ],
+          "builder": 372,
+          "builder_position": [
+            10,
+            12
+          ],
+          "charges": 3,
+          "city": 347,
+          "city_after": {
+            "culture": 2.07,
+            "faith": 0.0,
+            "food": 4.0,
+            "gold": 0.0,
+            "production": 4.5,
+            "science": 0.45
+          },
+          "city_before": {
+            "culture": 2.07,
+            "faith": 0.0,
+            "food": 3.0,
+            "gold": 0.0,
+            "production": 3.6,
+            "science": 0.45
+          },
+          "city_before_walk": {
+            "culture": 2.07,
+            "faith": 0.0,
+            "food": 3.0,
+            "gold": 0.0,
+            "production": 3.6,
+            "science": 0.45
+          },
+          "destination": [
+            10,
+            12
+          ],
+          "food_bank": 2.9749999999999996,
+          "food_change": 1.0,
+          "fresh_allowance_for_static_price": false,
+          "guard_at_destination_in_input": false,
+          "housing": 2.0,
+          "improvement": "lumber_mill",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 5,
+          "population": 1,
+          "production_change": 0.8999999999999999,
+          "raw_food_surplus": 1.0,
+          "resource": null,
+          "science_change": 0.0,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 2.0,
+            "gold": 0.0,
+            "production": 2.0,
+            "science": 0.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 0.0,
+            "gold": 0.0,
+            "production": 2.0,
+            "science": 0.0
+          },
+          "worked_in_input": false
+        },
+        {
+          "turn": 75,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008602-control-view-t75.json",
+          "after_worked": [
+            [
+              20,
+              8
+            ],
+            [
+              22,
+              9
+            ],
+            [
+              23,
+              7
+            ],
+            [
+              24,
+              7
+            ]
+          ],
+          "amenities": 0,
+          "before_walk_worked": [
+            [
+              20,
+              8
+            ],
+            [
+              21,
+              8
+            ],
+            [
+              22,
+              9
+            ],
+            [
+              23,
+              7
+            ]
+          ],
+          "before_worked": [
+            [
+              20,
+              8
+            ],
+            [
+              21,
+              8
+            ],
+            [
+              22,
+              9
+            ],
+            [
+              23,
+              7
+            ]
+          ],
+          "builder": 267,
+          "builder_position": [
+            22,
+            8
+          ],
+          "charges": 2,
+          "city": 112,
+          "city_after": {
+            "culture": 3.2,
+            "faith": 0.0,
+            "food": 9.0,
+            "gold": 2.0,
+            "production": 13.0,
+            "science": 2.0
+          },
+          "city_before": {
+            "culture": 3.2,
+            "faith": 0.0,
+            "food": 9.0,
+            "gold": 2.0,
+            "production": 12.0,
+            "science": 2.0
+          },
+          "city_before_walk": {
+            "culture": 3.2,
+            "faith": 0.0,
+            "food": 9.0,
+            "gold": 2.0,
+            "production": 12.0,
+            "science": 2.0
+          },
+          "destination": [
+            24,
+            7
+          ],
+          "food_bank": 6.199999999999996,
+          "food_change": 0.0,
+          "fresh_allowance_for_static_price": false,
+          "guard_at_destination_in_input": false,
+          "housing": 5.0,
+          "improvement": "mine",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 3,
+          "population": 4,
+          "production_change": 1.0,
+          "raw_food_surplus": 1.0,
+          "resource": null,
+          "science_change": 0.0,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 1.0,
+            "gold": 0.0,
+            "production": 2.0,
+            "science": 0.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 0.0,
+            "gold": 0.0,
+            "production": 1.0,
+            "science": 0.0
+          },
+          "worked_in_input": false
+        },
+        {
+          "turn": 50,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008603-control-view-t50.json",
+          "after_worked": [
+            [
+              21,
+              7
+            ],
+            [
+              22,
+              7
+            ],
+            [
+              23,
+              6
+            ],
+            [
+              23,
+              8
+            ]
+          ],
+          "amenities": -2,
+          "before_walk_worked": [
+            [
+              21,
+              7
+            ],
+            [
+              22,
+              7
+            ],
+            [
+              22,
+              9
+            ],
+            [
+              23,
+              6
+            ]
+          ],
+          "before_worked": [
+            [
+              21,
+              7
+            ],
+            [
+              22,
+              7
+            ],
+            [
+              22,
+              9
+            ],
+            [
+              23,
+              6
+            ]
+          ],
+          "builder": 153,
+          "builder_position": [
+            22,
+            8
+          ],
+          "charges": 3,
+          "city": 148,
+          "city_after": {
+            "culture": 2.8800000000000003,
+            "faith": 0.0,
+            "food": 8.0,
+            "gold": 0.0,
+            "production": 6.3,
+            "science": 3.6
+          },
+          "city_before": {
+            "culture": 2.8800000000000003,
+            "faith": 0.0,
+            "food": 10.0,
+            "gold": 0.0,
+            "production": 5.4,
+            "science": 2.7
+          },
+          "city_before_walk": {
+            "culture": 2.8800000000000003,
+            "faith": 0.0,
+            "food": 10.0,
+            "gold": 0.0,
+            "production": 5.4,
+            "science": 2.7
+          },
+          "destination": [
+            23,
+            8
+          ],
+          "food_bank": 3.95,
+          "food_change": -2.0,
+          "fresh_allowance_for_static_price": true,
+          "guard_at_destination_in_input": false,
+          "housing": 5.0,
+          "improvement": "mine",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 3,
+          "population": 4,
+          "production_change": 0.8999999999999995,
+          "raw_food_surplus": 2.0,
+          "resource": "iron",
+          "science_change": 0.8999999999999999,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 0.0,
+            "gold": 0.0,
+            "production": 1.0,
+            "science": 1.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 0.0,
+            "gold": 0.0,
+            "production": 1.0,
+            "science": 0.0
+          },
+          "worked_in_input": false
+        },
+        {
+          "turn": 75,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008603-control-view-t75.json",
+          "after_worked": [
+            [
+              18,
+              14
+            ],
+            [
+              19,
+              14
+            ]
+          ],
+          "amenities": -1,
+          "before_walk_worked": [
+            [
+              17,
+              13
+            ],
+            [
+              18,
+              14
+            ]
+          ],
+          "before_worked": [
+            [
+              17,
+              13
+            ],
+            [
+              18,
+              14
+            ]
+          ],
+          "builder": 118,
+          "builder_position": [
+            20,
+            12
+          ],
+          "charges": 3,
+          "city": 197,
+          "city_after": {
+            "culture": 2.96,
+            "faith": 0.0,
+            "food": 6.0,
+            "gold": 1.0,
+            "production": 5.4,
+            "science": 1.1
+          },
+          "city_before": {
+            "culture": 3.6,
+            "faith": 0.0,
+            "food": 6.0,
+            "gold": 0.0,
+            "production": 4.0,
+            "science": 1.0
+          },
+          "city_before_walk": {
+            "culture": 3.6,
+            "faith": 0.0,
+            "food": 6.0,
+            "gold": 0.0,
+            "production": 4.0,
+            "science": 1.0
+          },
+          "destination": [
+            19,
+            14
+          ],
+          "food_bank": 0.47499999999999964,
+          "food_change": 0.0,
+          "fresh_allowance_for_static_price": true,
+          "guard_at_destination_in_input": false,
+          "housing": 4.0,
+          "improvement": "quarry",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 2,
+          "population": 2,
+          "production_change": 1.4000000000000004,
+          "raw_food_surplus": 2.0,
+          "resource": "gypsum",
+          "science_change": 0.10000000000000009,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 1.0,
+            "gold": 1.0,
+            "production": 2.0,
+            "science": 0.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 0.0,
+            "gold": 0.0,
+            "production": 1.0,
+            "science": 0.0
+          },
+          "worked_in_input": false
+        },
+        {
+          "turn": 75,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008603-control-view-t75.json",
+          "after_worked": [
+            [
+              18,
+              14
+            ],
+            [
+              21,
+              11
+            ]
+          ],
+          "amenities": -1,
+          "before_walk_worked": [
+            [
+              17,
+              13
+            ],
+            [
+              18,
+              14
+            ]
+          ],
+          "before_worked": [
+            [
+              17,
+              13
+            ],
+            [
+              18,
+              14
+            ]
+          ],
+          "builder": 118,
+          "builder_position": [
+            20,
+            12
+          ],
+          "charges": 3,
+          "city": 197,
+          "city_after": {
+            "culture": 2.7,
+            "faith": 0.0,
+            "food": 6.0,
+            "gold": 0.0,
+            "production": 5.800000000000001,
+            "science": 1.0
+          },
+          "city_before": {
+            "culture": 3.6,
+            "faith": 0.0,
+            "food": 6.0,
+            "gold": 0.0,
+            "production": 4.0,
+            "science": 1.0
+          },
+          "city_before_walk": {
+            "culture": 3.6,
+            "faith": 0.0,
+            "food": 6.0,
+            "gold": 0.0,
+            "production": 4.0,
+            "science": 1.0
+          },
+          "destination": [
+            21,
+            11
+          ],
+          "food_bank": 0.47499999999999964,
+          "food_change": 0.0,
+          "fresh_allowance_for_static_price": true,
+          "guard_at_destination_in_input": true,
+          "housing": 4.0,
+          "improvement": "lumber_mill",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 3,
+          "population": 2,
+          "production_change": 1.8000000000000007,
+          "raw_food_surplus": 2.0,
+          "resource": null,
+          "science_change": 0.0,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 1.0,
+            "gold": 0.0,
+            "production": 2.0,
+            "science": 0.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 0.0,
+            "gold": 0.0,
+            "production": 2.0,
+            "science": 0.0
+          },
+          "worked_in_input": false
+        },
+        {
+          "turn": 75,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008603-control-view-t75.json",
+          "after_worked": [
+            [
+              17,
+              13
+            ],
+            [
+              21,
+              12
+            ]
+          ],
+          "amenities": -1,
+          "before_walk_worked": [
+            [
+              17,
+              13
+            ],
+            [
+              18,
+              14
+            ]
+          ],
+          "before_worked": [
+            [
+              17,
+              13
+            ],
+            [
+              18,
+              14
+            ]
+          ],
+          "builder": 118,
+          "builder_position": [
+            20,
+            12
+          ],
+          "charges": 3,
+          "city": 197,
+          "city_after": {
+            "culture": 3.6,
+            "faith": 0.0,
+            "food": 6.0,
+            "gold": 0.0,
+            "production": 5.800000000000001,
+            "science": 1.0
+          },
+          "city_before": {
+            "culture": 3.6,
+            "faith": 0.0,
+            "food": 6.0,
+            "gold": 0.0,
+            "production": 4.0,
+            "science": 1.0
+          },
+          "city_before_walk": {
+            "culture": 3.6,
+            "faith": 0.0,
+            "food": 6.0,
+            "gold": 0.0,
+            "production": 4.0,
+            "science": 1.0
+          },
+          "destination": [
+            21,
+            12
+          ],
+          "food_bank": 0.47499999999999964,
+          "food_change": 0.0,
+          "fresh_allowance_for_static_price": true,
+          "guard_at_destination_in_input": false,
+          "housing": 4.0,
+          "improvement": "mine",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 3,
+          "population": 2,
+          "production_change": 1.8000000000000007,
+          "raw_food_surplus": 2.0,
+          "resource": null,
+          "science_change": 0.0,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 2.0,
+            "gold": 0.0,
+            "production": 1.0,
+            "science": 0.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 0.0,
+            "gold": 0.0,
+            "production": 2.0,
+            "science": 0.0
+          },
+          "worked_in_input": false
+        },
+        {
+          "turn": 75,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008603-control-view-t75.json",
+          "after_worked": [
+            [
+              21,
+              7
+            ],
+            [
+              22,
+              7
+            ],
+            [
+              22,
+              9
+            ],
+            [
+              23,
+              6
+            ]
+          ],
+          "amenities": -1,
+          "before_walk_worked": [
+            [
+              20,
+              10
+            ],
+            [
+              21,
+              7
+            ],
+            [
+              22,
+              7
+            ],
+            [
+              23,
+              6
+            ]
+          ],
+          "before_worked": [
+            [
+              20,
+              10
+            ],
+            [
+              21,
+              7
+            ],
+            [
+              22,
+              7
+            ],
+            [
+              23,
+              6
+            ]
+          ],
+          "builder": 321,
+          "builder_position": [
+            22,
+            9
+          ],
+          "charges": 2,
+          "city": 148,
+          "city_after": {
+            "culture": 3.2,
+            "faith": 0.0,
+            "food": 10.0,
+            "gold": 0.0,
+            "production": 10.8,
+            "science": 3.0
+          },
+          "city_before": {
+            "culture": 3.2,
+            "faith": 0.0,
+            "food": 10.0,
+            "gold": 0.0,
+            "production": 9.0,
+            "science": 3.0
+          },
+          "city_before_walk": {
+            "culture": 3.2,
+            "faith": 0.0,
+            "food": 10.0,
+            "gold": 0.0,
+            "production": 9.0,
+            "science": 3.0
+          },
+          "destination": [
+            22,
+            9
+          ],
+          "food_bank": 4.449999999999999,
+          "food_change": 0.0,
+          "fresh_allowance_for_static_price": false,
+          "guard_at_destination_in_input": false,
+          "housing": 6.5,
+          "improvement": "lumber_mill",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 4,
+          "population": 4,
+          "production_change": 1.8000000000000007,
+          "raw_food_surplus": 2.0,
+          "resource": null,
+          "science_change": 0.0,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 2.0,
+            "gold": 0.0,
+            "production": 1.0,
+            "science": 0.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 0.0,
+            "gold": 0.0,
+            "production": 2.0,
+            "science": 0.0
+          },
+          "worked_in_input": false
+        },
+        {
+          "turn": 75,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008603-control-view-t75.json",
+          "after_worked": [
+            [
+              22,
+              6
+            ],
+            [
+              23,
+              5
+            ],
+            [
+              24,
+              5
+            ]
+          ],
+          "amenities": -1,
+          "before_walk_worked": [
+            [
+              23,
+              5
+            ],
+            [
+              24,
+              5
+            ],
+            [
+              24,
+              6
+            ]
+          ],
+          "before_worked": [
+            [
+              23,
+              5
+            ],
+            [
+              24,
+              5
+            ],
+            [
+              24,
+              6
+            ]
+          ],
+          "builder": 336,
+          "builder_position": [
+            22,
+            7
+          ],
+          "charges": 2,
+          "city": 227,
+          "city_after": {
+            "culture": 2.9,
+            "faith": 0.0,
+            "food": 9.0,
+            "gold": 0.0,
+            "production": 10.6,
+            "science": 2.5
+          },
+          "city_before": {
+            "culture": 2.9,
+            "faith": 0.0,
+            "food": 12.0,
+            "gold": 0.0,
+            "production": 7.0,
+            "science": 2.5
+          },
+          "city_before_walk": {
+            "culture": 2.9,
+            "faith": 0.0,
+            "food": 12.0,
+            "gold": 0.0,
+            "production": 7.0,
+            "science": 2.5
+          },
+          "destination": [
+            22,
+            6
+          ],
+          "food_bank": 6.1,
+          "food_change": -3.0,
+          "fresh_allowance_for_static_price": true,
+          "guard_at_destination_in_input": false,
+          "housing": 5.0,
+          "improvement": "lumber_mill",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 7,
+          "population": 3,
+          "production_change": 3.5999999999999996,
+          "raw_food_surplus": 6.0,
+          "resource": null,
+          "science_change": 0.0,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 1.0,
+            "gold": 0.0,
+            "production": 2.0,
+            "science": 0.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 0.0,
+            "gold": 0.0,
+            "production": 2.0,
+            "science": 0.0
+          },
+          "worked_in_input": false
+        }
+      ],
+      "positive_before_t75": 5,
+      "assignment_change_before_t75": 1
+    },
+    "deity": {
+      "legal_models": 33,
+      "positive_production_models": 8,
+      "positive_unworked_models": 3,
+      "assignment_change_positive_models": [
+        {
+          "turn": 75,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008700-control-view-t75.json",
+          "after_worked": [
+            [
+              24,
+              10
+            ],
+            [
+              25,
+              11
+            ],
+            [
+              26,
+              9
+            ],
+            [
+              26,
+              11
+            ]
+          ],
+          "amenities": 1,
+          "before_walk_worked": [
+            [
+              24,
+              9
+            ],
+            [
+              25,
+              11
+            ],
+            [
+              26,
+              9
+            ],
+            [
+              26,
+              11
+            ]
+          ],
+          "before_worked": [
+            [
+              24,
+              9
+            ],
+            [
+              25,
+              11
+            ],
+            [
+              26,
+              9
+            ],
+            [
+              26,
+              11
+            ]
+          ],
+          "builder": 398,
+          "builder_position": [
+            26,
+            10
+          ],
+          "charges": 3,
+          "city": 75,
+          "city_after": {
+            "culture": 6.2,
+            "faith": 0.0,
+            "food": 9.0,
+            "gold": 10.0,
+            "production": 16.0,
+            "science": 10.0
+          },
+          "city_before": {
+            "culture": 6.2,
+            "faith": 0.0,
+            "food": 9.0,
+            "gold": 10.0,
+            "production": 14.0,
+            "science": 11.0
+          },
+          "city_before_walk": {
+            "culture": 6.2,
+            "faith": 0.0,
+            "food": 9.0,
+            "gold": 10.0,
+            "production": 14.0,
+            "science": 11.0
+          },
+          "destination": [
+            24,
+            10
+          ],
+          "food_bank": 7.699999999999999,
+          "food_change": 0.0,
+          "fresh_allowance_for_static_price": true,
+          "guard_at_destination_in_input": false,
+          "housing": 6.0,
+          "improvement": "lumber_mill",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 4,
+          "population": 4,
+          "production_change": 2.0,
+          "raw_food_surplus": 1.0,
+          "resource": null,
+          "science_change": -1.0,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 1.0,
+            "gold": 0.0,
+            "production": 2.0,
+            "science": 0.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 0.0,
+            "gold": 0.0,
+            "production": 2.0,
+            "science": 0.0
+          },
+          "worked_in_input": false
+        },
+        {
+          "turn": 75,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008701-control-view-t75.json",
+          "after_worked": [
+            [
+              -1,
+              21
+            ],
+            [
+              0,
+              19
+            ],
+            [
+              0,
+              20
+            ],
+            [
+              1,
+              21
+            ]
+          ],
+          "amenities": 0,
+          "before_walk_worked": [
+            [
+              0,
+              19
+            ],
+            [
+              0,
+              20
+            ],
+            [
+              1,
+              21
+            ],
+            [
+              1,
+              22
+            ]
+          ],
+          "before_worked": [
+            [
+              0,
+              19
+            ],
+            [
+              0,
+              20
+            ],
+            [
+              1,
+              21
+            ],
+            [
+              1,
+              22
+            ]
+          ],
+          "builder": 357,
+          "builder_position": [
+            -1,
+            21
+          ],
+          "charges": 2,
+          "city": 257,
+          "city_after": {
+            "culture": 3.2,
+            "faith": 0.0,
+            "food": 10.0,
+            "gold": 0.0,
+            "production": 9.0,
+            "science": 6.0
+          },
+          "city_before": {
+            "culture": 3.2,
+            "faith": 0.0,
+            "food": 10.0,
+            "gold": 0.0,
+            "production": 7.0,
+            "science": 6.0
+          },
+          "city_before_walk": {
+            "culture": 3.2,
+            "faith": 0.0,
+            "food": 10.0,
+            "gold": 0.0,
+            "production": 7.0,
+            "science": 6.0
+          },
+          "destination": [
+            -1,
+            21
+          ],
+          "food_bank": 18.3,
+          "food_change": 0.0,
+          "fresh_allowance_for_static_price": false,
+          "guard_at_destination_in_input": false,
+          "housing": 5.5,
+          "improvement": "lumber_mill",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 5,
+          "population": 4,
+          "production_change": 2.0,
+          "raw_food_surplus": 2.0,
+          "resource": null,
+          "science_change": 0.0,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 2.0,
+            "gold": 0.0,
+            "production": 1.0,
+            "science": 0.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 0.0,
+            "gold": 0.0,
+            "production": 2.0,
+            "science": 0.0
+          },
+          "worked_in_input": false
+        },
+        {
+          "turn": 75,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008702-control-view-t75.json",
+          "after_worked": [
+            [
+              14,
+              16
+            ],
+            [
+              15,
+              17
+            ],
+            [
+              16,
+              17
+            ]
+          ],
+          "amenities": -2,
+          "before_walk_worked": [
+            [
+              15,
+              17
+            ],
+            [
+              16,
+              17
+            ],
+            [
+              17,
+              16
+            ]
+          ],
+          "before_worked": [
+            [
+              15,
+              17
+            ],
+            [
+              16,
+              17
+            ],
+            [
+              17,
+              16
+            ]
+          ],
+          "builder": 422,
+          "builder_position": [
+            16,
+            16
+          ],
+          "charges": 3,
+          "city": 348,
+          "city_after": {
+            "culture": 0.585,
+            "faith": 0.0,
+            "food": 8.0,
+            "gold": 0.0,
+            "production": 3.9000000000000004,
+            "science": 0.9750000000000001
+          },
+          "city_before": {
+            "culture": 0.585,
+            "faith": 0.0,
+            "food": 8.0,
+            "gold": 0.0,
+            "production": 3.25,
+            "science": 0.9750000000000001
+          },
+          "city_before_walk": {
+            "culture": 0.585,
+            "faith": 0.0,
+            "food": 8.0,
+            "gold": 0.0,
+            "production": 3.25,
+            "science": 0.9750000000000001
+          },
+          "destination": [
+            16,
+            17
+          ],
+          "food_bank": 15.350000000000001,
+          "food_change": 0.0,
+          "fresh_allowance_for_static_price": false,
+          "guard_at_destination_in_input": true,
+          "housing": 5.0,
+          "improvement": "farm",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 1,
+          "population": 3,
+          "production_change": 0.6500000000000004,
+          "raw_food_surplus": 2.0,
+          "resource": null,
+          "science_change": 0.0,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 2.0,
+            "gold": 0.0,
+            "production": 0.0,
+            "science": 0.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 1.0,
+            "gold": 0.0,
+            "production": 0.0,
+            "science": 0.0
+          },
+          "worked_in_input": true
+        },
+        {
+          "turn": 25,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008703-control-view-t25.json",
+          "after_worked": [
+            [
+              23,
+              25
+            ],
+            [
+              24,
+              23
+            ],
+            [
+              25,
+              22
+            ],
+            [
+              25,
+              23
+            ]
+          ],
+          "amenities": 0,
+          "before_walk_worked": [
+            [
+              24,
+              23
+            ],
+            [
+              24,
+              25
+            ],
+            [
+              25,
+              22
+            ],
+            [
+              25,
+              23
+            ]
+          ],
+          "before_worked": [
+            [
+              24,
+              23
+            ],
+            [
+              24,
+              25
+            ],
+            [
+              25,
+              22
+            ],
+            [
+              25,
+              23
+            ]
+          ],
+          "builder": 194,
+          "builder_position": [
+            23,
+            24
+          ],
+          "charges": 3,
+          "city": 75,
+          "city_after": {
+            "culture": 3.2,
+            "faith": 4.0,
+            "food": 10.0,
+            "gold": 5.0,
+            "production": 11.0,
+            "science": 4.0
+          },
+          "city_before": {
+            "culture": 3.2,
+            "faith": 4.0,
+            "food": 10.0,
+            "gold": 5.0,
+            "production": 10.0,
+            "science": 4.0
+          },
+          "city_before_walk": {
+            "culture": 3.2,
+            "faith": 4.0,
+            "food": 10.0,
+            "gold": 5.0,
+            "production": 10.0,
+            "science": 4.0
+          },
+          "destination": [
+            23,
+            25
+          ],
+          "food_bank": 6.0,
+          "food_change": 0.0,
+          "fresh_allowance_for_static_price": false,
+          "guard_at_destination_in_input": false,
+          "housing": 6.0,
+          "improvement": "farm",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 1,
+          "population": 4,
+          "production_change": 1.0,
+          "raw_food_surplus": 2.0,
+          "resource": null,
+          "science_change": 0.0,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 1.0,
+            "gold": 0.0,
+            "production": 1.0,
+            "science": 0.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 1.0,
+            "gold": 0.0,
+            "production": 0.0,
+            "science": 0.0
+          },
+          "worked_in_input": false
+        },
+        {
+          "turn": 25,
+          "source": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008703-control-view-t25.json",
+          "after_worked": [
+            [
+              24,
+              25
+            ],
+            [
+              25,
+              22
+            ],
+            [
+              25,
+              23
+            ],
+            [
+              26,
+              22
+            ]
+          ],
+          "amenities": 0,
+          "before_walk_worked": [
+            [
+              24,
+              23
+            ],
+            [
+              24,
+              25
+            ],
+            [
+              25,
+              22
+            ],
+            [
+              25,
+              23
+            ]
+          ],
+          "before_worked": [
+            [
+              24,
+              23
+            ],
+            [
+              24,
+              25
+            ],
+            [
+              25,
+              22
+            ],
+            [
+              25,
+              23
+            ]
+          ],
+          "builder": 194,
+          "builder_position": [
+            23,
+            24
+          ],
+          "charges": 3,
+          "city": 75,
+          "city_after": {
+            "culture": 4.2,
+            "faith": 4.0,
+            "food": 10.0,
+            "gold": 5.0,
+            "production": 11.0,
+            "science": 4.0
+          },
+          "city_before": {
+            "culture": 3.2,
+            "faith": 4.0,
+            "food": 10.0,
+            "gold": 5.0,
+            "production": 10.0,
+            "science": 4.0
+          },
+          "city_before_walk": {
+            "culture": 3.2,
+            "faith": 4.0,
+            "food": 10.0,
+            "gold": 5.0,
+            "production": 10.0,
+            "science": 4.0
+          },
+          "destination": [
+            24,
+            25
+          ],
+          "food_bank": 6.0,
+          "food_change": 0.0,
+          "fresh_allowance_for_static_price": true,
+          "guard_at_destination_in_input": false,
+          "housing": 6.0,
+          "improvement": "farm",
+          "known_native_hostile_reach": [],
+          "nearest_foreign_military_distance_in_observation": 1,
+          "population": 4,
+          "production_change": 1.0,
+          "raw_food_surplus": 2.0,
+          "resource": null,
+          "science_change": 0.0,
+          "scope": "Legal structural improvement on static decision-board clone; after-walk baseline; not enacted work or safety proof",
+          "standing_improvement": null,
+          "tile_before_walk": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 2.0,
+            "gold": 0.0,
+            "production": 0.0,
+            "science": 0.0
+          },
+          "tile_delta": {
+            "culture": 0.0,
+            "faith": 0.0,
+            "food": 1.0,
+            "gold": 0.0,
+            "production": 0.0,
+            "science": 0.0
+          },
+          "worked_in_input": true
+        }
+      ],
+      "positive_before_t75": 3,
+      "assignment_change_before_t75": 2
+    }
+  }
+}

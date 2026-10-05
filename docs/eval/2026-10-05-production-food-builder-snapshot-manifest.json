@@ -1,0 +1,242 @@
+{
+  "frozen_at": "2026-10-05T01:37:09.341482+00:00",
+  "source_head": "eaa425da480dd22f94f278488ae9f5553f51e0aa",
+  "compiler": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: aarch64-apple-darwin\nrelease: 1.97.1\nLLVM version: 22.1.6\n",
+  "compile_command": [
+    "/Users/martbot-mbp-m5-max-128/.cargo/bin/rustc",
+    "--edition",
+    "2021",
+    "-C",
+    "opt-level=3",
+    "-C",
+    "debug-assertions=yes",
+    "-L",
+    "dependency=/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/artifacts/deps",
+    "--extern",
+    "civvis=/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/artifacts/deps/libcivvis-e26cdcfa7a10e4e6.rlib",
+    "--extern",
+    "serde_json=/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/artifacts/deps/libserde_json-5d92e8a1d79db490.rlib",
+    "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/food-builder/artifacts/2026-10-05-production-food-builder-snapshot-probe.rs",
+    "-o",
+    "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/food-builder/artifacts/civvis-production-food-builder-snapshot"
+  ],
+  "compile_exit_code": 0,
+  "probe_sha256": "ac68207eeb5d34ce14e42078ea903aa256368194109509aa646babe2c595221b",
+  "binary": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/food-builder/artifacts/civvis-production-food-builder-snapshot",
+  "binary_sha256": "91f4e68b00b605bf4b3cc20469dbdf7ac484aa00a09e1a1b2d0c6083cf1d16fc",
+  "inputs": [
+    {
+      "difficulty": "emperor",
+      "seed": 61008600,
+      "turn": 25,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008600-control-view-t25.json",
+      "sha256": "41c1b53685bae4d6abb162d8a0fe5fc625e0fd407d18ffd8da7aac4d9b8348b6"
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008600,
+      "turn": 50,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008600-control-view-t50.json",
+      "sha256": "bed3207f94bd131467f795f00555b56d221410f4a3388f0f59e9b973dbdbcc63"
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008600,
+      "turn": 75,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008600-control-view-t75.json",
+      "sha256": "270c166897ed6c076ca6b190a7819a50689796c57706e5d4cd39de94f311626a"
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008601,
+      "turn": 25,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008601-control-view-t25.json",
+      "sha256": "a4a2c4bbbc17d5eb7b2c615078d9d53cdfd050f43bcef10acda38ffdcb12c4fe"
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008601,
+      "turn": 50,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008601-control-view-t50.json",
+      "sha256": "acb0fa91649d43376a2beaf8cabe5dac58056322b8d547ae245cc13ddb391210"
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008601,
+      "turn": 75,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008601-control-view-t75.json",
+      "sha256": "7043aab2ee8a7632c18d38ac3f5f1a7f8df4a8799e3eda70eed6617fcbb5e2a1"
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008602,
+      "turn": 25,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008602-control-view-t25.json",
+      "sha256": "bf85209cdb52ae1c2128641b130b5c94eaee34ef921caf3ac68dce7bbbb1b0fa"
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008602,
+      "turn": 50,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008602-control-view-t50.json",
+      "sha256": "07148dc6db48e7329e537930bcf777e17f76bcb80caff9576289c4f5275856b0"
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008602,
+      "turn": 75,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008602-control-view-t75.json",
+      "sha256": "a413cd8874ad26ee16b0ecf85318d490e9c22c447873691578fe61f8121160fe"
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008603,
+      "turn": 25,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008603-control-view-t25.json",
+      "sha256": "4493115b12f6f15233da39d80f0643068e7179a4f52a1c9310432b26c7d87b9c"
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008603,
+      "turn": 50,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008603-control-view-t50.json",
+      "sha256": "e6d8a48521e55bbdb42f928eebc192f5cb3ca4c4c910044783b57824e643de38"
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61008603,
+      "turn": 75,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-emperor-61008603-control-view-t75.json",
+      "sha256": "8658aea03ebfc89be131dbc74c431e6dead413f6122a4dd67b97276c5d4751a0"
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008700,
+      "turn": 25,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008700-control-view-t25.json",
+      "sha256": "b1266cdec89739c05a51e8c9d13aa3e58848512973b36603584b25919e812083"
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008700,
+      "turn": 50,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008700-control-view-t50.json",
+      "sha256": "a0e5ca32c45b2bec56bfafd6059a9402351da8725b7bd1ab8eb7ab1504b1e4d9"
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008700,
+      "turn": 75,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008700-control-view-t75.json",
+      "sha256": "3900ad819e1eb2f731590d4de55e7c8da0ba1bd753fc03f15c007d4484558ca9"
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008701,
+      "turn": 25,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008701-control-view-t25.json",
+      "sha256": "0bc35872c0965191f47809ff9c73a67ab284826d0fc1f763638fa20b21922c70"
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008701,
+      "turn": 50,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008701-control-view-t50.json",
+      "sha256": "f042eb4a844a6fbef1ff4bd6c398acb05e291fcd6e796730c72af86a983144e2"
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008701,
+      "turn": 75,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008701-control-view-t75.json",
+      "sha256": "4914b9a45ba7651332e3ecba7b38647677718a926a83214cd902a6e979979c80"
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008702,
+      "turn": 25,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008702-control-view-t25.json",
+      "sha256": "4da5d77ee6b199af40fea20d85d067c3336575e12d8b09cbfa19584f6b14737d"
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008702,
+      "turn": 50,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008702-control-view-t50.json",
+      "sha256": "100cfe630068feb1c88fb873ef5ab2943cd9f2321c91d9a9e2b65f5735577110"
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008702,
+      "turn": 75,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008702-control-view-t75.json",
+      "sha256": "c758b69df99d364075529022e847ea4645b779618882a47e3e06cb3e10470022"
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008703,
+      "turn": 25,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008703-control-view-t25.json",
+      "sha256": "a74850c22df44e6d0011284bebd26d2e64b4f1904be055c701ad5fe4d318f2de"
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008703,
+      "turn": 50,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008703-control-view-t50.json",
+      "sha256": "bbb6c5636ae1eab2006424f84fe903e14ed1cf8a1343d6d4e55e73d25ef9cb7d"
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008703,
+      "turn": 75,
+      "path": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/diagnostic/civvis-production-builder-escort-paired-deity-61008703-control-view-t75.json",
+      "sha256": "bdd2573369b7ca69bd60676f7dff2ac82d00a591eadf7b19e4a8cdbbe92f01c4"
+    }
+  ],
+  "frozen_library_manifest": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/builder-escort/artifacts/2026-10-05-production-builder-escort-diagnostic-manifest.json",
+  "frozen_library_manifest_sha256": "5fa63bd082f8399016c23462597e966369a85d8998c1d8f11fcb9ab8aeb130a5",
+  "dependency_sha256": {
+    "libcc-306998902a309339.rlib": "78ab97890e958b744b3e729a3e57bde8648bdad7874a0e538f5ab338ff85c8df",
+    "libcc-306998902a309339.rmeta": "baf76212f86cdc64c144bb4d2cb58398e73caee357d6344be29810d0e2a4b5c9",
+    "libcivvis-e26cdcfa7a10e4e6.rlib": "8bcac95f149e7b09287382b3be269c8fa4f3cce1fa4b053b208239d7fd6ed738",
+    "libcivvis-e26cdcfa7a10e4e6.rmeta": "133fb5e18d58694190f8b3781b47d19a060aec6fcba4749bdec67ab121cb9ec9",
+    "libfind_msvc_tools-6ea7281740f42015.rlib": "47bf306f740c2612626613b603188d3edc78182bdc2500741010227e536c9daf",
+    "libfind_msvc_tools-6ea7281740f42015.rmeta": "347d481afc2236373d09cf575e0cf878c5f7242acb604b389954cd499f1e3358",
+    "libitoa-e05d252acce1b140.rlib": "a6646b819797de97bb0c378b156845db0afc2a6063b593e8f63b9832b1f2514d",
+    "libitoa-e05d252acce1b140.rmeta": "7f4ca4d82773219f09ff1de4a0a605f0e8174b141154cbd530789e260afd6409",
+    "liblibm-5ee0467b56344aa1.rlib": "f8b977db76e23af41c4fa0413dd9837b5ae61b9fded1beb696328e326bac7e37",
+    "liblibm-5ee0467b56344aa1.rmeta": "4fd1704c62eeef360e4270311c97b5bf97ed3dc8eedd3753cad1a34282330d91",
+    "liblibmimalloc_sys-2c7708222b09358b.rlib": "b0085a1b5a82ca0803e95d2d34d651cbbef6420c21a37a7561aae78638ebe26c",
+    "liblibmimalloc_sys-2c7708222b09358b.rmeta": "594f5bc512e122b22c2fe6796bf8f6e6b0dc0b0812ba6bfa806782e86c98ae1b",
+    "libmemchr-64cfcd45a0ce2bd7.rlib": "4ebb83a2bcee2de068fb28e3789337db50ae064fb859e4fb8dd6dda2f883bb72",
+    "libmemchr-64cfcd45a0ce2bd7.rmeta": "1d9b69d2af2d332caeb7ace6f8c6d455c141d493fde61b0c04ca34ff4f3ff01a",
+    "libmimalloc-4b1d0a8b44717daa.rlib": "4a6f3058d8007eaf87e4f45092ce4c4d1973f997ad78d2eef70d15a4b82733bf",
+    "libmimalloc-4b1d0a8b44717daa.rmeta": "074ac9a0063ad06a13975bcd75f2311e59364b4eb1416e88984c4a05edf23fc3",
+    "libmimalloc.a": "bd38e1689bb5666aede82dd698dca9daa9cc024d634453f2f00fcd28212b1728",
+    "libproc_macro2-b1baaf8ea9e1f1c6.rlib": "ed525c0441a4b562466f32e95b8bb5d0e3346af66dd811b2436f72366f66a927",
+    "libproc_macro2-b1baaf8ea9e1f1c6.rmeta": "7fd01ef5bacb2a06a92eb3155f3e26e5d6a7429146ff3398a74085857d577706",
+    "libquote-e94315914580abd1.rlib": "49d266cb0b426141a382464dca58ffca0a9a07bf9263bcc46c30a650836a6f43",
+    "libquote-e94315914580abd1.rmeta": "6c5b9105cdc55464dfeff46173748ad6c072488f72600944cb5101c20c808a51",
+    "libserde-99734557989d9f5b.rlib": "dddf35e4e424e1f5cf6bb71efd1a576bf0d15772119b14fe6500a00fb8714575",
+    "libserde-99734557989d9f5b.rmeta": "617a14bf10af84f82a465f4f9ff532da408bf7a7e5120f5c40c83fcf9eb72334",
+    "libserde_core-d8b9cb9d7eda75e3.rlib": "6eee18f0eff435c6ba9aa265b215e7d8e47cbb2d7f5449c140f0ce59990fbd8e",
+    "libserde_core-d8b9cb9d7eda75e3.rmeta": "27735a4fb80fe90289c6a90b0f12e4683232fa26d51ce31b7c7aeb99621d8951",
+    "libserde_derive-15fd15435ae91cdd.dylib": "865028b9da1627619c514243d0b7c739efa3b2292e0d4599f59b3e39ab93a9d4",
+    "libserde_json-5d92e8a1d79db490.rlib": "5631fee12717203a99e357cb15007fcb3e56b9ea40b5a506ed61ddd27ecd1b1b",
+    "libserde_json-5d92e8a1d79db490.rmeta": "6e6fff70f240bc61219c1d599641e6510df0370b1df13c3c54ce24e04d9c7bd2",
+    "libshlex-2ad7c2fa1558f084.rlib": "e415292c6f4f3bac21b7b2157507dbbb4850f64096b3041c37ea9062ea549639",
+    "libshlex-2ad7c2fa1558f084.rmeta": "ec81815c290e7b69244db1185c8f3006a78476c771011f6f8c1e80c6768f2e60",
+    "libsyn-3854ff36265737a1.rlib": "a66fd194dc2f4a26ba9db90898a01c0d735d7dea6d3d0261bb6331fa6c9cbb75",
+    "libsyn-3854ff36265737a1.rmeta": "0a374ecaab0f36d1068d36466ec17d24fc85fa1eaaa6824f5ff86c8c693dba27",
+    "libunicode_ident-00ff4f24fa63cdb3.rlib": "213612d4f31af086ad59b78928decf6df7085d84281f675bf6f082d95eae6f04",
+    "libunicode_ident-00ff4f24fa63cdb3.rmeta": "a31bb1297fba56277bf30784aad75b0647182af6b01c8ebdad08ccb26b0cc6d5",
+    "libzmij-db1726fcbad03e10.rlib": "087ecf77c66cc9d9f6a71ef4c393bf87194fd96ce7c57921adea7f9d598086d7",
+    "libzmij-db1726fcbad03e10.rmeta": "795aa0098ae8483a5b8f328ceb42a75f06e78c1e280976e95ec28faed1c94de1"
+  },
+  "scope": "Static native decision-board Farm/citizen assignment models only. Fresh movement on a model copy prices structural continuation without enemy-turn simulation; not actual executed work or safety proof. No AI instantiated.",
+  "new_games_played": 0,
+  "fresh_samples_played": 0,
+  "snapshots_at_freeze": 0,
+  "actual_Firaxis_verification": false
+}

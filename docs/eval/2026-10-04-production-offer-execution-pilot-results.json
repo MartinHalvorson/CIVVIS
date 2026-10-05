@@ -1,0 +1,850 @@
+{
+  "created_at": "2026-10-04T21:03:25.631966+00:00",
+  "paired_manifest": "docs/eval/2026-10-04-production-offer-execution-paired-manifest.json",
+  "phase": "fresh pilot, separate from consumed diagnostics and untouched confirmation",
+  "assigned_pairs": 8,
+  "terminal_executions": 16,
+  "actual_Firaxis_verification": false,
+  "per_seed": [
+    {
+      "seed": 61007800,
+      "difficulty": "emperor",
+      "terminal_exit_codes": {
+        "control": 0,
+        "candidate": 0
+      },
+      "t75": {
+        "checkpoint_present": [
+          true,
+          true
+        ],
+        "production": {
+          "control": 59.0,
+          "candidate": 59.0,
+          "delta": 0.0
+        },
+        "rival_production": {
+          "control": 115.2,
+          "candidate": 115.2,
+          "delta": 0.0
+        },
+        "cumulative_production": {
+          "control": 2046.0,
+          "candidate": 2046.0,
+          "delta": 0.0
+        },
+        "science": {
+          "control": 25.5,
+          "candidate": 25.5,
+          "delta": 0.0
+        },
+        "military_power": {
+          "control": 271.05,
+          "candidate": 271.05,
+          "delta": 0.0
+        },
+        "cities": {
+          "control": 8.0,
+          "candidate": 8.0,
+          "delta": 0.0
+        },
+        "population": {
+          "control": 27.0,
+          "candidate": 27.0,
+          "delta": 0.0
+        },
+        "productive_improvements": {
+          "control": 2.0,
+          "candidate": 2.0,
+          "delta": 0.0
+        }
+      },
+      "final": {
+        "control": {
+          "turn": 151,
+          "winner": 3,
+          "focal_alive": true,
+          "refused_counter": 30
+        },
+        "candidate": {
+          "turn": 151,
+          "winner": 3,
+          "focal_alive": true,
+          "refused_counter": 30
+        }
+      },
+      "actions.json_byte_equal": true,
+      "final.json_byte_equal": true,
+      "alive_at_t75": [
+        true,
+        true
+      ]
+    },
+    {
+      "seed": 61007801,
+      "difficulty": "emperor",
+      "terminal_exit_codes": {
+        "control": 0,
+        "candidate": 0
+      },
+      "t75": {
+        "checkpoint_present": [
+          true,
+          true
+        ],
+        "production": {
+          "control": 50.0,
+          "candidate": 50.0,
+          "delta": 0.0
+        },
+        "rival_production": {
+          "control": 90.9,
+          "candidate": 90.9,
+          "delta": 0.0
+        },
+        "cumulative_production": {
+          "control": 1856.8,
+          "candidate": 1856.8,
+          "delta": 0.0
+        },
+        "science": {
+          "control": 22.0,
+          "candidate": 22.0,
+          "delta": 0.0
+        },
+        "military_power": {
+          "control": 488.9,
+          "candidate": 488.9,
+          "delta": 0.0
+        },
+        "cities": {
+          "control": 7.0,
+          "candidate": 7.0,
+          "delta": 0.0
+        },
+        "population": {
+          "control": 16.0,
+          "candidate": 16.0,
+          "delta": 0.0
+        },
+        "productive_improvements": {
+          "control": 4.0,
+          "candidate": 4.0,
+          "delta": 0.0
+        }
+      },
+      "final": {
+        "control": {
+          "turn": 151,
+          "winner": 1,
+          "focal_alive": true,
+          "refused_counter": 64
+        },
+        "candidate": {
+          "turn": 151,
+          "winner": 1,
+          "focal_alive": true,
+          "refused_counter": 64
+        }
+      },
+      "actions.json_byte_equal": true,
+      "final.json_byte_equal": true,
+      "alive_at_t75": [
+        true,
+        true
+      ]
+    },
+    {
+      "seed": 61007802,
+      "difficulty": "emperor",
+      "terminal_exit_codes": {
+        "control": 0,
+        "candidate": 0
+      },
+      "t75": {
+        "checkpoint_present": [
+          true,
+          true
+        ],
+        "production": {
+          "control": 63.0,
+          "candidate": 63.0,
+          "delta": 0.0
+        },
+        "rival_production": {
+          "control": 104.3,
+          "candidate": 104.3,
+          "delta": 0.0
+        },
+        "cumulative_production": {
+          "control": 2126.1,
+          "candidate": 2126.1,
+          "delta": 0.0
+        },
+        "science": {
+          "control": 23.5,
+          "candidate": 23.5,
+          "delta": 0.0
+        },
+        "military_power": {
+          "control": 373.4,
+          "candidate": 373.4,
+          "delta": 0.0
+        },
+        "cities": {
+          "control": 7.0,
+          "candidate": 7.0,
+          "delta": 0.0
+        },
+        "population": {
+          "control": 27.0,
+          "candidate": 27.0,
+          "delta": 0.0
+        },
+        "productive_improvements": {
+          "control": 6.0,
+          "candidate": 6.0,
+          "delta": 0.0
+        }
+      },
+      "final": {
+        "control": {
+          "turn": 124,
+          "winner": 3,
+          "focal_alive": true,
+          "refused_counter": 29
+        },
+        "candidate": {
+          "turn": 124,
+          "winner": 3,
+          "focal_alive": true,
+          "refused_counter": 29
+        }
+      },
+      "actions.json_byte_equal": true,
+      "final.json_byte_equal": true,
+      "alive_at_t75": [
+        true,
+        true
+      ]
+    },
+    {
+      "seed": 61007803,
+      "difficulty": "emperor",
+      "terminal_exit_codes": {
+        "control": 0,
+        "candidate": 0
+      },
+      "t75": {
+        "checkpoint_present": [
+          true,
+          true
+        ],
+        "production": {
+          "control": 33.4,
+          "candidate": 33.4,
+          "delta": 0.0
+        },
+        "rival_production": {
+          "control": 106.7,
+          "candidate": 106.7,
+          "delta": 0.0
+        },
+        "cumulative_production": {
+          "control": 1303.5,
+          "candidate": 1303.5,
+          "delta": 0.0
+        },
+        "science": {
+          "control": 9.65,
+          "candidate": 9.65,
+          "delta": 0.0
+        },
+        "military_power": {
+          "control": 278.45,
+          "candidate": 278.45,
+          "delta": 0.0
+        },
+        "cities": {
+          "control": 5.0,
+          "candidate": 5.0,
+          "delta": 0.0
+        },
+        "population": {
+          "control": 14.0,
+          "candidate": 14.0,
+          "delta": 0.0
+        },
+        "productive_improvements": {
+          "control": 2.0,
+          "candidate": 2.0,
+          "delta": 0.0
+        }
+      },
+      "final": {
+        "control": {
+          "turn": 119,
+          "winner": 3,
+          "focal_alive": true,
+          "refused_counter": 16
+        },
+        "candidate": {
+          "turn": 119,
+          "winner": 3,
+          "focal_alive": true,
+          "refused_counter": 16
+        }
+      },
+      "actions.json_byte_equal": true,
+      "final.json_byte_equal": true,
+      "alive_at_t75": [
+        true,
+        true
+      ]
+    },
+    {
+      "seed": 61007900,
+      "difficulty": "deity",
+      "terminal_exit_codes": {
+        "control": 0,
+        "candidate": 0
+      },
+      "t75": {
+        "checkpoint_present": [
+          true,
+          true
+        ],
+        "production": {
+          "control": 46.0,
+          "candidate": 46.0,
+          "delta": 0.0
+        },
+        "rival_production": {
+          "control": 137.6,
+          "candidate": 137.6,
+          "delta": 0.0
+        },
+        "cumulative_production": {
+          "control": 1489.6,
+          "candidate": 1489.6,
+          "delta": 0.0
+        },
+        "science": {
+          "control": 34.825,
+          "candidate": 34.825,
+          "delta": 0.0
+        },
+        "military_power": {
+          "control": 168.2,
+          "candidate": 185.0,
+          "delta": 16.80000000000001
+        },
+        "cities": {
+          "control": 6.0,
+          "candidate": 6.0,
+          "delta": 0.0
+        },
+        "population": {
+          "control": 24.0,
+          "candidate": 24.0,
+          "delta": 0.0
+        },
+        "productive_improvements": {
+          "control": 5.0,
+          "candidate": 5.0,
+          "delta": 0.0
+        }
+      },
+      "final": {
+        "control": {
+          "turn": 151,
+          "winner": 1,
+          "focal_alive": true,
+          "refused_counter": 50
+        },
+        "candidate": {
+          "turn": 151,
+          "winner": 1,
+          "focal_alive": true,
+          "refused_counter": 35
+        }
+      },
+      "actions.json_byte_equal": false,
+      "final.json_byte_equal": false,
+      "first_action_difference": {
+        "index": 11806,
+        "control_focal_turn": 72,
+        "control_action": [
+          0,
+          {
+            "type": "unslot_policy",
+            "policy": "colonization"
+          }
+        ],
+        "candidate_action": [
+          0,
+          {
+            "type": "produce",
+            "city": 141,
+            "item": {
+              "unit": "archer"
+            }
+          }
+        ]
+      },
+      "alive_at_t75": [
+        true,
+        true
+      ]
+    },
+    {
+      "seed": 61007901,
+      "difficulty": "deity",
+      "terminal_exit_codes": {
+        "control": 0,
+        "candidate": 0
+      },
+      "t75": {
+        "checkpoint_present": [
+          true,
+          true
+        ],
+        "production": {
+          "control": 35.4,
+          "candidate": 24.95,
+          "delta": -10.45
+        },
+        "rival_production": {
+          "control": 188.7,
+          "candidate": 192.4,
+          "delta": 3.700000000000017
+        },
+        "cumulative_production": {
+          "control": 1537.9,
+          "candidate": 1409.2,
+          "delta": -128.70000000000005
+        },
+        "science": {
+          "control": 12.75,
+          "candidate": 11.775,
+          "delta": -0.9749999999999996
+        },
+        "military_power": {
+          "control": 209.55,
+          "candidate": 252.45,
+          "delta": 42.89999999999998
+        },
+        "cities": {
+          "control": 5.0,
+          "candidate": 4.0,
+          "delta": -1.0
+        },
+        "population": {
+          "control": 21.0,
+          "candidate": 17.0,
+          "delta": -4.0
+        },
+        "productive_improvements": {
+          "control": 1.0,
+          "candidate": 1.0,
+          "delta": 0.0
+        }
+      },
+      "final": {
+        "control": {
+          "turn": 151,
+          "winner": 2,
+          "focal_alive": true,
+          "refused_counter": 68
+        },
+        "candidate": {
+          "turn": 126,
+          "winner": 2,
+          "focal_alive": true,
+          "refused_counter": 54
+        }
+      },
+      "actions.json_byte_equal": false,
+      "final.json_byte_equal": false,
+      "first_action_difference": {
+        "index": 5344,
+        "control_focal_turn": 41,
+        "control_action": [
+          0,
+          {
+            "type": "end_turn"
+          }
+        ],
+        "candidate_action": [
+          0,
+          {
+            "type": "move",
+            "unit": 172,
+            "to": [
+              18,
+              21
+            ]
+          }
+        ]
+      },
+      "alive_at_t75": [
+        true,
+        true
+      ]
+    },
+    {
+      "seed": 61007902,
+      "difficulty": "deity",
+      "terminal_exit_codes": {
+        "control": 0,
+        "candidate": 0
+      },
+      "t75": {
+        "checkpoint_present": [
+          true,
+          true
+        ],
+        "production": {
+          "control": 42.25,
+          "candidate": 42.25,
+          "delta": 0.0
+        },
+        "rival_production": {
+          "control": 159.8,
+          "candidate": 159.8,
+          "delta": 0.0
+        },
+        "cumulative_production": {
+          "control": 1583.25,
+          "candidate": 1583.25,
+          "delta": 0.0
+        },
+        "science": {
+          "control": 27.0,
+          "candidate": 27.0,
+          "delta": 0.0
+        },
+        "military_power": {
+          "control": 432.25,
+          "candidate": 432.25,
+          "delta": 0.0
+        },
+        "cities": {
+          "control": 6.0,
+          "candidate": 6.0,
+          "delta": 0.0
+        },
+        "population": {
+          "control": 18.0,
+          "candidate": 18.0,
+          "delta": 0.0
+        },
+        "productive_improvements": {
+          "control": 2.0,
+          "candidate": 2.0,
+          "delta": 0.0
+        }
+      },
+      "final": {
+        "control": {
+          "turn": 151,
+          "winner": 3,
+          "focal_alive": true,
+          "refused_counter": 77
+        },
+        "candidate": {
+          "turn": 151,
+          "winner": 1,
+          "focal_alive": true,
+          "refused_counter": 80
+        }
+      },
+      "actions.json_byte_equal": false,
+      "final.json_byte_equal": false,
+      "first_action_difference": {
+        "index": 26008,
+        "control_focal_turn": 116,
+        "control_action": [
+          0,
+          {
+            "type": "end_turn"
+          }
+        ],
+        "candidate_action": [
+          0,
+          {
+            "type": "produce",
+            "city": 194,
+            "item": {
+              "unit": "builder"
+            }
+          }
+        ]
+      },
+      "alive_at_t75": [
+        true,
+        true
+      ]
+    },
+    {
+      "seed": 61007903,
+      "difficulty": "deity",
+      "terminal_exit_codes": {
+        "control": 0,
+        "candidate": 0
+      },
+      "t75": {
+        "checkpoint_present": [
+          true,
+          true
+        ],
+        "production": {
+          "control": 38.9,
+          "candidate": 38.9,
+          "delta": 0.0
+        },
+        "rival_production": {
+          "control": 174.2,
+          "candidate": 174.2,
+          "delta": 0.0
+        },
+        "cumulative_production": {
+          "control": 1622.1,
+          "candidate": 1622.1,
+          "delta": 0.0
+        },
+        "science": {
+          "control": 18.5,
+          "candidate": 18.5,
+          "delta": 0.0
+        },
+        "military_power": {
+          "control": 441.3,
+          "candidate": 441.3,
+          "delta": 0.0
+        },
+        "cities": {
+          "control": 6.0,
+          "candidate": 6.0,
+          "delta": 0.0
+        },
+        "population": {
+          "control": 20.0,
+          "candidate": 20.0,
+          "delta": 0.0
+        },
+        "productive_improvements": {
+          "control": 0.0,
+          "candidate": 0.0,
+          "delta": 0.0
+        }
+      },
+      "final": {
+        "control": {
+          "turn": 107,
+          "winner": 2,
+          "focal_alive": true,
+          "refused_counter": 14
+        },
+        "candidate": {
+          "turn": 107,
+          "winner": 2,
+          "focal_alive": true,
+          "refused_counter": 14
+        }
+      },
+      "actions.json_byte_equal": true,
+      "final.json_byte_equal": true,
+      "alive_at_t75": [
+        true,
+        true
+      ]
+    }
+  ],
+  "difficulty": {
+    "emperor": {
+      "assigned_pairs": 4,
+      "t75_checkpoint_present_counts": [
+        4,
+        4
+      ],
+      "alive_at_t75_counts": [
+        4,
+        4
+      ],
+      "production": {
+        "control": 51.35,
+        "candidate": 51.35,
+        "delta": 0.0,
+        "pct_delta": 0.0
+      },
+      "cumulative_production": {
+        "control": 1833.1,
+        "candidate": 1833.1,
+        "delta": 0.0,
+        "pct_delta": 0.0
+      },
+      "science": {
+        "control": 20.1625,
+        "candidate": 20.1625,
+        "delta": 0.0,
+        "pct_delta": 0.0
+      },
+      "military_power": {
+        "control": 352.95,
+        "candidate": 352.95,
+        "delta": 0.0,
+        "pct_delta": 0.0
+      },
+      "cities": {
+        "control": 6.75,
+        "candidate": 6.75,
+        "delta": 0.0,
+        "pct_delta": 0.0
+      },
+      "population": {
+        "control": 21.0,
+        "candidate": 21.0,
+        "delta": 0.0,
+        "pct_delta": 0.0
+      },
+      "productive_improvements": {
+        "control": 3.5,
+        "candidate": 3.5,
+        "delta": 0.0,
+        "pct_delta": 0.0
+      },
+      "focal_rival_ratio_mean": {
+        "control": 0.49481545198061805,
+        "candidate": 0.49481545198061805
+      }
+    },
+    "deity": {
+      "assigned_pairs": 4,
+      "t75_checkpoint_present_counts": [
+        4,
+        4
+      ],
+      "alive_at_t75_counts": [
+        4,
+        4
+      ],
+      "production": {
+        "control": 40.6375,
+        "candidate": 38.025,
+        "delta": -2.6125,
+        "pct_delta": -6.428791141187326
+      },
+      "cumulative_production": {
+        "control": 1558.2125,
+        "candidate": 1526.0375,
+        "delta": -32.17500000000001,
+        "pct_delta": -2.0648659922828245
+      },
+      "science": {
+        "control": 23.26875,
+        "candidate": 23.025,
+        "delta": -0.2437499999999999,
+        "pct_delta": -1.0475423045930699
+      },
+      "military_power": {
+        "control": 312.825,
+        "candidate": 327.75,
+        "delta": 14.924999999999997,
+        "pct_delta": 4.77103812035483
+      },
+      "cities": {
+        "control": 5.75,
+        "candidate": 5.5,
+        "delta": -0.25,
+        "pct_delta": -4.3478260869565215
+      },
+      "population": {
+        "control": 20.75,
+        "candidate": 19.75,
+        "delta": -1.0,
+        "pct_delta": -4.819277108433735
+      },
+      "productive_improvements": {
+        "control": 2.0,
+        "candidate": 2.0,
+        "delta": 0.0,
+        "pct_delta": 0.0
+      },
+      "focal_rival_ratio_mean": {
+        "control": 0.25240030627311577,
+        "candidate": 0.23791990392506637
+      }
+    }
+  },
+  "raw_sha256": {
+    "civvis-production-offer-execution-emperor-61007800-control-final.json": "f9cec7a1f8f9e561451ae223399769879f25f19412cdf2576d2ec067722a997c",
+    "civvis-production-offer-execution-emperor-61007800-control-actions.json": "75bde7e6da4d018f062d5a6cd63ea770c3ba39e945dd93a694c83c264f41ab57",
+    "civvis-production-offer-execution-emperor-61007800-control-cities.jsonl": "3bc52e411b08e4387af4789c0ff9e74a36258b2bd78d3adb4cf65492b3a5a2e9",
+    "civvis-production-offer-execution-emperor-61007800-control-setup.json": "eece275747851fa244376002eea1de307df27de4f31e2675fb727ad612443e79",
+    "civvis-production-offer-execution-emperor-61007800-candidate-final.json": "f9cec7a1f8f9e561451ae223399769879f25f19412cdf2576d2ec067722a997c",
+    "civvis-production-offer-execution-emperor-61007800-candidate-cities.jsonl": "3bc52e411b08e4387af4789c0ff9e74a36258b2bd78d3adb4cf65492b3a5a2e9",
+    "civvis-production-offer-execution-emperor-61007800-candidate-setup.json": "8b513084e2df54967e191dfed213ad36ca858d74173a1a99aa6b76889631c199",
+    "civvis-production-offer-execution-emperor-61007800-candidate-actions.json": "75bde7e6da4d018f062d5a6cd63ea770c3ba39e945dd93a694c83c264f41ab57",
+    "civvis-production-offer-execution-emperor-61007801-control-cities.jsonl": "e72c0e94b1219f3efb9718339a4e0982afd4f0ce3f1180b11423dfbba19e29f4",
+    "civvis-production-offer-execution-emperor-61007801-control-setup.json": "352bf83e301a78eb5596484a8ee3e6cd30f3f5c815752dd42a7398dd09abe603",
+    "civvis-production-offer-execution-emperor-61007801-control-actions.json": "a8a79f04bed317dd5df548ff58e5c724dcc10f78f56af9e1f7a1f5b62ad7b24a",
+    "civvis-production-offer-execution-emperor-61007801-control-final.json": "16599532a695321424bcd39d852b852fa77a52283988deb0d2c343684204911f",
+    "civvis-production-offer-execution-emperor-61007801-candidate-final.json": "16599532a695321424bcd39d852b852fa77a52283988deb0d2c343684204911f",
+    "civvis-production-offer-execution-emperor-61007801-candidate-actions.json": "a8a79f04bed317dd5df548ff58e5c724dcc10f78f56af9e1f7a1f5b62ad7b24a",
+    "civvis-production-offer-execution-emperor-61007801-candidate-setup.json": "c6a4ac1e65358af3de5ae5b1394796b3ff5fa82d1adfb5236c8a788e9949aacf",
+    "civvis-production-offer-execution-emperor-61007801-candidate-cities.jsonl": "e72c0e94b1219f3efb9718339a4e0982afd4f0ce3f1180b11423dfbba19e29f4",
+    "civvis-production-offer-execution-emperor-61007802-control-setup.json": "0405f5f97444e314254612a9896e24d297ffb419c6e519e48072ee0d0cb58030",
+    "civvis-production-offer-execution-emperor-61007802-control-actions.json": "a7ef566c5c268bc3061cd7b3fedd69efd1836be41e5e854c7a5315ab79e02685",
+    "civvis-production-offer-execution-emperor-61007802-control-cities.jsonl": "2f2790229bae56be529892dfbbcc9d28f5aa71d94d10e15cbf22d866e10fb662",
+    "civvis-production-offer-execution-emperor-61007802-control-final.json": "1308f9b81e14ef098702ee9273e9031f31e54fe2fc7aeac1572330383149e7ea",
+    "civvis-production-offer-execution-emperor-61007802-candidate-setup.json": "efa41fdc68895d658a828747c285d12385a1efc437982fe043fcfc23b36cdb64",
+    "civvis-production-offer-execution-emperor-61007802-candidate-final.json": "1308f9b81e14ef098702ee9273e9031f31e54fe2fc7aeac1572330383149e7ea",
+    "civvis-production-offer-execution-emperor-61007802-candidate-actions.json": "a7ef566c5c268bc3061cd7b3fedd69efd1836be41e5e854c7a5315ab79e02685",
+    "civvis-production-offer-execution-emperor-61007802-candidate-cities.jsonl": "2f2790229bae56be529892dfbbcc9d28f5aa71d94d10e15cbf22d866e10fb662",
+    "civvis-production-offer-execution-emperor-61007803-control-final.json": "f9f738bb26acecf2f74f09fbd251e639fc7e760560579a042fb5a99c1245a9a3",
+    "civvis-production-offer-execution-emperor-61007803-control-cities.jsonl": "799f770ebef76503678602f95335ef876cfa309a1bc4223ca6d9fbed29f15566",
+    "civvis-production-offer-execution-emperor-61007803-control-actions.json": "6925bb35dc5e725587fc244e46855449b9f808cc9c8d73492b64e986351f6fef",
+    "civvis-production-offer-execution-emperor-61007803-control-setup.json": "d2c0ab557bb6fab16dd74d88e00f8d1f52a101bda0cf096e16fbb1aea67cd39b",
+    "civvis-production-offer-execution-emperor-61007803-candidate-setup.json": "0d0c9a255ce37a9ae53f99f6be444b2d52a9f00351e9343f6ff190eec49c3073",
+    "civvis-production-offer-execution-emperor-61007803-candidate-cities.jsonl": "799f770ebef76503678602f95335ef876cfa309a1bc4223ca6d9fbed29f15566",
+    "civvis-production-offer-execution-emperor-61007803-candidate-actions.json": "6925bb35dc5e725587fc244e46855449b9f808cc9c8d73492b64e986351f6fef",
+    "civvis-production-offer-execution-emperor-61007803-candidate-final.json": "f9f738bb26acecf2f74f09fbd251e639fc7e760560579a042fb5a99c1245a9a3",
+    "civvis-production-offer-execution-deity-61007900-control-actions.json": "cbc3af412afcb7f26bd42b22f92f20000a3d3b783f31175c79f0b2d5c1ca962c",
+    "civvis-production-offer-execution-deity-61007900-control-setup.json": "6eb319e23df1755ac1ca11fc80e9b5e48b3589b847b471aaa91ea77a603e0952",
+    "civvis-production-offer-execution-deity-61007900-control-cities.jsonl": "c0855e2ebc27c766a58d77a0f1217d9be2e703246071478c416175fbe941c650",
+    "civvis-production-offer-execution-deity-61007900-control-final.json": "1b4bddb4080381753037e43b1d58422c5940a855c7fd9102212546bbe7594697",
+    "civvis-production-offer-execution-deity-61007900-candidate-final.json": "f93a24b1e1f73656ddad8bfdd17264efc4141e436ee7cc5e4ec83bfcb98f8541",
+    "civvis-production-offer-execution-deity-61007900-candidate-cities.jsonl": "dd20a3bd38c64bf37213787154510763aec6152d1751cd62dc31fbbf0d6f2bdb",
+    "civvis-production-offer-execution-deity-61007900-candidate-setup.json": "dfc53f94cfa8a0c647481daa702e8531d38d06512160e5d70aa614b474a4a8e9",
+    "civvis-production-offer-execution-deity-61007900-candidate-actions.json": "5dfe3450d8d78b11b2c33509ec9bc04e1f792569a4fc23532c1ea2aefc97508b",
+    "civvis-production-offer-execution-deity-61007901-control-cities.jsonl": "667abca894d29f466ee46006bdf5113989169f8e868688eb273369de29faf2dc",
+    "civvis-production-offer-execution-deity-61007901-control-final.json": "b13d6eaa9c4475a86f4a9b23d5282b8ad1c2a5f30c0e561a264cff3b18dd9a68",
+    "civvis-production-offer-execution-deity-61007901-control-actions.json": "1db5f972c4ad9f81511370b40a84996ec0748609ae24b1ddcc82b5672f2e6bd7",
+    "civvis-production-offer-execution-deity-61007901-control-setup.json": "80c67e4a1c9550f8c23fc538cf4943d80e981546afe84694b60eb8e141c42b58",
+    "civvis-production-offer-execution-deity-61007901-candidate-final.json": "c1b4968e7ff70084632c4931a8b995715505faf1546ea62e31d37a54a1f04a34",
+    "civvis-production-offer-execution-deity-61007901-candidate-setup.json": "7e9159f31c6fb3dad3dfb5fdd1ad610b73a82f9f8f2fa2e423bcb8c4e14c078d",
+    "civvis-production-offer-execution-deity-61007901-candidate-actions.json": "17e26bde98d84c0ec97002e8dd2da99401ab9473e0008e04d46ee1277bd4547d",
+    "civvis-production-offer-execution-deity-61007901-candidate-cities.jsonl": "2542a6795aef7ced7a3105fbb00611f45107e64edef1e69b04142aa6eab29b4f",
+    "civvis-production-offer-execution-deity-61007902-control-final.json": "43674bd1d8c3fac1ccfe601986641a0b843321bf55572ce845be86f23d60a321",
+    "civvis-production-offer-execution-deity-61007902-control-actions.json": "ba2719a737f348d55b52a76d41970388e25abca06833534d6538f8bb37de2637",
+    "civvis-production-offer-execution-deity-61007902-control-setup.json": "efb4ff853076524d77d7fb2de51c6e33f7a6954f43883cfb63ac77651cfc8579",
+    "civvis-production-offer-execution-deity-61007902-control-cities.jsonl": "d460586f995ee97098ae8714681ccb0d38b8516ff4d76300faae0a5eabc202c9",
+    "civvis-production-offer-execution-deity-61007902-candidate-setup.json": "e462932358bb694bd4b1b34f8095fe82967b2109ea11c5c2a935c9854b0bc9de",
+    "civvis-production-offer-execution-deity-61007902-candidate-final.json": "66b3604f68c602334889bc0c9f538ce2dcb1979736fae4ea2e319d54919363d9",
+    "civvis-production-offer-execution-deity-61007902-candidate-actions.json": "ee7ebf3b4fb2f88124889c10d2e9bf310711b569ae4d1bddb6832725a9a1b68c",
+    "civvis-production-offer-execution-deity-61007902-candidate-cities.jsonl": "e7b9dda3821860d1b556a20c98c3e66e99ea947c26d28cfb9d8c572419aa37ec",
+    "civvis-production-offer-execution-deity-61007903-control-setup.json": "3e5cd854afd268067fea580bb13d14c7649dd156d444f1ad27508a35d337b422",
+    "civvis-production-offer-execution-deity-61007903-control-cities.jsonl": "dee0f1e41b5100f316f687208c0e80614266dcef03ae8f486aa59f5e41736854",
+    "civvis-production-offer-execution-deity-61007903-control-actions.json": "085d1c13a0c5f6bda94d707d522de1360a515e530c69c94f4c2ed070ea107766",
+    "civvis-production-offer-execution-deity-61007903-control-final.json": "11dce413622f8ef6b59044b036a7ccea2e5c3a674905e6a3e1d9cb57d6154ba0",
+    "civvis-production-offer-execution-deity-61007903-candidate-setup.json": "e9c0dda084ab889af2ccb1a9a94dcc29534d782f496a32c64398f8aba241ec9f",
+    "civvis-production-offer-execution-deity-61007903-candidate-cities.jsonl": "dee0f1e41b5100f316f687208c0e80614266dcef03ae8f486aa59f5e41736854",
+    "civvis-production-offer-execution-deity-61007903-candidate-final.json": "11dce413622f8ef6b59044b036a7ccea2e5c3a674905e6a3e1d9cb57d6154ba0",
+    "civvis-production-offer-execution-deity-61007903-candidate-actions.json": "085d1c13a0c5f6bda94d707d522de1360a515e530c69c94f4c2ed070ea107766"
+  },
+  "confirmation_gate_passed": false,
+  "confirmation_played": false,
+  "confirmation_stop_reason": "Pilot showed unchanged Emperor early Production and lower Deity early Production; the frozen gate required a positive T75 gain at both difficulties with no worse T75 survival.",
+  "strength_conclusion": "No demonstrated early-production improvement. Correctness integration and future production policy work remain separate."
+}

@@ -339,7 +339,7 @@ fn execute_observed_action_recorded(
                     .or_default() += 1;
             }
         }
-        // A rejected queue, plot purchase or financial trade leaves independent
+        // A rejected queue, plot purchase, proposal or financial trade leaves independent
         // production and military orders executable. Refresh after the batch: stopping here can
         // repeat the same economic refusal in every frame and never reach
         // the army. Orders still pay their authoritative costs when applied.
@@ -351,6 +351,10 @@ fn execute_observed_action_recorded(
             // Visible borders can have an unseen city, so the view offers a
             // plot the board refuses; aborting repeats it before any queue.
             Action::BuyPlot { .. } => true,
+            // Proposals are validated before being queued. A refusal cannot
+            // change peace, borders or terrain, so it must not starve later
+            // Builder work or military orders. Refresh after this batch.
+            Action::ProposeDeal { .. } => true,
             Action::Produce { item, .. } => !matches!(item, crate::game::Item::District { .. }),
             Action::Trade { offer, request, .. } => {
                 offer.cities.is_empty()

@@ -1,0 +1,25 @@
+{
+  "frozen_at": "2026-10-04T23:45:44.172533+00:00",
+  "source": "6d769391da7a17891c295761c13e7cc3dcec997d",
+  "purpose": "Consumed native city-growth coverage diagnostic, no fresh strength",
+  "configuration": "Same public Domination live bridge, stock adaptive rivals, native 4p60x38 Pangaea Online150 Gran Colombia focal handicap-exempt as opening study; unchanged public weights. Both arms wrapped Ai forwarding observation use.",
+  "treatment": "Per-city food appetite +4 only when forecast next citizen arrives within8 turns and at least2 sooner, +1pop default assignment raises production, and 75%-discounted citizen production during its projected lead repays125% of lost construction hammers byT75. Growth rates read from exact one-round passive native engine clones; compare controlled own city food banks, no copied growth formula. Eligibility remains young/headroom>=2/amenities>=-1/no recentattack throughT60, skip military/Settler/walls/repair queues, visible hostile radius2.",
+  "consumed_diagnostics": {
+    "emperor": [
+      61008600,
+      61008601,
+      61008602,
+      61008603
+    ],
+    "deity": [
+      61008700,
+      61008701,
+      61008702,
+      61008703
+    ]
+  },
+  "continuation_gate": "Demonstrated changed citizen assignments/earlier growth; consumed T75 production positive at both difficulties, no lower T75 survival and science>=90%. Every assigned pair reported before deciding fresh pilot.",
+  "fresh_samples_played": 0,
+  "actual_Firaxis_verification": false,
+  "forecast_limits": "One-round rates extrapolated until first citizen; future wars, improvements, governor and queue changes are not predicted. Compare +1pop against current assignment. Credit only projected earlier-citizen lead until baseline arrival/T75. Experimental model, not causal gain evidence."
+}

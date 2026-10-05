@@ -1,0 +1,45 @@
+{
+  "recorded_at": "2026-10-04T21:47:14.290704+00:00",
+  "merged_archive_source": "c1c4b4fc91f9e07fe316fd8f65a1bfe95dab49f5",
+  "runtime_changes_in_archive": [],
+  "baseline_full_cargo_command": "CARGO_TARGET_DIR=/tmp/civvis-production-offer-execution-target CARGO_BUILD_JOBS=4 cargo test --profile ci --locked -- --test-threads=4",
+  "baseline_full_cargo_source": "93d474b1dd39f03afd1e467f05b4b7eccd2a1e64",
+  "baseline_full_cargo_result": {
+    "passed": 4574,
+    "failed": 0,
+    "ignored": 54,
+    "exit_code": 0
+  },
+  "source_difference_from_that_validation": [
+    "src/bin/civvis_orders.rs",
+    "src/bin/civvis_orders/host_move_postconditions.rs",
+    "src/bin/civvis_orders/host_move_postconditions/tests.rs"
+  ],
+  "scope": "Native library, Cargo.toml/lock, data and other bins are identical to the completed full Cargo validation. Reuse that full command for unchanged targets, independently replay the byte-frozen current library test executable, and compile/run all tests of the only changed upstream binary against that exact frozen library. This is not a new full Cargo invocation at the archive merge.",
+  "core_replay": {
+    "command": "/tmp/civvis-production-builder-routing-current-core-tests --test-threads=4",
+    "binary_sha256": "5f794525dcc15290fdaf7ae834949cdcb1e3a397c6d9f1b5b08888c1f0709610",
+    "passed": 4313,
+    "failed": 0,
+    "ignored": 50,
+    "exit_code": 0
+  },
+  "current_orders": {
+    "compile_exit_code": 0,
+    "command": "/tmp/civvis-production-builder-routing-current-orders-tests --test-threads=4",
+    "binary_sha256": "fbfad8d1153bae2f6ed3af89b80c3fd53259848d096168be755f9e19d822d4ff",
+    "passed": 239,
+    "failed": 0,
+    "ignored": 0,
+    "exit_code": 0
+  },
+  "unchanged_other_bins_reused_passes": 35,
+  "combined_current_native_targets_passes": 4587,
+  "combined_ignored": 54,
+  "quality": {
+    "command": "CARGO_TARGET_DIR=/tmp/civvis-production-builder-opening-check-target CARGO_BUILD_JOBS=4 python3 tools/rust_quality.py --base origin/main --head HEAD",
+    "exit_code": 0,
+    "result": "All three changed standalone Rust probes are formatted and warning-free"
+  },
+  "actual_Firaxis_verification": false
+}

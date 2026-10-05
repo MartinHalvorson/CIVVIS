@@ -1,3 +1,4 @@
 # civ6_play mod/harness arms read per game (#3941). Names: stalled-operation-release, debug-timescale-3 (standing; applied at turn 1 since #3977)
 stalled-operation-release
 debug-timescale-3
+poll-20ms

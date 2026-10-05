@@ -1,0 +1,61 @@
+{
+  "created_at": "2026-10-04T19:54:09.413623+00:00",
+  "configuration": "public targeted live bridge, stock adaptive rivals, native simulation",
+  "fresh_strength_samples": 0,
+  "actual_Firaxis_verification": false,
+  "replays": [
+    {
+      "seed": 61007101,
+      "difficulty": "deity",
+      "terminal_exit_code": 0,
+      "action_count": 34454,
+      "actions.json_byte_equal_to_control": true,
+      "final.json_byte_equal_to_control": true,
+      "planning_thoughts": 6750,
+      "journal_dropped_total": 750,
+      "journal_truncated_turns_total": 0,
+      "builder_wait_thoughts": 333,
+      "builder_diversion_thoughts": 75,
+      "recorded_thought_ids_contiguous_from_one": true,
+      "journal_last_cursor": 6750
+    },
+    {
+      "seed": 61007102,
+      "difficulty": "deity",
+      "terminal_exit_code": 0,
+      "action_count": 32001,
+      "actions.json_byte_equal_to_control": true,
+      "final.json_byte_equal_to_control": true,
+      "planning_thoughts": 4434,
+      "journal_dropped_total": 0,
+      "journal_truncated_turns_total": 0,
+      "builder_wait_thoughts": 322,
+      "builder_diversion_thoughts": 8,
+      "recorded_thought_ids_contiguous_from_one": true,
+      "journal_last_cursor": 4434
+    }
+  ],
+  "raw_sha256": {
+    "civvis-production-builder-routing-deity-61007101-trace-actions.json": "96796d0d483e1e11a4a75fca58eb465024b914445b12cf957a310c325974c7a1",
+    "civvis-production-builder-routing-deity-61007101-trace-cities.jsonl": "05fbf56214a7e445caee2a0d77950b61958565bc6ffc0edd521cf23d5b6afbda",
+    "civvis-production-builder-routing-deity-61007101-trace-final.json": "395d697c4f8b9a1070df296b95a57ca083eea7893a6b0b3c8282535aa97f1fef",
+    "civvis-production-builder-routing-deity-61007101-trace-rounds.jsonl": "5d3925c982ffb34f8149002696fa63475e6620653dc10521b43fe8abe222c176",
+    "civvis-production-builder-routing-deity-61007101-trace-setup.json": "1bca46f10b3892abc1f70fe16e7459d64f80ce474959dcc305e9ea72ba1309c7",
+    "civvis-production-builder-routing-deity-61007101-trace-view-t50.json": "2bb0002bccb88745fbd27f6ddd1a83b47487a74bfa06468cdb32ba6db8cadb91",
+    "civvis-production-builder-routing-deity-61007101-trace-view-t75.json": "6ff4da435aa40abb175eb40553d61ce97f2ccdb6a5620d123e405f454d5bbe94",
+    "civvis-production-builder-routing-deity-61007102-trace-actions.json": "13313fa484394af61e7271156f37609c28c9e6298fc7352ac9614790400b4e69",
+    "civvis-production-builder-routing-deity-61007102-trace-cities.jsonl": "ba38a45baf35810cf2e95e45d0a24d652d3fa4e6fe0164e1fcf93dfe7e444502",
+    "civvis-production-builder-routing-deity-61007102-trace-final.json": "af299b3a9cea1e74b19a39350fc30876891d6d676b05ec3b2fea97f3a8b4a02d",
+    "civvis-production-builder-routing-deity-61007102-trace-rounds.jsonl": "128762bf42b603881034269350489e12e3815c8e8592200eb3d967b8284848e5",
+    "civvis-production-builder-routing-deity-61007102-trace-setup.json": "23fa66704a5eec0394f864de2da30cc02d4613b9bd3b1190cc043a42624a1a4c",
+    "civvis-production-builder-routing-deity-61007102-trace-view-t50.json": "3cd0de1077b0bfac3a9ab4095f9cf84f550f8758d52a343a29dfbb23680d8493",
+    "civvis-production-builder-routing-deity-61007102-trace-view-t75.json": "086e011d5381ea843fd9ef5085f6a003f643458cef83b872cfa1ac18dc450e69"
+  },
+  "limitations": [
+    "Initial-turn snapshots precede focal military movement and combat.",
+    "Clone Move/Improve legality does not establish next-turn capture safety.",
+    "Visible hostiles within three tiles are a neighborhood diagnostic, not the full capture-reach envelope.",
+    "Planning thoughts may describe actions refused or skipped by the authoritative executor."
+  ],
+  "total_replayed_actions": 66455
+}

@@ -736,6 +736,8 @@ def supervised_brain_command(args: argparse.Namespace, run_dir: Path,
         command += ["--with", treatment]
     for treatment in args.civvis_without:
         command += ["--without", treatment]
+    if getattr(args, "civvis_capture_inputs", False):
+        command.append("--capture-inputs")
     return command
 
 
@@ -1001,6 +1003,15 @@ def build_config(args: argparse.Namespace) -> dict:
         # mod timer runs on it). Combat visualization, which the game core
         # waits on, was ~10 min of a 262-turn game (G93). Off unless set.
         "DebugTimeScale": getattr(args, "debug_timescale", None),
+        # An in-game A/B of two timescales ("3,4"), alternating every
+        # DebugTimeScaleABTurns turns (10); takes precedence over DebugTimeScale.
+        "DebugTimeScaleAB": getattr(args, "debug_timescale_ab", None),
+        "DebugTimeScaleABTurns": getattr(args, "debug_timescale_ab_turns", None) or 10,
+        # The agent's orders peek interval (CivvisQueue.ordersLanded, the
+        # Heartbeat's peek pulse); nil keeps the mod's 0.05 s. The peek returns
+        # before any query while no board is out (`awaiting.done`), so the AI
+        # phase never sees it.
+        "OrdersPeekSeconds": 0.02 if getattr(args, "poll_20ms", False) else None,
         # ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. A MOVE_TO whose
         # host path outran the turn was queued, and the host walked the unit
         # along it at the start of the next turn before the brain could act. Now
@@ -1603,7 +1614,8 @@ def _recognize_window(path: Path, bounds: tuple[int, int, int, int]) -> list[dic
             observations = macos_ocr.recognize(crop)
         finally:
             crop.unlink(missing_ok=True)
-    except (OSError, ValueError):
+    except (ImportError, OSError, ValueError):
+        # No Pillow (CI), or an unreadable image: read the whole capture.
         return macos_ocr.recognize(path)
     cw, ch = x1 - x0, y1 - y0
     mapped = []
@@ -4544,6 +4556,8 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "MoveFallback": args.move_fallback,
             "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
             "DebugTimeScale": getattr(args, "debug_timescale", None),
+            "DebugTimeScaleAB": getattr(args, "debug_timescale_ab", None),
+            "OrdersPeekSeconds": 0.02 if getattr(args, "poll_20ms", False) else None,
             "ReplanFrames": getattr(args, "replan_frames", None),
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
@@ -5332,7 +5346,11 @@ def _play(args: argparse.Namespace) -> int:
     # The board itself is relayed every 50 ms in between (`watch.follow`'s
     # `read_s`): the upkeep above runs `ps` and `ioreg` and the focus keeper,
     # which stretched each 0.25 s pass to 0.32 s of board-to-brain latency.
-    read_s = 0.05 if args.civvis_decides else None
+    # `poll-20ms` (arm): 20 ms here and for the agent's orders peek. G104
+    # (2026-10-05, 699 frames) waited a median 0.095 s between the brain's
+    # orders being ready and the agent applying them -- pure polling, these two
+    # 50 ms waits -- 1.75 min of a 15.9 min game.
+    read_s = (0.02 if getattr(args, "poll_20ms", False) else 0.05) if args.civvis_decides else None
     # ⚠ A STALLED RUN IS DEAD, AND WAITING TEN MINUTES FOR IT COSTS A WHOLE ATTEMPT.
     # Run civvis-20260730T140023Z wedged at turn 87 and burned the full 600 s before the
     # ladder could start the next game. The mod emits at least one event per turn and a
@@ -5443,6 +5461,14 @@ def _play(args: argparse.Namespace) -> int:
     # ⚠ Only when the game actually ENDED. A stall, a timeout, or a wrong-modes
     # refusal has nothing on screen worth looking at, and holding there would add
     # ten seconds to every failure in a batch.
+    # `[end-time] <step> +<s>`: the boundary from the loop ending to the ladder
+    # row, step by step (the hold, the rescue queue, the quit, the decider, the
+    # summary). Play log only.
+    end_t0 = time.monotonic()
+
+    def end_mark(step: str) -> None:
+        print(f"[end-time] {step} +{time.monotonic() - end_t0:.2f}s", flush=True)
+
     if state["outcome"] and args.end_game_seconds > 0:
         hold = end_game_hold_seconds(state["outcome"], args.end_game_seconds)
         print(f"holding the final screen for {hold:.0f}s", flush=True)
@@ -5454,10 +5480,13 @@ def _play(args: argparse.Namespace) -> int:
         print(f"holding the native retire action for {OPERATOR_RETIRE_SETTLE_S:.1f}s",
               flush=True)
         time.sleep(OPERATOR_RETIRE_SETTLE_S)
+    end_mark("held")
     # No rescue may click into a game that is being quit (`DesktopRescueQueue`).
     desktop_rescues.close(30.0)
     game_stopped = launcher.stop()
+    end_mark("game_stopped")
     stop_brain()
+    end_mark("brain_stopped")
     if not game_stopped:
         print("could not stop Civilization VI after the run", file=sys.stderr)
 
@@ -5581,6 +5610,8 @@ def _play(args: argparse.Namespace) -> int:
             "MoveFallback": args.move_fallback,
             "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
             "DebugTimeScale": getattr(args, "debug_timescale", None),
+            "DebugTimeScaleAB": getattr(args, "debug_timescale_ab", None),
+            "OrdersPeekSeconds": 0.02 if getattr(args, "poll_20ms", False) else None,
             "ReplanFrames": args.replan_frames,
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
@@ -5705,6 +5736,7 @@ def _play(args: argparse.Namespace) -> int:
         print(f"bridge-health totals unavailable: {exc}", file=sys.stderr)
     summary = with_diagnostic(summary, run_dir / "summary.json")
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
+    end_mark("summary_written")
     print(json.dumps(summary, indent=2, sort_keys=True))
 
     # The ladder records itself. This used to be a by-hand step, and the
@@ -5794,6 +5826,8 @@ TREE_MOD_ARMS_FILE = REPO_ROOT / "deploy" / "live-mod-arms.txt"
 TREE_MOD_ARMS = {
     # #3939: answer a probe-marked stalled MOVE_TO operation at the probe tick.
     "stalled-operation-release": "stalled_operation_release",
+    # Relay reads and the agent's orders peek every 20 ms instead of 50 ms.
+    "poll-20ms": "poll_20ms",
     # The engine's debug timescale (`--debug-timescale N`): an arm can carry a
     # value. G96 ran turns 1-139 at 2 in 8.71 min against 11.59 at 1 on the
     # same genes; 3 and 4 are the next trials. The agent reverts any of them
@@ -5805,6 +5839,9 @@ TREE_MOD_ARMS = {
     # Hold the leader-intro probe's captures for 45 s while the game loads
     # (`advance_leader_intro`'s defer_s); probe only if no board arrives.
     "leader-intro-defer": ("leader_intro_defer", 45.0),
+    # In-game A/Bs of two timescales in 10-turn blocks (one game, same board).
+    "debug-timescale-ab-2-3": ("debug_timescale_ab", "2,3"),
+    "debug-timescale-ab-3-4": ("debug_timescale_ab", "3,4"),
 }
 
 
@@ -6056,6 +6093,10 @@ def main(argv: list[str] | None = None) -> int:
                     metavar="TREATMENT",
                     help="withhold one live treatment from the decision worker, "
                          "repeatable — the control arm of a live A/B")
+    ap.add_argument("--civvis-capture-inputs", action="store_true", default=False,
+                    help="opt in to exact event-read capture in the decision worker; "
+                         "archives are unique per process under the run directory, "
+                         "with returned status recorded separately from execution")
     ap.add_argument("--civvis-with", action="append", default=[],
                     metavar="TREATMENT",
                     help="restore one ledger-held live treatment for a labeled "
@@ -6110,6 +6151,15 @@ def main(argv: list[str] | None = None) -> int:
                          "without a step (`stall_probe`) at the probe tick instead of "
                          "waiting out the 30-tick grace: the same `move_noop` answer, "
                          "about 3 s sooner per stalled leg")
+    ap.add_argument("--poll-20ms", dest="poll_20ms", action="store_true",
+                    help="relay the log and peek for landed orders every 20 ms "
+                         "instead of 50 ms (arm `poll-20ms`)")
+    ap.add_argument("--debug-timescale-ab", dest="debug_timescale_ab", default=None,
+                    help="an in-game A/B of two timescales, e.g. '3,4': the agent "
+                         "alternates them every --debug-timescale-ab-turns turns and "
+                         "tags each turn with its scale (end_turn_wait.scale)")
+    ap.add_argument("--debug-timescale-ab-turns", dest="debug_timescale_ab_turns",
+                    type=int, default=None, help="block length of the timescale A/B (10)")
     ap.add_argument("--leader-intro-defer", dest="leader_intro_defer", type=float,
                     default=0.0,
                     help="seconds to wait for a live board before the leader-intro "

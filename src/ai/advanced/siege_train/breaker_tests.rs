@@ -497,3 +497,422 @@ fn only_shooters_with_a_firing_post_and_a_clear_reach_count_toward_the_walls() {
     let drawn = ai.breach_reading(&g, 0, &city, &bows).shooter_walls;
     assert!(drawn < counted, "{drawn} < {counted}");
 }
+
+/// `declaration-waits-for-the-breaker`: a walled objective is breachable
+/// before the war only with a siege gun, or a ram or tower that works on its
+/// walls, on its ring. Live King civvis-20261005T053701Z (game 103) declared
+/// on the Maori with Opango's Catapult 17 tiles out; the walls doubled first.
+#[test]
+fn a_walled_city_needs_a_breaker_on_its_ring_before_the_war() {
+    let (mut g, cid) = walled_city();
+    let ai = AdvancedAi::targeting(super::super::VictoryTarget::Domination);
+    assert!(g.cities[&cid].wall_hp > 0, "fixture: walls stand");
+    assert!(
+        !ai.declaration_breaker_at_hand(&g, 0, cid),
+        "nothing on the ring"
+    );
+    let far = at_distance(&g, cid, STAGING_FAR + 3)[0];
+    let gun = g.spawn_test_unit("catapult", 0, far);
+    assert!(
+        !ai.declaration_breaker_at_hand(&g, 0, cid),
+        "a gun on the road is not at hand"
+    );
+    let near = at_distance(&g, cid, STAGING_FAR - 1)[0];
+    g.units.get_mut(&gun).unwrap().pos = near;
+    assert!(
+        ai.declaration_breaker_at_hand(&g, 0, cid),
+        "a gun on the ring"
+    );
+    g.remove_unit(gun);
+    // A ram works on Ancient Walls.
+    g.spawn_test_unit("battering_ram", 0, near);
+    assert!(
+        ai.declaration_breaker_at_hand(&g, 0, cid),
+        "a ram that opens these walls"
+    );
+    // Bare walls need no breaker at all.
+    let (mut bare, bare_city) = walled_city();
+    bare.cities.get_mut(&bare_city).unwrap().wall_hp = 0;
+    assert!(ai.declaration_breaker_at_hand(&bare, 0, bare_city));
+}
+
+/// `declaration-waits-for-the-breaker`: the hold has patience. Ten standard
+/// turns from the first held turn on a tile, through turns the army reads
+/// unstaged, then the declaration goes ahead; a breaker's arrival or a new
+/// objective starts a fresh clock.
+#[test]
+fn the_declaration_holds_for_the_breaker_only_so_long() {
+    let (mut g, _) = walled_city();
+    let mut ai = AdvancedAi::targeting(super::super::VictoryTarget::Domination);
+    let (here, there) = ((10, 10), (20, 10));
+    let patience = g.standard_duration(DECLARATION_BREAKER_PATIENCE);
+    assert!(ai.declaration_hold_patience(&g, Some(here), true, true));
+    g.turn += 1;
+    assert!(
+        !ai.declaration_hold_patience(&g, Some(here), true, false),
+        "an unstaged turn holds nothing"
+    );
+    g.turn += patience - 2;
+    assert!(
+        ai.declaration_hold_patience(&g, Some(here), true, true),
+        "the clock ran through it"
+    );
+    g.turn += 1;
+    assert!(
+        !ai.declaration_hold_patience(&g, Some(here), true, true),
+        "patience spent"
+    );
+    assert!(
+        ai.declaration_hold_patience(&g, Some(there), true, true),
+        "a new objective"
+    );
+    assert!(!ai.declaration_hold_patience(&g, Some(there), false, true));
+    assert!(
+        ai.declaration_hold_patience(&g, Some(there), true, true),
+        "a breaker that left starts a fresh clock"
+    );
+}
+
+/// A second walled city of the same enemy `distance` tiles from `cid`, on
+/// the flattened board, with Ancient Walls at full strength.
+fn second_walled_city(g: &mut Game, cid: u32, distance: i32) -> u32 {
+    let site = at_distance(g, cid, distance)[0];
+    let other = g.found_city_for(1, site, None);
+    let city = g.cities.get_mut(&other).unwrap();
+    city.buildings = vec![crate::name!("walls")];
+    Arc::make_mut(&mut g.observed_city_max_wall_hp).remove(&other);
+    let max = g.city_max_wall_hp(&g.cities[&other]);
+    assert!(max > 0);
+    g.cities.get_mut(&other).unwrap().wall_hp = max;
+    other
+}
+
+/// Tiles exactly `a` from city `first` and `b` from city `second`.
+fn between(g: &Game, first: u32, second: u32, a: i32, b: i32) -> Vec<Pos> {
+    let (one, two) = (g.cities[&first].pos, g.cities[&second].pos);
+    let mut tiles: Vec<Pos> = g
+        .wring(one, a)
+        .into_iter()
+        .filter(|pos| {
+            g.wdist(*pos, two) == b
+                && g.unit_ids_at(*pos).is_empty()
+                && g.city_at(*pos).is_none()
+                && g.map
+                    .get(*pos)
+                    .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+        })
+        .collect();
+    tiles.sort_unstable();
+    tiles
+}
+
+/// Live King civvis-20261005T051413Z (game 102): three healthy Bombards of
+/// Uruk's force stood four and five tiles from Toronto, whose own force had
+/// four units staged and no gun; Toronto's reading said "0 gun(s) fit".
+/// Under `breach-counts-nearby-guns` a fit gun at a walled city's ring is
+/// that city's breaker whatever row it serves: Toronto reads three guns and
+/// its damage budget is ready; the other siege no longer counts them.
+#[test]
+fn guns_of_another_siege_at_this_ring_are_this_sieges_breakers_under_the_gene() {
+    let (mut g, toronto) = medieval_city();
+    let uruk = second_walled_city(&mut g, toronto, 9);
+    let melee: Vec<u32> = at_distance(&g, toronto, 3)
+        .into_iter()
+        .take(4)
+        .map(|pos| g.spawn_unit("man_at_arms", 0, pos))
+        .collect();
+    let guns: Vec<u32> = between(&g, toronto, uruk, 4, 5)
+        .into_iter()
+        .chain(between(&g, toronto, uruk, 4, 6))
+        .take(3)
+        .map(|pos| g.spawn_unit("bombard", 0, pos))
+        .collect();
+    assert_eq!(guns.len(), 3);
+    let toronto_group = group_on(&g, toronto, &melee);
+    let uruk_group = group_on(&g, uruk, &guns);
+    let plan = plan_against(&g, toronto);
+    let view = CityView::of(&g, toronto).unwrap();
+
+    let mut off = AdvancedAi::new();
+    off.enable_siege_train();
+    off.enable_siege_positive_damage_budget();
+    off.enable_siege_needs_a_breaker();
+    off.force_groups = vec![toronto_group.clone(), uruk_group.clone()];
+    let mut on = off.clone();
+    on.enable_breach_counts_nearby_guns();
+
+    let force_off = off.siege_force(&g, 0, &view, &plan, &toronto_group);
+    let force_on = on.siege_force(&g, 0, &view, &plan, &toronto_group);
+    assert!(guns.iter().all(|gun| !force_off.contains(gun)));
+    assert!(guns.iter().all(|gun| force_on.contains(gun)));
+    assert_eq!(off.breach_reading(&g, 0, &view, &force_off).guns, 0);
+    let reading = on.breach_reading(&g, 0, &view, &force_on);
+    assert_eq!(reading.guns, 3);
+    assert!(reading.at_hand(&view));
+    assert!(!off.conversion_siege_ready(&g, 0, toronto, &force_off));
+    assert!(on.conversion_siege_ready(&g, 0, toronto, &force_on));
+    // Uruk's own roster gives them up to the siege whose ring they stand at.
+    let uruk_view = CityView::of(&g, uruk).unwrap();
+    let uruk_on = on.siege_force(&g, 0, &uruk_view, &plan, &uruk_group);
+    assert!(guns.iter().all(|gun| !uruk_on.contains(gun)));
+    assert_eq!(off.siege_force(&g, 0, &uruk_view, &plan, &uruk_group), guns);
+    // The assessment advances Toronto out of Stage under the gene only.
+    off.assess_siege(&g, 0, toronto, &plan, &toronto_group);
+    on.assess_siege(&g, 0, toronto, &plan, &toronto_group);
+    assert_eq!(off.sieges[&toronto].stage, SiegeStage::Stage);
+    assert_ne!(on.sieges[&toronto].stage, SiegeStage::Stage);
+}
+
+/// A gun beyond `STAGING_FAR` of the walls, or one too hurt to fire, is no
+/// city's nearby breaker.
+#[test]
+fn a_far_or_unfit_gun_is_no_nearby_breaker() {
+    let (mut g, toronto) = medieval_city();
+    let uruk = second_walled_city(&mut g, toronto, 12);
+    let far = g.spawn_unit("bombard", 0, at_distance(&g, toronto, STAGING_FAR + 1)[0]);
+    let near = at_distance(&g, toronto, 3);
+    let hurt = g.spawn_unit("bombard", 0, near[0]);
+    g.units.get_mut(&hurt).unwrap().hp = 29;
+    let fit = g.spawn_unit("bombard", 0, near[1]);
+    let plan = plan_against(&g, toronto);
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_siege_needs_a_breaker();
+    ai.enable_breach_counts_nearby_guns();
+    ai.force_groups = vec![
+        group_on(&g, toronto, &[fit]),
+        group_on(&g, uruk, &[far, hurt]),
+    ];
+    assert_eq!(ai.nearby_gun_city(&g, 0, &plan, far), None);
+    assert_eq!(ai.nearby_gun_city(&g, 0, &plan, hurt), None);
+    assert_eq!(ai.nearby_gun_city(&g, 0, &plan, fit), Some(toronto));
+    ai.disable_breach_counts_nearby_guns();
+    assert_eq!(ai.nearby_gun_city(&g, 0, &plan, fit), None, "gene off");
+}
+
+/// One gun serves one city: the nearer of two walled sieges; at an equal
+/// distance the one its own force is on, then the lower city id.
+#[test]
+fn one_gun_serves_the_nearer_siege_and_ties_go_to_its_own_then_the_lower_id() {
+    let (mut g, first) = medieval_city();
+    let second = second_walled_city(&mut g, first, 7);
+    let gun = g.spawn_unit("bombard", 0, between(&g, first, second, 3, 4)[0]);
+    let plan = plan_against(&g, first);
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_siege_needs_a_breaker();
+    ai.enable_breach_counts_nearby_guns();
+    let screen_first = g.spawn_unit("man_at_arms", 0, at_distance(&g, first, 2)[0]);
+    let screen_second = g.spawn_unit("man_at_arms", 0, at_distance(&g, second, 2)[0]);
+    let group_first = group_on(&g, first, &[screen_first]);
+    let group_second = group_on(&g, second, &[screen_second, gun]);
+    ai.force_groups = vec![group_first.clone(), group_second.clone()];
+    assert_eq!(
+        ai.nearby_gun_city(&g, 0, &plan, gun),
+        Some(first),
+        "the nearer city"
+    );
+    let (view_first, view_second) = (
+        CityView::of(&g, first).unwrap(),
+        CityView::of(&g, second).unwrap(),
+    );
+    assert!(ai
+        .siege_force(&g, 0, &view_first, &plan, &group_first)
+        .contains(&gun));
+    assert!(!ai
+        .siege_force(&g, 0, &view_second, &plan, &group_second)
+        .contains(&gun));
+
+    // Equidistant: its own force's city, then the lower id.
+    let (mut g, first) = medieval_city();
+    let second = second_walled_city(&mut g, first, 6);
+    let tile = between(&g, first, second, 3, 3)[0];
+    let gun = g.spawn_unit("bombard", 0, tile);
+    let screen_first = g.spawn_unit("man_at_arms", 0, at_distance(&g, first, 2)[0]);
+    let screen_second = g.spawn_unit("man_at_arms", 0, at_distance(&g, second, 2)[0]);
+    let plan = plan_against(&g, first);
+    ai.force_groups = vec![
+        group_on(&g, first, &[screen_first]),
+        group_on(&g, second, &[screen_second, gun]),
+    ];
+    assert_eq!(
+        ai.nearby_gun_city(&g, 0, &plan, gun),
+        Some(second),
+        "its own force's city"
+    );
+    ai.force_groups = vec![
+        group_on(&g, first, &[screen_first]),
+        group_on(&g, second, &[screen_second]),
+    ];
+    assert_eq!(
+        ai.nearby_gun_city(&g, 0, &plan, gun),
+        Some(first.min(second)),
+        "neither: the lower id"
+    );
+}
+
+/// Under `breach-counts-nearby-guns` a gun the battle planner still holds
+/// recovering counts as a breaker once back at `ROTATE_HP`; below it, it is
+/// still a wounded gun. Off, any recovering gun is a wounded one.
+#[test]
+fn a_recovering_gun_at_rotate_hp_counts_as_a_breaker_under_the_gene() {
+    let (mut g, cid) = medieval_city();
+    let near = at_distance(&g, cid, 3);
+    let gun = g.spawn_unit("bombard", 0, near[0]);
+    g.units.get_mut(&gun).unwrap().hp = 60;
+    let city = CityView::of(&g, cid).unwrap();
+    let mut off = AdvancedAi::new();
+    off.enable_siege_train();
+    off.enable_siege_needs_a_breaker();
+    off.battle_planner_recovering.insert(gun);
+    let mut on = off.clone();
+    on.enable_breach_counts_nearby_guns();
+    let read_off = off.breach_reading(&g, 0, &city, &[gun]);
+    assert_eq!((read_off.guns, read_off.wounded_guns), (0, 1));
+    let read_on = on.breach_reading(&g, 0, &city, &[gun]);
+    assert_eq!((read_on.guns, read_on.wounded_guns), (1, 0));
+    assert!(read_on.at_hand(&city));
+    // Still the battle planner's: counting is not posting.
+    assert!(!on.siege_member_fit(&g, gun));
+    g.units.get_mut(&gun).unwrap().hp = 45;
+    let low = on.breach_reading(&g, 0, &city, &[gun]);
+    assert_eq!((low.guns, low.wounded_guns), (0, 1), "below ROTATE_HP");
+}
+
+/// `medieval_city` with three Men-at-Arms staged three tiles out and a
+/// Bomber based `distance` tiles from the city.
+fn bombed_city(distance: i32) -> (Game, u32, Vec<u32>, u32) {
+    let (mut g, cid) = medieval_city();
+    let near = at_distance(&g, cid, 3);
+    let melee: Vec<u32> = near
+        .iter()
+        .take(3)
+        .map(|pos| g.spawn_unit("man_at_arms", 0, *pos))
+        .collect();
+    let bomber = g.spawn_unit("bomber", 0, at_distance(&g, cid, distance)[0]);
+    (g, cid, melee, bomber)
+}
+
+/// Live King civvis-20261005T060002Z (game 104): Bombers took Sparta's walls
+/// from 400 to 153 while the breach reading said "0 gun(s) fit ... nothing
+/// to open the walls". Under `breach-reads-the-air` a Bomber in strike range
+/// is wall damage a turn: the reading has a breach at hand and the damage
+/// budget a finite count of turns. Off, neither changes.
+#[test]
+fn a_bomber_in_strike_range_is_wall_damage_under_the_gene() {
+    let (g, cid, melee, bomber) = bombed_city(6);
+    assert!(g.wdist(g.units[&bomber].pos, g.cities[&cid].pos) <= g.unit_attack_range(bomber));
+    let city = CityView::of(&g, cid).unwrap();
+    let mut off = AdvancedAi::new();
+    off.enable_siege_train();
+    off.enable_siege_needs_a_breaker();
+    let mut on = off.clone();
+    on.enable_breach_reads_the_air();
+
+    assert_eq!(off.air_breach_walls(&g, 0, cid), 0.0);
+    let expected = expected_damage(
+        effective_strength(g.unit_ranged_attack_strength(&g.units[&bomber]), 100),
+        g.city_strength(cid),
+    );
+    let air = on.air_breach_walls(&g, 0, cid);
+    assert!(
+        air > 0.0 && (air - expected).abs() < 1e-9,
+        "{air} vs {expected}"
+    );
+
+    let mut read_off = off.breach_reading(&g, 0, &city, &melee);
+    read_off.air_walls = off.air_breach_walls(&g, 0, cid);
+    let mut read_on = on.breach_reading(&g, 0, &city, &melee);
+    read_on.air_walls = on.air_breach_walls(&g, 0, cid);
+    assert_eq!(
+        read_off,
+        off.breach_reading(&g, 0, &city, &melee),
+        "off: the same reading"
+    );
+    assert!(!read_off.at_hand(&city));
+    assert!(air * read_on.horizon >= f64::from(city.wall_hp));
+    assert!(read_on.at_hand(&city), "{read_on:?}");
+
+    let budget = |ai: &AdvancedAi| ai.conversion_siege_budget(&g, 0, cid, &melee).unwrap().0;
+    assert!(budget(&off).is_infinite(), "off: no wall damage, no budget");
+    assert!(
+        budget(&on).is_finite(),
+        "on: the Bomber brings the walls down"
+    );
+}
+
+/// A Bomber beyond its strike range of the city counts for nothing.
+#[test]
+fn a_bomber_out_of_strike_range_is_no_breaker() {
+    let (g, cid, _, bomber) = bombed_city(12);
+    assert!(g.wdist(g.units[&bomber].pos, g.cities[&cid].pos) > g.unit_attack_range(bomber));
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_siege_needs_a_breaker();
+    ai.enable_breach_reads_the_air();
+    assert_eq!(ai.air_breach_walls(&g, 0, cid), 0.0);
+}
+
+/// Walls the air wing has brought below half are a breach at hand, however
+/// little a turn it adds now; above half, a weak wing is not, and below half
+/// with no aircraft in range is no breach either.
+#[test]
+fn walls_the_air_has_brought_below_half_are_a_breach_at_hand() {
+    let (mut g, cid, melee, _) = bombed_city(6);
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_siege_needs_a_breaker();
+    let read = |g: &Game, air: f64| {
+        let city = CityView::of(g, cid).unwrap();
+        let mut reading = ai.breach_reading(g, 0, &city, &melee);
+        reading.air_walls = air;
+        (reading.at_hand(&city), city)
+    };
+    g.cities.get_mut(&cid).unwrap().wall_hp = 150;
+    let (high, city) = read(&g, 5.0);
+    assert_eq!(city.wall_max, 200);
+    const { assert!(5.0 * SHOOTER_BREACH_TURNS < 150.0) };
+    assert!(!high, "above half, a weak wing");
+    g.cities.get_mut(&cid).unwrap().wall_hp = 100;
+    assert!(read(&g, 5.0).0, "at half, the same wing");
+    assert!(!read(&g, 0.0).0, "at half, no aircraft");
+}
+
+/// One sortie serves one siege: a Bomber in range of two walled cities we
+/// besiege counts for the one the wing struck this frame, else the nearer.
+/// Live G104: a Bomber struck Sparta every turn from 222 while Pharsalos, a
+/// second siege, stood nearer it.
+#[test]
+fn a_bomber_in_range_of_two_sieges_counts_for_the_nearer() {
+    let (mut g, first) = medieval_city();
+    let second = second_walled_city(&mut g, first, 7);
+    let tile = between(&g, first, second, 3, 4)[0];
+    let bomber = g.spawn_unit("bomber", 0, tile);
+    assert!(g.wdist(tile, g.cities[&second].pos) <= g.unit_attack_range(bomber));
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_siege_needs_a_breaker();
+    ai.enable_breach_reads_the_air();
+    g.turn = 30;
+    for cid in [first, second] {
+        reducing(&mut ai, cid);
+        ai.sieges.get_mut(&cid).unwrap().assessed = 30;
+    }
+    assert!(ai.air_breach_walls(&g, 0, first) > 0.0);
+    assert_eq!(ai.air_breach_walls(&g, 0, second), 0.0);
+    // The wing's volley this frame went to the farther city: it serves that.
+    let far = g.cities[&second].pos;
+    ai.air_city_assault = Some(crate::ai::advanced::AirCityAssault {
+        target: far,
+        cavalry: None,
+        spot: far,
+        moved_to_spot: false,
+        aircraft: vec![bomber],
+    });
+    assert_eq!(ai.air_breach_walls(&g, 0, first), 0.0);
+    assert!(ai.air_breach_walls(&g, 0, second) > 0.0);
+    ai.air_city_assault = None;
+    // With no siege at the nearer city it serves the other.
+    ai.sieges.remove(&first);
+    assert!(ai.air_breach_walls(&g, 0, second) > 0.0);
+}

@@ -1,0 +1,83 @@
+{
+  "source_before_fixture_correction": "0d59c32d145e5e1fb990fdf6b23c6ad0708e0315",
+  "ci_run": 37231150398,
+  "ci_job": 111520865230,
+  "ci_partial_result": {
+    "passed": 2182,
+    "failed": 1,
+    "skipped": 50,
+    "not_run_due_to_failure": 2391
+  },
+  "ci_failure": "new rejected_access_proposal test assumed closed borders before Early Empire; failed initial !has_open_borders assertion before executing batch",
+  "fixture_correction": "recipient learns Early Empire; proposer does not; assert recipient enforces borders before checking no access",
+  "runtime_policy_changed_by_correction": false,
+  "initial_local_full_run": {
+    "exit_code": 130,
+    "scope": "Interrupted own Cargo run after CI identified fixture precondition failure, before running tests. Linked candidate library was frozen and preserved."
+  },
+  "corrected_local_full_suite": {
+    "source": "93d474b1dd39f03afd1e467f05b4b7eccd2a1e64",
+    "current_source": "700fa11213e3fe560865faac2b5266d96336d514",
+    "native_tree_equivalence": {
+      "93d474b1dd39f03afd1e467f05b4b7eccd2a1e64": {
+        "src": "b61db603beb3f9cb8396a10f87d3781629872a64",
+        "Cargo.toml": "19d563301d1c1654d3c794174afee0acf1ee3a8d",
+        "Cargo.lock": "e624ab9f956636ac13fe57f854b66c3a92a4b496",
+        "data": "6c33754ebe15462d24f039a860889cf33483877c"
+      },
+      "700fa11213e3fe560865faac2b5266d96336d514": {
+        "src": "b61db603beb3f9cb8396a10f87d3781629872a64",
+        "Cargo.toml": "19d563301d1c1654d3c794174afee0acf1ee3a8d",
+        "Cargo.lock": "e624ab9f956636ac13fe57f854b66c3a92a4b496",
+        "data": "6c33754ebe15462d24f039a860889cf33483877c"
+      }
+    },
+    "exit_code": 0,
+    "passed": 4574,
+    "failed": 0,
+    "ignored": 54,
+    "library_passed": 4313,
+    "library_ignored": 50,
+    "binary_passed": [
+      14,
+      226,
+      17,
+      4
+    ],
+    "doc_ignored": 4,
+    "build_duration": "26m 24s",
+    "library_test_duration_seconds": 477.28,
+    "command": "CARGO_TARGET_DIR=/tmp/civvis-production-offer-execution-target CARGO_BUILD_JOBS=4 cargo test --profile ci --locked -- --test-threads=4"
+  },
+  "corrected_ci": {
+    "source": "5f1dd30da",
+    "run": 37232279412,
+    "job": 111524345575,
+    "conclusion": "SUCCESS",
+    "new_regressions": "both passed",
+    "rust_tests_passed": 4574,
+    "rust_tests_skipped": 50,
+    "documentation_tests_ignored": 4
+  },
+  "local_quality": {
+    "exit_code": 0,
+    "base": "origin/main",
+    "head": "700fa11213e3fe560865faac2b5266d96336d514",
+    "result": "changed lines formatted and warning-free"
+  },
+  "pilot": {
+    "pairs": 8,
+    "terminal_executions": 16,
+    "confirmation_gate_passed": false,
+    "confirmation_played": false,
+    "result": "Emperor T75 mean 51.35 unchanged; Deity 40.6375 to 38.025 (-6.43%), no demonstrated early-production improvement"
+  },
+  "test_executable_sha256": "5f794525dcc15290fdaf7ae834949cdcb1e3a397c6d9f1b5b08888c1f0709610",
+  "current_library_byte_equal_frozen_candidate": true,
+  "focused_executor_tests": {
+    "exit_code": 0,
+    "passed": 12,
+    "failed": 0,
+    "command": "/tmp/civvis-production-offer-execution-target/ci/deps/civvis-f3c68e33949d14e4 ai::player::execution_tests --test-threads=4"
+  }
+}

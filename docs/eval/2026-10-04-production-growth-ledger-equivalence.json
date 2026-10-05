@@ -1,0 +1,98 @@
+{
+  "diagnostic_games": 8,
+  "fresh_strength_samples": 0,
+  "identical_actions": 215603,
+  "records": [
+    {
+      "difficulty": "emperor",
+      "seed": 61007000,
+      "checkpoint_bytes_equal": true,
+      "actions_bytes_equal": true,
+      "identical_actions": 31464,
+      "final_bytes_equal": true
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61007001,
+      "checkpoint_bytes_equal": true,
+      "actions_bytes_equal": true,
+      "identical_actions": 28447,
+      "final_bytes_equal": true
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61007002,
+      "checkpoint_bytes_equal": true,
+      "actions_bytes_equal": true,
+      "identical_actions": 7848,
+      "final_bytes_equal": true
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61007003,
+      "checkpoint_bytes_equal": true,
+      "actions_bytes_equal": true,
+      "identical_actions": 16940,
+      "final_bytes_equal": true
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61007100,
+      "checkpoint_bytes_equal": true,
+      "actions_bytes_equal": true,
+      "identical_actions": 35022,
+      "final_bytes_equal": true
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61007101,
+      "checkpoint_bytes_equal": true,
+      "actions_bytes_equal": true,
+      "identical_actions": 19936,
+      "final_bytes_equal": true
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61007102,
+      "checkpoint_bytes_equal": true,
+      "actions_bytes_equal": true,
+      "identical_actions": 38241,
+      "final_bytes_equal": true
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61007103,
+      "checkpoint_bytes_equal": true,
+      "actions_bytes_equal": true,
+      "identical_actions": 37705,
+      "final_bytes_equal": true
+    }
+  ],
+  "durable_evidence": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/ledger/diagnostic",
+  "sha256": {
+    "civvis-production-growth-ledger-deity-61007100-cities.jsonl": "621f0adf10ed1afadc18d831d3f3dcce1583b0233178061751306c9417b82359",
+    "civvis-production-growth-ledger-deity-61007100-diagnostic-actions.json": "af293d7e849ceef0b04168eb7ae4951c584e77c523900fb740ca0046c2f67915",
+    "civvis-production-growth-ledger-deity-61007100-diagnostic-final.json": "2f981bac26ef1e639c3393bedc7d2b981d61751d064f263f0b1549fef7ce9cc8",
+    "civvis-production-growth-ledger-deity-61007101-cities.jsonl": "a5d21a2218fefbc34712789d45eb59177cf8b68910d50ee147c4690f5aafe88b",
+    "civvis-production-growth-ledger-deity-61007101-diagnostic-actions.json": "5db7ca0c8df31528e23ba874d7e5a2a88ab1e83cfbd0d6a6378f3451e21792a0",
+    "civvis-production-growth-ledger-deity-61007101-diagnostic-final.json": "df25657d227f66c32a5688886330c4051f39cc5d576eb56d8403eed5f6d4e901",
+    "civvis-production-growth-ledger-deity-61007102-cities.jsonl": "03879b84ae9622846425dbb092d373bdf8c15d84ea37b68d587cbb6b9b8b7490",
+    "civvis-production-growth-ledger-deity-61007102-diagnostic-actions.json": "b22eacdffdeaff2a6cd337e9400fa2b861598254c8896538067cb65a360ce8e7",
+    "civvis-production-growth-ledger-deity-61007102-diagnostic-final.json": "8929f06a6cc9f011dbc17b380cb3312e55b0d196a42188905ed80a4cab311534",
+    "civvis-production-growth-ledger-deity-61007103-cities.jsonl": "1c42af0cfb4e78cb2b05fdd02fe7ef7120a5cb57bdb5518ec01b22d955db3a47",
+    "civvis-production-growth-ledger-deity-61007103-diagnostic-actions.json": "afa190c096fb99eb72a1fdd6b50baf7e36b9b11474f953def5720235593f2c2b",
+    "civvis-production-growth-ledger-deity-61007103-diagnostic-final.json": "778fc28c9737af8ca06dd2e95b82da4c91055e108e6ef1ceb250b8251dcc7e4b",
+    "civvis-production-growth-ledger-emperor-61007000-cities.jsonl": "d5b0ac56442a974b03176fbdcc1d21a2c731f82a526bc8d914dcd58bfb0939c0",
+    "civvis-production-growth-ledger-emperor-61007000-diagnostic-actions.json": "5d284c349aa3fa4fe79955d31989e9e5d8652e1fe5d3c8d375ce8a1e71326739",
+    "civvis-production-growth-ledger-emperor-61007000-diagnostic-final.json": "ca16e122ddb489d01a52b1ed61869fe390fe98c5be552b938e290865d647e5bc",
+    "civvis-production-growth-ledger-emperor-61007001-cities.jsonl": "27bbd747448dc0940b59cb174f7374fb908af5785401f4c719603a0321e8a836",
+    "civvis-production-growth-ledger-emperor-61007001-diagnostic-actions.json": "f73124e48ffa752188a64e8302e95c3045beae90482a9f46b163e49b447d4b36",
+    "civvis-production-growth-ledger-emperor-61007001-diagnostic-final.json": "7a15dc5d721e65e45c03f84cfb9cb5b6fccbc9dcd7d3e852f00498380094ed6e",
+    "civvis-production-growth-ledger-emperor-61007002-cities.jsonl": "401fcd78029aeada608e2fee799922bf93e67301422efa07aa70ab6dcb91a33d",
+    "civvis-production-growth-ledger-emperor-61007002-diagnostic-actions.json": "b504898836171697f39c48c7c2980fb7413d39c708e4e67ddb895cd369876dba",
+    "civvis-production-growth-ledger-emperor-61007002-diagnostic-final.json": "8457dbea1106717b7b1c0d66a657da755b203241fb4348cdd7a242ba725c543d",
+    "civvis-production-growth-ledger-emperor-61007003-cities.jsonl": "c67e36f6f9d69c94a89f12fe24921a192ac10095ae234dfc34aa02ef295e0e57",
+    "civvis-production-growth-ledger-emperor-61007003-diagnostic-actions.json": "1dff59382806613fae77271be260fb6af3b5c9f60249e8c546e85bbddf0bd1d8",
+    "civvis-production-growth-ledger-emperor-61007003-diagnostic-final.json": "bfae76b2ddc7c29766055cfc12de3b6049715d0070a25ee6304488c635f16136"
+  }
+}

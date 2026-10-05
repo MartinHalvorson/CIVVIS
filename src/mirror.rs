@@ -41,9 +41,12 @@ use serde::Deserialize;
 mod capital_identity;
 mod dedication_history;
 mod host_deaths;
+pub mod input_capture;
 mod religion_state;
+mod spy_posting;
 mod strategic_income;
 pub use host_deaths::HostUnitDeath;
+pub use spy_posting::StateSpyCity;
 
 use crate::{
     name::Name,
@@ -545,7 +548,8 @@ pub fn snapshot_from_events_at(
     // prefix for every later request of a growing log, so it is merged once
     // and kept (`SnapshotPrefix`), and each request clones it and merges only
     // what is new. Chunks merge in stream order either way.
-    let split = ranges.partition_point(|(start, _)| state_start.is_none_or(|limit| *start <= limit));
+    let split =
+        ranges.partition_point(|(start, _)| state_start.is_none_or(|limit| *start <= limit));
     let (head, tail) = ranges.split_at(split);
     let generation = events_generation(path, &raw);
     let mut snapshot = Snapshot::default();
@@ -558,7 +562,8 @@ pub fn snapshot_from_events_at(
                 if kept.path == path
                     && kept.generation == generation
                     && turn.is_none_or(|limit| kept.max_turn <= limit)
-                    && last_kept_start.is_none_or(|last| state_start.is_none_or(|limit| last <= limit))
+                    && last_kept_start
+                        .is_none_or(|last| state_start.is_none_or(|limit| last <= limit))
                 {
                     done = head.partition_point(|(start, _)| *start < kept.covered);
                     snapshot = kept.snapshot.clone();
@@ -705,7 +710,10 @@ pub fn turn_may_be_any(line: &str, turns: &[u32]) -> bool {
         while at < bytes.len() && matches!(bytes[at], b' ' | b'\t' | b'\n' | b'\r') {
             at += 1;
         }
-        let digits = bytes[at..].iter().take_while(|b| b.is_ascii_digit()).count();
+        let digits = bytes[at..]
+            .iter()
+            .take_while(|b| b.is_ascii_digit())
+            .count();
         if digits == 0 {
             continue;
         }
@@ -713,7 +721,10 @@ pub fn turn_may_be_any(line: &str, turns: &[u32]) -> bool {
         if after.is_some_and(|b| matches!(b, b'.' | b'e' | b'E')) {
             continue;
         }
-        if wanted.iter().any(|want| &bytes[at..at + digits] == want.as_bytes()) {
+        if wanted
+            .iter()
+            .any(|want| &bytes[at..at + digits] == want.as_bytes())
+        {
             return true;
         }
         saw_integer = true;
@@ -759,6 +770,12 @@ struct NeedleHits {
 /// unreadable file is read afresh. Bytes after the last newline are a line still
 /// being written; they are left for the next read on the incremental path.
 pub fn read_events(path: &std::path::Path) -> std::io::Result<std::rc::Rc<String>> {
+    let result = read_events_uncaptured(path);
+    input_capture::observe(path, &result);
+    result
+}
+
+fn read_events_uncaptured(path: &std::path::Path) -> std::io::Result<std::rc::Rc<String>> {
     use std::io::{Read, Seek, SeekFrom};
     const TAIL: u64 = 4096;
     let len = std::fs::metadata(path)?.len();
@@ -872,7 +889,10 @@ pub fn line_ranges_containing(raw: &str, needle: &str) -> Vec<(usize, usize)> {
             let found = read
                 .hits
                 .entry(needle.to_string())
-                .or_insert_with(|| NeedleHits { scanned: 0, lines: Vec::new() });
+                .or_insert_with(|| NeedleHits {
+                    scanned: 0,
+                    lines: Vec::new(),
+                });
             if found.scanned < raw.len() {
                 found.scanned = line_hits(raw, found.scanned, needle, &mut found.lines);
             }
@@ -908,7 +928,9 @@ fn line_hits(raw: &str, from: usize, needle: &str, out: &mut Vec<(usize, usize)>
     let finder = memchr::memmem::Finder::new(needle.as_bytes());
     let mut at = from;
     while at <= bytes.len() {
-        let Some(offset) = finder.find(&bytes[at..]) else { break };
+        let Some(offset) = finder.find(&bytes[at..]) else {
+            break;
+        };
         let hit = at + offset;
         let start = memchr::memrchr(b'\n', &bytes[..hit]).map_or(0, |i| i + 1);
         let newline = memchr::memchr(b'\n', &bytes[hit..]).map(|i| hit + i);
@@ -937,7 +959,10 @@ fn line_hits(raw: &str, from: usize, needle: &str, out: &mut Vec<(usize, usize)>
 /// and a 300 KB record is not parsed to learn that it is not a combat event.
 pub(crate) fn json_may_have_value(line: &str, key: &str, literal: &str) -> bool {
     let bytes = line.as_bytes();
-    let numeric = literal.as_bytes().last().is_some_and(|b| b.is_ascii_digit());
+    let numeric = literal
+        .as_bytes()
+        .last()
+        .is_some_and(|b| b.is_ascii_digit());
     // Every occurrence, overlapping included, as the `str::find` walk it
     // replaces found them; memmem is the SIMD searcher (std's is scalar here).
     let finder = memchr::memmem::Finder::new(key.as_bytes());
@@ -974,18 +999,35 @@ mod log_scan_prefilter_tests {
 
     #[test]
     fn a_kind_matches_with_or_without_spaces() {
-        assert!(json_may_have_value(r#"{"kind": "combat", "turn": 3}"#, "\"kind\"", "\"combat\""));
-        assert!(json_may_have_value(r#"{"kind":"combat"}"#, "\"kind\"", "\"combat\""));
-        assert!(json_may_have_value("{\"kind\" :\t\"combat\"}", "\"kind\"", "\"combat\""));
+        assert!(json_may_have_value(
+            r#"{"kind": "combat", "turn": 3}"#,
+            "\"kind\"",
+            "\"combat\""
+        ));
+        assert!(json_may_have_value(
+            r#"{"kind":"combat"}"#,
+            "\"kind\"",
+            "\"combat\""
+        ));
+        assert!(json_may_have_value(
+            "{\"kind\" :\t\"combat\"}",
+            "\"kind\"",
+            "\"combat\""
+        ));
     }
 
     #[test]
     fn the_word_alone_is_not_the_kind() {
         // Every exported unit carries a `combat` strength; a state record must
         // not look like a combat event to the prefilter.
-        let state = r#"{"kind": "state", "turn": 9, "units": [{"combat": 20, "kind": "UNIT_WARRIOR"}]}"#;
+        let state =
+            r#"{"kind": "state", "turn": 9, "units": [{"combat": 20, "kind": "UNIT_WARRIOR"}]}"#;
         assert!(!json_may_have_value(state, "\"kind\"", "\"combat\""));
-        assert!(!json_may_have_value(r#"{"label": "kind", "x": "combat"}"#, "\"kind\"", "\"combat\""));
+        assert!(!json_may_have_value(
+            r#"{"label": "kind", "x": "combat"}"#,
+            "\"kind\"",
+            "\"combat\""
+        ));
     }
 
     #[test]
@@ -995,10 +1037,18 @@ mod log_scan_prefilter_tests {
         assert!(!json_may_have_value(line, "\"turn\"", "22"));
         assert!(!json_may_have_value(line, "\"turn\"", "2"));
         assert!(!json_may_have_value(r#"{"turn": 2201}"#, "\"turn\"", "220"));
-        assert!(!json_may_have_value(r#"{"turn": 220.5}"#, "\"turn\"", "220"));
+        assert!(!json_may_have_value(
+            r#"{"turn": 220.5}"#,
+            "\"turn\"",
+            "220"
+        ));
         assert!(json_may_have_value(r#"{"turn":220}"#, "\"turn\"", "220"));
         // A nested member passes: the exact parse behind the prefilter decides.
-        assert!(json_may_have_value(r#"{"turn": 5, "deal": {"turn": 220}}"#, "\"turn\"", "220"));
+        assert!(json_may_have_value(
+            r#"{"turn": 5, "deal": {"turn": 220}}"#,
+            "\"turn\"",
+            "220"
+        ));
     }
 
     #[test]
@@ -1022,7 +1072,10 @@ mod log_scan_prefilter_tests {
         for i in 0..6000 {
             match i % 997 {
                 0 => raw.push_str(&format!("{{\"kind\": \"build_no_plot\", \"i\": {i}}}\r\n")),
-                1 => raw.push_str(&format!("{}build_no_plot build_no_plot\n", "x".repeat(70_000))),
+                1 => raw.push_str(&format!(
+                    "{}build_no_plot build_no_plot\n",
+                    "x".repeat(70_000)
+                )),
                 _ => raw.push_str(&format!("{{\"kind\": \"await\", \"polls\": {i}}}\n")),
             }
         }
@@ -1051,7 +1104,11 @@ mod log_scan_prefilter_tests {
         check("build_no_plot");
         check("b");
         // Appended lines are searched; kept ones are not searched again.
-        std::fs::write(&path, "a build_no_plot\nb\nc build_no_plot\r\nd\ne build_no_plot\n").unwrap();
+        std::fs::write(
+            &path,
+            "a build_no_plot\nb\nc build_no_plot\r\nd\ne build_no_plot\n",
+        )
+        .unwrap();
         check("build_no_plot");
         check("b");
         check("");
@@ -1076,8 +1133,15 @@ mod log_scan_prefilter_tests {
                 r#"{{"kind": "tiles", "turn": {turn}, "frame": {frame}, "delta": {delta}, "width": 8, "height": 8, "plots": [{{"x": {x}, "y": 1, "t": "TERRAIN_GRASS"}}]}}"#
             )
         };
-        let state = |turn: u32, frame: u32| format!(r#"{{"kind": "state", "turn": {turn}, "frame": {frame}}}"#);
-        let mut log = vec![state(1, 0), tiles(1, 0, false, 1), state(2, 0), tiles(2, 0, true, 2)];
+        let state = |turn: u32, frame: u32| {
+            format!(r#"{{"kind": "state", "turn": {turn}, "frame": {frame}}}"#)
+        };
+        let mut log = vec![
+            state(1, 0),
+            tiles(1, 0, false, 1),
+            state(2, 0),
+            tiles(2, 0, true, 2),
+        ];
         let check = |log: &Vec<String>, turn: u32| {
             std::fs::write(&path, log.join("\n") + "\n").unwrap();
             let warm = format!("{:?}", snapshot_from_events_at(&path, Some(turn)).unwrap());
@@ -1095,7 +1159,12 @@ mod log_scan_prefilter_tests {
         // A lower limit after a higher one must not reuse what it cannot see.
         check(&log, 2);
         check(&log, 3);
-        log.extend([state(4, 0), tiles(4, 0, true, 6), state(4, 1), tiles(4, 1, true, 7)]);
+        log.extend([
+            state(4, 0),
+            tiles(4, 0, true, 6),
+            state(4, 1),
+            tiles(4, 1, true, 7),
+        ]);
         check(&log, 4);
         forget();
         let _ = std::fs::remove_dir_all(&dir);
@@ -1144,9 +1213,15 @@ mod log_scan_prefilter_tests {
         assert!(turn_may_match(r#"{"kind":"state","turn":8,"turn":7}"#, 7));
         use super::turn_may_be_any;
         assert!(turn_may_be_any(r#"{"kind":"combat","turn":12}"#, &[11, 12]));
-        assert!(!turn_may_be_any(r#"{"kind":"combat","turn":13}"#, &[11, 12]));
+        assert!(!turn_may_be_any(
+            r#"{"kind":"combat","turn":13}"#,
+            &[11, 12]
+        ));
         assert!(turn_may_be_any(r#"{"kind":"combat","turn":-3}"#, &[11, 12]));
-        assert!(!turn_may_be_any(r#"{"kind":"combat","turn":18446744073709551616}"#, &[11]));
+        assert!(!turn_may_be_any(
+            r#"{"kind":"combat","turn":18446744073709551616}"#,
+            &[11]
+        ));
     }
 }
 
@@ -2358,6 +2433,10 @@ pub struct StateMenuItem {
     pub c: f64,
     #[serde(default = "unknown_metric")]
     pub p: f64,
+    /// Observed work on a district type, including a paused foundation. This
+    /// is not overflow and does not identify a plot by itself.
+    #[serde(default)]
+    pub pr: Option<f64>,
     /// Exact strategic-resource price for this city and formation, when the
     /// host accessor answered. Zero is a price; absence remains unknown.
     #[serde(default)]
@@ -2907,6 +2986,10 @@ pub struct StateUnit {
     pub spy_operation_end_turn: Option<i64>,
     #[serde(default)]
     pub spy_missions_available: Option<Vec<String>>,
+    /// The host purchase city of a Spy's plot, including a district operation:
+    /// `UnitPanel.lua:2151-2155`, not a nearest-city or city-center guess.
+    #[serde(default)]
+    pub spy_city: Option<StateSpyCity>,
     /// Exact host experience and promotion state. Option distinguishes an older
     /// archive that never exported the facts from a level-one unit with none.
     #[serde(default)]
@@ -3488,6 +3571,11 @@ pub struct StateRival {
     pub foreign_tourists: f64,
     #[serde(default = "unknown_metric")]
     pub domestic_tourists: f64,
+    /// The engine's own turns until this major wins on Culture
+    /// (`GetCulture():GetTurnsUntilVictory()`, WorldRankings.lua:1678): `-1`
+    /// when it reports none, NaN (absent) on an older export.
+    #[serde(default = "unknown_metric")]
+    pub culture_turns_to_victory: f64,
     #[serde(default = "unknown_metric")]
     pub gold: f64,
     #[serde(default = "unknown_metric")]
@@ -4160,6 +4248,11 @@ pub struct StateSnapshot {
     pub foreign_tourists: f64,
     #[serde(default = "unknown_metric")]
     pub domestic_tourists: f64,
+    /// The engine's own turns until this major wins on Culture
+    /// (`GetCulture():GetTurnsUntilVictory()`, WorldRankings.lua:1678): `-1`
+    /// when it reports none, NaN (absent) on an older export.
+    #[serde(default = "unknown_metric")]
+    pub culture_turns_to_victory: f64,
     /// Our tourism per turn as the host reports it (`GetStats():GetTourism()`,
     /// the accessor already used for each rival). `None` on an older export.
     /// The mirror writes it into `Game::observed_tourism_per_turn`, and it is
@@ -4211,6 +4304,13 @@ pub struct StateSnapshot {
     /// this empire alone.
     #[serde(default)]
     pub world_era: Option<i64>,
+    /// `Game.GetEras():GetNextEraCountdown()`: the turns left AFTER this one in
+    /// the world era (0 on its last turn), negative before the countdown has
+    /// started. `None` on an older export. The model's
+    /// `Game::world_era_countdown_end` is derived from it; without it that
+    /// deadline existed only in the simulator, so `age-closer-2` never fired live.
+    #[serde(default)]
+    pub era_countdown: Option<i64>,
     #[serde(default)]
     pub dark_age: Option<bool>,
     #[serde(default)]
@@ -4648,6 +4748,10 @@ fn apply_rival_public_economy(
         // record is the player's `science_projects` below.
         observed.foreign_tourists = count(rival.foreign_tourists);
         observed.domestic_tourists = count(rival.domestic_tourists);
+        observed.culture_turns_to_victory = rival
+            .culture_turns_to_victory
+            .is_finite()
+            .then_some(rival.culture_turns_to_victory);
     }
     // The rival's majority religion, by the CIVVIS name its founded religion
     // takes (`civvis_religion_name`): `Game::majority_religion_of` reads it
@@ -6440,6 +6544,7 @@ const UNIT_KEYS: &[&str] = &[
     "spy_operation",
     "spy_operation_end_turn",
     "spy_missions_available",
+    "spy_city",
     "concert_plots",
 ];
 
@@ -6520,6 +6625,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "strategic_resources",
         "strategic_resource_income",
         "foreign_tourists", "domestic_tourists",
+        "culture_turns_to_victory",
         "tourism_per_turn",
         "cities_following_religion",
         "military",
@@ -6534,7 +6640,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // The age. `the_schema_allowlists_cover_every_declared_field` fails if a
         // StateSnapshot field is missing here.
         "era_score", "era_score_baseline", "normal_age_threshold",
-        "golden_age_threshold", "world_era", "dark_age", "golden_age",
+        "golden_age_threshold", "world_era", "era_countdown", "dark_age", "golden_age",
         "heroic_golden_age", "dedications", "dedication_choices", "resolutions",
         "congress_turns_left",
         // The host's climate and its trade-route projections (2026-08-26).
@@ -6676,6 +6782,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "science_victory_points_needed",
         "foreign_tourists",
         "domestic_tourists",
+        "culture_turns_to_victory",
         // Both border fields: `open_borders` had crossed since the buy lane
         // shipped and filed `schema:rival.open_borders` on every live turn.
         "open_borders",
@@ -6931,7 +7038,11 @@ pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<St
     const SEAT: u8 = 2;
     const STATE: u8 = 4;
     let mut marked: std::collections::BTreeMap<(usize, usize), u8> = Default::default();
-    for (needle, flag) in [("\"combat\"", COMBAT), ("\"seat\"", SEAT), ("\"state\"", STATE)] {
+    for (needle, flag) in [
+        ("\"combat\"", COMBAT),
+        ("\"seat\"", SEAT),
+        ("\"state\"", STATE),
+    ] {
         for range in line_ranges_containing(&raw, needle) {
             *marked.entry(range).or_default() |= flag;
         }
@@ -8392,6 +8503,113 @@ fn host_queue_tail(rules: &crate::rules::Rules, city: &StateCity) -> Vec<crate::
         .collect()
 }
 
+/// Bind native district work only to the city's exact observed foundation.
+/// The ordinary menu sites are possible NEW placements, not invested plots.
+/// Unit formation balances and unfinished Wonder locations have different
+/// identity rules and are deliberately not inferred here.
+fn apply_host_district_progress(
+    game: &mut crate::game::Game,
+    cities: &[StateCity],
+    city_ids: &BTreeMap<u32, i64>,
+) {
+    use crate::game::{Game, Item};
+    for (cid, host_id) in city_ids {
+        let Some(state) = cities.iter().find(|city| city.id == *host_id) else {
+            continue;
+        };
+        for observed in &state.districts {
+            let Some(name) = civvis_node_name(&game.rules.districts, &observed.kind, "DISTRICT_")
+            else {
+                continue;
+            };
+            let district = crate::name::Name::new(&name);
+            let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+            let item = Item::District { district, pos };
+            let key = Game::item_progress_key(&item);
+            let active_head = game.cities[cid].queue.first() == Some(&item);
+            if observed.complete || active_head {
+                // Current-head work already lives in City::production. Never
+                // add the same total again as a paused investment.
+                game.cities
+                    .get_mut(cid)
+                    .unwrap()
+                    .production_progress
+                    .remove(&key);
+                if observed.complete {
+                    continue;
+                }
+            }
+            let unique = state
+                .districts
+                .iter()
+                .filter(|other| {
+                    civvis_node_name(&game.rules.districts, &other.kind, "DISTRICT_").as_deref()
+                        == Some(name.as_str())
+                })
+                .count()
+                == 1;
+            let exact_foundation = game.map.tiles.get(&pos).is_some_and(|tile| {
+                tile.owner_city == Some(*cid)
+                    && tile
+                        .district_foundation
+                        .as_ref()
+                        .is_some_and(|foundation| foundation.district == district)
+            });
+            if !unique || !exact_foundation {
+                continue;
+            }
+            // Prefer the current positive menu. A tail row can also carry an
+            // observation, but a duplicate/conflicting type is not an identity.
+            let rows = state
+                .buildable
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .filter(|row| row.t.eq_ignore_ascii_case(&observed.kind))
+                .collect::<Vec<_>>();
+            let menu_progress = (rows.len() == 1).then(|| rows[0].pr).flatten();
+            let tail = state
+                .queue
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .filter(|row| row.t.eq_ignore_ascii_case(&observed.kind))
+                .collect::<Vec<_>>();
+            let tail_progress = (tail.len() == 1).then(|| tail[0].pr).flatten();
+            let reading = |value: f64| value.is_finite() && value >= 0.0;
+            let Some(progress) = menu_progress
+                .filter(|value| reading(*value))
+                .or_else(|| tail_progress.filter(|value| reading(*value)))
+            else {
+                continue; // Missing is unknown, not a fabricated zero or ETA-derived work.
+            };
+            // Fresh reconstruction plants the foundation before the host menu
+            // arrives. Its model-derived locked cost must not override the
+            // native price paired with this exact work observation. The host
+            // keeps the placed Campus quote fixed as research advances.
+            if rows.len() == 1 && rows[0].c.is_finite() && rows[0].c > 0.0 {
+                game.map
+                    .tiles
+                    .get_mut(&pos)
+                    .unwrap()
+                    .district_foundation
+                    .as_mut()
+                    .unwrap()
+                    .cost = rows[0].c;
+            }
+            if active_head {
+                continue;
+            }
+            let saved = &mut game.cities.get_mut(cid).unwrap().production_progress;
+            if progress == 0.0 {
+                saved.remove(&key);
+            } else {
+                saved.insert(key, progress);
+            }
+        }
+    }
+}
+
 fn blocked_production_from(
     refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     city_ids: &std::collections::BTreeMap<u32, i64>,
@@ -8664,7 +8882,7 @@ struct LiveSpySeat {
     ready_turn: u32,
 }
 
-fn seat_live_spies(game: &mut crate::game::Game) {
+fn seat_live_spies(game: &mut crate::game::Game, state: &StateSnapshot) {
     game.spies.retain(|_, spy| spy.owner != 0);
     let turn = game.turn;
     let live: Vec<LiveSpySeat> = game
@@ -8672,11 +8890,7 @@ fn seat_live_spies(game: &mut crate::game::Game) {
         .values()
         .filter(|unit| unit.owner == 0 && unit.kind == "spy")
         .map(|unit| {
-            let city = game
-                .cities
-                .iter()
-                .find(|(_, city)| city.pos == unit.pos)
-                .map(|(id, _)| *id);
+            let city = spy_posting::city_of(game, state, unit.id, unit.pos);
             // ★★★ THE HOST'S OWN OPERATION, WHEN IT CROSSED. Every seat 0 Spy
             // is re-seated fresh on every sync, so until the host's
             // `GetSpyOperation` reached this board a Spy on a mission read as
@@ -9846,6 +10060,24 @@ fn apply_player_ages(game: &mut crate::game::Game, state: &StateSnapshot) {
         // past its end is clamped rather than allowed to index out of range.
         game.world_era = (era as usize).min(crate::rules::ERA_NAMES.len() - 1);
     }
+    apply_era_countdown(game, state.era_countdown);
+}
+
+/// The host's era countdown as the model's `world_era_countdown_end`: the turn
+/// on which `Game::process_eras` opens the next era. The simulator advances the
+/// era at the start of turn `end`, so the old era's last turn is `end - 1`;
+/// Firaxis counts 0 on that last turn, hence `turn + countdown + 1`. A negative
+/// countdown (not started) clears it: the countdown always runs for
+/// `NEXT_ERA_COUNTDOWN_TURNS` once it starts, so an unstarted era cannot end
+/// inside `age-closer-2`'s window. An older export (`None`) leaves the model's
+/// own value alone.
+fn apply_era_countdown(game: &mut crate::game::Game, countdown: Option<i64>) {
+    let Some(countdown) = countdown else {
+        return;
+    };
+    game.world_era_countdown_end = u32::try_from(countdown)
+        .ok()
+        .map(|left| game.turn.saturating_add(left).saturating_add(1));
 }
 
 /// A Firaxis `COMMEMORATION_*` type as CIVVIS's dedication id — the same pairing
@@ -11459,6 +11691,10 @@ fn apply_observed_host_metrics(
             .or_default();
         observed.foreign_tourists = count(state.foreign_tourists);
         observed.domestic_tourists = count(state.domestic_tourists);
+        observed.culture_turns_to_victory = state
+            .culture_turns_to_victory
+            .is_finite()
+            .then_some(state.culture_turns_to_victory);
         // Match the local player's World Rankings science lane to the host
         // instead of treating its reconstructed fifty-light-year trip as fact.
         observed.science_victory_points = (state.science_victory_points.is_finite()
@@ -12234,6 +12470,7 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
         HostPhase::Finish,
         &[
             ("player_ages", BOTH, step_player_ages),
+            ("district_progress", BOTH, step_district_progress),
             ("record_host_observed", BOTH, step_record_host_observed),
         ],
     ),
@@ -12280,6 +12517,32 @@ pub(crate) fn host_step_names(mode: MirrorMode, phase: HostPhase) -> Vec<&'stati
 // --- the steps ----------------------------------------------------------
 // One body each, whatever the pass. A `ctx.mode` test inside a step is a real
 // difference between the two passes and carries its reason.
+
+fn step_district_progress(ctx: &mut HostStepCtx<'_>) {
+    let city_ids = ctx
+        .state
+        .cities
+        .iter()
+        .filter_map(|city| {
+            let cid = ctx.known_city_ids.get(&city.id).copied().or_else(|| {
+                // Older exports can lack a positive native city id. Their actual
+                // own-city centre still names the city planted in this same pass.
+                (city.id <= 0)
+                    .then(|| {
+                        ctx.game
+                            .city_at(crate::hex::offset_to_axial(city.x, city.y))
+                    })
+                    .flatten()
+            })?;
+            ctx.game
+                .cities
+                .get(&cid)
+                .is_some_and(|city| city.owner == 0)
+                .then_some((cid, city.id))
+        })
+        .collect();
+    apply_host_district_progress(ctx.game, &ctx.state.cities, &city_ids);
+}
 
 fn step_game_speed(ctx: &mut HostStepCtx<'_>) {
     if let Some(speed) = civvis_game_speed(&ctx.state.seat.speed) {
@@ -13602,7 +13865,7 @@ pub fn rebuild_from_state(
     let menus = host_menus_from(&state.cities, &city_ids, &game.rules);
     game.replace_host_unit_resource_prices(menus.unit_resource_prices);
     game.replace_host_menus(menus.buildable, menus.purchasable, menus.district_plots);
-    seat_live_spies(&mut game);
+    seat_live_spies(&mut game, state);
     block_live_spy_production(&mut game, state.spy_capacity);
     let blocked_purchases =
         blocked_production_from(&state.refused_purchases, &city_ids, &game.rules);
@@ -13626,7 +13889,9 @@ pub fn rebuild_from_state(
     game.host_previews = Arc::new(host_previews_from(&state.host_previews, &unit_ids));
 
     // The readings that must survive whatever the board passes scored on their
-    // way there. See `HOST_STATE_STEPS`.
+    // way there. See `HOST_STATE_STEPS`. Finish still needs the completed
+    // city-ID map: an own native city's positive ID must resolve on a fresh
+    // board just as it does in the persistent context used by sync.
     run_host_steps(
         &mut HostStepCtx::new(
             &mut game,
@@ -13635,7 +13900,8 @@ pub fn rebuild_from_state(
             &mut unmapped,
             &mut no_treasury,
             pass,
-        ),
+        )
+        .with_board(&known_city_ids, &minor_assignments, &seat_of_host),
         HostPhase::Finish,
     );
     Reconstruction {
@@ -15244,6 +15510,7 @@ impl LiveMirror {
                     // multi-item queue.  Clear even when the item is absent: a
                     // finished build is an empty queue in the real game, not the
                     // last thing CIVVIS happened to see.
+                    let had_assigned_production = !live.queue.is_empty();
                     live.queue.clear();
                     if let Some(item) = queued {
                         live.queue.push(item);
@@ -15255,6 +15522,13 @@ impl LiveMirror {
                     }
                     if city.production_progress.is_finite() && city.production_progress >= 0.0 {
                         live.production = city.production_progress;
+                    } else if had_assigned_production && live.queue.is_empty() {
+                        // A vanished head's old work is not observed overflow.
+                        // Keeping it would credit that completed item again when
+                        // an idle city resumes a paused district. This discards
+                        // stale assigned work, not an explicitly observed idle
+                        // balance; actual native overflow remains unknown.
+                        live.production = 0.0;
                     }
                     // Same translation as the rebuild path, and for the same reason:
                     // an untranslated name here panics `rules.buildings[..]` later.
@@ -15281,15 +15555,12 @@ impl LiveMirror {
             }
         }
 
-        // This host rule is permanent, unlike a recent refusal cooldown. Apply it after
-        // each replacement and after newly observed cities have been placed.
-        seat_live_spies(&mut self.game);
-        block_live_spy_production(&mut self.game, state.spy_capacity);
-
         // --- rivals ----------------------------------------------------------
         // Rebuilt wholesale: what we can see of them is fog-dependent and they carry
         // no plan of ours worth preserving.
         if skip_rivals {
+            seat_live_spies(&mut self.game, state);
+            block_live_spy_production(&mut self.game, state.spy_capacity);
             apply_governor_state(&mut self.game, state, &mut self.unmapped);
             apply_great_person_points(&mut self.game, state, &mut self.unmapped);
             apply_strategic_stockpiles(&mut self.game, state, &mut self.unmapped);
@@ -15676,6 +15947,10 @@ impl LiveMirror {
         .with_board(&self.known_city_ids, &minor_assignments, &seat_of_host);
         run_host_steps(&mut ctx, HostPhase::Board);
         run_host_steps(&mut ctx, HostPhase::Finish);
+        // The posting can name a newly observed foreign city. Resolve it
+        // after the same whole-board reconstruction as the district itself.
+        seat_live_spies(&mut self.game, state);
+        block_live_spy_production(&mut self.game, state.spy_capacity);
     }
 }
 

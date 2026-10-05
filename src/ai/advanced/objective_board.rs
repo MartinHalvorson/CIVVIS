@@ -304,6 +304,9 @@ pub enum ObjectiveKey {
     Deter(u32),
     /// A sector, by index.
     Recon(u32),
+    /// `find-the-capital`: the hunt for a rival's unseen original capital,
+    /// by the rival's seat.
+    FindCapital(usize),
     /// The leftovers.
     Reserve,
 }
@@ -485,6 +488,9 @@ struct UnitFacts {
     ranged: bool,
     siege: bool,
     recon: bool,
+    /// A fast land body (`UnitDoctrine::Mobile`): it may hunt an unseen
+    /// capital under `find-the-capital`.
+    mobile: bool,
 }
 
 impl UnitFacts {
@@ -506,6 +512,7 @@ impl UnitFacts {
             ranged: ranged_attack && !spec.siege,
             siege: ranged_attack && spec.siege,
             recon: BasicAi::unit_doctrine(g, uid) == UnitDoctrine::Recon,
+            mobile: BasicAi::unit_doctrine(g, uid) == UnitDoctrine::Mobile,
         }
     }
 
@@ -1522,6 +1529,16 @@ impl AdvancedAi {
                 });
             }
         }
+        // `find-the-capital`: the hunt for an unseen rival capital a
+        // Domination plan needs, once that rival's ground is open to us.
+        if self.find_the_capital && !arena {
+            if let Some(row) = self.find_capital_row(g, pid) {
+                think!(self.journal(), Military, Detail,
+                    "Hunting {}", row.label;
+                    "Domination needs that original capital and it has never been seen; the nearest fog in the middle of their known ground is at {:?}", row.at; row.at);
+                rows.push(row);
+            }
+        }
         rows
     }
 
@@ -1729,7 +1746,11 @@ impl AdvancedAi {
                         if unit.domain != domain {
                             continue;
                         }
-                        if row.kind == ObjectiveKind::Recon && !unit.recon {
+                        if row.kind == ObjectiveKind::Recon
+                            && !unit.recon
+                            // `find-the-capital`: a fast body may hunt it too.
+                            && !(unit.mobile && matches!(row.key, ObjectiveKey::FindCapital(_)))
+                        {
                             continue;
                         }
                         if unit.recon

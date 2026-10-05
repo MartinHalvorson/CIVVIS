@@ -170,7 +170,12 @@ local function fakeQueue(behaviour)
 	end
 	function queue:GetUnitProgress(index) return 7 end
 	function queue:GetBuildingProgress(index) return 0 end
-	function queue:GetDistrictProgress(index) return 0 end
+	function queue:GetDistrictProgress(index)
+		assert(index == 1 or index == 2, "district progress takes an INDEX, never a hash")
+		if behaviour.progressRaise then error("unavailable") end
+		if behaviour.progressMissing then return nil end
+		return behaviour.progress or 0
+	end
 	function queue:GetProjectProgress(index) return 0 end
 	return queue
 end
@@ -228,6 +233,15 @@ check("…with the plot count", campus.n, 2)
 check("…and the plots", campus.s and #campus.s, 2)
 check("…as offset x", campus.s and campus.s[1].x, 11)
 check("…and offset y", campus.s and campus.s[1].y, 12)
+check("district progress preserves explicit zero", campus.pr, 0)
+local savedCampus = find(menus.buildable(fakeCity(fakeQueue({ progress = 40 }))), "DISTRICT_CAMPUS") or {}
+check("paused district work crosses by index", savedCampus.pr, 40)
+local raisingProgress = find(menus.buildable(fakeCity(fakeQueue({ progressRaise = true }))), "DISTRICT_CAMPUS") or {}
+check("failed progress accessor stays unknown", raisingProgress.pr, nil)
+check("failed progress accessor does not discard the menu row", raisingProgress.c, 51)
+local missingProgress = find(menus.buildable(fakeCity(fakeQueue({ progressMissing = true }))), "DISTRICT_CAMPUS") or {}
+check("missing progress stays unknown", missingProgress.pr, nil)
+check("unit progress is not inferred from district work", (find(buildable, "UNIT_WARRIOR") or {}).pr, nil)
 check("a project crosses", (find(buildable, "PROJECT_ENHANCE_DISTRICT_CAMPUS") or {}).c, 15)
 check("a building crosses", (find(buildable, "BUILDING_GRANARY") or {}).c, 120)
 local count = 0

@@ -1,0 +1,8 @@
+{
+  "at": "2026-10-05T00:54:58.015273+00:00",
+  "accepted_improvements_matching_reservation": 27,
+  "matching_guard_at_destination_next_frame": 25,
+  "guard_observation_scope": "Position at next world-turn observation, after opponents acted; this does not directly observe every guard at the instant of improvement",
+  "controls_equal_previous_actions_and_final_worlds": true,
+  "decision": "Reject: Deity scored T75 Production fell 5.874454514937899%; no fresh sample played"
+}

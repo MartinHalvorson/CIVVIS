@@ -1,0 +1,58 @@
+{
+  "purpose": "Consumed repaired-executor opening diagnostics; no fresh production claim",
+  "actual_Firaxis_verification": false,
+  "games": [
+    {
+      "seed": 61007901,
+      "difficulty": "deity",
+      "actions": 27194,
+      "reference_equal": {
+        "actions": true,
+        "final": true
+      },
+      "rounds": 125,
+      "planning_thoughts": 2656,
+      "journal_ids_contiguous": true,
+      "maximum_ring_evictions": 0,
+      "maximum_turn_truncations": 0,
+      "raw_sha256": {
+        "civvis-production-builder-opening-deity-61007901-trace-actions.json": "17e26bde98d84c0ec97002e8dd2da99401ab9473e0008e04d46ee1277bd4547d",
+        "civvis-production-builder-opening-deity-61007901-trace-cities.jsonl": "2542a6795aef7ced7a3105fbb00611f45107e64edef1e69b04142aa6eab29b4f",
+        "civvis-production-builder-opening-deity-61007901-trace-final.json": "c1b4968e7ff70084632c4931a8b995715505faf1546ea62e31d37a54a1f04a34",
+        "civvis-production-builder-opening-deity-61007901-trace-rounds.jsonl": "e93487ece9e96c10af53dd1b4559270a35374d43d554fcc594796cfea37f12f0",
+        "civvis-production-builder-opening-deity-61007901-trace-setup.json": "df1c6d8afe99546375dc85ecc86b578be063ffb6b89021627627d6c89ff0fe94",
+        "civvis-production-builder-opening-deity-61007901-trace-view-t25.json": "2c7e1440e1a3a7ae6e515d78751e51353dd5f6a1628348483b24dea8e2352864",
+        "civvis-production-builder-opening-deity-61007901-trace-view-t50.json": "2cea86c9076dcb3789fcb6c96a32898eff21a5b3845a0ee92f8f97b2ac69083e",
+        "civvis-production-builder-opening-deity-61007901-trace-view-t75.json": "8217bd258977144ef7bd529f9412d8956fb5de0a10cc99df3daa8f3990075eb1",
+        "civvis-production-builder-opening-deity-61007901-trace.csv": "21d1e3171ffc49ca9580443f80f80b25714c0586d725d584162e61e15a6bb4b9",
+        "civvis-production-builder-opening-deity-61007901-trace.stderr": "f7ad2ad12a2d7aaf6d71c93225cb258e415fc5968a3ffda825e54d519310057b"
+      }
+    },
+    {
+      "seed": 61007903,
+      "difficulty": "deity",
+      "actions": 22992,
+      "reference_equal": {
+        "actions": true,
+        "final": true
+      },
+      "rounds": 106,
+      "planning_thoughts": 4031,
+      "journal_ids_contiguous": true,
+      "maximum_ring_evictions": 0,
+      "maximum_turn_truncations": 0,
+      "raw_sha256": {
+        "civvis-production-builder-opening-deity-61007903-trace-actions.json": "085d1c13a0c5f6bda94d707d522de1360a515e530c69c94f4c2ed070ea107766",
+        "civvis-production-builder-opening-deity-61007903-trace-cities.jsonl": "dee0f1e41b5100f316f687208c0e80614266dcef03ae8f486aa59f5e41736854",
+        "civvis-production-builder-opening-deity-61007903-trace-final.json": "11dce413622f8ef6b59044b036a7ccea2e5c3a674905e6a3e1d9cb57d6154ba0",
+        "civvis-production-builder-opening-deity-61007903-trace-rounds.jsonl": "6c8976329751ae37e7a6e9538ac80ad9037ffd6bdc1108b65dae42ac7ff9ff4e",
+        "civvis-production-builder-opening-deity-61007903-trace-setup.json": "b76fc8a4b0f01826e2bab8693136889dab27cdccd2ca7b98896cadcc96373d5b",
+        "civvis-production-builder-opening-deity-61007903-trace-view-t25.json": "d459828931c3fd17e1c1ccb646d6886fa09f2f1606cc3f3fd34da6c739d58ba1",
+        "civvis-production-builder-opening-deity-61007903-trace-view-t50.json": "e768003175b4202ad9b39472d77fca2ea3eb096425fd25a5d6f36933d492c964",
+        "civvis-production-builder-opening-deity-61007903-trace-view-t75.json": "c1aa2f334d9267ab486627b91a5c638fd4007b4a4aa344dc70af3416a3ad030b",
+        "civvis-production-builder-opening-deity-61007903-trace.csv": "771011e473fb066d57d500566939b3b30e2d67247e98eafe79e53cc01c5066ca",
+        "civvis-production-builder-opening-deity-61007903-trace.stderr": "8b5059ea33ad348685f31577627449cf86f1a53175a9eb91c17275750a0b6672"
+      }
+    }
+  ]
+}

@@ -1,0 +1,163 @@
+{
+  "decision": "reject: no production gain or additional Builder purchases; Deity advance thresholds failed",
+  "made_at": "2026-10-04T15:20:44.999436+00:00",
+  "pilot_games": 16,
+  "confirmation_games": 0,
+  "fresh_seeds_consumed": {
+    "emperor": [
+      61007000,
+      61007001,
+      61007002,
+      61007003
+    ],
+    "deity": [
+      61007100,
+      61007101,
+      61007102,
+      61007103
+    ]
+  },
+  "records": [
+    {
+      "difficulty": "emperor",
+      "seed": 61007000,
+      "final_byte_identical": true,
+      "actions_byte_identical": true,
+      "executed_actions_per_arm": 31464
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61007001,
+      "final_byte_identical": true,
+      "actions_byte_identical": true,
+      "executed_actions_per_arm": 28447
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61007002,
+      "final_byte_identical": true,
+      "actions_byte_identical": true,
+      "executed_actions_per_arm": 7848
+    },
+    {
+      "difficulty": "emperor",
+      "seed": 61007003,
+      "final_byte_identical": true,
+      "actions_byte_identical": true,
+      "executed_actions_per_arm": 16940
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61007100,
+      "final_byte_identical": true,
+      "actions_byte_identical": true,
+      "executed_actions_per_arm": 35022
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61007101,
+      "final_byte_identical": true,
+      "actions_byte_identical": true,
+      "executed_actions_per_arm": 19936
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61007102,
+      "final_byte_identical": true,
+      "actions_byte_identical": true,
+      "executed_actions_per_arm": 38241
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61007103,
+      "final_byte_identical": true,
+      "actions_byte_identical": true,
+      "executed_actions_per_arm": 37705
+    }
+  ],
+  "production_to_strongest_rival": {
+    "emperor": {
+      "75": {
+        "control": {
+          "mean": 0.5373215344045082,
+          "games": 3
+        },
+        "candidate": {
+          "mean": 0.5373215344045082,
+          "games": 3
+        }
+      },
+      "100": {
+        "control": {
+          "mean": 0.6935677951316578,
+          "games": 3
+        },
+        "candidate": {
+          "mean": 0.6935677951316578,
+          "games": 3
+        }
+      }
+    },
+    "deity": {
+      "75": {
+        "control": {
+          "mean": 0.14397529651911659,
+          "games": 4
+        },
+        "candidate": {
+          "mean": 0.14397529651911659,
+          "games": 4
+        }
+      },
+      "100": {
+        "control": {
+          "mean": 0.12061019842116492,
+          "games": 4
+        },
+        "candidate": {
+          "mean": 0.12061019842116492,
+          "games": 4
+        }
+      }
+    }
+  },
+  "durable_raw_evidence": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/coverage/pilot",
+  "raw_sha256": {
+    "civvis-production-growth-coverage-pilot-deity-61007100-candidate-actions.json": "af293d7e849ceef0b04168eb7ae4951c584e77c523900fb740ca0046c2f67915",
+    "civvis-production-growth-coverage-pilot-deity-61007100-candidate-final.json": "2f981bac26ef1e639c3393bedc7d2b981d61751d064f263f0b1549fef7ce9cc8",
+    "civvis-production-growth-coverage-pilot-deity-61007100-control-actions.json": "af293d7e849ceef0b04168eb7ae4951c584e77c523900fb740ca0046c2f67915",
+    "civvis-production-growth-coverage-pilot-deity-61007100-control-final.json": "2f981bac26ef1e639c3393bedc7d2b981d61751d064f263f0b1549fef7ce9cc8",
+    "civvis-production-growth-coverage-pilot-deity-61007101-candidate-actions.json": "5db7ca0c8df31528e23ba874d7e5a2a88ab1e83cfbd0d6a6378f3451e21792a0",
+    "civvis-production-growth-coverage-pilot-deity-61007101-candidate-final.json": "df25657d227f66c32a5688886330c4051f39cc5d576eb56d8403eed5f6d4e901",
+    "civvis-production-growth-coverage-pilot-deity-61007101-control-actions.json": "5db7ca0c8df31528e23ba874d7e5a2a88ab1e83cfbd0d6a6378f3451e21792a0",
+    "civvis-production-growth-coverage-pilot-deity-61007101-control-final.json": "df25657d227f66c32a5688886330c4051f39cc5d576eb56d8403eed5f6d4e901",
+    "civvis-production-growth-coverage-pilot-deity-61007102-candidate-actions.json": "b22eacdffdeaff2a6cd337e9400fa2b861598254c8896538067cb65a360ce8e7",
+    "civvis-production-growth-coverage-pilot-deity-61007102-candidate-final.json": "8929f06a6cc9f011dbc17b380cb3312e55b0d196a42188905ed80a4cab311534",
+    "civvis-production-growth-coverage-pilot-deity-61007102-control-actions.json": "b22eacdffdeaff2a6cd337e9400fa2b861598254c8896538067cb65a360ce8e7",
+    "civvis-production-growth-coverage-pilot-deity-61007102-control-final.json": "8929f06a6cc9f011dbc17b380cb3312e55b0d196a42188905ed80a4cab311534",
+    "civvis-production-growth-coverage-pilot-deity-61007103-candidate-actions.json": "afa190c096fb99eb72a1fdd6b50baf7e36b9b11474f953def5720235593f2c2b",
+    "civvis-production-growth-coverage-pilot-deity-61007103-candidate-final.json": "778fc28c9737af8ca06dd2e95b82da4c91055e108e6ef1ceb250b8251dcc7e4b",
+    "civvis-production-growth-coverage-pilot-deity-61007103-control-actions.json": "afa190c096fb99eb72a1fdd6b50baf7e36b9b11474f953def5720235593f2c2b",
+    "civvis-production-growth-coverage-pilot-deity-61007103-control-final.json": "778fc28c9737af8ca06dd2e95b82da4c91055e108e6ef1ceb250b8251dcc7e4b",
+    "civvis-production-growth-coverage-pilot-emperor-61007000-candidate-actions.json": "5d284c349aa3fa4fe79955d31989e9e5d8652e1fe5d3c8d375ce8a1e71326739",
+    "civvis-production-growth-coverage-pilot-emperor-61007000-candidate-final.json": "ca16e122ddb489d01a52b1ed61869fe390fe98c5be552b938e290865d647e5bc",
+    "civvis-production-growth-coverage-pilot-emperor-61007000-control-actions.json": "5d284c349aa3fa4fe79955d31989e9e5d8652e1fe5d3c8d375ce8a1e71326739",
+    "civvis-production-growth-coverage-pilot-emperor-61007000-control-final.json": "ca16e122ddb489d01a52b1ed61869fe390fe98c5be552b938e290865d647e5bc",
+    "civvis-production-growth-coverage-pilot-emperor-61007001-candidate-actions.json": "f73124e48ffa752188a64e8302e95c3045beae90482a9f46b163e49b447d4b36",
+    "civvis-production-growth-coverage-pilot-emperor-61007001-candidate-final.json": "7a15dc5d721e65e45c03f84cfb9cb5b6fccbc9dcd7d3e852f00498380094ed6e",
+    "civvis-production-growth-coverage-pilot-emperor-61007001-control-actions.json": "f73124e48ffa752188a64e8302e95c3045beae90482a9f46b163e49b447d4b36",
+    "civvis-production-growth-coverage-pilot-emperor-61007001-control-final.json": "7a15dc5d721e65e45c03f84cfb9cb5b6fccbc9dcd7d3e852f00498380094ed6e",
+    "civvis-production-growth-coverage-pilot-emperor-61007002-candidate-actions.json": "b504898836171697f39c48c7c2980fb7413d39c708e4e67ddb895cd369876dba",
+    "civvis-production-growth-coverage-pilot-emperor-61007002-candidate-final.json": "8457dbea1106717b7b1c0d66a657da755b203241fb4348cdd7a242ba725c543d",
+    "civvis-production-growth-coverage-pilot-emperor-61007002-control-actions.json": "b504898836171697f39c48c7c2980fb7413d39c708e4e67ddb895cd369876dba",
+    "civvis-production-growth-coverage-pilot-emperor-61007002-control-final.json": "8457dbea1106717b7b1c0d66a657da755b203241fb4348cdd7a242ba725c543d",
+    "civvis-production-growth-coverage-pilot-emperor-61007003-candidate-actions.json": "1dff59382806613fae77271be260fb6af3b5c9f60249e8c546e85bbddf0bd1d8",
+    "civvis-production-growth-coverage-pilot-emperor-61007003-candidate-final.json": "bfae76b2ddc7c29766055cfc12de3b6049715d0070a25ee6304488c635f16136",
+    "civvis-production-growth-coverage-pilot-emperor-61007003-control-actions.json": "1dff59382806613fae77271be260fb6af3b5c9f60249e8c546e85bbddf0bd1d8",
+    "civvis-production-growth-coverage-pilot-emperor-61007003-control-final.json": "bfae76b2ddc7c29766055cfc12de3b6049715d0070a25ee6304488c635f16136"
+  },
+  "runtime_promotion": false,
+  "high_level_parity_established": false,
+  "confirmation_reserved_unplayed": true,
+  "prototype_checkpoint": "ab5066a9f"
+}

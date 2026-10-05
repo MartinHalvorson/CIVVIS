@@ -1,0 +1,23 @@
+{
+  "frozen_at": "2026-10-05T01:07:45.498482+00:00",
+  "purpose": "Passive existing Trader route/growth coverage; no decision changes or fresh strength",
+  "configuration": "Public targeted Domination live bridge, stock adaptive rivals; 4p60x38 Pangaea Online150 six city states Gran Colombia focal, focal handicap-exempt",
+  "consumed_diagnostics": {
+    "emperor": [
+      61008600,
+      61008601,
+      61008602,
+      61008603
+    ],
+    "deity": [
+      61008700,
+      61008701,
+      61008702,
+      61008703
+    ]
+  },
+  "observer": "Before every world turn record focal active routes, their modeled destination payload, and actual legal route actions for existing idle Traders with origin food/housing/amenity/income state. Original AI makes every decision. Both growth-to-district and all other existing settings remain their unchanged baseline values. Removed escort API is asserted false in the frozen library.",
+  "equivalence_gate": "All eight baseline action histories and final saves must reproduce preceding controls byte for byte. No mutation or fresh evaluation is authorized by a coverage result.",
+  "fresh_samples_played": 0,
+  "actual_Firaxis_verification": false
+}

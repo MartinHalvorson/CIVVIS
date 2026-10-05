@@ -515,6 +515,10 @@ class FreshnessTests(unittest.TestCase):
                          collab.shlex.quote(str(worker))):
             self.assertIn(expected, script)
         self.assertEqual(payload["StartInterval"], collab.FRESHNESS_INTERVAL_SECONDS)
+        # Not `Background`: on Apple silicon that band all but stops a job
+        # under load, and a refresh that outlives StartInterval holds the
+        # refresh lock every `start` needs (mbp-m5-max-128, 2026-10-04).
+        self.assertEqual(payload["ProcessType"], "Interactive")
         # ⚠ Nothing in the plist may name a path inside the clone: launchd
         # resolves these BEFORE spawning, and a job that cannot spawn once the
         # clone is deleted can never run its own self-cleanup.

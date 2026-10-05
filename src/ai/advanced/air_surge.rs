@@ -1695,6 +1695,21 @@ impl AdvancedAi {
                 }
             }
         }
+        // `capital-prey-opens-a-front-2`: a collapsed rival's capital the plan
+        // already aims at is not traded for the wing's objective either; in
+        // game 111 the surge's Persia overrode every campaign while Spain held
+        // 49 military beside 1,080.
+        if self.capital_prey_opens_a_front_2
+            && plan.target_player.is_some_and(|rival| {
+                rival != surge.target_player
+                    && self
+                        .capital_prey_beside_the_front(g, pid, self.one_war_front())
+                        .0
+                        == Some(rival)
+            })
+        {
+            return;
+        }
         if plan.strategy != GrandStrategy::Recovery {
             plan.strategy = GrandStrategy::Conquest;
             plan.target_player = Some(surge.target_player);
@@ -2453,7 +2468,16 @@ impl AdvancedAi {
             // whether the surge joined this war or declared it itself.
             return false;
         }
-        if self.urgent_victory_threat(g, target) {
+        // `air-surge-strikes-through-urgency`: a wing ready to strike answers
+        // the clock itself. Releasing it hands the war to the ordinary
+        // declaration, which waits on a ground army staged at the surge's
+        // objective. Live King civvis-20261005T080337Z (game 111) reached
+        // Strike on Persia, an urgent rival at parity, by turn 185, then held
+        // "the army has not finished staging" every turn to 200 with no Siege
+        // row on the board, and declared no war all game (diagnosed by -60).
+        if self.urgent_victory_threat(g, target)
+            && !(self.air_surge_strikes_through_urgency && plan.phase == AirSurgePhase::Strike)
+        {
             // Denial may need the staged ground army before the wing is
             // ready. Release the declaration hold without throwing away its
             // research and production. Ordinary diplomacy still checks the

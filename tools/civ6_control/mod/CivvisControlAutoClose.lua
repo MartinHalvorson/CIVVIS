@@ -230,9 +230,12 @@ local function installEventLedger()
 			ui.CivvisEventLedger = true;
 		end);
 		local took = false;
+		-- `==`, not rawequal: Havok Script's sandbox has no rawequal (G89,
+		-- 2026-10-05: every context threw here after a successful swap).
+		-- Neither side has __eq, so this is identity.
 		pcall(function()
-			took = rawequal(ui.ReferenceCurrentEvent, wrappedReference)
-				and rawequal(ui.ReleaseEventID, wrappedRelease);
+			took = ui.ReferenceCurrentEvent == wrappedReference
+				and ui.ReleaseEventID == wrappedRelease;
 		end);
 		if wrote and took then return true, "direct", kind, nil; end
 		-- Undo a partial write before shadowing.
@@ -251,13 +254,19 @@ local function installEventLedger()
 	end);
 	if proxy == nil then return false, "none", kind, "proxy_not_built"; end
 	local swapped = pcall(function() UI = proxy; end);
-	if swapped and rawequal(UI, proxy) then return true, "proxy", kind, nil; end
+	local current = nil;
+	pcall(function() current = UI; end);
+	if swapped and current == proxy then return true, "proxy", kind, nil; end
 	pcall(function() UI = ui; end);
 	return false, "none", kind, "global_not_replaced";
 end
 do
 	local ran, installed, how, uiType, why = pcall(installEventLedger);
-	if not ran then installed, how, why = false, "none", "threw"; end
+	if not ran then
+		-- `installed` holds the error message when the install raised.
+		why = "threw: " .. tostring(installed):gsub('["\\]', "'");
+		installed, how, uiType = false, "none", type(UI);
+	end
 	report("event_ledger", string.format(',"installed":%s,"how":"%s","ui_type":"%s","exposed":"%s"%s',
 		tostring(installed == true), tostring(how), tostring(uiType), type(ExposedMembers),
 		why and string.format(',"why":"%s"', tostring(why)) or ""));

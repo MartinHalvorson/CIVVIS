@@ -534,6 +534,17 @@ const RUSH_STAGING_RANGE: i32 = 3;
 /// How far `denial_reaches_far` lets an urgent denial war reach: half of the
 /// four-player Tiny Pangaea's 60-tile wrapped width.
 pub(crate) const DENIAL_FAR_REACH_TILES: i32 = 30;
+
+/// `peace-asks-a-city`: the military ratio over the rival from which a white
+/// peace offer also asks it to cede a town. 70 October live games offered
+/// peace at three times the rival's power or more 239 times (187 "one war at
+/// a time", 41 "the required capital is secure"), all white, 20 accepted the
+/// next turn; a Civilization VI rival that is losing may cede a town.
+pub(crate) const PEACE_CITY_ASK_RATIO: f64 = 3.0;
+
+/// `denial-keeps-its-rival`: the pressure points (of 100) another rival must
+/// lead the incumbent counter rival by to take the counter from it.
+pub(crate) const DENIAL_SWAP_MARGIN: i32 = 10;
 /// Our military over the urgent rival's at which the far reach opens.
 pub(crate) const DENIAL_FAR_REACH_RATIO: f64 = 3.0;
 /// A first capture this far from home can become a usable forward base before
@@ -2035,6 +2046,8 @@ pub struct AdvancedAi {
     peace_offers: BTreeSet<usize>,
     /// The offers above the planner is routed on; see `AiReport::peace_routed`.
     peace_routed: BTreeSet<usize>,
+    /// See `PlanReport::peace_asks_city`.
+    peace_asks_city: BTreeSet<usize>,
     victory_planning: bool,
     victory_target: Option<VictoryTarget>,
     forced_target_player: Option<usize>,
@@ -3333,6 +3346,19 @@ pub struct AdvancedAi {
     /// `denial-nearest-finish`: each rival's recent (turn, foreign tourists,
     /// bar) readings. See `AdvancedAi::record_culture_curves`.
     culture_curves: BTreeMap<usize, Vec<(u32, i64, i64)>>,
+    /// `culture-reads-the-engine-clock`: each rival's recent valid engine
+    /// readings as (turn read, projected finish turn). See
+    /// `denial_nearest_finish::engine_culture_clock`.
+    engine_culture_finish: BTreeMap<usize, Vec<(u32, f64)>>,
+    /// `prey-reads-a-steady-power`: each rival's recent military readings.
+    /// See `one_war::steady_rival_power`.
+    rival_power_seen: BTreeMap<usize, Vec<(u32, f64)>>,
+    /// `second-front-keeps-its-war`: the last turn the plan named each rival
+    /// its second front. See `one_war::second_front_recently_named`.
+    second_front_named: BTreeMap<usize, u32>,
+    /// `recovery-peace-waits`: the first turn of the current Recovery plan.
+    /// See `one_war::recovery_peace_ready`.
+    recovery_since: Option<u32>,
 
     /// Whether the empire will open an **ancient rush**: pick the nearest
     /// weak neighbour before the walls go up, march a small stack to their
@@ -5021,6 +5047,39 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `breach-reads-the-air`: our aircraft with a bombard strength based
+    /// within strike range of a walled city we besiege count toward its
+    /// breach reading and damage budget, at their expected wall damage a
+    /// turn; walls they have brought below half count as a breach at hand.
+    /// Live King civvis-20261005T060002Z (game 104) read "0 gun(s) fit ...
+    /// nothing to open the walls" at Sparta on 28 of 34 turns while Bombers
+    /// took its walls from 400 to 153. See `siege_train::air_breach_walls`.
+    /// Off by default.
+    breach_reads_the_air: bool,
+    /// `breach-counts-nearby-guns`: a fit siege gun of ours within
+    /// `siege_train::STAGING_FAR` of a walled city a land force of ours
+    /// besieges is that siege's breaker, whatever row the board gave it: it
+    /// counts in the city's breach reading, damage budget and posts, and takes
+    /// that siege's orders. One gun serves one city, the nearest. Live King
+    /// civvis-20261005T051413Z (game 102) held Toronto's 400 walls in Stage
+    /// reading "0 gun(s) fit" while three healthy Bombards of Uruk's force
+    /// stood four and five tiles from it. See `siege_train::nearby_gun_city`.
+    /// A gun the battle planner still holds recovering counts as a breaker
+    /// once back at `battle_planner::ROTATE_HP`; it still returns to a post
+    /// only at `RETURN_HP` (`siege_train::breach_gun_fit`). Off by default.
+    breach_counts_nearby_guns: bool,
+    /// `air-volley-needs-a-road`: a cavalry-free volley at a city whose walls
+    /// are already down flies only when a melee body can walk to it in two
+    /// turns. See `air_city_assault::air_assault_followup_routed`.
+    air_volley_needs_a_road: bool,
+    /// `bleeding-capital-loyalty`: Limitanei while a captured original
+    /// capital bleeds, and Victor first for a short runway. See
+    /// `one_war::bleeding_capital`.
+    bleeding_capital_loyalty: bool,
+    /// `air-surge-strikes-through-urgency`: a wing in Strike keeps its own
+    /// declaration when the target's clock turns urgent. See
+    /// `air_surge::air_surge_opening`.
+    air_surge_strikes_through_urgency: bool,
     /// `breakers-stay-with-the-siege`: while a walled Siege row asks the
     /// Objective Board for guns, a siege gun serves only Siege rows and the
     /// Reserve, never a Defend, Relieve, Destroy, Escort or camp row. See
@@ -5086,6 +5145,9 @@ pub struct AdvancedAi {
     /// Count local repair jobs as well as new improvements when replacing
     /// a lost Builder, retaining v2's three-job threshold.
     builder_workforce_recovery_3: bool,
+    /// Accepted replacement Builder reservation, retained through replanning
+    /// in its starting turn before any production has been invested.
+    builder_workforce_reservation: RefCell<Option<(u32, u32)>>,
     /// `anvil`: the land group nearest a threatened city of ours holds it
     /// as a formation — a shooter on the centre, melee on the front tiles,
     /// the rest within two — instead of the relief hold point. Opt-in gene;
@@ -5275,12 +5337,71 @@ pub struct AdvancedAi {
     /// `BREAKER_FASTEST_RATIO`, not by eight turns and half again. Opt-in gene
     /// `breaker-to-the-fastest`; see `siege_production.rs`.
     breaker_to_the_fastest: bool,
+    /// `age-closer-spends-the-reserve`: inside `age-closer-2`'s deadline
+    /// window, a Great Person purchase that the lookahead verifies closes the
+    /// Dark Age may spend the gold operating reserve down to a deficit floor
+    /// (five turns of negative income, else nothing). Live King
+    /// civvis-20261005T080337Z (G111) missed a Normal Age by ONE point with a
+    /// 650-gold reserve (10 cities) against banks of 378-485. Off by default.
+    age_closer_spends_the_reserve: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `counterweight-faith-is-no-threat`: a faith holding our majority is our
+    /// counterweight, not the threat, while a stronger faith stands in our
+    /// cities. See `adopted_faith_sanctuary::stronger_faith_than`.
+    counterweight_faith_is_no_threat: bool,
+    /// `capital-prey-scales-the-walls`: a prey capital at peace may stand
+    /// behind more wall the further its army has collapsed. See
+    /// `one_war::capital_prey_walls`.
+    capital_prey_scales_the_walls: bool,
+    /// `culture-reads-the-engine-clock`: the culture clocks and the culture
+    /// pressure read the host's own turns to a Culture Victory when observed.
+    /// See `denial_nearest_finish::engine_culture_clock`.
+    culture_reads_the_engine_clock: bool,
+    /// `capital-prey-opens-a-front-2`: version one, and the prey also takes
+    /// the campaign at peace, and a deeply collapsed prey reaches past the
+    /// declaration range. See `one_war::capital_prey_reaches_far`.
+    capital_prey_opens_a_front_2: bool,
+    /// The gates each capital-prey near miss last failed and the turn it was
+    /// journalled, so the journal repeats a miss once per
+    /// `CAPITAL_PREY_NOTE_TURNS`. See `one_war::journal_capital_prey`.
+    capital_prey_noted: BTreeMap<usize, (&'static str, u32)>,
+    /// `capture-holds-the-ring`: a capture lands only when it can be held,
+    /// the army holds the captured city's ring for a turn, or marches on the
+    /// loyalty pressure that would flip it. See `siege_train::capture_hold`.
+    capture_holds_the_ring: bool,
+    /// `capture-holds-the-ring`: the turn each captured city of ours was
+    /// first seen, by position (live ids churn).
+    capture_hold_seen: BTreeMap<Pos, u32>,
+    /// `capture-holds-the-ring`: a captured city whose loyalty runs out
+    /// first, and the hostile city whose pressure drives it, by position.
+    capture_loyalty_prey: BTreeMap<Pos, u32>,
+    /// `culture-finish-at-the-observed-bar`: the clocks that weigh a
+    /// culture finish against a march read it at [`CULTURE_OBSERVED_BAR`] of
+    /// the exported bar. See `denial_nearest_finish::projected_culture_finish_at`.
+    culture_finish_at_the_observed_bar: bool,
+    /// `denial-keeps-its-rival`: the counter keeps last turn's rival unless
+    /// another leads it by [`DENIAL_SWAP_MARGIN`]. See
+    /// `victory_heuristics::actionable_victory_denial_with_culture_pressures`.
+    denial_keeps_its_rival: bool,
+    /// The actionable denial rival this empire chose at the start of the
+    /// turn, read by `denial-keeps-its-rival` on the next.
+    denial_incumbent: Option<usize>,
+    /// `capital-prey-opens-a-front`: a collapsed rival's lightly walled
+    /// original capital opens a second front beside the burning war. See
+    /// `one_war::capital_prey_beside_the_front`. Off by default.
+    capital_prey_opens_a_front: bool,
     /// `conquest-opening-needs-the-production`: the early conquest opening
     /// names its target only when the capital can raise and march the strike
     /// force inside the window the opening would get. See
     /// `early_conquest::conquest_force_estimate`. Off by default.
     conquest_opening_needs_the_production: bool,
+    /// `conquest-opening-stays-near`: the early conquest opening names only a
+    /// city within [`early_conquest::CONQUEST_NEAR_REACH_TILES`] of our
+    /// capital. See `AdvancedAi::conquest_reach`. Off by default.
+    conquest_opening_stays_near: bool,
+    /// `conquest-opening-stays-near`: the turn the opening last journalled a
+    /// city it left alone as too far.
+    conquest_near_noted: Option<u32>,
     /// `dialogue-never-declares-war`: the controller's dialogue closer never
     /// answers a leader statement with a choice whose diplomatic action
     /// declares war. Live King civvis-20261005T045443Z (game 101) answered
@@ -5289,6 +5410,14 @@ pub struct AdvancedAi {
     /// was holding off. The board's own `war` order stays the only way in. See
     /// `CivvisControlAutoClose.lua`. Off by default.
     dialogue_never_declares_war: bool,
+    /// `declaration-waits-for-the-breaker`: a staged war on a walled
+    /// objective waits until a breaker stands on its ring. See
+    /// `siege_train::declaration_breaker_at_hand`. Off by default.
+    declaration_waits_for_the_breaker: bool,
+    /// `declaration-waits-for-the-breaker`: the objective tile the
+    /// declaration first held on for a breaker, and that turn. See
+    /// `siege_train::declaration_hold_patience`.
+    declaration_breaker_hold: Option<(Pos, u32)>,
     /// `capital-defense-holds`: a damaged city of ours with a hostile beside
     /// it keeps its Defend row whatever the pressure ratio reads, and a
     /// capital we hold under attack is an urgent Defend that outranks every
@@ -5361,6 +5490,10 @@ pub struct AdvancedAi {
     /// ahead of the Harbor. Opt-in gene `culture-defense-theater`; see
     /// `BasicAi::culture_defense_theater`.
     culture_defense_theater: bool,
+    /// `culture-defense-theater-2`: version 1, but the reservation leaves a
+    /// housing-bound city whose next housing is a Granary to the governor.
+    /// See `reserve_culture_defense_theater`.
+    culture_defense_theater_2: bool,
     /// `domination-specializes-earlier`: an assigned Domination lane's
     /// development half ends at [`DOMINATION_SPECIALIZATION_PERCENT`] of the
     /// clock (turn 100 of 250) instead of halfway, so it turns to Conquest
@@ -5803,6 +5936,34 @@ pub struct AdvancedAi {
     /// the stock Ilkum commitment would hold Urban Planning out again.
     colonization_earns_its_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `favor-spares-the-surprise-war`: with a Diplomatic Victory contender
+    /// standing, a war opens by the denouncement's Formal War, not a surprise
+    /// war. See `one_war::favor_spares_surprise`.
+    favor_spares_the_surprise_war: bool,
+    /// `faith-counter-waits-for-match-point`: a faith taking our cities is
+    /// declared on without a staged siege only at the religion lane's match
+    /// point. See `one_war::faith_at_match_point`.
+    faith_counter_waits_for_match_point: bool,
+    /// `find-the-capital`: a Domination plan cannot finish while a needed
+    /// rival's original capital has never been seen. Live King
+    /// civvis-20261005T081917Z (game 112) held Amsterdam and Xanadu from
+    /// turn 138 and still had no sight of Kongo's capital at 178: Kongo's
+    /// revealed ground ringed a fogged interior, its border was sealed, and
+    /// the passage purchase held 47 times because the book prices Open
+    /// Borders at 28 Gold against a 30 Gold minimum ask. Under the gene the
+    /// passage to that rival is worth what finding the capital is worth,
+    /// and once the border opens (Open Borders or war) one fast unit is
+    /// sent into the fog behind that rival's ground. See
+    /// `advanced/find_the_capital.rs`.
+    find_the_capital: bool,
+    /// `front-finishes-its-capital`: an urgent counter-war already running
+    /// waits for the front's siege of the front rival's original capital or
+    /// last city behind light walls. See `one_war::front_capital_to_finish`.
+    front_finishes_its_capital: bool,
+    /// `front-needs-a-declarable-rival`: a second front not yet at war is
+    /// named only when the declaration could reach it. See
+    /// `one_war::declarable_in_reach`. Off by default.
+    front_needs_a_declarable_rival: bool,
     /// `front-finishes-its-siege`: an urgent counter-war already running
     /// waits for the front's live siege of an unwalled city. See
     /// `one_war::front_siege_to_finish`. Off by default.
@@ -6246,6 +6407,15 @@ pub struct AdvancedAi {
     /// See `BasicAi::front_weighted_floor_2`.
     front_weighted_floor_2: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `guns-enter-together`: two or more fit siege guns of a walled siege
+    /// whose posts lie inside the city's strike ring step in together, and
+    /// the city's strike — once a turn — is charged once across them. See
+    /// `siege_train::entry_group`.
+    guns_enter_together: bool,
+    /// `guns-stay-out-of-reach`: a siege gun does not end a step where one
+    /// visible hostile could destroy it with a single blow. See
+    /// `advanced/guns_stay_out_of_reach.rs`.
+    guns_stay_out_of_reach: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     great_work_completion_value: bool,
     /// `industrial-chain-debt`: an Industrial Zone owes its Workshop,
@@ -6412,6 +6582,15 @@ pub struct AdvancedAi {
     /// 10.0 unimproved hills at t100.
     improvement_upgrades_count: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `liberation-funds-the-congress`: a Domination seat facing a
+    /// Diplomatic Victory threat liberates a captured city-state city for its
+    /// 100 Favor. See `one_war::liberation_funds_the_congress`.
+    liberation_funds_the_congress: bool,
+    /// `melee-storms-an-open-city`: against a city with no standing walls the
+    /// assault opens when the force's blows take it within `STORM_TURNS`
+    /// past its heal, and the reserved taker joins it. See
+    /// `siege_train::assault_pays`.
+    melee_storms_an_open_city: bool,
     /// `last-capital-war-kept`: no peace with the holder of the last original
     /// capital Domination needs. See `one_war::last_capital_war_kept`. Off
     /// by default.
@@ -6775,7 +6954,30 @@ pub struct AdvancedAi {
     /// Domination win (083931Z, 10 cities at t75) spent none. Opt-in gene
     /// `naval-escort-patience`.
     naval_escort_patience: bool,
+    /// `own-column-is-not-a-refusal`: a step our own column held, or one the
+    /// host was never sent, is not a host refusal; see
+    /// `BasicAi::note_host_moves` and `advanced/own_column.rs`.
+    own_column_is_not_a_refusal: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `recovery-peace-waits`: the Recovery clause's peace waits for the
+    /// Recovery plan to stand three turns. See
+    /// `one_war::recovery_peace_ready`.
+    recovery_peace_waits: bool,
+    /// `prey-reads-a-steady-power`: the capital-prey gates read the largest
+    /// of a rival's last three military readings. See
+    /// `one_war::steady_rival_power`.
+    prey_reads_a_steady_power: bool,
+    /// `rout-spares-the-counter`: a rout window offers no peace to the rival
+    /// we are countering while we hold its power. See
+    /// `one_war::rout_spares_the_counter`.
+    rout_spares_the_counter: bool,
+    /// `peace-asks-a-city`: a white peace offer from strength also asks the
+    /// rival to cede a town on its first ask. See `PlanReport::peace_asks_city`.
+    peace_asks_a_city: bool,
+    /// `religious-threat-spares-the-front`: a religious clock does not take
+    /// the army off its front while our cities keep our own faith. See
+    /// `one_war::religious_threat_spares_the_front`.
+    religious_threat_spares_the_front: bool,
     /// `prophet-race-takes-a-district-slot-2`: the race's Holy Site in the
     /// city that builds it soonest. See
     /// `BasicAi::prophet_race_takes_a_district_slot_2`. Off by default.
@@ -7004,6 +7206,17 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `second-front-keeps-its-war`: a second front the plan named keeps its
+    /// war against the one-war peace for ten standard turns. See
+    /// `one_war::second_front_recently_named`.
+    second_front_keeps_its_war: bool,
+    /// `stage-march-keeps-to-land`: a Stage or approach march of a land unit
+    /// standing on land takes the dry road however long it runs, or holds,
+    /// rather than stepping into the water, whenever `come-ashore` is on and
+    /// the ordinary route crosses water. An embarked unit is landed again at
+    /// home by `come-ashore` the next turn, so the crossing never completes.
+    /// See `siege_train::StageMarch`. Off by default.
+    stage_march_keeps_to_land: bool,
     /// `stalled-peace-spares-the-counter`: the fatigue clause's "the war has
     /// stalled" peace is not offered to a rival whose victory clock the
     /// Domination army answers. See `one_war::stalled_peace_spares`. Off by
@@ -7966,6 +8179,10 @@ mod missionary_field;
 /// with nothing left in reach. Opt-in gene `one-war-at-a-time`; see
 /// `advanced/one_war.rs`.
 mod one_war;
+/// Our own column is not the host's refusal: the live bridge reports which
+/// planned moves actually crossed. Opt-in gene `own-column-is-not-a-refusal`;
+/// see `advanced/own_column.rs`.
+mod own_column;
 /// Recon disruption: the pass picket. One opt-in gene; see
 /// `advanced/recon_disruption.rs`.
 mod recon_disruption;
@@ -7997,6 +8214,7 @@ mod fire_plan;
 /// the kill plan and the heal rotation — ahead of the per-unit ladder. One
 /// opt-in gene; see `advanced/battle_planner.rs`.
 mod battle_planner;
+mod guns_stay_out_of_reach;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
 /// Close as a body, and screen the shooters: two opt-in genes in the deployed
@@ -8034,6 +8252,8 @@ mod battlefront;
 /// gate. Five opt-in genes; see `advanced/chokepoints.rs`.
 mod chokepoints;
 mod scout_distance;
+/// `find-the-capital`: see the module.
+mod find_the_capital;
 
 mod culture_strategy;
 mod victory_conversion;
@@ -8741,6 +8961,7 @@ impl AdvancedAi {
             peace_until: 0,
             peace_offers: BTreeSet::new(),
             peace_routed: BTreeSet::new(),
+            peace_asks_city: BTreeSet::new(),
             victory_planning,
             victory_target,
             census: StrategyCensus::default(),
@@ -8852,6 +9073,10 @@ impl AdvancedAi {
             projected_stock_denial: false,
             stock_pressure_history: BTreeMap::new(),
             culture_curves: BTreeMap::new(),
+            engine_culture_finish: BTreeMap::new(),
+            rival_power_seen: BTreeMap::new(),
+            second_front_named: BTreeMap::new(),
+            recovery_since: None,
             early_rush: false,
             timed_war: false,
             selective_timed_war: false,
@@ -8944,6 +9169,11 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            breach_reads_the_air: false,
+            breach_counts_nearby_guns: false,
+            air_volley_needs_a_road: false,
+            bleeding_capital_loyalty: false,
+            air_surge_strikes_through_urgency: false,
             breakers_stay_with_the_siege: false,
             breach_assault: false,
             breach_assault_closes_in: false,
@@ -8961,6 +9191,7 @@ impl AdvancedAi {
             builder_workforce_recovery: false,
             builder_workforce_recovery_2: false,
             builder_workforce_recovery_3: false,
+            builder_workforce_reservation: RefCell::new(None),
             anvil: false,
             anvil_orders: BTreeMap::new(),
             anvil_orders_turn: None,
@@ -8998,9 +9229,26 @@ impl AdvancedAi {
             activation_keeps_its_building: false,
             breaker_keeps_its_queue: false,
             breaker_to_the_fastest: false,
+            age_closer_spends_the_reserve: false,
             // ---- append: c-d ----------------------------------------
+            counterweight_faith_is_no_threat: false,
+            capital_prey_scales_the_walls: false,
+            culture_reads_the_engine_clock: false,
+            capital_prey_opens_a_front_2: false,
+            capital_prey_noted: BTreeMap::new(),
+            capture_holds_the_ring: false,
+            capture_hold_seen: BTreeMap::new(),
+            capture_loyalty_prey: BTreeMap::new(),
+            culture_finish_at_the_observed_bar: false,
+            denial_keeps_its_rival: false,
+            denial_incumbent: None,
+            capital_prey_opens_a_front: false,
             conquest_opening_needs_the_production: false,
+            conquest_opening_stays_near: false,
+            conquest_near_noted: None,
             dialogue_never_declares_war: false,
+            declaration_waits_for_the_breaker: false,
+            declaration_breaker_hold: None,
             capital_defense_holds: false,
             diplomatic_contender_kept: false,
             diplomatic_contender_kept_2: false,
@@ -9018,6 +9266,7 @@ impl AdvancedAi {
             district_buildings_first: false,
             district_buildings_first_2: false,
             culture_defense_theater: false,
+            culture_defense_theater_2: false,
             domination_specializes_earlier: false,
             domination_ignores_city_states: false,
             culture_lane_forecast_2: false,
@@ -9100,6 +9349,11 @@ impl AdvancedAi {
             colonization_earns_its_slot: false,
             colonization_earns_its_slot_2: false,
             // ---- append: e-f ----------------------------------------
+            favor_spares_the_surprise_war: false,
+            faith_counter_waits_for_match_point: false,
+            find_the_capital: false,
+            front_finishes_its_capital: false,
+            front_needs_a_declarable_rival: false,
             front_finishes_its_siege: false,
             found_against_a_rival_faith: false,
             formations_heed_refusals: false,
@@ -9140,6 +9394,8 @@ impl AdvancedAi {
             front_weighted_floor: false,
             front_weighted_floor_2: false,
             // ---- append: g-k ----------------------------------------
+            guns_enter_together: false,
+            guns_stay_out_of_reach: false,
             great_work_completion_value: false,
             industrial_chain_debt: false,
             guard_breaks_the_pin: false,
@@ -9166,6 +9422,8 @@ impl AdvancedAi {
             industrial_hub: false,
             improvement_upgrades_count: false,
             // ---- append: l-o ----------------------------------------
+            liberation_funds_the_congress: false,
+            melee_storms_an_open_city: false,
             last_capital_war_kept: false,
             one_war_swaps_a_stalled_front: false,
             monument_first: false,
@@ -9201,7 +9459,13 @@ impl AdvancedAi {
             opening_force_keeps_its_members: false,
             one_sanctuary: false,
             naval_escort_patience: false,
+            own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
+            recovery_peace_waits: false,
+            prey_reads_a_steady_power: false,
+            rout_spares_the_counter: false,
+            peace_asks_a_city: false,
+            religious_threat_spares_the_front: false,
             prophet_race_takes_a_district_slot_2: false,
             peace_waits_for_unseen_prey: false,
             peace_waits_for_the_foothold: false,
@@ -9239,6 +9503,8 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            second_front_keeps_its_war: false,
+            stage_march_keeps_to_land: false,
             stalled_peace_spares_the_counter: false,
             staging_gun_remembers_hostiles: false,
             staging_column_passes_through: false,
@@ -9782,6 +10048,9 @@ impl AdvancedAi {
         } else {
             self.major_war_since = None;
         }
+        // `prey-reads-a-steady-power`: before the front is chosen. See
+        // `one_war::steady_rival_power`.
+        self.record_rival_power(g, pid);
         // The front and its tide clock; exact no-op with the gene off. See
         // `advanced/one_war.rs`.
         self.one_war_observe(g, pid);
@@ -12131,7 +12400,12 @@ impl AdvancedAi {
                 .max()
                 .unwrap_or(1)
                 .max(1);
-            (100 * g.foreign_tourists(pid) / culture_target).clamp(0, 100) as i32
+            // See `engine_culture_pressure`.
+            self.engine_culture_pressure(
+                g,
+                pid,
+                (100 * g.foreign_tourists(pid) / culture_target).clamp(0, 100) as i32,
+            )
         });
 
         let (converted, living_religious_rivals) = self.religious_conversion_tally(g, pid);
@@ -12306,7 +12580,12 @@ impl AdvancedAi {
                     .max(1);
                 (
                     *pid,
-                    (100 * g.foreign_tourists(*pid) / target).clamp(0, 100) as i32,
+                    // See `engine_culture_pressure`.
+                    self.engine_culture_pressure(
+                        g,
+                        *pid,
+                        (100 * g.foreign_tourists(*pid) / target).clamp(0, 100) as i32,
+                    ),
                 )
             })
             .collect()
@@ -13312,6 +13591,16 @@ impl AdvancedAi {
             Some(emergency.target)
         } else if let Some((rival, _)) = finishing_front {
             Some(rival)
+        } else if let Some(prey) = (wartime_rivals.is_empty()
+            && rush_victim.is_none()
+            && self.forced_target_player.is_none()
+            && self.capital_prey_opens_a_front_2)
+            .then(|| self.capital_prey_beside_the_front(g, pid, None).0)
+            .flatten()
+        {
+            // `capital-prey-opens-a-front-2`: at peace too, a collapsed
+            // rival's original capital in reach is the campaign's first front.
+            Some(prey)
         } else if wartime_rivals.is_empty() {
             // The rush already chose, on nearness and weakness, and the
             // generic value sort would happily re-aim the column at a richer
@@ -13767,7 +14056,7 @@ impl AdvancedAi {
                     } else if wartime_rivals.is_empty() {
                         "not yet at war"
                     } else {
-                        "chosen from the wars already running"
+                        "a second front beside the wars already running"
                     };
                     think!(self.journal(), Strategy, Strategy,
                            "Campaign aimed at {}", rival.civ;
@@ -18035,6 +18324,11 @@ impl AdvancedAi {
         if self.loyalty_policy_needed(g, pid) {
             desired.insert(0, "praetorium");
         }
+        // `bleeding-capital-loyalty`: Limitanei's +2 with the garrison while a
+        // captured original capital bleeds. See `one_war::bleeding_capital`.
+        if self.bleeding_capital_loyalty && self.bleeding_capital(g, pid).is_some() {
+            desired.insert(0, "limitanei");
+        }
 
         // ⚠ FRONT of the list, not appended: these portfolios are preference
         // ordered and the military slot is contested from the ancient era, which is
@@ -20113,8 +20407,16 @@ impl AdvancedAi {
                 _ => None,
             });
         }
-        if urgent {
+        // See `favor_spares_surprise`: with Favor at stake the urgent war is
+        // a Formal War too, unless its clock is nearly out.
+        let spared = urgent && self.favor_spares_surprise(g, pid, target);
+        if urgent && !spared {
             surprise
+        } else if spared && !denounced {
+            legal.iter().find_map(|action| match action {
+                Action::Denounce { player } if *player == target => Some(action.clone()),
+                _ => None,
+            })
         } else {
             // The denouncement is active but its five-turn preparation period
             // has not elapsed, so preserve the army and wait for Formal War.
@@ -20142,6 +20444,8 @@ impl AdvancedAi {
         if !self.domination_strikes_when_staged
             || !staged
             || !matches!(opening, Action::Denounce { .. })
+            // See `favor_spares_surprise`.
+            || self.favor_spares_surprise(g, pid, target)
             || self.active_victory_target(g) != Some(VictoryTarget::Domination)
             || g.military_power(pid) < STRIKE_WHEN_STAGED_RATIO * g.military_power(target).max(1.0)
         {
@@ -21185,6 +21489,13 @@ impl AdvancedAi {
     }
 
     fn advanced_diplomacy(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        // `recovery-peace-waits`: the current Recovery spell. See
+        // `one_war::recovery_peace_ready`.
+        if plan.strategy == GrandStrategy::Recovery {
+            self.recovery_since.get_or_insert(g.turn);
+        } else {
+            self.recovery_since = None;
+        }
         crate::ai::choose_dedications(g, pid, self.base.w.dedication_choice);
         self.propose_protective_friendship(g, pid);
         let incoming: Vec<u32> = g
@@ -21382,6 +21693,7 @@ impl AdvancedAi {
             .collect();
         self.peace_offers.clear();
         self.peace_routed.clear();
+        self.peace_asks_city.clear();
         self.religious_interception_war = self
             .religious_interception_war
             .filter(|(rival, _)| g.is_at_war(pid, *rival));
@@ -21479,7 +21791,10 @@ impl AdvancedAi {
                         && !self.unseen_prey(g, pid, *other)
                         // Nor a war we are winning when the Recovery plan
                         // fights no other. See `recovery_keeps_the_war`.
-                        && !self.recovery_keeps_the_war(g, pid, *other, plan))
+                        && !self.recovery_keeps_the_war(g, pid, *other, plan)
+                        // Nor on a Recovery that has not stood. See
+                        // `recovery_peace_ready`.
+                        && self.recovery_peace_ready(g))
                     || (self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                         && !appointed_objective)
@@ -21543,6 +21858,11 @@ impl AdvancedAi {
                     || matches!(one_war_peace, Some(one_war::OneWarPeace::Rout))
                 {
                     self.peace_routed.insert(*other);
+                }
+                // `peace-asks-a-city`: a white offer made from strength asks
+                // the rival to cede a town. See `PEACE_CITY_ASK_RATIO`.
+                if self.peace_asks_city_from_strength(g, pid, *other) {
+                    self.peace_asks_city.insert(*other);
                 }
                 if let Some(peace) = one_war_peace {
                     let key = match peace {
@@ -21745,6 +22065,8 @@ impl AdvancedAi {
                 let pos = g.cities[&cid].pos;
                 Self::city_within_declaration_range(g, pid, pos)
                     || self.denial_reaches_far(g, pid, target, pos)
+                    // See `capital_prey_reaches_far`.
+                    || self.capital_prey_reaches_far(g, pid, target, pos)
             })
         } else {
             plan.target_city
@@ -21752,6 +22074,8 @@ impl AdvancedAi {
                 .is_some_and(|target_city| {
                     Self::city_within_declaration_range(g, pid, target_city.pos)
                         || self.denial_reaches_far(g, pid, target, target_city.pos)
+                        // See `capital_prey_reaches_far`.
+                        || self.capital_prey_reaches_far(g, pid, target, target_city.pos)
                 })
         };
         let committed_domination = self.victory_target == Some(VictoryTarget::Domination);
@@ -21816,6 +22140,34 @@ impl AdvancedAi {
                     committed_domination || rushing,
                 )
             });
+        // `declaration-waits-for-the-breaker`: a staged army is not staged
+        // for a walled city until a breaker stands on its ring. See
+        // `siege_train::declaration_breaker_at_hand`.
+        let objective = plan
+            .target_city
+            .and_then(|city| g.cities.get(&city))
+            .map(|city| (city.id, city.pos));
+        let breaker_missing = self.declaration_waits_for_the_breaker
+            && objective.is_some_and(|(city, _)| !self.declaration_breaker_at_hand(g, pid, city));
+        let holdable =
+            breaker_missing && staged && !urgent_denial && !faith_counter_due && !rushing;
+        let breaker_held = self.declaration_hold_patience(
+            g,
+            objective.map(|(_, pos)| pos),
+            breaker_missing,
+            holdable,
+        );
+        if breaker_held {
+            if let Some(city) = plan.target_city.and_then(|city| g.cities.get(&city)) {
+                think!(self.journal(), Military, Detail,
+                       "Holding the declaration on {} for a wall-breaker", g.players[target].civ;
+                       "{} stands behind {} walls and no siege gun, ram or tower of ours is on its ring; \
+                        a war opened now gives it the turns to raise the next tier",
+                       city.name, city.wall_hp;
+                       city.pos);
+            }
+        }
+        let staged = staged && !breaker_held;
         // The Culture clock may expire before capture units reach the ring.
         // A concrete, safe Theater Square sortie can start denial meanwhile.
         let air_ready = !staged && self.urgent_culture_air_opening_ready(g, pid, target, plan);
@@ -21866,6 +22218,11 @@ impl AdvancedAi {
                         "a ready aircraft can disrupt the rival's Theater Square immediately"
                     } else if culture_counter_ready {
                         "the war ends the open borders and trade route that carry their tourism to us while the army stages"
+                    } else if !staged && religion_counter_ready {
+                        // The religion counter declares without a staged
+                        // siege; the line read "staged" for 41 of 71 such
+                        // October 4-5 declarations with 0-2 bodies on the ring.
+                        "the war lets the army condemn the faith taking our cities, before any siege is staged"
                     } else {
                         "the army is staged within reach of the first objective"
                     };
@@ -22253,6 +22610,9 @@ impl AdvancedAi {
         };
         let faith_reserve = self.conversion_faith_reserve(g, pid, faith_reserve);
         let mut candidates = Vec::new();
+        // Inside `age-closer-2`'s window: the cheapest priced Great Person,
+        // so a window that closes nothing says what it would have cost.
+        let mut cheapest_closer: Option<(f64, String, &str, f64, f64)> = None;
         // ⚠ THIS WAS A LIST OF THE NINE CLASS NAMES THAT HAPPENED TO EXIST.
         // `beliefs.json` shipped exactly that shape once: an AI chooser that
         // enumerated what the data held on the day it was written, so every
@@ -22392,15 +22752,36 @@ impl AdvancedAi {
                 let Some(price) = g.great_person_patronage_price(pid, kind, currency) else {
                     continue;
                 };
-                if bank + f64::EPSILON < price + reserve {
-                    continue;
+                if age_deadline.is_some()
+                    && cheapest_closer.as_ref().is_none_or(|(best, ..)| price < *best)
+                {
+                    cheapest_closer = Some((price, kind.to_string(), currency, bank, reserve));
                 }
                 let action = Action::PatronizeGreatPerson {
                     kind: kind.to_string(),
                     currency: currency.to_string(),
                 };
-                let closes_age =
-                    age_deadline.is_some() && Self::purchase_reaches_normal_age(g, pid, &action);
+                let mut verified_closer = None;
+                if bank + f64::EPSILON < price + reserve {
+                    // `age-closer-spends-the-reserve`: inside the deadline
+                    // window a purchase the lookahead verifies closes the
+                    // Dark Age may spend the gold reserve down to a deficit
+                    // floor. A Dark Age's loyalty losses cost cities; the
+                    // reserve is a few turns of thin books.
+                    let floor = (-5.0 * g.players[pid].gold_per_turn).max(0.0);
+                    let dips = currency == "gold"
+                        && self.age_closer_spends_the_reserve
+                        && age_deadline.is_some()
+                        && bank + f64::EPSILON >= price + floor
+                        && Self::purchase_reaches_normal_age(g, pid, &action);
+                    if !dips {
+                        continue;
+                    }
+                    verified_closer = Some(true);
+                }
+                let closes_age = verified_closer.unwrap_or_else(|| {
+                    age_deadline.is_some() && Self::purchase_reaches_normal_age(g, pid, &action)
+                });
                 // Version two relaxes the ordinary gate only for a purchase
                 // whose actual result covers the era shortfall in time.
                 // Idle Faith and version one's original arm keep their rules.
@@ -22416,6 +22797,27 @@ impl AdvancedAi {
                     std::cmp::Reverse((kind.to_string(), currency.to_string())),
                     action,
                 ));
+            }
+        }
+        if let Some(end) = age_deadline {
+            if !candidates.iter().any(|candidate| candidate.0) {
+                let player = &g.players[pid];
+                match &cheapest_closer {
+                    Some((price, kind, currency, bank, reserve)) => {
+                        think!(self.journal(), Economy, Detail,
+                               "No Great Person closes the era before turn {}", end;
+                               "era score {} of {}; the cheapest is the {} race at {price:.0} \
+                                {currency} against {bank:.0} in the bank and a {reserve:.0} \
+                                reserve",
+                               player.era_score, player.normal_age_threshold, plain(kind));
+                    }
+                    None => {
+                        think!(self.journal(), Economy, Detail,
+                               "No Great Person closes the era before turn {}", end;
+                               "era score {} of {}; no Great Person race is open to patronage",
+                               player.era_score, player.normal_age_threshold);
+                    }
+                }
             }
         }
         if let Some((closes_age, score, _, action)) =
@@ -28381,6 +28783,12 @@ impl AdvancedAi {
                     }
                 }
             }
+            // A catch-up reservation can be rescored before its first hammer
+            // lands, including on another observed frame in this same turn.
+            // Keep the accepted Builder after siege handling, while allowing
+            // the existing insolvency preemption below to take priority.
+            let higher_level_builder_commitment =
+                self.higher_level_builder_queue_committed(g, pid, cid);
             let recovery_preemption = economic_recovery
                 && committed
                     .as_ref()
@@ -28439,6 +28847,7 @@ impl AdvancedAi {
                     || defensive_temple_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
+                    || higher_level_builder_commitment
             }) && !recovery_preemption
                 && (finish_investment
                     || science_endgame_commitment
@@ -28447,6 +28856,7 @@ impl AdvancedAi {
                     || defensive_temple_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
+                    || higher_level_builder_commitment
                     || preempt_margin <= 1.0
                     || economic_recovery)
             {
@@ -43414,6 +43824,12 @@ impl AdvancedAi {
             // first. Empty with the gene off. See `advanced/fire_plan.rs`.
             self.plan_fire(g, pid);
         }
+        // `guns-stay-out-of-reach`: the tiles each siege gun must not end on,
+        // read once the turn's kills are settled, and a gun already standing
+        // on one steps off it. Nothing with the gene off. See
+        // `advanced/guns_stay_out_of_reach.rs`.
+        self.mark_gun_lethal_tiles(g, pid);
+        self.guns_step_out_of_reach(g, pid);
         let mut air_assault_units = self.plan_air_city_assault(g, pid, plan);
         // `air-surge-2` raiders: spare surge cavalry pillage behind the wing.
         // Nothing is read outside a Domination surge at war. See
@@ -44057,6 +44473,10 @@ impl AdvancedAi {
                     if strategy == GrandStrategy::Diplomacy {
                         value += 100.0;
                     }
+                    // See `liberation_funds_the_congress`.
+                    if self.liberation_funds_the_congress(before, pid, city_id) {
+                        value += one_war::LIBERATION_CONGRESS_VALUE;
+                    }
                     if before.players[city.original_owner].is_minor {
                         value += if strategy == GrandStrategy::Diplomacy {
                             70.0
@@ -44135,6 +44555,7 @@ impl Ai for AdvancedAi {
             assessed_turn: plan.assessed_turn,
             peace_offers: self.peace_offers.iter().copied().collect(),
             peace_routed: self.peace_routed.iter().copied().collect(),
+            peace_asks_city: self.peace_asks_city.iter().copied().collect(),
             forces: self
                 .force_groups
                 .iter()
@@ -44217,6 +44638,7 @@ impl AdvancedAi {
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         self.turn_start_policies = g.players[pid].policies.clone();
         self.air_city_assault = None;
+        self.base.gun_lethal_tiles.clear();
         self.builder_support.clear();
         self.battlefront_frame = None;
         self.settlement_atlas.borrow_mut().clear();
@@ -44334,8 +44756,20 @@ impl AdvancedAi {
         // One stock-pressure sample per rival per turn, before anything reads
         // urgency this turn. See `projected_stock_denial`.
         self.record_stock_pressures(g, pid);
+        // See `capital_prey_beside_the_front`: the prey and its near misses,
+        // once a turn, at war or at peace.
+        self.journal_capital_prey(g, pid);
+        // See `denial_keeps_its_rival`: this turn's counter rival, chosen
+        // against last turn's, is the incumbent for the next.
+        if self.denial_keeps_its_rival {
+            self.denial_incumbent = self
+                .actionable_victory_denial(g, pid)
+                .map(|(rival, _)| rival);
+        }
         // `denial-nearest-finish`: one culture-curve reading per rival.
         self.record_culture_curves(g, pid);
+        // See `engine_culture_clock`: one reading per rival per turn.
+        self.record_engine_culture_clock(g, pid);
         self.maintain_war_plan(g, pid);
         // The air surge's own lifecycle, after the melee appointment so the
         // two can never both own the grand strategy in the same turn: the
