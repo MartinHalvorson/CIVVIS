@@ -2396,7 +2396,7 @@ impl AdvancedAi {
             };
             let breach_note = match breach {
                 Some(reading) => format!(
-                    "; breakers: {} gun(s) fit, {} healing, {} ram/tower, shooters {:.0} wall a turn{}{}",
+                    "; breakers: {} gun(s) fit, {} healing, {} ram/tower, shooters {:.0} wall a turn{}{}{}",
                     reading.guns,
                     reading.wounded_guns,
                     reading.support,
