@@ -2848,6 +2848,12 @@ pub const GENES: &[Gene] = &[
     // border was sealed and the passage purchase held on a 28 Gold book
     // against a 30 Gold minimum. See `find_the_capital`.
     Gene { tag: "find-the-capital", field: "find_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_find_the_capital, disable: AdvancedAi::disable_find_the_capital },
+    // 8 of 31 captures in ten live King games (October 5) were lost the very
+    // next turn: G105 Vancouver 151 -> 152, walked into by one Pike and Shot
+    // with ten of 22 staged; G112 Xanadu flipped to loyalty in five turns at
+    // -13.5 a turn; G114 Curitiba sat at walls 0, health 1 with its body six
+    // to twelve tiles out. See `siege_train::capture_hold`.
+    Gene { tag: "capture-holds-the-ring", field: "capture_holds_the_ring", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_holds_the_ring, disable: AdvancedAi::disable_capture_holds_the_ring },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

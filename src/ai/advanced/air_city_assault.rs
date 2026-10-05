@@ -130,8 +130,9 @@ impl AdvancedAi {
                 {
                     reserved.extend(sorties.iter().copied());
                     let takers = self.air_assault_takers(g, pid, target);
-                    if let Some((taker, capture)) =
-                        self.air_assault_best_capture(g, pid, cid, &takers)
+                    if let Some((taker, capture)) = self
+                        .air_assault_best_capture(g, pid, cid, &takers)
+                        .filter(|(taker, _)| self.capture_holdable(g, pid, cid, *taker))
                     {
                         let origin = g.units[&taker].pos;
                         if capture.iter().all(|action| g.apply(pid, action).is_ok()) {
@@ -178,6 +179,14 @@ impl AdvancedAi {
                 }
                 continue;
             };
+            // `capture-holds-the-ring`: see `capture_holdable`.
+            if !self.capture_holdable(g, pid, cid, taker) {
+                crate::think!(self.journal(), Military, Decision,
+                    "Holding off the capture of {}", g.cities[&cid].name;
+                    "a hostile that can retake it stands within two tiles and too few of ours could end the turn beside it";
+                    target);
+                continue;
+            }
             let origin = g.units[&taker].pos;
             if actions.iter().all(|action| g.apply(pid, action).is_ok()) {
                 self.resolve_city_dispositions(g, pid, plan.strategy);

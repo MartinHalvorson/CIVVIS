@@ -218,6 +218,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `capital-prey-opens-a-front` | off (unmeasured) | Opt-in gene `capital-prey-opens-a-front`; see `Self::capital_prey_opens_a_front`. | — \| 2 |
 | `capital-prey-opens-a-front-2` | off (unmeasured) | Opt-in gene `capital-prey-opens-a-front-2`; see `Self::capital_prey_opens_a_front_2`. | — \| 2 |
 | `capture-hold-chain` | off (unmeasured) | Enable `capture-hold-chain` for measurement. | 1 \| 1 |
+| `capture-holds-the-ring` | off (unmeasured) | Opt-in gene `capture-holds-the-ring`; see `Self::capture_holds_the_ring`. | 1 \| 1 |
 | `capture-waits-on-the-march` | off (unmeasured) | Opt-in gene `capture-waits-on-the-march`; see `Self::capture_waits_on_the_march`. | 1 \| 1 |
 | `colonization-earns-its-slot` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot`; see `Self::colonization_earns_its_slot`. | — \| 2 |
 | `colonization-earns-its-slot-2` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot-2`; see `Self::colonization_earns_its_slot_2`. | — \| 2 |

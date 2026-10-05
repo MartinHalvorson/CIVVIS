@@ -5813,6 +5813,17 @@ impl AdvancedAi {
     pub fn disable_melee_storms_an_open_city(&mut self) {
         self.melee_storms_an_open_city = false;
     }
+    /// Opt-in gene `capture-holds-the-ring`; see
+    /// [`Self::capture_holds_the_ring`].
+    pub fn enable_capture_holds_the_ring(&mut self) {
+        self.capture_holds_the_ring = true;
+    }
+
+    /// The twin of `enable_capture_holds_the_ring`.
+    pub fn disable_capture_holds_the_ring(&mut self) {
+        self.capture_holds_the_ring = false;
+    }
+
 
 
     /// Opt-in gene `breach-reads-the-air`; see

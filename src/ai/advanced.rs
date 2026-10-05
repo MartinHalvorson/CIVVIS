@@ -5341,6 +5341,16 @@ pub struct AdvancedAi {
     /// journalled, so the journal repeats a miss once per
     /// `CAPITAL_PREY_NOTE_TURNS`. See `one_war::journal_capital_prey`.
     capital_prey_noted: BTreeMap<usize, (&'static str, u32)>,
+    /// `capture-holds-the-ring`: a capture lands only when it can be held,
+    /// the army holds the captured city's ring for a turn, or marches on the
+    /// loyalty pressure that would flip it. See `siege_train::capture_hold`.
+    capture_holds_the_ring: bool,
+    /// `capture-holds-the-ring`: the turn each captured city of ours was
+    /// first seen, by position (live ids churn).
+    capture_hold_seen: BTreeMap<Pos, u32>,
+    /// `capture-holds-the-ring`: a captured city whose loyalty runs out
+    /// first, and the hostile city whose pressure drives it, by position.
+    capture_loyalty_prey: BTreeMap<Pos, u32>,
     /// `culture-finish-at-the-observed-bar`: the clocks that weigh a
     /// culture finish against a march read it at [`CULTURE_OBSERVED_BAR`] of
     /// the exported bar. See `denial_nearest_finish::projected_culture_finish_at`.
@@ -9159,6 +9169,9 @@ impl AdvancedAi {
             culture_reads_the_engine_clock: false,
             capital_prey_opens_a_front_2: false,
             capital_prey_noted: BTreeMap::new(),
+            capture_holds_the_ring: false,
+            capture_hold_seen: BTreeMap::new(),
+            capture_loyalty_prey: BTreeMap::new(),
             culture_finish_at_the_observed_bar: false,
             denial_keeps_its_rival: false,
             denial_incumbent: None,
