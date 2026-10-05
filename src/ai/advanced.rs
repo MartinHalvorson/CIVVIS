@@ -550,6 +550,15 @@ pub(crate) const DENIAL_FAR_REACH_RATIO: f64 = 3.0;
 /// `recovery-needs-the-deficit`: our military over the strongest opponent's
 /// at or above which a threatened city no longer puts a war into Recovery.
 const RECOVERY_THREAT_POWER_RATIO: f64 = 2.0;
+/// `campaign-weighs-the-tourism-leader`: the march, in tiles, a campaign
+/// gives up to fight the rival leading the board's tourism.
+const TOURISM_LEADER_TILES: f64 = 8.0;
+/// `campaign-weighs-the-tourism-leader`: the tourism a turn below which no
+/// rival leads the race.
+const TOURISM_LEADER_FLOOR: f64 = 50.0;
+/// `campaign-weighs-the-tourism-leader`: the leader's tourism over the
+/// runner-up's.
+const TOURISM_LEADER_MARGIN: f64 = 1.25;
 /// A first capture this far from home can become a usable forward base before
 /// the capital march consumes the whole war. The diplomatic opening gate is
 /// wider; it does not mean an 18-tile capital is the best first siege.
@@ -5349,6 +5358,10 @@ pub struct AdvancedAi {
     /// 650-gold reserve (10 cities) against banks of 378-485. Off by default.
     age_closer_spends_the_reserve: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `campaign-weighs-the-tourism-leader`: the campaign's rival ranking
+    /// gives the tourism leader `TOURISM_LEADER_TILES` of march. See
+    /// `tourism_leader`.
+    campaign_weighs_the_tourism_leader: bool,
     /// `domination-finish-holds-the-front`: the owner of the city whose
     /// capture completes Domination holds the front and that city is the
     /// objective. See `one_war::domination_finish_front`.
@@ -9298,6 +9311,7 @@ impl AdvancedAi {
             breaker_to_the_fastest: false,
             age_closer_spends_the_reserve: false,
             // ---- append: c-d ----------------------------------------
+            campaign_weighs_the_tourism_leader: false,
             domination_finish_holds_the_front: false,
             declaration_needs_the_edge: false,
             diplomatic_contender_eliminated: false,
@@ -14575,6 +14589,35 @@ impl AdvancedAi {
             - victory_pressure * 2.4
     }
 
+    /// `campaign-weighs-the-tourism-leader`: the living rival major whose
+    /// tourism a turn is at least [`TOURISM_LEADER_FLOOR`] and
+    /// [`TOURISM_LEADER_MARGIN`] times every other rival's. Forty turns before
+    /// each of the 30 Culture losses of October 4-5 that leader was the
+    /// eventual winner 18 times (16 of them by the margin), while the
+    /// winner's foreign tourists stood at a median 25% of the bar -- below the
+    /// 45% of the top rival in games Culture did not end. Culture finishes
+    /// late and fast (live King civvis-20261005T143823Z, game 136: the
+    /// Netherlands' tourism 101 -> 281 and foreign tourists 29 -> 66 in its
+    /// last ten turns), too late for a counter to march; in 22 of 32 of those
+    /// losses the army took no city from anyone in the last 40 turns. A
+    /// campaign that weighs the leader among the rivals it can already fight
+    /// lands on the race before it shows.
+    fn tourism_leader(g: &Game, pid: usize) -> Option<usize> {
+        let mut rivals: Vec<(f64, usize)> = g
+            .players
+            .iter()
+            .filter(|other| {
+                other.id != pid && other.alive && !other.is_minor && !other.is_barbarian
+            })
+            .map(|other| (g.tourism_per_turn(other.id), other.id))
+            .collect();
+        rivals.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        let (best, leader) = *rivals.first()?;
+        let runner_up = rivals.get(1).map_or(0.0, |(tourism, _)| *tourism);
+        (best >= TOURISM_LEADER_FLOOR && best >= TOURISM_LEADER_MARGIN * runner_up)
+            .then_some(leader)
+    }
+
     /// The ordinary war-opening gate uses this distance from a home city to
     /// its first objective. Target selection must use the same gate or it can
     /// keep naming a rival that diplomacy cannot attack.
@@ -14683,6 +14726,10 @@ impl AdvancedAi {
         culture_pressure: Option<i32>,
     ) -> f64 {
         let mut value = self.rival_value_with_culture(g, pid, other, culture_pressure);
+        // See `tourism_leader`: the march the culture race is worth.
+        if self.campaign_weighs_the_tourism_leader && Self::tourism_leader(g, pid) == Some(other) {
+            value -= TOURISM_LEADER_TILES * 7.0;
+        }
         if !g.players[other].is_minor {
             // A leader marches on the civilizations their agenda disdains
             // before the ones it respects. Lower is a more attractive target,

@@ -2956,6 +2956,10 @@ pub const GENES: &[Gene] = &[
     // the war to Recovery at 1848 power against 645, one capital from
     // Domination. See `RECOVERY_THREAT_POWER_RATIO`.
     Gene { tag: "recovery-needs-the-deficit", field: "recovery_needs_the_deficit", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_needs_the_deficit, disable: AdvancedAi::disable_recovery_needs_the_deficit },
+    // 22 of the 32 Culture losses of October 4-5 took no city in their last
+    // 40 turns; the tourism leader 40 turns out was the winner 18 times in
+    // 30. See `AdvancedAi::tourism_leader`.
+    Gene { tag: "campaign-weighs-the-tourism-leader", field: "campaign_weighs_the_tourism_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_campaign_weighs_the_tourism_leader, disable: AdvancedAi::disable_campaign_weighs_the_tourism_leader },
     // Staging marches took the router's single step and stood: 47-62% of
     // live frame-0 MOVE_TOs were one tile. See `march_moves`.
     Gene { tag: "march-uses-its-moves", field: "march_uses_its_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_march_uses_its_moves, disable: AdvancedAi::disable_march_uses_its_moves },
