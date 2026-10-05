@@ -185,6 +185,58 @@ mod capital_defense_holds {
         assert!(!row.urgent, "only a capital is marked urgent: {row:?}");
     }
 
+    /// The Defend need of our capital at (6, 8) with three hostile warriors
+    /// beside it and no defender of ours, at `hp`, with the gene on or off,
+    /// and the city's own strength as `Game::city_strength` reads it (which
+    /// already loses up to nine points to damage).
+    fn capital_need(hp: i32, gene: bool) -> (f64, f64) {
+        let mut g = flat_board(374502, &[at(6, 8), at(30, 8)], false);
+        let capital = g.city_at(at(6, 8)).unwrap();
+        g.cities.get_mut(&capital).unwrap().pop = 6;
+        war(&mut g, 0, 1);
+        for pos in [at(7, 8), at(7, 7), at(7, 9)] {
+            g.spawn_test_unit("warrior", 1, pos);
+        }
+        g.cities.get_mut(&capital).unwrap().hp = hp;
+        let mut ai = on();
+        if gene {
+            ai.enable_capital_defense_holds();
+        }
+        let rows = board(&g, &mut ai, None);
+        let need = rows
+            .iter()
+            .find(|row| row.key == ObjectiveKey::Defend(capital))
+            .expect("three warriors at the gate raise a Defend row")
+            .requirement
+            .strength;
+        (need, g.city_strength(capital))
+    }
+
+    #[test]
+    fn on_a_damaged_capital_asks_for_more_than_a_healthy_one() {
+        let (healthy, _) = capital_need(200, true);
+        let (falling, _) = capital_need(20, true);
+        assert!(
+            falling > healthy,
+            "20 of 200 credits a tenth of the city's strength: {falling} against {healthy}"
+        );
+        // At full health the gene credits the whole city, as off does.
+        assert_eq!(healthy, capital_need(200, false).0);
+        // And it asks for more than the shipped damage penalty alone adds.
+        let (off_falling, _) = capital_need(20, false);
+        assert!(falling > off_falling, "{falling} against off's {off_falling}");
+    }
+
+    #[test]
+    fn off_the_need_moves_only_by_the_shipped_damage_penalty() {
+        let (falling, weak) = capital_need(20, false);
+        let (healthy, strong) = capital_need(200, false);
+        assert!(
+            (falling - healthy - (strong - weak)).abs() < 1e-9,
+            "off subtracts the city's whole strength: need {falling} vs {healthy}, strength {weak} vs {strong}"
+        );
+    }
+
     #[test]
     fn on_a_healthy_capital_or_a_distant_hostile_reads_as_off() {
         // Full health, hostile beside it: no row either way.

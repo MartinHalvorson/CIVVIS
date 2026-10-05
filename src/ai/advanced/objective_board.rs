@@ -1049,8 +1049,17 @@ impl AdvancedAi {
                 self.capital_defense_holds && city.is_capital && (contact || damaged);
             defended.insert(*cid);
             let hostile = self.hostile_strength_near(g, pid, *pos, THREAT_RELIEF_RADIUS, visible);
+            // `capital-defense-holds`: a damaged city answers for only the
+            // share of its strength its hit points still hold. Bogota at 20
+            // of 200 subtracted its full strength and asked for 24, two
+            // bodies, where at turns 38-39 it had asked for 50-56.
+            let own_strength = if self.capital_defense_holds && damaged {
+                g.city_strength(*cid) * f64::from(city.hp.max(0)) / f64::from(super::CITY_MAX_HP)
+            } else {
+                g.city_strength(*cid)
+            };
             let need = ForceNeed {
-                strength: (hostile * DEFEND_MARGIN - g.city_strength(*cid)).max(0.0),
+                strength: (hostile * DEFEND_MARGIN - own_strength).max(0.0),
                 melee: 1,
                 ranged: 0,
                 siege: 0,
