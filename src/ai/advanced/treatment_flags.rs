@@ -5747,6 +5747,17 @@ impl AdvancedAi {
         self.peace_asks_a_city = false;
     }
 
+    /// Opt-in gene `capital-prey-opens-a-front-2`; see
+    /// [`Self::capital_prey_opens_a_front_2`].
+    pub fn enable_capital_prey_opens_a_front_2(&mut self) {
+        self.capital_prey_opens_a_front_2 = true;
+    }
+
+    /// The twin of `enable_capital_prey_opens_a_front_2`.
+    pub fn disable_capital_prey_opens_a_front_2(&mut self) {
+        self.capital_prey_opens_a_front_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

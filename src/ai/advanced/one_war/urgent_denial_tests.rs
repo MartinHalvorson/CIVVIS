@@ -1078,11 +1078,15 @@ fn a_crushed_contender_at_war_takes_the_front_under_version_two() {
 #[test]
 fn a_collapsed_rivals_open_capital_opens_a_front_under_the_gene() {
     let (mut g, mut ai) = two_fronts();
-    assert_eq!(ai.capital_prey_beside_the_front(&g, 0, 1).0, None, "off");
+    assert_eq!(
+        ai.capital_prey_beside_the_front(&g, 0, Some(1)).0,
+        None,
+        "off"
+    );
     assert!(!ai.capital_prey_kept(&g, 0, 2), "off");
     ai.enable_capital_prey_opens_a_front();
     // Player 3, at peace with no army, is weaker than player 2's warrior.
-    assert_eq!(ai.capital_prey_beside_the_front(&g, 0, 1).0, Some(3));
+    assert_eq!(ai.capital_prey_beside_the_front(&g, 0, Some(1)).0, Some(3));
     assert!(ai.capital_prey_kept(&g, 0, 2), "the war on a prey is kept");
     assert!(!ai.capital_prey_kept(&g, 0, 3), "no war, nothing to keep");
     let capital = g
@@ -1092,7 +1096,7 @@ fn a_collapsed_rivals_open_capital_opens_a_front_under_the_gene() {
         .map(|city| city.id)
         .unwrap();
     g.cities.get_mut(&capital).unwrap().wall_hp = CAPITAL_PREY_WALLS + 100;
-    let (prey, near) = ai.capital_prey_beside_the_front(&g, 0, 1);
+    let (prey, near) = ai.capital_prey_beside_the_front(&g, 0, Some(1));
     assert_eq!(
         prey,
         Some(2),
@@ -1103,7 +1107,7 @@ fn a_collapsed_rivals_open_capital_opens_a_front_under_the_gene() {
     for y in [2, 3, 4] {
         g.spawn_test_unit("modern_armor", 3, (32, y));
     }
-    let (prey, near) = ai.capital_prey_beside_the_front(&g, 0, 1);
+    let (prey, near) = ai.capital_prey_beside_the_front(&g, 0, Some(1));
     assert_eq!(prey, Some(2));
     assert!(near.contains(&(3, "power")));
 }
@@ -1271,5 +1275,55 @@ fn a_peace_from_strength_asks_for_a_town_under_the_gene() {
     assert!(
         !ai.peace_asks_city_from_strength(&g, 0, 2),
         "under three times"
+    );
+}
+
+/// See `capital_prey_beside_the_front`: version two names a prey at peace,
+/// with no war burning; version one only beside a front.
+#[test]
+fn version_two_names_a_capital_prey_at_peace() {
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.clear();
+    ai.enable_capital_prey_opens_a_front();
+    assert_eq!(
+        ai.capital_prey_beside_the_front(&g, 0, None).0,
+        None,
+        "version one"
+    );
+    ai.enable_capital_prey_opens_a_front_2();
+    assert_eq!(
+        ai.capital_prey_beside_the_front(&g, 0, None).0,
+        Some(1),
+        "the weakest met rival, its capital eight tiles out"
+    );
+}
+
+/// See `capital_prey_reaches_far`: a prey at most a tenth of our military
+/// reaches past the declaration range to its own original capital; a
+/// stronger rival, or another tile, does not.
+#[test]
+fn a_deeply_collapsed_prey_reaches_past_the_declaration_range() {
+    let (mut g, mut ai) = two_fronts();
+    let capital = g
+        .cities
+        .values()
+        .find(|city| city.owner == 3 && city.is_capital)
+        .map(|city| city.pos)
+        .unwrap();
+    assert!(!ai.capital_prey_reaches_far(&g, 0, 3, capital), "off");
+    ai.enable_capital_prey_opens_a_front_2();
+    assert!(ai.capital_prey_reaches_far(&g, 0, 3, capital));
+    assert!(
+        !ai.capital_prey_reaches_far(&g, 0, 3, (capital.0, capital.1 + 2)),
+        "not its capital"
+    );
+    let mut row = 2;
+    while g.military_power(3) <= CAPITAL_PREY_DEEP_POWER * g.military_power(0) {
+        g.spawn_test_unit("modern_armor", 3, (32, row));
+        row += 1;
+    }
+    assert!(
+        !ai.capital_prey_reaches_far(&g, 0, 3, capital),
+        "more than a tenth"
     );
 }

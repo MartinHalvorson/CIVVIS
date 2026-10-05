@@ -2797,6 +2797,10 @@ pub const GENES: &[Gene] = &[
     // or more 239 times, every one white; 20 were accepted. See
     // `PEACE_CITY_ASK_RATIO` and `CivvisPeaceCityAsk` in the agent.
     Gene { tag: "peace-asks-a-city", field: "peace_asks_a_city", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_asks_a_city, disable: AdvancedAi::disable_peace_asks_a_city },
+    // Live King civvis-20261005T080337Z (game 111) declared no war through
+    // turn 200 with Spain at 49 military against 1,080 and Madrid behind 100
+    // walls 21 tiles out. See `one_war::capital_prey_reaches_far`.
+    Gene { tag: "capital-prey-opens-a-front-2", field: "capital_prey_opens_a_front_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_prey_opens_a_front_2, disable: AdvancedAi::disable_capital_prey_opens_a_front_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

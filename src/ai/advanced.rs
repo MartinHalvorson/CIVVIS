@@ -5301,6 +5301,14 @@ pub struct AdvancedAi {
     /// `breaker-to-the-fastest`; see `siege_production.rs`.
     breaker_to_the_fastest: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `capital-prey-opens-a-front-2`: version one, and the prey also takes
+    /// the campaign at peace, and a deeply collapsed prey reaches past the
+    /// declaration range. See `one_war::capital_prey_reaches_far`.
+    capital_prey_opens_a_front_2: bool,
+    /// The gates each capital-prey near miss last failed and the turn it was
+    /// journalled, so the journal repeats a miss once per
+    /// `CAPITAL_PREY_NOTE_TURNS`. See `one_war::journal_capital_prey`.
+    capital_prey_noted: BTreeMap<usize, (&'static str, u32)>,
     /// `culture-finish-at-the-observed-bar`: the clocks that weigh a
     /// culture finish against a march read it at [`CULTURE_OBSERVED_BAR`] of
     /// the exported bar. See `denial_nearest_finish::projected_culture_finish_at`.
@@ -9079,6 +9087,8 @@ impl AdvancedAi {
             breaker_keeps_its_queue: false,
             breaker_to_the_fastest: false,
             // ---- append: c-d ----------------------------------------
+            capital_prey_opens_a_front_2: false,
+            capital_prey_noted: BTreeMap::new(),
             culture_finish_at_the_observed_bar: false,
             denial_keeps_its_rival: false,
             denial_incumbent: None,
@@ -13404,6 +13414,16 @@ impl AdvancedAi {
             Some(emergency.target)
         } else if let Some((rival, _)) = finishing_front {
             Some(rival)
+        } else if let Some(prey) = (wartime_rivals.is_empty()
+            && rush_victim.is_none()
+            && self.forced_target_player.is_none()
+            && self.capital_prey_opens_a_front_2)
+            .then(|| self.capital_prey_beside_the_front(g, pid, None).0)
+            .flatten()
+        {
+            // `capital-prey-opens-a-front-2`: at peace too, a collapsed
+            // rival's original capital in reach is the campaign's first front.
+            Some(prey)
         } else if wartime_rivals.is_empty() {
             // The rush already chose, on nearness and weakness, and the
             // generic value sort would happily re-aim the column at a richer
@@ -21843,6 +21863,8 @@ impl AdvancedAi {
                 let pos = g.cities[&cid].pos;
                 Self::city_within_declaration_range(g, pid, pos)
                     || self.denial_reaches_far(g, pid, target, pos)
+                    // See `capital_prey_reaches_far`.
+                    || self.capital_prey_reaches_far(g, pid, target, pos)
             })
         } else {
             plan.target_city
@@ -21850,6 +21872,8 @@ impl AdvancedAi {
                 .is_some_and(|target_city| {
                     Self::city_within_declaration_range(g, pid, target_city.pos)
                         || self.denial_reaches_far(g, pid, target, target_city.pos)
+                        // See `capital_prey_reaches_far`.
+                        || self.capital_prey_reaches_far(g, pid, target, target_city.pos)
                 })
         };
         let committed_domination = self.victory_target == Some(VictoryTarget::Domination);
@@ -44469,6 +44493,9 @@ impl AdvancedAi {
         // One stock-pressure sample per rival per turn, before anything reads
         // urgency this turn. See `projected_stock_denial`.
         self.record_stock_pressures(g, pid);
+        // See `capital_prey_beside_the_front`: the prey and its near misses,
+        // once a turn, at war or at peace.
+        self.journal_capital_prey(g, pid);
         // See `denial_keeps_its_rival`: this turn's counter rival, chosen
         // against last turn's, is the incumbent for the next.
         if self.denial_keeps_its_rival {

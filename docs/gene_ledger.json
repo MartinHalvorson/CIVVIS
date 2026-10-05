@@ -2206,6 +2206,15 @@
           "campus-before-the-army-3": null
         }
       },
+      "capital-prey-opens-a-front": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "capital-prey-opens-a-front": null,
+          "capital-prey-opens-a-front-2": null
+        }
+      },
       "capture-go-or-stand-down": {
         "rule_on": [
           "capture-go-or-stand-down-2"
