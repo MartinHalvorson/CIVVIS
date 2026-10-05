@@ -208,5 +208,44 @@ check("participation denial cost", deniedSpent, costs[16] + costs[2])
 check("participation denial leaves an unknown vote free", requests[3].votes, 1)
 config.ParticipationDenial = false
 
+-- See `CivvisCongressRedirect`. Game 118 (T095215Z) t202: Macedon (here
+-- player 3, on 15 points) cast 9 A votes for itself at t182, Gaul (player 1,
+-- 8 points) 4 and Portugal (player 2, 8) 5. Half of 371 buys 10 votes: short
+-- of the 13 a claim needs over 9 plus a quarter, enough to lift Gaul's block
+-- (counted at three of its four) past 12. Ties on points and votes go to the
+-- lower id.
+local function redirect(name, favor, points, option, selection, mode, votes)
+    requests, submits = {}, 0
+    bank, leaderPoints = favor, points
+    config.DiploVictoryVoteFloor = nil
+    local _, spent, _, _, _, _, actualMode = vote(0)
+    check(name .. " mode", actualMode, mode)
+    check(name .. " option", requests[1].option, option)
+    check(name .. " target", requests[1].selection, selection)
+    check(name .. " votes", requests[1].votes, votes)
+    check(name .. " cost", spent, costs[votes - 1])
+end
+tally.wc_rival_blocks = { [3] = 9, [1] = 4, [2] = 5 }
+tally.wc_dvp_won = 1
+redirect("game 118 t202 hands the +2 to Gaul", 371, 15, 1, 1, "redirect", 10)
+-- A bank that buys the block plus a quarter claims it for us, at that count.
+tally.wc_rival_blocks = { [3] = 4, [1] = 2 }
+redirect("a small block is outvoted for us", 439, 15, 1, 0, "outvote", 7)
+-- A session the rivals carried on B is left to the denial.
+tally.wc_rival_blocks = { [3] = 9, [1] = 4, [2] = 5 }
+tally.wc_dvp_won = 2
+redirect("after a B session the denial stands", 371, 15, 2, 3, "deny", 10)
+tally.wc_dvp_won = 1
+-- The largest block held by a rival far behind the leader is no contender's.
+tally.wc_rival_blocks = { [1] = 9, [3] = 4 }
+redirect("a non-contender's block is not bought", 371, 15, 2, 3, "deny", 10)
+-- Off by configuration.
+tally.wc_rival_blocks = { [3] = 9, [1] = 4, [2] = 5 }
+config.DiploVictoryRedirect = false
+redirect("redirect off", 371, 15, 2, 3, "deny", 10)
+config.DiploVictoryRedirect = nil
+tally.wc_rival_blocks = nil
+tally.wc_dvp_won = nil
+
 if failures > 0 then os.exit(1) end
 print("all Congress claim/denial checks passed")

@@ -15939,6 +15939,81 @@ CivvisParticipationDenialOption = function(rtype, leader, pid, leaderPoints, las
 	return 3 - predicted;
 end
 
+-- ★★★ REDIRECT THE +2 RATHER THAN DENY IT.
+--
+-- Option A of the Diplomatic Victory resolution gives +2 to the player with
+-- the largest A block, and every rival votes A for itself; option B wins only
+-- when the rivals themselves turn on a leader. So a B ballot against the
+-- leader is lost in nearly every session, and the bank it spends is gone.
+-- Live King civvis-20261005T095215Z (game 118): Macedon's own A blocks of 12,
+-- 9 and 10 took the +2 at turns 162, 182 and 202 (10 -> 14 -> 17 DVP, the
+-- win at 221) while we cast 3, 3 and 10 B votes and banked 260-371 Favor.
+-- Four, six and three more A votes for Gaul (8-9 DVP), whose own block stood
+-- at 9, 4 and 8, would have handed it the +2 instead. Across the Diplomatic
+-- losses of October 2-5, the winner took the +2 in 39 of 78 sessions, and
+-- the Favor in hand bought that redirect in 29 of them.
+--
+-- From the last session's A blocks (`wc_rival_blocks`): when the largest
+-- block belongs to a contender (at least `DiploVictoryRedirectFloor`, 6,
+-- points, and within two of the leader), the block to beat is it plus a
+-- quarter (at least 2). A claim for us is preferred when the session's
+-- budget buys one more vote than that ("outvote"); otherwise the votes go to
+-- the rival block, counted at three quarters, of the rival with the fewest
+-- points -- at least two behind the leader and at most
+-- `DiploVictoryRedirectCeiling` (14) after the +3 -- that the budget can lift
+-- past it ("redirect"). Our A vote then matches the winning option and
+-- target too. Simulated from each previous session's blocks over October
+-- 2-5 the rule fires 46 times and carries the session in 26, taking the +2
+-- off its holder in 21 (6 the eventual winner). A session the rivals won on
+-- B is left to the denial. `nil` when nothing applies; off with
+-- `DiploVictoryRedirect = false`. Exported globally to stay below the
+-- chunk-local limit.
+CivvisCongressRedirect = function(blocks, candidates, pid, budget, maxVotes, config, lastWon)
+	config = type(config) == "table" and config or {};
+	if config.DiploVictoryRedirect == false or type(blocks) ~= "table" or lastWon == 2 then
+		return nil;
+	end
+	budget = math.min(tonumber(budget) or 0, tonumber(maxVotes) or 1);
+	local points, lead = {}, 0;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		local p = tonumber(c.points) or 0;
+		points[tonumber(c.id) or -1] = p;
+		if p > lead then lead = p; end
+	end
+	local top, topVotes = nil, 0;
+	for who, votes in pairs(blocks) do
+		local id, v = tonumber(who), tonumber(votes) or 0;
+		if id ~= nil and id ~= pid and (v > topVotes or (v == topVotes and top ~= nil and id < top)) then
+			top, topVotes = id, v;
+		end
+	end
+	local topPoints = top ~= nil and points[top] or nil;
+	if topPoints == nil or topPoints < (tonumber(config.DiploVictoryRedirectFloor) or 6)
+		or topPoints + 2 < lead then
+		return nil;
+	end
+	local need = topVotes + math.max(2, math.ceil(topVotes / 4));
+	if need + 1 <= budget then
+		return pid, need + 1, "outvote";
+	end
+	local ceiling = tonumber(config.DiploVictoryRedirectCeiling) or 14;
+	local best, bestVotes = nil, nil;
+	for who, votes in pairs(blocks) do
+		local id = tonumber(who);
+		local p = id ~= nil and points[id] or nil;
+		if p ~= nil and id ~= top and id ~= pid and p + 3 <= ceiling and p + 2 <= lead then
+			local n = math.max(1, need - math.floor((tonumber(votes) or 0) * 3 / 4) + 1);
+			local bp = best ~= nil and points[best] or nil;
+			if n <= budget and (best == nil or p < bp or (p == bp and (n < bestVotes
+				or (n == bestVotes and id < best)))) then
+				best, bestVotes = id, n;
+			end
+		end
+	end
+	if best == nil then return nil; end
+	return best, bestVotes, "redirect";
+end
+
 -- A ballot is verified against all three native selection fields, not just
 -- its size. WorldCongressPopup.lua:1915-1919 reads PlayerID, OptionChosen,
 -- and Votes; :1935-1940 reads ResolutionTarget for that same voter.
@@ -19583,6 +19658,9 @@ local function beginTurn(player, pid, turn)
 		-- `CivvisParticipationDenialOption` at the next ballot.
 		local lastOption = envoyTally.wc_last_option or {};
 		envoyTally.wc_last_option = lastOption;
+		-- Every rival A block by the player it names, and which option won:
+		-- `CivvisCongressRedirect` reads both.
+		local rivalBlocks, dvpWon = nil, nil;
 		for i, r in pairs(review.Resolutions or {}) do
 			if type(i) == "number" and type(r) == "table" and r.Type ~= nil then
 				local info = GameInfo.Resolutions[r.Type];
@@ -19600,6 +19678,11 @@ local function beginTurn(player, pid, turn)
 						end
 						lastOption[rtype .. ":" .. tostring(who)] = option;
 						local target = sel.ResolutionTarget;
+						if rtype == "WC_RES_DIPLOVICTORY" and option == 1 and who ~= pid
+							and tonumber(target) ~= nil then
+							rivalBlocks = rivalBlocks or {};
+							rivalBlocks[tonumber(target)] = (rivalBlocks[tonumber(target)] or 0) + votes;
+						end
 						voters[#voters + 1] = { player = who, option = option, votes = votes,
 							target = target };
 						if who == pid then
@@ -19608,6 +19691,7 @@ local function beginTurn(player, pid, turn)
 					end
 				end
 				local won = a > b and 1 or (b > a and 2 or 0);
+				if rtype == "WC_RES_DIPLOVICTORY" then dvpWon = won; end
 				resolutions[#resolutions + 1] = {
 					type = rtype,
 					target_type = tostring(r.TargetType or ""),
@@ -19648,6 +19732,10 @@ local function beginTurn(player, pid, turn)
 			end
 		end
 		if rivalBlock ~= nil then envoyTally.wc_rival_block = rivalBlock; end
+		if dvpWon ~= nil then
+			envoyTally.wc_rival_blocks = rivalBlocks;
+			envoyTally.wc_dvp_won = dvpWon;
+		end
 		if #resolutions == 0 and #proposals == 0 then return; end
 		table.sort(signature);
 		local key = table.concat(signature, "|");
@@ -21048,6 +21136,17 @@ local function tick()
 							n = budget;
 							mode = (budget >= claim and (tonumber(leaderPoints) or 0) < floor)
 								and "claim" or "outvote";
+						end
+						-- See `CivvisCongressRedirect`: a +2 we can take from a
+						-- contender goes to us or a rival far behind instead.
+						if mode ~= "claim" and mode ~= "outvote" then
+							local to, count, how = CivvisCongressRedirect(envoyTally.wc_rival_blocks,
+								candidates, pid, budget, maxVotes, cfg, envoyTally.wc_dvp_won);
+							for idx, t in pairs(to ~= nil and targets or {}) do
+								if tonumber(t) == to then
+									option, selection, n, mode = 1, idx, count, how;
+								end
+							end
 						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;
