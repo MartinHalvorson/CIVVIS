@@ -688,6 +688,8 @@ def supervised_brain_command(args: argparse.Namespace, run_dir: Path,
         command += ["--with", treatment]
     for treatment in args.civvis_without:
         command += ["--without", treatment]
+    if getattr(args, "civvis_capture_inputs", False):
+        command.append("--capture-inputs")
     return command
 
 
@@ -5810,6 +5812,10 @@ def main(argv: list[str] | None = None) -> int:
                     metavar="TREATMENT",
                     help="withhold one live treatment from the decision worker, "
                          "repeatable — the control arm of a live A/B")
+    ap.add_argument("--civvis-capture-inputs", action="store_true", default=False,
+                    help="opt in to exact event-read capture in the decision worker; "
+                         "archives are unique per process under the run directory, "
+                         "with returned status recorded separately from execution")
     ap.add_argument("--civvis-with", action="append", default=[],
                     metavar="TREATMENT",
                     help="restore one ledger-held live treatment for a labeled "

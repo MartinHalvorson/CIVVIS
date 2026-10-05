@@ -32,6 +32,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -386,16 +387,72 @@ def write_disabled_heartbeat(cache_root: Path | None = None,
         pass  # the heartbeat must never hurt the game it watches
 
 
+def new_input_capture(run_dir: Path) -> Path:
+    """Reserve a unique process container; the decider creates its NEW child.
+
+    Never reuse an archive across a seat change, runtime update, worker re-exec
+    or one-shot request. Failed starts are retained too, not overwritten.
+    """
+    root = run_dir.resolve() / "input-captures"
+    root.mkdir(exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix="process-", dir=root)) / "reads"
+
+
+def record_input_capture(run_dir: Path, binary: Path, turn: int,
+                         directory: Path, payload: dict,
+                         failure: str | None = None) -> bool:
+    """Read back the requested setting without claiming archive/execution proof.
+
+    An old binary can ignore unknown flags. Missing, invalid and incomplete
+    replies must be visible; they must not discard otherwise valid orders.
+    Returns whether the descriptor is structurally valid for decision tracing.
+    """
+    from civ6_decision_trace import validate_input_capture
+    capture = payload.get("input_capture")
+    status, error, valid = "missing", "no input_capture in reply", False
+    if failure is not None:
+        status, error = "decider_failed", failure
+    if "input_capture" in payload:
+        try:
+            validate_input_capture(capture)
+            if Path(capture["directory"]) != directory:
+                raise ValueError("capture directory differs from requested directory")
+            if Path(capture["source"]).resolve() != (run_dir / "events.jsonl").resolve():
+                raise ValueError("capture source differs from requested events")
+            valid, error = True, capture.get("error")
+            status = "reported_complete" if capture["complete"] else "reported_incomplete"
+            if capture["complete"] and any("error" in read for read in capture["reads"]):
+                status, error = "read_failed", "source read failure recorded"
+        except (ValueError, TypeError, KeyError) as exc:
+            status, error = "invalid", str(exc)
+    record = {"schema": 1, "turn": turn, "frame": payload.get("decision", {}).get("frame"),
+              "requested_directory": str(directory), "binary": str(binary.resolve()),
+              "status": status, "error": error, "input_capture": capture,
+              "archive_bytes_verified": False, "execution_status": "not_observed"}
+    try:
+        with (run_dir / "input_capture_status.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, sort_keys=True, allow_nan=False) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+    except (OSError, ValueError) as exc:
+        print(f"[brain] could not record input capture status: {exc}", flush=True)
+    if status != "reported_complete":
+        print(f"[brain] input capture {status}: {error}", flush=True)
+    return valid
+
+
 def civvis_orders(binary: Path, run_dir: Path, turn: int, victory: str,
                   strategy: str | None = None, civ: str | None = None,
                   without: list[str] | None = None,
-                  with_: list[str] | None = None) -> list[tuple]:
+                  with_: list[str] | None = None,
+                  capture_inputs: bool = False) -> list[tuple]:
     """Ask CIVVIS. Its stdout is a JSON array of orders; anything else is an error.
 
     ⚠ A non-zero exit or unparseable stdout returns NO orders rather than a guess.
     The mod then falls back and records `fallback`, which is visible — inventing
     orders here would put my heuristics back in the game under CIVVIS's name.
     """
+    capture_directory = None
     try:
         command = [str(binary), "--mirror", str(run_dir), "--turn", str(turn),
                    "--victory", victory]
@@ -407,23 +464,39 @@ def civvis_orders(binary: Path, run_dir: Path, turn: int, victory: str,
             command.extend(["--with", treatment])
         for treatment in without or []:
             command.extend(["--without", treatment])
+        capture_directory = new_input_capture(run_dir) if capture_inputs else None
+        if capture_directory is not None:
+            command.extend(["--capture-inputs", str(capture_directory)])
         proc = subprocess.run(
             command,
             capture_output=True, text=True, timeout=60,
         )
     except (subprocess.SubprocessError, OSError) as exc:
+        if capture_directory is not None:
+            record_input_capture(run_dir, binary, turn, capture_directory, {}, str(exc))
         print(f"[brain] civvis-orders failed to run: {exc}", flush=True)
         return []
     if proc.returncode != 0:
+        if capture_directory is not None:
+            record_input_capture(run_dir, binary, turn, capture_directory, {},
+                                 f"exit {proc.returncode}: {proc.stderr.strip()[:300]}")
         print(f"[brain] civvis-orders exit {proc.returncode}: "
               f"{proc.stderr.strip()[:300]}", flush=True)
         return []
     try:
         payload = json.loads(proc.stdout)
     except ValueError:
+        if capture_directory is not None:
+            record_input_capture(run_dir, binary, turn, capture_directory, {}, "stdout not JSON")
         print(f"[brain] civvis-orders stdout not JSON: "
               f"{proc.stdout.strip()[:200]}", flush=True)
         return []
+    if capture_directory is not None:
+        valid = record_input_capture(run_dir, binary, turn, capture_directory, payload)
+        if "decision" in payload:
+            from civ6_decision_trace import record_decision
+            traced = payload if valid else {k: v for k, v in payload.items() if k != "input_capture"}
+            record_decision(run_dir, traced, str(binary))
     rows: list[tuple] = []
     for order in payload.get("orders", []):
         rows.append((
@@ -588,7 +661,8 @@ class Decider:
 
     def __init__(self, binary: Path, run_dir: Path, victory: str,
                  war_from_plan: bool = False, strategy: str | None = None,
-                 without: list[str] | None = None, with_: list[str] | None = None):
+                 without: list[str] | None = None, with_: list[str] | None = None,
+                 capture_inputs: bool = False):
         self.binary = binary
         self.run_dir = run_dir
         self.victory = victory
@@ -609,6 +683,8 @@ class Decider:
         # under the normal live controller.
         self.without = list(without or [])
         self.with_ = list(with_ or [])
+        self.capture_inputs = capture_inputs
+        self.capture_directory: Path | None = None
         self.civ: str | None = None
         self.proc: subprocess.Popen | None = None
         self.why = None
@@ -627,6 +703,10 @@ class Decider:
             command.extend(["--with", treatment])
         for treatment in self.without:
             command.extend(["--without", treatment])
+        if self.capture_inputs:
+            if self.capture_directory is None:
+                raise ValueError("input capture directory must be reserved at process start")
+            command.extend(["--capture-inputs", str(self.capture_directory)])
         return command
 
     def set_civ(self, civ: object) -> None:
@@ -641,6 +721,10 @@ class Decider:
         self.civ = value
 
     def start(self) -> None:
+        if self.capture_inputs:
+            self.capture_directory = new_input_capture(self.run_dir)
+        if self.why is not None:
+            self.why.close()
         # ★★★★ KEEP CIVVIS'S REASONING. This used to send the decider's stderr to
         # DEVNULL, so a live run recorded WHAT was ordered and never WHY — and the two
         # questions this project keeps having to answer are "did it choose that" and
@@ -673,12 +757,18 @@ class Decider:
             while True:
                 line = self.proc.stdout.readline()
                 if not line:
+                    if getattr(self, "capture_inputs", False):
+                        record_input_capture(self.run_dir, self.binary, turn,
+                                             self.capture_directory, {}, "decider closed")
                     print("[brain] decider closed its output", flush=True)
                     self.proc = None
                     return [], "decider closed"
                 try:
                     payload = json.loads(line)
                 except ValueError:
+                    if getattr(self, "capture_inputs", False):
+                        record_input_capture(self.run_dir, self.binary, turn,
+                                             self.capture_directory, {}, "stdout not JSON")
                     return [], f"unparseable: {line.strip()[:120]}"
                 if "orders" in payload:
                     break
@@ -688,15 +778,25 @@ class Decider:
                 print(f"[brain] IGNORING non-response line on the decider's stdout: "
                       f"{line.strip()[:160]}", flush=True)
         except (OSError, ValueError) as exc:
+            if getattr(self, "capture_inputs", False):
+                record_input_capture(self.run_dir, self.binary, turn,
+                                     self.capture_directory, {}, str(exc))
             print(f"[brain] decider died mid-turn: {exc}", flush=True)
             self.proc = None
             return [], "decider died"
+        traced = payload
+        if getattr(self, "capture_inputs", False):
+            assert self.capture_directory is not None
+            valid = record_input_capture(self.run_dir, self.binary, turn,
+                                         self.capture_directory, payload)
+            if not valid:
+                traced = {k: v for k, v in payload.items() if k != "input_capture"}
         if "decision" in payload:
             # Preserve the native action plan AND the final emitted orders.
             # SQLite rows can be replaced by a later frame or a reload; this
             # append-only record retains the exact answer that was considered.
             from civ6_decision_trace import record_decision
-            record_decision(self.run_dir, payload, str(self.binary))
+            record_decision(self.run_dir, traced, str(self.binary))
         rows = [
             (str(o.get("kind", "")), o.get("subject"), o.get("verb"),
              o.get("x"), o.get("y"))
@@ -1051,6 +1151,10 @@ def main() -> int:
                     help="keep one CIVVIS agent alive across turns (plan continuity)")
     ap.add_argument("--no-server", dest="server", action="store_false",
                     help="spawn civvis-orders per turn; loses plan continuity")
+    ap.add_argument("--capture-inputs", action="store_true", default=False,
+                    help="opt in to exact event-read archives, unique per decider "
+                         "process, under RUN_DIR/input-captures; record returned "
+                         "capture status (not execution or archive integrity proof)")
     ap.add_argument("--seconds", type=float, default=7200.0)
     ap.add_argument(
         "--replay-turn", action="append", type=int, default=[], metavar="TURN",
@@ -1089,7 +1193,8 @@ def main() -> int:
           f"forced={args.with_ or 'none'} withheld={args.without or 'none'}", flush=True)
     strategy = None if args.strategy.strip().lower() in {"", "stock", "none"} else args.strategy
     decider = (Decider(binary, run_dir, args.victory, args.war_from_plan, strategy,
-                       without=args.without, with_=args.with_)
+                       without=args.without, with_=args.with_,
+                       capture_inputs=args.capture_inputs)
                if args.mode == "civvis" and args.server else None)
     updater = None
     if args.mode == "civvis" and args.github_refresh_seconds > 0:
@@ -1247,7 +1352,8 @@ def main() -> int:
                     record_note(run_dir, turn, note)
             else:
                 rows = civvis_orders(binary, run_dir, turn, args.victory, strategy,
-                                     seat_civ, args.without, args.with_)
+                                     seat_civ, args.without, args.with_,
+                                     capture_inputs=args.capture_inputs)
             rows, government_blocks = guard_government_orders(
                 event, rows, seen_governments
             )
