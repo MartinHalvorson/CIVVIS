@@ -337,6 +337,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `second-front-keeps-its-war` | off (unmeasured) | Opt-in gene `second-front-keeps-its-war`; see `Self::second_front_keeps_its_war`. | 1 \| 1 |
 | `second-front-kept-when-winning` | off (unmeasured) | Opt-in gene `second-front-kept-when-winning`; see `Self::second_front_kept_when_winning`. | — \| 2 |
 | `second-front-kept-when-winning-2` | off (unmeasured) | Opt-in gene `second-front-kept-when-winning-2`; see `Self::second_front_kept_when_winning_2`. | — \| 2 |
+| `second-front-waits-for-its-war` | off (unmeasured) | Opt-in gene `second-front-waits-for-its-war`; see `Self::second_front_waits_for_its_war`. | 1 \| 1 |
 | `settler-before-the-navy` | off (unmeasured) | The delegated city governor's navy step yields to a due Settler. | 1 \| 1 |
 | `settler-detour-stays-near` | off (unmeasured) | `settler-detour-stays-near`: a threat detour's fallback must lie about as close as the site it leaves. | 1 \| 1 |
 | `shared-danger` | off (unmeasured) | Opt-in gene `shared-danger`; see `Self::shared_danger`. | 1 \| 1 |

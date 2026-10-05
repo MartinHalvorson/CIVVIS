@@ -1751,3 +1751,66 @@ fn favor_spares_the_surprise_war_under_the_gene() {
     assert!(ai.faith_at_match_point(&g, 2));
     assert!(!ai.favor_spares_surprise(&g, 0, 2));
 }
+
+/// See `second_front_waits_for_its_war`: without a live front siege, a second
+/// front still at peace leaves the plan on the running war under the gene,
+/// and is declared on from the diplomacy desk all the same. Live King
+/// civvis-20261005T162932Z (game 143): the Washington row vanished for 51
+/// turns while the plan aimed at Egypt, still at peace.
+#[test]
+fn a_second_front_at_peace_waits_for_its_war_under_the_gene() {
+    // Gene off: the plan hands the running war's target to the second front.
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2));
+    assert!(!ai.urgent_victory_threat(&g, 2), "fixture: not urgent");
+    assert!(!ai.second_front_waits_for_the_front(&g, 0, 2));
+    assert!(!ai.second_front_waits_for_its_war(&g, 0, 2));
+    assert_eq!(ai.assess(&g, 0).target_player, Some(2));
+
+    // Gene on: the plan and its objective stay on the running war, and the
+    // second front is still declared on.
+    let (mut g, mut ai) = two_fronts();
+    g.found_city_for(0, (6, 18), None);
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    ai.enable_second_front_waits_for_its_war();
+    ai.coalition_before_war = false;
+    ai.coalition_before_war_2 = false;
+    ai.coalition_before_war_3 = false;
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2));
+    assert!(ai.second_front_waits_for_its_war(&g, 0, 2));
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.target_player, Some(1), "the army stays on its war");
+    assert_eq!(
+        plan.target_city.map(|city| g.cities[&city].owner),
+        Some(1),
+        "the running war keeps its objective, so the Board keeps its Siege row"
+    );
+    for _ in 0..12 {
+        if g.is_at_war(0, 2) {
+            break;
+        }
+        g.turn += 1;
+        let plan = ai.assess(&g, 0);
+        assert_eq!(plan.target_player, Some(1));
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+    }
+    assert!(g.is_at_war(0, 2), "the second front is declared on");
+    assert!(
+        !ai.second_front_waits_for_its_war(&g, 0, 2),
+        "once at war it no longer waits"
+    );
+
+    // An urgent clock keeps its claim on the plan.
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 1, 2]);
+    ai.enable_second_front_waits_for_its_war();
+    ai.one_war_observe(&g, 0);
+    assert!(ai.urgent_victory_threat(&g, 2));
+    assert!(!ai.second_front_waits_for_its_war(&g, 0, 2));
+}

@@ -6255,6 +6255,17 @@ impl AdvancedAi {
         self.breach_support_reads_the_wall_tier = false;
     }
 
+    /// Opt-in gene `second-front-waits-for-its-war`; see
+    /// [`Self::second_front_waits_for_its_war`].
+    pub fn enable_second_front_waits_for_its_war(&mut self) {
+        self.second_front_waits_for_its_war = true;
+    }
+
+    /// The twin of `enable_second_front_waits_for_its_war`.
+    pub fn disable_second_front_waits_for_its_war(&mut self) {
+        self.second_front_waits_for_its_war = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
