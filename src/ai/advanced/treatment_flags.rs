@@ -6155,6 +6155,17 @@ impl AdvancedAi {
         self.march_uses_its_moves = false;
     }
 
+    /// Opt-in gene `siege-members-use-their-moves`; see
+    /// [`Self::siege_members_use_their_moves`].
+    pub fn enable_siege_members_use_their_moves(&mut self) {
+        self.siege_members_use_their_moves = true;
+    }
+
+    /// The twin of `enable_siege_members_use_their_moves`.
+    pub fn disable_siege_members_use_their_moves(&mut self) {
+        self.siege_members_use_their_moves = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

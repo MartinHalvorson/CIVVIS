@@ -2959,6 +2959,10 @@ pub const GENES: &[Gene] = &[
     // Staging marches took the router's single step and stood: 47-62% of
     // live frame-0 MOVE_TOs were one tile. See `march_moves`.
     Gene { tag: "march-uses-its-moves", field: "march_uses_its_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_march_uses_its_moves, disable: AdvancedAi::disable_march_uses_its_moves },
+    // Live King civvis-20261005T141932Z (game 135): the Siege of Wak Kab'nal
+    // read Reduce at walls 15/100 for turns 71-78 with 1-2 of 4-10 members
+    // staged, the rest one tile a turn behind. See `close_to_staging`.
+    Gene { tag: "siege-members-use-their-moves", field: "siege_members_use_their_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_members_use_their_moves, disable: AdvancedAi::disable_siege_members_use_their_moves },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

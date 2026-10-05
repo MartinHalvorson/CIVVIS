@@ -1028,3 +1028,77 @@ fn stage_march_gene_leaves_a_crossing_without_come_ashore_and_a_dry_march_alone(
     };
     assert_eq!(run(true), run(false));
 }
+
+/// `siege-members-use-their-moves`: a postless gun far from an invested city
+/// walks a tile per movement point toward the staging ring in one decision,
+/// where it otherwise takes the router's single step.
+#[test]
+fn a_postless_gun_walks_its_whole_movement_under_the_member_gene() {
+    let walk = |on: bool| {
+        let (mut g, cid) = walled_city();
+        let target = g.cities[&cid].pos;
+        for pos in g.wdisk(target, 10) {
+            if pos == target {
+                continue;
+            }
+            let tile = g.map.tiles.get_mut(&pos).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        let far = super::tests::at_distance(&g, cid, 9)[0];
+        let gun = g.spawn_unit("catapult", 0, far);
+        let full = g.units[&gun].moves_left;
+        let city = CityView::of(&g, cid).unwrap();
+        let mut ai = AdvancedAi::new();
+        if on {
+            ai.enable_siege_members_use_their_moves();
+        }
+        assert_eq!(ai.close_to_staging(&mut g, 0, gun, &city), Some(true));
+        (9 - g.wdist(g.units[&gun].pos, target), full)
+    };
+    let (off, full) = walk(false);
+    assert_eq!(off, 1, "off, the router's single step");
+    let (on, _) = walk(true);
+    assert_eq!(
+        on as f64, full,
+        "on, a tile for every movement point on open ground"
+    );
+}
+
+/// `siege-members-use-their-moves`: a melee member's walk stops outside the
+/// city's strike; the step into it stays the router's.
+#[test]
+fn a_melee_member_walks_up_to_the_strike_and_no_further() {
+    let walk = |on: bool| {
+        let (mut g, cid) = walled_city();
+        let target = g.cities[&cid].pos;
+        for pos in g.wdisk(target, 10) {
+            if pos == target {
+                continue;
+            }
+            let tile = g.map.tiles.get_mut(&pos).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        let far = super::tests::at_distance(&g, cid, 6)[0];
+        let rider = g.spawn_unit("horseman", 0, far);
+        assert!(g.units[&rider].moves_left >= 3.0);
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        let mut ai = AdvancedAi::new();
+        ai.enable_siege_train();
+        if on {
+            ai.enable_siege_members_use_their_moves();
+        }
+        assert!(ai.siege_melee_step(&mut g, 0, rider, &city, &plan));
+        g.wdist(g.units[&rider].pos, target)
+    };
+    assert_eq!(walk(false), 5, "off, the router's single step");
+    assert_eq!(
+        walk(true),
+        CITY_STRIKE_RANGE + 1,
+        "on, to the edge of the strike"
+    );
+}

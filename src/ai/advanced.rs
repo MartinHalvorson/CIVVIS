@@ -7251,6 +7251,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-members-use-their-moves`: in Invest and Reduce, a member far
+    /// from the ring walks as far as its movement reaches toward it, not the
+    /// router's single step. See `siege_train::close_to_staging`.
+    siege_members_use_their_moves: bool,
     /// `science-denounce-waits-for-the-race`: the science denial's
     /// denunciation names only a rival physically in the space race. See
     /// `science_threat_denunciation`.
@@ -9576,6 +9580,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_members_use_their_moves: false,
             science_denounce_waits_for_the_race: false,
             stale_swap_reads_the_march: false,
             second_front_keeps_its_war: false,
@@ -21206,7 +21211,7 @@ impl AdvancedAi {
         debug_assert_ne!(next, current);
         // `march-uses-its-moves`: walk as far toward the dry ring as this
         // turn's movement reaches, never through the victim's land.
-        if overland {
+        if overland && self.march_uses_its_moves {
             let victim_free = |g: &Game, _: Pos, path: &[Pos]| {
                 path.iter().all(|pos| {
                     g.map.tiles[pos]
