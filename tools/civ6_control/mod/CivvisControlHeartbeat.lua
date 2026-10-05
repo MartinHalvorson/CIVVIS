@@ -69,7 +69,14 @@ end
 -- (`CivvisClockAck`) and how its frame deltas compare with the UI clock over
 -- 10 s windows (`CivvisFrameClock`); the agent reverts the timescale if
 -- either disagrees (`CivvisQueue.checkTimescaleClock`).
-CivvisFrameClock = { raw = 0, scale = 1 };
+-- ⚠ Only CONSECUTIVE frames are compared: a frame counts when the UI clock
+-- moved 0 < dui <= 0.5 s since this context's previous frame. A leader screen
+-- hides TopPanel and stops this SetUpdate while the UI clock runs on (G98
+-- 04:12:15-20, a first meeting), and a long hitch caps its frame delta; both
+-- read as missing frame time (G98: 0.48, the very signature of unscaled
+-- deltas) though nothing is wrong. Deltas the timescale does not scale still
+-- read ~0.5 in every ordinary frame.
+CivvisFrameClock = { raw = 0, ui = 0, scale = 1 };
 function CivvisFrameClock.scaleNow()
 	local s = nil;
 	pcall(function() s = tonumber(ExposedMembers.CivvisTimeScale); end);
@@ -82,18 +89,20 @@ function CivvisFrameClock.frame(raw)
 	local ui = nil;
 	pcall(function() ui = UI.GetElapsedTime(); end);
 	if type(ui) ~= "number" then return raw / scale; end
-	if scale ~= fc.scale or type(fc.ui0) ~= "number" then
-		fc.scale, fc.raw, fc.ui0 = scale, 0, ui;
-	else
+	if scale ~= fc.scale then
+		fc.scale, fc.raw, fc.ui = scale, 0, 0;
+	elseif type(fc.last) == "number" and ui - fc.last > 0 and ui - fc.last <= 0.5 then
 		fc.raw = fc.raw + raw;
-		if ui - fc.ui0 >= 10 then
-			local ratio = math.floor(fc.raw / (ui - fc.ui0) * 100 + 0.5) / 100;
+		fc.ui = fc.ui + (ui - fc.last);
+		if fc.ui >= 10 then
+			local ratio = math.floor(fc.raw / fc.ui * 100 + 0.5) / 100;
 			pcall(function()
 				ExposedMembers.CivvisFrameClock = { scale = scale, ratio = ratio, at = ui };
 			end);
-			fc.raw, fc.ui0 = 0, ui;
+			fc.raw, fc.ui = 0, 0;
 		end
 	end
+	fc.last = ui;
 	pcall(function()
 		local ack = ExposedMembers.CivvisClockAck;
 		ack.scale.Heartbeat = scale;
