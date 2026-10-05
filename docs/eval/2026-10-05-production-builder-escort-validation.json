@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-05T00:57:33.005062+00:00",
+  "final_native_equals_main": "15fb1fcd46835ba2904585d8930d1d158c26c561",
+  "final_native_equals_completed_full_suite_source": "21e760cee50b03bfff4d4b88f0a8b7bbce738f8c",
+  "compared_paths": [
+    "src",
+    "Cargo.toml",
+    "Cargo.lock",
+    "data"
+  ],
+  "reused_normal_full_suite": {
+    "passed": 4591,
+    "failed": 0,
+    "ignored": 54,
+    "log": "/Users/martbot-mbp-m5-max-128/civvis-production-evidence/2026-10-04/payback/validation/final-full-tests.txt",
+    "log_sha256": "3ac1b543e524f4d0766825705a55a7993e180a8e83bb9ec97bc40bf3e00eeac7"
+  },
+  "scope": "Source-equivalent full-suite reuse for docs-only final change; no new full Cargo invocation",
+  "changed_standalone_probe_rustfmt": "passed",
+  "experimental_api_reproduction": "Use frozen checkpoint/library; restored current library intentionally does not expose this experimental API"
+}
