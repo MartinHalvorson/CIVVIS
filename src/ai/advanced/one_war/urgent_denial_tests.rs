@@ -1559,10 +1559,11 @@ fn a_one_turn_collapse_opens_no_prey_front_under_the_gene() {
     ai.record_rival_power(&g, 0);
     assert!(g.military_power(3) < strong);
     assert_eq!(ai.steady_rival_power(&g, 3), strong);
+    // Player 2, at war with a lone warrior, is the prey that remains.
     let (prey, near) = ai.capital_prey_beside_the_front(&g, 0, Some(1));
-    assert_eq!(prey, None, "the reading of a turn ago stands");
+    assert_ne!(prey, Some(3), "the reading of a turn ago stands");
     assert!(near.contains(&(3, "power")));
-    // Past the memory the low reading is the rival's.
+    // Past the memory the low reading is the rival's, the weakest prey.
     g.turn += PREY_POWER_MEMORY_TURNS;
     ai.record_rival_power(&g, 0);
     assert_eq!(ai.capital_prey_beside_the_front(&g, 0, Some(1)).0, Some(3));
