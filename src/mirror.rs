@@ -11297,6 +11297,129 @@ fn apply_observed_city_facts(game: &mut crate::game::Game, state: &StateSnapshot
     }
 }
 
+/// The city fire each foreign seat last showed, carried across the boards a
+/// `--fresh-board` bridge rebuilds every turn.
+///
+/// The export reads a rival city's `ranged_strength` only while the seat can
+/// see the city (`cityRangedStrength` in CivvisControlAgent.lua: "Never read a
+/// fogged rival's strength"), and a city with no reading falls back to the
+/// strongest ranged unit of its owner's the board can see — a Builder's 3 when
+/// none is in sight. Live King civvis-20261005T024614Z (game 94) besieged
+/// Porto from turn 127, where the export read 60 (a Field Cannon civ) on every
+/// turn a unit of ours had the city in sight and nothing on the others. On
+/// turns 132 and 135 it read nothing, the siege's endurance against the
+/// city's strike jumped from 3.1 to 37.2 turns (and from 2.4 to 22.8), the
+/// train invested, and a Catapult, an Archer and a Trebuchet walked into
+/// Porto's reach one turn apiece and died for 1 to 12 wall points each.
+///
+/// A human remembers the number on the banner. Each city's last reading is
+/// kept by position, under the owner that showed it, so a city that changes
+/// hands drops the old owner's fire. Every city of one empire showed the same
+/// fire in that game (Porto and Lisbon 40, then 60, then 107 together), so the
+/// seat's latest reading across all its cities stands for a city of it never
+/// read. Neither reads below what the seat's research lets it train
+/// ([`researched_city_fire`]), which still holds for a seat never seen. An
+/// observed reading always wins.
+///
+/// `CIVVIS_NO_CITY_FIRE_MEMORY=1` (or `civvis_orders --no-city-fire-memory`)
+/// turns it off; see [`CityFireMemory::disabled_by_env`].
+#[derive(Clone, Debug, Default)]
+pub struct CityFireMemory {
+    turn: Option<u32>,
+    /// The last reading at each city position, and the seat that showed it.
+    by_city: BTreeMap<crate::Pos, (usize, f64)>,
+    /// Each seat's latest reading across all of its cities.
+    by_seat: BTreeMap<usize, f64>,
+}
+
+impl CityFireMemory {
+    /// The live kill switch: a non-empty `CIVVIS_NO_CITY_FIRE_MEMORY` other
+    /// than `0` disables the memory without a rebuild.
+    pub fn disabled_by_env() -> bool {
+        std::env::var("CIVVIS_NO_CITY_FIRE_MEMORY")
+            .is_ok_and(|value| !value.is_empty() && value != "0")
+    }
+
+    /// Record the fire this board observed, then give every foreign city the
+    /// export left unread the strongest of its own remembered fire (same
+    /// owner only), its seat's remembered fire and its seat's researched fire.
+    pub fn apply(&mut self, game: &mut crate::game::Game) {
+        if self.turn.is_some_and(|turn| game.turn < turn) {
+            // A replay starts a new timeline.
+            self.by_city.clear();
+            self.by_seat.clear();
+        }
+        self.turn = Some(game.turn);
+        let mut latest: BTreeMap<usize, f64> = BTreeMap::new();
+        for (cid, strength) in game.observed_city_ranged_strength.iter() {
+            if let Some(city) = game.cities.get(cid).filter(|city| city.owner != 0) {
+                self.by_city.insert(city.pos, (city.owner, *strength));
+                let best = latest.entry(city.owner).or_insert(0.0);
+                *best = best.max(*strength);
+            }
+        }
+        self.by_seat.extend(latest);
+        let fills: Vec<(u32, f64)> = game
+            .cities
+            .values()
+            .filter(|city| {
+                city.owner != 0 && !game.observed_city_ranged_strength.contains_key(&city.id)
+            })
+            .filter_map(|city| {
+                let own = self
+                    .by_city
+                    .get(&city.pos)
+                    .filter(|(owner, _)| *owner == city.owner)
+                    .map(|(_, strength)| *strength);
+                own.into_iter()
+                    .chain(self.by_seat.get(&city.owner).copied())
+                    .chain(researched_city_fire(game, city.owner))
+                    .reduce(f64::max)
+                    .map(|strength| (city.id, strength))
+            })
+            .collect();
+        if fills.is_empty() {
+            return;
+        }
+        let observed = Arc::make_mut(&mut game.observed_city_ranged_strength);
+        for (cid, strength) in fills {
+            observed.insert(cid, strength);
+        }
+    }
+}
+
+/// The ranged strength of the strongest land unit this seat's research lets
+/// it train — the engine's own `strongest_ranged_built` once it trains one.
+/// Units that need a strategic resource are left out, since the seat may hold
+/// none; `None` for a seat with no such unit.
+fn researched_city_fire(game: &crate::game::Game, owner: usize) -> Option<f64> {
+    let player = game.players.get(owner)?;
+    game.rules
+        .units
+        .values()
+        .filter(|spec| {
+            spec.class == "military"
+                && spec.buildable
+                && spec.ranged_strength > 0.0
+                && spec.domain.as_deref().is_none_or(|domain| domain == "land")
+                && spec.requires_resource.is_none()
+                && spec
+                    .tech
+                    .as_ref()
+                    .is_none_or(|tech| player.techs.contains(tech))
+                && spec
+                    .civic
+                    .as_ref()
+                    .is_none_or(|civic| player.civics.contains(civic))
+                && spec
+                    .unique_to
+                    .as_deref()
+                    .is_none_or(|civ| game.owns_civ_unique(owner, civ))
+        })
+        .map(|spec| spec.ranged_strength)
+        .reduce(f64::max)
+}
+
 fn apply_observed_host_metrics(
     game: &mut crate::game::Game,
     state: &StateSnapshot,

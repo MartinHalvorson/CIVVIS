@@ -180,3 +180,128 @@ fn imported_fire_changes_the_simulated_hit_on_a_siege_unit() {
         "the same roll must price native fire instead of strength three"
     );
 }
+
+#[test]
+fn a_fogged_city_keeps_its_last_fire_across_a_fresh_board() {
+    // Game 94: Porto read 60 while in sight and nothing on the turns it was
+    // not; the board fell back to the 3 of a Builder and the siege invested.
+    let (snapshot, mut state) = fixture();
+    let mut memory = CityFireMemory::default();
+    let mut seen = LiveMirror::new(&snapshot, &state, 2, 374206, 250, 0).game;
+    memory.apply(&mut seen);
+    assert_eq!(seen.city_ranged_strength(named(&seen, "Miskolc")), 60.0);
+
+    state.turn += 1;
+    state.rivals[0].cities[0].ranged_strength = None;
+    let mut fogged = LiveMirror::new(&snapshot, &state, 2, 374207, 250, 0).game;
+    let id = named(&fogged, "Miskolc");
+    assert_eq!(
+        fogged.city_ranged_strength(id),
+        3.0,
+        "the export alone reads a Builder's 3"
+    );
+    memory.apply(&mut fogged);
+    assert_eq!(fogged.city_ranged_strength(id), 60.0);
+    assert_eq!(
+        fogged.city_ranged_strength(named(&fogged, "Home")),
+        40.0,
+        "our own cities keep the host's reading"
+    );
+}
+
+#[test]
+fn an_observed_reading_always_wins_over_the_memory() {
+    let (snapshot, mut state) = fixture();
+    let mut memory = CityFireMemory::default();
+    memory.apply(&mut LiveMirror::new(&snapshot, &state, 2, 374212, 250, 0).game);
+    state.turn += 1;
+    state.rivals[0].cities[0].ranged_strength = Some(45.0);
+    let mut game = LiveMirror::new(&snapshot, &state, 2, 374213, 250, 0).game;
+    let id = named(&game, "Miskolc");
+    let owner = game.cities[&id].owner;
+    game.players[owner].techs.insert(crate::name!("ballistics"));
+    memory.apply(&mut game);
+    assert_eq!(
+        game.city_ranged_strength(id),
+        45.0,
+        "neither the 60 seen nor the 60 researched"
+    );
+}
+
+#[test]
+fn a_city_that_changes_hands_drops_the_old_owner_s_fire() {
+    let (snapshot, mut state) = fixture();
+    state.seat.players = 3;
+    state.rivals.push(StateRival {
+        player: 2,
+        cities: vec![city("Eger", 17, Some(25.0))],
+        ..Default::default()
+    });
+    let mut memory = CityFireMemory::default();
+    memory.apply(&mut LiveMirror::new(&snapshot, &state, 3, 374214, 250, 0).game);
+
+    state.turn += 1;
+    let mut taken = state.rivals[0].cities.remove(0);
+    taken.ranged_strength = None;
+    state.rivals[1].cities.push(taken);
+    state.rivals[1].cities[0].ranged_strength = None;
+    let mut game = LiveMirror::new(&snapshot, &state, 3, 374215, 250, 0).game;
+    let id = named(&game, "Miskolc");
+    let new_owner = game.cities[&id].owner;
+    assert_eq!(new_owner, game.cities[&named(&game, "Eger")].owner);
+    game.players[new_owner].techs.clear();
+    memory.apply(&mut game);
+    assert_eq!(
+        game.city_ranged_strength(id),
+        25.0,
+        "the new owner's own reading, not the 60 Miskolc showed under its old one"
+    );
+}
+
+#[test]
+fn an_unknown_city_with_no_memory_strikes_with_what_its_seat_trains() {
+    let (snapshot, mut state) = fixture();
+    state.rivals[0].cities[0].ranged_strength = None;
+    let mut game = LiveMirror::new(&snapshot, &state, 2, 374208, 250, 0).game;
+    let id = named(&game, "Miskolc");
+    let owner = game.cities[&id].owner;
+    game.players[owner].techs.insert(crate::name!("ballistics"));
+    // Robotics alone unlocks the Giant Death Robot, which needs Uranium.
+    game.players[owner].techs.insert(crate::name!("robotics"));
+    CityFireMemory::default().apply(&mut game);
+    assert_eq!(game.city_ranged_strength(id), 60.0, "a Field Cannon's 60");
+}
+
+#[test]
+fn a_fresher_reading_wins_and_research_floors_a_stale_one() {
+    let (snapshot, mut state) = fixture();
+    let mut memory = CityFireMemory::default();
+    state.rivals[0].cities[0].ranged_strength = Some(25.0);
+    memory.apply(&mut LiveMirror::new(&snapshot, &state, 2, 374209, 250, 0).game);
+
+    state.turn += 5;
+    state.rivals[0].cities[0].ranged_strength = None;
+    let mut game = LiveMirror::new(&snapshot, &state, 2, 374210, 250, 0).game;
+    let id = named(&game, "Miskolc");
+    let owner = game.cities[&id].owner;
+    game.players[owner].techs.insert(crate::name!("machinery"));
+    memory.apply(&mut game);
+    assert_eq!(
+        game.city_ranged_strength(id),
+        40.0,
+        "a Crossbowman outranks a stale 25"
+    );
+
+    // A replay rewinds the timeline; what the later turns saw is forgotten.
+    state.turn -= 3;
+    let mut rewound = LiveMirror::new(&snapshot, &state, 2, 374211, 250, 0).game;
+    let id = named(&rewound, "Miskolc");
+    let owner = rewound.cities[&id].owner;
+    rewound.players[owner].techs.clear();
+    memory.apply(&mut rewound);
+    assert_eq!(
+        rewound.city_ranged_strength(id),
+        15.0,
+        "a Slinger needs no research"
+    );
+}

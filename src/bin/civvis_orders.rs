@@ -8391,6 +8391,9 @@ fn main() {
     let fresh_ai = args.iter().any(|a| a == "--fresh-ai");
     let war_from_plan = args.iter().any(|a| a == "--war-from-plan");
     let fresh_board = args.iter().any(|a| a == "--fresh-board");
+    // `CityFireMemory`'s kill switch: the flag or `CIVVIS_NO_CITY_FIRE_MEMORY=1`.
+    let city_fire_memory = !args.iter().any(|a| a == "--no-city-fire-memory")
+        && !civvis::mirror::CityFireMemory::disabled_by_env();
     let arm = DecisionArm {
         war_from_plan,
         forced_on: &forced_on,
@@ -9014,6 +9017,11 @@ fn main() {
             mirror_turns,
             frontier,
         );
+        // One frame has no earlier reading of a fogged city's fire; its
+        // seat's research still floors it. See `CityFireMemory`.
+        if city_fire_memory {
+            civvis::mirror::CityFireMemory::default().apply(&mut live.game);
+        }
         // One-shot: there is no next turn to be self-limiting against, so this starts
         // empty and every foreign choice is released once.
         let mut ours = std::collections::BTreeMap::new();
@@ -9076,6 +9084,9 @@ fn main() {
     // board. It must therefore survive `--fresh-board` just like the peace and
     // treasury handoffs above.
     let mut host_city_attack_cooldowns = HostCityAttackCooldowns::default();
+    // The export reads a rival city's fire only while it is in sight; the
+    // board rebuilt each turn keeps the last reading. See `CityFireMemory`.
+    let mut host_city_fire = civvis::mirror::CityFireMemory::default();
     // A city's strike is once per host turn and the export never says it was
     // spent; the decider's own earlier frames do. See `HostCityStrikes`.
     let mut host_city_strikes = HostCityStrikes::default();
@@ -9212,6 +9223,9 @@ fn main() {
                     }
                     board.carry_treasury_baseline(carried_treasury);
                     host_city_attack_cooldowns.apply(&mut board);
+                    if city_fire_memory {
+                        host_city_fire.apply(&mut board.game);
+                    }
                     host_city_strikes.apply(&mut board, state.turn);
                     host_air_strikes.apply(&mut board, state.turn);
                     host_move_refusals.apply(&mut board);
@@ -9243,6 +9257,9 @@ fn main() {
                                 frontier,
                             );
                             host_city_attack_cooldowns.apply(&mut fresh);
+                            if city_fire_memory {
+                                host_city_fire.apply(&mut fresh.game);
+                            }
                             host_city_strikes.apply(&mut fresh, state.turn);
                             host_air_strikes.apply(&mut fresh, state.turn);
                             host_move_refusals.apply(&mut fresh);
@@ -9266,6 +9283,9 @@ fn main() {
                         Some(existing) => {
                             existing.sync(&snapshot, &state, frontier);
                             host_city_attack_cooldowns.apply(existing);
+                            if city_fire_memory {
+                                host_city_fire.apply(&mut existing.game);
+                            }
                             host_city_strikes.apply(existing, state.turn);
                             host_air_strikes.apply(existing, state.turn);
                             host_move_refusals.apply(existing);
