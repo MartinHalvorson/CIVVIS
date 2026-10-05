@@ -567,8 +567,19 @@ queue.checkTimescaleClock()
 check("the window after a switch reads one scale", has(events("timescale_clock")[#events("timescale_clock")], '"real_ratio":1,'), true)
 queue.timescaleBlock(15)
 check("the same block does not switch again", #commands, 2)
+-- G114 t190: a popup's AutoClose ticked in the switch's own frame, BEFORE the
+-- switch, so it acked the old scale at the switch's UI time, then closed and
+-- never ticked again. That stale ack is not an unscaled context (one strictly
+-- after a switch still is: "an unscaled context reverts" above).
+ack("NaturalDisasterPopup", 4)
 queue.timescaleBlock(20)
 check("turn 20 switches back", commands[3], "timescale 3")
+now, wallNow = now + 90, wallNow + 30
+ack("Heartbeat", 3)
+queue.checkTimescaleClock()
+check("an ack from the switch's own frame does not revert", #commands, 3)
+check("…the scale holds", clock.scale, 3)
+check("…and nothing is named unscaled", has(events("timescale_clock")[#events("timescale_clock")], "NaturalDisasterPopup"), false)
 revertThrows = false
 AutoProfiler.RunCommand = function(cmd) if cmd == "timescale 4" then error("refused") end; commands[#commands + 1] = cmd end
 queue.timescaleBlock(30)

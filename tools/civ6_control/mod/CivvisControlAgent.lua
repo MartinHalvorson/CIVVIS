@@ -20777,10 +20777,15 @@ CivvisQueue.checkTimescaleClock = function()
 	local since = type(ts.applied_ui) == "number" and ts.applied_ui or 0;
 	local why, unscaled = nil, {};
 	local heartbeat = false;
+	-- Strictly after the switch: UI.GetElapsedTime is per frame, and the switch
+	-- runs in an event handler, so a popup whose AutoClose ticked earlier in the
+	-- switch's own frame acked the OLD scale at exactly `since`. G114 t190: a
+	-- NaturalDisasterPopup did that, closed, never ticked again, and its stale
+	-- ack reverted the A/B game to 1x for its last 45 turns (7.8 min).
 	pcall(function()
 		local ack = ExposedMembers.CivvisClockAck;
 		for name, at in pairs(ack.at) do
-			if type(at) == "number" and at >= since then
+			if type(at) == "number" and at > since then
 				if name == "Heartbeat" then heartbeat = true; end
 				if ack.scale[name] ~= scale then unscaled[#unscaled + 1] = name; end
 			end
