@@ -300,7 +300,7 @@ impl AdvancedAi {
         }
         // See `overwhelming_power_declares`: before a war the board writes no
         // Siege row, so nothing orders the army onto this ring.
-        if self.overwhelming_power_declares(g, pid, target) {
+        if self.overwhelming_power_declares(g, pid, target, city.pos) {
             return Some(Ok(()));
         }
         let need = self.war_policy_siege_need(g, pid, city.id);
@@ -709,10 +709,10 @@ mod tests {
         let mut g = flat_board(37, &[at(6, 8), at(20, 8)]);
         let target = city_of(&g, 1, at(20, 8));
         let plan = conquest(&g, Some(target));
-        // Eight swordsmen at home, none on the objective's ring; one warrior
-        // of theirs.
-        for col in 0..8 {
-            spawn(&mut g, "swordsman", 0, at(4 + col, 12));
+        // Eight swordsmen 6-10 tiles out, none on the objective's 3-5 ring;
+        // one warrior of theirs.
+        for pos in (11..15).flat_map(|col| [at(col, 8), at(col, 10)]) {
+            spawn(&mut g, "swordsman", 0, pos);
         }
         spawn(&mut g, "warrior", 1, at(22, 8));
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
@@ -729,13 +729,30 @@ mod tests {
             "the gene off, the declaration waits on the ring"
         );
         ai.enable_overwhelming_power_declares();
-        assert!(ai.overwhelming_power_declares(&g, 0, 1));
+        let objective = g.cities[&target].pos;
+        assert!(ai.overwhelming_power_declares(&g, 0, 1, objective));
         assert_eq!(ai.war_policy_declaration(&g, 0, 1, &plan), Some(Ok(())));
+        // The same army with its median unit past ten tiles is not waived:
+        // power without proximity converted 0 of 9 live declarations.
+        let mut far = flat_board(37, &[at(6, 8), at(20, 8)]);
+        for col in 2..10 {
+            spawn(&mut far, "swordsman", 0, at(col, 14));
+        }
+        spawn(&mut far, "warrior", 1, at(22, 8));
+        let far_target = city_of(&far, 1, at(20, 8));
+        let far_plan = conquest(&far, Some(far_target));
+        let far_objective = far.cities[&far_target].pos;
+        assert!(far.military_power(0) >= OVERWHELMING_POWER_RATIO * far.military_power(1).max(1.0));
+        assert!(!ai.overwhelming_power_declares(&far, 0, 1, far_objective));
+        assert!(matches!(
+            ai.war_policy_declaration(&far, 0, 1, &far_plan),
+            Some(Err(_))
+        ));
         // Short of four times, the ring rule is back.
         for col in 0..6 {
             spawn(&mut g, "swordsman", 1, at(24 + col, 4));
         }
-        assert!(!ai.overwhelming_power_declares(&g, 0, 1));
+        assert!(!ai.overwhelming_power_declares(&g, 0, 1, objective));
         assert!(matches!(
             ai.war_policy_declaration(&g, 0, 1, &plan),
             Some(Err(_))

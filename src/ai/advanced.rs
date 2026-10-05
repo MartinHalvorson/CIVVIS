@@ -22235,7 +22235,9 @@ impl AdvancedAi {
         let culture_counter_ready = !staged && self.culture_counter_due(g, pid, target);
         // See `overwhelming_power_declares`: at that ratio the war itself
         // writes the Siege row that brings the army to the ring.
-        let overwhelming_ready = !staged && self.overwhelming_power_declares(g, pid, target);
+        let overwhelming_ready = !staged
+            && objective
+                .is_some_and(|(_, pos)| self.overwhelming_power_declares(g, pid, target, pos));
         if close_enough
             && ready
             && (staged

@@ -137,6 +137,9 @@ pub(crate) const FAVOR_SURPRISE_CLOCK_TURNS: f64 = 8.0;
 /// `overwhelming-power-declares`: our military over the target's steady
 /// reading at which a Domination seat declares without a staged siege.
 pub(crate) const OVERWHELMING_POWER_RATIO: f64 = 4.0;
+/// `overwhelming-power-declares`: the field army's median distance to the
+/// objective at or under which the overwhelming waiver applies.
+pub(crate) const OVERWHELMING_MARCH_TILES: i32 = 10;
 
 /// `liberation-funds-the-congress`: the Diplomatic Victory points at which a
 /// rival makes a captured city-state city worth its liberation Favor; the
@@ -1779,11 +1782,37 @@ impl AdvancedAi {
     /// 130 waited on Maastricht at turn 101 with no Siege row on the board.
     /// Another major war, the Defend row, the named objective, the
     /// declaration range and the war opening (casus belli first) all stand.
-    pub(crate) fn overwhelming_power_declares(&self, g: &Game, pid: usize, target: usize) -> bool {
-        self.overwhelming_power_declares
-            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
-            && g.military_power(pid)
-                >= OVERWHELMING_POWER_RATIO * self.steady_rival_power(g, target).max(1.0)
+    ///
+    /// Power alone converts nothing: of the 186 live declarations of October
+    /// 4-5, those at 5 or more times the target's power took a city of
+    /// theirs within 20 turns 7 times in 11 when the field army's median unit
+    /// stood within 10 tiles of the objective, and 0 times in 9 when it stood
+    /// further out (all declarations: 37% at 6 tiles or less, 3% at 16 or
+    /// more). So the waiver also asks that median to be at most
+    /// [`OVERWHELMING_MARCH_TILES`].
+    pub(crate) fn overwhelming_power_declares(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+        objective: Pos,
+    ) -> bool {
+        if !self.overwhelming_power_declares
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || g.military_power(pid)
+                < OVERWHELMING_POWER_RATIO * self.steady_rival_power(g, target).max(1.0)
+        {
+            return false;
+        }
+        let mut distances: Vec<i32> = self
+            .campaign_field_army(g, pid)
+            .iter()
+            .map(|uid| g.wdist(g.units[uid].pos, objective))
+            .collect();
+        distances.sort_unstable();
+        distances
+            .get(distances.len() / 2)
+            .is_some_and(|median| *median <= OVERWHELMING_MARCH_TILES)
     }
 
     pub(crate) fn steady_rival_power(&self, g: &Game, rival: usize) -> f64 {
