@@ -15946,6 +15946,48 @@ CivvisParticipationDenialOption = function(rtype, leader, pid, leaderPoints, las
 	return 3 - predicted;
 end
 
+-- ★★ A TRADE EMBARGO THE CULTURE LEADER CANNOT VOTE DOWN.
+--
+-- Option B of the Trade Policy resolution disables its target's
+-- international trade routes (APPLY_INTERNATIONAL_MAJOR_TRADE_ROUTES_DISABLED),
+-- and each live route is +25% Tourism toward its partner. The counter names
+-- the culture leader with the one free vote, and option A wins: over the
+-- Culture losses of October 3-5, Trade, Border and Migration resolutions
+-- came up 36 times in the last 60 turns, B landed on the eventual winner
+-- twice, and our B ballots on it carried 1-3 votes while the bank held 63-600
+-- Favor (median about 200). Option A won those sessions with 2-16 votes,
+-- median 6-7. So when the culture leader stands at `CultureEmbargoBar` (75)
+-- or more of the bar it must pass -- Culture wins fired at 79-99% of it --
+-- the Trade Policy ballot buys the last session's A total of that type plus
+-- two votes (eight when none is recorded), at most `CultureEmbargoMaxVotes`
+-- (12), from what the Diplomatic Victory ballot left, keeping
+-- `DiploVictoryClaimReserve` (120) while a Diplomatic leader stands at the
+-- vote floor. Returns the votes and their price; (1, 0) leaves the free
+-- vote. Off with `CultureEmbargo = false`. Exported globally to stay below
+-- the chunk-local limit.
+CivvisCultureEmbargoVotes = function(rtype, threat, candidates, favor, costs, leaderPoints, lastA, config)
+	config = type(config) == "table" and config or {};
+	if config.CultureEmbargo == false or rtype ~= "WC_RES_TRADE_TREATY" or type(costs) ~= "table" then
+		return 1, 0;
+	end
+	local culture = nil;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		if tonumber(c.id) == tonumber(threat) then culture = tonumber(c.culture); end
+	end
+	if culture == nil or culture < (tonumber(config.CultureEmbargoBar) or 75) then return 1, 0; end
+	local bank = tonumber(favor) or 0;
+	if (tonumber(leaderPoints) or 0) >= (tonumber(config.DiploVictoryVoteFloor) or 12) then
+		bank = bank - (tonumber(config.DiploVictoryClaimReserve) or 120);
+	end
+	local last = type(lastA) == "table" and tonumber(lastA[rtype]) or nil;
+	local want = (last or 6) + 2;
+	local cap = math.min(tonumber(config.CultureEmbargoMaxVotes) or 12, tonumber(costs.MaxVotes) or 1);
+	if want > cap then want = cap; end
+	while want > 1 and (tonumber(costs[want - 1]) or bank + 1) > bank do want = want - 1; end
+	if want < 2 then return 1, 0; end
+	return want, tonumber(costs[want - 1]) or 0;
+end
+
 -- ★★★ REDIRECT THE +2 RATHER THAN DENY IT.
 --
 -- Option A of the Diplomatic Victory resolution gives +2 to the player with
@@ -19716,6 +19758,8 @@ local function beginTurn(player, pid, turn)
 				end
 				local won = a > b and 1 or (b > a and 2 or 0);
 				if rtype == "WC_RES_DIPLOVICTORY" then dvpWon = won; end
+				envoyTally.wc_last_a = envoyTally.wc_last_a or {};
+				envoyTally.wc_last_a[rtype] = a;
 				resolutions[#resolutions + 1] = {
 					type = rtype,
 					target_type = tostring(r.TargetType or ""),
@@ -21006,6 +21050,7 @@ local function tick()
 					end, 0)) or 0;
 					local culture = (against > 0) and (100 * tourists / against) or 0;
 					local diplo = 100 * (tonumber(c.points) or 0) / 20;
+					c.culture = culture;
 					c.progress = (culture > diplo) and culture or diplo;
 					if c.progress > 100 then c.progress = 100; end
 				end
@@ -21234,6 +21279,15 @@ local function tick()
 						local want = tonumber(cfg.ParticipationDenialVotes) or 3;
 						local price = tonumber(costs[want - 1]);
 						if want > 1 and price ~= nil and price <= favor then
+							votes = want;
+							favor = favor - price;
+							spent = spent + price;
+						end
+					elseif option == 2 and tonumber(targets[selection]) == threat then
+						-- See `CivvisCultureEmbargoVotes`.
+						local want, price = CivvisCultureEmbargoVotes(rtype, threat, candidates,
+							favor, costs, leaderPoints, envoyTally.wc_last_a, cfg);
+						if want > 1 then
 							votes = want;
 							favor = favor - price;
 							spent = spent + price;

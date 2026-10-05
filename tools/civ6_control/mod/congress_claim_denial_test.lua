@@ -247,5 +247,47 @@ config.DiploVictoryRedirect = nil
 tally.wc_rival_blocks = nil
 tally.wc_dvp_won = nil
 
+-- See `CivvisCultureEmbargoVotes`. The culture leader (player 3) draws 90
+-- visitors against a bar of 100: the counter's Trade Policy ballot buys
+-- eight B votes on it (no recorded A total: 6 + 2) from what the probe left
+-- (314 - 12), 112 Favor; below the bar it keeps the one free vote.
+config.CounterResolutions = nil
+local function culture(id, visitors, domestic)
+    Players[id].GetCulture = function() return {
+        GetTouristsTo = function() return visitors end,
+        GetStaycationers = function() return domestic end,
+    } end
+end
+culture(1, 0, 100); culture(2, 0, 100); culture(3, 90, 10)
+requests, submits = {}, 0
+bank, leaderPoints = 314, 8
+config.DiploVictoryVoteFloor = nil
+local _, embargoSpent = vote(0)
+check("culture embargo option", requests[3].option, 2)
+check("culture embargo names the culture leader", requests[3].selection, 3)
+check("culture embargo votes", requests[3].votes, 8)
+check("culture embargo cost", embargoSpent, costs[2] + costs[7])
+check("the migration counter keeps its free vote", requests[2].votes, 1)
+-- A recorded A total of 3 asks for five.
+tally.wc_last_a = { WC_RES_TRADE_TREATY = 3 }
+requests, submits = {}, 0
+vote(0)
+check("culture embargo outvotes the recorded block", requests[3].votes, 5)
+tally.wc_last_a = nil
+-- Under the bar, the free vote.
+culture(3, 60, 10)
+requests, submits = {}, 0
+vote(0)
+check("culture embargo waits for the bar", requests[3].votes, 1)
+-- Off by configuration.
+culture(3, 90, 10)
+config.CultureEmbargo = false
+requests, submits = {}, 0
+vote(0)
+check("culture embargo off", requests[3].votes, 1)
+config.CultureEmbargo = nil
+for id = 1, 3 do Players[id].GetCulture = nil end
+config.CounterResolutions = false
+
 if failures > 0 then os.exit(1) end
 print("all Congress claim/denial checks passed")
