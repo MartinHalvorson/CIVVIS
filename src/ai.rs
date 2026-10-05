@@ -2657,6 +2657,17 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `activation-resume-waits`.
     pub(crate) activation_resume_waits: bool,
+    /// A Great Person activation path does not replace a queued building on
+    /// any waiting person's slot chain. Stock checks only the chain of the need
+    /// it is serving, so two needs that share a Theater Square undo each
+    /// other: live King 2026-10-05T051413Z, Bogota (45 production) switched
+    /// between the Art Museum (a Great Artist) and the Archaeological Museum
+    /// (Mary Leakey) on every turn from t187 to t214, and the two exclude each
+    /// other, so each switch dropped the turn's progress and neither was ever
+    /// finished. 044201Z did the same in Guayaquil from t174.
+    ///
+    /// Set from `AdvancedAi` by the HostOnly gene `activation-keeps-its-building`.
+    pub(crate) activation_keeps_its_building: bool,
     /// `granary_before_the_army`, behind the Campus step and the Builder
     /// backlog instead of ahead of them, so the housing reserve displaces
     /// only the military floor. Version 1 stood ahead of
@@ -5502,6 +5513,7 @@ impl BasicAi {
             front_objective: None,
             front_weighted_floor_2: false,
             activation_resume_waits: false,
+            activation_keeps_its_building: false,
             granary_before_the_army_2: false,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
@@ -6002,6 +6014,7 @@ impl BasicAi {
             front_objective: None,
             front_weighted_floor_2: false,
             activation_resume_waits: false,
+            activation_keeps_its_building: false,
             granary_before_the_army_2: false,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
@@ -12062,20 +12075,28 @@ impl BasicAi {
             .filter(|item| g.can_produce(pid, cid, item))
     }
 
+    /// The buildings that open a slot for `work`: the target first, then the
+    /// prerequisite needed to make it buildable.
+    fn live_great_person_work_chain(work: &str) -> &'static [&'static str] {
+        match work {
+            "writing" => &["amphitheater"],
+            "art" => &["art_museum", "amphitheater"],
+            "artifact" => &["archaeological_museum", "amphitheater"],
+            "music" => &["broadcast_center", "art_museum", "amphitheater"],
+            _ => &[],
+        }
+    }
+
     fn live_great_person_cultural_item(g: &Game, pid: usize, cid: u32, work: &str) -> Option<Item> {
         // The host's empty activation-plot list is authoritative. CIVVIS may
         // believe a generic Palace `any` slot is open while Firaxis refuses
         // this exact individual, and trusting the approximation here is what
         // leaves the physical person parked. Build typed capacity until the
         // next host frame exposes a real plot and clears the need.
-        let chain: &[&str] = match work {
-            "writing" => &["amphitheater"],
-            // Target first, then the prerequisite needed to make it buildable.
-            "art" => &["art_museum", "amphitheater"],
-            "artifact" => &["archaeological_museum", "amphitheater"],
-            "music" => &["broadcast_center", "art_museum", "amphitheater"],
-            _ => return None,
-        };
+        let chain = Self::live_great_person_work_chain(work);
+        if chain.is_empty() {
+            return None;
+        }
         let already_queued = g.player_city_ids(pid).into_iter().any(|city| {
             matches!(
                 g.cities[&city].queue.first(),
@@ -12282,6 +12303,20 @@ impl BasicAi {
         if self.activation_resume_waits
             && matches!(queued, Some(Item::District { .. }))
             && g.cities[&cid].production > 0.0
+        {
+            return None;
+        }
+        // `activation-keeps-its-building`: a rung of a waiting person's slot
+        // chain already queued here finishes first.
+        if self.activation_keeps_its_building
+            && matches!(queued, Some(Item::Building { building })
+                if g.players[pid].live_great_person_activation_needs.iter().any(|need| {
+                    Self::live_great_person_work(need).is_some_and(|work| {
+                        Self::live_great_person_work_chain(work)
+                            .iter()
+                            .any(|family| g.building_is_family(building, Name::new(family)))
+                    })
+                }))
         {
             return None;
         }
@@ -21367,6 +21402,68 @@ mod tests {
             waits.live_great_person_activation_resume_item(&game, 0, city).is_some(),
             "a queued district with nothing invested still yields"
         );
+    }
+
+    /// See `activation_keeps_its_building`: a Great Artist and Mary Leakey
+    /// share one Theater Square, and the Art Museum under way is not swapped
+    /// for the Archaeological Museum that excludes it.
+    #[test]
+    fn an_activation_path_keeps_a_museum_under_way() {
+        let mut game = Game::new_full(1, 20, 14, 41_109, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let theater = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&theater).unwrap().district = Some(crate::name!("theater_square"));
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("theater_square"), theater);
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("amphitheater"));
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+        game.players[0].civics.insert(crate::name!("humanism"));
+        for (kind, individual, work) in [
+            ("artist", "andrei_rublev", "art"),
+            ("scientist", "mary_leakey", "artifact"),
+        ] {
+            game.players[0].live_great_person_activation_needs.push(
+                crate::game::LiveGreatPersonActivationNeed {
+                    kind: kind.to_string(),
+                    individual: Some(individual.to_string()),
+                    required_district: Some("theater_square".to_string()),
+                    required_great_work: Some(work.to_string()),
+                    ..crate::game::LiveGreatPersonActivationNeed::default()
+                },
+            );
+        }
+        game.apply(0, &Action::Produce { city, item: Item::Building { building: crate::name!("art_museum") } })
+            .unwrap();
+        game.cities.get_mut(&city).unwrap().production = 46.0;
+        assert!(
+            matches!(BasicAi::new().live_great_person_activation_resume_item(&game, 0, city),
+                Some(Item::Building { building }) if building == "archaeological_museum"),
+            "stock swaps the Art Museum for the Archaeological Museum"
+        );
+        let mut keeps = BasicAi::new();
+        keeps.activation_keeps_its_building = true;
+        assert_eq!(keeps.live_great_person_activation_resume_item(&game, 0, city), None);
+        assert!(!keeps.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(game.cities[&city].queue.first(),
+            Some(Item::Building { building }) if *building == "art_museum"));
     }
 
     #[test]

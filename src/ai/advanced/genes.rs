@@ -2504,6 +2504,9 @@ pub const GENES: &[Gene] = &[
     // Live King 205431Z: Bogota alternated a Holy Site and a Theater Square
     // every frame from t251; see `BasicAi::activation_resume_waits`.
     Gene { tag: "activation-resume-waits", field: "activation_resume_waits", kind: Kind::HostOnly, enable: AdvancedAi::enable_activation_resume_waits, disable: AdvancedAi::disable_activation_resume_waits },
+    // Live King 051413Z: Bogota switched the Art Museum and the Archaeological
+    // Museum every turn t187-t214; see `BasicAi::activation_keeps_its_building`.
+    Gene { tag: "activation-keeps-its-building", field: "activation_keeps_its_building", kind: Kind::HostOnly, enable: AdvancedAi::enable_activation_keeps_its_building, disable: AdvancedAi::disable_activation_keeps_its_building },
     // Live King 113755Z: Galleys and Quadriremes ahead of the walkers at
     // three cities; see `BasicAi::settler_before_the_navy`.
     Gene { tag: "settler-before-the-navy", field: "settler_before_the_navy", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_before_the_navy, disable: AdvancedAi::disable_settler_before_the_navy },

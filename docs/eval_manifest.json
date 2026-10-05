@@ -6,18 +6,19 @@
     "withholdable": 38
   },
   "derived": {
-    "firaxis_only_count": 34,
-    "live_bridge_count": 72,
+    "firaxis_only_count": 35,
+    "live_bridge_count": 73,
     "native_engine_repair_count": 38,
     "withholdable_live_count": 38
   },
   "genome_coverage": {
-    "capability_toggles": 434,
+    "capability_toggles": 435,
     "measured_by_a_screen": 72,
     "reachable_as_a_gene": 413,
     "resolved_by_a_screen": 16,
-    "unreachable_by_any_screen": 44,
+    "unreachable_by_any_screen": 45,
     "unreachable_toggles": [
+      "activation_keeps_its_building",
       "activation_resume_waits",
       "bank_envoys",
       "camp_bounty",
@@ -221,7 +222,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 34,
+      "declared_count": 35,
       "items": [
         "live-trader-route",
         "live-religious-purchase",
@@ -256,11 +257,12 @@
         "live-move-refusal-break",
         "guard-breaks-the-pin",
         "naval-escort-patience",
-        "activation-resume-waits"
+        "activation-resume-waits",
+        "activation-keeps-its-building"
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 72,
+      "declared_count": 73,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -333,7 +335,8 @@
         "live-move-refusal-break",
         "guard-breaks-the-pin",
         "naval-escort-patience",
-        "activation-resume-waits"
+        "activation-resume-waits",
+        "activation-keeps-its-building"
       ]
     }
   },
