@@ -21946,6 +21946,18 @@ function Initialize()
 		end,
 		TeamVictory = onTeamVictory,
 		PlayerDefeat = onPlayerDefeat,
+		-- ★ THE HARNESS'S QUIT IS CONFIRMED HERE, NOT BY A SCREENSHOT. It quits
+		-- through Civ VI's own menu (`civ6_env.request_macos_quit`), which raises
+		-- `UserRequestClose`. On the end-game screen that screen exits unasked,
+		-- but anywhere else InGameTopOptionsMenu.lua:OnRequestClose opens its
+		-- "are you sure" modal, and only a screenshot-read click answered it:
+		-- civvis-20261005T123242Z's look failed under a capture stall, the menu
+		-- window ran out, and SIGTERM closed the game 28 s after the hold. This mod
+		-- is installed only for an automated game, and the modal's Yes
+		-- (`OnExitGame`) is exactly this call.
+		UserRequestClose = function()
+			if cfg.Play ~= false then pcall(function() Events.UserConfirmedClose(); end); end
+		end,
 		-- The tactical ledger: see CivvisLedger.
 		CombatVisBegin = CivvisLedger.onCombatVisBegin,
 		CombatVisEnd = CivvisLedger.onCombatVisEnd,
