@@ -2908,6 +2908,10 @@ pub const GENES: &[Gene] = &[
     // refusal and nothing on our side; each held the rival's one working deal
     // and the shared trade cooldown. Off by default; on restores the asks.
     Gene { tag: "luxury-buy-asks", field: "luxury_buy_asks", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_buy_asks, disable: AdvancedAi::disable_luxury_buy_asks },
+    // October 5 live: 452 denunciations, 294 before turn 160 on a technology
+    // lead alone; game 131 denounced the Inca while Rome won the space race.
+    // See `science_threat_denunciation`.
+    Gene { tag: "science-denounce-waits-for-the-race", field: "science_denounce_waits_for_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denounce_waits_for_the_race, disable: AdvancedAi::disable_science_denounce_waits_for_the_race },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

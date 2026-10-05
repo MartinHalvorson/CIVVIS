@@ -345,10 +345,26 @@ impl AdvancedAi {
     /// refuses to denounce an ally (`do_denounce`), so the alliance could not
     /// be broken here in any case; leaving it in would only spend the turn's
     /// one denunciation on a refused apply.
+    ///
+    /// `science-denounce-waits-for-the-race`: only a rival physically in the
+    /// race -- a project landed or a pad we have seen -- is denounced; a
+    /// technology lead alone is not. On October 5 the live seat sent 452
+    /// denunciations over 44 runs, 294 of them before turn 160 (median turn
+    /// 116), long before any Spaceport: each one closed Open Borders to us
+    /// (0 of 7 passage purchases closed after one) and cost standing for
+    /// nothing a launch had yet begun. Game 131 denounced the Inca at turns
+    /// 80, 102 and 257 "for a space race" while Rome, at war with us and so
+    /// past denouncing, won on Science at 268. The pace still admits a threat
+    /// for the other rungs.
     pub(crate) fn science_threat_denunciation(&self, g: &mut Game, pid: usize) -> Option<usize> {
         let ranked: Vec<usize> = self
             .science_threats(g, pid)
             .into_iter()
+            .filter(|threat| {
+                !self.science_denounce_waits_for_the_race
+                    || threat.stages > 0
+                    || threat.pad.is_some()
+            })
             .map(|threat| threat.rival)
             .filter(|rival| g.alliance_with(pid, *rival).is_none())
             .collect();

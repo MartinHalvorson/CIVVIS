@@ -7216,6 +7216,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `science-denounce-waits-for-the-race`: the science denial's
+    /// denunciation names only a rival physically in the space race. See
+    /// `science_threat_denunciation`.
+    science_denounce_waits_for_the_race: bool,
     /// `stale-swap-reads-the-march`: a committed objective the field army's
     /// body stands far from yields to a nearer city of the same rival without
     /// the value margin. See `stale_domination_objective_city`.
@@ -9515,6 +9519,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            science_denounce_waits_for_the_race: false,
             stale_swap_reads_the_march: false,
             second_front_keeps_its_war: false,
             stage_march_keeps_to_land: false,

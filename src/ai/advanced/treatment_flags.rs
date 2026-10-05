@@ -6001,6 +6001,17 @@ impl AdvancedAi {
         self.conquest_opening_stays_near = false;
     }
 
+    /// Opt-in gene `science-denounce-waits-for-the-race`; see
+    /// [`Self::science_denounce_waits_for_the_race`].
+    pub fn enable_science_denounce_waits_for_the_race(&mut self) {
+        self.science_denounce_waits_for_the_race = true;
+    }
+
+    /// The twin of `enable_science_denounce_waits_for_the_race`.
+    pub fn disable_science_denounce_waits_for_the_race(&mut self) {
+        self.science_denounce_waits_for_the_race = false;
+    }
+
     /// Opt-in gene `luxury-buy-asks`; see [`Self::luxury_buy_asks`].
     pub fn enable_luxury_buy_asks(&mut self) {
         self.luxury_buy_asks = true;

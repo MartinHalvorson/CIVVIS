@@ -374,6 +374,43 @@ fn the_most_pressing_threat_is_denounced_once_a_turn() {
     );
 }
 
+/// `science-denounce-waits-for-the-race`: a technology lead alone admits a
+/// threat but no denunciation; a pad we have seen does.
+#[test]
+fn a_technology_lead_alone_is_not_denounced_under_the_gene() {
+    let mut g = board();
+    g.turn = g.standard_duration(SCIENCE_THREAT_TECH_LEAD_TURN);
+    give_tech_lead(&mut g, 1, SCIENCE_THREAT_TECH_LEAD);
+    let mut ai = denier();
+    assert_eq!(
+        ai.science_threats(&g, 0).len(),
+        1,
+        "the pace admits the threat"
+    );
+    assert_eq!(
+        ai.science_threat_denunciation(&mut g.clone(), 0),
+        Some(1),
+        "the gene off, the lead alone is denounced"
+    );
+    ai.enable_science_denounce_waits_for_the_race();
+    assert_eq!(
+        ai.science_threat_denunciation(&mut g.clone(), 0),
+        None,
+        "under the gene a lead without a launch is not"
+    );
+    assert_eq!(
+        ai.science_threats(&g, 0).len(),
+        1,
+        "the other rungs still read it"
+    );
+    give_pad(&mut g, 1);
+    assert_eq!(
+        ai.science_threat_denunciation(&mut g, 0),
+        Some(1),
+        "a pad we have seen is the race itself"
+    );
+}
+
 #[test]
 fn an_ally_is_never_denounced_and_the_next_threat_is_taken_instead() {
     let mut g = board();
