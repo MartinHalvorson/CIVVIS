@@ -1074,6 +1074,9 @@ impl AdvancedAi {
             endurance += (unit.hp as f64 - 20.0).max(0.0) / incoming.max(1.0);
             taker |= !ranged && spec.is_melee_capable();
         }
+        // `breach-reads-the-air`: the air wing's sorties bring the walls down
+        // too. See `siege_train::air_breach_walls`.
+        wall_dps += self.air_breach_walls(g, pid, cid);
         let (sealed, ring) = super::siege_train::ring_state(g, cid);
         let heal = if ring > 0 && sealed == ring {
             0.0

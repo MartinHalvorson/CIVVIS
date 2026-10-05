@@ -24710,7 +24710,7 @@ impl Game {
             .unwrap_or(0)
     }
 
-    fn air_operation_origin(&self, uid: u32) -> Pos {
+    pub(crate) fn air_operation_origin(&self, uid: u32) -> Pos {
         let unit = &self.units[&uid];
         unit.air_patrol_pos.unwrap_or(unit.pos)
     }

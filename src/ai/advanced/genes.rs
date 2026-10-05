@@ -2731,6 +2731,11 @@ pub const GENES: &[Gene] = &[
     // Bombards of Uruk's force stood at its ring. See
     // `siege_train::nearby_gun_city`.
     Gene { tag: "breach-counts-nearby-guns", field: "breach_counts_nearby_guns", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_counts_nearby_guns, disable: AdvancedAi::disable_breach_counts_nearby_guns },
+    // Live King civvis-20261005T060002Z (game 104): Sparta's breach reading
+    // counted land guns only and held "nothing to open the walls" while our
+    // Bombers took its walls from 400 to 153. See
+    // `siege_train::air_breach_walls`.
+    Gene { tag: "breach-reads-the-air", field: "breach_reads_the_air", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_reads_the_air, disable: AdvancedAi::disable_breach_reads_the_air },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
