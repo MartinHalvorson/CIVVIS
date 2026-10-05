@@ -1,3 +1,18 @@
+-- ⚠ lupa's Lua 5.1.5 (the local runner) barriers the CLOSURE in
+-- lua_setupvalue, not the shared UpVal, so a value written into an upvalue the
+-- collector has already marked can be freed while still referenced: the merge
+-- 7bd809bdb crashed order_queue_test 6/6 (SIGSEGV/BUS/ABRT/TRAP, varying) right
+-- after its agent reload, and heap layout decided which tree crashed (-4f
+-- root-caused it, 2026-10-05). A full collection first leaves nothing marked.
+-- Harmless under the real lua5.1 CI runs.
+do
+	local setupvalue = debug.setupvalue
+	debug.setupvalue = function(...)
+		collectgarbage("collect")
+		return setupvalue(...)
+	end
+end
+
 -- Offline regression for the World Congress vote budget.
 --
 -- Run: lua5.1 tools/civ6_control/mod/congress_vote_budget_test.lua
