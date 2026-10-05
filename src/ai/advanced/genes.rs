@@ -3028,6 +3028,16 @@ pub const GENES: &[Gene] = &[
     // `commitments::muster_after_the_breaker` and
     // `commitments::rebase_capture_on_a_forward_step`.
     Gene { tag: "stall-waits-for-the-breach", field: "stall_waits_for_the_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_stall_waits_for_the_breach, disable: AdvancedAi::disable_stall_waits_for_the_breach },
+    // `flipped-capital-finishes`: a Free City holding the last original
+    // capital Domination needs is the plan's finishing front. Live King
+    // civvis-20261005T193504Z (game 156) held Canberra and took
+    // Mikisiw-Wacîhk at 167 and Washington at 174; Mikisiw flipped to the
+    // Free Cities at 172 and Washington at 182, and with the other two held
+    // the campaign sieged Los Angeles, Pihtokahanapiwiyin and Mistawasis
+    // instead. The Free Cities seat is barbarian-flagged, so no finishing
+    // rule or wartime front ever named it. See
+    // `victory_heuristics::free_city_finish`.
+    Gene { tag: "flipped-capital-finishes", field: "flipped_capital_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_flipped_capital_finishes, disable: AdvancedAi::disable_flipped_capital_finishes },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
