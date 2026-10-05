@@ -6973,6 +6973,10 @@ pub struct AdvancedAi {
     /// Recovery plan to stand three turns. See
     /// `one_war::recovery_peace_ready`.
     recovery_peace_waits: bool,
+    /// `ring-fires-on-the-city`: a shooter in range of a besieged city shoots
+    /// the city unless a hostile stands beside a wounded unit of ours. See
+    /// `siege_train::ring_is_threatened`.
+    ring_fires_on_the_city: bool,
     /// `ranged-before-melee`: the live bridge sends a frame's shots at a
     /// target ahead of the melee blows on it. See `civvis_orders`
     /// `ranged_before_melee`.
@@ -7570,6 +7574,10 @@ pub struct AdvancedAi {
     /// `BasicAi::settler_before_the_navy`.
     settler_before_the_navy: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `tower-assault`: a melee member a Siege Tower beside the city lets strike
+    /// through the walls storms on the city's health alone. See
+    /// `siege_train::tower_bypasses`.
+    tower_assault: bool,
     /// `war-bill-prices-the-tier-gap`: the campaign bill and the weaker-
     /// neighbour test price the unit tier a rival fields, not only its tech
     /// count. Live King civvis-20261005T045443Z (game 101) planned Gwangju at
@@ -9488,6 +9496,7 @@ impl AdvancedAi {
             own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
             recovery_peace_waits: false,
+            ring_fires_on_the_city: false,
             ranged_before_melee: false,
             prey_reads_a_steady_power: false,
             rout_spares_the_counter: false,
@@ -9593,6 +9602,7 @@ impl AdvancedAi {
 
             settler_before_the_navy: false,
             // ---- append: t-z ----------------------------------------
+            tower_assault: false,
             war_bill_prices_the_tier_gap: false,
             upkeep_reserve: false,
             trade_growth_to_district: false,
@@ -42634,6 +42644,10 @@ impl AdvancedAi {
                 .is_some_and(|cid| g.cities.get(&cid).is_some_and(|c| c.pos == pos))
             {
                 score += 28.0;
+                // `ring-fires-on-the-city`: see `siege_train::ring_is_threatened`.
+                if ranged && self.ring_fires_on_the_city && !self.ring_is_threatened(g, pid, uid) {
+                    score += RING_CITY_SHOT_BONUS;
+                }
             }
             if g.unit_ids_at(pos).iter().any(|oid| g.units[oid].hp <= 35) {
                 score += 16.0;
@@ -44566,6 +44580,13 @@ impl AdvancedAi {
 }
 
 impl AdvancedAi {}
+
+/// `ring-fires-on-the-city`: added to a ranged unit's shot at the campaign's
+/// target city, enough to rank it over a shot at a unit that kills nothing,
+/// unless a hostile in reach stands beside a wounded unit of ours. Opening
+/// census, 80 live runs October 4-5: 12 of 16 early wars never beat the
+/// city's 20 a turn of heal, firing 0.03-0.47 shots a turn at it.
+const RING_CITY_SHOT_BONUS: f64 = 40.0;
 
 impl Ai for AdvancedAi {
     fn expansion_census(&self) -> Option<ExpansionCensus> {

@@ -368,6 +368,15 @@ impl CityView {
 
 /// `siege-needs-a-breaker`: walls a melee blow opens — none at all, or at or
 /// under [`MELEE_WALL_FRACTION`] of the pool.
+/// `tower-assault`: the assault through a Siege Tower opens when the force's
+/// blows take the city's health alone within [`ASSAULT_TURNS`] counting one
+/// turn of heal, or past the heal within [`STORM_TURNS`].
+fn tower_assault_pays(volley: f64, city: &CityView) -> bool {
+    let to_take = f64::from(city.hp) + ASSAULT_HEAL;
+    volley * ASSAULT_TURNS >= to_take
+        || (volley > ASSAULT_HEAL && f64::from(city.hp) / (volley - ASSAULT_HEAL) <= STORM_TURNS)
+}
+
 fn walls_open_to_melee(city: &CityView) -> bool {
     city.wall_hp <= 0 || city.wall_max <= 0 || city.wall_fraction() <= MELEE_WALL_FRACTION
 }
@@ -2499,7 +2508,9 @@ impl AdvancedAi {
         // members are still far off reads Stage however low the city is, and
         // a unit already beside a breached city must not walk away from it.
         // `melee-storms-an-open-city`: the taker joins an open city's assault.
-        let taker_storms = self.melee_storms_an_open_city && city.wall_hp <= 0;
+        // `tower-assault`: and through a Siege Tower beside a walled one.
+        let taker_storms = (self.melee_storms_an_open_city && city.wall_hp <= 0)
+            || self.tower_bypasses(g, pid, uid, &city);
         if self.breach_assault
             && (siege.taker != Some(uid) || taker_storms)
             && arm_of(g, uid) == Arm::Melee
@@ -2995,6 +3006,12 @@ impl AdvancedAi {
                 if let Some(acted) = self.reliever_kill_shot(g, pid, uid, city) {
                     return acted;
                 }
+                // `ring-fires-on-the-city`: see `ring_is_threatened`.
+                if self.ring_fires_on_the_city && !self.ring_is_threatened(g, pid, uid) {
+                    if let Some(acted) = self.city_shot(g, pid, uid, city) {
+                        return acted;
+                    }
+                }
                 if let Some(acted) = self.best_unit_shot(g, pid, uid) {
                     return acted;
                 }
@@ -3160,7 +3177,9 @@ impl AdvancedAi {
             return None;
         }
         let volley = self.assault_volley(g, pid, city, plan, group);
-        if !self.assault_pays(volley, city) {
+        // `tower-assault`: see `tower_bypasses`.
+        let through = self.tower_bypasses(g, pid, uid, city);
+        if !self.assault_pays(volley, city) && !(through && tower_assault_pays(volley, city)) {
             return None;
         }
         let action = Action::Attack {
@@ -3230,6 +3249,55 @@ impl AdvancedAi {
             && city.wall_hp <= 0
             && volley > ASSAULT_HEAL
             && f64::from(city.hp) / (volley - ASSAULT_HEAL) <= STORM_TURNS
+    }
+
+    /// `tower-assault`: whether the melee member `uid` strikes the walled
+    /// city through a Siege Tower beside it (`Game::siege_support_effects`):
+    /// its blow lands on the city's health, so the walls are not the
+    /// assault's to bring down. Live King civvis-20261005T114715Z (game
+    /// 126): Constantinople's Medieval Walls (200) stood with a tower beside
+    /// them at turns 139-140 and a Pike and Shot beside it, while the
+    /// assault priced 200 walls plus 200 health plus the heal; the city held
+    /// at 197-200 from turn 128 to 141.
+    pub(super) fn tower_bypasses(&self, g: &Game, pid: usize, uid: u32, city: &CityView) -> bool {
+        self.tower_assault
+            && city.wall_hp > 0
+            && g.units.get(&uid).is_some_and(|unit| {
+                g.siege_support_effects(
+                    pid,
+                    city.id,
+                    city.pos,
+                    &g.rules.units[unit.kind].promotion_class,
+                )
+                .1
+            })
+    }
+
+    /// `ring-fires-on-the-city`: whether a hostile in `uid`'s reach stands
+    /// beside a wounded land unit of ours, the one case a shot at a unit
+    /// outranks the shot at the city. See `siege_shooter_step`.
+    pub(super) fn ring_is_threatened(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        let Some(shooter) = g.units.get(&uid) else {
+            return false;
+        };
+        let range = g.unit_attack_range(uid).max(1);
+        g.units.values().any(|hostile| {
+            let spec = &g.rules.units[hostile.kind];
+            hostile.owner != pid
+                && g.is_at_war(pid, hostile.owner)
+                && spec.class == "military"
+                && g.city_at(hostile.pos).is_none()
+                && g.wdist(shooter.pos, hostile.pos) <= range
+                && g.unit_visible_to(hostile.id, pid)
+                && g.nbrs(hostile.pos).into_iter().any(|pos| {
+                    g.unit_ids_at(pos).iter().any(|id| {
+                        let friend = &g.units[id];
+                        friend.owner == pid
+                            && friend.hp < super::battle_planner::ROTATE_HP
+                            && g.rules.units[friend.kind].class == "military"
+                    })
+                })
+        })
     }
 
     /// `breach-assault-closes-in`: whether this healthy melee unit, off the
@@ -4667,3 +4735,6 @@ mod capture_hold_tests;
 
 #[cfg(test)]
 mod keeper_tests;
+
+#[cfg(test)]
+mod tower_ring_tests;

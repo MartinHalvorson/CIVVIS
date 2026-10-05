@@ -5977,6 +5977,28 @@ impl AdvancedAi {
     pub fn disable_ranged_before_melee(&mut self) {
         self.ranged_before_melee = false;
     }
+    /// Opt-in gene `tower-assault`; see
+    /// [`Self::tower_assault`].
+    pub fn enable_tower_assault(&mut self) {
+        self.tower_assault = true;
+    }
+
+    /// The twin of `enable_tower_assault`.
+    pub fn disable_tower_assault(&mut self) {
+        self.tower_assault = false;
+    }
+
+    /// Opt-in gene `ring-fires-on-the-city`; see
+    /// [`Self::ring_fires_on_the_city`].
+    pub fn enable_ring_fires_on_the_city(&mut self) {
+        self.ring_fires_on_the_city = true;
+    }
+
+    /// The twin of `enable_ring_fires_on_the_city`.
+    pub fn disable_ring_fires_on_the_city(&mut self) {
+        self.ring_fires_on_the_city = false;
+    }
+
 
 
 

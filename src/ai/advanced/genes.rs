@@ -2923,6 +2923,19 @@ pub const GENES: &[Gene] = &[
     // and the Slinger's queued shot was dropped). See `civvis_orders`
     // `ranged_before_melee`.
     Gene { tag: "ranged-before-melee", field: "ranged_before_melee", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_before_melee, disable: AdvancedAi::disable_ranged_before_melee },
+    // Live King civvis-20261005T114715Z (game 126): a Siege Tower stood beside
+    // Constantinople (Medieval Walls, 200) at turns 139-140 with a Pike and Shot
+    // beside it, and the assault priced the walls and the city together (420)
+    // although the tower lets the blow strike the city through the walls; the
+    // city stayed at 197-200 from turn 128 to 141. See
+    // `siege_train::tower_bypasses`.
+    Gene { tag: "tower-assault", field: "tower_assault", kind: Kind::OptIn, enable: AdvancedAi::enable_tower_assault, disable: AdvancedAi::disable_tower_assault },
+    // Opening census, 80 live runs October 4-5: of 16 early declared wars, 12
+    // never beat the city's 20 a turn of heal; they put 0.03-0.47 shots a turn
+    // into the city and the rest into units ahead of it, while the 4
+    // captures fired 0.64-1.67 a turn at the city. See
+    // `siege_train::ring_is_threatened`.
+    Gene { tag: "ring-fires-on-the-city", field: "ring_fires_on_the_city", kind: Kind::OptIn, enable: AdvancedAi::enable_ring_fires_on_the_city, disable: AdvancedAi::disable_ring_fires_on_the_city },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

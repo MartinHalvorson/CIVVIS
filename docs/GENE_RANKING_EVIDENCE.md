@@ -315,6 +315,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `reinforce-before-stall` | off (unmeasured) | Enable `reinforce-before-stall` for measurement. | 1 \| 1 |
 | `religious-threat-spares-the-front` | off (unmeasured) | Opt-in gene `religious-threat-spares-the-front`; see `Self::religious_threat_spares_the_front`. | 1 \| 1 |
 | `research-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 1 \| 3 |
+| `ring-fires-on-the-city` | off (unmeasured) | Opt-in gene `ring-fires-on-the-city`; see `Self::ring_fires_on_the_city`. | 1 \| 1 |
 | `rout-spares-a-stronger-army` | off (unmeasured) | Opt-in gene `rout-spares-a-stronger-army`; see `Self::rout_spares_a_stronger_army`. | 1 \| 1 |
 | `rout-spares-the-counter` | off (unmeasured) | Opt-in gene `rout-spares-the-counter`; see `Self::rout_spares_the_counter`. | 1 \| 1 |
 | `runaway-expander-counter` | off (unmeasured) | Opt-in gene `runaway-expander-counter`; see `Self::runaway_expander_counter`. | 1 \| 1 |
@@ -346,6 +347,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `strategic-deposit-prey` | off (unmeasured) | Opt-in gene `strategic-deposit-prey`; see `Self::strategic_deposit_prey`. | 1 \| 1 |
 | `threatened-city-reserve-2` | off (unmeasured) | V2 reserves the engine's local quote for an available defender in the threatened city. | 1 \| 2 |
 | `tourism-land-reservation` | off (unmeasured) | Enable `tourism-land-reservation` for measurement. | 1 \| 1 |
+| `tower-assault` | off (unmeasured) | Opt-in gene `tower-assault`; see `Self::tower_assault`. | 1 \| 1 |
 | `trade-growth-to-district` | off (unmeasured) | Price route food by the next population-gated district slot. | 1 \| 1 |
 | `trade-production-to-launch` | off (unmeasured) | Price route production by time saved on an active space project. | 1 \| 1 |
 | `treasury-at-work-2-2` | off (unmeasured) | Keep the working reserve and buy the first Builder near local work. | 1 \| 2 |
