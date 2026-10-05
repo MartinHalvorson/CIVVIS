@@ -2854,6 +2854,37 @@ impl AdvancedAi {
                         return self.base.fortify_or_stop(g, pid, uid);
                     }
                 }
+                // `march-uses-its-moves`: walk as far toward the staging
+                // ring as this turn's movement reaches, to a tile outside the
+                // city's strike that passes the same danger test as the step.
+                if matches!(dry_march, StageMarch::Ordinary) {
+                    let goals: HashSet<Pos> = g.wdisk(city.pos, STAGING_FAR).into_iter().collect();
+                    let outside_and_safe = |g: &Game, pos: Pos, _: &[Pos]| {
+                        g.wdist(pos, city.pos) > CITY_STRIKE_RANGE
+                            && gun_danger.as_mut().is_none_or(|field| {
+                                let seen = field.danger(pos, uid);
+                                let risk = if remembers {
+                                    seen + fog_blow(g, pos)
+                                } else {
+                                    seen
+                                };
+                                risk <= escorted_limit(g, pos)
+                            })
+                    };
+                    if let Some(dest) =
+                        self.march_destination(g, uid, &goals, next, outside_and_safe)
+                    {
+                        let kind = g.units[&uid].kind;
+                        if self.base.path_walk_to(g, pid, uid, dest) {
+                            think!(self.journal(), Military, Detail,
+                                "Siege of {}: the {} walks {} tiles toward the staging ring", g.cities[&city.id].name, kind, g.wdist(here, dest);
+                                "its movement reaches {:?}, {} tiles from the city, where the router's single step reached {:?}",
+                                dest, g.wdist(dest, city.pos), next;
+                                city.pos);
+                            return true;
+                        }
+                    }
+                }
                 if let StageMarch::Dry { dry, wet, .. } = dry_march {
                     think!(self.journal(), Military, Detail,
                         "Siege of {}: the {} takes the land road toward the staging ring", g.cities[&city.id].name, g.units[&uid].kind;

@@ -6596,6 +6596,10 @@ pub struct AdvancedAi {
     /// `one_war::OVERWHELMING_POWER_RATIO` times its target's power declares
     /// without a staged siege. See `one_war::overwhelming_power_declares`.
     overwhelming_power_declares: bool,
+    /// `march-uses-its-moves`: a staging or reinforcement march walks to the
+    /// farthest tile its movement reaches this turn toward the ring, not the
+    /// router's single step. See `march_moves::march_destination`.
+    march_uses_its_moves: bool,
     /// `liberation-funds-the-congress`: a Domination seat facing a
     /// Diplomatic Victory threat liberates a captured city-state city for its
     /// 100 Favor. See `one_war::liberation_funds_the_congress`.
@@ -8264,6 +8268,10 @@ mod siege_production;
 /// `advanced/siege_train.rs`.
 mod siege_train;
 
+/// `march-uses-its-moves`: a march toward a siege ring walks as far as its
+/// movement carries it. See `advanced/march_moves.rs`.
+mod march_moves;
+
 /// The Objective Board: a ranked list of what the army is for this turn and
 /// persistent task forces raised against it, in place of proximity force
 /// groups and the posture ladder. Opt-in gene `objective-board`; see
@@ -9461,6 +9469,7 @@ impl AdvancedAi {
             // ---- append: l-o ----------------------------------------
             luxury_buy_asks: false,
             overwhelming_power_declares: false,
+            march_uses_its_moves: false,
             liberation_funds_the_congress: false,
             melee_storms_an_open_city: false,
             last_capital_war_kept: false,
@@ -21082,12 +21091,12 @@ impl AdvancedAi {
         let (water, dry): (HashSet<_>, HashSet<_>) = goals
             .into_iter()
             .partition(|position| g.rules.is_water(&g.map.tiles[position]));
-        let next = if let Some(next) = g.route_step_to_any(uid, &dry) {
-            next
+        let (next, overland) = if let Some(next) = g.route_step_to_any(uid, &dry) {
+            (next, true)
         } else if already_staged {
             return Some(self.base.fortify_or_stop(g, pid, uid));
         } else {
-            g.route_step_to_any(uid, &water)?
+            (g.route_step_to_any(uid, &water)?, false)
         };
         if !g.can_move(uid, next) {
             return None;
@@ -21102,6 +21111,30 @@ impl AdvancedAi {
             return Some(self.base.fortify_or_stop(g, pid, uid));
         }
         debug_assert_ne!(next, current);
+        // `march-uses-its-moves`: walk as far toward the dry ring as this
+        // turn's movement reaches, never through the victim's land.
+        if overland {
+            let victim_free = |g: &Game, _: Pos, path: &[Pos]| {
+                path.iter().all(|pos| {
+                    g.map.tiles[pos]
+                        .owner_city
+                        .and_then(|city| g.cities.get(&city))
+                        .map(|city| city.owner)
+                        != Some(target)
+                })
+            };
+            if let Some(dest) = self.march_destination(g, uid, &dry, next, victim_free) {
+                let kind = g.units[&uid].kind;
+                if self.base.path_walk_to(g, pid, uid, dest) {
+                    think!(self.journal(), Military, Detail,
+                        "Campaign march: the {} walks {} tiles toward the staging ring", plain(&kind), g.wdist(current, dest);
+                        "its movement reaches {:?}, {} tiles from the objective, where the router's single step reached {:?}",
+                        dest, g.wdist(dest, objective), next;
+                        objective);
+                    return Some(true);
+                }
+            }
+        }
         Some(
             g.apply(
                 pid,
@@ -21216,12 +21249,13 @@ impl AdvancedAi {
         };
         // Over dry land when a reasonable land road exists; see
         // `siege_train::march_step`.
-        let next = siege_train::dry_march_step(g, uid, objective, 5)
-            .filter(|position| {
-                g.map
-                    .get(*position)
-                    .is_some_and(|tile| !g.rules.is_water(tile))
-            })
+        let dry_step = siege_train::dry_march_step(g, uid, objective, 5).filter(|position| {
+            g.map
+                .get(*position)
+                .is_some_and(|tile| !g.rules.is_water(tile))
+        });
+        let routed = dry_step.is_none();
+        let next = dry_step
             .or_else(|| g.route_step_to_any(uid, &goals))
             .filter(|position| *position != here && g.can_move(uid, *position))?;
         // A step the battle planner's rotation would pull straight back out
@@ -21247,6 +21281,35 @@ impl AdvancedAi {
                            objective);
                 }
                 return Some(self.base.fortify_or_stop(g, pid, uid));
+            }
+        }
+        // `march-uses-its-moves`: walk as far toward the staging ring as this
+        // turn's movement reaches, to a tile the rotation would not pull
+        // straight back out.
+        if routed && self.march_uses_its_moves {
+            let hp = g.units[&uid].hp;
+            let mut rotation = (self.battle_planner_2 || self.battle_planner_3).then(|| {
+                let mut field = battle_planner::DangerField::with_reach(g, pid, true);
+                if self.shared_danger {
+                    field.share(g);
+                }
+                field
+            });
+            let unexposed = |_: &Game, pos: Pos, _: &[Pos]| {
+                rotation.as_mut().is_none_or(|field| {
+                    field.rotation_danger(pos, uid)
+                        <= f64::from(hp - battle_planner::ROTATE_DANGER_MARGIN)
+                })
+            };
+            if let Some(dest) = self.march_destination(g, uid, &goals, next, unexposed) {
+                if self.base.path_walk_to(g, pid, uid, dest) {
+                    think!(self.journal(), Military, Detail,
+                           "Reinforcement {} walks {} tiles toward the front", plain(&kind), g.wdist(here, dest);
+                           "its movement reaches {:?}, {} tiles from {:?}, where the router's single step reached {:?}",
+                           dest, g.wdist(dest, objective), objective, next;
+                           objective);
+                    return Some(true);
+                }
             }
         }
         if self.journal().wants(crate::reasoning::Level::Detail) {
@@ -45497,6 +45560,9 @@ mod observed_movement_memory_tests;
 
 #[cfg(test)]
 mod reinforcement_arrival_tests;
+
+#[cfg(test)]
+mod march_moves_tests;
 
 #[cfg(test)]
 mod native_production_eta_tests;

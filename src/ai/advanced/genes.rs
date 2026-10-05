@@ -2940,6 +2940,9 @@ pub const GENES: &[Gene] = &[
     // their siege and were born 13 tiles out against 7 for our nearest city.
     // See `siege_production::BREAKER_MARCH_FACTOR`.
     Gene { tag: "breaker-reads-the-march", field: "breaker_reads_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_reads_the_march, disable: AdvancedAi::disable_breaker_reads_the_march },
+    // Staging marches took the router's single step and stood: 47-62% of
+    // live frame-0 MOVE_TOs were one tile. See `march_moves`.
+    Gene { tag: "march-uses-its-moves", field: "march_uses_its_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_march_uses_its_moves, disable: AdvancedAi::disable_march_uses_its_moves },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

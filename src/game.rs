@@ -28224,6 +28224,43 @@ impl Game {
         }
 
         let _memo = self.query_memo();
+        let distance = self.reverse_goal_distance(uid, goals, &zones)?;
+
+        // The reverse field gives the distance from every interior tile to
+        // its nearest goal. Read the first edge in the same neighbour order as
+        // the forward BFS; among equal distances this preserves its stable
+        // tie-break while avoiding a fresh flood for every unit.
+        let mut best_distance = i32::MAX;
+        let mut best = None;
+        let map_tiles = self.map.tiles.values().as_slice();
+        let neighbors = self.map.neighbor_indices(start_index);
+        for &neighbor_index in neighbors.as_slice() {
+            let index = neighbor_index as usize;
+            let next = map_tiles[index].pos;
+            if !self.can_enter_neighbor(uid, start, next) {
+                continue;
+            }
+            let steps = distance[index];
+            if steps < best_distance {
+                best_distance = steps;
+                best = Some(next);
+            }
+        }
+        best
+    }
+
+    /// The reverse route field `route_step_to_any` walks: for every tile, the
+    /// number of route steps from it to the nearest of `goals` (`i32::MAX`
+    /// where none is reachable), cached per traversal class, territory access
+    /// and goal set within the routing epoch.
+    fn reverse_goal_distance(
+        &self,
+        uid: u32,
+        goals: &HashSet<Pos>,
+        zones: &[u32],
+    ) -> Option<Arc<Vec<i32>>> {
+        let _memo = self.query_memo();
+        let unit = self.units.get(&uid)?;
         let territory_access = self.unit_territory_access(unit);
         let access_key = self.route_access_key(unit, territory_access.as_slice());
         let class = self.traversal_class(uid);
@@ -28252,7 +28289,7 @@ impl Game {
                     class,
                     territory_access.as_slice(),
                     goals.as_slice(),
-                    &zones,
+                    zones,
                 ));
                 let mut routing = self.routing.borrow_mut();
                 if routing.stamp == stamp {
@@ -28274,28 +28311,63 @@ impl Game {
                 distance
             }
         };
+        Some(distance)
+    }
 
-        // The reverse field gives the distance from every interior tile to
-        // its nearest goal. Read the first edge in the same neighbour order as
-        // the forward BFS; among equal distances this preserves its stable
-        // tie-break while avoiding a fresh flood for every unit.
-        let mut best_distance = i32::MAX;
-        let mut best = None;
-        let map_tiles = self.map.tiles.values().as_slice();
-        let neighbors = self.map.neighbor_indices(start_index);
-        for &neighbor_index in neighbors.as_slice() {
-            let index = neighbor_index as usize;
-            let next = map_tiles[index].pos;
-            if !self.can_enter_neighbor(uid, start, next) {
-                continue;
-            }
-            let steps = distance[index];
-            if steps < best_distance {
-                best_distance = steps;
-                best = Some(next);
-            }
+    /// `march-uses-its-moves`: every tile `uid` can stop on this turn that
+    /// has a route to `goals`, with the route steps from it to the nearest
+    /// goal (read on the reverse field [`Game::route_step_to_any`] walks) and
+    /// the movement left on arriving, nearest first, then most movement left,
+    /// then position. The first value is the start tile's own step count.
+    ///
+    /// `None` wherever `route_step_to_any` declines before reading its field,
+    /// for a unit that moves as a formation, and for one without movement.
+    pub(crate) fn march_reach_toward_any(
+        &self,
+        uid: u32,
+        goals: &HashSet<Pos>,
+    ) -> Option<(i32, Vec<(Pos, i32, f64)>)> {
+        if goals.is_empty() {
+            return None;
         }
-        best
+        let unit = self.units.get(&uid)?;
+        if unit.linked_to.is_some() || unit.moves_left <= 0.0 {
+            return None;
+        }
+        let zones = self.routing_zones(self.traversal_class(uid));
+        let start = unit.pos;
+        let start_index = self.map.tiles.index_of(start)?;
+        let start_zone = zones[start_index];
+        if start_zone == 0
+            || goals.contains(&start)
+            || self.formation_movement_locked_by_zoc(uid)
+            || !goals
+                .iter()
+                .any(|p| self.map.tiles.index_of(*p).map_or(0, |i| zones[i]) == start_zone)
+        {
+            return None;
+        }
+        let _memo = self.query_memo();
+        let distance = self.reverse_goal_distance(uid, goals, &zones)?;
+        let start_steps = distance[start_index];
+        if start_steps == i32::MAX {
+            return None;
+        }
+        let mut reach: Vec<(Pos, i32, f64)> = self
+            .flow(uid, start, unit.moves_left)
+            .into_iter()
+            .filter(|(pos, _)| *pos != start && self.can_stop(uid, *pos))
+            .filter_map(|(pos, left)| {
+                let steps = distance[self.map.tiles.index_of(pos)?];
+                (steps != i32::MAX).then_some((pos, steps, left))
+            })
+            .collect();
+        reach.sort_by(|a, b| {
+            a.1.cmp(&b.1)
+                .then_with(|| b.2.total_cmp(&a.2))
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        Some((start_steps, reach))
     }
 
     /// Build a multi-source distance field by walking route edges backwards

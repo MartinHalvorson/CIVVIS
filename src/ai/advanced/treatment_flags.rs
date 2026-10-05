@@ -6100,6 +6100,17 @@ impl AdvancedAi {
         self.stale_swap_reads_the_march = false;
     }
 
+    /// Opt-in gene `march-uses-its-moves`; see
+    /// [`Self::march_uses_its_moves`].
+    pub fn enable_march_uses_its_moves(&mut self) {
+        self.march_uses_its_moves = true;
+    }
+
+    /// The twin of `enable_march_uses_its_moves`.
+    pub fn disable_march_uses_its_moves(&mut self) {
+        self.march_uses_its_moves = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
