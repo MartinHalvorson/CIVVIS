@@ -5358,6 +5358,10 @@ pub struct AdvancedAi {
     /// 650-gold reserve (10 cities) against banks of 378-485. Off by default.
     age_closer_spends_the_reserve: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `contender-at-peace-is-the-target`: at peace, the Diplomatic Victory
+    /// contender at our mercy is the campaign's rival. See
+    /// `one_war::diplomatic_contender_at_peace`.
+    contender_at_peace_is_the_target: bool,
     /// `campaign-weighs-the-tourism-leader`: the campaign's rival ranking
     /// gives the tourism leader `TOURISM_LEADER_TILES` of march. See
     /// `tourism_leader`.
@@ -9311,6 +9315,7 @@ impl AdvancedAi {
             breaker_to_the_fastest: false,
             age_closer_spends_the_reserve: false,
             // ---- append: c-d ----------------------------------------
+            contender_at_peace_is_the_target: false,
             campaign_weighs_the_tourism_leader: false,
             domination_finish_holds_the_front: false,
             declaration_needs_the_edge: false,
@@ -13760,9 +13765,14 @@ impl AdvancedAi {
             // rival two weeks' march away.
             rush_victim.map(|(target, _)| target).or_else(|| {
                 forced_target.or_else(|| {
-                    actionable_denial
-                        .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
-                        .map(|(rival, _)| rival)
+                    // See `diplomatic_contender_at_peace`: ahead of the
+                    // denial counter's own pick.
+                    self.diplomatic_contender_at_peace(g, pid)
+                        .or_else(|| {
+                            actionable_denial
+                                .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
+                                .map(|(rival, _)| rival)
+                        })
                         // A secured capital advances the Domination campaign
                         // to another capital owner, even when its frontier
                         // must be taken first. Otherwise prefer an eligible

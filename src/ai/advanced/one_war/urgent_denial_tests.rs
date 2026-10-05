@@ -1103,6 +1103,41 @@ fn a_contender_at_fourteen_holds_the_front_under_the_elimination_gene() {
     assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), None);
 }
 
+/// See `diplomatic_contender_at_peace`: at peace, a rival on 14 points at
+/// our mercy and in reach is the campaign's rival under the gene; at war it
+/// is the elimination gene's, and under 14 or inside twice its power it is
+/// passed by.
+#[test]
+fn a_contender_at_peace_is_the_campaign_target_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.clear();
+    g.players[2].dvp = ELIMINATION_CONTENDER_DVP;
+    assert_eq!(ai.diplomatic_contender_at_peace(&g, 0), None, "off");
+    ai.enable_contender_at_peace_is_the_target();
+    assert_eq!(ai.diplomatic_contender_at_peace(&g, 0), Some(2));
+    assert_eq!(ai.assess(&g, 0).target_player, Some(2));
+    g.players[2].dvp = ELIMINATION_CONTENDER_DVP - 1;
+    assert_eq!(ai.diplomatic_contender_at_peace(&g, 0), None, "under 14");
+    g.players[2].dvp = ELIMINATION_CONTENDER_DVP;
+    g.at_war.insert((0, 1));
+    assert_eq!(
+        ai.diplomatic_contender_at_peace(&g, 0),
+        None,
+        "a war is running"
+    );
+    g.at_war.clear();
+    let mut row = 2;
+    while g.military_power(0) >= ELIMINATION_POWER_RATIO * g.military_power(2) {
+        g.spawn_test_unit("modern_armor", 2, (30, row));
+        row += 1;
+    }
+    assert_eq!(
+        ai.diplomatic_contender_at_peace(&g, 0),
+        None,
+        "inside twice its power"
+    );
+}
+
 /// See `declaration_has_the_edge`: under the gene a plain staged war needs
 /// 1.5 times the target's steady power; with the gene off it always has it.
 #[test]
