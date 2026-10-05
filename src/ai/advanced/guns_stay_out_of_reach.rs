@@ -117,7 +117,6 @@ impl AdvancedAi {
 mod tests {
     use super::*;
     use crate::ai::advanced::VictoryTarget;
-    use crate::game::Action;
 
     /// A grassland field, our trebuchet at (16, 10), a Babylonian Line
     /// Infantry at (20, 10) seen by a warrior of ours behind it, at war.
@@ -145,55 +144,50 @@ mod tests {
         (g, ai, gun, hostile)
     }
 
+    /// A Line Infantry with two moves steps once and strikes: its reach is
+    /// two tiles, and its blow at the upper roll destroys a healthy
+    /// trebuchet.
     #[test]
     fn a_gun_does_not_step_where_one_blow_destroys_it() {
         let (mut g, mut ai, gun, _) = fixture();
         ai.enable_guns_stay_out_of_reach();
         ai.mark_gun_lethal_tiles(&g, 0);
         let lethal = &ai.base.gun_lethal_tiles[&gun];
-        assert!(lethal.contains_key(&(17, 10)), "{lethal:?}");
+        assert!(lethal.contains_key(&(18, 10)), "{lethal:?}");
+        assert!(!lethal.contains_key(&(17, 10)), "{lethal:?}");
+        assert!(!lethal.contains_key(&(16, 10)), "{lethal:?}");
         assert!(
-            !lethal.contains_key(&(16, 10)),
-            "out of reach where it stands"
+            ai.base.path_move(&mut g, 0, gun, (17, 10)),
+            "a step short of the reach is taken"
         );
         assert!(
-            !ai.base.path_move(&mut g, 0, gun, (17, 10)),
+            !ai.base.path_move(&mut g, 0, gun, (18, 10)),
             "the step into reach is refused"
         );
-        assert_eq!(g.units[&gun].pos, (16, 10));
-        assert!(
-            ai.base.path_move(&mut g, 0, gun, (15, 10)),
-            "a step away is not"
-        );
+        assert_eq!(g.units[&gun].pos, (17, 10));
 
-        // The gene off, nothing is marked and the same step is taken.
+        // The gene off, nothing is marked and the same steps are taken.
         let (mut g, mut ai, gun, _) = fixture();
         ai.mark_gun_lethal_tiles(&g, 0);
         assert!(ai.base.gun_lethal_tiles.is_empty());
         assert!(ai.base.path_move(&mut g, 0, gun, (17, 10)));
+        assert!(ai.base.path_move(&mut g, 0, gun, (18, 10)));
     }
 
     #[test]
     fn a_gun_inside_the_reach_steps_out_and_a_weaker_hostile_is_no_veto() {
-        let (mut g, mut ai, gun, hostile) = fixture();
+        let (mut g, mut ai, gun, _) = fixture();
         ai.enable_guns_stay_out_of_reach();
-        assert!(g
-            .apply(
-                0,
-                &Action::Move {
-                    unit: gun,
-                    to: (17, 10)
-                }
-            )
-            .is_ok());
-        g.units.get_mut(&gun).unwrap().moves_left = 2.0;
+        g.remove_unit(gun);
+        let gun = g.spawn_test_unit("trebuchet", 0, (18, 10));
         ai.mark_gun_lethal_tiles(&g, 0);
+        assert!(ai.base.gun_lethal_tiles[&gun].contains_key(&(18, 10)));
         ai.guns_step_out_of_reach(&mut g, 0);
         let pos = g.units[&gun].pos;
-        assert!(g.wdist(pos, (20, 10)) > 3, "it stands at {pos:?}");
+        assert!(g.wdist(pos, (20, 10)) > 2, "it stands at {pos:?}");
 
         // A Warrior's blow cannot destroy a healthy trebuchet.
-        let (mut g, mut ai, gun, _) = fixture();
+        let (mut g, mut ai, gun, hostile) = fixture();
         ai.enable_guns_stay_out_of_reach();
         g.remove_unit(hostile);
         let warrior = g.spawn_test_unit("warrior", 1, (20, 10));
@@ -201,6 +195,7 @@ mod tests {
         ai.mark_gun_lethal_tiles(&g, 0);
         assert!(ai.base.gun_lethal_tiles.is_empty());
         assert!(ai.base.path_move(&mut g, 0, gun, (17, 10)));
+        assert!(ai.base.path_move(&mut g, 0, gun, (18, 10)));
     }
 
     /// `guns-enter-together` walks guns into a city's strike on purpose: a
