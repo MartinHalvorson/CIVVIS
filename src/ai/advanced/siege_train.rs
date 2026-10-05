@@ -388,6 +388,35 @@ fn nearest_breaker(g: &Game, pid: usize, city: &CityView) -> i32 {
         .unwrap_or(i32::MAX)
 }
 
+impl AdvancedAi {
+    /// `declaration-waits-for-the-breaker`: whether the city a war is about
+    /// to open on can be breached by what stands on its ring now — walls a
+    /// melee blow opens, or a fit siege gun of ours, or a ram or tower that
+    /// works on these walls, within [`STAGING_FAR`]. The war-policy verdict
+    /// weighs only the strength staged on the ring, so the war opens with the
+    /// breaker still on the road, and a city at war raises its next wall tier
+    /// while the train holds for it. Live King civvis-20261005T053701Z
+    /// (game 103) declared on the Maori at turn 74, 373 power against 39,
+    /// with Opango behind 100 walls and its Catapult 17 tiles out; the walls
+    /// stood at 200 by turn 78, the siege held "for a wall-breaker on its
+    /// way" to turn 96, and the city fell at 118.
+    pub(super) fn declaration_breaker_at_hand(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(city) = CityView::of(g, cid) else {
+            return true;
+        };
+        if walls_open_to_melee(&city) {
+            return true;
+        }
+        g.units.values().any(|unit| {
+            unit.owner == pid
+                && g.wdist(unit.pos, city.pos) <= STAGING_FAR
+                && !g.is_embarked(unit)
+                && ((land_gun(g, unit.kind) && self.siege_member_fit(g, unit.id))
+                    || breach_support_works(g, unit.id, city.id))
+        })
+    }
+}
+
 /// A melee unit a ram or tower lends its effect to: `siege_support_effects`
 /// answers only for the melee and anti-cavalry classes.
 fn breach_support_user(g: &Game, uid: u32) -> bool {

@@ -497,3 +497,41 @@ fn only_shooters_with_a_firing_post_and_a_clear_reach_count_toward_the_walls() {
     let drawn = ai.breach_reading(&g, 0, &city, &bows).shooter_walls;
     assert!(drawn < counted, "{drawn} < {counted}");
 }
+
+/// `declaration-waits-for-the-breaker`: a walled objective is breachable
+/// before the war only with a siege gun, or a ram or tower that works on its
+/// walls, on its ring. Live King civvis-20261005T053701Z (game 103) declared
+/// on the Maori with Opango's Catapult 17 tiles out; the walls doubled first.
+#[test]
+fn a_walled_city_needs_a_breaker_on_its_ring_before_the_war() {
+    let (mut g, cid) = walled_city();
+    let ai = AdvancedAi::targeting(super::super::VictoryTarget::Domination);
+    assert!(g.cities[&cid].wall_hp > 0, "fixture: walls stand");
+    assert!(
+        !ai.declaration_breaker_at_hand(&g, 0, cid),
+        "nothing on the ring"
+    );
+    let far = at_distance(&g, cid, STAGING_FAR + 3)[0];
+    let gun = g.spawn_test_unit("catapult", 0, far);
+    assert!(
+        !ai.declaration_breaker_at_hand(&g, 0, cid),
+        "a gun on the road is not at hand"
+    );
+    let near = at_distance(&g, cid, STAGING_FAR - 1)[0];
+    g.units.get_mut(&gun).unwrap().pos = near;
+    assert!(
+        ai.declaration_breaker_at_hand(&g, 0, cid),
+        "a gun on the ring"
+    );
+    g.remove_unit(gun);
+    // A ram works on Ancient Walls.
+    g.spawn_test_unit("battering_ram", 0, near);
+    assert!(
+        ai.declaration_breaker_at_hand(&g, 0, cid),
+        "a ram that opens these walls"
+    );
+    // Bare walls need no breaker at all.
+    let (mut bare, bare_city) = walled_city();
+    bare.cities.get_mut(&bare_city).unwrap().wall_hp = 0;
+    assert!(ai.declaration_breaker_at_hand(&bare, 0, bare_city));
+}

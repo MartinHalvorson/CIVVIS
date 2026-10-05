@@ -2739,6 +2739,11 @@ pub const GENES: &[Gene] = &[
     // CHOICE_NEGATIVE, a surprise war (150 grievances). 100 such flips in 49 of
     // 74 October live games. See `CivvisControlAutoClose.lua`.
     Gene { tag: "dialogue-never-declares-war", field: "dialogue_never_declares_war", kind: Kind::OptIn, enable: AdvancedAi::enable_dialogue_never_declares_war, disable: AdvancedAi::disable_dialogue_never_declares_war },
+    // Live King civvis-20261005T053701Z (game 103) declared on the Maori at
+    // turn 74 with Opango behind 100 walls and its Catapult 17 tiles out;
+    // the walls stood at 200 by 78 and the city fell at 118. See
+    // `siege_train::declaration_breaker_at_hand`.
+    Gene { tag: "declaration-waits-for-the-breaker", field: "declaration_waits_for_the_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_waits_for_the_breaker, disable: AdvancedAi::disable_declaration_waits_for_the_breaker },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

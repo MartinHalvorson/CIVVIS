@@ -5289,6 +5289,10 @@ pub struct AdvancedAi {
     /// was holding off. The board's own `war` order stays the only way in. See
     /// `CivvisControlAutoClose.lua`. Off by default.
     dialogue_never_declares_war: bool,
+    /// `declaration-waits-for-the-breaker`: a staged war on a walled
+    /// objective waits until a breaker stands on its ring. See
+    /// `siege_train::declaration_breaker_at_hand`. Off by default.
+    declaration_waits_for_the_breaker: bool,
     /// `capital-defense-holds`: a damaged city of ours with a hostile beside
     /// it keeps its Defend row whatever the pressure ratio reads, and a
     /// capital we hold under attack is an urgent Defend that outranks every
@@ -8997,6 +9001,7 @@ impl AdvancedAi {
             // ---- append: c-d ----------------------------------------
             conquest_opening_needs_the_production: false,
             dialogue_never_declares_war: false,
+            declaration_waits_for_the_breaker: false,
             capital_defense_holds: false,
             diplomatic_contender_kept: false,
             diplomatic_contender_kept_2: false,
@@ -21811,6 +21816,28 @@ impl AdvancedAi {
                     committed_domination || rushing,
                 )
             });
+        // `declaration-waits-for-the-breaker`: a staged army is not staged
+        // for a walled city until a breaker stands on its ring. See
+        // `siege_train::declaration_breaker_at_hand`.
+        let breaker_held = self.declaration_waits_for_the_breaker
+            && staged
+            && !urgent_denial
+            && !faith_counter_due
+            && !rushing
+            && plan
+                .target_city
+                .is_some_and(|city| !self.declaration_breaker_at_hand(g, pid, city));
+        if breaker_held {
+            if let Some(city) = plan.target_city.and_then(|city| g.cities.get(&city)) {
+                think!(self.journal(), Military, Detail,
+                       "Holding the declaration on {} for a wall-breaker", g.players[target].civ;
+                       "{} stands behind {} walls and no siege gun, ram or tower of ours is on its ring; \
+                        a war opened now gives it the turns to raise the next tier",
+                       city.name, city.wall_hp;
+                       city.pos);
+            }
+        }
+        let staged = staged && !breaker_held;
         // The Culture clock may expire before capture units reach the ring.
         // A concrete, safe Theater Square sortie can start denial meanwhile.
         let air_ready = !staged && self.urgent_culture_air_opening_ready(g, pid, target, plan);

@@ -5612,6 +5612,17 @@ impl AdvancedAi {
         self.dialogue_never_declares_war = false;
     }
 
+    /// Opt-in gene `declaration-waits-for-the-breaker`; see
+    /// [`Self::declaration_waits_for_the_breaker`].
+    pub fn enable_declaration_waits_for_the_breaker(&mut self) {
+        self.declaration_waits_for_the_breaker = true;
+    }
+
+    /// The twin of `enable_declaration_waits_for_the_breaker`.
+    pub fn disable_declaration_waits_for_the_breaker(&mut self) {
+        self.declaration_waits_for_the_breaker = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
