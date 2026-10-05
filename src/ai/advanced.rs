@@ -5280,6 +5280,10 @@ pub struct AdvancedAi {
     /// `breaker-to-the-fastest`; see `siege_production.rs`.
     breaker_to_the_fastest: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-finish-at-the-observed-bar`: the clocks that weigh a
+    /// culture finish against a march read it at [`CULTURE_OBSERVED_BAR`] of
+    /// the exported bar. See `denial_nearest_finish::projected_culture_finish_at`.
+    culture_finish_at_the_observed_bar: bool,
     /// `denial-keeps-its-rival`: the counter keeps last turn's rival unless
     /// another leads it by [`DENIAL_SWAP_MARGIN`]. See
     /// `victory_heuristics::actionable_victory_denial_with_culture_pressures`.
@@ -9026,6 +9030,7 @@ impl AdvancedAi {
             breaker_keeps_its_queue: false,
             breaker_to_the_fastest: false,
             // ---- append: c-d ----------------------------------------
+            culture_finish_at_the_observed_bar: false,
             denial_keeps_its_rival: false,
             denial_incumbent: None,
             capital_prey_opens_a_front: false,

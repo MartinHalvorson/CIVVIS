@@ -1311,7 +1311,7 @@ impl AdvancedAi {
         };
         let window = g.standard_duration(FRONT_CAPITAL_FINISH_TURNS);
         if self
-            .projected_culture_finish(g, threat)
+            .observed_culture_finish(g, threat)
             .is_some_and(|turns| turns < f64::from(window))
         {
             return false;
@@ -1538,7 +1538,7 @@ impl AdvancedAi {
                     rival != prey
                         && self.urgent_victory_threat(g, rival)
                         && self
-                            .projected_culture_finish(g, rival)
+                            .observed_culture_finish(g, rival)
                             .is_some_and(|finish| finish < eta + CAPITAL_PREY_MATCH_MARGIN)
                 });
             if match_point {

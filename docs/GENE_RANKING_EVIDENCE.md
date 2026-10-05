@@ -224,6 +224,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-counter-declares` | off (unmeasured) | Opt-in gene `culture-counter-declares`; see `Self::culture_counter_declares`. | 1 \| 1 |
 | `culture-defense-theater` | off (unmeasured) | A Theater Square while the empire's Culture trails the strongest rival's: claimed for one idle city ahead of the delegated governor (`reserve_culture_defense_theater`), and in the delegated governor ahead of the Harbor. | 1 \| 1 |
 | `culture-faith-reservation` | off (unmeasured) | Enable `culture-faith-reservation` for measurement. | 1 \| 1 |
+| `culture-finish-at-the-observed-bar` | off (unmeasured) | Opt-in gene `culture-finish-at-the-observed-bar`; see `Self::culture_finish_at_the_observed_bar`. | 1 \| 1 |
 | `culture-lane-forecast-2` | off (unmeasured) | Version 2 of the Culture clock forecast: project secular and religious Tourism through each rival's current international modifiers. | 1 \| 2 |
 | `culture-tourism-payback` | off (unmeasured) | Enable `culture-tourism-payback` for measurement. | 1 \| 1 |
 | `decisive-window` | off (unmeasured) | Opt-in gene `decisive-window`; see `Self::decisive_window`. | 1 \| 1 |

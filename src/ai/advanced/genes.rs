@@ -2767,6 +2767,10 @@ pub const GENES: &[Gene] = &[
     // ten turns 89 times, 53 of them while countering a rival close to
     // winning. See `victory_heuristics::actionable_victory_denial_with_culture_pressures`.
     Gene { tag: "denial-keeps-its-rival", field: "denial_keeps_its_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_keeps_its_rival, disable: AdvancedAi::disable_denial_keeps_its_rival },
+    // All 22 October culture losses fired with the winner below the
+    // exported bar (median 94%). See
+    // `denial_nearest_finish::projected_culture_finish_at`.
+    Gene { tag: "culture-finish-at-the-observed-bar", field: "culture_finish_at_the_observed_bar", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_finish_at_the_observed_bar, disable: AdvancedAi::disable_culture_finish_at_the_observed_bar },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

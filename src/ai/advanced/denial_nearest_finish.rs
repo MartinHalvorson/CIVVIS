@@ -60,6 +60,11 @@ pub(super) const CULTURE_CURVE_WINDOW: u32 = 20;
 /// curve is projected: a few turns of tourism is noise.
 pub(super) const CULTURE_CURVE_MIN_SPAN: u32 = 8;
 
+/// `culture-finish-at-the-observed-bar`: the share of the exported bar at
+/// which a culture race is read as finished. Just under the median (94%) of
+/// the 22 October culture losses' last readings.
+pub(crate) const CULTURE_OBSERVED_BAR: f64 = 0.92;
+
 impl AdvancedAi {
     /// One reading per living rival per turn: its foreign tourists and the
     /// largest domestic count among the others, which it must pass.
@@ -102,6 +107,29 @@ impl AdvancedAi {
     /// [`CULTURE_CURVE_MIN_SPAN`] standard turns of readings, without
     /// visitors to project, or while the bar keeps pace.
     pub(super) fn projected_culture_finish(&self, g: &Game, rival: usize) -> Option<f64> {
+        self.projected_culture_finish_at(g, rival, 1.0)
+    }
+
+    /// `culture-finish-at-the-observed-bar`: the finish a clock weighing a
+    /// march against a culture race should read — at [`CULTURE_OBSERVED_BAR`]
+    /// of the exported bar under the gene, at the bar otherwise. Every one of
+    /// the 22 culture losses of October 4-5 fired with the winner's last
+    /// reading of foreign tourists below the largest other domestic count:
+    /// median 94%, 79% to 99% (civvis-20261005T061801Z: Canada 183 against
+    /// our 194; T063500Z: Scythia 179 against Scotland's 188). The urgency
+    /// gates keep the exported bar.
+    pub(super) fn observed_culture_finish(&self, g: &Game, rival: usize) -> Option<f64> {
+        let scale = if self.culture_finish_at_the_observed_bar {
+            CULTURE_OBSERVED_BAR
+        } else {
+            1.0
+        };
+        self.projected_culture_finish_at(g, rival, scale)
+    }
+
+    /// Turns until `rival`'s foreign tourists pass `scale` times the bar,
+    /// as [`Self::projected_culture_finish`] reads it at 1.0.
+    fn projected_culture_finish_at(&self, g: &Game, rival: usize, scale: f64) -> Option<f64> {
         let history = self.culture_curves.get(&rival)?;
         let (first_turn, first_foreign, first_bar) = *history.first()?;
         let (last_turn, foreign, bar) = *history.last()?;
@@ -112,13 +140,14 @@ impl AdvancedAi {
         {
             return None;
         }
-        if foreign >= bar {
+        let target = bar.max(1) as f64 * scale;
+        if foreign as f64 >= target {
             return Some(0.0);
         }
         let growth = ((foreign as f64 / first_foreign as f64).ln()
             - (bar.max(1) as f64 / first_bar.max(1) as f64).ln())
             / f64::from(span);
-        (growth > 0.0).then(|| (bar as f64 / foreign as f64).ln() / growth)
+        (growth > 0.0).then(|| (target / foreign as f64).ln() / growth)
     }
 
     /// The culture clock a Domination army answers when `rival`'s race is

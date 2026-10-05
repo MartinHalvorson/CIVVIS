@@ -5679,6 +5679,17 @@ impl AdvancedAi {
         self.denial_incumbent = None;
     }
 
+    /// Opt-in gene `culture-finish-at-the-observed-bar`; see
+    /// [`Self::culture_finish_at_the_observed_bar`].
+    pub fn enable_culture_finish_at_the_observed_bar(&mut self) {
+        self.culture_finish_at_the_observed_bar = true;
+    }
+
+    /// The twin of `enable_culture_finish_at_the_observed_bar`.
+    pub fn disable_culture_finish_at_the_observed_bar(&mut self) {
+        self.culture_finish_at_the_observed_bar = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
