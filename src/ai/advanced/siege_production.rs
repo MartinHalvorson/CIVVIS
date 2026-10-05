@@ -40,7 +40,29 @@ pub(super) const SUPPLY_STRENGTH_WINDOW: f64 = 3.0;
 const BREAKER_FASTEST_MARGIN: f64 = 3.0;
 const BREAKER_FASTEST_RATIO: f64 = 1.2;
 
+/// `breaker-reads-the-march`: the share of its movement a new siege gun
+/// actually closes on the siege it was built for each turn. The reservation
+/// priced the road at the gun's full movement; on October 5 the 563 guns
+/// born more than 5 tiles from a running siege closed a median 0.80 tiles a
+/// turn (two-move guns: 0.4 of their movement), only 233 reached 5 tiles
+/// within 20 turns, and they were born a median 13 tiles out against 7 for
+/// our nearest city. Read at full movement, a fast city's longer road looked
+/// cheaper than it was.
+pub(super) const BREAKER_MARCH_FACTOR: f64 = 0.4;
+
 impl AdvancedAi {
+    /// Turns a siege gun of `moves` movement takes to cover `distance` tiles
+    /// to the siege: at full movement, or under `breaker-reads-the-march` at
+    /// [`BREAKER_MARCH_FACTOR`] of it.
+    pub(super) fn breaker_march_turns(&self, distance: i32, moves: f64) -> f64 {
+        let factor = if self.breaker_reads_the_march {
+            BREAKER_MARCH_FACTOR
+        } else {
+            1.0
+        };
+        f64::from(distance) / (moves.max(1.0) * factor)
+    }
+
     /// Whether the wall-breaker reservation reads `owner` as at war: a war
     /// being fought, or, under `breaker-before-the-war`, the Conquest plan's
     /// own target, the war the army is staging for.
@@ -255,8 +277,10 @@ impl AdvancedAi {
                     (spec.siege && !matches!(spec.domain.as_deref(), Some("sea" | "air"))).then(
                         || {
                             self.production_build_turns(g, pid, cid, item)
-                                + f64::from(g.wdist(g.cities[&cid].pos, objective))
-                                    / spec.moves.max(1.0)
+                                + self.breaker_march_turns(
+                                    g.wdist(g.cities[&cid].pos, objective),
+                                    spec.moves,
+                                )
                         },
                     )
                 })
@@ -322,7 +346,10 @@ impl AdvancedAi {
                         continue;
                     }
                     let arrival = self.production_build_turns(g, pid, cid, &item)
-                        + f64::from(g.wdist(g.cities[&cid].pos, objective)) / spec.moves.max(1.0);
+                        + self.breaker_march_turns(
+                            g.wdist(g.cities[&cid].pos, objective),
+                            spec.moves,
+                        );
                     if busy && arrival > SUPPLY_DISPLACE_ARRIVAL {
                         continue;
                     }

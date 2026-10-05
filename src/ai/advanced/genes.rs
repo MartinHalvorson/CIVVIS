@@ -2936,6 +2936,10 @@ pub const GENES: &[Gene] = &[
     // captures fired 0.64-1.67 a turn at the city. See
     // `siege_train::ring_is_threatened`.
     Gene { tag: "ring-fires-on-the-city", field: "ring_fires_on_the_city", kind: Kind::OptIn, enable: AdvancedAi::enable_ring_fires_on_the_city, disable: AdvancedAi::disable_ring_fires_on_the_city },
+    // October 5 live: new siege guns closed a median 0.80 tiles a turn on
+    // their siege and were born 13 tiles out against 7 for our nearest city.
+    // See `siege_production::BREAKER_MARCH_FACTOR`.
+    Gene { tag: "breaker-reads-the-march", field: "breaker_reads_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_reads_the_march, disable: AdvancedAi::disable_breaker_reads_the_march },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

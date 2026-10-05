@@ -6046,6 +6046,17 @@ impl AdvancedAi {
         self.conquest_opening_stays_near = false;
     }
 
+    /// Opt-in gene `breaker-reads-the-march`; see
+    /// [`Self::breaker_reads_the_march`].
+    pub fn enable_breaker_reads_the_march(&mut self) {
+        self.breaker_reads_the_march = true;
+    }
+
+    /// The twin of `enable_breaker_reads_the_march`.
+    pub fn disable_breaker_reads_the_march(&mut self) {
+        self.breaker_reads_the_march = false;
+    }
+
     /// Opt-in gene `science-denounce-waits-for-the-race`; see
     /// [`Self::science_denounce_waits_for_the_race`].
     pub fn enable_science_denounce_waits_for_the_race(&mut self) {

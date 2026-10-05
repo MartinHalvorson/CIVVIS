@@ -654,3 +654,23 @@ fn version_two_supplies_only_a_capital_in_parallel() {
         assert_eq!(reserved.is_some(), capital, "capital {capital}");
     }
 }
+
+/// `breaker-reads-the-march`: a gun's road is priced at the share of its
+/// movement live guns closed on their siege (0.4), so a fast city's longer
+/// road no longer reads cheaper than a nearer city's slower build.
+#[test]
+fn the_breaker_road_is_priced_at_the_measured_march() {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert_eq!(ai.breaker_march_turns(13, 2.0), 6.5, "off: full movement");
+    ai.enable_breaker_reads_the_march();
+    assert!((ai.breaker_march_turns(13, 2.0) - 16.25).abs() < 1e-9);
+    assert!((ai.breaker_march_turns(7, 2.0) - 8.75).abs() < 1e-9);
+    // A near city building in 8 turns against a far one building in 4: at
+    // full movement the far gun reads sooner (10.5 against 11.5), at the
+    // measured march the near one does (16.75 against 20.25).
+    let near = 8.0 + ai.breaker_march_turns(7, 2.0);
+    let far = 4.0 + ai.breaker_march_turns(13, 2.0);
+    assert!(near < far, "{near} against {far}");
+    // Movement under one is read as one, as before.
+    assert!((ai.breaker_march_turns(4, 0.0) - 10.0).abs() < 1e-9);
+}

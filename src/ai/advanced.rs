@@ -5047,6 +5047,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `breaker-reads-the-march`: the wall-breaker reservation prices a gun's
+    /// road at the speed live guns actually close on a siege. See
+    /// `siege_production::BREAKER_MARCH_FACTOR`.
+    breaker_reads_the_march: bool,
     /// `breach-reads-the-air`: our aircraft with a bombard strength based
     /// within strike range of a walled city we besiege count toward its
     /// breach reading and damage budget, at their expected wall damage a
@@ -9201,6 +9205,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            breaker_reads_the_march: false,
             breach_reads_the_air: false,
             breach_counts_nearby_guns: false,
             air_volley_needs_a_road: false,
