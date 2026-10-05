@@ -5345,6 +5345,10 @@ pub struct AdvancedAi {
     /// ahead of the Harbor. Opt-in gene `culture-defense-theater`; see
     /// `BasicAi::culture_defense_theater`.
     culture_defense_theater: bool,
+    /// `culture-defense-theater-2`: version 1, but the reservation leaves a
+    /// housing-bound city whose next housing is a Granary to the governor.
+    /// See `reserve_culture_defense_theater`.
+    culture_defense_theater_2: bool,
     /// `domination-specializes-earlier`: an assigned Domination lane's
     /// development half ends at [`DOMINATION_SPECIALIZATION_PERCENT`] of the
     /// clock (turn 100 of 250) instead of halfway, so it turns to Conquest
@@ -8985,6 +8989,7 @@ impl AdvancedAi {
             district_buildings_first: false,
             district_buildings_first_2: false,
             culture_defense_theater: false,
+            culture_defense_theater_2: false,
             domination_specializes_earlier: false,
             domination_ignores_city_states: false,
             culture_lane_forecast_2: false,
