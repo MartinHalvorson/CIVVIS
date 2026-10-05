@@ -98,6 +98,10 @@ use crate::Pos;
 /// The staging ring: this far from the city while the train gathers.
 pub(super) const STAGING_NEAR: i32 = 3;
 pub(super) const STAGING_FAR: i32 = 5;
+
+/// `declaration-waits-for-the-breaker`: the standard turns a staged
+/// declaration holds for a breaker on one objective before it goes ahead.
+pub(super) const DECLARATION_BREAKER_PATIENCE: u32 = 10;
 /// A City Center strikes this far; nothing stands inside it before the
 /// train is staged.
 pub(super) const CITY_STRIKE_RANGE: i32 = 2;
@@ -414,6 +418,39 @@ impl AdvancedAi {
                 && ((land_gun(g, unit.kind) && self.siege_member_fit(g, unit.id))
                     || breach_support_works(g, unit.id, city.id))
         })
+    }
+
+    /// `declaration-waits-for-the-breaker`: whether the hold on `objective`
+    /// still has patience. The clock starts the first turn the hold applies
+    /// (`holdable`) on that tile, runs through turns the army reads
+    /// unstaged, and resets only when the breaker arrives or the objective
+    /// moves. After [`DECLARATION_BREAKER_PATIENCE`] standard turns the
+    /// declaration goes ahead without it, so a breaker stuck on its column
+    /// cannot hold the war forever.
+    pub(super) fn declaration_hold_patience(
+        &mut self,
+        g: &Game,
+        objective: Option<Pos>,
+        breaker_missing: bool,
+        holdable: bool,
+    ) -> bool {
+        let Some(pos) = objective.filter(|_| breaker_missing) else {
+            self.declaration_breaker_hold = None;
+            return false;
+        };
+        if self
+            .declaration_breaker_hold
+            .is_none_or(|(held, _)| held != pos)
+        {
+            if !holdable {
+                return false;
+            }
+            self.declaration_breaker_hold = Some((pos, g.turn));
+        }
+        holdable
+            && self.declaration_breaker_hold.is_some_and(|(_, since)| {
+                g.turn.saturating_sub(since) < g.standard_duration(DECLARATION_BREAKER_PATIENCE)
+            })
     }
 }
 

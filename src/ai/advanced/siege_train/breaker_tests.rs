@@ -535,3 +535,40 @@ fn a_walled_city_needs_a_breaker_on_its_ring_before_the_war() {
     bare.cities.get_mut(&bare_city).unwrap().wall_hp = 0;
     assert!(ai.declaration_breaker_at_hand(&bare, 0, bare_city));
 }
+
+/// `declaration-waits-for-the-breaker`: the hold has patience. Ten standard
+/// turns from the first held turn on a tile, through turns the army reads
+/// unstaged, then the declaration goes ahead; a breaker's arrival or a new
+/// objective starts a fresh clock.
+#[test]
+fn the_declaration_holds_for_the_breaker_only_so_long() {
+    let (mut g, _) = walled_city();
+    let mut ai = AdvancedAi::targeting(super::super::VictoryTarget::Domination);
+    let (here, there) = ((10, 10), (20, 10));
+    let patience = g.standard_duration(DECLARATION_BREAKER_PATIENCE);
+    assert!(ai.declaration_hold_patience(&g, Some(here), true, true));
+    g.turn += 1;
+    assert!(
+        !ai.declaration_hold_patience(&g, Some(here), true, false),
+        "an unstaged turn holds nothing"
+    );
+    g.turn += patience - 2;
+    assert!(
+        ai.declaration_hold_patience(&g, Some(here), true, true),
+        "the clock ran through it"
+    );
+    g.turn += 1;
+    assert!(
+        !ai.declaration_hold_patience(&g, Some(here), true, true),
+        "patience spent"
+    );
+    assert!(
+        ai.declaration_hold_patience(&g, Some(there), true, true),
+        "a new objective"
+    );
+    assert!(!ai.declaration_hold_patience(&g, Some(there), false, true));
+    assert!(
+        ai.declaration_hold_patience(&g, Some(there), true, true),
+        "a breaker that left starts a fresh clock"
+    );
+}
