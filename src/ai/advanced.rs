@@ -6772,6 +6772,10 @@ pub struct AdvancedAi {
     /// Domination win (083931Z, 10 cities at t75) spent none. Opt-in gene
     /// `naval-escort-patience`.
     naval_escort_patience: bool,
+    /// `own-column-is-not-a-refusal`: a step our own column held, or one the
+    /// host was never sent, is not a host refusal; see
+    /// `BasicAi::note_host_moves` and `advanced/own_column.rs`.
+    own_column_is_not_a_refusal: bool,
     // ---- append: p-r ------------------------------------------------
     /// `prophet-race-takes-a-district-slot-2`: the race's Holy Site in the
     /// city that builds it soonest. See
@@ -7959,6 +7963,10 @@ mod missionary_field;
 /// with nothing left in reach. Opt-in gene `one-war-at-a-time`; see
 /// `advanced/one_war.rs`.
 mod one_war;
+/// Our own column is not the host's refusal: the live bridge reports which
+/// planned moves actually crossed. Opt-in gene `own-column-is-not-a-refusal`;
+/// see `advanced/own_column.rs`.
+mod own_column;
 /// Recon disruption: the pass picket. One opt-in gene; see
 /// `advanced/recon_disruption.rs`.
 mod recon_disruption;
@@ -9193,6 +9201,7 @@ impl AdvancedAi {
             opening_force_keeps_its_members: false,
             one_sanctuary: false,
             naval_escort_patience: false,
+            own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
             prophet_race_takes_a_district_slot_2: false,
             peace_waits_for_unseen_prey: false,

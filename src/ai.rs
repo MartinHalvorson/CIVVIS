@@ -3570,6 +3570,31 @@ pub struct BasicAi {
     move_refusal_watch: RefCell<HashMap<u32, (u32, Pos, Pos)>>,
     move_refusal_strikes: HashMap<u32, (Pos, Pos, u8)>,
     move_refusal_blocks: HashMap<u32, (Pos, u32)>,
+    /// `own-column-is-not-a-refusal` (OptIn): a planned step the host never
+    /// received, or one onto a tile another of our units held when the frame
+    /// began, is not the host's refusal. Live King civvis-20261005T060002Z
+    /// (G104), Siege of Sparta: the air-assault barrier deferred every ground
+    /// order of frame 0 (`air_assault_phase_deferred=60` t216, `=52` t217),
+    /// yet the frame-0 plan had already written this turn's watch and path
+    /// trail. The next frame's replan found its own first step "already
+    /// walked" by the same-turn reversal guard and issued nothing, and the
+    /// following turn judged the step the host never saw as a refusal: a
+    /// Rocket Artillery 13 tiles out was barred for 8 turns on t218, idle
+    /// t216-223, and a second stood 14 turns at (23,20) until it "stands
+    /// down; it is going nowhere" on t236. Inert with the gene off.
+    own_column_is_not_a_refusal: bool,
+    /// Per unit: the last host turn the live bridge reported on its planned
+    /// moves, and whether any move order actually reached the host that turn.
+    /// Written only by [`BasicAi::note_host_moves`].
+    host_move_feedback: HashMap<u32, (u32, bool)>,
+    /// Whether the live bridge has reported sent moves at all. Off the bridge
+    /// nothing reports, and every applied move is the host's own act.
+    host_move_feedback_active: bool,
+    /// Per unit: the turn whose watched step was onto a tile one of our own
+    /// units on the same stacking layer held when the frame began.
+    move_refusal_congested: RefCell<HashMap<u32, u32>>,
+    /// Where each of our units stood when this frame's movement began.
+    frame_own_tiles: HashMap<Pos, Vec<u32>>,
     /// Melee units the ancient-rush lane wants in hand, or 0 when no rush is
     /// running. Set once a turn by `AdvancedAi` from its strategic plan.
     ///
@@ -5601,6 +5626,11 @@ impl BasicAi {
             move_refusal_watch: RefCell::new(HashMap::new()),
             move_refusal_strikes: HashMap::new(),
             move_refusal_blocks: HashMap::new(),
+            own_column_is_not_a_refusal: false,
+            host_move_feedback: HashMap::new(),
+            host_move_feedback_active: false,
+            move_refusal_congested: RefCell::new(HashMap::new()),
+            frame_own_tiles: HashMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -6102,6 +6132,11 @@ impl BasicAi {
             move_refusal_watch: RefCell::new(HashMap::new()),
             move_refusal_strikes: HashMap::new(),
             move_refusal_blocks: HashMap::new(),
+            own_column_is_not_a_refusal: false,
+            host_move_feedback: HashMap::new(),
+            host_move_feedback_active: false,
+            move_refusal_congested: RefCell::new(HashMap::new()),
+            frame_own_tiles: HashMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -7568,6 +7603,9 @@ impl BasicAi {
         self.move_refusal_watch.get_mut().clear();
         self.move_refusal_strikes.clear();
         self.move_refusal_blocks.clear();
+        self.host_move_feedback.clear();
+        self.move_refusal_congested.get_mut().clear();
+        self.frame_own_tiles.clear();
         self.explore_last.get_mut().clear();
         self.explore_dead.get_mut().clear();
         self.explore_goal.get_mut().clear();
@@ -7637,6 +7675,18 @@ impl BasicAi {
             .into_iter()
             .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
             .collect();
+        self.host_move_feedback = std::mem::take(&mut self.host_move_feedback)
+            .into_iter()
+            .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
+            .collect();
+        let congested = std::mem::take(self.move_refusal_congested.get_mut());
+        *self.move_refusal_congested.get_mut() = congested
+            .into_iter()
+            .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
+            .collect();
+        // Rebuilt by `begin_movement_turn` for every frame; a rebuilt board's
+        // ids would only make a stale copy lie.
+        self.frame_own_tiles.clear();
         // ⚠ Remapped, not cleared. A replan can rebuild the live board after a
         // host-accepted step but before that host turn ends. Clearing this trail
         // then forgets the step the reversal guard must reject, so the replan can
@@ -7674,6 +7724,100 @@ impl BasicAi {
         self.refresh_unit_memories(g, pid);
         self.observe_unit_motion(g, pid);
         self.judge_move_refusals(g, pid);
+        if self.own_column_is_not_a_refusal {
+            self.frame_own_tiles.clear();
+            for uid in g.player_unit_ids(pid) {
+                self.frame_own_tiles
+                    .entry(g.units[&uid].pos)
+                    .or_default()
+                    .push(uid);
+            }
+        }
+    }
+
+    /// `own-column-is-not-a-refusal`: whether `to` held another of our units
+    /// on `uid`'s stacking layer when this frame's movement began. Firaxis
+    /// checks stacking where a move ENDS, so a step the planning board freed
+    /// by walking that unit away first is still refused if the host takes
+    /// the two orders the other way round -- congestion in our own column,
+    /// not ground the host will not let us walk.
+    fn frame_start_friend_holds(&self, g: &Game, uid: u32, to: Pos) -> bool {
+        self.frame_own_tiles.get(&to).is_some_and(|held| {
+            held.iter()
+                .any(|other| *other != uid && g.units_share_stacking_layer(uid, *other))
+        })
+    }
+
+    /// `own-column-is-not-a-refusal`: the live bridge reports, after every
+    /// frame's outbound filters have settled, which of the units the plan
+    /// moved actually had a move order sent to Firaxis (`sent`) and which
+    /// were planned to move but withheld (`unsent`: the air-assault barrier,
+    /// a deferred follow-up). A withheld unit never walked, so the watched
+    /// step and path trail this frame's plan wrote for it are the plan's, not
+    /// the host's: both go back to what they were before the frame was
+    /// planned (`before_paths`, `before_watches`), so the next frame may plan
+    /// the very same step again. Returns how many units were rolled back.
+    /// Inert with the gene off.
+    pub(crate) fn note_host_moves(
+        &mut self,
+        g: &Game,
+        before_paths: &HashMap<u32, (u32, Vec<Pos>)>,
+        before_watches: &HashMap<u32, (u32, Pos, Pos)>,
+        sent: &BTreeSet<u32>,
+        unsent: &BTreeSet<u32>,
+    ) -> usize {
+        if !self.own_column_is_not_a_refusal {
+            return 0;
+        }
+        self.host_move_feedback_active = true;
+        for uid in sent {
+            self.host_move_feedback.insert(*uid, (g.turn, true));
+        }
+        let mut rolled_back = 0;
+        for uid in unsent.difference(sent) {
+            if self.host_move_feedback.get(uid) != Some(&(g.turn, true)) {
+                self.host_move_feedback.insert(*uid, (g.turn, false));
+            }
+            let mut changed = false;
+            let trails = self.last_path_step_from.get_mut();
+            if trails.get(uid) != before_paths.get(uid) {
+                match before_paths.get(uid) {
+                    Some(trail) => trails.insert(*uid, trail.clone()),
+                    None => trails.remove(uid),
+                };
+                changed = true;
+            }
+            let watches = self.move_refusal_watch.get_mut();
+            if watches.get(uid) != before_watches.get(uid) {
+                match before_watches.get(uid) {
+                    Some(watch) => watches.insert(*uid, *watch),
+                    None => watches.remove(uid),
+                };
+                changed = true;
+            }
+            let watched_this_turn = before_watches
+                .get(uid)
+                .is_some_and(|(turn, _, _)| *turn == g.turn);
+            if !watched_this_turn {
+                let congested = self.move_refusal_congested.get_mut();
+                if congested.get(uid) == Some(&g.turn) {
+                    congested.remove(uid);
+                }
+            }
+            if changed {
+                rolled_back += 1;
+            }
+        }
+        rolled_back
+    }
+
+    /// `own-column-is-not-a-refusal`: whether the live bridge reported a move
+    /// order reaching the host for this unit on `turn`. Always true off the
+    /// bridge, where every applied move is the host's own act.
+    fn host_received_a_move(&self, uid: u32, turn: u32) -> bool {
+        !self.own_column_is_not_a_refusal
+            || !self.host_move_feedback_active
+            || self.host_move_feedback.get(&uid) == Some(&(turn, true))
     }
 
     /// `live-move-refusal-break`: judge last turn's issued steps against where
@@ -7719,6 +7863,15 @@ impl BasicAi {
                 self.move_refusal_strikes.remove(&uid);
                 continue;
             }
+            // `own-column-is-not-a-refusal`: a step onto a tile our own column
+            // held when the order went out, or one the host was never sent,
+            // is no evidence about the ground. Neither a strike nor a reset.
+            if self.own_column_is_not_a_refusal
+                && (self.move_refusal_congested.get_mut().get(&uid) == Some(&turn)
+                    || !self.host_received_a_move(uid, turn))
+            {
+                continue;
+            }
             let strikes = match self.move_refusal_strikes.get(&uid) {
                 Some((f, s, n)) if *f == from && *s == step => n + 1,
                 _ => 1,
@@ -7735,6 +7888,12 @@ impl BasicAi {
             }
         }
         *self.move_refusal_watch.borrow_mut() = keep;
+        if self.own_column_is_not_a_refusal {
+            let turn = g.turn;
+            self.move_refusal_congested
+                .get_mut()
+                .retain(|_, marked| *marked + 1 >= turn);
+        }
         for (uid, from, step, kind) in blocked {
             think!(self.journal, Military, Detail,
                    "{kind} {uid} stops re-asking a move the host keeps refusing";
@@ -7825,6 +7984,16 @@ impl BasicAi {
         for uid in ids {
             let mark = work_mark(g, uid);
             let pos = g.units[&uid].pos;
+            // `own-column-is-not-a-refusal`: a turn on which no move of this
+            // unit reached the host is not a lap of any circle -- the unit
+            // stood where the bridge left it. It neither counts as fruitless
+            // nor enters the window.
+            let inert = self.own_column_is_not_a_refusal
+                && self.host_move_feedback_active
+                && !g
+                    .turn
+                    .checked_sub(1)
+                    .is_some_and(|last| self.host_received_a_move(uid, last));
             let (was_looping, looping, fruitless, footprint, stand_down) = {
                 let motion = self.unit_motion.entry(uid).or_default();
                 if self.live_motion_turn_accounting && motion.observed_turn == Some(g.turn) {
@@ -7846,10 +8015,12 @@ impl BasicAi {
                         observed_turn,
                         ..UnitMotion::default()
                     };
-                } else {
+                } else if !inert {
                     motion.fruitless += 1;
                 }
-                motion.tiles.push_back(pos);
+                if !inert {
+                    motion.tiles.push_back(pos);
+                }
                 while motion.tiles.len() > LIVELOCK_WINDOW {
                     motion.tiles.pop_front();
                 }
@@ -14190,9 +14361,18 @@ impl BasicAi {
             return;
         }
         let mut watch = self.move_refusal_watch.borrow_mut();
+        let fresh = watch.get(&uid).is_none_or(|(turn, _, _)| *turn != g.turn);
         let entry = watch.entry(uid).or_insert((g.turn, from, to));
         if entry.0 != g.turn {
             *entry = (g.turn, from, to);
+        }
+        if fresh && self.own_column_is_not_a_refusal {
+            let mut congested = self.move_refusal_congested.borrow_mut();
+            if self.frame_start_friend_holds(g, uid, to) {
+                congested.insert(uid, g.turn);
+            } else {
+                congested.remove(&uid);
+            }
         }
     }
 

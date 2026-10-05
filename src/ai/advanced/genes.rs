@@ -2739,6 +2739,13 @@ pub const GENES: &[Gene] = &[
     // CHOICE_NEGATIVE, a surprise war (150 grievances). 100 such flips in 49 of
     // 74 October live games. See `CivvisControlAutoClose.lua`.
     Gene { tag: "dialogue-never-declares-war", field: "dialogue_never_declares_war", kind: Kind::OptIn, enable: AdvancedAi::enable_dialogue_never_declares_war, disable: AdvancedAi::disable_dialogue_never_declares_war },
+    // G104 (civvis-20261005T060002Z) Siege of Sparta: the air-assault barrier
+    // withheld frame 0's ground orders, the frame-0 plan's watch and path
+    // trail survived, and the next turn barred a step the host was never sent
+    // (Rocket Artillery idle t216-223; another "going nowhere" t236). A step
+    // our own column held at frame start is congestion, not a refusal either.
+    // See `advanced/own_column.rs`.
+    Gene { tag: "own-column-is-not-a-refusal", field: "own_column_is_not_a_refusal", kind: Kind::OptIn, enable: AdvancedAi::enable_own_column_is_not_a_refusal, disable: AdvancedAi::disable_own_column_is_not_a_refusal },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -26911,6 +26911,15 @@ impl Game {
         !separate_military_layers
     }
 
+    /// Whether two units on the board would contest one stacking layer if they
+    /// stood on the same tile. False for an unknown id.
+    pub fn units_share_stacking_layer(&self, unit: u32, other: u32) -> bool {
+        let (Some(a), Some(b)) = (self.units.get(&unit), self.units.get(&other)) else {
+            return false;
+        };
+        self.shares_stacking_layer(&self.rules.units[a.kind], &self.rules.units[b.kind])
+    }
+
     /// Whether this unit may **end its movement** on `pos`.
     ///
     /// The stacking layer is the only rule that separates finishing a move
