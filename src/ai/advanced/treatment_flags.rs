@@ -5737,6 +5737,16 @@ impl AdvancedAi {
         self.breach_counts_nearby_guns = false;
     }
 
+    /// Opt-in gene `find-the-capital`; see [`Self::find_the_capital`].
+    pub fn enable_find_the_capital(&mut self) {
+        self.find_the_capital = true;
+    }
+
+    /// The twin of `enable_find_the_capital`.
+    pub fn disable_find_the_capital(&mut self) {
+        self.find_the_capital = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

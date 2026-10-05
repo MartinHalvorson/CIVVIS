@@ -4427,7 +4427,15 @@ fn decide(
             }
         }
     }
-    let passage_value = |_seat: usize| mirror_state.game.passage_gold_value(0);
+    // `find-the-capital`: passage to a rival whose needed original capital
+    // we have never seen is worth more than the tourism book (28 Gold for a
+    // seat with no tourism, under the lane's 30 Gold minimum ask). See
+    // `AdvancedAi::find_the_capital_passage_gold`.
+    let passage_value = |seat: usize| {
+        let book = mirror_state.game.passage_gold_value(0);
+        ai.find_the_capital_passage_gold(&mirror_state.game, 0, seat)
+            .map_or(book, |floor| book.max(floor))
+    };
     let exploration_targets = border_buy_exploration_targets(
         snapshot,
         state,

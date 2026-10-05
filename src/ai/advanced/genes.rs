@@ -2793,6 +2793,11 @@ pub const GENES: &[Gene] = &[
     // Bombards of Uruk's force stood at its ring. See
     // `siege_train::nearby_gun_city`.
     Gene { tag: "breach-counts-nearby-guns", field: "breach_counts_nearby_guns", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_counts_nearby_guns, disable: AdvancedAi::disable_breach_counts_nearby_guns },
+    // Live King civvis-20261005T081917Z (game 112) held two of three
+    // rival original capitals from turn 138 and never saw Kongo's: its
+    // border was sealed and the passage purchase held on a 28 Gold book
+    // against a 30 Gold minimum. See `find_the_capital`.
+    Gene { tag: "find-the-capital", field: "find_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_find_the_capital, disable: AdvancedAi::disable_find_the_capital },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
