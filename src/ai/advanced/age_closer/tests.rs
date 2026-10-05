@@ -331,3 +331,82 @@ fn a_rebuilt_live_board_carries_the_hosts_era_deadline_into_the_window() {
     // Off, the same last-turns board reads no deadline at all.
     assert_eq!(AdvancedAi::new().age_closing_deadline(&last_turns, 0), None);
 }
+
+/// G111's own numbers (civvis-20261005T080337Z t104, frame replayed on pin
+/// 460f8bddd): era score 58 of 59 with the era ending at t107, the Scientist
+/// 23 points short (545 gold), 468 gold in the bank, a 650-gold reserve at
+/// ten cities. The window was open; nothing was affordable, so no version of
+/// the gene could have bought the point.
+fn g111_scientist(g: &mut Game) -> f64 {
+    let cost = g.gp_cost(0, "scientist");
+    g.players[0].gpp.insert("scientist".to_string(), cost - 23.0);
+    g.players[0].era_score = 58;
+    g.players[0].normal_age_threshold = 59;
+    g.players[0].gold_per_turn = 8.4;
+    let price = g.great_person_patronage_price(0, "scientist", "gold").unwrap();
+    assert_eq!(price, 545.0);
+    price
+}
+
+fn spender() -> AdvancedAi {
+    let mut ai = candidate();
+    ai.enable_age_closer_spends_the_reserve();
+    ai
+}
+
+#[test]
+fn g111_live_numbers_leave_no_affordable_closer() {
+    let (mut g, _) = board();
+    g111_scientist(&mut g);
+    g.players[0].gold = 468.0;
+    for ai in [candidate(), spender()] {
+        let mut trial = g.clone();
+        assert_eq!(ai.age_closing_deadline(&trial, 0), Some(42));
+        ai.advanced_great_people(&mut trial, 0, GrandStrategy::Science);
+        assert_eq!(bought(&trial, "scientist"), 0);
+        assert_eq!(trial.players[0].era_score, 58);
+    }
+}
+
+#[test]
+fn a_verified_closer_may_spend_the_gold_reserve_under_the_gene() {
+    let (mut g, _) = board();
+    let price = g111_scientist(&mut g);
+    // Enough for the price, not for the price plus the operating reserve.
+    g.players[0].gold = price + 55.0;
+    let mut kept = g.clone();
+    candidate().advanced_great_people(&mut kept, 0, GrandStrategy::Science);
+    assert_eq!(bought(&kept, "scientist"), 0, "age-closer-2 alone keeps the reserve");
+    spender().advanced_great_people(&mut g, 0, GrandStrategy::Science);
+    assert_eq!(bought(&g, "scientist"), 1);
+    assert_eq!(g.players[0].era_score, 59);
+    assert_eq!(g.players[0].gold, 55.0);
+}
+
+#[test]
+fn the_reserve_stays_when_the_purchase_would_not_close_or_the_books_bleed() {
+    // Not a closer: two points short, the near-recruit pays one.
+    let (mut g, _) = board();
+    let price = g111_scientist(&mut g);
+    g.players[0].era_score = 57;
+    g.players[0].gold = price + 55.0;
+    spender().advanced_great_people(&mut g, 0, GrandStrategy::Science);
+    assert_eq!(bought(&g, "scientist"), 0);
+    // A closer, but income runs at -30: the floor is five turns of deficit.
+    let (mut g, _) = board();
+    let price = g111_scientist(&mut g);
+    g.players[0].gold_per_turn = -30.0;
+    g.players[0].gold = price + 149.0;
+    spender().advanced_great_people(&mut g, 0, GrandStrategy::Science);
+    assert_eq!(bought(&g, "scientist"), 0);
+    g.players[0].gold = price + 150.0;
+    spender().advanced_great_people(&mut g, 0, GrandStrategy::Science);
+    assert_eq!(bought(&g, "scientist"), 1);
+    // Outside the window the gene does nothing.
+    let (mut g, _) = board();
+    let price = g111_scientist(&mut g);
+    g.world_era_countdown_end = Some(60);
+    g.players[0].gold = price + 55.0;
+    spender().advanced_great_people(&mut g, 0, GrandStrategy::Science);
+    assert_eq!(bought(&g, "scientist"), 0);
+}

@@ -5317,6 +5317,13 @@ pub struct AdvancedAi {
     /// `BREAKER_FASTEST_RATIO`, not by eight turns and half again. Opt-in gene
     /// `breaker-to-the-fastest`; see `siege_production.rs`.
     breaker_to_the_fastest: bool,
+    /// `age-closer-spends-the-reserve`: inside `age-closer-2`'s deadline
+    /// window, a Great Person purchase that the lookahead verifies closes the
+    /// Dark Age may spend the gold operating reserve down to a deficit floor
+    /// (five turns of negative income, else nothing). Live King
+    /// civvis-20261005T080337Z (G111) missed a Normal Age by ONE point with a
+    /// 650-gold reserve (10 cities) against banks of 378-485. Off by default.
+    age_closer_spends_the_reserve: bool,
     // ---- append: c-d ------------------------------------------------
     /// `culture-reads-the-engine-clock`: the culture clocks and the culture
     /// pressure read the host's own turns to a Culture Victory when observed.
@@ -9123,6 +9130,7 @@ impl AdvancedAi {
             activation_keeps_its_building: false,
             breaker_keeps_its_queue: false,
             breaker_to_the_fastest: false,
+            age_closer_spends_the_reserve: false,
             // ---- append: c-d ----------------------------------------
             culture_reads_the_engine_clock: false,
             capital_prey_opens_a_front_2: false,
@@ -22459,6 +22467,9 @@ impl AdvancedAi {
         };
         let faith_reserve = self.conversion_faith_reserve(g, pid, faith_reserve);
         let mut candidates = Vec::new();
+        // Inside `age-closer-2`'s window: the cheapest priced Great Person,
+        // so a window that closes nothing says what it would have cost.
+        let mut cheapest_closer: Option<(f64, String, &str, f64, f64)> = None;
         // ⚠ THIS WAS A LIST OF THE NINE CLASS NAMES THAT HAPPENED TO EXIST.
         // `beliefs.json` shipped exactly that shape once: an AI chooser that
         // enumerated what the data held on the day it was written, so every
@@ -22598,15 +22609,36 @@ impl AdvancedAi {
                 let Some(price) = g.great_person_patronage_price(pid, kind, currency) else {
                     continue;
                 };
-                if bank + f64::EPSILON < price + reserve {
-                    continue;
+                if age_deadline.is_some()
+                    && cheapest_closer.as_ref().is_none_or(|(best, ..)| price < *best)
+                {
+                    cheapest_closer = Some((price, kind.to_string(), currency, bank, reserve));
                 }
                 let action = Action::PatronizeGreatPerson {
                     kind: kind.to_string(),
                     currency: currency.to_string(),
                 };
-                let closes_age =
-                    age_deadline.is_some() && Self::purchase_reaches_normal_age(g, pid, &action);
+                let mut verified_closer = None;
+                if bank + f64::EPSILON < price + reserve {
+                    // `age-closer-spends-the-reserve`: inside the deadline
+                    // window a purchase the lookahead verifies closes the
+                    // Dark Age may spend the gold reserve down to a deficit
+                    // floor. A Dark Age's loyalty losses cost cities; the
+                    // reserve is a few turns of thin books.
+                    let floor = (-5.0 * g.players[pid].gold_per_turn).max(0.0);
+                    let dips = currency == "gold"
+                        && self.age_closer_spends_the_reserve
+                        && age_deadline.is_some()
+                        && bank + f64::EPSILON >= price + floor
+                        && Self::purchase_reaches_normal_age(g, pid, &action);
+                    if !dips {
+                        continue;
+                    }
+                    verified_closer = Some(true);
+                }
+                let closes_age = verified_closer.unwrap_or_else(|| {
+                    age_deadline.is_some() && Self::purchase_reaches_normal_age(g, pid, &action)
+                });
                 // Version two relaxes the ordinary gate only for a purchase
                 // whose actual result covers the era shortfall in time.
                 // Idle Faith and version one's original arm keep their rules.
@@ -22622,6 +22654,27 @@ impl AdvancedAi {
                     std::cmp::Reverse((kind.to_string(), currency.to_string())),
                     action,
                 ));
+            }
+        }
+        if let Some(end) = age_deadline {
+            if !candidates.iter().any(|candidate| candidate.0) {
+                let player = &g.players[pid];
+                match &cheapest_closer {
+                    Some((price, kind, currency, bank, reserve)) => {
+                        think!(self.journal(), Economy, Detail,
+                               "No Great Person closes the era before turn {}", end;
+                               "era score {} of {}; the cheapest is the {} race at {price:.0} \
+                                {currency} against {bank:.0} in the bank and a {reserve:.0} \
+                                reserve",
+                               player.era_score, player.normal_age_threshold, plain(kind));
+                    }
+                    None => {
+                        think!(self.journal(), Economy, Detail,
+                               "No Great Person closes the era before turn {}", end;
+                               "era score {} of {}; no Great Person race is open to patronage",
+                               player.era_score, player.normal_age_threshold);
+                    }
+                }
             }
         }
         if let Some((closes_age, score, _, action)) =

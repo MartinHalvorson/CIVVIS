@@ -2832,6 +2832,11 @@ pub const GENES: &[Gene] = &[
     // at turn 216 at 1.16 times its power and named it the counter's second
     // front at 218. See `one_war::rout_spares_the_counter`.
     Gene { tag: "rout-spares-the-counter", field: "rout_spares_the_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_rout_spares_the_counter, disable: AdvancedAi::disable_rout_spares_the_counter },
+    // Live King civvis-20261005T080337Z (G111) missed a Normal Age by one era
+    // point: `age-closer-2`'s window opened (era end t107, countdown read live)
+    // but the gold operating reserve (650 at 10 cities) priced every closer
+    // out. See `AdvancedAi::age_closer_spends_the_reserve`.
+    Gene { tag: "age-closer-spends-the-reserve", field: "age_closer_spends_the_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_age_closer_spends_the_reserve, disable: AdvancedAi::disable_age_closer_spends_the_reserve },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
