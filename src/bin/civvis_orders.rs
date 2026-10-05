@@ -1515,13 +1515,19 @@ impl HostOrderRefusals {
                     self.failed_on.remove(&identity);
                 }
                 Verdict::Failed(reason) => {
-                    // One strike per order a turn: a replan frame re-sends the
-                    // same order, and its refusal is the same answer again,
-                    // not another turn of it. Counting frames struck an order
-                    // out inside one turn -- live King civvis-20261005T141932Z
-                    // (game 135) sent Victor's post in three frames of turn 142
-                    // and could not send it again until 152.
-                    let struck_this_turn = self.failed_on.get(&identity) == Some(&turn);
+                    // One strike per order a turn for a city, governor or
+                    // diplomacy order: a replan frame re-sends the same order,
+                    // and its refusal is the same answer again, not another
+                    // turn of it. Counting frames struck an order out inside
+                    // one turn -- live King civvis-20261005T141932Z (game 135)
+                    // sent Victor's post in three frames of turn 142 and could
+                    // not send it again until 152. A unit's order keeps a
+                    // strike per check: a plane strikes once a turn, so a
+                    // refused strike re-sent in the same turn is futile
+                    // (`air_pillage_tests`), and a move's same-turn replays are
+                    // already suppressed upstream.
+                    let struck_this_turn =
+                        check.order.kind != "unit" && self.failed_on.get(&identity) == Some(&turn);
                     self.failed_on.insert(identity.clone(), turn);
                     let record = self.seen.entry(identity).or_insert(RefusalRecord {
                         strikes: 0,
