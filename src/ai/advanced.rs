@@ -5891,6 +5891,18 @@ pub struct AdvancedAi {
     /// the stock Ilkum commitment would hold Urban Planning out again.
     colonization_earns_its_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `find-the-capital`: a Domination plan cannot finish while a needed
+    /// rival's original capital has never been seen. Live King
+    /// civvis-20261005T081917Z (game 112) held Amsterdam and Xanadu from
+    /// turn 138 and still had no sight of Kongo's capital at 178: Kongo's
+    /// revealed ground ringed a fogged interior, its border was sealed, and
+    /// the passage purchase held 47 times because the book prices Open
+    /// Borders at 28 Gold against a 30 Gold minimum ask. Under the gene the
+    /// passage to that rival is worth what finding the capital is worth,
+    /// and once the border opens (Open Borders or war) one fast unit is
+    /// sent into the fog behind that rival's ground. See
+    /// `advanced/find_the_capital.rs`.
+    find_the_capital: bool,
     /// `front-finishes-its-capital`: an urgent counter-war already running
     /// waits for the front's siege of the front rival's original capital or
     /// last city behind light walls. See `one_war::front_capital_to_finish`.
@@ -8166,6 +8178,8 @@ mod battlefront;
 /// gate. Five opt-in genes; see `advanced/chokepoints.rs`.
 mod chokepoints;
 mod scout_distance;
+/// `find-the-capital`: see the module.
+mod find_the_capital;
 
 mod culture_strategy;
 mod victory_conversion;
@@ -9248,6 +9262,7 @@ impl AdvancedAi {
             colonization_earns_its_slot: false,
             colonization_earns_its_slot_2: false,
             // ---- append: e-f ----------------------------------------
+            find_the_capital: false,
             front_finishes_its_capital: false,
             front_needs_a_declarable_rival: false,
             front_finishes_its_siege: false,

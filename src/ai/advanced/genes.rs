@@ -2843,6 +2843,11 @@ pub const GENES: &[Gene] = &[
     // never struck a healthy city; the city went 200 -> 191 and built walls at
     // 74. See `siege_train::assault_pays`.
     Gene { tag: "melee-storms-an-open-city", field: "melee_storms_an_open_city", kind: Kind::OptIn, enable: AdvancedAi::enable_melee_storms_an_open_city, disable: AdvancedAi::disable_melee_storms_an_open_city },
+    // Live King civvis-20261005T081917Z (game 112) held two of three
+    // rival original capitals from turn 138 and never saw Kongo's: its
+    // border was sealed and the passage purchase held on a 28 Gold book
+    // against a 30 Gold minimum. See `find_the_capital`.
+    Gene { tag: "find-the-capital", field: "find_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_find_the_capital, disable: AdvancedAi::disable_find_the_capital },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

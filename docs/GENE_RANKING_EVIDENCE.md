@@ -254,6 +254,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `domination-specializes-earlier` | off (unmeasured) | `domination-specializes-earlier`: an assigned Domination lane leaves its development half at 40% of the clock. | 1 \| 1 |
 | `domination-strikes-when-staged` | off (unmeasured) | Opt-in gene `domination-strikes-when-staged`; see `Self::domination_strikes_when_staged`. | 1 \| 1 |
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |
+| `find-the-capital` | off (unmeasured) | Opt-in gene `find-the-capital`; see `Self::find_the_capital`. | 1 \| 1 |
 | `first-granary-reserve-2` | off (unmeasured) | Reserve a Granary only when its housing accelerates the next citizen within the construction and growth budget. | 1 \| 3 |
 | `first-granary-reserve-3` | off (unmeasured) | `first-granary-reserve-3`: version one's rule (population within one of housing, no Granary) reaches the delegated city governor too, and an Aqueduct follows the Granary while the city is still housing-bound. | 1 \| 3 |
 | `formations-heed-refusals` | off (unmeasured) | Opt-in gene `formations-heed-refusals`; see `Self::formations_heed_refusals`. | 1 \| 1 |
