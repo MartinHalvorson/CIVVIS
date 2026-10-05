@@ -2321,6 +2321,15 @@
           "culture-lane-forecast-2": null
         }
       },
+      "diplomatic-contender-kept": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "diplomatic-contender-kept": null,
+          "diplomatic-contender-kept-2": null
+        }
+      },
       "diplomatic-lane-forecast": {
         "rule_on": [
           "diplomatic-lane-forecast"

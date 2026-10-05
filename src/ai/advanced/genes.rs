@@ -2668,6 +2668,10 @@ pub const GENES: &[Gene] = &[
     // points and 3 military while Persia won the Diplomatic Victory. See
     // `one_war::diplomatic_contender`.
     Gene { tag: "diplomatic-contender-kept", field: "diplomatic_contender_kept", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_contender_kept, disable: AdvancedAi::disable_diplomatic_contender_kept },
+    // Live King 021048Z aimed the army at Indonesia (13 points, 988 military)
+    // while at war with Portugal at 15 points and 172 military. See
+    // `one_war::diplomatic_contender_front`.
+    Gene { tag: "diplomatic-contender-kept-2", field: "diplomatic_contender_kept_2", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_contender_kept_2, disable: AdvancedAi::disable_diplomatic_contender_kept_2 },
     // Live King civvis-20261004T122037Z (game 62): Yaroslavl's walls went
     // 100 -> 84 in twelve turns while the journal read "shooters 6-16 wall a
     // turn": nine archers within five tiles were counted, but the range-2

@@ -414,6 +414,15 @@ impl AdvancedAi {
         let capital_handoff = current
             .and_then(|front| self.domination_followup_target(g, pid, Some(front)))
             .filter(|target| enemies.contains(target));
+        // `diplomatic-contender-kept-2`: the crushed Diplomatic Victory
+        // contender with the most points among the wars already running
+        // takes the front ahead of every other clock. See
+        // `diplomatic_contender_front`.
+        if self.diplomatic_contender_kept_2 && self.forced_target_player.is_none() {
+            if let Some(contender) = self.diplomatic_contender_front(g, pid, enemies) {
+                return Some(contender);
+            }
+        }
         // The declaration gate already admits urgent victory denial. Once
         // that war exists, concentrate on it instead of immediately offering
         // the winning rival peace as a second front. Keep the ordinary rout
@@ -848,8 +857,35 @@ impl AdvancedAi {
     /// points against Sumeria's 3 military and four cities, while Persia, the
     /// front, won the Diplomatic Victory at turn 242.
     pub(crate) fn diplomatic_contender(&self, g: &Game, pid: usize, other: usize) -> bool {
-        self.diplomatic_contender_kept
-            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+        self.diplomatic_contender_kept && self.diplomatic_contender_reading(g, pid, other)
+    }
+
+    /// `diplomatic-contender-kept-2`: among `enemies`, the one reading as a
+    /// diplomatic contender (`diplomatic_contender_reading`) with the most
+    /// Diplomatic Victory points. Only its elimination takes those points
+    /// off the board, so it takes the front ahead of every other clock. Live
+    /// King civvis-20261005T021048Z (game 93) fought Portugal (15 points, 7
+    /// cities, 172 military), the Zulu (14) and Indonesia (13, 988 military)
+    /// at once from turn 220, at 1,970 power, and aimed the campaign at
+    /// Indonesia every turn.
+    pub(crate) fn diplomatic_contender_front(
+        &self,
+        g: &Game,
+        pid: usize,
+        enemies: &[usize],
+    ) -> Option<usize> {
+        enemies
+            .iter()
+            .copied()
+            .filter(|enemy| self.diplomatic_contender_reading(g, pid, *enemy))
+            .max_by_key(|enemy| (g.players[*enemy].dvp, std::cmp::Reverse(*enemy)))
+    }
+
+    /// A living major at [`DIPLOMATIC_CONTENDER_DVP`] Diplomatic Victory
+    /// points or more that a Domination seat outguns
+    /// [`ONE_WAR_CRUSHED_RATIO`] times over.
+    fn diplomatic_contender_reading(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && g.players.get(other).is_some_and(|player| {
                 player.alive
                     && !player.is_minor

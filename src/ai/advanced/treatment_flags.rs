@@ -5399,6 +5399,18 @@ impl AdvancedAi {
         self.diplomatic_contender_kept = false;
     }
 
+    /// Opt-in gene `diplomatic-contender-kept-2`; see
+    /// [`Self::diplomatic_contender_kept_2`]. Version one's terms stay with
+    /// their own flag.
+    pub fn enable_diplomatic_contender_kept_2(&mut self) {
+        self.diplomatic_contender_kept_2 = true;
+    }
+
+    /// The twin of `enable_diplomatic_contender_kept_2`.
+    pub fn disable_diplomatic_contender_kept_2(&mut self) {
+        self.diplomatic_contender_kept_2 = false;
+    }
+
     /// Opt-in gene `breaker-supply-scales-2`; see
     /// [`Self::breaker_supply_scales_2`].
     pub fn enable_breaker_supply_scales_2(&mut self) {
