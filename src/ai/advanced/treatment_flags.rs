@@ -6299,6 +6299,31 @@ impl AdvancedAi {
         self.prophet_race_earns_its_points = false;
     }
 
+    /// Version 2 of `declaration_needs_the_edge`; one version of a family
+    /// plays, so this turns version 1 off. Opt-in gene
+    /// `declaration-needs-the-edge-2`. See
+    /// `AdvancedAi::declaration_needs_the_edge_2`.
+    pub fn enable_declaration_needs_the_edge_2(&mut self) {
+        self.declaration_needs_the_edge = false;
+        self.declaration_needs_the_edge_2 = true;
+    }
+
+    /// The twin of `enable_declaration_needs_the_edge_2`.
+    pub fn disable_declaration_needs_the_edge_2(&mut self) {
+        self.declaration_needs_the_edge_2 = false;
+    }
+
+    /// Opt-in gene `faith-counter-needs-the-edge`; see
+    /// `AdvancedAi::faith_counter_has_the_edge`.
+    pub fn enable_faith_counter_needs_the_edge(&mut self) {
+        self.faith_counter_needs_the_edge = true;
+    }
+
+    /// The twin of `enable_faith_counter_needs_the_edge`.
+    pub fn disable_faith_counter_needs_the_edge(&mut self) {
+        self.faith_counter_needs_the_edge = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

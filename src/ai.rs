@@ -15894,6 +15894,20 @@ impl BasicAi {
                 .map_or(0.0, |adjustment| adjustment.culture)
     }
 
+    /// A seat's Production a turn, read the way `seat_culture_per_turn` reads
+    /// Culture: what its cities make, plus the host's correction for that
+    /// seat, which carries a live rival's public Production total. Empty on a
+    /// native board, where the cities are the whole reading.
+    pub(crate) fn seat_production_per_turn(g: &Game, seat: usize) -> f64 {
+        g.player_city_ids(seat)
+            .into_iter()
+            .map(|city| g.city_yields(city).production)
+            .sum::<f64>()
+            + g.observed_yield_adjustments
+                .get(&seat)
+                .map_or(0.0, |adjustment| adjustment.production)
+    }
+
     /// Whether the empire's Culture trails `CULTURE_DEFENSE_RATIO` of the
     /// strongest living rival major's.
     pub(crate) fn culture_trails_the_field(g: &Game, pid: usize) -> bool {

@@ -1814,3 +1814,141 @@ fn a_second_front_at_peace_waits_for_its_war_under_the_gene() {
     assert!(ai.urgent_victory_threat(&g, 2));
     assert!(!ai.second_front_waits_for_its_war(&g, 0, 2));
 }
+
+/// Pin player `seat`'s military to `power` through the host reading.
+fn set_power(g: &mut Game, seat: usize, power: f64) {
+    std::sync::Arc::make_mut(&mut g.observed_military_power).insert(seat, power);
+}
+
+/// Pin player 2's Production a turn `margin` above ours (below when negative)
+/// through the host's yield correction, as the live mirror folds a rival's
+/// public total.
+fn set_production_margin(g: &mut Game, margin: f64) {
+    std::sync::Arc::make_mut(&mut g.observed_yield_adjustments).clear();
+    let ours = crate::ai::BasicAi::seat_production_per_turn(g, 0);
+    let theirs = crate::ai::BasicAi::seat_production_per_turn(g, 2);
+    std::sync::Arc::make_mut(&mut g.observed_yield_adjustments).insert(
+        2,
+        crate::rules::Yields {
+            production: ours - theirs + margin,
+            ..Default::default()
+        },
+    );
+}
+
+/// See `declaration_edge_2`: under version 2 a staged war at 1.6 times a
+/// rival that out-produces us is held, at 2.1 times its peak it passes, and
+/// at 1.6 times a rival we out-produce it passes on version 1's edge.
+/// Version 1 alone passes all three.
+#[test]
+fn a_staged_war_needs_twice_the_peak_or_the_production_edge_under_version_two() {
+    let (mut g, mut ai) = two_fronts();
+    let ours = g.military_power(0);
+    set_power(&mut g, 2, ours / 1.6);
+    set_production_margin(&mut g, 10.0);
+    assert!(ai.declaration_has_the_edge(&g, 0, 2), "off");
+    ai.enable_declaration_needs_the_edge();
+    assert!(ai.declaration_has_the_edge(&g, 0, 2), "version 1 at 1.6 times");
+    ai.enable_declaration_needs_the_edge_2();
+    assert!(!ai.declaration_needs_the_edge, "version 2 turns version 1 off");
+    ai.record_rival_power(&g, 0);
+    let reading = ai.declaration_edge_2(&g, 0, 2);
+    assert!(reading.their_production > reading.our_production);
+    assert!(
+        !ai.declaration_has_the_edge(&g, 0, 2),
+        "1.6 times a rival that out-produces us"
+    );
+
+    set_power(&mut g, 2, ours / 2.1);
+    g.turn += DECLARATION_PEAK_TURNS;
+    ai.record_rival_power(&g, 0);
+    assert!(ai.declaration_has_the_edge(&g, 0, 2), "2.1 times its peak");
+
+    set_power(&mut g, 2, ours / 1.6);
+    g.turn += DECLARATION_PEAK_TURNS;
+    ai.record_rival_power(&g, 0);
+    set_production_margin(&mut g, -10.0);
+    assert!(
+        ai.declaration_has_the_edge(&g, 0, 2),
+        "1.6 times a rival we out-produce"
+    );
+    ai.disable_declaration_needs_the_edge_2();
+    ai.disable_declaration_needs_the_edge();
+    assert!(ai.declaration_has_the_edge(&g, 0, 2), "off again");
+}
+
+/// See `peak_rival_power`: a rival that stood at its strength within the last
+/// 30 turns is weighed at that peak however low it reads now, and the peak
+/// leaves the reading once 30 turns have passed. The prey gates' three-turn
+/// reading is untouched.
+#[test]
+fn version_two_weighs_the_thirty_turn_peak() {
+    let (mut g, mut ai) = two_fronts();
+    let ours = g.military_power(0);
+    set_production_margin(&mut g, 10.0);
+    ai.enable_declaration_needs_the_edge_2();
+    set_power(&mut g, 2, ours / 1.6);
+    ai.record_rival_power(&g, 0);
+    let peak = g.military_power(2);
+    set_power(&mut g, 2, ours / 2.1);
+    g.turn += DECLARATION_PEAK_TURNS - 1;
+    ai.record_rival_power(&g, 0);
+    assert_eq!(ai.peak_rival_power(&g, 2), peak);
+    assert_eq!(
+        ai.steady_rival_power(&g, 2),
+        g.military_power(2),
+        "the prey reading is the turn's"
+    );
+    assert!(
+        !ai.declaration_has_the_edge(&g, 0, 2),
+        "2.1 times now but 1.6 times the peak of 29 turns ago"
+    );
+    g.turn += 1;
+    ai.record_rival_power(&g, 0);
+    assert_eq!(ai.peak_rival_power(&g, 2), g.military_power(2));
+    assert!(ai.declaration_has_the_edge(&g, 0, 2), "the peak has aged out");
+    ai.disable_declaration_needs_the_edge_2();
+    ai.record_rival_power(&g, 0);
+    assert!(
+        ai.rival_power_peak_seen.is_empty(),
+        "the gene off keeps no memory"
+    );
+}
+
+/// See `faith_counter_has_the_edge`: under the gene the religion counter
+/// needs 1.5 times the rival's steady power, so a faith whose army stood
+/// at 1.4 times under ours a turn ago is not declared on without a siege,
+/// though its army reads twice under ours this turn.
+#[test]
+fn a_faith_counter_needs_the_edge_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    g.found_city_for(0, (6, 18), None);
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    ai.one_war_observe(&g, 0);
+    let ours = g.military_power(0);
+    ai.enable_prey_reads_a_steady_power();
+    set_power(&mut g, 2, ours / 1.4);
+    ai.record_rival_power(&g, 0);
+    set_power(&mut g, 2, ours / 2.0);
+    g.turn += 1;
+    ai.record_rival_power(&g, 0);
+    assert!(ai.faith_counter_due(&g, 0, 2), "off: twice its power this turn");
+    assert!(ai.faith_counter_has_the_edge(&g, 0, 2), "off");
+    ai.enable_faith_counter_needs_the_edge();
+    assert!(
+        !ai.faith_counter_has_the_edge(&g, 0, 2),
+        "1.4 times its steady power"
+    );
+    assert!(!ai.faith_counter_due(&g, 0, 2));
+    set_power(&mut g, 2, ours / 1.6);
+    g.turn += PREY_POWER_MEMORY_TURNS;
+    ai.record_rival_power(&g, 0);
+    assert!(ai.faith_counter_has_the_edge(&g, 0, 2), "1.6 times");
+    assert!(ai.faith_counter_due(&g, 0, 2));
+    ai.disable_faith_counter_needs_the_edge();
+    set_power(&mut g, 2, ours / 1.2);
+    g.turn += PREY_POWER_MEMORY_TURNS;
+    ai.record_rival_power(&g, 0);
+    assert!(ai.faith_counter_has_the_edge(&g, 0, 2), "off again");
+}

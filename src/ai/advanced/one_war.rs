@@ -137,6 +137,49 @@ pub(crate) const FAVOR_SURPRISE_CLOCK_TURNS: f64 = 8.0;
 /// `declaration-needs-the-edge`: our military over the target's steady reading
 /// a plain staged declaration needs.
 pub(crate) const DECLARATION_EDGE_RATIO: f64 = 1.5;
+/// `declaration-needs-the-edge-2`: our military over the target's peak
+/// reading of the last [`DECLARATION_PEAK_TURNS`] turns at which a staged
+/// declaration passes whichever empire out-produces the other.
+pub(crate) const DECLARATION_PEAK_EDGE_RATIO: f64 = 2.0;
+/// `declaration-needs-the-edge-2`: the turns of rival military readings the
+/// peak reading takes the largest of.
+pub(crate) const DECLARATION_PEAK_TURNS: u32 = 30;
+
+/// `declaration-needs-the-edge-2`: what a staged declaration is weighed on.
+/// See `AdvancedAi::declaration_edge_2`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct DeclarationEdge {
+    /// Our military.
+    pub ours: f64,
+    /// The target's peak military of the last [`DECLARATION_PEAK_TURNS`].
+    pub peak: f64,
+    /// The target's steady military (`steady_rival_power`).
+    pub steady: f64,
+    /// Our Production a turn (`BasicAi::seat_production_per_turn`).
+    pub our_production: f64,
+    /// The target's Production a turn.
+    pub their_production: f64,
+}
+
+impl DeclarationEdge {
+    /// Our military over the target's peak reading.
+    pub fn peak_ratio(&self) -> f64 {
+        self.ours / self.peak.max(1.0)
+    }
+
+    /// Our military over the target's steady reading.
+    pub fn steady_ratio(&self) -> f64 {
+        self.ours / self.steady.max(1.0)
+    }
+
+    /// Twice its peak, or version 1's edge against a target that makes less
+    /// Production than we do.
+    pub fn passes(&self) -> bool {
+        self.peak_ratio() >= DECLARATION_PEAK_EDGE_RATIO
+            || (self.their_production < self.our_production
+                && self.steady_ratio() >= DECLARATION_EDGE_RATIO)
+    }
+}
 /// `diplomatic-contender-eliminated`: the Diplomatic Victory points at which
 /// a rival we are fighting is to be eliminated rather than passed by.
 pub(crate) const ELIMINATION_CONTENDER_DVP: i64 = 14;
@@ -1161,6 +1204,8 @@ impl AdvancedAi {
         self.faith_counter(g, pid, rival)
             && g.military_power(pid)
                 >= self.second_front_ratio(rival) * g.military_power(rival).max(1.0)
+            // See `faith_counter_has_the_edge`.
+            && self.faith_counter_has_the_edge(g, pid, rival)
             // See `faith_at_match_point`.
             && (!self.faith_counter_waits_for_match_point || self.faith_at_match_point(g, rival))
     }
@@ -1802,17 +1847,30 @@ impl AdvancedAi {
     /// `prey-reads-a-steady-power`: record each living rival's military this
     /// turn, keeping [`PREY_POWER_MEMORY_TURNS`] turns of readings.
     pub(crate) fn record_rival_power(&mut self, g: &Game, pid: usize) {
-        if !self.prey_reads_a_steady_power {
-            self.rival_power_seen.clear();
-            return;
-        }
-        for rival in g
+        let rivals: Vec<usize> = g
             .players
             .iter()
             .filter(|p| p.id != pid && p.alive && !p.is_minor && !p.is_barbarian)
             .map(|p| p.id)
-            .collect::<Vec<_>>()
-        {
+            .collect();
+        // `declaration-needs-the-edge-2`: its own, longer memory, so the
+        // prey gates' three-turn reading is unchanged.
+        if self.declaration_needs_the_edge_2 {
+            for &rival in &rivals {
+                let seen = self.rival_power_peak_seen.entry(rival).or_default();
+                seen.retain(|(turn, _)| {
+                    *turn != g.turn && g.turn.saturating_sub(*turn) < DECLARATION_PEAK_TURNS
+                });
+                seen.push((g.turn, g.military_power(rival)));
+            }
+        } else {
+            self.rival_power_peak_seen.clear();
+        }
+        if !self.prey_reads_a_steady_power {
+            self.rival_power_seen.clear();
+            return;
+        }
+        for rival in rivals {
             let seen = self.rival_power_seen.entry(rival).or_default();
             seen.retain(|(turn, _)| {
                 *turn != g.turn && g.turn.saturating_sub(*turn) < PREY_POWER_MEMORY_TURNS
@@ -1874,9 +1932,66 @@ impl AdvancedAi {
     /// opened a surprise war on the Maya at turn 48 at 196 power against 193
     /// because the army stood staged within reach.
     pub(crate) fn declaration_has_the_edge(&self, g: &Game, pid: usize, target: usize) -> bool {
+        if self.declaration_needs_the_edge_2 {
+            return self.declaration_edge_2(g, pid, target).passes();
+        }
         !self.declaration_needs_the_edge
             || g.military_power(pid)
                 >= DECLARATION_EDGE_RATIO * self.steady_rival_power(g, target).max(1.0)
+    }
+
+    /// `declaration-needs-the-edge-2`: the readings the version-2 edge
+    /// decides on. A staged declaration passes at
+    /// [`DECLARATION_PEAK_EDGE_RATIO`] times the target's peak power of the
+    /// last [`DECLARATION_PEAK_TURNS`] turns, or, when the target makes less
+    /// Production than we do, at version 1's [`DECLARATION_EDGE_RATIO`] times
+    /// its steady power. Of the 180 live declarations of October 4-5 with
+    /// ten turns seen after them, 45 were routs: our power fell under theirs
+    /// or we sued for peace for a rout. The rival did not levy or buy its way
+    /// back (3 of the 45 spent 50 Gold on the jump turn); it out-built us,
+    /// its power x1.23 by ten turns on and x1.43 by twenty against our x0.87.
+    /// Rival Production over ours read AUC 0.80 for the rout (medians 0.85
+    /// converted, 1.47 routed) and our power over its 30-turn peak 0.79
+    /// (2.46 against 1.25). The rule blocks 61 of the 119 staged
+    /// declarations, 29 of their 30 routs and 2 of their 26 captures, and the
+    /// staged wars it keeps take a city within 20 turns in 41% (22% before).
+    /// Live King civvis-20261005T185206Z (game 153) declared on Spain at
+    /// turns 100 and 120 at 611 and 712 against 305 and 282; Spain made 189
+    /// and 231 Production to our 85 and 131, and both wars ended in a rout.
+    pub(crate) fn declaration_edge_2(&self, g: &Game, pid: usize, target: usize) -> DeclarationEdge {
+        DeclarationEdge {
+            ours: g.military_power(pid),
+            peak: self.peak_rival_power(g, target),
+            steady: self.steady_rival_power(g, target),
+            our_production: crate::ai::BasicAi::seat_production_per_turn(g, pid),
+            their_production: crate::ai::BasicAi::seat_production_per_turn(g, target),
+        }
+    }
+
+    /// `declaration-needs-the-edge-2`: the largest of `rival`'s steady
+    /// reading and its readings of the last [`DECLARATION_PEAK_TURNS`] turns.
+    pub(crate) fn peak_rival_power(&self, g: &Game, rival: usize) -> f64 {
+        self.rival_power_peak_seen
+            .get(&rival)
+            .into_iter()
+            .flatten()
+            .filter(|(turn, _)| g.turn.saturating_sub(*turn) < DECLARATION_PEAK_TURNS)
+            .map(|(_, power)| *power)
+            .fold(self.steady_rival_power(g, rival), f64::max)
+    }
+
+    /// `faith-counter-needs-the-edge`: whether the religion counter may
+    /// declare on `rival` without a staged siege: always with the gene off,
+    /// and under it at [`DECLARATION_EDGE_RATIO`] times its steady power.
+    /// Live King civvis-20261005T184245Z (game 152) countered Indonesia's
+    /// faith at turn 82 at 358 against 350, was routed by 91 (258 against
+    /// 338), declared again at 101 at 449 against 388, took nothing, and lost
+    /// to Indonesia's religion at 157. October 4-5's three counter wars under
+    /// 1.5 times took no city.
+    pub(crate) fn faith_counter_has_the_edge(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        !self.faith_counter_needs_the_edge
+            || g.military_power(pid)
+                >= DECLARATION_EDGE_RATIO * self.steady_rival_power(g, rival).max(1.0)
     }
 
     /// `diplomatic-contender-eliminated`: the rival a Domination seat must
