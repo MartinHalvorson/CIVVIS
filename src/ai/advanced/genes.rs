@@ -2734,6 +2734,11 @@ pub const GENES: &[Gene] = &[
     // Archers and the siege never brought the city under 181. See
     // `city_campaign::war_bill_tier_factor`.
     Gene { tag: "war-bill-prices-the-tier-gap", field: "war_bill_prices_the_tier_gap", kind: Kind::OptIn, enable: AdvancedAi::enable_war_bill_prices_the_tier_gap, disable: AdvancedAi::disable_war_bill_prices_the_tier_gap },
+    // Live King civvis-20261005T045443Z (game 101) went to war with Korea at
+    // t94 with no war order: AutoClose answered "too many troops near me" with
+    // CHOICE_NEGATIVE, a surprise war (150 grievances). 100 such flips in 49 of
+    // 74 October live games. See `CivvisControlAutoClose.lua`.
+    Gene { tag: "dialogue-never-declares-war", field: "dialogue_never_declares_war", kind: Kind::OptIn, enable: AdvancedAi::enable_dialogue_never_declares_war, disable: AdvancedAi::disable_dialogue_never_declares_war },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

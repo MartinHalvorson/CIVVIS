@@ -5601,6 +5601,17 @@ impl AdvancedAi {
         self.war_bill_prices_the_tier_gap = false;
     }
 
+    /// Opt-in gene `dialogue-never-declares-war`; see
+    /// [`Self::dialogue_never_declares_war`].
+    pub fn enable_dialogue_never_declares_war(&mut self) {
+        self.dialogue_never_declares_war = true;
+    }
+
+    /// The twin of `enable_dialogue_never_declares_war`.
+    pub fn disable_dialogue_never_declares_war(&mut self) {
+        self.dialogue_never_declares_war = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

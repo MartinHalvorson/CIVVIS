@@ -229,6 +229,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `denial-nearest-finish` | off (unmeasured) | Opt-in gene `denial-nearest-finish`; see `Self::denial_nearest_finish`. | 1 \| 1 |
 | `denial-needs-a-road` | off (unmeasured) | Opt-in gene `denial-needs-a-road`; see `Self::denial_needs_a_road`. | 1 \| 1 |
 | `denial-outranks-expansion` | off (unmeasured) | A rival close to winning is answered before the lane's expansion rule. | 1 \| 1 |
+| `dialogue-never-declares-war` | off (unmeasured) | Opt-in gene `dialogue-never-declares-war`; see `Self::dialogue_never_declares_war`. | 1 \| 1 |
 | `diplomatic-contender-kept` | off (unmeasured) | Opt-in gene `diplomatic-contender-kept`; see `Self::diplomatic_contender_kept`. | — \| 2 |
 | `diplomatic-contender-kept-2` | off (unmeasured) | Opt-in gene `diplomatic-contender-kept-2`; see `Self::diplomatic_contender_kept_2`. | — \| 2 |
 | `district-buildings-first` | off (unmeasured) | A standing district's first building before the delegated city governor opens another district. | — \| 2 |

@@ -18425,10 +18425,14 @@ local function applyOrders(player, pid, turn, rows)
 	-- Consume only the recognized batch directive. Attach the policy to the
 	-- rows themselves so delayed strikes retain it without global frame state.
 	local survival = false;
+	local dialogueNoWar = false;
 	for i = #rows, 1, -1 do
 		local row = rows[i];
 		if row.kind == "combat_policy" and row.verb == "DOOMED_BLOW_VETO" then
 			survival = true;
+			table.remove(rows, i);
+		elseif row.kind == "combat_policy" and row.verb == "DIALOGUE_NEVER_DECLARES_WAR" then
+			dialogueNoWar = true;
 			table.remove(rows, i);
 		elseif row.kind == "observe" and row.verb == "AIR_ASSAULT" then
 			-- A failed spotting move or refused sortie changes no sight/damage,
@@ -18489,6 +18493,16 @@ local function applyOrders(player, pid, turn, rows)
 		emit("combat_policy_applied", {
 			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
 			policy = "DOOMED_BLOW_VETO",
+		});
+	end
+	-- The leader statement is answered in DiplomacyActionView's own context,
+	-- usually before this turn's first batch lands, so the batch renews a
+	-- one-turn lease there (CivvisControlAutoClose.lua) instead of a row flag.
+	if dialogueNoWar then
+		local leased = pcall(function() LuaEvents.CivvisDialogueNoWar(turn); end);
+		emit("combat_policy_applied", {
+			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
+			policy = "DIALOGUE_NEVER_DECLARES_WAR", leased = leased,
 		});
 	end
 	local shadowRows = 0;
