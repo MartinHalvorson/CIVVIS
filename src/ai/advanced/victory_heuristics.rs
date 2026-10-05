@@ -377,7 +377,7 @@ impl AdvancedAi {
         if let Some(counter) = self.domination_military_counter(g, pid, own_progress, &ranked) {
             return Some(counter);
         }
-        for (rival, pressure) in ranked {
+        let actionable = |rival: usize, pressure: VictoryFocus| -> Option<GrandStrategy> {
             let domination_counter = self.domination_counter_pressure(g, pressure)
                 || self.domination_faithless_conversion_counter(g, pid, rival, pressure);
             if targeted
@@ -385,20 +385,42 @@ impl AdvancedAi {
                 && (!self.deny_while_targeted
                     || !self.victory_pressure_is_urgent(g, rival, pressure))
             {
-                continue;
+                return None;
             }
-            let Some(counter) =
-                self.denial_response_for_pressure(g, pid, own_progress, rival, pressure)
-            else {
-                continue;
-            };
-            if self.conquest_denial_actionable(g, pid, rival, counter)
-                && self.culture_denial_actionable(g, pid, rival, counter)
-            {
-                return Some((rival, counter));
+            let counter =
+                self.denial_response_for_pressure(g, pid, own_progress, rival, pressure)?;
+            (self.conquest_denial_actionable(g, pid, rival, counter)
+                && self.culture_denial_actionable(g, pid, rival, counter))
+            .then_some(counter)
+        };
+        let chosen = ranked.iter().find_map(|(rival, pressure)| {
+            actionable(*rival, *pressure).map(|counter| (*rival, counter, pressure.progress))
+        });
+        // `denial-keeps-its-rival`: last turn's counter rival keeps the
+        // counter while it is still actionable and the new leader does not
+        // lead it by [`DENIAL_SWAP_MARGIN`]. Every swap moves the Domination
+        // army: 58 live games of October 4-5 bounced the campaign A -> B -> A
+        // within ten turns 89 times, 53 of them while countering a rival
+        // close to winning. Live King civvis-20261004T150335Z offered
+        // Vietnam peace at turn 123 "to counter a rival victory threat",
+        // declared on Indonesia, and was staging against Vietnam again at
+        // 132; civvis-20261004T114858Z-cont1 moved its front from Byzantium
+        // to France, 21 tiles off, at 156 and back at 161.
+        if self.denial_keeps_its_rival {
+            if let (Some((rival, _, progress)), Some(incumbent)) = (chosen, self.denial_incumbent) {
+                if rival != incumbent {
+                    let kept = ranked
+                        .iter()
+                        .find(|(other, _)| *other == incumbent)
+                        .filter(|(_, held)| progress < held.progress + super::DENIAL_SWAP_MARGIN)
+                        .and_then(|(_, held)| actionable(incumbent, *held));
+                    if let Some(counter) = kept {
+                        return Some((incumbent, counter));
+                    }
+                }
             }
         }
-        None
+        chosen.map(|(rival, counter, _)| (rival, counter))
     }
 
     /// A Domination army answers with war, so it serves the most advanced

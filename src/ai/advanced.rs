@@ -534,6 +534,10 @@ const RUSH_STAGING_RANGE: i32 = 3;
 /// How far `denial_reaches_far` lets an urgent denial war reach: half of the
 /// four-player Tiny Pangaea's 60-tile wrapped width.
 pub(crate) const DENIAL_FAR_REACH_TILES: i32 = 30;
+
+/// `denial-keeps-its-rival`: the pressure points (of 100) another rival must
+/// lead the incumbent counter rival by to take the counter from it.
+pub(crate) const DENIAL_SWAP_MARGIN: i32 = 10;
 /// Our military over the urgent rival's at which the far reach opens.
 pub(crate) const DENIAL_FAR_REACH_RATIO: f64 = 3.0;
 /// A first capture this far from home can become a usable forward base before
@@ -5276,6 +5280,13 @@ pub struct AdvancedAi {
     /// `breaker-to-the-fastest`; see `siege_production.rs`.
     breaker_to_the_fastest: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `denial-keeps-its-rival`: the counter keeps last turn's rival unless
+    /// another leads it by [`DENIAL_SWAP_MARGIN`]. See
+    /// `victory_heuristics::actionable_victory_denial_with_culture_pressures`.
+    denial_keeps_its_rival: bool,
+    /// The actionable denial rival this empire chose at the start of the
+    /// turn, read by `denial-keeps-its-rival` on the next.
+    denial_incumbent: Option<usize>,
     /// `capital-prey-opens-a-front`: a collapsed rival's lightly walled
     /// original capital opens a second front beside the burning war. See
     /// `one_war::capital_prey_beside_the_front`. Off by default.
@@ -9015,6 +9026,8 @@ impl AdvancedAi {
             breaker_keeps_its_queue: false,
             breaker_to_the_fastest: false,
             // ---- append: c-d ----------------------------------------
+            denial_keeps_its_rival: false,
+            denial_incumbent: None,
             capital_prey_opens_a_front: false,
             conquest_opening_needs_the_production: false,
             dialogue_never_declares_war: false,
@@ -44384,6 +44397,13 @@ impl AdvancedAi {
         // One stock-pressure sample per rival per turn, before anything reads
         // urgency this turn. See `projected_stock_denial`.
         self.record_stock_pressures(g, pid);
+        // See `denial_keeps_its_rival`: this turn's counter rival, chosen
+        // against last turn's, is the incumbent for the next.
+        if self.denial_keeps_its_rival {
+            self.denial_incumbent = self
+                .actionable_victory_denial(g, pid)
+                .map(|(rival, _)| rival);
+        }
         // `denial-nearest-finish`: one culture-curve reading per rival.
         self.record_culture_curves(g, pid);
         self.maintain_war_plan(g, pid);

@@ -2763,6 +2763,10 @@ pub const GENES: &[Gene] = &[
     // while all our cities kept Buddhism. See
     // `one_war::religious_threat_spares_the_front`.
     Gene { tag: "religious-threat-spares-the-front", field: "religious_threat_spares_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_threat_spares_the_front, disable: AdvancedAi::disable_religious_threat_spares_the_front },
+    // 58 live games of October 4-5 bounced the campaign A -> B -> A within
+    // ten turns 89 times, 53 of them while countering a rival close to
+    // winning. See `victory_heuristics::actionable_victory_denial_with_culture_pressures`.
+    Gene { tag: "denial-keeps-its-rival", field: "denial_keeps_its_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_keeps_its_rival, disable: AdvancedAi::disable_denial_keeps_its_rival },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

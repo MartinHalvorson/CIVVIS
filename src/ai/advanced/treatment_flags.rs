@@ -5667,6 +5667,18 @@ impl AdvancedAi {
         self.religious_threat_spares_the_front = false;
     }
 
+    /// Opt-in gene `denial-keeps-its-rival`; see
+    /// [`Self::denial_keeps_its_rival`].
+    pub fn enable_denial_keeps_its_rival(&mut self) {
+        self.denial_keeps_its_rival = true;
+    }
+
+    /// The twin of `enable_denial_keeps_its_rival`.
+    pub fn disable_denial_keeps_its_rival(&mut self) {
+        self.denial_keeps_its_rival = false;
+        self.denial_incumbent = None;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -1222,3 +1222,28 @@ fn a_religious_clock_spares_the_front_while_we_keep_our_faith() {
         "their faith holds our majority"
     );
 }
+
+/// See `denial_keeps_its_rival`: an incumbent that no longer counts holds
+/// nothing, and the incumbent that leads stays.
+#[test]
+fn the_counter_keeps_its_rival_only_while_it_still_counts() {
+    let (mut g, mut ai) = two_fronts();
+    convert(&mut g, &[0, 1, 2]);
+    let counter = Some((2, GrandStrategy::Conquest));
+    assert_eq!(ai.actionable_victory_denial(&g, 0), counter);
+    ai.enable_denial_keeps_its_rival();
+    ai.denial_incumbent = Some(3);
+    assert_eq!(
+        ai.actionable_victory_denial(&g, 0),
+        counter,
+        "a stale incumbent"
+    );
+    ai.denial_incumbent = Some(2);
+    assert_eq!(
+        ai.actionable_victory_denial(&g, 0),
+        counter,
+        "the incumbent leads"
+    );
+    ai.disable_denial_keeps_its_rival();
+    assert_eq!(ai.denial_incumbent, None);
+}
