@@ -529,6 +529,18 @@ impl BreachReading {
             // below half are coming down.
             || (self.air_walls > 0.0 && 2 * city.wall_hp <= city.wall_max)
     }
+
+    /// `siege-needs-a-breaker`: nothing the train holds can open the walls,
+    /// so it does not besiege them. A gun `guns-enter-together` keeps off its
+    /// post this turn (`barred_guns`) is a breaker waiting for a partner, not
+    /// a missing one: counting it as none sent a lone gun's siege from Invest
+    /// back to Stage, where with no post it counted again, and back. Replay
+    /// of live King civvis-20261005T091120Z (game 115), Poznan turns 155-175:
+    /// invest, stage, invest, stage on "0 gun(s) fit ... 1 gun(s) kept off
+    /// their posts". With the gene off `barred_guns` is always zero.
+    fn leaves_walls_shut(&self, city: &CityView) -> bool {
+        !self.at_hand(city) && self.barred_guns == 0
+    }
 }
 
 /// The wall rule shared by the train's melee orders and its damage budget.
@@ -2228,7 +2240,7 @@ impl AdvancedAi {
             }
             reading
         });
-        let no_breaker = !arena && breach.is_some_and(|reading| !reading.at_hand(&city));
+        let no_breaker = !arena && breach.is_some_and(|reading| reading.leaves_walls_shut(&city));
         // `siege-needs-a-breaker`: walls a breaker at hand can open are
         // opened before the taker comes. The damage budget reads a train
         // with no melee taker in reach as never finishing (`inf`), so a

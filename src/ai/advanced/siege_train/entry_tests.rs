@@ -370,3 +370,28 @@ fn a_reserve_gun_at_a_walled_siege_joins_it_under_the_gene() {
         assert_eq!(force.contains(&gun), gene);
     }
 }
+
+#[test]
+fn a_gun_kept_off_its_post_still_counts_against_falling_back_to_stage() {
+    // A lone gun posted inside the strike ring and kept off it: under the
+    // gene it is no breaker for the reading, but the siege is not told the
+    // walls have nothing to open them, so it does not oscillate to Stage.
+    let (mut g, cid) = open_walled_city();
+    let lanes = two_lanes(&g, cid);
+    let gun = guns_on(&mut g, &lanes[..1])[0];
+    let city = CityView::of(&g, cid).unwrap();
+    for gene in [false, true] {
+        let mut ai = train(gene);
+        investing(&mut ai, cid, &[(gun, lanes[0].1)]);
+        let reading = ai.breach_reading(&g, 0, &city, &[gun]);
+        assert_eq!(reading.barred_guns, usize::from(gene));
+        assert!(
+            !reading.leaves_walls_shut(&city),
+            "a waiting gun is a breaker (gene {gene})"
+        );
+    }
+    // No gun at all: the walls are shut, as before.
+    let ai = train(true);
+    let empty = ai.breach_reading(&g, 0, &city, &[]);
+    assert!(empty.leaves_walls_shut(&city));
+}
