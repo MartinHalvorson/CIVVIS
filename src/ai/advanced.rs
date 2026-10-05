@@ -25447,10 +25447,18 @@ impl AdvancedAi {
         // there is no new title to spend. Ordinary CIVVIS games never need this
         // because `AppointGovernor` installs the city atomically.
         if self.live_governor_assignment_adapter {
+            // A Governor an enemy spy has neutralized comes back unseated and
+            // cannot take a post until it recovers, so the retry waits for it:
+            // each refused request is a strike, and three strike the order out
+            // for ten turns (`ORDER_REFUSAL_COOLDOWN_TURNS`). Live King
+            // civvis-20261005T141932Z (game 135) sent Victor's post three times
+            // in its neutralized turn 142 and not again until 152, seven turns
+            // after he recovered; in game 136 Hamilton flipped at turn 145
+            // with Victor recovered and unposted since 141.
             let unassigned = g.players[pid]
                 .governor_roster
                 .iter()
-                .filter(|(_, state)| state.city.is_none())
+                .filter(|(_, state)| state.city.is_none() && state.disabled_until <= g.turn)
                 .map(|(governor, _)| governor.to_string())
                 .collect::<Vec<_>>();
             for governor in unassigned {
