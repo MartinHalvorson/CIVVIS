@@ -778,3 +778,141 @@ fn a_recovering_gun_at_rotate_hp_counts_as_a_breaker_under_the_gene() {
     let low = on.breach_reading(&g, 0, &city, &[gun]);
     assert_eq!((low.guns, low.wounded_guns), (0, 1), "below ROTATE_HP");
 }
+
+/// `medieval_city` with three Men-at-Arms staged three tiles out and a
+/// Bomber based `distance` tiles from the city.
+fn bombed_city(distance: i32) -> (Game, u32, Vec<u32>, u32) {
+    let (mut g, cid) = medieval_city();
+    let near = at_distance(&g, cid, 3);
+    let melee: Vec<u32> = near
+        .iter()
+        .take(3)
+        .map(|pos| g.spawn_unit("man_at_arms", 0, *pos))
+        .collect();
+    let bomber = g.spawn_unit("bomber", 0, at_distance(&g, cid, distance)[0]);
+    (g, cid, melee, bomber)
+}
+
+/// Live King civvis-20261005T060002Z (game 104): Bombers took Sparta's walls
+/// from 400 to 153 while the breach reading said "0 gun(s) fit ... nothing
+/// to open the walls". Under `breach-reads-the-air` a Bomber in strike range
+/// is wall damage a turn: the reading has a breach at hand and the damage
+/// budget a finite count of turns. Off, neither changes.
+#[test]
+fn a_bomber_in_strike_range_is_wall_damage_under_the_gene() {
+    let (g, cid, melee, bomber) = bombed_city(6);
+    assert!(g.wdist(g.units[&bomber].pos, g.cities[&cid].pos) <= g.unit_attack_range(bomber));
+    let city = CityView::of(&g, cid).unwrap();
+    let mut off = AdvancedAi::new();
+    off.enable_siege_train();
+    off.enable_siege_needs_a_breaker();
+    let mut on = off.clone();
+    on.enable_breach_reads_the_air();
+
+    assert_eq!(off.air_breach_walls(&g, 0, cid), 0.0);
+    let expected = expected_damage(
+        effective_strength(g.unit_ranged_attack_strength(&g.units[&bomber]), 100),
+        g.city_strength(cid),
+    );
+    let air = on.air_breach_walls(&g, 0, cid);
+    assert!(
+        air > 0.0 && (air - expected).abs() < 1e-9,
+        "{air} vs {expected}"
+    );
+
+    let mut read_off = off.breach_reading(&g, 0, &city, &melee);
+    read_off.air_walls = off.air_breach_walls(&g, 0, cid);
+    let mut read_on = on.breach_reading(&g, 0, &city, &melee);
+    read_on.air_walls = on.air_breach_walls(&g, 0, cid);
+    assert_eq!(
+        read_off,
+        off.breach_reading(&g, 0, &city, &melee),
+        "off: the same reading"
+    );
+    assert!(!read_off.at_hand(&city));
+    assert!(air * read_on.horizon >= f64::from(city.wall_hp));
+    assert!(read_on.at_hand(&city), "{read_on:?}");
+
+    let budget = |ai: &AdvancedAi| ai.conversion_siege_budget(&g, 0, cid, &melee).unwrap().0;
+    assert!(budget(&off).is_infinite(), "off: no wall damage, no budget");
+    assert!(
+        budget(&on).is_finite(),
+        "on: the Bomber brings the walls down"
+    );
+}
+
+/// A Bomber beyond its strike range of the city counts for nothing.
+#[test]
+fn a_bomber_out_of_strike_range_is_no_breaker() {
+    let (g, cid, _, bomber) = bombed_city(12);
+    assert!(g.wdist(g.units[&bomber].pos, g.cities[&cid].pos) > g.unit_attack_range(bomber));
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_siege_needs_a_breaker();
+    ai.enable_breach_reads_the_air();
+    assert_eq!(ai.air_breach_walls(&g, 0, cid), 0.0);
+}
+
+/// Walls the air wing has brought below half are a breach at hand, however
+/// little a turn it adds now; above half, a weak wing is not, and below half
+/// with no aircraft in range is no breach either.
+#[test]
+fn walls_the_air_has_brought_below_half_are_a_breach_at_hand() {
+    let (mut g, cid, melee, _) = bombed_city(6);
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_siege_needs_a_breaker();
+    let read = |g: &Game, air: f64| {
+        let city = CityView::of(g, cid).unwrap();
+        let mut reading = ai.breach_reading(g, 0, &city, &melee);
+        reading.air_walls = air;
+        (reading.at_hand(&city), city)
+    };
+    g.cities.get_mut(&cid).unwrap().wall_hp = 150;
+    let (high, city) = read(&g, 5.0);
+    assert_eq!(city.wall_max, 200);
+    const { assert!(5.0 * SHOOTER_BREACH_TURNS < 150.0) };
+    assert!(!high, "above half, a weak wing");
+    g.cities.get_mut(&cid).unwrap().wall_hp = 100;
+    assert!(read(&g, 5.0).0, "at half, the same wing");
+    assert!(!read(&g, 0.0).0, "at half, no aircraft");
+}
+
+/// One sortie serves one siege: a Bomber in range of two walled cities we
+/// besiege counts for the one the wing struck this frame, else the nearer.
+/// Live G104: a Bomber struck Sparta every turn from 222 while Pharsalos, a
+/// second siege, stood nearer it.
+#[test]
+fn a_bomber_in_range_of_two_sieges_counts_for_the_nearer() {
+    let (mut g, first) = medieval_city();
+    let second = second_walled_city(&mut g, first, 7);
+    let tile = between(&g, first, second, 3, 4)[0];
+    let bomber = g.spawn_unit("bomber", 0, tile);
+    assert!(g.wdist(tile, g.cities[&second].pos) <= g.unit_attack_range(bomber));
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_siege_needs_a_breaker();
+    ai.enable_breach_reads_the_air();
+    g.turn = 30;
+    for cid in [first, second] {
+        reducing(&mut ai, cid);
+        ai.sieges.get_mut(&cid).unwrap().assessed = 30;
+    }
+    assert!(ai.air_breach_walls(&g, 0, first) > 0.0);
+    assert_eq!(ai.air_breach_walls(&g, 0, second), 0.0);
+    // The wing's volley this frame went to the farther city: it serves that.
+    let far = g.cities[&second].pos;
+    ai.air_city_assault = Some(crate::ai::advanced::AirCityAssault {
+        target: far,
+        cavalry: None,
+        spot: far,
+        moved_to_spot: false,
+        aircraft: vec![bomber],
+    });
+    assert_eq!(ai.air_breach_walls(&g, 0, first), 0.0);
+    assert!(ai.air_breach_walls(&g, 0, second) > 0.0);
+    ai.air_city_assault = None;
+    // With no siege at the nearer city it serves the other.
+    ai.sieges.remove(&first);
+    assert!(ai.air_breach_walls(&g, 0, second) > 0.0);
+}

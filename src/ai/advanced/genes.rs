@@ -2819,6 +2819,11 @@ pub const GENES: &[Gene] = &[
     // the city's whole blow (~108 against a Bombard) on each gun. See
     // `siege_train::entry_group`.
     Gene { tag: "guns-enter-together", field: "guns_enter_together", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_enter_together, disable: AdvancedAi::disable_guns_enter_together },
+    // Live King civvis-20261005T060002Z (game 104): Sparta's breach reading
+    // counted land guns only and held "nothing to open the walls" while our
+    // Bombers took its walls from 400 to 153. See
+    // `siege_train::air_breach_walls`.
+    Gene { tag: "breach-reads-the-air", field: "breach_reads_the_air", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_reads_the_air, disable: AdvancedAi::disable_breach_reads_the_air },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

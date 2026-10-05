@@ -5034,6 +5034,15 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `breach-reads-the-air`: our aircraft with a bombard strength based
+    /// within strike range of a walled city we besiege count toward its
+    /// breach reading and damage budget, at their expected wall damage a
+    /// turn; walls they have brought below half count as a breach at hand.
+    /// Live King civvis-20261005T060002Z (game 104) read "0 gun(s) fit ...
+    /// nothing to open the walls" at Sparta on 28 of 34 turns while Bombers
+    /// took its walls from 400 to 153. See `siege_train::air_breach_walls`.
+    /// Off by default.
+    breach_reads_the_air: bool,
     /// `breach-counts-nearby-guns`: a fit siege gun of ours within
     /// `siege_train::STAGING_FAR` of a walled city a land force of ours
     /// besieges is that siege's breaker, whatever row the board gave it: it
@@ -9048,6 +9057,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            breach_reads_the_air: false,
             breach_counts_nearby_guns: false,
             bleeding_capital_loyalty: false,
             air_surge_strikes_through_urgency: false,

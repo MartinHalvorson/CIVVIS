@@ -194,6 +194,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `breach-assault` | off (unmeasured) | Opt-in gene `breach-assault`; see `Self::breach_assault`. | 1 \| 1 |
 | `breach-assault-closes-in` | off (unmeasured) | Opt-in gene `breach-assault-closes-in`; see `Self::breach_assault_closes_in`. | 1 \| 1 |
 | `breach-counts-nearby-guns` | off (unmeasured) | Opt-in gene `breach-counts-nearby-guns`; see `Self::breach_counts_nearby_guns`. | 1 \| 1 |
+| `breach-reads-the-air` | off (unmeasured) | Opt-in gene `breach-reads-the-air`; see `Self::breach_reads_the_air`. | 1 \| 1 |
 | `breaker-before-the-war` | off (unmeasured) | Opt-in gene `breaker-before-the-war`; see `Self::breaker_before_the_war`. | 1 \| 1 |
 | `breaker-keeps-its-queue` | off (unmeasured) | The strategic scorer does not displace a queued siege unit that holds production while its city is not threatened. | 1 \| 1 |
 | `breaker-supply-scales` | off (unmeasured) | Opt-in gene `breaker-supply-scales`; see `Self::breaker_supply_scales`. | — \| 2 |

@@ -5804,6 +5804,17 @@ impl AdvancedAi {
         self.guns_enter_together = false;
     }
 
+    /// Opt-in gene `breach-reads-the-air`; see
+    /// [`Self::breach_reads_the_air`].
+    pub fn enable_breach_reads_the_air(&mut self) {
+        self.breach_reads_the_air = true;
+    }
+
+    /// The twin of `enable_breach_reads_the_air`.
+    pub fn disable_breach_reads_the_air(&mut self) {
+        self.breach_reads_the_air = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

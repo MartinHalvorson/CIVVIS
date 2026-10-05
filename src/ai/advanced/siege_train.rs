@@ -501,6 +501,10 @@ pub(super) struct BreachReading {
     pub(super) support: usize,
     /// The expected wall damage a turn from the fit shooters within reach.
     pub(super) shooter_walls: f64,
+    /// `breach-reads-the-air`: the expected wall damage a turn from our
+    /// aircraft based within strike range of the city. See
+    /// `AdvancedAi::air_breach_walls`; 0 with the gene off.
+    pub(super) air_walls: f64,
     /// Turns the shooters are given to breach: [`SHOOTER_BREACH_TURNS`], or
     /// [`SHOOTER_BREACH_TURNS_DOMINANT`] for a dominant train.
     pub(super) horizon: f64,
@@ -511,7 +515,10 @@ impl BreachReading {
         walls_open_to_melee(city)
             || self.guns > 0
             || self.support > 0
-            || self.shooter_walls * self.horizon >= f64::from(city.wall_hp)
+            || (self.shooter_walls + self.air_walls) * self.horizon >= f64::from(city.wall_hp)
+            // `breach-reads-the-air`: walls the air wing has already brought
+            // below half are coming down.
+            || (self.air_walls > 0.0 && 2 * city.wall_hp <= city.wall_max)
     }
 }
 
@@ -1645,6 +1652,86 @@ impl AdvancedAi {
         members.into_iter().collect()
     }
 
+    /// `breach-reads-the-air`: the wall damage a turn our aircraft bring to
+    /// the walled city `cid`. Each aircraft with a bombard strength strikes
+    /// once a turn, as `Game::do_air_strike` resolves it: its strength at its
+    /// health, less 17 for a ranged one, against the city's, at full effect on
+    /// the wall for a siege aircraft and half for any other. An aircraft
+    /// counts toward one walled city we besiege within its strike range of
+    /// its base, so two sieges never both count one sortie: the one this
+    /// frame's volley struck, else the appointed surge's objective, else the
+    /// nearest, then the lowest id. Live G104 besieged Pharsalos as well from
+    /// turn 220, nearer the Bomber that struck Sparta every turn. 0 with the
+    /// gene off. The breach reading counted land guns
+    /// only: live King civvis-20261005T060002Z (game 104) read "0 gun(s) fit
+    /// ... nothing to open the walls" at Sparta on 28 of 34 turns from 196 to
+    /// 229 while our Bombers struck it, its walls 400 -> 153.
+    pub(super) fn air_breach_walls(&self, g: &Game, pid: usize, cid: u32) -> f64 {
+        if !self.breach_reads_the_air {
+            return 0.0;
+        }
+        let walled = |id: u32| {
+            CityView::of(g, id).filter(|city| {
+                city.owner != pid && g.is_at_war(pid, city.owner) && city.wall_max > 0
+            })
+        };
+        let Some(city) = walled(cid) else {
+            return 0.0;
+        };
+        let besieged: Vec<CityView> = self
+            .sieges
+            .iter()
+            .filter(|(id, siege)| {
+                **id != cid
+                    && siege.stage != SiegeStage::Hold
+                    && g.turn.saturating_sub(siege.assessed) <= 1
+            })
+            .filter_map(|(id, _)| walled(*id))
+            .chain(std::iter::once(city))
+            .collect();
+        let volley = self.air_city_assault.as_ref().map(|assault| assault.target);
+        let surge = self
+            .air_surge_plan
+            .as_ref()
+            .map(|surge| surge.objective_pos);
+        let defense = g.city_strength(cid);
+        g.units
+            .values()
+            .filter(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                unit.owner == pid
+                    && spec.class == "military"
+                    && spec.domain.as_deref() == Some("air")
+                    && spec.bombard_strength > 0.0
+            })
+            .filter(|unit| {
+                let base = g.air_operation_origin(unit.id);
+                let range = g.unit_attack_range(unit.id);
+                besieged
+                    .iter()
+                    .filter(|other| g.wdist(base, other.pos) <= range)
+                    .min_by_key(|other| {
+                        (
+                            volley != Some(other.pos),
+                            surge != Some(other.pos),
+                            g.wdist(base, other.pos),
+                            other.id,
+                        )
+                    })
+                    .is_some_and(|served| served.id == cid)
+            })
+            .map(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                let mut strength = g.unit_ranged_attack_strength(unit);
+                if spec.ranged_strength > 0.0 {
+                    strength -= 17.0;
+                }
+                expected_damage(effective_strength(strength, unit.hp), defense)
+                    * if spec.siege { 1.0 } else { 0.5 }
+            })
+            .sum()
+    }
+
     /// `breach-counts-nearby-guns`: the walled city a fit siege gun of ours
     /// within [`STAGING_FAR`] of it is the breaker for, whatever row the board
     /// gave it — the nearest walled city a land force of ours besieges, then
@@ -2115,6 +2202,7 @@ impl AdvancedAi {
         // with nothing to show for it. See `BreachReading`.
         let breach = self.siege_needs_a_breaker.then(|| {
             let mut reading = self.breach_reading(g, pid, &city, &force);
+            reading.air_walls = self.air_breach_walls(g, pid, cid);
             if strength >= DOMINANT_BILL_SHARE * bill {
                 reading.horizon = SHOOTER_BREACH_TURNS_DOMINANT;
             }
@@ -2318,6 +2406,11 @@ impl AdvancedAi {
                             ", {} gun(s) kept off their posts inside the city's strike",
                             reading.barred_guns
                         )
+                    } else {
+                        String::new()
+                    },
+                    if reading.air_walls > 0.0 {
+                        format!(", aircraft {:.0} wall a turn", reading.air_walls)
                     } else {
                         String::new()
                     },
