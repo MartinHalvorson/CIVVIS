@@ -364,6 +364,52 @@ check("released follow-up is never issued", ops(144), "UNITOPERATION_MOVE_TO")
 check("released follow-up is named not-arrived",
 	(lastEvent("orders_queue") or ""):find("queue_prior_not_arrived", 1, true) ~= nil, true)
 
+-- 2c'. A follow-up whose walk provably cannot land THIS turn is refused now,
+-- with the same `queue_prior_not_arrived` the grace gives (G126-G130: 12-15
+-- such queues a game, ~4 s each). Spent movement says so at once; otherwise
+-- the host's own path, read once at the probe tick, says it lands on a later
+-- turn. A walk whose path lands this turn keeps its hold.
+reset()
+host.units[160] = { id = 160, kind = "UNIT_KNIGHT", x = 1, y = 1, moves = 2, active_operation = true }
+applyOrders(player, PID, 7, { row(160, "MOVE_TO", 9, 1), row(160, "ATTACK", 10, 1) })
+queue.drain(player, PID, 7)
+check("a walking unit with movement holds its follow-up", queue.pendingCount(), 1)
+host.units[160].x, host.units[160].moves = 4, 0
+queue.drain(player, PID, 7)
+check("spent short of its plot: the follow-up is refused now", queue.pendingCount(), 0)
+check("…by the grace's own name",
+	(lastEvent("orders_queue") or ""):find("queue_prior_not_arrived", 1, true) ~= nil, true)
+check("…and the release is named", (lastEvent("queue_cannot_land") or ""):find('"spent":true', 1, true) ~= nil, true)
+check("the follow-up never ran", ops(160), "UNITOPERATION_MOVE_TO")
+
+reset()
+Map.GetPlotIndex = function(x, y) return y * 100 + x end
+-- Both land this turn when issued (`capToTurn` refuses a walk that does not);
+-- 161's path is lost to next turn on the way, which is what the held queues were.
+local landTurn = { [161] = 1, [162] = 1 }
+UnitManager.GetMoveToPathEx = function(unit, destination)
+	return { plots = { 101, destination }, turns = { 1, landTurn[unit.GetID()] } }
+end
+host.units[161] = { id = 161, kind = "UNIT_KNIGHT", x = 1, y = 1, moves = 2, active_operation = true }
+host.units[162] = { id = 162, kind = "UNIT_KNIGHT", x = 4, y = 4, moves = 2, active_operation = true }
+applyOrders(player, PID, 7, {
+	row(161, "MOVE_TO", 9, 1), row(161, "ATTACK", 10, 1),
+	row(162, "MOVE_TO", 6, 4), row(162, "ATTACK", 7, 4),
+})
+landTurn[161] = 2
+-- Both are under way (off their origins), as the held walks were: a unit still
+-- on its origin is the no-op path's to answer, not this one's.
+host.units[161].x, host.units[162].x = 2, 5
+for _ = 1, 7 do queue.drain(player, PID, 7) end
+check("no path read before the probe tick", queue.pendingCount(), 2)
+queue.drain(player, PID, 7)
+check("a path landing next turn releases its follow-up at the probe tick", queue.pendingCount(), 1)
+check("…named for its unit", (lastEvent("queue_cannot_land") or ""):find('"unit":161', 1, true) ~= nil, true)
+for _ = 1, 10 do queue.drain(player, PID, 7) end
+check("a path landing this turn keeps its hold", queue.pendingCount(), 1)
+UnitManager.GetMoveToPathEx = nil
+Map.GetPlotIndex = nil
+
 -- 2d. An opening walk the host cannot path is answered a few ticks in, not
 -- at the grace: one plot (or none) from `GetMoveToPathEx` means the leg will
 -- not happen (civvis-20261004T083931Z: 564 such no-ops held their frame to the
