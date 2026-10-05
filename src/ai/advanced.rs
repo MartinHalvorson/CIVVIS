@@ -6677,6 +6677,15 @@ pub struct AdvancedAi {
     /// `ai::choose_conquest_dedications`.
     golden_dedication_serves_the_conquest: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `opening-yields-to-walls`: a declared conquest opening that has taken
+    /// nothing asks for terms and stands down once its target walls up with no
+    /// breaker held, or once it has spent the patience window without denting
+    /// the city. Over the 10-04/05 control runs 13 of 16 openings took
+    /// nothing; 9 of the 13 targets built walls 1-38 turns after the
+    /// declaration, and every one of the 13 ran until the whole strike force
+    /// was dead or the rival made peace (20-130 turns). See
+    /// `early_conquest::conquest_yields_to_walls`.
+    opening_yields_to_walls: bool,
     /// `luxury-buy-asks`: the live bridge asks a peaceful rival for a luxury
     /// copy (`append_luxury_buy_order` in `civvis_orders`). Off: no rival
     /// ever priced one -- 644 EQUALIZE asks of October 4-5, none closed.
@@ -9679,6 +9688,7 @@ impl AdvancedAi {
             improvement_upgrades_count: false,
             golden_dedication_serves_the_conquest: false,
             // ---- append: l-o ----------------------------------------
+            opening_yields_to_walls: false,
             luxury_buy_asks: false,
             overwhelming_power_declares: false,
             march_uses_its_moves: false,

@@ -312,6 +312,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `one-sanctuary` | off (unmeasured) | Opt-in gene `one-sanctuary`; see `Self::one_sanctuary`. | 1 \| 1 |
 | `one-war-swaps-a-stalled-front` | off (unmeasured) | Opt-in gene `one-war-swaps-a-stalled-front`; see `Self::one_war_swaps_a_stalled_front`. | 1 \| 1 |
 | `opening-force-keeps-its-members` | off (unmeasured) | Opt-in gene `opening-force-keeps-its-members`; see `Self::opening_force_keeps_its_members`. | 1 \| 1 |
+| `opening-yields-to-walls` | off (unmeasured) | Opt-in gene `opening-yields-to-walls`; see `Self::opening_yields_to_walls`. | 1 \| 1 |
 | `overwhelming-power-declares` | off (unmeasured) | Opt-in gene `overwhelming-power-declares`; see `Self::overwhelming_power_declares`. | 1 \| 1 |
 | `own-column-is-not-a-refusal` | off (unmeasured) | Opt-in gene `own-column-is-not-a-refusal`; see `Self::own_column_is_not_a_refusal`. | 1 \| 1 |
 | `peace-asks-a-city` | off (unmeasured) | Opt-in gene `peace-asks-a-city`; see `Self::peace_asks_a_city`. | 1 \| 1 |

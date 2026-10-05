@@ -3051,6 +3051,14 @@ pub const GENES: &[Gene] = &[
     // closed borders; 7 to 18 units mustered at 0% ready from turn 129 to 160.
     // See `advanced/siege_road.rs`.
     Gene { tag: "siege-target-needs-a-road", field: "siege_target_needs_a_road", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_target_needs_a_road, disable: AdvancedAi::disable_siege_target_needs_a_road },
+    // `opening-yields-to-walls`: a declared conquest opening that has taken
+    // nothing asks for terms and stands down when its target walls up with
+    // no breaker held, or after the patience window with the city undented.
+    // 13 of 16 openings on 10-04/05 took nothing, 9 of their targets walled
+    // up 1-38 turns after the declaration, and each war ran until the strike
+    // force was dead or the rival made peace, 20-130 turns later. See
+    // `early_conquest::conquest_yields_to_walls`.
+    Gene { tag: "opening-yields-to-walls", field: "opening_yields_to_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_yields_to_walls, disable: AdvancedAi::disable_opening_yields_to_walls },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
