@@ -157,7 +157,11 @@ ballot("free denial", 0, 17, nil, 2, "free", 1)
 -- A block at t201 was 5; half the bank buys 10 votes, twice the block.
 local tally = upvalue(vote, "envoyTally")
 tally.wc_rival_block = 5
-ballot("game 99 t221 outvotes the blocks", 439, 15, nil, 1, "outvote", 10)
+-- From the floor the outvote goes all in above the 60 reserve: 379 buys 14.
+ballot("game 99 t221 outvotes the blocks", 439, 15, nil, 1, "outvote", 14)
+config.DiploVictoryOutvoteAllIn = false
+ballot("outvote all-in off keeps the session share", 439, 15, nil, 1, "outvote", 10)
+config.DiploVictoryOutvoteAllIn = nil
 -- A block that 10 votes do not double stays a denial (native t201: our 13
 -- against the leader's 14 A votes lost the +2 to the leader).
 tally.wc_rival_block = 8
@@ -228,9 +232,11 @@ end
 tally.wc_rival_blocks = { [3] = 9, [1] = 4, [2] = 5 }
 tally.wc_dvp_won = 1
 redirect("game 118 t202 hands the +2 to Gaul", 371, 15, 1, 1, "redirect", 10)
--- A bank that buys the block plus a quarter claims it for us, at that count.
+-- A bank that buys the block plus a quarter claims it for us -- from the
+-- floor with every vote above the 60 reserve (379 buys 14), since game 130
+-- t181 lost a claim 11-12 with 13 votes in the bank.
 tally.wc_rival_blocks = { [3] = 4, [1] = 2 }
-redirect("a small block is outvoted for us", 439, 15, 1, 0, "outvote", 7)
+redirect("a small block is outvoted for us", 439, 15, 1, 0, "outvote", 14)
 -- A session the rivals carried on B is left to the denial.
 tally.wc_rival_blocks = { [3] = 9, [1] = 4, [2] = 5 }
 tally.wc_dvp_won = 2
@@ -245,7 +251,7 @@ redirect("a non-contender's block is not bought", 371, 15, 2, 3, "deny", 10)
 -- five. Reading the lower id's block as the top found no contender and
 -- denied.
 tally.wc_rival_blocks = { [1] = 5, [3] = 5 }
-redirect("tied blocks: a claim over the contender", 227, 12, 1, 0, "outvote", 8)
+redirect("tied blocks: a claim over the contender", 227, 12, 1, 0, "outvote", 9)
 redirect("tied blocks: the contender's is the one to beat", 150, 12, 1, 1, "redirect", 5)
 -- Off by configuration.
 tally.wc_rival_blocks = { [3] = 9, [1] = 4, [2] = 5 }

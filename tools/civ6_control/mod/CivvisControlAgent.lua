@@ -21271,6 +21271,25 @@ local function tick()
 								end
 							end
 						end
+						-- ★★ AN OUTVOTE FROM THE FLOOR GOES ALL IN. A claim is won
+						-- or lost whole: the +2 goes to the largest A block, ties
+						-- lose, and a rival's block can triple between sessions.
+						-- Live King civvis-20261005T124739Z (game 130) t181: half
+						-- of 451 Favor cast 11 votes against India's last block of
+						-- 4; India cast 12, took the +2 (9 -> 14) and won on
+						-- Diplomacy at 222 -- 13 votes were in the bank. Of 58
+						-- recorded claims for us (October 2-5), 12 lost, 10 of
+						-- them by three votes or fewer with Favor left unspent. So
+						-- from the floor an outvote casts every vote the bank buys
+						-- above `DiploVictoryOutvoteReserve` (60) when that is
+						-- more. Below the floor the paced reserve stands. Off with
+						-- `DiploVictoryOutvoteAllIn = false`.
+						if mode == "outvote" and cfg.DiploVictoryOutvoteAllIn ~= false
+								and (tonumber(leaderPoints) or 0) >= floor then
+							local allIn = CivvisCongressVoteBudget(math.max(0, favor
+								- (tonumber(cfg.DiploVictoryOutvoteReserve) or 60)), costs, maxVotes);
+							if allIn > n then n = allIn; end
+						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;
 						favor = favor - cost;
