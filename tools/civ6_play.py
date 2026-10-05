@@ -1000,6 +1000,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # DebugTimeScaleABTurns turns (10); takes precedence over DebugTimeScale.
         "DebugTimeScaleAB": getattr(args, "debug_timescale_ab", None),
         "DebugTimeScaleABTurns": getattr(args, "debug_timescale_ab_turns", None) or 10,
+        # The agent's orders peek interval (CivvisQueue.ordersLanded, the
+        # Heartbeat's peek pulse); nil keeps the mod's 0.05 s. The peek returns
+        # before any query while no board is out (`awaiting.done`), so the AI
+        # phase never sees it.
+        "OrdersPeekSeconds": 0.02 if getattr(args, "poll_20ms", False) else None,
         # ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. A MOVE_TO whose
         # host path outran the turn was queued, and the host walked the unit
         # along it at the start of the next turn before the brain could act. Now
@@ -4420,6 +4425,7 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
             "DebugTimeScale": getattr(args, "debug_timescale", None),
             "DebugTimeScaleAB": getattr(args, "debug_timescale_ab", None),
+            "OrdersPeekSeconds": 0.02 if getattr(args, "poll_20ms", False) else None,
             "ReplanFrames": getattr(args, "replan_frames", None),
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
@@ -5211,7 +5217,11 @@ def _play(args: argparse.Namespace) -> int:
     # The board itself is relayed every 50 ms in between (`watch.follow`'s
     # `read_s`): the upkeep above runs `ps` and `ioreg` and the focus keeper,
     # which stretched each 0.25 s pass to 0.32 s of board-to-brain latency.
-    read_s = 0.05 if args.civvis_decides else None
+    # `poll-20ms` (arm): 20 ms here and for the agent's orders peek. G104
+    # (2026-10-05, 699 frames) waited a median 0.095 s between the brain's
+    # orders being ready and the agent applying them -- pure polling, these two
+    # 50 ms waits -- 1.75 min of a 15.9 min game.
+    read_s = (0.02 if getattr(args, "poll_20ms", False) else 0.05) if args.civvis_decides else None
     # ⚠ A STALLED RUN IS DEAD, AND WAITING TEN MINUTES FOR IT COSTS A WHOLE ATTEMPT.
     # Run civvis-20260730T140023Z wedged at turn 87 and burned the full 600 s before the
     # ladder could start the next game. The mod emits at least one event per turn and a
@@ -5454,6 +5464,7 @@ def _play(args: argparse.Namespace) -> int:
             "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
             "DebugTimeScale": getattr(args, "debug_timescale", None),
             "DebugTimeScaleAB": getattr(args, "debug_timescale_ab", None),
+            "OrdersPeekSeconds": 0.02 if getattr(args, "poll_20ms", False) else None,
             "ReplanFrames": args.replan_frames,
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
@@ -5667,6 +5678,8 @@ TREE_MOD_ARMS_FILE = REPO_ROOT / "deploy" / "live-mod-arms.txt"
 TREE_MOD_ARMS = {
     # #3939: answer a probe-marked stalled MOVE_TO operation at the probe tick.
     "stalled-operation-release": "stalled_operation_release",
+    # Relay reads and the agent's orders peek every 20 ms instead of 50 ms.
+    "poll-20ms": "poll_20ms",
     # The engine's debug timescale (`--debug-timescale N`): an arm can carry a
     # value. G96 ran turns 1-139 at 2 in 8.71 min against 11.59 at 1 on the
     # same genes; 3 and 4 are the next trials. The agent reverts any of them
@@ -5990,6 +6003,9 @@ def main(argv: list[str] | None = None) -> int:
                          "without a step (`stall_probe`) at the probe tick instead of "
                          "waiting out the 30-tick grace: the same `move_noop` answer, "
                          "about 3 s sooner per stalled leg")
+    ap.add_argument("--poll-20ms", dest="poll_20ms", action="store_true",
+                    help="relay the log and peek for landed orders every 20 ms "
+                         "instead of 50 ms (arm `poll-20ms`)")
     ap.add_argument("--debug-timescale-ab", dest="debug_timescale_ab", default=None,
                     help="an in-game A/B of two timescales, e.g. '3,4': the agent "
                          "alternates them every --debug-timescale-ab-turns turns and "
