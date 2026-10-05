@@ -6046,6 +6046,17 @@ impl AdvancedAi {
         self.conquest_opening_stays_near = false;
     }
 
+    /// Opt-in gene `recovery-needs-the-deficit`; see
+    /// [`Self::recovery_needs_the_deficit`].
+    pub fn enable_recovery_needs_the_deficit(&mut self) {
+        self.recovery_needs_the_deficit = true;
+    }
+
+    /// The twin of `enable_recovery_needs_the_deficit`.
+    pub fn disable_recovery_needs_the_deficit(&mut self) {
+        self.recovery_needs_the_deficit = false;
+    }
+
     /// Opt-in gene `domination-finish-holds-the-front`; see
     /// [`Self::domination_finish_holds_the_front`].
     pub fn enable_domination_finish_holds_the_front(&mut self) {

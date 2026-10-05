@@ -344,3 +344,26 @@ fn the_last_capital_is_the_objective_when_its_owner_is_already_at_war() {
     assert_eq!(plan.target_player, Some(1));
     assert_eq!(plan.target_city, Some(capital));
 }
+
+/// `recovery-needs-the-deficit`: a threatened city puts a war into Recovery
+/// only while the army is short of twice the strongest opponent. Live King
+/// civvis-20261005T141932Z (game 135) went into Recovery at 1848 power
+/// against 645, one capital from Domination.
+#[test]
+fn a_threatened_city_leaves_a_winning_war_out_of_recovery_under_the_gene() {
+    let (mut g, _, _) = board();
+    g.at_war.insert((0, 2));
+    g.spawn_test_unit("giant_death_robot", 2, at(5, 8));
+    for row in 0..6 {
+        g.spawn_test_unit("giant_death_robot", 0, at(30, 14 + row));
+    }
+    assert!(g.military_power(0) >= 2.0 * g.military_power(2));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert_eq!(
+        ai.assess(&g, 0).strategy,
+        GrandStrategy::Recovery,
+        "off: the threatened city"
+    );
+    ai.enable_recovery_needs_the_deficit();
+    assert_ne!(ai.assess(&g, 0).strategy, GrandStrategy::Recovery);
+}
