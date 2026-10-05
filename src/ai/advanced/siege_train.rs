@@ -182,6 +182,12 @@ pub(super) const ASSAULT_SURVIVOR_HP: i32 = 25;
 pub(super) const ASSAULT_TURNS: f64 = 2.0;
 /// ... counting one turn of the city's heal.
 pub(super) const ASSAULT_HEAL: f64 = 20.0;
+/// `siege-keeps-a-shooter`: walls standing at or under this share of their
+/// pool are a running breach that Civilization VI restores in full after a
+/// few turns without damage, so one shooter keeps firing on them.
+pub(super) const KEEPER_WALL_SHARE: f64 = 0.6;
+/// ... a kept shooter must keep at least this much past the city's strike.
+pub(super) const KEEPER_SURVIVE_MARGIN: f64 = 10.0;
 /// `melee-storms-an-open-city`: against a city with no standing walls the
 /// assault opens when the force's blows, past the city's heal, take it within
 /// this many turns.
@@ -2979,6 +2985,12 @@ impl AdvancedAi {
         let range = g.unit_attack_range(uid).max(1);
         let distance = g.wdist(unit.pos, city.pos);
         if distance <= range && unit.moves_left > 0.0 {
+            // `siege-keeps-a-shooter`: the kept shooter's shot is the walls'.
+            if city.wall_hp > 0 && self.siege_wall_keepers.contains(&uid) {
+                if let Some(acted) = self.city_shot(g, pid, uid, city) {
+                    return acted;
+                }
+            }
             if city.wall_hp > 0 {
                 if let Some(acted) = self.reliever_kill_shot(g, pid, uid, city) {
                     return acted;
@@ -3505,6 +3517,80 @@ impl AdvancedAi {
             })
             .map(|(uid, _)| *uid)
             .collect()
+    }
+
+    /// `siege-keeps-a-shooter`: for each walled siege in Invest or Reduce
+    /// whose walls stand at or under [`KEEPER_WALL_SHARE`] of their pool, the
+    /// one ranged unit of ours that stays to fire on them this turn when every
+    /// one in range of the city would otherwise rotate out to heal: the
+    /// healthiest that keeps [`KEEPER_SURVIVE_MARGIN`] past its danger. None
+    /// when a healthy one in range already fires. Live King
+    /// civvis-20261005T104725Z (game 122): Tenochtitlan's walls went 13 ->
+    /// 100 (turns 82-87), 59 -> 100 (98-102) and 40 -> 100 (111-116) while
+    /// its gun and Crossbowmen all rotated out to heal together.
+    pub(super) fn siege_wall_keepers(
+        &self,
+        g: &Game,
+        pid: usize,
+        field: &mut super::battle_planner::DangerField,
+    ) -> BTreeSet<u32> {
+        let mut keepers = BTreeSet::new();
+        if !self.siege_keeps_a_shooter {
+            return keepers;
+        }
+        let heals = !g.is_arena() || g.tactics.heal;
+        for (cid, siege) in &self.sieges {
+            if !matches!(siege.stage, SiegeStage::Invest | SiegeStage::Reduce) {
+                continue;
+            }
+            let Some(city) = CityView::of(g, *cid) else {
+                continue;
+            };
+            if city.owner == pid
+                || !g.is_at_war(pid, city.owner)
+                || city.wall_hp <= 0
+                || city.wall_max <= 0
+                || f64::from(city.wall_hp) > KEEPER_WALL_SHARE * f64::from(city.wall_max)
+            {
+                continue;
+            }
+            let in_range: Vec<u32> = g
+                .units
+                .values()
+                .filter(|unit| {
+                    let spec = &g.rules.units[unit.kind];
+                    unit.owner == pid
+                        && spec.class == "military"
+                        && spec.has_ranged_attack()
+                        && spec.domain.as_deref() != Some("air")
+                        && !g.is_embarked(unit)
+                        && unit.attacks_left > 0
+                        && unit.moves_left > 0.0
+                        && g.wdist(unit.pos, city.pos) <= g.unit_attack_range(unit.id).max(1)
+                })
+                .map(|unit| unit.id)
+                .collect();
+            let wounded = |uid: u32| {
+                heals
+                    && (g.units[&uid].hp < super::battle_planner::ROTATE_HP
+                        || self.battle_planner_recovering.contains(&uid))
+            };
+            if in_range.iter().any(|uid| !wounded(*uid)) {
+                continue;
+            }
+            let keeper = in_range
+                .into_iter()
+                .filter_map(|uid| {
+                    let unit = &g.units[&uid];
+                    let danger = field.rotation_danger(unit.pos, uid);
+                    (f64::from(unit.hp) - danger >= KEEPER_SURVIVE_MARGIN)
+                        .then_some((unit.hp, Reverse(uid)))
+                })
+                .max()
+                .map(|(_, Reverse(uid))| uid);
+            keepers.extend(keeper);
+        }
+        keepers
     }
 
     /// Whether a fit gun near a walled siege serves it whatever row the
@@ -4578,3 +4664,6 @@ mod storm_tests;
 
 #[cfg(test)]
 mod capture_hold_tests;
+
+#[cfg(test)]
+mod keeper_tests;

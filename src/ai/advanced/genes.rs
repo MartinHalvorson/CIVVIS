@@ -2876,6 +2876,11 @@ pub const GENES: &[Gene] = &[
     // counterweight and spread Protestantism, the winner's faith, in its own
     // cities. See `adopted_faith_sanctuary::stronger_faith_than`.
     Gene { tag: "counterweight-faith-is-no-threat", field: "counterweight_faith_is_no_threat", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_faith_is_no_threat, disable: AdvancedAi::disable_counterweight_faith_is_no_threat },
+    // Live King civvis-20261005T104725Z (game 122): Tenochtitlan's walls
+    // went 13 -> 100 (turns 82-87), 59 -> 100 (98-102) and 40 -> 100
+    // (111-116) while every shooter and the gun rotated out to heal at once
+    // and nothing hit the walls. See `siege_train::siege_wall_keepers`.
+    Gene { tag: "siege-keeps-a-shooter", field: "siege_keeps_a_shooter", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_keeps_a_shooter, disable: AdvancedAi::disable_siege_keeps_a_shooter },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
