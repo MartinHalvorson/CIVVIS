@@ -2813,6 +2813,12 @@ pub const GENES: &[Gene] = &[
     // 191 with Kongo on 15 points and lost on Diplomacy at 202 by one vote's
     // Favor. See `one_war::liberation_funds_the_congress`.
     Gene { tag: "liberation-funds-the-congress", field: "liberation_funds_the_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_liberation_funds_the_congress, disable: AdvancedAi::disable_liberation_funds_the_congress },
+    // Live King civvis-20261005T051413Z (game 102): four fit Bombards stood
+    // three tiles from walled Toronto from turn 137 to 145, one tile outside
+    // their range, and never fired: every post inside the strike ring read
+    // the city's whole blow (~108 against a Bombard) on each gun. See
+    // `siege_train::entry_group`.
+    Gene { tag: "guns-enter-together", field: "guns_enter_together", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_enter_together, disable: AdvancedAi::disable_guns_enter_together },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

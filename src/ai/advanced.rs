@@ -6322,6 +6322,11 @@ pub struct AdvancedAi {
     /// See `BasicAi::front_weighted_floor_2`.
     front_weighted_floor_2: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `guns-enter-together`: two or more fit siege guns of a walled siege
+    /// whose posts lie inside the city's strike ring step in together, and
+    /// the city's strike — once a turn — is charged once across them. See
+    /// `siege_train::entry_group`.
+    guns_enter_together: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     great_work_completion_value: bool,
     /// `industrial-chain-debt`: an Industrial Zone owes its Workshop,
@@ -9253,6 +9258,7 @@ impl AdvancedAi {
             front_weighted_floor: false,
             front_weighted_floor_2: false,
             // ---- append: g-k ----------------------------------------
+            guns_enter_together: false,
             great_work_completion_value: false,
             industrial_chain_debt: false,
             guard_breaks_the_pin: false,

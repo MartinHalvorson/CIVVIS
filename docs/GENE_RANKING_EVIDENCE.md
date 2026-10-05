@@ -264,6 +264,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `granary-before-the-army` | off (unmeasured) | The delegated city governor's housing reserve (Granary, else Aqueduct) ahead of the military floor. | — \| 2 |
 | `granary-before-the-army-2` | off (unmeasured) | Version 2 of `granary-before-the-army`; see `BasicAi::granary_before_the_army_2`. | — \| 2 |
 | `great-work-completion-value` | off (unmeasured) | Enable `great-work-completion-value` for measurement. | 1 \| 1 |
+| `guns-enter-together` | off (unmeasured) | Opt-in gene `guns-enter-together`; see `Self::guns_enter_together`. | 1 \| 1 |
 | `hostile-memory-3` | off (unmeasured) | Version three also revises stale sightings when their forecast area is fully visible, using only the unit facts recorded at observation. | 1 \| 3 |
 | `housing-research-2` | off (unmeasured) | Research housing that the capped cities can actually build. | 1 \| 2 |
 | `improvement-upgrades-count` | off (unmeasured) | Opt-in gene `improvement-upgrades-count`; see `Self::improvement_upgrades_count`. | 1 \| 1 |
