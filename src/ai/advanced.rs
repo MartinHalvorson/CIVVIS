@@ -7228,6 +7228,12 @@ pub struct AdvancedAi {
     /// war against the one-war peace for ten standard turns. See
     /// `one_war::second_front_recently_named`.
     second_front_keeps_its_war: bool,
+    /// `siege-keeps-a-shooter`: while a walled siege's walls stand under
+    /// `KEEPER_WALL_SHARE` the heal rotation leaves one fit shooter or gun
+    /// firing. See `siege_train::siege_wall_keepers`.
+    siege_keeps_a_shooter: bool,
+    /// `siege-keeps-a-shooter`: this frame's kept shooters.
+    siege_wall_keepers: BTreeSet<u32>,
     /// `stage-march-keeps-to-land`: a Stage or approach march of a land unit
     /// standing on land takes the dry road however long it runs, or holds,
     /// rather than stepping into the water, whenever `come-ashore` is on and
@@ -9522,6 +9528,8 @@ impl AdvancedAi {
             science_denounce_waits_for_the_race: false,
             stale_swap_reads_the_march: false,
             second_front_keeps_its_war: false,
+            siege_keeps_a_shooter: false,
+            siege_wall_keepers: BTreeSet::new(),
             stage_march_keeps_to_land: false,
             stalled_peace_spares_the_counter: false,
             staging_gun_remembers_hostiles: false,

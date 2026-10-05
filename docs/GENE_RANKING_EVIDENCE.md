@@ -329,6 +329,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-counts-posted-shooters` | off (unmeasured) | Opt-in gene `siege-counts-posted-shooters`; see `Self::siege_counts_posted_shooters`. | 1 \| 1 |
 | `siege-force-keeps-its-members` | off (unmeasured) | Opt-in gene `siege-force-keeps-its-members`; see `Self::siege_force_keeps_its_members`. | 1 \| 1 |
 | `siege-holds-a-breach` | off (unmeasured) | Opt-in gene `siege-holds-a-breach`; see `Self::siege_holds_a_breach`. | 1 \| 1 |
+| `siege-keeps-a-shooter` | off (unmeasured) | Opt-in gene `siege-keeps-a-shooter`; see `Self::siege_keeps_a_shooter`. | 1 \| 1 |
 | `siege-needs-a-breaker` | off (unmeasured) | Opt-in gene `siege-needs-a-breaker`; see `Self::siege_needs_a_breaker`. | 1 \| 1 |
 | `siege-positive-damage-budget` | off (unmeasured) | Enable `siege-positive-damage-budget` for measurement. | 1 \| 1 |
 | `siege-rally-holds` | off (unmeasured) | Opt-in gene `siege-rally-holds`; see `Self::siege_rally_holds`. | 1 \| 1 |

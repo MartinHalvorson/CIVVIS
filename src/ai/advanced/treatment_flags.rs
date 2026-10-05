@@ -5956,6 +5956,18 @@ impl AdvancedAi {
     pub fn disable_counterweight_faith_is_no_threat(&mut self) {
         self.counterweight_faith_is_no_threat = false;
     }
+    /// Opt-in gene `siege-keeps-a-shooter`; see
+    /// [`Self::siege_keeps_a_shooter`].
+    pub fn enable_siege_keeps_a_shooter(&mut self) {
+        self.siege_keeps_a_shooter = true;
+    }
+
+    /// The twin of `enable_siege_keeps_a_shooter`.
+    pub fn disable_siege_keeps_a_shooter(&mut self) {
+        self.siege_keeps_a_shooter = false;
+        self.siege_wall_keepers.clear();
+    }
+
 
     /// Opt-in gene `recovery-peace-waits`; see
     /// [`Self::recovery_peace_waits`].

@@ -2206,7 +2206,7 @@ impl AdvancedAi {
 
     /// Pull the wounded and the exposed out of reach and fortify them.
     /// Returns how many actually moved or swapped.
-    fn rotate_wounded(
+    pub(super) fn rotate_wounded(
         &mut self,
         g: &mut Game,
         pid: usize,
@@ -2215,6 +2215,8 @@ impl AdvancedAi {
         doomed: &BTreeSet<u32>,
     ) -> u32 {
         let heals = !g.is_arena() || g.tactics.heal;
+        // `siege-keeps-a-shooter`: see `siege_wall_keepers`.
+        self.siege_wall_keepers = self.siege_wall_keepers(g, pid, field);
         let mut ids = g.player_unit_ids(pid);
         ids.sort_unstable();
         let mut rotations = 0u32;
@@ -2238,6 +2240,14 @@ impl AdvancedAi {
                 // `battle-planner-3`: the siege's taker holds its post.
                 || (self.battle_planner_3 && self.unit_is_reserved(uid))
             {
+                continue;
+            }
+            if self.siege_wall_keepers.contains(&uid) {
+                self.battle_planner_recovering.remove(&uid);
+                think!(self.journal(), Military, Decision,
+                    "Battle plan: the {} at {:?} keeps firing on the walls", unit.kind, unit.pos;
+                    "{} hp; every other shooter in range is out to heal, and the walls would be restored in full after a few turns without damage",
+                    unit.hp);
                 continue;
             }
             if g.city_at(unit.pos).is_some() || g.encampment_at(unit.pos).is_some() {
