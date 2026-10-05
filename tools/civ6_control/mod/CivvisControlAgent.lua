@@ -8249,6 +8249,16 @@ local function exportState(player, pid, turn, frame, eventKind)
 				domestic_tourists = try(function()
 					return other:GetCulture():GetStaycationers();
 				end, -1),
+				-- And the engine's own culture-victory clock for them, read the way
+				-- the shipped World Rankings screen does (WorldRankings.lua:1678);
+				-- -1 when it reports none. The tourists ratio above misread the
+				-- finisher in G107 (France read 59-75 %, Babylon 50-68 %, Babylon
+				-- won at t206), and every October culture loss was below 100 % of
+				-- it at the final frame.
+				culture_turns_to_victory = try(function()
+					local culture = other:GetCulture();
+					return (culture.GetTurnsUntilVictory and culture:GetTurnsUntilVictory()) or -1;
+				end, -1),
 				gold = try(function() return other:GetTreasury():GetGoldBalance(); end, -1),
 				-- Net, like our own `gold_per_turn` below (yield minus maintenance).
 				gold_per_turn = try(function()
@@ -9163,6 +9173,12 @@ local function exportState(player, pid, turn, frame, eventKind)
 		end, -1),
 		domestic_tourists = try(function()
 			return player:GetCulture():GetStaycationers();
+		end, -1),
+		-- The engine's own culture-victory clock for us (WorldRankings.lua:1678),
+		-- -1 when it reports none; each rival carries the same field.
+		culture_turns_to_victory = try(function()
+			local culture = player:GetCulture();
+			return (culture.GetTurnsUntilVictory and culture:GetTurnsUntilVictory()) or -1;
 		end, -1),
 		-- Our own tourism per turn, the accessor each rival's `tourism` already
 		-- uses (GetStats():GetTourism()). The board prefers it to its model and
