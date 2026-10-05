@@ -255,6 +255,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `district-buildings-first` | off (unmeasured) | A standing district's first building before the delegated city governor opens another district. | — \| 2 |
 | `district-buildings-first-2` | off (unmeasured) | Version one, and the capital's Library ahead of its next Settler once it holds a Campus. | — \| 2 |
 | `domination-capital-focus` | off (unmeasured) | Rank required capitals within the selected domination campaign front. | 1 \| 1 |
+| `domination-finish-holds-the-front` | off (unmeasured) | Opt-in gene `domination-finish-holds-the-front`; see `Self::domination_finish_holds_the_front`. | 1 \| 1 |
 | `domination-ignores-city-states` | off (unmeasured) | `domination-ignores-city-states`: an assigned Domination seat keeps city-states out of its campaign's fallback ranking. | 1 \| 1 |
 | `domination-lane-hands-over` | off (unmeasured) | The Domination lane hands over to Conquest at `DOMINATION_HANDOVER_CITIES` instead of waiting for a growing city target. | 1 \| 1 |
 | `domination-siege-research` | off (unmeasured) | Unlock the first land siege capability for a walled Conquest objective. | — \| 2 |

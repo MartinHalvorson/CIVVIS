@@ -6046,6 +6046,17 @@ impl AdvancedAi {
         self.conquest_opening_stays_near = false;
     }
 
+    /// Opt-in gene `domination-finish-holds-the-front`; see
+    /// [`Self::domination_finish_holds_the_front`].
+    pub fn enable_domination_finish_holds_the_front(&mut self) {
+        self.domination_finish_holds_the_front = true;
+    }
+
+    /// The twin of `enable_domination_finish_holds_the_front`.
+    pub fn disable_domination_finish_holds_the_front(&mut self) {
+        self.domination_finish_holds_the_front = false;
+    }
+
     /// Opt-in gene `declaration-needs-the-edge`; see
     /// [`Self::declaration_needs_the_edge`].
     pub fn enable_declaration_needs_the_edge(&mut self) {

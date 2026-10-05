@@ -253,6 +253,79 @@ fn the_finishing_capital_is_the_first_objective_when_we_outgun_its_owner() {
     }
 }
 
+/// `domination-finish-holds-the-front`: at war with the owner of the capital
+/// that completes Domination, a committed objective at full health yields to
+/// that capital; one the siege has damaged keeps the army. Live King
+/// civvis-20261005T141932Z (game 135) stayed committed to three other cities
+/// for 18 turns beside Madrid, the last capital it needed.
+#[test]
+fn the_finishing_capital_holds_the_front_and_outranks_an_untouched_commitment() {
+    let mut g = Game::new_full(3, 40, 24, 109_106_001, 300, 0, false);
+    for id in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(id);
+    }
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+    }
+    g.found_city_for(0, at(4, 8), None);
+    let third = g.found_city_for(2, at(4, 18), None);
+    g.cities.get_mut(&third).unwrap().owner = 0;
+    let capital = g.found_city_for(1, at(17, 8), None);
+    let town = g.found_city_for(1, at(10, 8), None);
+    for cid in [capital, town] {
+        g.cities.get_mut(&cid).unwrap().wall_hp = 100;
+    }
+    g.record_contact(0, 1);
+    g.record_contact(0, 2);
+    g.at_war.insert((0, 1));
+    g.current = 0;
+    g.turn = 150;
+    for y in 0..8 {
+        g.spawn_test_unit("modern_armor", 0, at(5, 6 + y % 6));
+    }
+    g.spawn_test_unit("warrior", 1, at(17, 9));
+    assert!(AdvancedAi::capture_completes_domination(&g, 0, capital));
+    let committed = |ai: &mut AdvancedAi, g: &Game| {
+        ai.plan = Some(StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(town),
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: g.turn,
+            rush: false,
+        });
+    };
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert_eq!(ai.domination_finish_front(&g, 0), None, "off");
+    ai.enable_siege_commitment();
+    committed(&mut ai, &g);
+    assert_eq!(
+        ai.assess(&g, 0).target_city,
+        Some(town),
+        "off: the commitment holds"
+    );
+    ai.enable_domination_finish_holds_the_front();
+    assert_eq!(ai.domination_finish_front(&g, 0), Some((1, capital)));
+    committed(&mut ai, &g);
+    assert_eq!(
+        ai.assess(&g, 0).target_city,
+        Some(capital),
+        "the finish outranks it"
+    );
+    // A siege that has the town below full health finishes it first.
+    g.cities.get_mut(&town).unwrap().hp = 120;
+    committed(&mut ai, &g);
+    assert_eq!(
+        ai.assess(&g, 0).target_city,
+        Some(town),
+        "a damaged siege finishes"
+    );
+}
+
 /// See `domination_finish_at_war`: at war with both the owner of the last
 /// capital Domination needs and an old front, the campaign goes for that
 /// capital, whoever the denial layer names (Maori, game 65).

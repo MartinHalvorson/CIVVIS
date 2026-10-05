@@ -5346,6 +5346,10 @@ pub struct AdvancedAi {
     /// 650-gold reserve (10 cities) against banks of 378-485. Off by default.
     age_closer_spends_the_reserve: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `domination-finish-holds-the-front`: the owner of the city whose
+    /// capture completes Domination holds the front and that city is the
+    /// objective. See `one_war::domination_finish_front`.
+    domination_finish_holds_the_front: bool,
     /// `declaration-needs-the-edge`: a plain staged declaration needs
     /// `one_war::DECLARATION_EDGE_RATIO` times the target's steady power.
     /// See `one_war::declaration_has_the_edge`.
@@ -9283,6 +9287,7 @@ impl AdvancedAi {
             breaker_to_the_fastest: false,
             age_closer_spends_the_reserve: false,
             // ---- append: c-d ----------------------------------------
+            domination_finish_holds_the_front: false,
             declaration_needs_the_edge: false,
             diplomatic_contender_eliminated: false,
             counterweight_faith_is_no_threat: false,
@@ -13778,10 +13783,17 @@ impl AdvancedAi {
             // desk agree on which war this is. See `advanced/one_war.rs`.
             // A second front the Domination plan must open (the next
             // capital, an urgent clock) takes the plan's target first.
-            // See `diplomatic_contender_to_eliminate`: ahead of a second front
-            // and of the capital hop.
-            self.diplomatic_contender_to_eliminate(g, pid)
-                .filter(|rival| active_fronts.contains(rival))
+            // See `domination_finish_front`: the war that ends the game first,
+            // under any grand strategy.
+            self.domination_finish_front(g, pid)
+                .map(|(owner, _)| owner)
+                .filter(|owner| active_fronts.contains(owner))
+                // See `diplomatic_contender_to_eliminate`: ahead of a second
+                // front and of the capital hop.
+                .or_else(|| {
+                    self.diplomatic_contender_to_eliminate(g, pid)
+                        .filter(|rival| active_fronts.contains(rival))
+                })
                 .or_else(|| {
                     self.one_war_second_front(g, pid)
                         // See `second_front_waits_for_the_front`.
@@ -14131,13 +14143,41 @@ impl AdvancedAi {
         } else {
             ranked_target_city
         };
-        let target_city = capture_opportunity_city
+        // See `domination_finish_front`: the city that completes Domination
+        // outranks a committed objective the siege has not yet damaged (a
+        // damaged one still finishes) and every swap. Game 135 stayed
+        // "committed" to Ratumacos, Divodurum and Córdoba from turn 193 to 211
+        // beside Madrid, the last capital it needed.
+        let finishing_capital = self
+            .domination_finish_front(g, pid)
+            .filter(|(owner, _)| target_player == Some(*owner))
+            .map(|(_, capital)| capital)
+            .filter(|capital| {
+                committed_target_city.is_none_or(|committed| {
+                    committed == *capital
+                        || g.cities
+                            .get(&committed)
+                            .is_none_or(|city| city.hp >= CITY_MAX_HP)
+                })
+            });
+        let target_city = finishing_capital
+            .or(capture_opportunity_city)
             .or(stale_walled_city)
             .or(committed_target_city)
             .or(ranked_target_city);
 
+        if let Some(capital) =
+            finishing_capital.filter(|capital| committed_target_city != Some(*capital))
+        {
+            let city = &g.cities[&capital];
+            think!(self.journal(), Strategy, Strategy,
+                   "Campaign holds on {}", city.name;
+                   "its capture completes Domination; no committed siege, swap or second front outranks it";
+                   city.pos);
+        }
         if let Some(committed_city) = committed_target_city.filter(|city| {
-            capture_opportunity_city.is_none()
+            finishing_capital.is_none()
+                && capture_opportunity_city.is_none()
                 && stale_walled_city.is_none()
                 && Some(*city) != ranked_target_city
         }) {

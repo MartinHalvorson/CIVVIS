@@ -489,6 +489,13 @@ impl AdvancedAi {
         let capital_handoff = current
             .and_then(|front| self.domination_followup_target(g, pid, Some(front)))
             .filter(|target| enemies.contains(target));
+        // See `domination_finish_front`: the war that ends the game first.
+        if let Some((owner, _)) = self
+            .domination_finish_front(g, pid)
+            .filter(|(owner, _)| enemies.contains(owner))
+        {
+            return Some(owner);
+        }
         // See `diplomatic_contender_to_eliminate`: ahead of every other clock.
         if let Some(contender) = self
             .diplomatic_contender_to_eliminate(g, pid)
@@ -1785,6 +1792,38 @@ impl AdvancedAi {
     /// seat declared on it at 95 "179 power against their 4". Over October
     /// 4-5 a rival's reading fell by three quarters in one turn and recovered
     /// to 60% within ten 21 times (diagnosed with -60).
+    /// `domination-finish-holds-the-front`: the rival at war with us holding a
+    /// city whose capture completes Domination (`capture_completes_domination`
+    /// -- every other original capital already ours), with that city. While
+    /// it stands, its owner holds the front and the plan's target under any
+    /// grand strategy, ahead of the elimination front, the diplomatic
+    /// contender, the urgent clause and the capital hop; no second front is
+    /// opened (`one_war_second_front`); and the city outranks a committed
+    /// objective at full health (`assess`). Live King civvis-20261005T141932Z
+    /// (game 135) held Aduatuca and Wak Kab'nal from turn 188 with Madrid,
+    /// held by Gaul whom we fought at twice its power, the last capital it
+    /// needed; the campaign stayed "committed" to three other Gallic cities to
+    /// 211, a Recovery flip at 224 dropped the finishing front, and the second
+    /// front opened on the Maya at 19 points -- six cities no war could
+    /// eliminate in time -- who won on Diplomacy at 232.
+    pub(crate) fn domination_finish_front(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+        if !self.domination_finish_holds_the_front
+            || self.forced_target_player.is_some()
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        {
+            return None;
+        }
+        g.cities
+            .values()
+            .filter(|city| {
+                city.owner != pid
+                    && g.is_at_war(pid, city.owner)
+                    && Self::capture_completes_domination(g, pid, city.id)
+            })
+            .map(|city| (city.owner, city.id))
+            .min()
+    }
+
     /// `declaration-needs-the-edge`: whether a plain staged declaration on
     /// `target` has the edge -- our military at [`DECLARATION_EDGE_RATIO`]
     /// times its steady reading (`steady_rival_power`). Always with the gene
@@ -2218,6 +2257,11 @@ impl AdvancedAi {
     /// Kongo's 1,347. Kongo, holding Kabasa (the last capital Domination
     /// needed) and past its Exoplanet launch at 198, won on Science at 216.
     pub(crate) fn one_war_second_front(&self, g: &Game, pid: usize) -> Option<usize> {
+        // See `domination_finish_front`: no new war while the war that ends
+        // the game stands.
+        if self.domination_finish_front(g, pid).is_some() {
+            return None;
+        }
         // See `declarable_in_reach`.
         self.one_war_second_front_named(g, pid).filter(|rival| {
             !self.front_needs_a_declarable_rival
