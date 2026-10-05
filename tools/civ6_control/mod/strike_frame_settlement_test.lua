@@ -132,6 +132,22 @@ finish(); settle(); check("one actor cannot release another actor's shot", expor
 finish({ player = 0, id = 1114114, type = "unit", hp = 100 }, defender)
 settle(); check("all actors settled before the one replan export", exports, 1)
 
+-- G115 t20: a warrior's melee killed the horse archer a slinger's shot was
+-- aimed at; the host dropped the shot with no combat and the frame waited out
+-- the grace. A kill on the shot's plot releases it; a kill elsewhere does not.
+local warrior = { player = 0, id = 131073, type = "unit", x = 41, y = 9, hp = 100 }
+reset(); issue()
+finish(warrior, { player = 63, id = 2555938, type = "unit", x = 42, y = 9, hp = 0, gone = true })
+settle(); check("a kill on the shot's plot releases it", exports, 1)
+check("the release is named", count("strike_target_killed"), 1)
+check("a released shot is not a timeout", count("strike_frame_timeout"), 0)
+reset(); issue()
+finish(warrior, { player = 63, id = 77, type = "unit", x = 40, y = 9, hp = 0, gone = true })
+settle(); check("a kill on another plot does not release the shot", exports, 0)
+reset(); issue()
+finish(warrior, { player = 63, id = 2555938, type = "unit", x = 42, y = 9, hp = 40 })
+settle(); check("a survivor on the shot's plot keeps it pending", exports, 0)
+
 reset(); issue(); settle(); settle()
 check("unanswered shot waits within existing grace", exports, 0)
 settle(); check("unanswered shot releases at existing grace", exports, 1)
