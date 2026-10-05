@@ -6467,6 +6467,7 @@ CivvisExportClock.now = function()
 end;
 CivvisExportClock.begin = function()
 	CivvisExportClock.marks = {};
+	CivvisExportClock.laps, CivvisExportClock.lapAt = {}, nil;
 	CivvisExportClock.kind = select(2, CivvisExportClock.now());
 	CivvisExportClock.auto0 = try(function() return Automation.GetTime(); end, nil);
 	CivvisExportClock.cpu0 = try(function() return os.clock(); end, nil);
@@ -6477,9 +6478,34 @@ CivvisExportClock.mark = function(name)
 	if marks == nil then return; end
 	marks[#marks + 1] = { name = name, at = CivvisExportClock.now() };
 end;
+-- ★ AND WHERE INSIDE `cities` IT GOES. In a 19-city empire (G138,
+-- civvis-20261005T150407Z) an export cost 117 ms, 46% of it `cities`, ~2.8 ms
+-- per city per export, three exports a turn. The per-city body is a run of
+-- separate reads (trade, buildings, districts, plots, yields, then the build
+-- menus inside the record), so a lap charges the time since the previous lap
+-- to its name, summed over the cities; `lap(nil)` restarts the timer at a
+-- city's top. RECORDS only. The live context's clock is whole seconds, so one
+-- export's laps read 0 or 1000 ms; a game's sums estimate the split, as the
+-- section sums do. That clock is read directly here: `now` would first raise
+-- on the missing `os.rawclock` in a pcall, ~500 laps a turn.
+CivvisExportClock.lap = function(name)
+	local laps = CivvisExportClock.laps;
+	if laps == nil then return; end
+	local now;
+	if CivvisExportClock.kind == "auto" then
+		now = try(function() return Automation.GetTime(); end, nil);
+	else
+		now = CivvisExportClock.now();
+	end
+	local at = CivvisExportClock.lapAt;
+	if name ~= nil and type(now) == "number" and type(at) == "number" then
+		laps[name] = (laps[name] or 0) + (now - at);
+	end
+	CivvisExportClock.lapAt = now;
+end;
 CivvisExportClock.report = function(turn, frame)
-	local marks = CivvisExportClock.marks;
-	CivvisExportClock.marks = nil;
+	local marks, laps = CivvisExportClock.marks, CivvisExportClock.laps;
+	CivvisExportClock.marks, CivvisExportClock.laps = nil, nil;
 	if marks == nil or #marks < 2 then return; end
 	local function delta(t0, t1)
 		if type(t0) ~= "number" or type(t1) ~= "number" then return nil; end
@@ -6489,8 +6515,12 @@ CivvisExportClock.report = function(turn, frame)
 	for i = 2, #marks do
 		sections[marks[i].name] = delta(marks[i - 1].at, marks[i].at);
 	end
+	local cityMs = {};
+	for name, seconds in pairs(laps or {}) do
+		cityMs[name] = delta(0, seconds);
+	end
 	emit("export_timing", {
-		turn = turn, frame = frame, ms = sections, clock = CivvisExportClock.kind,
+		turn = turn, frame = frame, ms = sections, city_ms = cityMs, clock = CivvisExportClock.kind,
 		total_ms = delta(marks[1].at, marks[#marks].at),
 		auto_total = delta(CivvisExportClock.auto0, try(function() return Automation.GetTime(); end, nil)),
 		cpu_total_ms = delta(CivvisExportClock.cpu0, try(function() return os.clock(); end, nil)),
@@ -6698,6 +6728,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		return pending and pending:GetID() or nil;
 	end, nil);
 	eachCity(player, function(city)
+		CivvisExportClock.lap(nil);
 		local outgoing = try(function()
 			return city:GetTrade():GetOutgoingRoutes();
 		end, {});
@@ -6792,6 +6823,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 				yields = routeYields,
 			};
 		end
+		CivvisExportClock.lap("trade");
 		local queue = try(function()
 			local q = city:GetBuildQueue();
 			return q and q:GetCurrentProductionTypeHash() or 0;
@@ -6832,6 +6864,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 				end
 			end
 		end
+		CivvisExportClock.lap("buildings");
 		-- ★★★★★ AND WHAT IT HAS DISTRICTED, WITH THE PLOT.
 		--
 		-- `districts` was **null on all 23,677 city records ever exported**, across
@@ -6894,6 +6927,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 				end
 			end
 		end
+		CivvisExportClock.lap("districts");
 		local ownedPlots = try(function()
 			return Map.GetCityPlots():GetPurchasedPlots(city);
 		end);
@@ -7029,6 +7063,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- Great People disappear after activation, but their Great Works are permanent
 		-- state.  Export the occupied slots exactly so the next reconstruction does
 		-- not forget the yield, Tourism, theming identity, or consumed slot.
+		CivvisExportClock.lap("plots");
 		local greatWorks = nil;
 		if blds ~= nil then
 			greatWorks = {};
@@ -7112,6 +7147,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		local centerPlot = try(function()
 			return Map.GetPlot(city:GetX(), city:GetY());
 		end);
+		CivvisExportClock.lap("yields");
 		cities[#cities + 1] = {
 			districts = placed,
 			wonders = wonders,
@@ -7228,9 +7264,22 @@ local function exportState(player, pid, turn, frame, eventKind)
 			-- START now, with the engine's cost and turns; what it can BUY now,
 			-- with the engine's price; and the queue behind `producing`. Each
 			-- is nil when the read fails, which the mirror treats as unknown.
-			buildable = try(function() return CivvisMenus.buildable(city); end),
-			purchasable = try(function() return CivvisMenus.purchasable(city); end),
-			queue = try(function() return CivvisMenus.queue(city); end),
+			buildable = try(function()
+				CivvisExportClock.lap("record");
+				local menu = CivvisMenus.buildable(city);
+				CivvisExportClock.lap("buildable");
+				return menu;
+			end),
+			purchasable = try(function()
+				local menu = CivvisMenus.purchasable(city);
+				CivvisExportClock.lap("purchasable");
+				return menu;
+			end),
+			queue = try(function()
+				local menu = CivvisMenus.queue(city);
+				CivvisExportClock.lap("queue");
+				return menu;
+			end),
 			food = try(function() return city:GetGrowth():GetFood(); end, -1),
 			-- ★★★★★ THE EMPIRE'S HAPPINESS WAS NEVER ASKED FOR, AND IT MULTIPLIES
 			-- EVERY YIELD ON THE BOARD.
@@ -7392,6 +7441,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			loyalty_per_turn = loyalRate,
 			falls_to = loyalFallsTo,
 		};
+		CivvisExportClock.lap("record");
 	end);
 
 	-- Empty Great Work slots empire-wide, with the tiles they stand on. See
