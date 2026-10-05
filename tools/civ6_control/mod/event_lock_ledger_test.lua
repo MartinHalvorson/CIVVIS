@@ -102,6 +102,105 @@ local loaded = pcall(load)
 check("a UI without the lock functions loads cleanly", loaded, true)
 check("…and is not marked", UI.CivvisEventLedger, nil)
 
+local function lastRow(kind)
+	for i = #lines, 1, -1 do
+		if lines[i]:find('"kind":"' .. kind .. '"', 1, true) then return lines[i] end
+	end
+	return ""
+end
+
+-- `UI` as the engine hands it over on this build: not a plain table (G90 had
+-- 19 DiplomacyActionView closes and no row). The context's global is then
+-- shadowed by a proxy that wraps only the two lock calls.
+local backing = {
+	GetElapsedTime = function() return 3.0 end,
+	ReferenceCurrentEvent = function() refCalls = refCalls + 1; return 77 end,
+	ReleaseEventID = function(id) return "freed:" .. tostring(id) end,
+}
+local real = newproxy(true)
+getmetatable(real).__index = backing
+getmetatable(real).__newindex = function(_, k, v) backing[k] = v end
+UI = real
+ExposedMembers = {}
+load()
+check("a userdata UI is shadowed by a table proxy", type(UI), "table")
+check("…and the install says how", lastRow("event_ledger"):find('"installed":true,"how":"proxy","ui_type":"userdata"', 1, true) ~= nil, true)
+check("other keys return the real function object", rawequal(UI.GetElapsedTime, backing.GetElapsedTime), true)
+local before = refCalls
+check("the lock call reaches the engine through the proxy", UI.ReferenceCurrentEvent(), 77)
+check("…exactly once", refCalls - before, 1)
+check("…and is recorded", ExposedMembers.CivvisEventLocks.held[77] ~= nil, true)
+check("release passes through", UI.ReleaseEventID(77), "freed:77")
+UI.SomeFlag = 5
+check("a write goes through to the real UI", backing.SomeFlag, 5)
+load()
+check("a second shim run in the context leaves one proxy", lastRow("event_ledger"):find('"how":"already"', 1, true) ~= nil, true)
+before = refCalls
+UI.ReferenceCurrentEvent()
+check("…still one call per lock", refCalls - before, 1)
+
+-- A read-only table refuses the in-place wrap; the proxy takes over.
+local frozen = { GetElapsedTime = function() return 1 end,
+	ReferenceCurrentEvent = function() return 5 end, ReleaseEventID = function() return true end }
+UI = setmetatable({}, { __index = frozen, __newindex = function() error("read-only") end })
+local readonly = UI
+load()
+check("a read-only UI falls back to the proxy", lastRow("event_ledger"):find('"how":"proxy","ui_type":"table"', 1, true) ~= nil, true)
+check("…which replaced the global", rawequal(UI, readonly), false)
+check("…and still hands back the real function", rawequal(UI.GetElapsedTime, frozen.GetElapsedTime), true)
+
+-- No UI at all: nothing installed, said so, global untouched.
+UI = nil
+load()
+check("no UI reports installed=false", lastRow("event_ledger"):find('"installed":false,"how":"none","ui_type":"nil"', 1, true) ~= nil, true)
+check("…and leaves the global alone", UI, nil)
+
+-- No shared table in a context: the row is still written.
+UI = { ReferenceCurrentEvent = function() return 9 end, ReleaseEventID = function() return true end }
+ExposedMembers = nil
+load()
+UI.ReferenceCurrentEvent()
+check("without ExposedMembers the ref row still appears", lastRow("event_lock"):find('"op":"ref","id":9,"held":-1', 1, true) ~= nil, true)
+check("…and the install names the missing table", lastRow("event_ledger"):find('"exposed":"nil"', 1, true) ~= nil, true)
+
+-- Havok Script's sandbox has no rawequal (G89, 2026-10-05: every context
+-- reported `threw` after a swap that had worked). The install must neither
+-- need it nor misreport a working proxy.
+local savedRawequal = rawequal
+rawequal = nil
+local sandboxBacking = {
+	ReferenceCurrentEvent = function() return 81 end,
+	ReleaseEventID = function() return true end,
+	GetElapsedTime = function() return 2 end,
+}
+local sandboxUI = newproxy(true)
+getmetatable(sandboxUI).__index = sandboxBacking
+UI = sandboxUI
+ExposedMembers = {}
+load()
+check("without rawequal a userdata UI still installs the proxy",
+	lastRow("event_ledger"):find('"installed":true,"how":"proxy","ui_type":"userdata"', 1, true) ~= nil, true)
+check("…and records locks", (UI.ReferenceCurrentEvent() == 81) and ExposedMembers.CivvisEventLocks.held[81] ~= nil, true)
+rawequal = savedRawequal
+
+-- A raising install reports the error text and the real UI type.
+UI = { ReferenceCurrentEvent = function() return 1 end, ReleaseEventID = function() return true end }
+local brokenType = type
+local typeCalls = 0
+type = function(v)
+	if v == UI then
+		typeCalls = typeCalls + 1
+		if typeCalls == 1 then error("probe \"quoted\" failure") end
+	end
+	return brokenType(v)
+end
+load()
+type = brokenType
+local threw = lastRow("event_ledger")
+check("a raising install says it threw, with the error text", threw:find('"why":"threw: ', 1, true) ~= nil, true)
+check("…with quotes made JSON-safe", threw:find("probe 'quoted' failure", 1, true) ~= nil, true)
+check("…and the real UI type", threw:find('"ui_type":"table"', 1, true) ~= nil, true)
+
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
 	os.exit(1)
