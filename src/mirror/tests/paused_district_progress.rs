@@ -54,6 +54,7 @@ fn paused_native_district_work_survives_fresh_reconstruction() {
         let cid = mirror.cid_of[&7];
         assert_eq!(mirror.game.cities[&cid].production, 16.0);
         assert_eq!(mirror.game.item_invested_production(cid, &campus()), 40.0);
+        assert_eq!(mirror.game.item_cost_for_city(0, cid, &campus()), 73.0);
         assert_eq!(
             mirror.game.item_remaining_cost_for_city(0, cid, &campus()),
             33.0
@@ -84,6 +85,10 @@ fn active_head_is_not_counted_twice_and_refresh_can_pause_it() {
     let mut mirror = build(&snapshot, &state);
     let cid = mirror.cid_of[&7];
     assert_eq!(mirror.game.item_invested_production(cid, &campus()), 40.0);
+    assert_eq!(
+        mirror.game.item_remaining_cost_for_city(0, cid, &campus()),
+        33.0
+    );
     assert!(mirror.game.cities[&cid].production_progress.is_empty());
     state.cities[0].producing = Some("UNIT_SPEARMAN".into());
     state.cities[0].production_progress = 16.0;
@@ -97,6 +102,48 @@ fn active_head_is_not_counted_twice_and_refresh_can_pause_it() {
     mirror.sync(&snapshot, &state, 0);
     assert_eq!(mirror.game.item_invested_production(cid, &campus()), 50.0);
     assert!(mirror.game.cities[&cid].production_progress.is_empty());
+}
+
+#[test]
+fn active_head_without_menu_progress_does_not_retain_a_paused_credit() {
+    let (snapshot, mut state) = fixture();
+    let mut mirror = build(&snapshot, &state);
+    let cid = mirror.cid_of[&7];
+    state.cities[0].producing = Some("DISTRICT_CAMPUS".into());
+    state.cities[0].production_progress = 50.0;
+    state.cities[0].buildable.as_mut().unwrap()[1].pr = None;
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.game.item_invested_production(cid, &campus()), 50.0);
+    assert!(mirror.game.cities[&cid].production_progress.is_empty());
+}
+
+#[test]
+fn native_work_uses_native_cost_and_invalid_prices_do_not_replace_it() {
+    let (snapshot, mut state) = fixture();
+    let mut mirror = build(&snapshot, &state);
+    let cid = mirror.cid_of[&7];
+    assert_eq!(mirror.game.item_cost_for_city(0, cid, &campus()), 73.0);
+    for cost in [-1.0, 0.0, f64::NAN, f64::INFINITY] {
+        state.cities[0].buildable.as_mut().unwrap()[1].c = cost;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.item_cost_for_city(0, cid, &campus()), 73.0);
+        assert_eq!(mirror.game.item_invested_production(cid, &campus()), 40.0);
+    }
+}
+
+#[test]
+fn menu_zero_wins_over_older_tail_progress_without_duplicating_the_balance() {
+    let (snapshot, mut state) = fixture();
+    state.cities[0].buildable.as_mut().unwrap()[1].pr = Some(0.0);
+    state.cities[0].queue = Some(vec![StateQueueItem {
+        t: "DISTRICT_CAMPUS".into(),
+        pr: Some(40.0),
+        ..StateQueueItem::default()
+    }]);
+    let mirror = build(&snapshot, &state);
+    let cid = mirror.cid_of[&7];
+    assert_eq!(mirror.game.item_invested_production(cid, &campus()), 0.0);
+    assert_eq!(mirror.game.item_cost_for_city(0, cid, &campus()), 73.0);
 }
 
 #[test]

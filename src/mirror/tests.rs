@@ -13453,7 +13453,7 @@ fn host_state_step_list_is_the_recorded_order() {
         ]
     );
 
-    let finish = ["player_ages", "record_host_observed"];
+    let finish = ["player_ages", "district_progress", "record_host_observed"];
     assert_eq!(rebuild(HostPhase::Finish), finish);
     assert_eq!(sync(HostPhase::Finish), finish);
 }

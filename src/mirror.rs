@@ -8412,7 +8412,8 @@ fn apply_host_district_progress(
             let pos = crate::hex::offset_to_axial(observed.x, observed.y);
             let item = Item::District { district, pos };
             let key = Game::item_progress_key(&item);
-            if observed.complete || game.cities[cid].queue.first() == Some(&item) {
+            let active_head = game.cities[cid].queue.first() == Some(&item);
+            if observed.complete || active_head {
                 // Current-head work already lives in City::production. Never
                 // add the same total again as a paused investment.
                 game.cities
@@ -8420,7 +8421,9 @@ fn apply_host_district_progress(
                     .unwrap()
                     .production_progress
                     .remove(&key);
-                continue;
+                if observed.complete {
+                    continue;
+                }
             }
             let unique = state
                 .districts
@@ -8466,6 +8469,23 @@ fn apply_host_district_progress(
             else {
                 continue; // Missing is unknown, not a fabricated zero or ETA-derived work.
             };
+            // Fresh reconstruction plants the foundation before the host menu
+            // arrives. Its model-derived locked cost must not override the
+            // native price paired with this exact work observation. The host
+            // keeps the placed Campus quote fixed as research advances.
+            if rows.len() == 1 && rows[0].c.is_finite() && rows[0].c > 0.0 {
+                game.map
+                    .tiles
+                    .get_mut(&pos)
+                    .unwrap()
+                    .district_foundation
+                    .as_mut()
+                    .unwrap()
+                    .cost = rows[0].c;
+            }
+            if active_head {
+                continue;
+            }
             let saved = &mut game.cities.get_mut(cid).unwrap().production_progress;
             if progress == 0.0 {
                 saved.remove(&key);
@@ -12162,6 +12182,7 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
         HostPhase::Finish,
         &[
             ("player_ages", BOTH, step_player_ages),
+            ("district_progress", BOTH, step_district_progress),
             ("record_host_observed", BOTH, step_record_host_observed),
         ],
     ),
@@ -12208,6 +12229,32 @@ pub(crate) fn host_step_names(mode: MirrorMode, phase: HostPhase) -> Vec<&'stati
 // --- the steps ----------------------------------------------------------
 // One body each, whatever the pass. A `ctx.mode` test inside a step is a real
 // difference between the two passes and carries its reason.
+
+fn step_district_progress(ctx: &mut HostStepCtx<'_>) {
+    let city_ids = ctx
+        .state
+        .cities
+        .iter()
+        .filter_map(|city| {
+            let cid = ctx.known_city_ids.get(&city.id).copied().or_else(|| {
+                // Older exports can lack a positive native city id. Their actual
+                // own-city centre still names the city planted in this same pass.
+                (city.id <= 0)
+                    .then(|| {
+                        ctx.game
+                            .city_at(crate::hex::offset_to_axial(city.x, city.y))
+                    })
+                    .flatten()
+            })?;
+            ctx.game
+                .cities
+                .get(&cid)
+                .is_some_and(|city| city.owner == 0)
+                .then_some((cid, city.id))
+        })
+        .collect();
+    apply_host_district_progress(ctx.game, &ctx.state.cities, &city_ids);
+}
 
 fn step_game_speed(ctx: &mut HostStepCtx<'_>) {
     if let Some(speed) = civvis_game_speed(&ctx.state.seat.speed) {
@@ -13565,7 +13612,6 @@ pub fn rebuild_from_state(
         ),
         HostPhase::Finish,
     );
-    apply_host_district_progress(&mut game, &state.cities, &city_ids);
     Reconstruction {
         game,
         unit_ids,
@@ -15597,12 +15643,6 @@ impl LiveMirror {
         .with_board(&self.known_city_ids, &minor_assignments, &seat_of_host);
         run_host_steps(&mut ctx, HostPhase::Board);
         run_host_steps(&mut ctx, HostPhase::Finish);
-        let city_ids = self
-            .cid_of
-            .iter()
-            .map(|(host, cid)| (*cid, *host))
-            .collect();
-        apply_host_district_progress(&mut self.game, &state.cities, &city_ids);
         // The posting can name a newly observed foreign city. Resolve it
         // after the same whole-board reconstruction as the district itself.
         seat_live_spies(&mut self.game, state);
