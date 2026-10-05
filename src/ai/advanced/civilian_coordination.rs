@@ -10,7 +10,6 @@ use super::*;
 pub(super) struct BuilderSupport {
     pub(super) guard: u32,
     destination: Pos,
-    job: Option<Name>,
 }
 
 impl AdvancedAi {
@@ -89,11 +88,7 @@ impl AdvancedAi {
                     if expected + 5.0 >= f64::from(soldier.hp) {
                         continue;
                     }
-                    let support = BuilderSupport {
-                        guard,
-                        destination,
-                        job: None,
-                    };
+                    let support = BuilderSupport { guard, destination };
                     if Self::builder_support_actions(g, pid, builder, support).is_none() {
                         continue;
                     }
@@ -114,167 +109,10 @@ impl AdvancedAi {
                     .then_with(|| a.4.cmp(&b.4))
             });
             if let Some(&(_, _, _, guard, destination)) = candidates.first() {
-                self.builder_support.insert(
-                    builder,
-                    BuilderSupport {
-                        guard,
-                        destination,
-                        job: None,
-                    },
-                );
+                self.builder_support
+                    .insert(builder, BuilderSupport { guard, destination });
                 think!(self.journal(), Expansion, Detail, "Builder and guard share a plan";
                        "builder {builder} and guard {guard} reserve {destination:?}; both routes fit this turn and military planning cannot spend the guard"; destination);
-            }
-        }
-    }
-
-    /// Experimental worked-production escort; absent from production defaults.
-    pub fn enable_productive_builder_escort(&mut self) {
-        self.builder_productive_escort = true;
-    }
-
-    pub fn productive_builder_escort_enabled(&self) -> bool {
-        self.builder_productive_escort
-    }
-
-    pub(super) fn plan_productive_builder_support(
-        &mut self,
-        g: &Game,
-        pid: usize,
-        plan: &StrategicPlan,
-    ) {
-        if !self.builder_productive_escort
-            || !self.live_settler_capture_lessons
-            || self.active_victory_target(g).is_none()
-            || self.base.minor
-            || self.base.barb
-            || plan.strategy == GrandStrategy::Recovery
-            || g.turn > g.standard_duration(160)
-        {
-            return;
-        }
-        let _memo = g.query_memo();
-        let worked: BTreeSet<_> = g
-            .player_city_ids(pid)
-            .into_iter()
-            .filter(|cid| plan.threatened_city != Some(*cid))
-            .flat_map(|cid| g.city_citizen_plan(cid).worked_tiles)
-            .collect();
-        let mut danger = None;
-        for builder in g.player_unit_ids(pid) {
-            let worker = &g.units[&builder];
-            if worker.kind != "builder"
-                || worker.charges <= 0
-                || worker.moves_left <= 0.0
-                || self.builder_support.contains_key(&builder)
-            {
-                continue;
-            }
-            let reach =
-                self.barbarian_reach(g, pid, worker.pos, civilian_safety::REACH_SCAN_RADIUS);
-            let reachable: BTreeSet<_> = g
-                .reachable(builder)
-                .into_iter()
-                .chain([worker.pos])
-                .collect();
-            let reserved: HashSet<_> = self
-                .builder_support
-                .values()
-                .map(|s| s.destination)
-                .collect();
-            let jobs = self.builder_jobs_ranked(g, pid, builder, plan.strategy, &reserved);
-            for destination in jobs {
-                if !worked.contains(&destination)
-                    || !reachable.contains(&destination)
-                    || !reach.covers(g, destination)
-                    || g.map
-                        .get(destination)
-                        .is_none_or(|t| g.rules.is_water(t) || t.pillaged)
-                    || g.city_at(destination).is_some()
-                {
-                    continue;
-                }
-                let Some(city) = g.map.get(destination).and_then(|t| t.owner_city) else {
-                    continue;
-                };
-                if g.cities[&city].owner != pid || plan.threatened_city == Some(city) {
-                    continue;
-                }
-                let improvement = self
-                    .worthwhile_improvements(g, pid, destination, plan.strategy)
-                    .into_iter()
-                    .filter_map(|name| {
-                        let delta = g.improvement_yield_change(pid, destination, name);
-                        (delta.production > 0.0 && delta.food >= 0.0)
-                            .then_some((delta.production, name))
-                    })
-                    .max_by(|a, b| a.0.total_cmp(&b.0).then_with(|| b.1.cmp(&a.1)))
-                    .map(|(_, name)| name);
-                let Some(improvement) = improvement else {
-                    continue;
-                };
-                let danger = danger
-                    .get_or_insert_with(|| battle_planner::DangerField::with_reach(g, pid, true));
-                let mut candidates = Vec::new();
-                for guard in g.player_unit_ids(pid) {
-                    let soldier = &g.units[&guard];
-                    if !Self::guard_matches_escort_layer(g, soldier, false)
-                        || soldier.hp < STACKED_GUARD_MIN_HP
-                        || soldier.linked_to.is_some()
-                        || self.guard_is_reserved_for_civilian(guard)
-                        || g.wdist(soldier.pos, worker.pos) > 3
-                        || g.city_at(soldier.pos)
-                            .is_some_and(|cid| plan.threatened_city == Some(cid))
-                    {
-                        continue;
-                    }
-                    // Keep the final military body inside its own city.
-                    if g.city_at(soldier.pos).is_some_and(|cid| {
-                        g.cities[&cid].owner == pid
-                            && g.unit_ids_at(soldier.pos)
-                                .iter()
-                                .filter(|uid| {
-                                    let u = &g.units[uid];
-                                    u.owner == pid && g.rules.units[u.kind].class == "military"
-                                })
-                                .count()
-                                <= 1
-                    }) {
-                        continue;
-                    }
-                    let expected = danger.danger(destination, guard);
-                    if expected + 5.0 >= f64::from(soldier.hp) {
-                        continue;
-                    }
-                    let support = BuilderSupport {
-                        guard,
-                        destination,
-                        job: Some(improvement),
-                    };
-                    if Self::builder_support_actions(g, pid, builder, support).is_none() {
-                        continue;
-                    }
-                    candidates.push((expected, g.wdist(soldier.pos, destination), guard));
-                }
-                candidates.sort_by(|a, b| {
-                    a.0.total_cmp(&b.0)
-                        .then_with(|| a.1.cmp(&b.1))
-                        .then_with(|| a.2.cmp(&b.2))
-                });
-                if let Some(&(_, _, guard)) = candidates.first() {
-                    self.builder_support.insert(
-                        builder,
-                        BuilderSupport {
-                            guard,
-                            destination,
-                            job: Some(improvement),
-                        },
-                    );
-                    think!(self.journal(), Expansion, Detail, "Guard reserves a productive Builder job";
-                        "builder {builder}, guard {guard}, {improvement} at {destination:?}; both walks fit now; improve when movement permits, with fresh validation and the existing survival bar"; destination);
-                    // One new productive pair per frame; emergency pairs retain priority.
-                    return;
-                }
             }
         }
     }
@@ -304,35 +142,6 @@ impl AdvancedAi {
                 actions.push(action);
             }
         }
-        if let Some(improvement) = support.job {
-            let action = Action::Improve {
-                unit: builder,
-                improvement,
-            };
-            let performed = trial.apply(pid, &action).is_ok();
-            if !performed {
-                let worker = trial.units.get(&builder)?;
-                // A hill can consume this turn's final movement. Promise only
-                // the checked joint walk, then revalidate the job next frame.
-                if worker.moves_left > 0.0 || actions.is_empty() {
-                    return None;
-                }
-                let mut operation = trial.speculative_clone();
-                let fresh_moves = operation.unit_max_moves(builder);
-                operation.units.get_mut(&builder)?.moves_left = fresh_moves;
-                operation.apply(pid, &action).ok()?;
-            }
-            let guard = trial.units.get(&support.guard)?;
-            if guard.hp < STACKED_GUARD_MIN_HP
-                || battle_planner::strike_danger(&trial, pid, support.destination, guard.id) + 5.0
-                    >= f64::from(guard.hp)
-            {
-                return None;
-            }
-            if performed {
-                actions.push(action);
-            }
-        }
         Some(actions)
     }
 
@@ -352,7 +161,6 @@ impl AdvancedAi {
                     builder,
                     BuilderSupport {
                         destination: current,
-                        job: None,
                         ..support
                     },
                 );
