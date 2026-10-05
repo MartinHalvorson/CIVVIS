@@ -1554,6 +1554,13 @@ impl AdvancedAi {
         if arm_of(g, uid) == Arm::Other {
             return None;
         }
+        // `capture-holds-the-ring`: see `capture_hold`.
+        if self.capture_holds_the_ring {
+            self.note_capture_holds(g, pid);
+            if let Some(acted) = self.capture_ring_step(g, pid, uid) {
+                return Some(acted);
+            }
+        }
         let group = self
             .force_groups
             .iter()
@@ -1589,6 +1596,10 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         group: &ForceGroup,
     ) -> Option<u32> {
+        // `capture-holds-the-ring`: see `loyalty_prey_for`.
+        if let Some(prey) = self.loyalty_prey_for(g, pid, group.anchor) {
+            return Some(prey);
+        }
         let enemy_city = |cid: u32| {
             g.cities
                 .get(&cid)
@@ -2165,6 +2176,8 @@ impl AdvancedAi {
                 self.siege_breaker_waits.remove(&city.pos);
             }
         }
+        // `capture-holds-the-ring`: see `dying_open_city`.
+        let dying = self.dying_open_city(&city);
         let record = self.sieges.entry(cid).or_insert(Siege {
             stage: SiegeStage::Stage,
             taker: None,
@@ -2238,6 +2251,10 @@ impl AdvancedAi {
                     }
                 }
                 _ => {}
+            }
+            // `capture-holds-the-ring`: a dying open city is never staged for.
+            if stage == SiegeStage::Stage && dying {
+                stage = SiegeStage::Invest;
             }
         }
         let mut taker = None;
@@ -2910,6 +2927,18 @@ impl AdvancedAi {
             } else {
                 None
             };
+            // `capture-holds-the-ring`: see `capture_holdable`.
+            let action = action.filter(|_| {
+                let holdable = self.capture_holdable(g, pid, city.id, uid);
+                if !holdable {
+                    think!(self.journal(), Military, Decision,
+                        "Siege of {}: the {} holds off the capture", g.cities[&city.id].name, unit.kind;
+                        "a hostile that can retake it stands within two tiles and fewer than {} of ours could end the turn beside it",
+                        capture_hold::CAPTURE_ESCORTS;
+                        city.pos);
+                }
+                holdable
+            });
             if let Some(action) = action {
                 if g.apply(pid, &action).is_ok() {
                     self.force_groups_dirty = true;
@@ -4380,8 +4409,13 @@ mod linked_support_tests;
 #[path = "siege_train/tests.rs"]
 mod obstacle_routing_tests;
 
+mod capture_hold;
+
 #[cfg(test)]
 mod entry_tests;
 
 #[cfg(test)]
 mod storm_tests;
+
+#[cfg(test)]
+mod capture_hold_tests;

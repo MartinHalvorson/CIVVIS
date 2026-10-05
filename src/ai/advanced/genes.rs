@@ -2805,6 +2805,12 @@ pub const GENES: &[Gene] = &[
     // never struck a healthy city; the city went 200 -> 191 and built walls at
     // 74. See `siege_train::assault_pays`.
     Gene { tag: "melee-storms-an-open-city", field: "melee_storms_an_open_city", kind: Kind::OptIn, enable: AdvancedAi::enable_melee_storms_an_open_city, disable: AdvancedAi::disable_melee_storms_an_open_city },
+    // 8 of 31 captures in ten live King games (October 5) were lost the very
+    // next turn: G105 Vancouver 151 -> 152, walked into by one Pike and Shot
+    // with ten of 22 staged; G112 Xanadu flipped to loyalty in five turns at
+    // -13.5 a turn; G114 Curitiba sat at walls 0, health 1 with its body six
+    // to twelve tiles out. See `siege_train::capture_hold`.
+    Gene { tag: "capture-holds-the-ring", field: "capture_holds_the_ring", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_holds_the_ring, disable: AdvancedAi::disable_capture_holds_the_ring },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
