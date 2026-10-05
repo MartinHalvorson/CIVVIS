@@ -6266,6 +6266,17 @@ impl AdvancedAi {
         self.second_front_waits_for_its_war = false;
     }
 
+    /// Opt-in gene `stall-waits-for-the-breach`; see
+    /// [`Self::stall_waits_for_the_breach`].
+    pub fn enable_stall_waits_for_the_breach(&mut self) {
+        self.stall_waits_for_the_breach = true;
+    }
+
+    /// The twin of `enable_stall_waits_for_the_breach`.
+    pub fn disable_stall_waits_for_the_breach(&mut self) {
+        self.stall_waits_for_the_breach = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -2994,6 +2994,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "breaker-research-first", field: "breaker_research_first", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_research_first, disable: AdvancedAi::disable_breaker_research_first },
     Gene { tag: "breach-support-reads-the-wall-tier", field: "breach_support_reads_the_wall_tier", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_support_reads_the_wall_tier, disable: AdvancedAi::disable_breach_support_reads_the_wall_tier },
     Gene { tag: "second-front-waits-for-its-war", field: "second_front_waits_for_its_war", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_waits_for_its_war, disable: AdvancedAi::disable_second_front_waits_for_its_war },
+    // Live King G148 stood Mikisiw-Wacîhk down at turn 112, five turns after
+    // its first fit gun came, with 10 of 16 staged, and was back there at
+    // 145; G150 stood Karkar down at 92 on the turn its train stepped into
+    // Invest reading "damage ready true". See
+    // `commitments::muster_after_the_breaker` and
+    // `commitments::rebase_capture_on_a_forward_step`.
+    Gene { tag: "stall-waits-for-the-breach", field: "stall_waits_for_the_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_stall_waits_for_the_breach, disable: AdvancedAi::disable_stall_waits_for_the_breach },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
