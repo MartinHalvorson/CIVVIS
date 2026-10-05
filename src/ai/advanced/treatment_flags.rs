@@ -5520,6 +5520,17 @@ impl AdvancedAi {
         self.staging_column_passes_through = false;
     }
 
+    /// Opt-in gene `breakers-stay-with-the-siege`; see
+    /// [`Self::breakers_stay_with_the_siege`].
+    pub fn enable_breakers_stay_with_the_siege(&mut self) {
+        self.breakers_stay_with_the_siege = true;
+    }
+
+    /// The twin of `enable_breakers_stay_with_the_siege`.
+    pub fn disable_breakers_stay_with_the_siege(&mut self) {
+        self.breakers_stay_with_the_siege = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

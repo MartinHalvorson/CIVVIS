@@ -5021,6 +5021,11 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `breakers-stay-with-the-siege`: while a walled Siege row asks the
+    /// Objective Board for guns, a siege gun serves only Siege rows and the
+    /// Reserve, never a Defend, Relieve, Destroy, Escort or camp row. See
+    /// `objective_board::breaker_rows_ask`. Off by default.
+    breakers_stay_with_the_siege: bool,
     /// `breach-assault`: the ring's melee joins the assault on a city whose
     /// walls are down or opened by a ram or tower, once the siege's blows can
     /// take it within two turns. See `siege_train::breach_assault_blow`.
@@ -8884,6 +8889,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            breakers_stay_with_the_siege: false,
             breach_assault: false,
             breach_assault_closes_in: false,
             breaker_supply_scales_2: false,

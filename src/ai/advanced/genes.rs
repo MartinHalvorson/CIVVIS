@@ -2702,6 +2702,10 @@ pub const GENES: &[Gene] = &[
     // between two tiles every frame behind one of ours in a ridge's only gap.
     // See `siege_train::siege_stage_step`.
     Gene { tag: "staging-column-passes-through", field: "staging_column_passes_through", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_column_passes_through, disable: AdvancedAi::disable_staging_column_passes_through },
+    // Live King civvis-20261005T024614Z (game 94): fielded Catapults went to
+    // the Guayaquil anvil and heal rotations while Lisbon's siege held "for a
+    // wall-breaker on its way". See `objective_board::breaker_rows_ask`.
+    Gene { tag: "breakers-stay-with-the-siege", field: "breakers_stay_with_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_breakers_stay_with_the_siege, disable: AdvancedAi::disable_breakers_stay_with_the_siege },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
