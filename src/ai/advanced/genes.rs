@@ -2837,6 +2837,12 @@ pub const GENES: &[Gene] = &[
     // but the gold operating reserve (650 at 10 cities) priced every closer
     // out. See `AdvancedAi::age_closer_spends_the_reserve`.
     Gene { tag: "age-closer-spends-the-reserve", field: "age_closer_spends_the_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_age_closer_spends_the_reserve, disable: AdvancedAi::disable_age_closer_spends_the_reserve },
+    // Live King civvis-20261005T074521Z (game 110): Tarsus stood without
+    // walls in Invest and Reduce from turn 67 to 73, "damage ready" in about
+    // two turns, while its only melee beside it was the reserved taker, which
+    // never struck a healthy city; the city went 200 -> 191 and built walls at
+    // 74. See `siege_train::assault_pays`.
+    Gene { tag: "melee-storms-an-open-city", field: "melee_storms_an_open_city", kind: Kind::OptIn, enable: AdvancedAi::enable_melee_storms_an_open_city, disable: AdvancedAi::disable_melee_storms_an_open_city },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

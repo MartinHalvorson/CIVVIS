@@ -180,6 +180,13 @@ pub(super) const ASSAULT_SURVIVOR_HP: i32 = 25;
 pub(super) const ASSAULT_TURNS: f64 = 2.0;
 /// ... counting one turn of the city's heal.
 pub(super) const ASSAULT_HEAL: f64 = 20.0;
+/// `melee-storms-an-open-city`: against a city with no standing walls the
+/// assault opens when the force's blows, past the city's heal, take it within
+/// this many turns.
+pub(super) const STORM_TURNS: f64 = 3.0;
+/// ... and the reserved taker joins only while it keeps this much after the
+/// city's reply, enough to still take the city when it falls.
+pub(super) const STORM_TAKER_SURVIVOR_HP: i32 = 50;
 /// A hostile this close to the city is a reliever at the ring.
 pub(super) const RELIEVER_RADIUS: i32 = 3;
 /// Expected damage over hit points before a shot is counted as a kill: the
@@ -2454,7 +2461,12 @@ impl AdvancedAi {
         // `breach-assault` runs before the Stage return: a siege whose counted
         // members are still far off reads Stage however low the city is, and
         // a unit already beside a breached city must not walk away from it.
-        if self.breach_assault && siege.taker != Some(uid) && arm_of(g, uid) == Arm::Melee {
+        // `melee-storms-an-open-city`: the taker joins an open city's assault.
+        let taker_storms = self.melee_storms_an_open_city && city.wall_hp <= 0;
+        if self.breach_assault
+            && (siege.taker != Some(uid) || taker_storms)
+            && arm_of(g, uid) == Arm::Melee
+        {
             if let Some(acted) = self.breach_assault_blow(g, pid, uid, &city, plan, group) {
                 return Some(acted);
             }
@@ -3063,8 +3075,7 @@ impl AdvancedAi {
                 return None;
             }
             let volley = self.assault_volley(g, pid, city, plan, group);
-            let to_take = f64::from(city.hp + city.wall_hp.max(0)) + ASSAULT_HEAL;
-            if volley * ASSAULT_TURNS < to_take {
+            if !self.assault_pays(volley, city) {
                 return None;
             }
             let next = march_step(g, uid, city.pos, 1).filter(|pos| g.can_move(uid, *pos))?;
@@ -3087,8 +3098,7 @@ impl AdvancedAi {
             return None;
         }
         let volley = self.assault_volley(g, pid, city, plan, group);
-        let to_take = f64::from(city.hp + city.wall_hp.max(0)) + ASSAULT_HEAL;
-        if volley * ASSAULT_TURNS < to_take {
+        if !self.assault_pays(volley, city) {
             return None;
         }
         let action = Action::Attack {
@@ -3097,7 +3107,25 @@ impl AdvancedAi {
         };
         let mut after = g.speculative_clone();
         after.apply(pid, &action).ok()?;
-        if after.units.get(&uid).is_none_or(|survivor| survivor.hp < ASSAULT_SURVIVOR_HP) {
+        // `melee-storms-an-open-city`: the reserved taker keeps enough to
+        // take the city when it falls (or takes it with this blow).
+        let taker = self
+            .sieges
+            .get(&city.id)
+            .is_some_and(|siege| siege.taker == Some(uid));
+        let floor = if taker {
+            STORM_TAKER_SURVIVOR_HP
+        } else {
+            ASSAULT_SURVIVOR_HP
+        };
+        let captures = self.melee_storms_an_open_city
+            && after.cities.get(&city.id).is_some_and(|c| c.owner == pid);
+        if !captures
+            && after
+                .units
+                .get(&uid)
+                .is_none_or(|survivor| survivor.hp < floor)
+        {
             return None;
         }
         g.apply(pid, &action).ok()?;
@@ -3120,6 +3148,26 @@ impl AdvancedAi {
             city.hp, city.wall_hp, left;
             city.pos);
         Some(true)
+    }
+
+    /// `breach-assault`: whether the force's blows a turn (`assault_volley`)
+    /// open the assault: they take the walls and the city within
+    /// [`ASSAULT_TURNS`] counting one turn of heal. Under
+    /// `melee-storms-an-open-city`, against a city with no standing walls,
+    /// also when the blows past the city's heal take it within
+    /// [`STORM_TURNS`]. Live King civvis-20261005T074521Z (game 110): Tarsus
+    /// stood without walls from turn 67 to 73 with the siege reading
+    /// "damage ready" in about two turns; the only melee beside it was the
+    /// reserved taker, the city went 200 -> 191, and it built walls at 74.
+    fn assault_pays(&self, volley: f64, city: &CityView) -> bool {
+        let to_take = f64::from(city.hp + city.wall_hp.max(0)) + ASSAULT_HEAL;
+        if volley * ASSAULT_TURNS >= to_take {
+            return true;
+        }
+        self.melee_storms_an_open_city
+            && city.wall_hp <= 0
+            && volley > ASSAULT_HEAL
+            && f64::from(city.hp) / (volley - ASSAULT_HEAL) <= STORM_TURNS
     }
 
     /// `breach-assault-closes-in`: whether this healthy melee unit, off the
@@ -4427,3 +4475,6 @@ mod obstacle_routing_tests;
 
 #[cfg(test)]
 mod entry_tests;
+
+#[cfg(test)]
+mod storm_tests;
