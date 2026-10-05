@@ -278,14 +278,36 @@ check("report is once per begin", #events("export_timing"), 1)
 clock.mark("stray")
 check("a mark outside an export is ignored", clock.marks, nil)
 
+-- 2b. Laps inside `cities`: each charges the time since the previous lap to
+-- its name, summed over the cities; `lap(nil)` restarts the timer at a city's
+-- top, so the time between cities is charged to nothing.
+clock.lap("trade")
+check("a lap outside an export is ignored", clock.laps, nil)
+clock.begin()
+for _, city in ipairs({ { 5, 7, 2 }, { 1, 3, 4 } }) do
+	raw = raw + 100; clock.lap(nil)
+	raw = raw + city[1]; clock.lap("trade")
+	raw = raw + city[2]; clock.lap("buildable")
+	raw = raw + city[3]; clock.lap("record")
+end
+raw = raw + 1; clock.mark("cities")
+clock.report(42, 0)
+e = events("export_timing")
+check("laps: still one event", #e, 2)
+check("…city_ms trade summed over the cities", has(e[2], '"trade":6'), true)
+check("…city_ms buildable", has(e[2], '"buildable":10'), true)
+check("…city_ms record", has(e[2], '"record":6'), true)
+check("…the time between cities is no lap's", has(e[2], '"cities":223'), true)
+
 -- 3. A host without the raw clock still reports the cross-checks.
 os.rawclock = nil
-clock.begin(); auto = auto + 0.2; clock.mark("cities"); clock.report(41, 0)
+clock.begin(); clock.lap(nil); auto = auto + 0.2; clock.lap("plots"); clock.mark("cities"); clock.report(41, 0)
 e = events("export_timing")
-check("no raw clock: still one event", #e, 2)
-check("…sections fall back to Automation.GetTime", has(e[2], '"cities":200'), true)
-check("…saying which clock timed them", has(e[2], '"clock":"auto"'), true)
-check("…and the Automation total", has(e[2], '"auto_total":200'), true)
+check("no raw clock: still one event", #e, 3)
+check("…sections fall back to Automation.GetTime", has(e[3], '"cities":200'), true)
+check("…and so do the laps", has(e[3], '"plots":200'), true)
+check("…saying which clock timed them", has(e[3], '"clock":"auto"'), true)
+check("…and the Automation total", has(e[3], '"auto_total":200'), true)
 check("the raw clock says so too", has(e[1], '"clock":"raw"'), true)
 
 -- 4. The marks sit in `exportState`, in its order, around the state emit.
@@ -303,6 +325,20 @@ for _, needle in ipairs(order) do
 	check("exportState: " .. needle .. " in order", i ~= nil, true)
 	at = i or at
 end
+-- 4b. The laps sit in the per-city body, in its order, between the prelude
+-- and the cities marks.
+local cityBody = body:sub(body:find('mark("prelude")', 1, true), body:find('mark("cities")', 1, true))
+at = 0
+for _, needle in ipairs({ "eachCity(player, function(city)", "lap(nil)", 'lap("trade")',
+		'lap("buildings")', 'lap("districts")', 'lap("plots")', 'lap("yields")',
+		"cities[#cities + 1] = {", 'lap("record")', "CivvisMenus.buildable(city)", 'lap("buildable")',
+		"CivvisMenus.purchasable(city)", 'lap("purchasable")', "CivvisMenus.queue(city)",
+		'lap("queue")', 'lap("record");\n\tend);' }) do
+	local i = cityBody:find(needle, at + 1, true)
+	check("cities: " .. needle .. " in order", i ~= nil, true)
+	at = i or at
+end
+
 -- 5. The record after the state is LOAD-BEARING: the game writes its latest
 -- log record only when the next one is logged, so the report must follow the
 -- state unconditionally -- only the final mark and comments between them.
