@@ -4861,6 +4861,7 @@ impl AdvancedAi {
     /// See `BasicAi::builder_before_the_army`: the delegated city governor's
     /// Builder quota ahead of the Monument, the Settler and the military floor.
     pub fn enable_builder_before_the_army(&mut self) {
+        self.disable_builder_before_the_army_4();
         self.disable_builder_before_the_army_2();
         self.disable_builder_before_the_army_3();
         self.builder_before_the_army = true;
@@ -4876,6 +4877,7 @@ impl AdvancedAi {
     /// See `BasicAi::builder_before_the_army_2`: version 1's step, only while
     /// the empire has no Builder standing or queued. Exclusive with version 1.
     pub fn enable_builder_before_the_army_2(&mut self) {
+        self.disable_builder_before_the_army_4();
         self.disable_builder_before_the_army();
         self.disable_builder_before_the_army_3();
         self.builder_before_the_army_2 = true;
@@ -5081,6 +5083,7 @@ impl AdvancedAi {
     /// then one per three unimproved worked tiles behind the Campus step and
     /// a due Settler. Exclusive with versions 1 and 2.
     pub fn enable_builder_before_the_army_3(&mut self) {
+        self.disable_builder_before_the_army_4();
         self.disable_builder_before_the_army();
         self.disable_builder_before_the_army_2();
         self.builder_before_the_army_3 = true;
@@ -5610,6 +5613,34 @@ impl AdvancedAi {
     /// The twin of `enable_dialogue_never_declares_war`.
     pub fn disable_dialogue_never_declares_war(&mut self) {
         self.dialogue_never_declares_war = false;
+    }
+
+    /// See `BasicAi::builder_before_the_army_4`: version 3 capped at one
+    /// Builder per city. Exclusive with versions 1 to 3.
+    pub fn enable_builder_before_the_army_4(&mut self) {
+        self.disable_builder_before_the_army();
+        self.disable_builder_before_the_army_2();
+        self.disable_builder_before_the_army_3();
+        self.builder_before_the_army_4 = true;
+        self.base.builder_before_the_army_4 = true;
+    }
+
+    /// The twin of `enable_builder_before_the_army_4`.
+    pub fn disable_builder_before_the_army_4(&mut self) {
+        self.builder_before_the_army_4 = false;
+        self.base.builder_before_the_army_4 = false;
+    }
+
+    /// See `BasicAi::settler_before_distant_raiders`.
+    pub fn enable_settler_before_distant_raiders(&mut self) {
+        self.settler_before_distant_raiders = true;
+        self.base.settler_before_distant_raiders = true;
+    }
+
+    /// The twin of `enable_settler_before_distant_raiders`.
+    pub fn disable_settler_before_distant_raiders(&mut self) {
+        self.settler_before_distant_raiders = false;
+        self.base.settler_before_distant_raiders = false;
     }
 
     // ---- append: a-b ------------------------------------------------

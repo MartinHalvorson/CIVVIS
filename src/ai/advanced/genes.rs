@@ -2739,6 +2739,14 @@ pub const GENES: &[Gene] = &[
     // CHOICE_NEGATIVE, a surprise war (150 grievances). 100 such flips in 49 of
     // 74 October live games. See `CivvisControlAutoClose.lua`.
     Gene { tag: "dialogue-never-declares-war", field: "dialogue_never_declares_war", kind: Kind::OptIn, enable: AdvancedAi::enable_dialogue_never_declares_war, disable: AdvancedAi::disable_dialogue_never_declares_war },
+    // Version 3 armed, 56 live games: 21 unimproved worked tiles against 17
+    // improved at t100 in the middle half; ten-city empires at the five-Builder
+    // cap. See `BasicAi::builder_before_the_army_4`.
+    Gene { tag: "builder-before-the-army-4", field: "builder_before_the_army_4", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_before_the_army_4, disable: AdvancedAi::disable_builder_before_the_army_4 },
+    // Live King 2026-10-05T092839Z: a camp beyond the second city kept the
+    // capital on barbarian defense t15-t47 with no Settler on the map. See
+    // `BasicAi::settler_before_distant_raiders`.
+    Gene { tag: "settler-before-distant-raiders", field: "settler_before_distant_raiders", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_before_distant_raiders, disable: AdvancedAi::disable_settler_before_distant_raiders },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
