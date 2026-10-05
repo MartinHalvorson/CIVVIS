@@ -323,11 +323,19 @@ def confirm_exit_dialog() -> bool:
 #: times out, and 8 of those 12 spent ~15 s on a failed exit-dialog shot. The
 #: 11:16Z game (civvis-20261005T110504Z) exited mid-shot, which then ran on
 #: 3.3 s after the process was gone. The pid is polled every 0.2 s meanwhile.
-EXIT_CONFIRM_AFTER_S = 3.0
-#: The whole menu-quit window, looks included, before the SIGTERM path. Wider
-#: than the old 5 s so a game that does raise the modal still gets several
-#: looks after the settle above.
-NATIVE_QUIT_WINDOW_S = 8.0
+#:
+#: ⚠ AND PAST CIV'S OWN EXIT TIME. Civ VI takes 5-8 s to close after the menu
+#: quit (5.2, 6.9, 7.3, 7.8 s measured on 2026-10-05), longer after a long game,
+#: and the look, once started, holds the loop for its whole failed capture
+#: (~15 s while systemstatusd spins). civvis-20261005T130519Z (268 turns) quit
+#: from its end screen, looked at 3 s, and stopped at +22.9 s; the game had left
+#: underneath the shot. In-game quits no longer raise the modal at all (the
+#: control mod answers UserRequestClose), so the look is only for a quit from
+#: the front end, and 12 s costs that rare case nothing it can feel.
+EXIT_CONFIRM_AFTER_S = 12.0
+#: The whole menu-quit window, looks included, before the SIGTERM path, wide
+#: enough for several looks after the settle above.
+NATIVE_QUIT_WINDOW_S = 20.0
 
 
 def quit_game(timeout_s: float = 20.0) -> bool:

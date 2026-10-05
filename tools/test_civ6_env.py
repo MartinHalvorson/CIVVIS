@@ -244,7 +244,9 @@ class ExitConfirmationWiringTests(unittest.TestCase):
         now, clock, sleep = self._clock()
 
         def pids():
-            return [4242] if now[0] < 1002.0 else []   # gone 2 s after the quit
+            # gone 9 s after the quit: Civ's own exit takes 5-8 s, longer after a
+            # long game, and must not be met by a screenshot that can stall 15 s
+            return [4242] if now[0] < 1009.0 else []
 
         with mock.patch.object(civ6_env, "game_pids", side_effect=pids), \
              mock.patch.object(civ6_env, "request_macos_quit", return_value=True), \
