@@ -1197,6 +1197,13 @@ impl AdvancedAi {
         self.doomed_blow_veto || self.doomed_blow_veto_2
     }
 
+    /// Gene `dialogue-never-declares-war`. The brain never sees a leader
+    /// statement; the live controller's dialogue closer answers it, so the
+    /// bridge reply carries the policy there.
+    pub fn dialogue_never_declares_war_enabled(&self) -> bool {
+        self.dialogue_never_declares_war
+    }
+
     /// Apply the selected survival policy to a live bridge finishing volley.
     /// The bridge commits these actions before `take_turn`, so the ordinary
     /// battle planner cannot protect their strikers afterwards. Recheck the

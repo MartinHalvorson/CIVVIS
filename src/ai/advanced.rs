@@ -5268,6 +5268,14 @@ pub struct AdvancedAi {
     /// `breaker-to-the-fastest`; see `siege_production.rs`.
     breaker_to_the_fastest: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `dialogue-never-declares-war`: the controller's dialogue closer never
+    /// answers a leader statement with a choice whose diplomatic action
+    /// declares war. Live King civvis-20261005T045443Z (game 101) answered
+    /// Korea's "too many troops near me" warning at t94 with CHOICE_NEGATIVE,
+    /// which Civ VI binds to DIPLOACTION_DECLARE_SURPRISE_WAR, while the board
+    /// was holding off. The board's own `war` order stays the only way in. See
+    /// `CivvisControlAutoClose.lua`. Off by default.
+    dialogue_never_declares_war: bool,
     /// `capital-defense-holds`: a damaged city of ours with a hostile beside
     /// it keeps its Defend row whatever the pressure ratio reads, and a
     /// capital we hold under attack is an urgent Defend that outranks every
@@ -8969,6 +8977,7 @@ impl AdvancedAi {
             breaker_keeps_its_queue: false,
             breaker_to_the_fastest: false,
             // ---- append: c-d ----------------------------------------
+            dialogue_never_declares_war: false,
             capital_defense_holds: false,
             diplomatic_contender_kept: false,
             diplomatic_contender_kept_2: false,

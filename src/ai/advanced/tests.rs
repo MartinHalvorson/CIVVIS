@@ -51409,3 +51409,9 @@ fn a_reserved_gun_keeps_its_queue_against_the_scorer() {
     assert!(!ai.breaker_commitment_holds(&game, city, &horse, &plan), "not a gun");
 }
 
+#[test]
+fn dialogue_never_declares_war_is_a_native_opt_in_off_in_both_controllers() {
+    super::test_support::opt_in_off_in_both_controllers("dialogue-never-declares-war", |ai| {
+        ai.dialogue_never_declares_war_enabled()
+    });
+}

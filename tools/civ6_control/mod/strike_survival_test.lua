@@ -305,5 +305,22 @@ reset(); scout(); host.preview = 0
 applyOrders(player, PID, 7, { policy(), row(10, "RANGE_ATTACK", 31, 42) })
 check("safe ranged strike preserved", ops(10), "UNITOPERATION_RANGE_ATTACK")
 
+-- Gene `dialogue-never-declares-war`: the directive leases the AutoClose
+-- policy for this turn; it is metadata, never an order and never a veto.
+local leases = {}
+LuaEvents = setmetatable({
+	CivvisDialogueNoWar = function(turn) leases[#leases + 1] = turn end,
+}, { __index = function() return stub() end })
+reset(); scout(); host.preview = 100
+applyOrders(player, PID, 7, { row(10, "ATTACK", 31, 42),
+	{ kind = "combat_policy", verb = "DIALOGUE_NEVER_DECLARES_WAR" } })
+check("dialogue lease renewed for this turn", leases[1], 7)
+check("dialogue policy acknowledged", field(lastEvent("combat_policy_applied"), "policy"), "DIALOGUE_NEVER_DECLARES_WAR")
+check("dialogue metadata not counted as an action", field(lastEvent("orders"), "seen"), 1)
+check("dialogue policy is not a strike veto", ops(10), "UNITOPERATION_MOVE_TO")
+reset(); scout()
+applyOrders(player, PID, 7, { row(10, "ATTACK", 31, 42) })
+check("no directive, no lease", #leases, 1)
+
 if failures > 0 then error(tostring(failures) .. " failures") end
 print("strike survival controls passed")

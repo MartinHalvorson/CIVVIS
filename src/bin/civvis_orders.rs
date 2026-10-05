@@ -4802,6 +4802,16 @@ fn decide(
             pos: None,
         });
     }
+    // A leader statement is answered by the AutoClose layer, often before this
+    // frame's orders land, so every batch renews a one-turn lease there.
+    if ai.dialogue_never_declares_war_enabled() {
+        orders.push(Order {
+            kind: "combat_policy",
+            subject: None,
+            verb: Some("DIALOGUE_NEVER_DECLARES_WAR".to_string()),
+            pos: None,
+        });
+    }
     let body = orders
         .iter()
         .map(|o| o.to_json())
@@ -12081,6 +12091,49 @@ mod tests {
         );
         assert_eq!(volley.targets, 1);
         assert_eq!(volley.actions, old_volley.actions);
+    }
+
+    #[test]
+    fn dialogue_never_declares_war_rides_every_bridge_reply_only_when_selected() {
+        let directives = |enable: bool| {
+            let (snapshot, state) = local_barbarian_defense_board();
+            let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+            let mut ai = victory_lane("domination").unwrap();
+            if enable {
+                ai.enable_dialogue_never_declares_war();
+            }
+            let mut continuation = air_assault_continuation::Continuation::default();
+            let reply: serde_json::Value = serde_json::from_str(&decide(
+                &mut mirror,
+                &mut ai,
+                &snapshot,
+                &state,
+                default_decision_arm(),
+                DecisionMemory {
+                    ours: &mut std::collections::BTreeMap::new(),
+                    host_peace_retries: &mut HostPeaceRetries::default(),
+                    host_move_refusals: &mut HostMoveRefusals::default(),
+                    host_order_refusals: &mut HostOrderRefusals::default(),
+                    air_assault_continuation: &mut continuation,
+                },
+            ))
+            .unwrap();
+            reply["orders"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|order| {
+                    order["kind"] == "combat_policy"
+                        && order["verb"] == "DIALOGUE_NEVER_DECLARES_WAR"
+                })
+                .count()
+        };
+        assert_eq!(directives(false), 0, "off: the reply is unchanged");
+        assert_eq!(
+            directives(true),
+            1,
+            "on: every reply renews the AutoClose lease, strikes or not"
+        );
     }
 
     #[test]
