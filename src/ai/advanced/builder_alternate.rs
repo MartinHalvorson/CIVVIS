@@ -47,6 +47,7 @@ impl AdvancedAi {
         let mut no_path_count = 0;
         let mut unsafe_count = 0;
         let mut no_moves_count = 0;
+        let mut model_walk_refused_count = 0;
         let mut improve_refused_count = 0;
         let mut no_gain_count = 0;
         let mut food_loss_count = 0;
@@ -111,17 +112,19 @@ impl AdvancedAi {
         let candidate_count = candidates.len();
         for (_, pos, city, improvement) in candidates.into_iter().take(ALTERNATE_PRICE_ATTEMPTS) {
             let mut trial = g.speculative_clone();
-            if pos != current
-                && (trial
+            if pos != current {
+                if trial
                     .apply(pid, &Action::MoveTo { unit: uid, to: pos })
                     .is_err()
-                    || trial
-                        .units
-                        .get(&uid)
-                        .is_none_or(|unit| unit.pos != pos || unit.moves_left <= 0.0))
-            {
-                no_moves_count += 1;
-                continue;
+                    || trial.units.get(&uid).is_none_or(|unit| unit.pos != pos)
+                {
+                    model_walk_refused_count += 1;
+                    continue;
+                }
+                if trial.units[&uid].moves_left <= 0.0 {
+                    no_moves_count += 1;
+                    continue;
+                }
             }
             // Attribute only the operation. Walking can itself change yields
             // through a village reward; it must not inflate the improvement.
@@ -170,7 +173,7 @@ impl AdvancedAi {
         }
         if g.turn < 75 {
             think!(self.journal(), Expansion, Detail, "Builder alternate coverage deferred";
-                "Builder {uid}: candidates={candidate_count}; reserved={reserved_count}; no_city={no_city_count}; no_path={no_path_count}; unsafe_path={unsafe_count}; no_moves_after_walk={no_moves_count}; improve_refused={improve_refused_count}; no_production_gain={no_gain_count}; food_loss={food_loss_count}; science_loss={science_loss_count}; walk_refused={walk_refused_count}"; current);
+                "Builder {uid}: candidates={candidate_count}; reserved={reserved_count}; no_city={no_city_count}; no_path={no_path_count}; unsafe_path={unsafe_count}; model_walk_refused={model_walk_refused_count}; no_moves_after_walk={no_moves_count}; improve_refused={improve_refused_count}; no_production_gain={no_gain_count}; food_loss={food_loss_count}; science_loss={science_loss_count}; walk_refused={walk_refused_count}"; current);
         }
         false
     }
