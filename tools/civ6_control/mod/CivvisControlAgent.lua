@@ -6115,6 +6115,9 @@ CivvisMenus.buildable = function(city)
 				t = row.DistrictType,
 				c = try(function() return queue:GetDistrictCost(row.Index); end, -1),
 				p = try(function() return queue:GetTurnsLeft(row.DistrictType); end, -1),
+				-- ProductionPanel.lua reads saved work by database INDEX, not hash.
+				-- Missing accessor is unknown; it must not become zero or guessed work.
+				pr = try(function() return queue:GetDistrictProgress(row.Index); end, nil),
 				n = offered,
 				s = plots,
 			};

@@ -2433,6 +2433,10 @@ pub struct StateMenuItem {
     pub c: f64,
     #[serde(default = "unknown_metric")]
     pub p: f64,
+    /// Observed work on a district type, including a paused foundation. This
+    /// is not overflow and does not identify a plot by itself.
+    #[serde(default)]
+    pub pr: Option<f64>,
     /// Exact strategic-resource price for this city and formation, when the
     /// host accessor answered. Zero is a price; absence remains unknown.
     #[serde(default)]
@@ -8385,6 +8389,93 @@ fn host_queue_tail(rules: &crate::rules::Rules, city: &StateCity) -> Vec<crate::
         .collect()
 }
 
+/// Bind native district work only to the city's exact observed foundation.
+/// The ordinary menu sites are possible NEW placements, not invested plots.
+/// Unit formation balances and unfinished Wonder locations have different
+/// identity rules and are deliberately not inferred here.
+fn apply_host_district_progress(
+    game: &mut crate::game::Game,
+    cities: &[StateCity],
+    city_ids: &BTreeMap<u32, i64>,
+) {
+    use crate::game::{Game, Item};
+    for (cid, host_id) in city_ids {
+        let Some(state) = cities.iter().find(|city| city.id == *host_id) else {
+            continue;
+        };
+        for observed in &state.districts {
+            let Some(name) = civvis_node_name(&game.rules.districts, &observed.kind, "DISTRICT_")
+            else {
+                continue;
+            };
+            let district = crate::name::Name::new(&name);
+            let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+            let item = Item::District { district, pos };
+            let key = Game::item_progress_key(&item);
+            if observed.complete || game.cities[cid].queue.first() == Some(&item) {
+                // Current-head work already lives in City::production. Never
+                // add the same total again as a paused investment.
+                game.cities
+                    .get_mut(cid)
+                    .unwrap()
+                    .production_progress
+                    .remove(&key);
+                continue;
+            }
+            let unique = state
+                .districts
+                .iter()
+                .filter(|other| {
+                    civvis_node_name(&game.rules.districts, &other.kind, "DISTRICT_").as_deref()
+                        == Some(name.as_str())
+                })
+                .count()
+                == 1;
+            let exact_foundation = game.map.tiles.get(&pos).is_some_and(|tile| {
+                tile.owner_city == Some(*cid)
+                    && tile
+                        .district_foundation
+                        .as_ref()
+                        .is_some_and(|foundation| foundation.district == district)
+            });
+            if !unique || !exact_foundation {
+                continue;
+            }
+            // Prefer the current positive menu. A tail row can also carry an
+            // observation, but a duplicate/conflicting type is not an identity.
+            let rows = state
+                .buildable
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .filter(|row| row.t.eq_ignore_ascii_case(&observed.kind))
+                .collect::<Vec<_>>();
+            let menu_progress = (rows.len() == 1).then(|| rows[0].pr).flatten();
+            let tail = state
+                .queue
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .filter(|row| row.t.eq_ignore_ascii_case(&observed.kind))
+                .collect::<Vec<_>>();
+            let tail_progress = (tail.len() == 1).then(|| tail[0].pr).flatten();
+            let reading = |value: f64| value.is_finite() && value >= 0.0;
+            let Some(progress) = menu_progress
+                .filter(|value| reading(*value))
+                .or_else(|| tail_progress.filter(|value| reading(*value)))
+            else {
+                continue; // Missing is unknown, not a fabricated zero or ETA-derived work.
+            };
+            let saved = &mut game.cities.get_mut(cid).unwrap().production_progress;
+            if progress == 0.0 {
+                saved.remove(&key);
+            } else {
+                saved.insert(key, progress);
+            }
+        }
+    }
+}
+
 fn blocked_production_from(
     refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     city_ids: &std::collections::BTreeMap<u32, i64>,
@@ -13474,6 +13565,7 @@ pub fn rebuild_from_state(
         ),
         HostPhase::Finish,
     );
+    apply_host_district_progress(&mut game, &state.cities, &city_ids);
     Reconstruction {
         game,
         unit_ids,
@@ -15505,6 +15597,12 @@ impl LiveMirror {
         .with_board(&self.known_city_ids, &minor_assignments, &seat_of_host);
         run_host_steps(&mut ctx, HostPhase::Board);
         run_host_steps(&mut ctx, HostPhase::Finish);
+        let city_ids = self
+            .cid_of
+            .iter()
+            .map(|(host, cid)| (*cid, *host))
+            .collect();
+        apply_host_district_progress(&mut self.game, &state.cities, &city_ids);
         // The posting can name a newly observed foreign city. Resolve it
         // after the same whole-board reconstruction as the district itself.
         seat_live_spies(&mut self.game, state);

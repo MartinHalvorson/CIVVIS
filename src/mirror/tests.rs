@@ -50,6 +50,9 @@ fn a_unique_unit_resolves_through_its_noun() {
 
 use super::*;
 
+#[path = "tests/paused_district_progress.rs"]
+mod paused_district_progress;
+
 fn plot(x: i32, y: i32, t: &str) -> Plot {
     Plot {
         x,
