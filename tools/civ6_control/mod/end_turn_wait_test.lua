@@ -457,15 +457,25 @@ queue.checkTimescaleClock()
 check("an unscaled context reverts", has(lastTimescale(), '"why":"context_unscaled"'), true)
 check("…naming it", has(events("timescale_clock")[#events("timescale_clock")], '"unscaled":["WonderBuiltPopup"]'), true)
 
--- Frame deltas that do not scale with the UI clock: revert.
+-- Frame deltas that do not scale with the UI clock read low in EVERY window:
+-- the second low window in a row reverts. One low window (a hitch) does not,
+-- and a normal window in between starts the count again.
 fresh()
 now, wallNow = 600.0, 6000
 queue.startTimescale(2)
-now, wallNow = 660.0, 6030
-ack("Heartbeat", 2)
-ExposedMembers.CivvisFrameClock = { scale = 2, ratio = 0.5, at = now }
-queue.checkTimescaleClock()
-check("unscaled frame deltas revert", has(lastTimescale(), '"why":"frame_clock_off"'), true)
+local function window(ratio)
+	now, wallNow = now + 60.0, wallNow + 30
+	ack("Heartbeat", 2)
+	ExposedMembers.CivvisFrameClock = { scale = 2, ratio = ratio, at = now }
+	queue.checkTimescaleClock()
+end
+window(0.5)
+check("one low frame window is a hitch, not a verdict", #commands, 1)
+window(0.95)
+window(0.5)
+check("…and a normal window in between starts the count again", #commands, 1)
+window(0.5)
+check("unscaled frame deltas revert on the second low window in a row", has(lastTimescale(), '"why":"frame_clock_off"'), true)
 
 -- Frame deltas a little behind the UI clock (G96: 0.91, capped long frames)
 -- only slow the pulses: kept. Ahead of it would hurry them: revert.

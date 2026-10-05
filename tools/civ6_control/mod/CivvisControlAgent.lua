@@ -20120,9 +20120,16 @@ CivvisQueue.checkTimescaleClock = function()
 	-- side: G96 read 0.91-0.95 at 2x (a long frame's delta is capped, and at
 	-- 2x more frames are long), which only slows the pulses a little. The
 	-- floor catches deltas the timescale does not scale at all (0.5 at 2x).
-	elseif frameRatio ~= nil and (frameRatio > 1.15 or frameRatio < 0.7) then
+	elseif frameRatio ~= nil and frameRatio > 1.15 then
 		why = "frame_clock_off";
+	elseif frameRatio ~= nil and frameRatio < 0.7 then
+		-- Low is the safe side, and one long hitch can drag a single 10 s
+		-- window down (G96 t139: 0.80 between windows of ~1.0). Unscaled
+		-- deltas stay low in every window, so the second one in a row decides.
+		ts.slow_frames = (ts.slow_frames or 0) + 1;
+		if ts.slow_frames >= 2 then why = "frame_clock_off"; end
 	end
+	if frameRatio ~= nil and frameRatio >= 0.7 then ts.slow_frames = 0; end
 	if why ~= nil then CivvisQueue.resetTimescale(why); end
 end;
 
