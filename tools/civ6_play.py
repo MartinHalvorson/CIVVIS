@@ -5528,17 +5528,43 @@ def _play(args: argparse.Namespace) -> int:
     # (`tools/live_ledger.py pull`). Same rule as recording: a failure here
     # is a line on stderr, never a failed run; `civ6_ladder.py publish-run
     # <tag>` recovers it, and the publish is idempotent.
-    try:
-        import civ6_ladder
-        civ6_ladder.publish_run(run_dir.name, run_dir.parent)
-    except Exception as exc:  # noqa: BLE001 — deliberately broad, see above
-        print(f"ledger publish failed (summary is on disk; "
-              f"`civ6_ladder.py publish-run {run_dir.name}` will recover it): "
-              f"{exc}", file=sys.stderr)
+    # ★ IN THE BACKGROUND (`publish_run_in_background`): nothing on this
+    # machine waits for the ledger branch, and the publish held every game
+    # boundary for its fetch, gzip and push.
+    publish_run_in_background(run_dir)
 
     if outcome.get("kind") == "victory" and outcome.get("team") == outcome.get("local_team"):
         return 0
     return 1
+
+
+def publish_run_in_background(run_dir: Path) -> subprocess.Popen | None:
+    """Publish a finished run to the ledger branch without holding the boundary.
+
+    `civ6_ladder.publish_run` fetches the ledger tip, gzips `events.jsonl` and
+    pushes a commit. A 222-turn game's events are 90 MB: 3.9 s of gzip alone,
+    then a ~9 MB push, on top of a ~1.2 s fetch, all of it between the game's
+    end and the next game's start, which nothing here waits for (the keeper and
+    the climb read the LOCAL ladder `record_summary` just wrote). So it runs as
+    a detached `civ6_ladder.py publish-run <tag>`, in its own session so the
+    lane's process-group signals never reach it, with no pipe to this process
+    (a caller reading our stdout must not wait for it), logging beside the
+    run. The publish is idempotent and append-only, and a failure is recovered
+    exactly as before: `civ6_ladder.py publish-run <tag>`.
+    """
+    log = run_dir / "ledger-publish.log"
+    command = [sys.executable, str(Path(__file__).resolve().with_name("civ6_ladder.py")),
+               "--runs", str(run_dir.parent), "publish-run", run_dir.name]
+    try:
+        with open(log, "ab") as out:
+            return subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=out,
+                                    stderr=subprocess.STDOUT, start_new_session=True,
+                                    close_fds=True)
+    except OSError as exc:
+        print(f"ledger publish could not start (summary is on disk; "
+              f"`civ6_ladder.py publish-run {run_dir.name}` will recover it): "
+              f"{exc}", file=sys.stderr)
+        return None
 
 
 def status() -> int:
