@@ -6303,7 +6303,7 @@ impl Game {
         }
     }
 
-    pub(super) fn item_progress_key(item: &Item) -> String {
+    pub(crate) fn item_progress_key(item: &Item) -> String {
         match item {
             Item::Formation { unit, formation } => format!("formation:{unit}:{formation}"),
             Item::Unit { unit } => format!("unit:{unit}"),

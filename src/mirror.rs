@@ -2433,6 +2433,10 @@ pub struct StateMenuItem {
     pub c: f64,
     #[serde(default = "unknown_metric")]
     pub p: f64,
+    /// Observed work on a district type, including a paused foundation. This
+    /// is not overflow and does not identify a plot by itself.
+    #[serde(default)]
+    pub pr: Option<f64>,
     /// Exact strategic-resource price for this city and formation, when the
     /// host accessor answered. Zero is a price; absence remains unknown.
     #[serde(default)]
@@ -8385,6 +8389,113 @@ fn host_queue_tail(rules: &crate::rules::Rules, city: &StateCity) -> Vec<crate::
         .collect()
 }
 
+/// Bind native district work only to the city's exact observed foundation.
+/// The ordinary menu sites are possible NEW placements, not invested plots.
+/// Unit formation balances and unfinished Wonder locations have different
+/// identity rules and are deliberately not inferred here.
+fn apply_host_district_progress(
+    game: &mut crate::game::Game,
+    cities: &[StateCity],
+    city_ids: &BTreeMap<u32, i64>,
+) {
+    use crate::game::{Game, Item};
+    for (cid, host_id) in city_ids {
+        let Some(state) = cities.iter().find(|city| city.id == *host_id) else {
+            continue;
+        };
+        for observed in &state.districts {
+            let Some(name) = civvis_node_name(&game.rules.districts, &observed.kind, "DISTRICT_")
+            else {
+                continue;
+            };
+            let district = crate::name::Name::new(&name);
+            let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+            let item = Item::District { district, pos };
+            let key = Game::item_progress_key(&item);
+            let active_head = game.cities[cid].queue.first() == Some(&item);
+            if observed.complete || active_head {
+                // Current-head work already lives in City::production. Never
+                // add the same total again as a paused investment.
+                game.cities
+                    .get_mut(cid)
+                    .unwrap()
+                    .production_progress
+                    .remove(&key);
+                if observed.complete {
+                    continue;
+                }
+            }
+            let unique = state
+                .districts
+                .iter()
+                .filter(|other| {
+                    civvis_node_name(&game.rules.districts, &other.kind, "DISTRICT_").as_deref()
+                        == Some(name.as_str())
+                })
+                .count()
+                == 1;
+            let exact_foundation = game.map.tiles.get(&pos).is_some_and(|tile| {
+                tile.owner_city == Some(*cid)
+                    && tile
+                        .district_foundation
+                        .as_ref()
+                        .is_some_and(|foundation| foundation.district == district)
+            });
+            if !unique || !exact_foundation {
+                continue;
+            }
+            // Prefer the current positive menu. A tail row can also carry an
+            // observation, but a duplicate/conflicting type is not an identity.
+            let rows = state
+                .buildable
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .filter(|row| row.t.eq_ignore_ascii_case(&observed.kind))
+                .collect::<Vec<_>>();
+            let menu_progress = (rows.len() == 1).then(|| rows[0].pr).flatten();
+            let tail = state
+                .queue
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .filter(|row| row.t.eq_ignore_ascii_case(&observed.kind))
+                .collect::<Vec<_>>();
+            let tail_progress = (tail.len() == 1).then(|| tail[0].pr).flatten();
+            let reading = |value: f64| value.is_finite() && value >= 0.0;
+            let Some(progress) = menu_progress
+                .filter(|value| reading(*value))
+                .or_else(|| tail_progress.filter(|value| reading(*value)))
+            else {
+                continue; // Missing is unknown, not a fabricated zero or ETA-derived work.
+            };
+            // Fresh reconstruction plants the foundation before the host menu
+            // arrives. Its model-derived locked cost must not override the
+            // native price paired with this exact work observation. The host
+            // keeps the placed Campus quote fixed as research advances.
+            if rows.len() == 1 && rows[0].c.is_finite() && rows[0].c > 0.0 {
+                game.map
+                    .tiles
+                    .get_mut(&pos)
+                    .unwrap()
+                    .district_foundation
+                    .as_mut()
+                    .unwrap()
+                    .cost = rows[0].c;
+            }
+            if active_head {
+                continue;
+            }
+            let saved = &mut game.cities.get_mut(cid).unwrap().production_progress;
+            if progress == 0.0 {
+                saved.remove(&key);
+            } else {
+                saved.insert(key, progress);
+            }
+        }
+    }
+}
+
 fn blocked_production_from(
     refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     city_ids: &std::collections::BTreeMap<u32, i64>,
@@ -12071,6 +12182,7 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
         HostPhase::Finish,
         &[
             ("player_ages", BOTH, step_player_ages),
+            ("district_progress", BOTH, step_district_progress),
             ("record_host_observed", BOTH, step_record_host_observed),
         ],
     ),
@@ -12117,6 +12229,32 @@ pub(crate) fn host_step_names(mode: MirrorMode, phase: HostPhase) -> Vec<&'stati
 // --- the steps ----------------------------------------------------------
 // One body each, whatever the pass. A `ctx.mode` test inside a step is a real
 // difference between the two passes and carries its reason.
+
+fn step_district_progress(ctx: &mut HostStepCtx<'_>) {
+    let city_ids = ctx
+        .state
+        .cities
+        .iter()
+        .filter_map(|city| {
+            let cid = ctx.known_city_ids.get(&city.id).copied().or_else(|| {
+                // Older exports can lack a positive native city id. Their actual
+                // own-city centre still names the city planted in this same pass.
+                (city.id <= 0)
+                    .then(|| {
+                        ctx.game
+                            .city_at(crate::hex::offset_to_axial(city.x, city.y))
+                    })
+                    .flatten()
+            })?;
+            ctx.game
+                .cities
+                .get(&cid)
+                .is_some_and(|city| city.owner == 0)
+                .then_some((cid, city.id))
+        })
+        .collect();
+    apply_host_district_progress(ctx.game, &ctx.state.cities, &city_ids);
+}
 
 fn step_game_speed(ctx: &mut HostStepCtx<'_>) {
     if let Some(speed) = civvis_game_speed(&ctx.state.seat.speed) {
@@ -13462,7 +13600,9 @@ pub fn rebuild_from_state(
     game.host_previews = Arc::new(host_previews_from(&state.host_previews, &unit_ids));
 
     // The readings that must survive whatever the board passes scored on their
-    // way there. See `HOST_STATE_STEPS`.
+    // way there. See `HOST_STATE_STEPS`. Finish still needs the completed
+    // city-ID map: an own native city's positive ID must resolve on a fresh
+    // board just as it does in the persistent context used by sync.
     run_host_steps(
         &mut HostStepCtx::new(
             &mut game,
@@ -13471,7 +13611,8 @@ pub fn rebuild_from_state(
             &mut unmapped,
             &mut no_treasury,
             pass,
-        ),
+        )
+        .with_board(&known_city_ids, &minor_assignments, &seat_of_host),
         HostPhase::Finish,
     );
     Reconstruction {
@@ -15076,6 +15217,7 @@ impl LiveMirror {
                     // multi-item queue.  Clear even when the item is absent: a
                     // finished build is an empty queue in the real game, not the
                     // last thing CIVVIS happened to see.
+                    let had_assigned_production = !live.queue.is_empty();
                     live.queue.clear();
                     if let Some(item) = queued {
                         live.queue.push(item);
@@ -15087,6 +15229,13 @@ impl LiveMirror {
                     }
                     if city.production_progress.is_finite() && city.production_progress >= 0.0 {
                         live.production = city.production_progress;
+                    } else if had_assigned_production && live.queue.is_empty() {
+                        // A vanished head's old work is not observed overflow.
+                        // Keeping it would credit that completed item again when
+                        // an idle city resumes a paused district. This discards
+                        // stale assigned work, not an explicitly observed idle
+                        // balance; actual native overflow remains unknown.
+                        live.production = 0.0;
                     }
                     // Same translation as the rebuild path, and for the same reason:
                     // an untranslated name here panics `rules.buildings[..]` later.
