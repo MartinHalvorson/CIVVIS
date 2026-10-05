@@ -5311,6 +5311,17 @@ impl AdvancedAi {
         self.capture_waits_on_the_march = false;
     }
 
+    /// Opt-in gene `recovery-keeps-a-winning-war`; see
+    /// [`Self::recovery_keeps_a_winning_war`].
+    pub fn enable_recovery_keeps_a_winning_war(&mut self) {
+        self.recovery_keeps_a_winning_war = true;
+    }
+
+    /// The twin of `enable_recovery_keeps_a_winning_war`.
+    pub fn disable_recovery_keeps_a_winning_war(&mut self) {
+        self.recovery_keeps_a_winning_war = false;
+    }
+
     /// Opt-in gene `one-war-swaps-a-stalled-front`; see
     /// [`Self::one_war_swaps_a_stalled_front`].
     pub fn enable_one_war_swaps_a_stalled_front(&mut self) {

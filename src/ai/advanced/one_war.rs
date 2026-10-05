@@ -861,6 +861,30 @@ impl AdvancedAi {
             .filter(|leader| self.diplomatic_contender(g, pid, *leader))
     }
 
+    /// `recovery-keeps-a-winning-war`: the Recovery plan offers "this is not
+    /// the war the recovery plan is fighting" peace to every war but its
+    /// target's. When that target is no war of ours, there is no other war
+    /// it fights, and a war we outgun [`ONE_WAR_SECOND_FRONT_RATIO`] times
+    /// over is kept. Forty such offers on 2026-10-04/05, sixteen to the only
+    /// war we had, four of them at 1.5 times its power or more: live King
+    /// civvis-20261005T014503Z (game 92) offered the Inca that peace at turn
+    /// 85 at 321 power against 202 with Qusqu, their capital, the campaign's
+    /// objective, and they took it at 86.
+    pub(crate) fn recovery_keeps_the_war(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+        plan: &super::StrategicPlan,
+    ) -> bool {
+        self.recovery_keeps_a_winning_war
+            && plan
+                .target_player
+                .is_none_or(|target| target == other || !g.is_at_war(pid, target))
+            && g.military_power(pid)
+                >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(other).max(1.0)
+    }
+
     /// A front we outgun [`ONE_WAR_CRUSHED_RATIO`] times over. Peace there
     /// hands a beaten rival the turns to rebuild: on King
     /// `civvis-20260929T020236Z` the seat offered Norway peace at 812

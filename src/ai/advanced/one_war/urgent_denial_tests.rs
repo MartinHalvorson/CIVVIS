@@ -987,3 +987,24 @@ fn a_crushed_diplomatic_contender_is_kept_and_opened_under_the_gene() {
     g.players[3].dvp = DIPLOMATIC_CONTENDER_LEADER_DVP + 1;
     assert_eq!(ai.one_war_second_front(&g, 0), Some(3), "the new leader");
 }
+
+/// See `recovery_keeps_the_war`: under the gene, a war we outgun 1.5 times
+/// over is kept when the Recovery plan's target is no war of ours; a target
+/// we are fighting, or a closer war, still takes the peace.
+#[test]
+fn recovery_keeps_a_winning_war_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    let mut plan = ai.plan.clone().unwrap();
+    plan.strategy = GrandStrategy::Recovery;
+    plan.target_player = Some(3);
+    assert!(!ai.recovery_keeps_the_war(&g, 0, 1, &plan), "off");
+    ai.enable_recovery_keeps_a_winning_war();
+    assert!(ai.recovery_keeps_the_war(&g, 0, 1, &plan), "kept");
+    plan.target_player = Some(2);
+    assert!(!ai.recovery_keeps_the_war(&g, 0, 1, &plan), "another war");
+    plan.target_player = Some(3);
+    while g.military_power(0) >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(1) {
+        g.spawn_test_unit("modern_armor", 1, (16, 20));
+    }
+    assert!(!ai.recovery_keeps_the_war(&g, 0, 1, &plan), "not winning");
+}

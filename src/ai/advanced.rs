@@ -6756,6 +6756,11 @@ pub struct AdvancedAi {
     /// will revolt before any rescue can establish. See
     /// `DOOMED_CAPTURE_TURNS`. Off by default.
     raze_doomed_capture: bool,
+    /// `recovery-keeps-a-winning-war`: the Recovery plan's "this is not the
+    /// war the recovery plan is fighting" peace spares a war we are winning
+    /// when the plan fights no other. See `one_war::recovery_keeps_the_war`.
+    /// Off by default.
+    recovery_keeps_a_winning_war: bool,
     /// The policy deck keeps the maintenance relief the host held at the
     /// turn's start and the Amenity repair card while it is what keeps a city
     /// content. Opt-in gene `policy-deck-hysteresis`; see
@@ -9095,6 +9100,7 @@ impl AdvancedAi {
             rout_spares_a_stronger_army: false,
             runaway_expander_counter: false,
             raze_doomed_capture: false,
+            recovery_keeps_a_winning_war: false,
             policy_deck_hysteresis: false,
             policy_deck_hysteresis_2: false,
             reinforce_before_stall: false,
@@ -21322,7 +21328,10 @@ impl AdvancedAi {
                         && !self.war_holds_the_road(g, pid, *other)
                         // Nor with a beaten rival in the fog. See
                         // `unseen_prey`.
-                        && !self.unseen_prey(g, pid, *other))
+                        && !self.unseen_prey(g, pid, *other)
+                        // Nor a war we are winning when the Recovery plan
+                        // fights no other. See `recovery_keeps_the_war`.
+                        && !self.recovery_keeps_the_war(g, pid, *other, plan))
                     || (self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                         && !appointed_objective)

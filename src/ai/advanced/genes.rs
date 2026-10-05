@@ -2637,6 +2637,10 @@ pub const GENES: &[Gene] = &[
     // Live King 174103Z stood down six Dutch objectives in 95 turns with the
     // army still on the road. See `advanced/capture_march.rs`.
     Gene { tag: "capture-waits-on-the-march", field: "capture_waits_on_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_waits_on_the_march, disable: AdvancedAi::disable_capture_waits_on_the_march },
+    // Live King 014503Z offered the Inca, its only war, Recovery peace at 321
+    // power against 202 with Qusqu the objective. See
+    // `one_war::recovery_keeps_the_war`.
+    Gene { tag: "recovery-keeps-a-winning-war", field: "recovery_keeps_a_winning_war", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_keeps_a_winning_war, disable: AdvancedAi::disable_recovery_keeps_a_winning_war },
     // Live King 160213Z fought Germany for 92 turns without a capture while
     // the at-war Maori held the capital it needed. See
     // `one_war::stalled_front_swap`.
