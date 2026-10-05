@@ -6012,6 +6012,17 @@ impl AdvancedAi {
         self.stale_swap_reads_the_march = false;
     }
 
+    /// Opt-in gene `tier-gap-priced-once`; see
+    /// [`Self::tier_gap_priced_once`].
+    pub fn enable_tier_gap_priced_once(&mut self) {
+        self.tier_gap_priced_once = true;
+    }
+
+    /// The twin of `enable_tier_gap_priced_once`.
+    pub fn disable_tier_gap_priced_once(&mut self) {
+        self.tier_gap_priced_once = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

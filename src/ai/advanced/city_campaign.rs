@@ -464,7 +464,20 @@ impl AdvancedAi {
         average_body: f64,
     ) -> CityRequirement {
         let city = &g.cities[&city_id];
-        let edge = appraisal.tech_strength_edge();
+        // See `war_bill_tier_factor`: exactly 1.0 with the gene off.
+        let factor = self.war_bill_tier_factor(g, pid, city.owner);
+        // `tier-gap-priced-once`: a tier factor above 1 already prices the
+        // tech gap, so the tech edge does not add it again, and the factor
+        // multiplies the field defenders only; the city's own strength is
+        // its best unit's less 10 and carries the gap itself. Live King G129
+        // (Mpinda): 304 = (city 39 + edge 15) x 1.5 x 3.0 x 1.25 with no
+        // defender at all, held off at 220 power against 103.
+        let once = self.tier_gap_priced_once && factor > 1.0;
+        let edge = if once {
+            0.0
+        } else {
+            appraisal.tech_strength_edge()
+        };
         let defenders: f64 = g
             .units
             .values()
@@ -479,10 +492,11 @@ impl AdvancedAi {
             .sum();
         let walls = city.wall_hp.max(0) as f64 / 100.0 * WALL_STRENGTH_PER_100_HP;
         let at_city = (g.city_strength(city_id) - edge).max(0.0) + walls;
-        // See `war_bill_tier_factor`: exactly 1.0 with the gene off.
-        let strength = (defenders + at_city)
-            * CAMPAIGN_SUPERIORITY
-            * self.war_bill_tier_factor(g, pid, city.owner);
+        let strength = if once {
+            (defenders * factor + at_city) * CAMPAIGN_SUPERIORITY
+        } else {
+            (defenders + at_city) * CAMPAIGN_SUPERIORITY * factor
+        };
         let bodies = ((strength / average_body.max(1.0)).ceil() as usize).max(CAMPAIGN_MIN_BODIES)
             + CAMPAIGN_SPARE_BODIES;
         let holdable = !Self::should_defer_city_capture(g, pid, city_id)
@@ -1398,6 +1412,53 @@ mod tests {
             !ai.campaign_weak_enough(&game, 0, &appraisal),
             "a tier behind, numbers no longer waive ten techs"
         );
+    }
+
+    /// `tier-gap-priced-once`: live King G129's shape. The rival stands a tier
+    /// ahead (a fielded Musketman over our Warriors) with no defender near the
+    /// target, so the bill is the city's own strength and walls at the
+    /// superiority spare: the tech edge does not add the gap and the factor
+    /// does not triple a city strength that already carries it. Without the
+    /// tier factor the gene changes nothing.
+    #[test]
+    fn tier_gap_priced_once_prices_the_gap_once() {
+        assert!(!AdvancedAi::new().tier_gap_priced_once);
+        assert!(!AdvancedAi::legacy().tier_gap_priced_once);
+        assert!(super::super::GENES
+            .iter()
+            .any(|gene| gene.tag == "tier-gap-priced-once" && gene.opt_in()));
+        let mut game = flat_board(80_331, &[(6, 10), (18, 10)]);
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        game.found_city_for(0, (6, 4), None);
+        warriors(&mut game, 0, home, 10);
+        units_of(&mut game, "archer", 0, (6, 4), 2);
+        // Twelve tiles from the target: the tier is fielded, no defender counts.
+        units_of(&mut game, "musketman", 1, (30, 10), 1);
+        units_of(&mut game, "crossbowman", 1, (30, 10), 1);
+        give_techs(&mut game, 1, 10);
+        let target = game.player_city_ids(1)[0];
+        let mut ai = AdvancedAi::new();
+        let appraisal = ai.appraise_neighbour(&game, 0, 1).unwrap();
+        assert!(appraisal.tech_lead < 0, "{appraisal:?}");
+
+        ai.enable_tier_gap_priced_once();
+        let alone = ai.campaign_city_requirement(&game, 0, target, &appraisal, 20.0);
+        ai.disable_tier_gap_priced_once();
+        let shipped = ai.campaign_city_requirement(&game, 0, target, &appraisal, 20.0);
+        assert_eq!(alone.strength, shipped.strength, "no tier factor, no change");
+
+        ai.enable_war_bill_prices_the_tier_gap();
+        let factor = ai.war_bill_tier_factor(&game, 0, 1);
+        assert!(factor > 1.0);
+        let tripled = ai.campaign_city_requirement(&game, 0, target, &appraisal, 20.0);
+        ai.enable_tier_gap_priced_once();
+        let once = ai.campaign_city_requirement(&game, 0, target, &appraisal, 20.0);
+        let city = &game.cities[&target];
+        let expected = (game.city_strength(target)
+            + city.wall_hp.max(0) as f64 / 100.0 * WALL_STRENGTH_PER_100_HP)
+            * CAMPAIGN_SUPERIORITY;
+        assert!((once.strength - expected).abs() < 1e-9, "{once:?} vs {expected}");
+        assert!(once.strength < tripled.strength, "{once:?} vs {tripled:?}");
     }
 
     /// A small gap scales the bill smoothly and keeps the waiver; no gap, or

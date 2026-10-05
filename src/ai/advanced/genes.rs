@@ -2900,6 +2900,12 @@ pub const GENES: &[Gene] = &[
     // at an army median of 15-20 tiles while walled Jabalpur stood 4 from our
     // city. See `stale_domination_objective_city`.
     Gene { tag: "stale-swap-reads-the-march", field: "stale_swap_reads_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_stale_swap_reads_the_march, disable: AdvancedAi::disable_stale_swap_reads_the_march },
+    // Under war-bill-prices-the-tier-gap the tech gap was priced three times:
+    // in the city's own strength, in the tech edge, and by the tier factor
+    // over both. Live G129 held off Kongo at 2.1x power behind a 304 bill;
+    // armed games' siege bills ran a median 1.74x the rival's WHOLE military
+    // at >=2x power (0.99x before). See `AdvancedAi::campaign_city_requirement`.
+    Gene { tag: "tier-gap-priced-once", field: "tier_gap_priced_once", kind: Kind::OptIn, enable: AdvancedAi::enable_tier_gap_priced_once, disable: AdvancedAi::disable_tier_gap_priced_once },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
