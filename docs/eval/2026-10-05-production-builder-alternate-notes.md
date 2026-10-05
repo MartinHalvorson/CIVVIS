@@ -27,6 +27,4 @@ Methods and the final new registry row were moved above the tail markers;
 private field/default remain in their own range. Corrected suite: 14 passed.
 This failure happened before any game or optimized strength compile.
 
-Six focused native fixtures are compiling with a local unoptimized CI-profile
-override for fast feedback only. Normal optimized validation and all consumed
-paired game runs remain pending. No fresh samples or Firaxis games played.
+Initial fast fixture compile passed; four fixtures failed because the blocked preferred route still allowed a normal greedy move, and Barbarians were disabled in the capture fixture. Corrected setup places the preferred route behind an impassable ring and enables native Barbarians. All six corrected fixtures pass with the local unoptimized CI-profile override. These are fast feedback only. Normal optimized validation and all consumed paired game runs remain pending. No fresh samples or Firaxis games played.

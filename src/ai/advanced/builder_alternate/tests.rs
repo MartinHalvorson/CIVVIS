@@ -1,7 +1,7 @@
 use super::*;
 
 fn fixture() -> (Game, AdvancedAi, u32, Pos, Pos) {
-    let mut g = Game::new_full(2, 24, 16, 91_617, 150, 0, false);
+    let mut g = Game::new_full(2, 24, 16, 91_617, 150, 0, true);
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);
     }
@@ -25,8 +25,8 @@ fn fixture() -> (Game, AdvancedAi, u32, Pos, Pos) {
         .extend([crate::name!("mining"), crate::name!("bronze_working")]);
     g.players[0].explored.extend(g.map.tiles.keys().copied());
     let start = (5, 4);
-    let alternate = (6, 4);
-    let preferred = (10, 5);
+    let alternate = (4, 4);
+    let preferred = (7, 4);
     for pos in [alternate, preferred] {
         let tile = g.map.tiles.get_mut(&pos).unwrap();
         tile.improvement = None;
@@ -104,7 +104,7 @@ fn exhausted_movement_cannot_be_borrowed_for_the_operation() {
 fn known_capture_reach_refuses_the_alternate_without_spending_a_charge() {
     let (mut g, mut ai, builder, alternate, _) = fixture();
     let barb = g.barb_pid.unwrap();
-    let raider = g.spawn_test_unit("warrior", barb, (7, 4));
+    let raider = g.spawn_test_unit("warrior", barb, (3, 4));
     g.players[0].explored.insert(g.units[&raider].pos);
     let before = serde_json::to_vec(&g).unwrap();
     assert!(!ai.builder_productive_alternate_step(
