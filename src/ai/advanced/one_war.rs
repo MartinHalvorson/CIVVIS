@@ -125,6 +125,9 @@ pub(crate) const PREY_POWER_MEMORY_TURNS: u32 = 3;
 /// `second-front-keeps-its-war`: the standard turns a second front the plan
 /// named keeps its war against the one-war peace.
 pub(crate) const SECOND_FRONT_MEMORY_TURNS: u32 = 10;
+/// `recovery-peace-waits`: the turns a Recovery plan stands before its
+/// "not the war the recovery plan is fighting" peace is offered.
+pub(crate) const RECOVERY_PEACE_PATIENCE: u32 = 3;
 
 /// `liberation-funds-the-congress`: the Diplomatic Victory points at which a
 /// rival makes a captured city-state city worth its liberation Favor; the
@@ -1000,6 +1003,22 @@ impl AdvancedAi {
     /// civvis-20261005T014503Z (game 92) offered the Inca that peace at turn
     /// 85 at 321 power against 202 with Qusqu, their capital, the campaign's
     /// objective, and they took it at 86.
+    /// `recovery-peace-waits`: whether the Recovery plan has stood for
+    /// [`RECOVERY_PEACE_PATIENCE`] turns (always, with the gene off). A
+    /// threatened city flips the grand strategy to Recovery for a turn or
+    /// two and back: across October 4-5 the seat entered Recovery 4.9 times a
+    /// game, the median spell lasted 2 turns and 248 of 331 spells 3 turns or
+    /// fewer, and its clause offered peace to every war but the plan's 315
+    /// times, accepted 22 times, 7 of them while we held 1.5 times the
+    /// rival's power (live King civvis-20261004T201619Z: Gaul at turn 209,
+    /// 982 against 701; T140744Z: Norway at 224, 1,119 against 604).
+    pub(crate) fn recovery_peace_ready(&self, g: &Game) -> bool {
+        !self.recovery_peace_waits
+            || self
+                .recovery_since
+                .is_some_and(|since| g.turn.saturating_sub(since) >= RECOVERY_PEACE_PATIENCE)
+    }
+
     pub(crate) fn recovery_keeps_the_war(
         &self,
         g: &Game,

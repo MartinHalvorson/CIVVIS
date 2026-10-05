@@ -2880,6 +2880,10 @@ pub const GENES: &[Gene] = &[
     // counterweight and spread Protestantism, the winner's faith, in its own
     // cities. See `adopted_faith_sanctuary::stronger_faith_than`.
     Gene { tag: "counterweight-faith-is-no-threat", field: "counterweight_faith_is_no_threat", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_faith_is_no_threat, disable: AdvancedAi::disable_counterweight_faith_is_no_threat },
+    // 315 Recovery-clause peace offers of October 4-5 came from spells with
+    // a median of 2 turns; 7 were accepted at 1.5 times the rival's power.
+    // See `one_war::recovery_peace_ready`.
+    Gene { tag: "recovery-peace-waits", field: "recovery_peace_waits", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_peace_waits, disable: AdvancedAi::disable_recovery_peace_waits },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

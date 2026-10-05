@@ -5957,6 +5957,17 @@ impl AdvancedAi {
         self.counterweight_faith_is_no_threat = false;
     }
 
+    /// Opt-in gene `recovery-peace-waits`; see
+    /// [`Self::recovery_peace_waits`].
+    pub fn enable_recovery_peace_waits(&mut self) {
+        self.recovery_peace_waits = true;
+    }
+
+    /// The twin of `enable_recovery_peace_waits`.
+    pub fn disable_recovery_peace_waits(&mut self) {
+        self.recovery_peace_waits = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

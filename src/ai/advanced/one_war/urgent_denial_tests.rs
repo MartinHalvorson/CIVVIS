@@ -1602,3 +1602,24 @@ fn a_named_second_front_keeps_its_war_under_the_gene() {
     assert_eq!(soon, None, "the named second front keeps its war");
     assert_eq!(later, Some(OneWarPeace::SecondFront), "past the memory");
 }
+
+/// See `recovery_peace_ready`: under the gene the Recovery clause's peace
+/// waits for the Recovery plan to stand its patience; a return to Conquest
+/// ends the spell.
+#[test]
+fn recovery_peace_waits_for_a_standing_recovery_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    assert!(ai.recovery_peace_ready(&g), "off");
+    ai.enable_recovery_peace_waits();
+    assert!(!ai.recovery_peace_ready(&g), "no Recovery yet");
+    let mut plan = ai.plan.clone().unwrap();
+    plan.strategy = GrandStrategy::Recovery;
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.recovery_peace_ready(&g), "a fresh spell");
+    g.turn += RECOVERY_PEACE_PATIENCE;
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(ai.recovery_peace_ready(&g), "a standing spell");
+    plan.strategy = GrandStrategy::Conquest;
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.recovery_peace_ready(&g), "the spell ended");
+}

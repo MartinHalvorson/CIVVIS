@@ -3356,6 +3356,9 @@ pub struct AdvancedAi {
     /// `second-front-keeps-its-war`: the last turn the plan named each rival
     /// its second front. See `one_war::second_front_recently_named`.
     second_front_named: BTreeMap<usize, u32>,
+    /// `recovery-peace-waits`: the first turn of the current Recovery plan.
+    /// See `one_war::recovery_peace_ready`.
+    recovery_since: Option<u32>,
 
     /// Whether the empire will open an **ancient rush**: pick the nearest
     /// weak neighbour before the walls go up, march a small stack to their
@@ -6942,6 +6945,10 @@ pub struct AdvancedAi {
     /// `BasicAi::note_host_moves` and `advanced/own_column.rs`.
     own_column_is_not_a_refusal: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `recovery-peace-waits`: the Recovery clause's peace waits for the
+    /// Recovery plan to stand three turns. See
+    /// `one_war::recovery_peace_ready`.
+    recovery_peace_waits: bool,
     /// `prey-reads-a-steady-power`: the capital-prey gates read the largest
     /// of a rival's last three military readings. See
     /// `one_war::steady_rival_power`.
@@ -9051,6 +9058,7 @@ impl AdvancedAi {
             engine_culture_finish: BTreeMap::new(),
             rival_power_seen: BTreeMap::new(),
             second_front_named: BTreeMap::new(),
+            recovery_since: None,
             early_rush: false,
             timed_war: false,
             selective_timed_war: false,
@@ -9431,6 +9439,7 @@ impl AdvancedAi {
             naval_escort_patience: false,
             own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
+            recovery_peace_waits: false,
             prey_reads_a_steady_power: false,
             rout_spares_the_counter: false,
             peace_asks_a_city: false,
@@ -21447,6 +21456,13 @@ impl AdvancedAi {
     }
 
     fn advanced_diplomacy(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        // `recovery-peace-waits`: the current Recovery spell. See
+        // `one_war::recovery_peace_ready`.
+        if plan.strategy == GrandStrategy::Recovery {
+            self.recovery_since.get_or_insert(g.turn);
+        } else {
+            self.recovery_since = None;
+        }
         crate::ai::choose_dedications(g, pid, self.base.w.dedication_choice);
         self.propose_protective_friendship(g, pid);
         let incoming: Vec<u32> = g
@@ -21742,7 +21758,10 @@ impl AdvancedAi {
                         && !self.unseen_prey(g, pid, *other)
                         // Nor a war we are winning when the Recovery plan
                         // fights no other. See `recovery_keeps_the_war`.
-                        && !self.recovery_keeps_the_war(g, pid, *other, plan))
+                        && !self.recovery_keeps_the_war(g, pid, *other, plan)
+                        // Nor on a Recovery that has not stood. See
+                        // `recovery_peace_ready`.
+                        && self.recovery_peace_ready(g))
                     || (self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                         && !appointed_objective)

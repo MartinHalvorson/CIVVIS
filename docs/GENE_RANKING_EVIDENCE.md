@@ -305,6 +305,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `ranged-hp-reserve` | off (unmeasured) | A ranged unit keeps `RANGED_HP_RESERVE` in hand against the lethal pool. | 1 \| 1 |
 | `raze-a-doomed-capture` | off (unmeasured) | Opt-in gene `raze-a-doomed-capture`; see `Self::raze_doomed_capture`. | 1 \| 1 |
 | `recovery-keeps-a-winning-war` | off (unmeasured) | Opt-in gene `recovery-keeps-a-winning-war`; see `Self::recovery_keeps_a_winning_war`. | 1 \| 1 |
+| `recovery-peace-waits` | off (unmeasured) | Opt-in gene `recovery-peace-waits`; see `Self::recovery_peace_waits`. | 1 \| 1 |
 | `reinforce-before-stall` | off (unmeasured) | Enable `reinforce-before-stall` for measurement. | 1 \| 1 |
 | `religious-threat-spares-the-front` | off (unmeasured) | Opt-in gene `religious-threat-spares-the-front`; see `Self::religious_threat_spares_the_front`. | 1 \| 1 |
 | `research-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 1 \| 3 |
