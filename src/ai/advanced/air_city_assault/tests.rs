@@ -523,6 +523,9 @@ fn a_breached_city_waits_for_a_body_with_a_road_in() {
         std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, 400);
         let body = g.spawn_test_unit("infantry", 0, (16, 10));
         assert!(g.wdist(g.units[&body].pos, (20, 10)) <= AIR_ASSAULT_FOLLOWUP_REACH);
+        // An archer gives the host's sight of the city and is no melee body.
+        g.spawn_test_unit("archer", 0, (18, 10));
+        assert!(g.player_can_see(0, (20, 10)));
         if boxed {
             let ring: Vec<_> = g.nbrs((16, 10)).into_iter().collect();
             for p in ring {
