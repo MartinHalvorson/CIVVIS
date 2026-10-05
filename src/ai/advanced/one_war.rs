@@ -1590,6 +1590,28 @@ impl AdvancedAi {
         march + CAPITAL_PREY_SIEGE_TURNS
     }
 
+    /// `rout-spares-the-counter`: whether a bad window offers `other` no
+    /// peace because it is the rival we are countering -- its clock urgent,
+    /// the actionable denial's rival, or a culture lane at the threat bar --
+    /// and we still hold at least its power. The war is the counter: the
+    /// peace is undone at the next counter turn, with the siege's progress
+    /// and the grievances already paid. 51 rout offers of October 4-5 were
+    /// made from the stronger army and 15 were followed by our own
+    /// declaration on the same rival within twenty turns, 7 of them while
+    /// countering; `rout-spares-a-stronger-army` spares only 1.5 times over.
+    /// Live King civvis-20261005T083500Z (game 113) offered Spain "the last
+    /// window was a rout" at turn 216 at 560 power against 483, then named it
+    /// the counter's second front at 218.
+    pub(crate) fn rout_spares_the_counter(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.rout_spares_the_counter
+            && g.military_power(pid) >= g.military_power(other).max(1.0)
+            && (self.urgent_victory_threat(g, other)
+                || self
+                    .actionable_victory_denial(g, pid)
+                    .is_some_and(|(rival, _)| rival == other)
+                || self.culture_lane_threat(g, other))
+    }
+
     /// `peace-asks-a-city`: whether a white peace offer to `other` also asks
     /// it to cede a town — not routed, from [`super::PEACE_CITY_ASK_RATIO`]
     /// times its power.
@@ -1801,6 +1823,10 @@ impl AdvancedAi {
             && g.military_power(pid)
                 >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(other).max(1.0)
         {
+            return None;
+        }
+        // See `rout_spares_the_counter`.
+        if self.rout_spares_the_counter(g, pid, other) {
             return None;
         }
         if front.window_net() <= ONE_WAR_ROUT_NET {

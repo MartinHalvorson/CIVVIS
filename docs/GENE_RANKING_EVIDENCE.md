@@ -299,6 +299,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religious-threat-spares-the-front` | off (unmeasured) | Opt-in gene `religious-threat-spares-the-front`; see `Self::religious_threat_spares_the_front`. | 1 \| 1 |
 | `research-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 1 \| 3 |
 | `rout-spares-a-stronger-army` | off (unmeasured) | Opt-in gene `rout-spares-a-stronger-army`; see `Self::rout_spares_a_stronger_army`. | 1 \| 1 |
+| `rout-spares-the-counter` | off (unmeasured) | Opt-in gene `rout-spares-the-counter`; see `Self::rout_spares_the_counter`. | 1 \| 1 |
 | `runaway-expander-counter` | off (unmeasured) | Opt-in gene `runaway-expander-counter`; see `Self::runaway_expander_counter`. | 1 \| 1 |
 | `sanctuary-yields-a-held-queue` | off (unmeasured) | Opt-in gene `sanctuary-yields-a-held-queue`; see `Self::sanctuary_yields_a_held_queue`. | 1 \| 1 |
 | `second-front-kept-when-winning` | off (unmeasured) | Opt-in gene `second-front-kept-when-winning`; see `Self::second_front_kept_when_winning`. | — \| 2 |

@@ -5826,6 +5826,17 @@ impl AdvancedAi {
         self.culture_reads_the_engine_clock = false;
     }
 
+    /// Opt-in gene `rout-spares-the-counter`; see
+    /// [`Self::rout_spares_the_counter`].
+    pub fn enable_rout_spares_the_counter(&mut self) {
+        self.rout_spares_the_counter = true;
+    }
+
+    /// The twin of `enable_rout_spares_the_counter`.
+    pub fn disable_rout_spares_the_counter(&mut self) {
+        self.rout_spares_the_counter = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

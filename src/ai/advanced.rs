@@ -6878,6 +6878,10 @@ pub struct AdvancedAi {
     /// `BasicAi::note_host_moves` and `advanced/own_column.rs`.
     own_column_is_not_a_refusal: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `rout-spares-the-counter`: a rout window offers no peace to the rival
+    /// we are countering while we hold its power. See
+    /// `one_war::rout_spares_the_counter`.
+    rout_spares_the_counter: bool,
     /// `peace-asks-a-city`: a white peace offer from strength also asks the
     /// rival to cede a town on its first ask. See `PlanReport::peace_asks_city`.
     peace_asks_a_city: bool,
@@ -9338,6 +9342,7 @@ impl AdvancedAi {
             naval_escort_patience: false,
             own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
+            rout_spares_the_counter: false,
             peace_asks_a_city: false,
             religious_threat_spares_the_front: false,
             prophet_race_takes_a_district_slot_2: false,

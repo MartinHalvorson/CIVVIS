@@ -2828,6 +2828,10 @@ pub const GENES: &[Gene] = &[
     // read closer to a Culture Victory, and Babylon won on Culture at 206.
     // See `denial_nearest_finish::engine_culture_clock`.
     Gene { tag: "culture-reads-the-engine-clock", field: "culture_reads_the_engine_clock", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_reads_the_engine_clock, disable: AdvancedAi::disable_culture_reads_the_engine_clock },
+    // Live King civvis-20261005T083500Z (game 113) offered Spain rout peace
+    // at turn 216 at 1.16 times its power and named it the counter's second
+    // front at 218. See `one_war::rout_spares_the_counter`.
+    Gene { tag: "rout-spares-the-counter", field: "rout_spares_the_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_rout_spares_the_counter, disable: AdvancedAi::disable_rout_spares_the_counter },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

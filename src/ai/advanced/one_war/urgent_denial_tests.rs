@@ -1401,3 +1401,33 @@ fn the_engine_culture_clock_replaces_the_tourist_ratio_under_the_gene() {
     set(&mut g, None);
     assert_eq!(ai.engine_culture_pressure(&g, 2, 70), 70, "no reading");
 }
+
+/// See `rout_spares_the_counter`: under the gene, a rout window against the
+/// urgent rival we hold at parity or better offers no peace; a rival
+/// stronger than us still gets it.
+#[test]
+fn a_rout_spares_the_rival_we_are_countering_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    convert(&mut g, &[0, 1, 2]);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(2), "the urgent rival is the front");
+    let mut row = 2;
+    while g.military_power(0) >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(2) {
+        g.spawn_test_unit("modern_armor", 2, (23, row));
+        row += 1;
+    }
+    assert!(
+        g.military_power(0) >= g.military_power(2),
+        "fixture: still at parity"
+    );
+    ai.one_war.as_mut().unwrap().window = VecDeque::from([(g.turn, ONE_WAR_ROUT_NET)]);
+    let rout = Some(OneWarPeace::Rout);
+    assert_eq!(ai.one_war_peace(&g, 0, 2), rout, "off");
+    ai.enable_rout_spares_the_counter();
+    assert_eq!(ai.one_war_peace(&g, 0, 2), None, "the counter is spared");
+    while g.military_power(0) >= g.military_power(2) {
+        g.spawn_test_unit("modern_armor", 2, (23, row));
+        row += 1;
+    }
+    assert_eq!(ai.one_war_peace(&g, 0, 2), rout, "a stronger rival");
+}
