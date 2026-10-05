@@ -4962,8 +4962,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
-    /// Productive same-turn alternate work after a refused normal Builder route.
+    /// Productive alternate work after a refused normal Builder route.
     builder_productive_alternate: bool,
+    /// One quoted setup operation, due on the following native turn.
+    builder_alternate_pending: BTreeMap<u32, (Pos, Name, u32)>,
     /// `befriend-the-strongest`: offer a friendship to the strongest
     /// neighbour at peace. See `advanced/protective_friendship.rs`.
     befriend_the_strongest: bool,
@@ -8403,6 +8405,7 @@ impl AdvancedAi {
 
             // ---- append: a-b ----------------------------------------
             builder_productive_alternate: false,
+            builder_alternate_pending: BTreeMap::new(),
             befriend_the_strongest: false,
             beeline_orders_by_value: false,
             builders_work_through_raiders: false,
@@ -35617,6 +35620,9 @@ impl AdvancedAi {
             return g
                 .apply(pid, &Action::RepairImprovement { unit: uid })
                 .is_ok();
+        }
+        if let Some(acted) = self.builder_prepared_alternate_step(g, pid, uid) {
+            return acted;
         }
         let mut here = self.worthwhile_improvements(g, pid, current, strategy);
         let here_shortfall = g

@@ -89,6 +89,86 @@ fn a_reserved_alternate_is_left_for_its_builder() {
 fn exhausted_movement_cannot_be_borrowed_for_the_operation() {
     let (mut g, mut ai, builder, alternate, _) = fixture();
     g.map.tiles.get_mut(&alternate).unwrap().hills = true;
+    let charges = g.units[&builder].charges;
+    assert!(ai.builder_productive_alternate_step(
+        &mut g,
+        0,
+        builder,
+        GrandStrategy::Science,
+        &HashSet::new()
+    ));
+    assert_eq!(g.units[&builder].pos, alternate);
+    assert_eq!(g.units[&builder].moves_left, 0.0);
+    assert_eq!(g.units[&builder].charges, charges);
+    assert!(g.map.tiles[&alternate].improvement.is_none());
+    assert_eq!(
+        ai.builder_prepared_alternate_step(&mut g, 0, builder),
+        Some(false)
+    );
+    assert_eq!(g.units[&builder].charges, charges);
+    // Renew only the test world's native turn allowance, as the engine does.
+    g.turn += 1;
+    let allowance = g.unit_max_moves(builder);
+    g.units.get_mut(&builder).unwrap().moves_left = allowance;
+    assert!(ai.advanced_builder_step(&mut g, 0, builder, GrandStrategy::Science));
+    assert_eq!(g.units[&builder].charges, charges - 1);
+    assert_eq!(
+        g.map.tiles[&alternate].improvement,
+        Some(crate::name!("mine"))
+    );
+    assert!(!ai.builder_alternate_pending.contains_key(&builder));
+}
+
+#[test]
+fn prepared_work_rechecks_a_new_capture_threat() {
+    let (mut g, mut ai, builder, alternate, _) = fixture();
+    g.map.tiles.get_mut(&alternate).unwrap().hills = true;
+    assert!(ai.builder_productive_alternate_step(
+        &mut g,
+        0,
+        builder,
+        GrandStrategy::Science,
+        &HashSet::new()
+    ));
+    g.turn += 1;
+    let allowance = g.unit_max_moves(builder);
+    g.units.get_mut(&builder).unwrap().moves_left = allowance;
+    let barb = g.barb_pid.unwrap();
+    g.spawn_test_unit("warrior", barb, (3, 4));
+    let before = serde_json::to_vec(&g).unwrap();
+    assert_eq!(ai.builder_prepared_alternate_step(&mut g, 0, builder), None);
+    assert_eq!(serde_json::to_vec(&g).unwrap(), before);
+    assert!(g.map.tiles[&alternate].improvement.is_none());
+    assert!(!ai.builder_alternate_pending.contains_key(&builder));
+}
+
+#[test]
+fn prepared_work_rechecks_the_production_payoff() {
+    let (mut g, mut ai, builder, alternate, _) = fixture();
+    g.map.tiles.get_mut(&alternate).unwrap().hills = true;
+    assert!(ai.builder_productive_alternate_step(
+        &mut g,
+        0,
+        builder,
+        GrandStrategy::Science,
+        &HashSet::new()
+    ));
+    g.turn += 1;
+    let allowance = g.unit_max_moves(builder);
+    g.units.get_mut(&builder).unwrap().moves_left = allowance;
+    // Another accepted operation already delivered the quoted improvement.
+    g.map.tiles.get_mut(&alternate).unwrap().improvement = Some(crate::name!("mine"));
+    let before = serde_json::to_vec(&g).unwrap();
+    assert_eq!(ai.builder_prepared_alternate_step(&mut g, 0, builder), None);
+    assert_eq!(serde_json::to_vec(&g).unwrap(), before);
+    assert!(!ai.builder_alternate_pending.contains_key(&builder));
+}
+
+#[test]
+fn a_setup_too_late_to_finish_before_t75_is_refused() {
+    let (mut g, mut ai, builder, alternate, _) = fixture();
+    g.map.tiles.get_mut(&alternate).unwrap().hills = true;
+    g.turn = 74;
     let before = serde_json::to_vec(&g).unwrap();
     assert!(!ai.builder_productive_alternate_step(
         &mut g,

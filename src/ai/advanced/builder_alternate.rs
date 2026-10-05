@@ -1,6 +1,6 @@
 //! A refused preferred route need not consume the Builder's work turn.
-//! This experiment completes another ordinary worthwhile improvement only
-//! when it pays Production immediately without losing city Food or Science.
+//! This experiment completes or prepares an ordinary worthwhile improvement
+//! when it pays city Production without losing city Food or Science.
 //! Existing emergency, project, repair, support and route decisions run first.
 
 use super::*;
@@ -11,6 +11,80 @@ impl AdvancedAi {
     /// Read back the experimental flag for frozen comparisons.
     pub fn builder_productive_alternate_enabled(&self) -> bool {
         self.builder_productive_alternate
+    }
+
+    /// Complete a setup quote only on its next turn, under a new safety and
+    /// yield check. Support and all ordinary emergency operations run first.
+    pub(super) fn builder_prepared_alternate_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<bool> {
+        if !self.builder_productive_alternate {
+            return None;
+        }
+        self.builder_alternate_pending
+            .retain(|builder, (_, _, due)| g.units.contains_key(builder) && g.turn <= *due);
+        let (pos, improvement, due) = self.builder_alternate_pending.get(&uid).copied()?;
+        if g.turn < due {
+            return Some(false);
+        }
+        self.builder_alternate_pending.remove(&uid);
+        if self.active_victory_target(g).is_none()
+            || self.builder_support.contains_key(&uid)
+            || !g.units.get(&uid).is_some_and(|unit| {
+                unit.owner == pid
+                    && unit.kind == "builder"
+                    && unit.pos == pos
+                    && unit.moves_left > 0.0
+                    && unit.charges > 0
+            })
+            || self.builder_targets.iter().any(|(other, target)| {
+                *other != uid && *target == pos && g.units.contains_key(other)
+            })
+        {
+            return None;
+        }
+        let city = g.map.get(pos)?.owner_city?;
+        if !g.cities.get(&city).is_some_and(|city| city.owner == pid) {
+            return None;
+        }
+        let reach = self.barbarian_reach(g, pid, pos, civilian_safety::REACH_SCAN_RADIUS);
+        let visible = self.battlefront_visibility(g, pid);
+        let threats = self.visible_barbarian_capture_threats(g, pid, &visible);
+        if !self.builder_job_out_of_reach(g, pid, uid, pos, &reach)
+            || self
+                .builder_barbarian_capture_risk_with_threats(g, pid, uid, pos, &visible, &threats)
+                > BUILDER_BARBARIAN_CAPTURE_RISK_LIMIT
+        {
+            return None;
+        }
+        let mut trial = g.speculative_clone();
+        let before = trial.city_yields(city);
+        let action = Action::Improve {
+            unit: uid,
+            improvement,
+        };
+        if trial.apply(pid, &action).is_err() {
+            return None;
+        }
+        let after = trial.city_yields(city);
+        if after.production <= before.production + 1e-9
+            || after.food < before.food - 1e-9
+            || after.science < before.science - 1e-9
+        {
+            return None;
+        }
+        if g.apply(pid, &action).is_err() {
+            return None;
+        }
+        self.builder_targets.remove(&uid);
+        self.note_first_luxury_opened(g, pid, pos, &improvement);
+        think!(self.journal(), Expansion, Decision, "Builder completes prepared productive alternate work";
+            "Builder {uid} improves {improvement} at {pos:?}; renewed city Production +{:.2}, Food and Science retained",
+            after.production - before.production; pos);
+        Some(true)
     }
 
     pub(super) fn builder_productive_alternate_step(
@@ -112,6 +186,7 @@ impl AdvancedAi {
         let candidate_count = candidates.len();
         for (_, pos, city, improvement) in candidates.into_iter().take(ALTERNATE_PRICE_ATTEMPTS) {
             let mut trial = g.speculative_clone();
+            let mut setup = false;
             if pos != current {
                 if trial
                     .apply(pid, &Action::MoveTo { unit: uid, to: pos })
@@ -123,7 +198,14 @@ impl AdvancedAi {
                 }
                 if trial.units[&uid].moves_left <= 0.0 {
                     no_moves_count += 1;
-                    continue;
+                    if g.turn >= 74 {
+                        continue;
+                    }
+                    // A quote of next-turn work, never permission to spend a
+                    // live charge now. Actual operation is repriced next turn.
+                    let allowance = trial.unit_max_moves(uid);
+                    trial.units.get_mut(&uid).unwrap().moves_left = allowance;
+                    setup = true;
                 }
             }
             // Attribute only the operation. Walking can itself change yields
@@ -152,10 +234,19 @@ impl AdvancedAi {
                 walk_refused_count += 1;
                 continue;
             }
-            if g.units
-                .get(&uid)
-                .is_none_or(|unit| unit.pos != pos || unit.moves_left <= 0.0)
-            {
+            if g.units.get(&uid).is_none_or(|unit| unit.pos != pos) {
+                return walked;
+            }
+            if setup {
+                self.builder_targets.insert(uid, pos);
+                self.builder_alternate_pending
+                    .insert(uid, (pos, improvement, g.turn + 1));
+                think!(self.journal(), Expansion, Decision, "Builder prepares productive alternate work";
+                    "Builder {uid} walks to {pos:?} for {improvement}; quoted next-turn city Production +{:.2}, no live charge spent",
+                    after.production - before.production; pos);
+                return true;
+            }
+            if g.units[&uid].moves_left <= 0.0 {
                 return walked;
             }
             if g.apply(pid, &action).is_ok() {

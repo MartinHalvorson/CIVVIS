@@ -89,3 +89,32 @@ modeled early jobs already allowed immediate work, so delayed movement cannot
 be assumed to be the decisive reason. Before any new movement treatment, two
 consumed maps must reproduce their frozen version-one candidate action histories
 and final worlds while these counters are collected. No fresh maps assigned.
+
+
+## Passive trace completed
+
+Both optimized consumed trace games exited zero on frozen source `d1c057ea6`.
+Action histories and final worlds are byte-exact to the previous v1 candidate;
+weights, handicaps, deployment tags and flag readbacks agree, with contiguous
+journals and no reset or truncated turns. No fresh samples were played.
+Repeated early calls (not distinct jobs) report Emperor 906 unsafe-path
+rejections, 10 exhausted-movement candidate prices and two zero-production
+prices; Deity reports 209, eight and eleven respectively. Most idle work cannot
+be fixed by movement allowance. However actual safe priced candidates did
+exhaust movement on both maps: Emperor Builders 153/321 and Deity 194/232.
+Those candidates' future production gain is still unproven.
+
+GitHub validation on this exact trace source passed 4,608 native tests, with
+50 skipped, plus documentation and developer-tool checks. Its collaboration
+policy still fails experimental toggle reachability metadata. This does not
+replace the separately recorded local v1 library failure or establish strength.
+
+V2 hypothesis: allow a safe alternate setup move before T74 only when its
+static after-walk improvement price is productive with Food/Science retained.
+A renewed allowance is used only in the speculative quote, never the live
+board. Preserve one pending operation until the next native turn, then recheck
+ownership, support, reservations, capture protection and current city gains
+after all existing emergency/project/chop/repair decisions. If invalid, clear
+it and resume ordinary work. All consumed-map strength and safety gates stay
+the same; no fresh games before early executed work and positive P75 on both
+difficulties.
