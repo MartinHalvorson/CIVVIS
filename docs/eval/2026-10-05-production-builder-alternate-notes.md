@@ -28,3 +28,12 @@ private field/default remain in their own range. Corrected suite: 14 passed.
 This failure happened before any game or optimized strength compile.
 
 Initial fast fixture compile passed; four fixtures failed because the blocked preferred route still allowed a normal greedy move, and Barbarians were disabled in the capture fixture. Corrected setup places the preferred route behind an impassable ring and enables native Barbarians. All six corrected fixtures pass with the local unoptimized CI-profile override. These are fast feedback only. Normal optimized validation and all consumed paired game runs remain pending. No fresh samples or Firaxis games played.
+
+
+The initial draft registered the unmeasured toggle as a gene. GitHub policy
+correctly rejected the missing fire evidence and derived gene/evaluation tables.
+The row was removed: this is a private opt-in production experiment until it
+shows useful work and strength, matching preceding production prototypes.
+The first local optimized build was interrupted before completion so validation
+can compile the corrected registry source. This interruption is not passing
+validation. Native gameplay remains unchanged with the private flag disabled.
