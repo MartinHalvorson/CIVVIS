@@ -4571,7 +4571,16 @@ fn decide(
             }
         }
     }
-    match append_luxury_buy_order(state, &mut orders) {
+    // `luxury-buy-asks`: no rival has ever priced a luxury for us -- 644
+    // EQUALIZE asks of October 4-5, every answer a refusal with nothing on our
+    // side (364 of them to rivals we had not denounced) -- while each ask held
+    // the rival's one working deal and the trade cooldown the sales share.
+    let luxury_buy = if ai.luxury_buy_asks_enabled() {
+        append_luxury_buy_order(state, &mut orders)
+    } else {
+        Some("luxury_buy_hold:gene")
+    };
+    match luxury_buy {
         None => note_bits.push("luxury_buy=1".to_string()),
         Some(why) => {
             // The holds worth a glance: an amenity deficit standing on the

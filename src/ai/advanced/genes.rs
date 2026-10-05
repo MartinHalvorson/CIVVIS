@@ -2904,6 +2904,10 @@ pub const GENES: &[Gene] = &[
     // from turn 105 to 125 at 5-13 times their power for a staged siege no
     // board row ordered. See `one_war::overwhelming_power_declares`.
     Gene { tag: "overwhelming-power-declares", field: "overwhelming_power_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_overwhelming_power_declares, disable: AdvancedAi::disable_overwhelming_power_declares },
+    // October 4-5 live: 644 luxury purchase asks, every one answered with a
+    // refusal and nothing on our side; each held the rival's one working deal
+    // and the shared trade cooldown. Off by default; on restores the asks.
+    Gene { tag: "luxury-buy-asks", field: "luxury_buy_asks", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_buy_asks, disable: AdvancedAi::disable_luxury_buy_asks },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

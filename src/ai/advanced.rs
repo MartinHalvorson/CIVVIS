@@ -6584,6 +6584,10 @@ pub struct AdvancedAi {
     /// 10.0 unimproved hills at t100.
     improvement_upgrades_count: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `luxury-buy-asks`: the live bridge asks a peaceful rival for a luxury
+    /// copy (`append_luxury_buy_order` in `civvis_orders`). Off: no rival
+    /// ever priced one -- 644 EQUALIZE asks of October 4-5, none closed.
+    luxury_buy_asks: bool,
     /// `overwhelming-power-declares`: a Domination seat holding
     /// `one_war::OVERWHELMING_POWER_RATIO` times its target's power declares
     /// without a staged siege. See `one_war::overwhelming_power_declares`.
@@ -9428,6 +9432,7 @@ impl AdvancedAi {
             industrial_hub: false,
             improvement_upgrades_count: false,
             // ---- append: l-o ----------------------------------------
+            luxury_buy_asks: false,
             overwhelming_power_declares: false,
             liberation_funds_the_congress: false,
             melee_storms_an_open_city: false,
@@ -9764,6 +9769,12 @@ impl AdvancedAi {
     /// purchase (`append_favor_buy_order` in `civvis_orders`).
     pub fn favor_bought_before_congress_enabled(&self) -> bool {
         self.favor_bought_before_congress
+    }
+
+    /// Whether `luxury-buy-asks` is on; the live bridge asks before it plans
+    /// a luxury purchase (`append_luxury_buy_order` in `civvis_orders`).
+    pub fn luxury_buy_asks_enabled(&self) -> bool {
+        self.luxury_buy_asks
     }
 
     /// Whether the barbarian seat hunts religious units. See

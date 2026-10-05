@@ -6001,6 +6001,16 @@ impl AdvancedAi {
         self.conquest_opening_stays_near = false;
     }
 
+    /// Opt-in gene `luxury-buy-asks`; see [`Self::luxury_buy_asks`].
+    pub fn enable_luxury_buy_asks(&mut self) {
+        self.luxury_buy_asks = true;
+    }
+
+    /// The twin of `enable_luxury_buy_asks`.
+    pub fn disable_luxury_buy_asks(&mut self) {
+        self.luxury_buy_asks = false;
+    }
+
     /// Opt-in gene `overwhelming-power-declares`; see
     /// [`Self::overwhelming_power_declares`].
     pub fn enable_overwhelming_power_declares(&mut self) {
