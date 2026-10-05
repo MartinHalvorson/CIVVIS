@@ -90,7 +90,8 @@ pub(super) const OVERWHELMING_POWER: f64 = 3.0;
 pub(super) const UNIQUE_MARGIN: f64 = 5.0;
 /// A unique unit's package is priced at this share of its research.
 pub(super) const UNIQUE_COST_SHARE: f64 = 0.75;
-/// Guns a breaker package is sized for.
+/// Guns a land breaker package is sized for. An air breaker is sized as the
+/// air surge's wing (`air_surge::AIR_SURGE_BOMBERS`).
 pub(super) const BREACH_GUNS: f64 = 2.0;
 /// Turns those guns are given to empty the wall pool.
 pub(super) const BREACH_TURNS: f64 = 6.0;
@@ -468,9 +469,17 @@ impl AdvancedAi {
                     tier <= 2 && matches!(assault.promotion_class.as_str(), "melee" | "anti_cavalry")
                 }
                 _ => {
-                    BREACH_GUNS
-                        * BREACH_TURNS
-                        * expected_damage(spec.bombard_strength, city_strength)
+                    // An air breaker strikes as the air surge's wing, not as a
+                    // pair of guns: live King G104 (civvis-20261005T060002Z)
+                    // held Bombers from t158, and at t177 the window priced
+                    // Jet Bombers (Stealth Technology) because two Bombers
+                    // fell short of Sparta's 400-HP walls.
+                    let guns = if spec.domain.as_deref() == Some("air") {
+                        super::air_surge::AIR_SURGE_BOMBERS as f64
+                    } else {
+                        BREACH_GUNS
+                    };
+                    guns * BREACH_TURNS * expected_damage(spec.bombard_strength, city_strength)
                         + f64::EPSILON
                         >= wall_pool
                 }
@@ -589,6 +598,26 @@ impl AdvancedAi {
         self.faith_veto_due(g, pid)
             && self.prophet_race_enterable_for(g, pid, self.victory_target)
             && !g.players[pid].techs.contains(&crate::name!("astrology"))
+    }
+
+    /// The Bomber count the Domination air readiness pass builds toward. A
+    /// target behind Urban Defenses (tier 4) is the case the window prices
+    /// Bombers as the breaker, sized as the air surge's wing; readiness
+    /// alone stopped at `AIR_SURGE_LAUNCH_BOMBERS` (live King G104: two
+    /// Bombers, Sparta's walls 400 from t196 to t242). Below tier 4 a land
+    /// gun is the cheaper breaker and readiness keeps its launch pair.
+    pub(crate) fn decisive_air_wing_bombers(&self, g: &Game, pid: usize) -> usize {
+        use super::air_surge::{AIR_SURGE_BOMBERS, AIR_SURGE_LAUNCH_BOMBERS};
+        if !self.decisive_window {
+            return AIR_SURGE_LAUNCH_BOMBERS;
+        }
+        let Some(plan) = self.plan.as_ref() else {
+            return AIR_SURGE_LAUNCH_BOMBERS;
+        };
+        match self.decisive_window_target(g, pid, plan) {
+            Some(target) if self.decisive_wall_tier(g, target).1 >= 4 => AIR_SURGE_BOMBERS,
+            _ => AIR_SURGE_LAUNCH_BOMBERS,
+        }
     }
 
     /// The technology the decisive window needs next; `None` once it is open.
