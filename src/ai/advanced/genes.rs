@@ -2788,6 +2788,11 @@ pub const GENES: &[Gene] = &[
     // home the next turn.
     // See `siege_train::StageMarch`.
     Gene { tag: "stage-march-keeps-to-land", field: "stage_march_keeps_to_land", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_march_keeps_to_land, disable: AdvancedAi::disable_stage_march_keeps_to_land },
+    // Live King civvis-20261005T051413Z (game 102): Toronto's breach reading
+    // counted only its own force's guns and read 0 while three healthy
+    // Bombards of Uruk's force stood at its ring. See
+    // `siege_train::nearby_gun_city`.
+    Gene { tag: "breach-counts-nearby-guns", field: "breach_counts_nearby_guns", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_counts_nearby_guns, disable: AdvancedAi::disable_breach_counts_nearby_guns },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

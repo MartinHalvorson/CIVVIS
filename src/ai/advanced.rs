@@ -5025,6 +5025,18 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `breach-counts-nearby-guns`: a fit siege gun of ours within
+    /// `siege_train::STAGING_FAR` of a walled city a land force of ours
+    /// besieges is that siege's breaker, whatever row the board gave it: it
+    /// counts in the city's breach reading, damage budget and posts, and takes
+    /// that siege's orders. One gun serves one city, the nearest. Live King
+    /// civvis-20261005T051413Z (game 102) held Toronto's 400 walls in Stage
+    /// reading "0 gun(s) fit" while three healthy Bombards of Uruk's force
+    /// stood four and five tiles from it. See `siege_train::nearby_gun_city`.
+    /// A gun the battle planner still holds recovering counts as a breaker
+    /// once back at `battle_planner::ROTATE_HP`; it still returns to a post
+    /// only at `RETURN_HP` (`siege_train::breach_gun_fit`). Off by default.
+    breach_counts_nearby_guns: bool,
     /// `breakers-stay-with-the-siege`: while a walled Siege row asks the
     /// Objective Board for guns, a siege gun serves only Siege rows and the
     /// Reserve, never a Defend, Relieve, Destroy, Escort or camp row. See
@@ -8998,6 +9010,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            breach_counts_nearby_guns: false,
             breakers_stay_with_the_siege: false,
             breach_assault: false,
             breach_assault_closes_in: false,

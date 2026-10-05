@@ -1557,7 +1557,12 @@ impl AdvancedAi {
             }
         }
         if self.siege_train || self.siege_positive_damage_budget {
-            if let Some(cid) = self.siege_city_of(g, pid, plan, &group) {
+            // `breach-counts-nearby-guns`: a gun another siege counts as its
+            // breaker takes that siege's orders. See `nearby_gun_city`.
+            if let Some(cid) = self
+                .nearby_gun_city(g, pid, plan, uid)
+                .or_else(|| self.siege_city_of(g, pid, plan, &group))
+            {
                 return self.siege_train_step(g, pid, uid, cid, plan, &group);
             }
         }
@@ -1599,7 +1604,8 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         group: &ForceGroup,
     ) -> Vec<u32> {
-        self.force_groups
+        let mut members = self
+            .force_groups
             .iter()
             .chain(std::iter::once(group))
             .filter(|group| {
@@ -1612,9 +1618,72 @@ impl AdvancedAi {
                     && arm_of(g, *uid) != Arm::Other
                     && !self.guard_is_reserved_for_civilian(*uid)
             })
-            .collect::<BTreeSet<_>>()
+            .collect::<BTreeSet<_>>();
+        // `breach-counts-nearby-guns`: a fit gun at another walled city's
+        // ring serves that city, and one at this city's ring serves this one,
+        // whichever row the board gave it. See `nearby_gun_city`.
+        if self.breach_counts_nearby_guns {
+            members.retain(|uid| {
+                self.nearby_gun_city(g, pid, plan, *uid)
+                    .is_none_or(|cid| cid == city.id)
+            });
+            members.extend(
+                g.units
+                    .values()
+                    .filter(|unit| {
+                        unit.owner == pid
+                            && !self.guard_is_reserved_for_civilian(unit.id)
+                            && self.nearby_gun_city(g, pid, plan, unit.id) == Some(city.id)
+                    })
+                    .map(|unit| unit.id),
+            );
+        }
+        members.into_iter().collect()
+    }
+
+    /// `breach-counts-nearby-guns`: the walled city a fit siege gun of ours
+    /// within [`STAGING_FAR`] of it is the breaker for, whatever row the board
+    /// gave it — the nearest walled city a land force of ours besieges, then
+    /// the one its own force is on, then the lowest id, so two sieges never
+    /// both count one gun. `None` with the gene off, for anything but a fit
+    /// land siege gun, or for a gun at no besieged city's ring. A breach
+    /// reading counted only its own force's guns: live King
+    /// civvis-20261005T051413Z (game 102) held Toronto's 400 walls in Stage
+    /// from turn 155 with four units staged and "0 gun(s) fit", while three
+    /// healthy Bombards of Uruk's force stood four and five tiles from
+    /// Toronto, eight to ten from Uruk, with Toronto between them and it.
+    fn nearby_gun_city(&self, g: &Game, pid: usize, plan: &StrategicPlan, uid: u32) -> Option<u32> {
+        if !self.breach_counts_nearby_guns {
+            return None;
+        }
+        let unit = g.units.get(&uid)?;
+        if unit.owner != pid
+            || g.is_embarked(unit)
+            || arm_of(g, uid) != Arm::Siege
+            || !self.breach_gun_fit(g, uid)
+        {
+            return None;
+        }
+        let mut own = None;
+        let mut cities = BTreeSet::new();
+        for group in &self.force_groups {
+            if group.domain != ForceDomain::Land {
+                continue;
+            }
+            let Some(cid) = self.siege_city_of(g, pid, plan, group) else {
+                continue;
+            };
+            if group.units.contains(&uid) {
+                own = Some(cid);
+            }
+            cities.insert(cid);
+        }
+        cities
             .into_iter()
-            .collect()
+            .filter_map(|cid| CityView::of(g, cid))
+            .filter(|city| city.wall_max > 0 && g.wdist(unit.pos, city.pos) <= STAGING_FAR)
+            .min_by_key(|city| (g.wdist(unit.pos, city.pos), own != Some(city.id), city.id))
+            .map(|city| city.id)
     }
 
     /// `siege-needs-a-breaker`: whether a ranged member will be on the line
@@ -1629,6 +1698,20 @@ impl AdvancedAi {
         !heals
             || (unit.hp >= super::battle_planner::ROTATE_HP
                 && !self.battle_planner_recovering.contains(&uid))
+    }
+
+    /// Whether a gun counts as a breaker in a breach reading: fit to stand
+    /// in the train (`siege_member_fit`), or, under
+    /// `breach-counts-nearby-guns`, at or above `ROTATE_HP` though the battle
+    /// planner still holds it recovering. Counting is not posting: such a
+    /// gun still takes no post it cannot survive. Live heal rotations held
+    /// guns at 40-79 hp out of every breach reading (games 96 and 102).
+    pub(super) fn breach_gun_fit(&self, g: &Game, uid: u32) -> bool {
+        self.siege_member_fit(g, uid)
+            || (self.breach_counts_nearby_guns
+                && g.units
+                    .get(&uid)
+                    .is_some_and(|unit| unit.hp >= super::battle_planner::ROTATE_HP))
     }
 
     /// `siege-needs-a-breaker`: whether the capture of `cid` is waiting on a
@@ -1748,7 +1831,7 @@ impl AdvancedAi {
                 continue;
             }
             match arm_of(g, *uid) {
-                Arm::Siege if self.siege_member_fit(g, *uid) => reading.guns += 1,
+                Arm::Siege if self.breach_gun_fit(g, *uid) => reading.guns += 1,
                 Arm::Siege => reading.wounded_guns += 1,
                 Arm::Shooter if self.siege_member_fit(g, *uid) => {
                     if wall_shooters.as_ref().is_none_or(|shooters| shooters.contains(uid)) {

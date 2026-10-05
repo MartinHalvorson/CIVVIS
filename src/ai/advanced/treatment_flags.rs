@@ -5726,6 +5726,17 @@ impl AdvancedAi {
     pub fn disable_stage_march_keeps_to_land(&mut self) {
         self.stage_march_keeps_to_land = false;
     }
+    /// Opt-in gene `breach-counts-nearby-guns`; see
+    /// [`Self::breach_counts_nearby_guns`].
+    pub fn enable_breach_counts_nearby_guns(&mut self) {
+        self.breach_counts_nearby_guns = true;
+    }
+
+    /// The twin of `enable_breach_counts_nearby_guns`.
+    pub fn disable_breach_counts_nearby_guns(&mut self) {
+        self.breach_counts_nearby_guns = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
