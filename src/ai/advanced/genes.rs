@@ -2869,9 +2869,6 @@ pub const GENES: &[Gene] = &[
     // 91 faith-counter declarations of October 4-5 took 9 cities against 8
     // of 39 other wars. See `one_war::faith_at_match_point`.
     Gene { tag: "faith-counter-waits-for-match-point", field: "faith_counter_waits_for_match_point", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_counter_waits_for_match_point, disable: AdvancedAi::disable_faith_counter_waits_for_match_point },
-    // Live King civvis-20261005T103704Z (game 121) read America at 4 for
-    // one turn and declared on it. See `one_war::steady_rival_power`.
-    Gene { tag: "prey-reads-a-steady-power", field: "prey_reads_a_steady_power", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_reads_a_steady_power, disable: AdvancedAi::disable_prey_reads_a_steady_power },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

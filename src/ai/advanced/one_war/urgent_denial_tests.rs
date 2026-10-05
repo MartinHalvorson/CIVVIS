@@ -1538,34 +1538,3 @@ fn a_faith_counter_waits_for_match_point_under_the_gene() {
     assert!(ai.faith_at_match_point(&g, 2));
     assert!(ai.faith_counter_due(&g, 0, 2), "three of four");
 }
-
-/// See `steady_rival_power`: under the gene, a rival whose army vanished from
-/// the reading this turn is read at its strength of the turns before, so its
-/// capital is no prey; the gene off reads the turn alone.
-#[test]
-fn a_one_turn_collapse_opens_no_prey_front_under_the_gene() {
-    let (mut g, mut ai) = two_fronts();
-    ai.enable_capital_prey_opens_a_front();
-    let army: Vec<u32> = (2..8)
-        .map(|y| g.spawn_test_unit("modern_armor", 3, (32, y)))
-        .collect();
-    let strong = g.military_power(3);
-    ai.enable_prey_reads_a_steady_power();
-    ai.record_rival_power(&g, 0);
-    for uid in army {
-        g.remove_unit(uid);
-    }
-    g.turn += 1;
-    ai.record_rival_power(&g, 0);
-    assert!(g.military_power(3) < strong);
-    assert_eq!(ai.steady_rival_power(&g, 3), strong);
-    let (prey, near) = ai.capital_prey_beside_the_front(&g, 0, Some(1));
-    assert_eq!(prey, None, "the reading of a turn ago stands");
-    assert!(near.contains(&(3, "power")));
-    // Past the memory the low reading is the rival's.
-    g.turn += PREY_POWER_MEMORY_TURNS;
-    ai.record_rival_power(&g, 0);
-    assert_eq!(ai.capital_prey_beside_the_front(&g, 0, Some(1)).0, Some(3));
-    ai.disable_prey_reads_a_steady_power();
-    assert_eq!(ai.steady_rival_power(&g, 3), g.military_power(3), "off");
-}
