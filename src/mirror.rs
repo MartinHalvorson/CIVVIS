@@ -41,6 +41,7 @@ use serde::Deserialize;
 mod capital_identity;
 mod dedication_history;
 mod host_deaths;
+pub mod input_capture;
 mod religion_state;
 mod spy_posting;
 mod strategic_income;
@@ -769,6 +770,12 @@ struct NeedleHits {
 /// unreadable file is read afresh. Bytes after the last newline are a line still
 /// being written; they are left for the next read on the incremental path.
 pub fn read_events(path: &std::path::Path) -> std::io::Result<std::rc::Rc<String>> {
+    let result = read_events_uncaptured(path);
+    input_capture::observe(path, &result);
+    result
+}
+
+fn read_events_uncaptured(path: &std::path::Path) -> std::io::Result<std::rc::Rc<String>> {
     use std::io::{Read, Seek, SeekFrom};
     const TAIL: u64 = 4096;
     let len = std::fs::metadata(path)?.len();
