@@ -10002,8 +10002,7 @@ impl BasicAi {
             if let Some(item) = self
                 .opening_barbarian_defense_item(g, pid, *cid)
                 .filter(|_| {
-                    !self.settler_before_distant_raiders
-                        || Self::hostile_at_the_gates(g, pid, *cid)
+                    !self.settler_before_distant_raiders || Self::hostile_at_the_gates(g, pid, *cid)
                 })
             {
                 let displaced = g.cities[cid].queue.first().cloned();
@@ -12825,8 +12824,7 @@ impl BasicAi {
             } else {
                 n_cities.div_ceil(2)
             };
-            if let Some(builder) =
-                Self::builder_backlog_item(g, pid, cid, n_cities, builders, cap)
+            if let Some(builder) = Self::builder_backlog_item(g, pid, cid, n_cities, builders, cap)
             {
                 return Some(builder);
             }
@@ -24394,7 +24392,11 @@ mod tests {
             is_builder(&pick(4, 1, 2)),
             "version 4 trains a third Builder for three cities"
         );
-        assert_eq!(pick(4, 1, 3), pick(2, 1, 3), "one Builder per city is the cap");
+        assert_eq!(
+            pick(4, 1, 3),
+            pick(2, 1, 3),
+            "one Builder per city is the cap"
+        );
     }
 
     /// See `monument_first`: a city without a Monument builds it where the
@@ -26586,7 +26588,10 @@ mod tests {
         g.units.get_mut(&raider).unwrap().pos = far;
         assert!(BasicAi::new().barbarian_local_alarm_for_controller(&g, 0, city));
         assert!(!BasicAi::hostile_at_the_gates(&g, 0, city));
-        assert!(BasicAi::new().settler_due(&g, 0, city, 1, 0), "the fixture is due a Settler");
+        assert!(
+            BasicAi::new().settler_due(&g, 0, city, 1, 0),
+            "the fixture is due a Settler"
+        );
         let pick = |g: &Game, on: bool| {
             let mut ai = BasicAi::new();
             ai.settler_before_distant_raiders = on;
@@ -26596,11 +26601,18 @@ mod tests {
             unit: crate::name!("settler"),
         });
         let stock = pick(&g, false);
-        assert_ne!(stock, settler, "the stock pick answers the alarm: {stock:?}");
+        assert_ne!(
+            stock, settler,
+            "the stock pick answers the alarm: {stock:?}"
+        );
         assert_eq!(pick(&g, true), settler, "the due Settler goes first");
         g.units.get_mut(&raider).unwrap().pos = gates;
         assert!(BasicAi::hostile_at_the_gates(&g, 0, city));
-        assert_eq!(pick(&g, true), pick(&g, false), "a raider at the gates keeps the defense");
+        assert_eq!(
+            pick(&g, true),
+            pick(&g, false),
+            "a raider at the gates keeps the defense"
+        );
     }
 
     #[test]
