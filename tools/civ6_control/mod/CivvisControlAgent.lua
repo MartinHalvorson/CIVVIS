@@ -6539,12 +6539,20 @@ CivvisExportClock.now = function()
 	local raw = try(function() return os.rawclock(); end, nil);
 	local per = try(function() return os.clockpersecond(); end, nil);
 	if type(raw) == "number" and type(per) == "number" and per > 0 then
-		return raw / per;
+		return raw / per, "raw";
 	end
+	-- The live agent context has no fine clock (no os.rawclock), so every
+	-- section read nothing. Whole seconds of Automation.GetTime() instead: one
+	-- export reads 0 or 1000 ms per section, but the second boundaries fall at
+	-- random inside the sections, so a game's per-section SUM estimates where
+	-- the ~38 ms an export costs (G115: 28 s over 731 exports) actually goes.
+	local auto = try(function() return Automation.GetTime(); end, nil);
+	if type(auto) == "number" then return auto, "auto"; end
 	return nil;
 end;
 CivvisExportClock.begin = function()
 	CivvisExportClock.marks = {};
+	CivvisExportClock.kind = select(2, CivvisExportClock.now());
 	CivvisExportClock.auto0 = try(function() return Automation.GetTime(); end, nil);
 	CivvisExportClock.cpu0 = try(function() return os.clock(); end, nil);
 	CivvisExportClock.mark("start");
@@ -6567,7 +6575,7 @@ CivvisExportClock.report = function(turn, frame)
 		sections[marks[i].name] = delta(marks[i - 1].at, marks[i].at);
 	end
 	emit("export_timing", {
-		turn = turn, frame = frame, ms = sections,
+		turn = turn, frame = frame, ms = sections, clock = CivvisExportClock.kind,
 		total_ms = delta(marks[1].at, marks[#marks].at),
 		auto_total = delta(CivvisExportClock.auto0, try(function() return Automation.GetTime(); end, nil)),
 		cpu_total_ms = delta(CivvisExportClock.cpu0, try(function() return os.clock(); end, nil)),

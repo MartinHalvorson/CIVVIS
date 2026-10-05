@@ -283,8 +283,10 @@ os.rawclock = nil
 clock.begin(); auto = auto + 0.2; clock.mark("cities"); clock.report(41, 0)
 e = events("export_timing")
 check("no raw clock: still one event", #e, 2)
-check("…with no section numbers", has(e[2], '"cities":'), false)
-check("…but the Automation total", has(e[2], '"auto_total":200'), true)
+check("…sections fall back to Automation.GetTime", has(e[2], '"cities":200'), true)
+check("…saying which clock timed them", has(e[2], '"clock":"auto"'), true)
+check("…and the Automation total", has(e[2], '"auto_total":200'), true)
+check("the raw clock says so too", has(e[1], '"clock":"raw"'), true)
 
 -- 4. The marks sit in `exportState`, in its order, around the state emit.
 local source = assert(io.open(here .. "/CivvisControlAgent.lua")):read("*a")
