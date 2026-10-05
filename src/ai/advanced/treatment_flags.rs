@@ -5531,6 +5531,17 @@ impl AdvancedAi {
         self.breakers_stay_with_the_siege = false;
     }
 
+    /// Opt-in gene `staging-gun-remembers-hostiles`; see
+    /// [`Self::staging_gun_remembers_hostiles`].
+    pub fn enable_staging_gun_remembers_hostiles(&mut self) {
+        self.staging_gun_remembers_hostiles = true;
+    }
+
+    /// The twin of `enable_staging_gun_remembers_hostiles`.
+    pub fn disable_staging_gun_remembers_hostiles(&mut self) {
+        self.staging_gun_remembers_hostiles = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

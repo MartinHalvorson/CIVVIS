@@ -2706,6 +2706,11 @@ pub const GENES: &[Gene] = &[
     // the Guayaquil anvil and heal rotations while Lisbon's siege held "for a
     // wall-breaker on its way". See `objective_board::breaker_rows_ask`.
     Gene { tag: "breakers-stay-with-the-siege", field: "breakers_stay_with_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_breakers_stay_with_the_siege, disable: AdvancedAi::disable_breakers_stay_with_the_siege },
+    // Live King civvis-20261005T033442Z (game 96): Trebuchets marched alone
+    // into the reach of Khmer Cuirassiers seen the turn before and lost in
+    // the fog, and were one-shot at turns 145 and 146. See
+    // `siege_train::siege_stage_step`.
+    Gene { tag: "staging-gun-remembers-hostiles", field: "staging_gun_remembers_hostiles", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_remembers_hostiles, disable: AdvancedAi::disable_staging_gun_remembers_hostiles },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
