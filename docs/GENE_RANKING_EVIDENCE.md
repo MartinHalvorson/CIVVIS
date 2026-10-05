@@ -237,7 +237,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `formations-heed-refusals` | off (unmeasured) | Opt-in gene `formations-heed-refusals`; see `Self::formations_heed_refusals`. | 1 \| 1 |
 | `found-against-a-rival-faith` | off (unmeasured) | Opt-in gene `found-against-a-rival-faith`; see `Self::found_against_a_rival_faith`. | 1 \| 1 |
 | `front-finishes-its-siege` | off (unmeasured) | Opt-in gene `front-finishes-its-siege`; see `Self::front_finishes_its_siege`. | 1 \| 1 |
-| `front-weighted-floor` | off (unmeasured) | The delegated governor's military floor builds where the unit reaches the campaign's target city soonest. | 1 \| 1 |
+| `front-weighted-floor` | off (unmeasured) | The delegated governor's military floor builds where the unit reaches the campaign's target city soonest. | — \| 2 |
+| `front-weighted-floor-2` | off (unmeasured) | `front-weighted-floor-2`: while the floor is unmet, a city near the campaign's target builds the floor's unit ahead of its economy steps. | — \| 2 |
 | `government-ladder-3` | off (unmeasured) | Choose a government by its remaining civic cost per extra policy slot, reserving time to use the upgrade. | 2 \| 3 |
 | `granary-before-the-army` | off (unmeasured) | The delegated city governor's housing reserve (Granary, else Aqueduct) ahead of the military floor. | — \| 2 |
 | `granary-before-the-army-2` | off (unmeasured) | Version 2 of `granary-before-the-army`; see `BasicAi::granary_before_the_army_2`. | — \| 2 |

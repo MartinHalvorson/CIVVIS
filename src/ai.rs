@@ -63,6 +63,9 @@ const FRONT_ARRIVAL_MARGIN: u32 = 2;
 /// See `BasicAi::front_weighted_floor`: below this share of its floor the
 /// army is built wherever a queue is free.
 const FRONT_FLOOR_SHARE: f64 = 0.75;
+/// See `BasicAi::front_weighted_floor_2`: how close to the campaign's target
+/// a city must stand to build the floor's unit ahead of its economy.
+const FRONT_NEAR_TILES: i32 = 8;
 
 /// The gates of `BasicAi::pick_item`'s Settler step; see
 /// `BasicAi::settler_gates`.
@@ -2616,8 +2619,23 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `front-weighted-floor`.
     pub(crate) front_weighted_floor: bool,
+    /// While the military floor is unmet, a city within
+    /// `FRONT_NEAR_TILES` of the campaign's target whose arrival (build plus
+    /// walk) is within `FRONT_ARRIVAL_MARGIN` of the best city's builds the
+    /// floor's unit ahead of the Granary and Campus steps; cities farther out
+    /// keep their order, so the army is never built slower. Version 1 only
+    /// stopped far cities, and only while the army held three quarters of its
+    /// floor: live King 2026-10-04T235724Z ran at 7-15 units against a lent
+    /// floor of 18-30, so it never bound (74% of the siege army still built
+    /// more than 12 tiles out). The near cities are the ones to move: in
+    /// 160213Z they spent about three quarters of their siege turns on
+    /// buildings and districts while the floor stood unmet.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `front-weighted-floor-2`.
+    pub(crate) front_weighted_floor_2: bool,
     /// The campaign's target city, set by `AdvancedAi` for
-    /// `front_weighted_floor`; `None` with the gene off or no target.
+    /// `front_weighted_floor` and `front_weighted_floor_2`; `None` with both
+    /// off or no target.
     pub(crate) front_objective: Option<Pos>,
     /// `live_great_person_activation_resume_item` does not take a city whose
     /// queue head is a district already holding production: the district
@@ -5473,6 +5491,7 @@ impl BasicAi {
             granary_before_the_army: false,
             front_weighted_floor: false,
             front_objective: None,
+            front_weighted_floor_2: false,
             activation_resume_waits: false,
             granary_before_the_army_2: false,
             industry_before_the_army: false,
@@ -5962,6 +5981,7 @@ impl BasicAi {
             granary_before_the_army: false,
             front_weighted_floor: false,
             front_objective: None,
+            front_weighted_floor_2: false,
             activation_resume_waits: false,
             granary_before_the_army_2: false,
             industry_before_the_army: false,
@@ -12592,6 +12612,28 @@ impl BasicAi {
         } else {
             self.w.mil_per_city * n_cities as f64
         };
+        if self.front_weighted_floor_2
+            && !self.minor
+            && !self.barb
+            && can_add_military
+            && (military as f64) < military_floor
+        {
+            if let Some(objective) = self.front_objective {
+                if let Some(unit) = self
+                    .combined_arms_unit(g, pid, cid, melee, ranged)
+                    .filter(|unit| Self::is_front_city_for(g, pid, cid, unit, objective))
+                {
+                    think!(self.journal, Cities, Detail,
+                           "A city beside the front takes the floor's {unit}";
+                           "{} is {} tiles from the campaign's target and the army holds {military} \
+                            against a floor of {military_floor:.1}", g.cities[&cid].name,
+                           g.wdist(g.cities[&cid].pos, objective));
+                    return Some(Item::Unit {
+                        unit: Name::new(&unit),
+                    });
+                }
+            }
+        }
         if self.granary_before_the_army
             && !self.minor
             && !self.barb
@@ -12768,11 +12810,19 @@ impl BasicAi {
             // `front-weighted-floor`: leave the unit to a city that puts it at
             // the front sooner.
             let force_pick = force_pick.filter(|unit| {
-                !self.front_weighted_floor
+                let keeps = !self.front_weighted_floor
                     || (military as f64) < FRONT_FLOOR_SHARE * military_floor
                     || self.front_objective.is_none_or(|objective| {
                         !Self::another_city_arrives_sooner(g, pid, cid, unit, objective)
-                    })
+                    });
+                if !keeps {
+                    think!(self.journal, Cities, Detail,
+                           "Military floor leaves the {unit} to a city nearer the front";
+                           "{} is {} tiles from the campaign's target; another city puts the unit \
+                            there sooner", g.cities[&cid].name,
+                           self.front_objective.map_or(0, |objective| g.wdist(g.cities[&cid].pos, objective)));
+                }
+                keeps
             });
             let picked = recon_pick.or(naval_recon_pick).or(force_pick);
             if let Some(m) = picked {
@@ -15015,6 +15065,14 @@ impl BasicAi {
             .min_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or(0.0)
             .min(2.0)
+    }
+
+    /// See `front_weighted_floor_2`: whether `cid` stands within
+    /// `FRONT_NEAR_TILES` of `objective` and puts `unit` there within
+    /// `FRONT_ARRIVAL_MARGIN` of the best city of ours that can build it.
+    pub(crate) fn is_front_city_for(g: &Game, pid: usize, cid: u32, unit: &str, objective: Pos) -> bool {
+        g.wdist(g.cities[&cid].pos, objective) <= FRONT_NEAR_TILES
+            && !Self::another_city_arrives_sooner(g, pid, cid, unit, objective)
     }
 
     /// See `front_weighted_floor`: whether another city of ours that can build
@@ -23513,6 +23571,18 @@ mod tests {
         assert!(
             !BasicAi::another_city_arrives_sooner(&game, 0, front, "warrior", objective),
             "the city beside the front keeps it"
+        );
+        // Version 2: the city beside the front is a front city, the capital
+        // nine to twelve tiles back is not.
+        assert!(BasicAi::is_front_city_for(&game, 0, front, "warrior", objective));
+        assert!(!BasicAi::is_front_city_for(&game, 0, capital, "warrior", objective));
+        let mut second = BasicAi::new();
+        second.front_weighted_floor_2 = true;
+        second.front_objective = Some(objective);
+        let pick = second.pick_item(&game, 0, front, 2, 1, 3, 1, 0, 0, 0, 0);
+        assert!(
+            matches!(&pick, Some(Item::Unit { unit }) if game.rules.units[unit].class == "military"),
+            "the front city builds the floor's unit: {pick:?}"
         );
     }
 

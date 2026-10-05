@@ -2486,6 +2486,9 @@ pub const GENES: &[Gene] = &[
     // Live King 160213Z: 69% of the siege army built more than 12 tiles from
     // the objective; see `BasicAi::front_weighted_floor`.
     Gene { tag: "front-weighted-floor", field: "front_weighted_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_front_weighted_floor, disable: AdvancedAi::disable_front_weighted_floor },
+    // Live King 235724Z: version 1 never bound (army 30-58% of its floor);
+    // see `BasicAi::front_weighted_floor_2`.
+    Gene { tag: "front-weighted-floor-2", field: "front_weighted_floor_2", kind: Kind::OptIn, enable: AdvancedAi::enable_front_weighted_floor_2, disable: AdvancedAi::disable_front_weighted_floor_2 },
     // Live King 205431Z: Bogota alternated a Holy Site and a Theater Square
     // every frame from t251; see `BasicAi::activation_resume_waits`.
     Gene { tag: "activation-resume-waits", field: "activation_resume_waits", kind: Kind::HostOnly, enable: AdvancedAi::enable_activation_resume_waits, disable: AdvancedAi::disable_activation_resume_waits },
