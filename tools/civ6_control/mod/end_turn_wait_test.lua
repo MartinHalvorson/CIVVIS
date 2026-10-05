@@ -323,6 +323,63 @@ now = 90.0
 check("a turn that advanced is never a stall", queue.checkAiPhaseStall(), false)
 ContextPtr = liveContext
 
+-- 6. The debug timescale arm (default off). It runs `timescale N` through
+-- AutoProfiler.RunCommand, measures the UI clock against the wall clock at
+-- every turn end, and reverts if the UI clock drifts; game end reverts too.
+local agentSource = io.open(here .. "/CivvisControlAgent.lua"):read("*a")
+check("Initialize asks for the timescale", has(agentSource, "pcall(CivvisQueue.startTimescale, cfg.DebugTimeScale);"), true)
+check("turn end checks the clock", has(agentSource, "\tpcall(CivvisQueue.checkTimescaleClock);\nend;"), true)
+check("victory reverts it", has(agentSource, 'pcall(CivvisQueue.resetTimescale, "game_over");'), true)
+check("our defeat reverts it", has(agentSource, 'pcall(CivvisQueue.resetTimescale, "defeated");'), true)
+local commands = {}
+AutoProfiler = { RunCommand = function(cmd) commands[#commands + 1] = cmd; return "ok:" .. cmd end }
+local wallNow = 1000
+Automation.GetTime = function() return wallNow end
+now = 100.0
+queue.timescale = nil
+check("off unless asked", queue.startTimescale(nil), false)
+check("…or asked for 1", queue.startTimescale(1), false)
+check("nothing ran", #commands, 0)
+check("asked for 2, it runs", queue.startTimescale(2), true)
+check("…the console command", commands[1], "timescale 2")
+check("…and journals the result", has(events("timescale")[1], '"result":"ok:timescale 2"'), true)
+check("a second start is refused", queue.startTimescale(2), false)
+-- A UI clock that keeps real time: logged, left alone.
+wallNow, now = 1005, 105.0
+queue.checkTimescaleClock()
+check("no verdict before 10 s of wall time", #events("timescale_clock"), 0)
+wallNow, now = 1012, 112.0
+queue.checkTimescaleClock()
+check("a real-time UI clock is logged", has(events("timescale_clock")[1], '"ratio":1'), true)
+check("…and kept", #commands, 1)
+-- A UI clock that runs fast: the mod's timers would fire early, so revert.
+wallNow, now = 1020, 140.0
+queue.checkTimescaleClock()
+check("a fast UI clock reverts the timescale", commands[2], "timescale 1")
+check("…saying why", has(events("timescale")[2], '"why":"ui_clock_scaled"'), true)
+queue.checkTimescaleClock()
+check("…once", #commands, 2)
+-- A slow UI clock reverts too.
+queue.timescale = nil
+now, wallNow = 200.0, 2000
+queue.startTimescale(2)
+wallNow, now = 2020, 210.0
+queue.checkTimescaleClock()
+check("a slow UI clock reverts as well", commands[#commands], "timescale 1")
+-- Game end reverts; a failing RunCommand is journaled and never retried.
+queue.timescale = nil
+queue.startTimescale(2)
+check("game end reverts", queue.resetTimescale("game_over"), true)
+check("…with the reason", has(events("timescale")[#events("timescale")], '"why":"game_over"'), true)
+queue.timescale = nil
+AutoProfiler = { RunCommand = function() error("console unavailable") end }
+check("a raising RunCommand reports not applied", queue.startTimescale(2), false)
+check("…with the error journaled", has(events("timescale")[#events("timescale")], "console unavailable"), true)
+check("…and nothing to revert", queue.resetTimescale("game_over"), false)
+queue.timescale = nil
+AutoProfiler = nil
+Automation.GetTime = nil
+
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
 	os.exit(1)

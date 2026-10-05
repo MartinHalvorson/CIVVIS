@@ -19905,6 +19905,7 @@ CivvisQueue.onLocalTurnEnd = function()
 		-- ledger); a normal turn ends with none.
 		held_locks = try(function() return ExposedMembers.CivvisEventLocks.count; end, nil),
 	});
+	pcall(CivvisQueue.checkTimescaleClock);
 end;
 
 -- ★★ THE APP CAN STOP DRIVING THE GAME AFTER OUR TURN ENDS. G84
@@ -19984,6 +19985,60 @@ CivvisQueue.checkAiPhaseStall = function()
 		queued = try(function() return DiplomacyManager.HasQueuedSession(pid); end, nil),
 	});
 	return true;
+end;
+
+-- ★ A DEBUG TIMESCALE FOR THE COMBAT VISUALIZATION THE GAME CORE WAITS ON.
+-- G93 (pin 7ee5812, 1,201 combats): every combat the player can see holds a
+-- serial CombatVis event for ~0.7 s even with QuickCombat live, and the
+-- AI phase waits on it: 300 s of 994 s of AI windows, plus ~330 s in our
+-- own turns, so ~10 min of that game. `DebugTimeScale` (default off) runs
+-- the engine console's `timescale N` through AutoProfiler.RunCommand, which
+-- exists in this context (`debug_api`, G94).
+-- ⚠ Every mod timer runs on UI.GetElapsedTime: the deal hold, the orphan
+-- net, the stall detector, the autoclose holds. If the timescale moves that
+-- clock, they would all fire early or late. So the UI clock is measured
+-- against the wall clock (Automation.GetTime) at every turn end, and once
+-- 10 s of wall time have passed a ratio outside [0.77, 1.3] reverts to
+-- `timescale 1`. Game end reverts it too, so it never outlives the game.
+CivvisQueue.startTimescale = function(want)
+	want = tonumber(want);
+	if want == nil or want <= 1 or CivvisQueue.timescale ~= nil then return false; end
+	local ran, result = pcall(function()
+		return AutoProfiler.RunCommand("timescale " .. tostring(want));
+	end);
+	CivvisQueue.timescale = {
+		want = want, applied = ran,
+		ui0 = try(function() return UI.GetElapsedTime(); end, nil),
+		wall0 = try(function() return Automation.GetTime(); end, nil),
+	};
+	emit("timescale", { phase = "applied", want = want, ran = ran, result = tostring(result) });
+	return ran;
+end;
+
+CivvisQueue.resetTimescale = function(why)
+	local ts = CivvisQueue.timescale;
+	if ts == nil or not ts.applied or ts.reverted then return false; end
+	ts.reverted = true;
+	local ran, result = pcall(function() return AutoProfiler.RunCommand("timescale 1"); end);
+	emit("timescale", { phase = "reverted", why = why, ran = ran, result = tostring(result) });
+	return ran;
+end;
+
+CivvisQueue.checkTimescaleClock = function()
+	local ts = CivvisQueue.timescale;
+	if ts == nil or not ts.applied or ts.reverted then return; end
+	local ui = try(function() return UI.GetElapsedTime(); end, nil);
+	local wall = try(function() return Automation.GetTime(); end, nil);
+	if type(ui) ~= "number" or type(wall) ~= "number"
+			or type(ts.ui0) ~= "number" or type(ts.wall0) ~= "number" then
+		return;
+	end
+	local wallElapsed = wall - ts.wall0;
+	if wallElapsed < 10 then return; end
+	local ratio = math.floor((ui - ts.ui0) / wallElapsed * 100 + 0.5) / 100;
+	emit("timescale_clock", { ui_elapsed = math.floor((ui - ts.ui0) * 10 + 0.5) / 10,
+		wall_elapsed = wallElapsed, ratio = ratio });
+	if ratio > 1.3 or ratio < 0.77 then CivvisQueue.resetTimescale("ui_clock_scaled"); end
 end;
 
 -- Whether an unanswered deal ask still holds this turn open (see abandon).
@@ -21437,6 +21492,7 @@ CivvisQueue.onPeekPulse = function()
 end;
 
 local function onTeamVictory(team, victoryType, eventID)
+	pcall(CivvisQueue.resetTimescale, "game_over");
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
 	local ourTeam = try(function()
 		return (pid ~= nil and pid >= 0) and Players[pid]:GetTeam() or -1;
@@ -21456,7 +21512,10 @@ end
 
 local function onPlayerDefeat(player, defeat, eventID)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
-	if player == pid then finished = true; end
+	if player == pid then
+		finished = true;
+		pcall(CivvisQueue.resetTimescale, "defeated");
+	end
 	emit("defeat", {
 		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
 		player = player, defeat = defeat, local_player = pid,
@@ -21642,6 +21701,7 @@ function Initialize()
 		autoprofiler = try(function() return type(AutoProfiler); end, "error"),
 		run_command = try(function() return type(AutoProfiler.RunCommand); end, "error"),
 	});
+	pcall(CivvisQueue.startTimescale, cfg.DebugTimeScale);
 	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse); end);
 	pcall(function() LuaEvents.CivvisControlPeek.Add(CivvisQueue.onPeekPulse); end);
 	for name, handler in pairs({
