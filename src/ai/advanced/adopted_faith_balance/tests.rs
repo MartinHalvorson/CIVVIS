@@ -127,9 +127,10 @@ fn a_counterweight_holding_our_majority_is_no_threat_under_the_gene() {
     }
     let home =
         [(4, 4), (10, 4), (4, 10), (10, 10), (16, 10)].map(|pos| g.found_city_for(0, pos, None));
-    let dutch = g.found_city_for(1, (30, 4), None);
-    let french = g.found_city_for(2, (30, 12), None);
-    let vietnamese = g.found_city_for(3, (30, 20), None);
+    // Axial positions: at row 20 of this 40-column map the last column is 29.
+    let dutch = g.found_city_for(1, (26, 4), None);
+    let french = g.found_city_for(2, (26, 12), None);
+    let vietnamese = g.found_city_for(3, (24, 18), None);
     g.players[1].religion = Some("Protestantism".into());
     g.players[2].religion = Some("Catholicism".into());
     let faith_of = |cid: u32| -> &'static str {
