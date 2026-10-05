@@ -6266,6 +6266,19 @@ impl AdvancedAi {
         self.guns_post_for_a_near_breach = false;
     }
 
+    /// Opt-in gene `builders-before-the-lent-floor`; see
+    /// [`Self::builders_before_the_lent_floor`].
+    pub fn enable_builders_before_the_lent_floor(&mut self) {
+        self.builders_before_the_lent_floor = true;
+        self.base.builders_before_the_lent_floor = true;
+    }
+
+    /// The twin of `enable_builders_before_the_lent_floor`.
+    pub fn disable_builders_before_the_lent_floor(&mut self) {
+        self.builders_before_the_lent_floor = false;
+        self.base.builders_before_the_lent_floor = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -51208,6 +51208,79 @@ fn a_slow_city_leaves_the_lent_army_margin_to_fast_cities() {
     );
 }
 
+/// See `BasicAi::builders_before_the_lent_floor`: above the genome's own
+/// floor, a unit for the lent margin waits for the Builder backlog.
+#[test]
+fn the_lent_floor_waits_for_the_builder_backlog_only_under_the_gene() {
+    let (mut game, capital, _) = empire_with_a_capital(79_137);
+    clear_barbarian_fixture(&mut game);
+    let home = game.cities[&capital].pos;
+    game.spawn_test_unit("scout", 0, home);
+    game.spawn_test_unit("warrior", 0, home);
+    game.turn = 60;
+    game.players[0].techs.insert(crate::name!("pottery"));
+    // Every owned tile a bare plains hill the empire can mine, so the tile
+    // the capital works is unimproved ground a Builder can work.
+    game.players[0].techs.insert(crate::name!("mining"));
+    let owned: Vec<Pos> = game.cities[&capital]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|position| *position != home)
+        .collect();
+    for position in owned {
+        let tile = game.map.tiles.get_mut(&position).expect("owned tile");
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = true;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.pillaged = false;
+    }
+    std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+        capital,
+        crate::rules::Yields {
+            production: 200.0,
+            ..crate::rules::Yields::default()
+        },
+    );
+    assert!(
+        BasicAi::unimproved_worked_tiles(&game, 0) > 0,
+        "fixture: the capital works unimproved ground"
+    );
+    let pick = |ai: &AdvancedAi, builders: usize, held: usize| {
+        ai.base
+            .pick_item(&game, 0, capital, 2, 1, builders, 9, 9, held, held, 0)
+    };
+    let is_builder = |item: &Option<Item>| {
+        matches!(item, Some(Item::Unit { unit }) if *unit == crate::name!("builder"))
+    };
+    let is_military = |item: &Option<Item>| {
+        matches!(item, Some(Item::Unit { unit }) if game.rules.units[unit].class == "military")
+    };
+    for gene in [false, true] {
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.base.book_pos = 4;
+        ai.base.w.mil_per_city = 3.0;
+        ai.base.lent_military_floor_base = Some(1.0);
+        ai.disable_recon_replacement();
+        ai.disable_naval_recon();
+        if gene {
+            ai.enable_builders_before_the_lent_floor();
+        }
+        let lent = pick(&ai, 0, 2);
+        if gene {
+            assert!(is_builder(&lent), "the lent margin waits: {lent:?}");
+        } else {
+            assert!(is_military(&lent), "today the lent margin builds: {lent:?}");
+        }
+        let own = pick(&ai, 0, 1);
+        assert!(is_military(&own), "below the genome's own floor: {own:?}");
+        let staffed = pick(&ai, 1, 2);
+        assert!(is_military(&staffed), "one Builder for two cities: {staffed:?}");
+    }
+}
+
     /// See `AdvancedAi::denial_reaches_far`: an urgent rival 25 tiles away is in
     /// reach for an overwhelming Domination army under `denial-nearest-finish`,
     /// and not otherwise.
