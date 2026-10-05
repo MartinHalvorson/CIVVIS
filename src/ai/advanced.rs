@@ -7635,6 +7635,12 @@ pub struct AdvancedAi {
     /// through the walls storms on the city's health alone. See
     /// `siege_train::tower_bypasses`.
     tower_assault: bool,
+    /// `tier-gap-priced-once`: under `war-bill-prices-the-tier-gap`, a tier
+    /// factor above 1 replaces the tech edge and multiplies the field
+    /// defenders only, so the city's own strength (already its best unit's)
+    /// and the tech count do not price the same gap again. See
+    /// `AdvancedAi::campaign_city_requirement`.
+    tier_gap_priced_once: bool,
     /// `war-bill-prices-the-tier-gap`: the campaign bill and the weaker-
     /// neighbour test price the unit tier a rival fields, not only its tech
     /// count. Live King civvis-20261005T045443Z (game 101) planned Gwangju at
@@ -9676,6 +9682,7 @@ impl AdvancedAi {
             settler_before_the_navy: false,
             // ---- append: t-z ----------------------------------------
             tower_assault: false,
+            tier_gap_priced_once: false,
             war_bill_prices_the_tier_gap: false,
             upkeep_reserve: false,
             trade_growth_to_district: false,

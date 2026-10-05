@@ -2976,6 +2976,12 @@ pub const GENES: &[Gene] = &[
     // staged, the rest one tile a turn behind. See `close_to_staging`.
     Gene { tag: "siege-members-use-their-moves", field: "siege_members_use_their_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_members_use_their_moves, disable: AdvancedAi::disable_siege_members_use_their_moves },
     Gene { tag: "guns-grind-the-walls", field: "guns_grind_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_grind_the_walls, disable: AdvancedAi::disable_guns_grind_the_walls },
+    // Under war-bill-prices-the-tier-gap the tech gap was priced three times:
+    // in the city's own strength, in the tech edge, and by the tier factor
+    // over both. Live G129 held off Kongo at 2.1x power behind a 304 bill;
+    // armed games' siege bills ran a median 1.74x the rival's WHOLE military
+    // at >=2x power (0.99x before). See `AdvancedAi::campaign_city_requirement`.
+    Gene { tag: "tier-gap-priced-once", field: "tier_gap_priced_once", kind: Kind::OptIn, enable: AdvancedAi::enable_tier_gap_priced_once, disable: AdvancedAi::disable_tier_gap_priced_once },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
