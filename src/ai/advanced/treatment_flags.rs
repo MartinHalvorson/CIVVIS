@@ -6392,6 +6392,17 @@ impl AdvancedAi {
         self.base.builders_before_the_lent_floor = false;
     }
 
+    /// Opt-in gene `stranded-settler-leaves-the-corridor`; see
+    /// [`Self::stranded_settler_leaves_the_corridor`].
+    pub fn enable_stranded_settler_leaves_the_corridor(&mut self) {
+        self.stranded_settler_leaves_the_corridor = true;
+    }
+
+    /// The twin of `enable_stranded_settler_leaves_the_corridor`.
+    pub fn disable_stranded_settler_leaves_the_corridor(&mut self) {
+        self.stranded_settler_leaves_the_corridor = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

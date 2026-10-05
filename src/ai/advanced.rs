@@ -7422,6 +7422,9 @@ pub struct AdvancedAi {
     /// -60's fork). See `one_war::second_front_waits_for_its_war`. Off by
     /// default.
     second_front_waits_for_its_war: bool,
+    /// `stranded-settler-leaves-the-corridor`: a stranded early Settler drops
+    /// its home corridor. See `settler_never_idles::settler_stranded`.
+    stranded_settler_leaves_the_corridor: bool,
     /// `siege-members-use-their-moves`: in Invest and Reduce, a member far
     /// from the ring walks as far as its movement reaches toward it, not the
     /// router's single step. See `siege_train::close_to_staging`.
@@ -9790,6 +9793,7 @@ impl AdvancedAi {
             stall_breaker_waited: None,
             stall_stage_seen: None,
             second_front_waits_for_its_war: false,
+            stranded_settler_leaves_the_corridor: false,
             siege_members_use_their_moves: false,
             science_ladder_reads_the_clock: false,
             science_denounce_waits_for_the_race: false,

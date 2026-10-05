@@ -65,8 +65,8 @@
 
 use super::civilian_safety::{BarbarianReach, REACH_SCAN_RADIUS};
 use super::{
-    AdvancedAi, VictoryTarget, SETTLEMENT_GLOBAL_PREFILTER_LIMIT, SETTLER_DEAD_SITE_AVOID_TURNS,
-    SETTLER_STEP_RISK_LIMIT,
+    AdvancedAi, VictoryTarget, EARLY_SETTLER_HOME_RADIUS, SETTLEMENT_GLOBAL_PREFILTER_LIMIT,
+    SETTLER_DEAD_SITE_AVOID_TURNS, SETTLER_STEP_RISK_LIMIT,
 };
 use crate::ai::BasicAi;
 use crate::game::{Action, Game};
@@ -491,6 +491,25 @@ impl AdvancedAi {
                        "no other legal site is reachable; the site is worth {worth:.1}"; here);
                 return true;
             }
+        }
+        // `stranded-settler-leaves-the-corridor`: the early home corridor
+        // (`EARLY_SETTLER_HOME_RADIUS` tiles from the one-city capital) binds
+        // for the Settler's whole life. When every legal site inside it is
+        // taken, wet or impassable, the exhausted search finds nothing and the
+        // Settler holds the pipeline: live King civvis-20261005T203103Z
+        // (game 160) stood its second Settler six tiles from Bogotá from turn
+        // 29 to 66, twelve turns of them walking back into the corridor, and
+        // the empire held two cities at turn 60. A stranded Settler is the
+        // exhausted state, so the corridor drops here and the next turn's
+        // search runs as any Settler's.
+        if self.stranded_settler_leaves_the_corridor
+            && self.early_settler_homes.remove(&uid).is_some()
+        {
+            think!(self.journal(), Expansion, Decision, "Settler leaves its early corridor at {here:?}";
+                   "no legal site is reachable within {EARLY_SETTLER_HOME_RADIUS} tiles of its \
+                    capital and none here; it searches as any Settler from next turn"; here);
+            self.settler_stranded_at.insert(uid, (here, g.turn));
+            return false;
         }
         think!(self.journal(), Expansion, Detail, "Settler is stranded at {here:?}";
                "no legal site is reachable and a city cannot be founded here; it holds until \
@@ -1814,6 +1833,46 @@ mod tests {
                 .any(|thought| thought.headline.starts_with("Settler is stranded")),
             "the hold is named"
         );
+    }
+
+    /// `stranded-settler-leaves-the-corridor`: an early Settler stranded inside
+    /// its home corridor drops the corridor under the gene and keeps it
+    /// otherwise. Live King game 160 held one stranded six tiles from Bogotá
+    /// from turn 29 to 66.
+    #[test]
+    fn a_stranded_early_settler_leaves_its_corridor_only_under_the_gene() {
+        for gene in [false, true] {
+            let mut g = Game::new_full(1, 12, 8, 91_304, 60, 0, false);
+            let founder = g
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|uid| g.units[uid].kind == "settler")
+                .expect("a starting settler");
+            let here = g.units[&founder].pos;
+            g.apply(0, &Action::FoundCity { unit: founder }).unwrap();
+            for pos in g.map.tiles.keys().copied().collect::<Vec<_>>() {
+                std::sync::Arc::make_mut(&mut g.blocked_city_sites).insert(pos);
+            }
+            let settler = g.spawn_test_unit("settler", 0, here);
+            let mut ai = AdvancedAi::new();
+            ai.enable_settler_never_idles();
+            ai.enable_live_settler_capture_lessons();
+            if gene {
+                ai.enable_stranded_settler_leaves_the_corridor();
+            }
+            ai.early_settler_homes.insert(settler, here);
+            assert_eq!(ai.early_settler_home(settler), Some(here), "fixture: an early home");
+            let journal = Journal::recording();
+            ai.attach_journal(journal.handle());
+            assert!(!ai.settler_stranded(&mut g, 0, settler));
+            assert_eq!(ai.early_settler_home(settler).is_none(), gene);
+            let named = journal
+                .since(0)
+                .thoughts
+                .iter()
+                .any(|thought| thought.headline.starts_with("Settler leaves its early corridor"));
+            assert_eq!(named, gene);
+        }
     }
 
     fn protected_retreat_board(city: bool) -> (Game, AdvancedAi, u32, Pos, u32) {

@@ -3064,6 +3064,11 @@ pub const GENES: &[Gene] = &[
     // per two cities; a third of worked tiles improved at t60. See
     // `BasicAi::builders_before_the_lent_floor`.
     Gene { tag: "builders-before-the-lent-floor", field: "builders_before_the_lent_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_before_the_lent_floor, disable: AdvancedAi::disable_builders_before_the_lent_floor },
+    // Live King game 160 (civvis-20261005T203103Z): an early Settler bound to
+    // six tiles of its capital stood stranded from turn 29 to 66 and the
+    // empire held two cities at t60. See
+    // `settler_never_idles::settler_stranded`.
+    Gene { tag: "stranded-settler-leaves-the-corridor", field: "stranded_settler_leaves_the_corridor", kind: Kind::OptIn, enable: AdvancedAi::enable_stranded_settler_leaves_the_corridor, disable: AdvancedAi::disable_stranded_settler_leaves_the_corridor },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
