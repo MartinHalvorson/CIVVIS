@@ -1,0 +1,332 @@
+{
+  "at": "2026-10-05T01:14:55.755913+00:00",
+  "coverage_only": true,
+  "fresh_samples_played": 0,
+  "actual_Firaxis_verification": false,
+  "exploratory_origin_filter": "T<=75, pop<6, housing headroom>=2, amenities>=0, income>=3, raw surplus<=2; owned legal destination Food>=1/P>=1. This counts existing options and does not forecast growth or authorize a switch.",
+  "difficulties": {
+    "emperor": {
+      "games": [
+        {
+          "seed": 61008600,
+          "controls_byte_identical": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "configuration_equal": true,
+          "ready_trader_turns": 7,
+          "eligible_trader_turns": 0,
+          "t75_route_turns": {
+            "domestic": 30,
+            "foreign": 17
+          },
+          "eligible_frames": [],
+          "eligible_foreign_starts_with_domestic_alternative": []
+        },
+        {
+          "seed": 61008601,
+          "controls_byte_identical": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "configuration_equal": true,
+          "ready_trader_turns": 10,
+          "eligible_trader_turns": 1,
+          "t75_route_turns": {
+            "domestic": 44
+          },
+          "eligible_frames": [
+            {
+              "turn": 29,
+              "unit": 177,
+              "origin": 138,
+              "origin_population": 2,
+              "origin_raw_food_surplus": 2.0,
+              "income": 6.9,
+              "gold": 142.70000000000002,
+              "domestic_options": [
+                {
+                  "destination": 54,
+                  "domestic": true,
+                  "origin": 138,
+                  "origin_amenities": 0,
+                  "origin_food_bank": 7.6,
+                  "origin_housing": 5.0,
+                  "origin_population": 2,
+                  "origin_raw_food_surplus": 2.0,
+                  "origin_yields": {
+                    "culture": 0.6,
+                    "faith": 0.0,
+                    "food": 6.0,
+                    "gold": 0.0,
+                    "production": 5.0,
+                    "science": 1.0
+                  },
+                  "route_yields": {
+                    "culture": 0.0,
+                    "faith": 0.0,
+                    "food": 1.0,
+                    "gold": 0.0,
+                    "production": 1.0,
+                    "science": 0.0
+                  },
+                  "unit": 177
+                },
+                {
+                  "destination": 99,
+                  "domestic": true,
+                  "origin": 138,
+                  "origin_amenities": 0,
+                  "origin_food_bank": 7.6,
+                  "origin_housing": 5.0,
+                  "origin_population": 2,
+                  "origin_raw_food_surplus": 2.0,
+                  "origin_yields": {
+                    "culture": 0.6,
+                    "faith": 0.0,
+                    "food": 6.0,
+                    "gold": 0.0,
+                    "production": 5.0,
+                    "science": 1.0
+                  },
+                  "route_yields": {
+                    "culture": 0.0,
+                    "faith": 0.0,
+                    "food": 1.0,
+                    "gold": 0.0,
+                    "production": 1.0,
+                    "science": 0.0
+                  },
+                  "unit": 177
+                }
+              ],
+              "actual_action": {
+                "city": 54,
+                "type": "trade_route",
+                "unit": 177
+              },
+              "actual_option": {
+                "destination": 54,
+                "domestic": true,
+                "origin": 138,
+                "origin_amenities": 0,
+                "origin_food_bank": 7.6,
+                "origin_housing": 5.0,
+                "origin_population": 2,
+                "origin_raw_food_surplus": 2.0,
+                "origin_yields": {
+                  "culture": 0.6,
+                  "faith": 0.0,
+                  "food": 6.0,
+                  "gold": 0.0,
+                  "production": 5.0,
+                  "science": 1.0
+                },
+                "route_yields": {
+                  "culture": 0.0,
+                  "faith": 0.0,
+                  "food": 1.0,
+                  "gold": 0.0,
+                  "production": 1.0,
+                  "science": 0.0
+                },
+                "unit": 177
+              }
+            }
+          ],
+          "eligible_foreign_starts_with_domestic_alternative": []
+        },
+        {
+          "seed": 61008602,
+          "controls_byte_identical": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "configuration_equal": true,
+          "ready_trader_turns": 0,
+          "eligible_trader_turns": 0,
+          "t75_route_turns": {
+            "domestic": 15
+          },
+          "eligible_frames": [],
+          "eligible_foreign_starts_with_domestic_alternative": []
+        },
+        {
+          "seed": 61008603,
+          "controls_byte_identical": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "configuration_equal": true,
+          "ready_trader_turns": 10,
+          "eligible_trader_turns": 0,
+          "t75_route_turns": {
+            "domestic": 45,
+            "foreign": 1
+          },
+          "eligible_frames": [],
+          "eligible_foreign_starts_with_domestic_alternative": []
+        }
+      ],
+      "eligible_trader_turns": 1,
+      "eligible_foreign_starts": 0
+    },
+    "deity": {
+      "games": [
+        {
+          "seed": 61008700,
+          "controls_byte_identical": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "configuration_equal": true,
+          "ready_trader_turns": 8,
+          "eligible_trader_turns": 0,
+          "t75_route_turns": {
+            "domestic": 32,
+            "foreign": 13
+          },
+          "eligible_frames": [],
+          "eligible_foreign_starts_with_domestic_alternative": []
+        },
+        {
+          "seed": 61008701,
+          "controls_byte_identical": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "configuration_equal": true,
+          "ready_trader_turns": 4,
+          "eligible_trader_turns": 0,
+          "t75_route_turns": {
+            "domestic": 37
+          },
+          "eligible_frames": [],
+          "eligible_foreign_starts_with_domestic_alternative": []
+        },
+        {
+          "seed": 61008702,
+          "controls_byte_identical": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "configuration_equal": true,
+          "ready_trader_turns": 3,
+          "eligible_trader_turns": 0,
+          "t75_route_turns": {
+            "domestic": 6
+          },
+          "eligible_frames": [],
+          "eligible_foreign_starts_with_domestic_alternative": []
+        },
+        {
+          "seed": 61008703,
+          "controls_byte_identical": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "configuration_equal": true,
+          "ready_trader_turns": 8,
+          "eligible_trader_turns": 0,
+          "t75_route_turns": {
+            "domestic": 33
+          },
+          "eligible_frames": [],
+          "eligible_foreign_starts_with_domestic_alternative": []
+        }
+      ],
+      "eligible_trader_turns": 0,
+      "eligible_foreign_starts": 0
+    }
+  },
+  "all_eight_controls_reproduced": true,
+  "raw_sha256": {
+    "all-completions.json": "7fc1b877703393ceac5d2acf7f1ad4b4573c02ba0acd1b91cdc8b2ff852cfd55",
+    "civvis-production-trade-growth-coverage-deity-61008700-control-actions.json": "3edc4a61b80444b8182c3480ac08dfcbe0486f7f7f77d3aa7c222170ccef3c36",
+    "civvis-production-trade-growth-coverage-deity-61008700-control-cities.jsonl": "a92dfc432dff2ee453ae2b3f524066c817a5ac3df397885d3c36fba4d5a3912f",
+    "civvis-production-trade-growth-coverage-deity-61008700-control-final.json": "17f68b9272eda525c616ed2a12c0b3d34b59e927cf615a6a40b8aeec00ad64d4",
+    "civvis-production-trade-growth-coverage-deity-61008700-control-frames.jsonl": "723fad088e713c5e13850c90d0512350975adfda81087a796d2ffa740f66b968",
+    "civvis-production-trade-growth-coverage-deity-61008700-control-routes.jsonl": "5740d76e97d9f8ecb93ef190eb6406ac9fbfa6d3b80f6ac37f4ee850c3bd887a",
+    "civvis-production-trade-growth-coverage-deity-61008700-control-setup.json": "610c32b8713175d220e0012ac667eade7553c0e7e3934eac857a9311c71066bf",
+    "civvis-production-trade-growth-coverage-deity-61008700-control-thoughts.jsonl": "12194ec890db41021dfca0e3475939f0d0b3333986f25c73ed70b925a1937e65",
+    "civvis-production-trade-growth-coverage-deity-61008700-control-view-t25.json": "b1266cdec89739c05a51e8c9d13aa3e58848512973b36603584b25919e812083",
+    "civvis-production-trade-growth-coverage-deity-61008700-control-view-t50.json": "a0e5ca32c45b2bec56bfafd6059a9402351da8725b7bd1ab8eb7ab1504b1e4d9",
+    "civvis-production-trade-growth-coverage-deity-61008700-control-view-t75.json": "3900ad819e1eb2f731590d4de55e7c8da0ba1bd753fc03f15c007d4484558ca9",
+    "civvis-production-trade-growth-coverage-deity-61008701-control-actions.json": "500245cbbd3b1b6f0653d7685616b49d8a3d4be1a17a4f5bf5e419b11a3da6bf",
+    "civvis-production-trade-growth-coverage-deity-61008701-control-cities.jsonl": "de8675e99f8a0c6754ef635550cc42a04598c10bce6d8ad8959965d85e350570",
+    "civvis-production-trade-growth-coverage-deity-61008701-control-final.json": "304f67696bc248694ef71949015e136109f0215ca8a1f039bf596d1596f1aa64",
+    "civvis-production-trade-growth-coverage-deity-61008701-control-frames.jsonl": "c3e3d10a20c3783af728dc0d008a649c5049c825ce1799d09680f41bb86b29fa",
+    "civvis-production-trade-growth-coverage-deity-61008701-control-routes.jsonl": "f5dea1be685fa23238b241bc657a348a5ad8895befa90e3e35a5786bbc2e3e21",
+    "civvis-production-trade-growth-coverage-deity-61008701-control-setup.json": "f924db23f09f6ba3d4e2561e4f12ee40554a9e912798c60159e202b587ab4e3f",
+    "civvis-production-trade-growth-coverage-deity-61008701-control-thoughts.jsonl": "2f4294d34c086451c8cb92c1bf774bfb177583be057b4c1d8ac105ce51a5fe1e",
+    "civvis-production-trade-growth-coverage-deity-61008701-control-view-t25.json": "0bc35872c0965191f47809ff9c73a67ab284826d0fc1f763638fa20b21922c70",
+    "civvis-production-trade-growth-coverage-deity-61008701-control-view-t50.json": "f042eb4a844a6fbef1ff4bd6c398acb05e291fcd6e796730c72af86a983144e2",
+    "civvis-production-trade-growth-coverage-deity-61008701-control-view-t75.json": "4914b9a45ba7651332e3ecba7b38647677718a926a83214cd902a6e979979c80",
+    "civvis-production-trade-growth-coverage-deity-61008702-control-actions.json": "beab4f701149a5eeb3d1a3e240e533cd438d57fab78ef0bccbadc15d73cb512c",
+    "civvis-production-trade-growth-coverage-deity-61008702-control-cities.jsonl": "b16bfd80b4e47779c4c455058c585d3ad3f495d71d0e32904d9f345985e6e41e",
+    "civvis-production-trade-growth-coverage-deity-61008702-control-final.json": "88427db2938c181af86b3e1ba6d484bd0eca73be70d256c8829ab5c2a594f970",
+    "civvis-production-trade-growth-coverage-deity-61008702-control-frames.jsonl": "091e02a236ce785c429a66cfb812ac2c6b6ef8ba4b6b258a4583bab4b39f9630",
+    "civvis-production-trade-growth-coverage-deity-61008702-control-routes.jsonl": "1bacbfe125db7c367d031d93d07e29fc15524abc1eb661293fc1ddea6950e919",
+    "civvis-production-trade-growth-coverage-deity-61008702-control-setup.json": "8bde06515b7062e006215cf7e3165b02ce88ab84962a2e8d70b4b9a42d95c40c",
+    "civvis-production-trade-growth-coverage-deity-61008702-control-thoughts.jsonl": "d1a6e05a1bc41a118349fc7a39a76443dff00d5d1b0ad4d413ca19bb1542da17",
+    "civvis-production-trade-growth-coverage-deity-61008702-control-view-t25.json": "4da5d77ee6b199af40fea20d85d067c3336575e12d8b09cbfa19584f6b14737d",
+    "civvis-production-trade-growth-coverage-deity-61008702-control-view-t50.json": "100cfe630068feb1c88fb873ef5ab2943cd9f2321c91d9a9e2b65f5735577110",
+    "civvis-production-trade-growth-coverage-deity-61008702-control-view-t75.json": "c758b69df99d364075529022e847ea4645b779618882a47e3e06cb3e10470022",
+    "civvis-production-trade-growth-coverage-deity-61008703-control-actions.json": "ef645029791e3dcfb56996f494fb570e9984714c17c9e9335052ca2540d9d8e2",
+    "civvis-production-trade-growth-coverage-deity-61008703-control-cities.jsonl": "867505080983318666f8c0272c9db6b9330e9ac781f989a99cb2e5966738fd2c",
+    "civvis-production-trade-growth-coverage-deity-61008703-control-final.json": "60c84ee40699952f5983995118b201b605db4c9cca916125d45edb34bc03de83",
+    "civvis-production-trade-growth-coverage-deity-61008703-control-frames.jsonl": "756e9c15f7e7920dab79f2c78ab29548338313b0538b6e0e24eae4f0554a7a34",
+    "civvis-production-trade-growth-coverage-deity-61008703-control-routes.jsonl": "f07b0351c5f5f14c4955759d47e59af2ff3b3e10dc503aca8da4f613cb98f7b7",
+    "civvis-production-trade-growth-coverage-deity-61008703-control-setup.json": "4d8735a07f6351abcc7a3a068580722dfcf5b651cfdb7d654aac17e7b2aaac8d",
+    "civvis-production-trade-growth-coverage-deity-61008703-control-thoughts.jsonl": "c2acb51de5caa7c862d57855198704e41ab1d7e5a30176cfbf6bfb7964ed6f9a",
+    "civvis-production-trade-growth-coverage-deity-61008703-control-view-t25.json": "a74850c22df44e6d0011284bebd26d2e64b4f1904be055c701ad5fe4d318f2de",
+    "civvis-production-trade-growth-coverage-deity-61008703-control-view-t50.json": "bbb6c5636ae1eab2006424f84fe903e14ed1cf8a1343d6d4e55e73d25ef9cb7d",
+    "civvis-production-trade-growth-coverage-deity-61008703-control-view-t75.json": "bdd2573369b7ca69bd60676f7dff2ac82d00a591eadf7b19e4a8cdbbe92f01c4",
+    "civvis-production-trade-growth-coverage-deity-control-completion.json": "6f35ea94b591dbdee576f99a26ba20d225b240fa41b7e6d28b396586c4e4ae93",
+    "civvis-production-trade-growth-coverage-deity-control.csv": "661ea94a1d26535a55a78635227807bedca47777997f929e8da0d9f2d386d454",
+    "civvis-production-trade-growth-coverage-deity-control.log": "ccd30af10d1ebe7472c5b782e78f997676353501deca5d60572f78cd28e2db69",
+    "civvis-production-trade-growth-coverage-emperor-61008600-control-actions.json": "96a9c973f0c9e7e11d8aeea3ce7172d2618c95defd34e7a286635eec57d83e2c",
+    "civvis-production-trade-growth-coverage-emperor-61008600-control-cities.jsonl": "cc22f80ac58bd3357c3971f9ef707fa008663b2c865f6815e5e994d78712cd3d",
+    "civvis-production-trade-growth-coverage-emperor-61008600-control-final.json": "ef480d63184affad41c4460fecd98087232ee4692c354c3f5d3cc1019ec4fea0",
+    "civvis-production-trade-growth-coverage-emperor-61008600-control-frames.jsonl": "e840dd3e4d08176586f4bbd7357c288c8a35d041b66eeda0bcd41699ef5b8145",
+    "civvis-production-trade-growth-coverage-emperor-61008600-control-routes.jsonl": "9af014b4d1fe975565f01322ff42b55a26d9e1f7295049cf3f90758d32ed8b60",
+    "civvis-production-trade-growth-coverage-emperor-61008600-control-setup.json": "3d17530fcdb57bdf64eb7933ef103d5d1bda4837c98ebd65c5252b452b7c94e5",
+    "civvis-production-trade-growth-coverage-emperor-61008600-control-thoughts.jsonl": "1dd13a97e71a5e5d7ad3a50f136540de50f0f594b2c3f7797f4b6425311672d8",
+    "civvis-production-trade-growth-coverage-emperor-61008600-control-view-t25.json": "41c1b53685bae4d6abb162d8a0fe5fc625e0fd407d18ffd8da7aac4d9b8348b6",
+    "civvis-production-trade-growth-coverage-emperor-61008600-control-view-t50.json": "bed3207f94bd131467f795f00555b56d221410f4a3388f0f59e9b973dbdbcc63",
+    "civvis-production-trade-growth-coverage-emperor-61008600-control-view-t75.json": "270c166897ed6c076ca6b190a7819a50689796c57706e5d4cd39de94f311626a",
+    "civvis-production-trade-growth-coverage-emperor-61008601-control-actions.json": "53c9bf6017a9f2663f049248efacb74050727662084d13a4b14a0ce074c98bf1",
+    "civvis-production-trade-growth-coverage-emperor-61008601-control-cities.jsonl": "96c24d60061268c2b0fcf324a828bbd34665b340e79c3b792b4108630158b6f6",
+    "civvis-production-trade-growth-coverage-emperor-61008601-control-final.json": "478d28fd9d91b2fd9f09ee17753b8be6ea382d4fa5f8f1567bc49867f314dcbb",
+    "civvis-production-trade-growth-coverage-emperor-61008601-control-frames.jsonl": "c6eb21eb537c810ef729872d6c70addc31d435bed0e3b34ce47231db368dce2b",
+    "civvis-production-trade-growth-coverage-emperor-61008601-control-routes.jsonl": "54edfe93ff0beab155944a5f17fe30b56eacd907b3a30c62dabd162c576390a8",
+    "civvis-production-trade-growth-coverage-emperor-61008601-control-setup.json": "521ffafd9812e627863468b18c91b49e0305f6e60275bf589445a9cbe1780066",
+    "civvis-production-trade-growth-coverage-emperor-61008601-control-thoughts.jsonl": "6ef4b9b27236d3e2c4275c0102d7c7a6658d7e40cde5af10a0197985e337b84e",
+    "civvis-production-trade-growth-coverage-emperor-61008601-control-view-t25.json": "a4a2c4bbbc17d5eb7b2c615078d9d53cdfd050f43bcef10acda38ffdcb12c4fe",
+    "civvis-production-trade-growth-coverage-emperor-61008601-control-view-t50.json": "acb0fa91649d43376a2beaf8cabe5dac58056322b8d547ae245cc13ddb391210",
+    "civvis-production-trade-growth-coverage-emperor-61008601-control-view-t75.json": "7043aab2ee8a7632c18d38ac3f5f1a7f8df4a8799e3eda70eed6617fcbb5e2a1",
+    "civvis-production-trade-growth-coverage-emperor-61008602-control-actions.json": "ee677d69f46bb09769f7475240dfd41919597bbe64cd3496ba323d3cb3efb42b",
+    "civvis-production-trade-growth-coverage-emperor-61008602-control-cities.jsonl": "d17e003ea1311d304a173773f03097d6baac7ed15d8614e82c06c0f12df6fbc0",
+    "civvis-production-trade-growth-coverage-emperor-61008602-control-final.json": "0c77863d8ae06923124d81de0bc3231458f9644ff7bb88c270cba312784cdbcc",
+    "civvis-production-trade-growth-coverage-emperor-61008602-control-frames.jsonl": "40a92634748f05ed83e2cf047ec046618d13e15bb79f155090b73ccf6164c31b",
+    "civvis-production-trade-growth-coverage-emperor-61008602-control-routes.jsonl": "d55e0b49ed4e77589a4852f30712b6f39929fca5e86a5cdd493752c516208d91",
+    "civvis-production-trade-growth-coverage-emperor-61008602-control-setup.json": "0a1384f378bb0d7f445435dc79430bed616236a6ce6b49db87083239a435c65d",
+    "civvis-production-trade-growth-coverage-emperor-61008602-control-thoughts.jsonl": "b9f2fadeae906e1c9526d55f9135a5410a21c63891776961038e792df709d3b5",
+    "civvis-production-trade-growth-coverage-emperor-61008602-control-view-t25.json": "bf85209cdb52ae1c2128641b130b5c94eaee34ef921caf3ac68dce7bbbb1b0fa",
+    "civvis-production-trade-growth-coverage-emperor-61008602-control-view-t50.json": "07148dc6db48e7329e537930bcf777e17f76bcb80caff9576289c4f5275856b0",
+    "civvis-production-trade-growth-coverage-emperor-61008602-control-view-t75.json": "a413cd8874ad26ee16b0ecf85318d490e9c22c447873691578fe61f8121160fe",
+    "civvis-production-trade-growth-coverage-emperor-61008603-control-actions.json": "decaa637a26a51d18ed83d1adb02ad9e60d456ac679aff041254e89071459921",
+    "civvis-production-trade-growth-coverage-emperor-61008603-control-cities.jsonl": "bd59373627d9f6afd881713dbfc19230b857cf3b29bd05d00b58a63e08124c94",
+    "civvis-production-trade-growth-coverage-emperor-61008603-control-final.json": "9eff62fb2d51ca01b8c6c6e3b469749bfa8ddb29b0a7f3ee35741c028d2f0334",
+    "civvis-production-trade-growth-coverage-emperor-61008603-control-frames.jsonl": "52e393bf53f058f630b052930650e7528d9244fa78643723a90b92ef82a3b20b",
+    "civvis-production-trade-growth-coverage-emperor-61008603-control-routes.jsonl": "ae712f68600e53dcb9e8983f1d87c331653c62ec7e019ba9306fd9ef844d2a0b",
+    "civvis-production-trade-growth-coverage-emperor-61008603-control-setup.json": "216a54ef13e7068e795842baced607418997da74c2d437a556e3508eb77cebb2",
+    "civvis-production-trade-growth-coverage-emperor-61008603-control-thoughts.jsonl": "650ac26d814c51c7da6dcce5172f3b6fc2a1bb93c29566917a6dde406dae90ab",
+    "civvis-production-trade-growth-coverage-emperor-61008603-control-view-t25.json": "4493115b12f6f15233da39d80f0643068e7179a4f52a1c9310432b26c7d87b9c",
+    "civvis-production-trade-growth-coverage-emperor-61008603-control-view-t50.json": "e6d8a48521e55bbdb42f928eebc192f5cb3ca4c4c910044783b57824e643de38",
+    "civvis-production-trade-growth-coverage-emperor-61008603-control-view-t75.json": "8658aea03ebfc89be131dbc74c431e6dead413f6122a4dd67b97276c5d4751a0",
+    "civvis-production-trade-growth-coverage-emperor-control-completion.json": "4c44cef4c6a360171aa4226d4b9b42597d797ea63f460740598be8e69cfcd2aa",
+    "civvis-production-trade-growth-coverage-emperor-control.csv": "61b676cff6a40ce33da5deec530b654bbc2660ff85d98a74b8026dfb86b9aac8",
+    "civvis-production-trade-growth-coverage-emperor-control.log": "55fe21b3d31f44496537208f3af03bac66ac4c6dd3a3ef1eafd8f166d7eb6e58"
+  }
+}
