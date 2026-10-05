@@ -250,3 +250,42 @@ fn a_beaten_rival_in_the_fog_is_not_offered_peace_under_the_gene() {
     assert!(offered(false), "off, the campaign sues for peace");
     assert!(!offered(true), "the fogged rival keeps its war");
 }
+
+/// A completed campaign does not sue for peace with a Diplomatic Victory
+/// contender we outgun: only its elimination takes its points off the board.
+/// Live King civvis-20261005T212727Z (game 165) offered Indonesia peace at
+/// 16 points and 1,191 power against 666 and lost to its Diplomatic Victory.
+#[test]
+fn a_completed_campaign_keeps_its_war_on_a_diplomatic_contender_it_outguns() {
+    let offered = |dvp: i64, ours: f64, theirs: f64| {
+        let mut game = board(&[
+            (0, (6, 12)),
+            (1, (14, 12)),
+            (1, (17, 15)),
+            (2, (24, 12)),
+        ]);
+        let border = game.city_at((17, 15)).unwrap();
+        let mut ai = campaign(&game);
+        ai.campaign.as_mut().unwrap().cities = vec![border];
+        game.cities.get_mut(&border).unwrap().owner = 0;
+        ai.maintain_city_campaign(&mut game, 0);
+        assert_eq!(ai.campaign.as_ref().unwrap().taken, 1);
+        game.players[1].dvp = dvp;
+        let observed = std::sync::Arc::make_mut(&mut game.observed_military_power);
+        observed.insert(0, ours);
+        observed.insert(1, theirs);
+        ai.city_campaign_diplomacy(&mut game, 0);
+        game.pending_deals
+            .iter()
+            .any(|deal| deal.from == 0 && deal.to == 1 && deal.peace)
+    };
+    assert!(
+        !offered(15, 300.0, 100.0),
+        "a 15-point contender at a third of our power keeps its war"
+    );
+    assert!(offered(3, 300.0, 100.0), "an ordinary completed campaign still closes");
+    assert!(
+        offered(15, 150.0, 100.0),
+        "a contender we do not outgun twice over is still offered peace"
+    );
+}
