@@ -388,3 +388,62 @@ fn the_science_ladder_reads_the_finish_clock_under_the_gene() {
         assert_eq!(ai.science_race_pressure(&g, 2), on, "{project} on");
     }
 }
+
+/// See `free_city_finish`: live King civvis-20261005T193504Z (game 156) held
+/// two of the three foreign original capitals while the third, flipped to
+/// the Free Cities, was never the objective; the campaign sieged its old
+/// owner's towns instead.
+#[test]
+fn a_free_city_holding_the_last_capital_is_the_finishing_front() {
+    let mut g = Game::new_full(3, 40, 24, 109_106_002, 300, 0, false);
+    for id in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(id);
+    }
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+    }
+    g.found_city_for(0, at(4, 8), None);
+    let third = g.found_city_for(2, at(4, 18), None);
+    g.cities.get_mut(&third).unwrap().owner = 0;
+    let capital = g.found_city_for(1, at(17, 8), None);
+    let town = g.found_city_for(1, at(10, 8), None);
+    let free = g
+        .players
+        .iter()
+        .position(|player| player.is_free_city)
+        .expect("Rise & Fall reserves the Free Cities seat");
+    g.players[free].alive = true;
+    g.cities.get_mut(&capital).unwrap().owner = free;
+    g.record_contact(0, 1);
+    g.record_contact(0, 2);
+    g.at_war.insert((0, 1));
+    g.current = 0;
+    g.turn = 190;
+    for y in 0..8 {
+        g.spawn_test_unit("modern_armor", 0, at(5, 6 + y % 6));
+    }
+    assert!(g.is_at_war(0, free), "the Free Cities are always at war");
+    assert!(AdvancedAi::capture_completes_domination(&g, 0, capital));
+
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_one_war_at_a_time();
+    ai.enable_domination_finish_holds_the_front();
+    assert_eq!(ai.free_city_finish(&g, 0), None, "off");
+    let plan = ai.assess(&g, 0);
+    assert_ne!(plan.target_city, Some(capital), "off: the flipped capital is nobody's objective");
+
+    ai.enable_flipped_capital_finishes();
+    assert_eq!(ai.free_city_finish(&g, 0), Some((free, capital)));
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.target_player, Some(free));
+    assert_eq!(plan.target_city, Some(capital), "on: the Free City's capital ends the game");
+
+    // Not the last capital: the old owner still holds the other one, so
+    // taking the flipped capital does not finish and the rule stays quiet.
+    g.cities.get_mut(&third).unwrap().owner = 2;
+    assert_eq!(ai.free_city_finish(&g, 0), None, "not the finish");
+    let _ = town;
+}

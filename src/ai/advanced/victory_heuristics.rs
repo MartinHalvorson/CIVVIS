@@ -540,6 +540,36 @@ impl AdvancedAi {
             })
     }
 
+    /// `flipped-capital-finishes`: the Free Cities seat and the original
+    /// capital it holds whose capture completes Domination. The Free Cities
+    /// are always at war with us, but their seat is barbarian-flagged, so
+    /// `domination_finish_at_war`, `campaign_target_legal` and the wartime
+    /// front sets skip it and a capital that flipped to them was never the
+    /// objective again. Live King civvis-20261005T193504Z (game 156) held
+    /// Canberra and Washington from 174 to 181 with Mikisiw-Wacîhk, the
+    /// last capital, a Free City since 172; then Canberra and Mikisiw from 188
+    /// with Washington a Free City since 182. The campaign sieged Los Angeles,
+    /// Pihtokahanapiwiyin and Mistawasis.
+    pub(super) fn free_city_finish(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+        if !self.flipped_capital_finishes
+            || self.forced_target_player.is_some()
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        {
+            return None;
+        }
+        g.cities
+            .values()
+            .filter(|city| {
+                city.is_capital
+                    && city.owner != pid
+                    && g.players.get(city.owner).is_some_and(|owner| owner.is_free_city)
+                    && g.is_at_war(pid, city.owner)
+                    && Self::capture_completes_domination(g, pid, city.id)
+            })
+            .map(|city| (city.owner, city.id))
+            .min()
+    }
+
     /// Rank required capitals inside the selected front as well as globally.
     /// A different rival owning the cheapest capital must not erase this
     /// front's capital objective and send the army after an ordinary city.

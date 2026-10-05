@@ -6346,6 +6346,17 @@ impl AdvancedAi {
         self.counterfaith_leaves_two_holdouts = false;
     }
 
+    /// Opt-in gene `flipped-capital-finishes`; see
+    /// [`Self::flipped_capital_finishes`].
+    pub fn enable_flipped_capital_finishes(&mut self) {
+        self.flipped_capital_finishes = true;
+    }
+
+    /// The twin of `enable_flipped_capital_finishes`.
+    pub fn disable_flipped_capital_finishes(&mut self) {
+        self.flipped_capital_finishes = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

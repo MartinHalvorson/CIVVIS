@@ -276,6 +276,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `find-the-capital` | off (unmeasured) | Opt-in gene `find-the-capital`; see `Self::find_the_capital`. | 1 \| 1 |
 | `first-granary-reserve-2` | off (unmeasured) | Reserve a Granary only when its housing accelerates the next citizen within the construction and growth budget. | 1 \| 3 |
 | `first-granary-reserve-3` | off (unmeasured) | `first-granary-reserve-3`: version one's rule (population within one of housing, no Granary) reaches the delegated city governor too, and an Aqueduct follows the Granary while the city is still housing-bound. | 1 \| 3 |
+| `flipped-capital-finishes` | off (unmeasured) | Opt-in gene `flipped-capital-finishes`; see `Self::flipped_capital_finishes`. | 1 \| 1 |
 | `formations-heed-refusals` | off (unmeasured) | Opt-in gene `formations-heed-refusals`; see `Self::formations_heed_refusals`. | 1 \| 1 |
 | `found-against-a-rival-faith` | off (unmeasured) | Opt-in gene `found-against-a-rival-faith`; see `Self::found_against_a_rival_faith`. | 1 \| 1 |
 | `front-finishes-its-capital` | off (unmeasured) | Opt-in gene `front-finishes-its-capital`; see `Self::front_finishes_its_capital`. | 1 \| 1 |

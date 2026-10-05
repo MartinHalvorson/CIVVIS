@@ -5999,6 +5999,12 @@ pub struct AdvancedAi {
     /// `adopted_faith_sanctuary::counterfaith_is_safe`.
     counterfaith_leaves_two_holdouts: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `flipped-capital-finishes`: a Free City holding the original capital
+    /// whose capture completes Domination is the war that ends the game. The
+    /// Free Cities seat is barbarian-flagged, so `domination_finish_at_war`,
+    /// the wartime front sets and `campaign_target_legal` never name it. See
+    /// `victory_heuristics::free_city_finish`.
+    flipped_capital_finishes: bool,
     /// `faith-counter-needs-the-edge`: the religion counter declares without
     /// a staged siege only at `one_war::DECLARATION_EDGE_RATIO` times the
     /// rival's steady power. See `one_war::faith_counter_has_the_edge`.
@@ -9574,6 +9580,7 @@ impl AdvancedAi {
             colonization_earns_its_slot_2: false,
             counterfaith_leaves_two_holdouts: false,
             // ---- append: e-f ----------------------------------------
+            flipped_capital_finishes: false,
             faith_counter_needs_the_edge: false,
             favor_bought_before_congress: false,
             favor_spares_the_surprise_war: false,
@@ -13613,7 +13620,9 @@ impl AdvancedAi {
                     .map(|city| (rival, city))
             })
             // See `domination_finish_at_war`.
-            .or_else(|| self.domination_finish_at_war(g, pid));
+            .or_else(|| self.domination_finish_at_war(g, pid))
+            // See `free_city_finish`: the last capital held by a Free City.
+            .or_else(|| self.free_city_finish(g, pid));
         let emergency_objective = g.emergency_objective(pid).cloned();
         // Each arm carries the reason it fired. The strings are static and
         // cost nothing to build; they exist so the spectator's reasoning log
@@ -13890,7 +13899,11 @@ impl AdvancedAi {
                 && forced_target.is_none()
                 && (!self.one_war_at_a_time
                     || wartime_rivals.is_empty()
-                    || wartime_rivals.contains(rival))
+                    || wartime_rivals.contains(rival)
+                    // `flipped-capital-finishes`: the barbarian-flagged Free
+                    // Cities seat is never in `wartime_rivals`, yet always at
+                    // war with us.
+                    || (self.flipped_capital_finishes && g.players[*rival].is_free_city))
         });
         let domination_capital = self.domination_capital_target(g, pid);
         // A Domination plan that names a distant, weak empire cannot start
