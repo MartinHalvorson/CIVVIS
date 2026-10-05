@@ -7295,6 +7295,23 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `second-front-waits-for-its-war`: a second front we are not yet at
+    /// war with does not take the plan's target from a running war that still
+    /// holds a city within the declaration range. The Board writes Siege rows
+    /// only for the plan's target city and the campaign's cities while their
+    /// owner is at war with us, so aiming the plan at a rival still at peace
+    /// left the running war with no Siege row at all, while the declaration
+    /// on the second front waited for a staging that no row ordered. The
+    /// second front is still declared on (`waiting_second` in the diplomacy
+    /// desk, with every counter's waiver), and it takes the plan once it is
+    /// at war. Live King civvis-20261005T162932Z (game 143) declared on
+    /// America at turn 88 at 544 power against 13; from turn 99 the campaign
+    /// read "a second front" on Egypt, the Washington row vanished, and the
+    /// war on America produced nothing for 51 turns until Egypt was declared
+    /// on at 150. October 5: 308 such war-turns in 20 of 58 runs (census by
+    /// -60's fork). See `one_war::second_front_waits_for_its_war`. Off by
+    /// default.
+    second_front_waits_for_its_war: bool,
     /// `siege-members-use-their-moves`: in Invest and Reduce, a member far
     /// from the ring walks as far as its movement reaches toward it, not the
     /// router's single step. See `siege_train::close_to_staging`.
@@ -9640,6 +9657,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            second_front_waits_for_its_war: false,
             siege_members_use_their_moves: false,
             science_ladder_reads_the_clock: false,
             science_denounce_waits_for_the_race: false,
@@ -13936,8 +13954,12 @@ impl AdvancedAi {
                 })
                 .or_else(|| {
                     self.one_war_second_front(g, pid)
-                        // See `second_front_waits_for_the_front`.
-                        .filter(|rival| !self.second_front_waits_for_the_front(g, pid, *rival))
+                        // See `second_front_waits_for_the_front` and
+                        // `second_front_waits_for_its_war`.
+                        .filter(|rival| {
+                            !self.second_front_waits_for_the_front(g, pid, *rival)
+                                && !self.second_front_waits_for_its_war(g, pid, *rival)
+                        })
                 })
                 .or_else(|| {
                     self.one_war_front()
@@ -22384,8 +22406,12 @@ impl AdvancedAi {
         // ready.
         // See `second_front_waits_for_the_front`: a faith counter is declared
         // on while the plan, and the army, stay on the front's siege.
+        // See `second_front_waits_for_its_war`: any second front still at
+        // peace is declared on from here while the running war keeps the plan.
         let waiting_second = self.one_war_second_front(g, pid).filter(|rival| {
-            !g.is_at_war(pid, *rival) && self.second_front_waits_for_the_front(g, pid, *rival)
+            !g.is_at_war(pid, *rival)
+                && (self.second_front_waits_for_the_front(g, pid, *rival)
+                    || self.second_front_waits_for_its_war(g, pid, *rival))
         });
         let Some(target) = waiting_second
             .or(plan.target_player)

@@ -2993,6 +2993,7 @@ pub const GENES: &[Gene] = &[
     // siege is held for its breaker. See `advanced/decisive_window.rs`.
     Gene { tag: "breaker-research-first", field: "breaker_research_first", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_research_first, disable: AdvancedAi::disable_breaker_research_first },
     Gene { tag: "breach-support-reads-the-wall-tier", field: "breach_support_reads_the_wall_tier", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_support_reads_the_wall_tier, disable: AdvancedAi::disable_breach_support_reads_the_wall_tier },
+    Gene { tag: "second-front-waits-for-its-war", field: "second_front_waits_for_its_war", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_waits_for_its_war, disable: AdvancedAi::disable_second_front_waits_for_its_war },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

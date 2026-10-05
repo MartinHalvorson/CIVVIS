@@ -1544,6 +1544,44 @@ impl AdvancedAi {
             && self.front_siege_live(g)
     }
 
+    /// `second-front-waits-for-its-war`: whether the second front `rival`,
+    /// still at peace with us, leaves the plan's target on the war already
+    /// running. It waits while the front is at war with us and still holds a
+    /// city within the declaration range of ours; the diplomacy desk declares
+    /// on it meanwhile (`waiting_second`), and once at war it takes the plan as
+    /// before. An urgent clock and the Diplomatic Victory leader keep their
+    /// claim on the plan: those are the fronts a running war must not delay.
+    /// The Board writes Siege rows only for the plan's target and the
+    /// campaign's cities while their owner is at war with us, so a plan aimed
+    /// at a rival still at peace left the running war without a Siege row and
+    /// the second front without a staged army. Live King
+    /// civvis-20261005T162932Z (game 143): war on America from turn 88; from
+    /// 99 the campaign read "a second front" on Egypt (a faith counter), the
+    /// Washington row vanished, and the war on America produced nothing for 51
+    /// turns until Egypt was declared on at 150. October 5: 308 such war-turns
+    /// in 20 of 58 runs (census by -60's fork).
+    pub(crate) fn second_front_waits_for_its_war(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> bool {
+        if !self.second_front_waits_for_its_war
+            || g.is_at_war(pid, rival)
+            || self.urgent_victory_threat(g, rival)
+            || self.diplomatic_contender_leader(g, pid) == Some(rival)
+        {
+            return false;
+        }
+        let Some(front) = self.one_war_front().filter(|front| *front != rival) else {
+            return false;
+        };
+        g.is_at_war(pid, front)
+            && g.player_city_ids(front)
+                .into_iter()
+                .any(|cid| Self::city_within_declaration_range(g, pid, g.cities[&cid].pos))
+    }
+
     /// A faithless Domination seat whose cities `rival`'s faith is taking:
     /// `domination_faithless_conversion_counter`. See `faith_counter_due`.
     pub(crate) fn faith_counter(&self, g: &Game, pid: usize, rival: usize) -> bool {
