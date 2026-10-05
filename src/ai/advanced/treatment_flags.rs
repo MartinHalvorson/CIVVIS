@@ -6266,6 +6266,17 @@ impl AdvancedAi {
         self.second_front_waits_for_its_war = false;
     }
 
+    /// Opt-in gene `guns-post-for-a-near-breach`; see
+    /// [`Self::guns_post_for_a_near_breach`].
+    pub fn enable_guns_post_for_a_near_breach(&mut self) {
+        self.guns_post_for_a_near_breach = true;
+    }
+
+    /// The twin of `enable_guns_post_for_a_near_breach`.
+    pub fn disable_guns_post_for_a_near_breach(&mut self) {
+        self.guns_post_for_a_near_breach = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

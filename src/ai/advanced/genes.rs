@@ -2994,6 +2994,12 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "breaker-research-first", field: "breaker_research_first", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_research_first, disable: AdvancedAi::disable_breaker_research_first },
     Gene { tag: "breach-support-reads-the-wall-tier", field: "breach_support_reads_the_wall_tier", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_support_reads_the_wall_tier, disable: AdvancedAi::disable_breach_support_reads_the_wall_tier },
     Gene { tag: "second-front-waits-for-its-war", field: "second_front_waits_for_its_war", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_waits_for_its_war, disable: AdvancedAi::disable_second_front_waits_for_its_war },
+    // Live King 10-04/05: 537 walled Invest/Reduce siege-turns had fit guns
+    // within seven tiles that would open the walls in four turns or fewer,
+    // and 58% saw no shot on the city: guns posted two tiles out walked to
+    // three and held there, the approach charging each the city's whole
+    // reply plus 20. See `siege_train::near_breach`.
+    Gene { tag: "guns-post-for-a-near-breach", field: "guns_post_for_a_near_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_post_for_a_near_breach, disable: AdvancedAi::disable_guns_post_for_a_near_breach },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

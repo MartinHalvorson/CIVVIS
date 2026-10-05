@@ -6479,6 +6479,11 @@ pub struct AdvancedAi {
     /// visible hostile could destroy it with a single blow. See
     /// `advanced/guns_stay_out_of_reach.rs`.
     guns_stay_out_of_reach: bool,
+    /// `guns-post-for-a-near-breach`: the fit siege guns of a walled siege
+    /// whose shots open the walls within `NEAR_BREACH_TURNS` enter their
+    /// firing posts together on a survivable reply. See
+    /// `siege_train::near_breach`.
+    guns_post_for_a_near_breach: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     great_work_completion_value: bool,
     /// `industrial-chain-debt`: an Industrial Zone owes its Workshop,
@@ -9544,6 +9549,7 @@ impl AdvancedAi {
             grinding_sieges: BTreeSet::new(),
             guns_enter_together: false,
             guns_stay_out_of_reach: false,
+            guns_post_for_a_near_breach: false,
             great_work_completion_value: false,
             industrial_chain_debt: false,
             guard_breaks_the_pin: false,

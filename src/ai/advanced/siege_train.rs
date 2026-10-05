@@ -205,6 +205,20 @@ pub(super) const KILL_MARGIN: f64 = 1.15;
 pub(super) const INVEST_PATIENCE: u32 = 3;
 /// A siege record nobody has assessed for this many turns is dropped.
 const SIEGE_MEMORY: u32 = 3;
+/// `guns-post-for-a-near-breach`: the guns of a walled siege whose shots
+/// open the standing walls within this many turns enter their firing posts
+/// on a survivable reply rather than on [`ENTRY_HP_MARGIN`] over it.
+pub(super) const NEAR_BREACH_TURNS: f64 = 4.0;
+/// `guns-post-for-a-near-breach`: posted guns this far from the city count
+/// toward the near breach; a two-move gun closes from here in one turn.
+pub(super) const NEAR_BREACH_REACH: i32 = STAGING_FAR + 2;
+/// `guns-post-for-a-near-breach`: a near-breach gun enters while its health
+/// covers the upper roll of the expected reply (the engine's roll is uniform
+/// on 0.8-1.2 of the centre).
+pub(super) const NEAR_BREACH_REPLY_ROLL: f64 = 1.2;
+/// The approach's margin over the expected reply on a post inside the
+/// city's strike ring.
+pub(super) const ENTRY_HP_MARGIN: f64 = 20.0;
 /// `anvil`: a defender under this rotates into the city to heal, if the
 /// unit standing there is healthier by the margin.
 pub(super) const ANVIL_ROTATE_HP: i32 = 50;
@@ -484,6 +498,19 @@ fn breach_support_user(g: &Game, uid: u32) -> bool {
     g.units
         .get(&uid)
         .is_some_and(|unit| crate::ai::siege_support::eligible_attacker(&g.rules.units[unit.kind]))
+}
+
+/// `guns-post-for-a-near-breach`: the heaviest single blow — a unit's, a
+/// City Center's or an Encampment's — that would land on `uid` standing on
+/// `tile` next turn.
+fn strongest_blow(g: &Game, pid: usize, tile: Pos, uid: u32) -> f64 {
+    let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
+    field
+        .contributions(tile, uid)
+        .iter()
+        .filter(|(source, _)| source.is_some())
+        .map(|(_, blow)| *blow)
+        .fold(0.0, f64::max)
 }
 
 /// The wall damage one shot of this ranged unit is expected to do to the
@@ -3583,6 +3610,9 @@ impl AdvancedAi {
         // `guns-enter-together`: see `entry_group`. Read once, before the
         // first step, so a gun's own step cannot change the group it is in.
         let entering = self.entering_with(g, pid, uid, city_pos);
+        // `guns-post-for-a-near-breach`: see `near_breach`. Read once too.
+        let near = self.near_breach_size(g, pid, uid, city_pos);
+        let entering = entering.max(near);
         for _ in 0..4 {
             let unit = g.units.get(&uid)?;
             if unit.pos == goal || unit.moves_left <= 0.0 {
@@ -3598,16 +3628,18 @@ impl AdvancedAi {
                 // of three Bombards before Natal held posts for turns 160-170
                 // and stood five to seven tiles out, never firing, while the
                 // walls went 400 -> 68 under one Bombard's fire.
-                let hp = f64::from(unit.hp);
                 if let Some(dest) = (!moved)
                     .then(|| g.pass_through_destination(uid, goal, 0))
                     .flatten()
                     .filter(|dest| {
                         dry_stand(g, uid, *dest)
                             && (g.wdist(*dest, city_pos) > CITY_STRIKE_RANGE
-                                || hp > self.entry_danger(g, pid, *dest, uid, entering) + 20.0)
+                                || !self.entry_refused(g, pid, uid, *dest, entering, near > 0).0)
                     })
                 {
+                    if g.wdist(dest, city_pos) <= CITY_STRIKE_RANGE {
+                        self.note_near_breach_entry(g, pid, uid, dest, city_pos, entering, near);
+                    }
                     moved = self.base.path_walk_to(g, pid, uid, dest);
                 }
                 break;
@@ -3615,10 +3647,12 @@ impl AdvancedAi {
             // A post inside the city's firing ring can be covered by more
             // than one city or Encampment. Do not march a body into a stand
             // where the forward model expects the next volley to finish it.
-            if g.wdist(next, city_pos) <= CITY_STRIKE_RANGE
-                && f64::from(unit.hp) <= self.entry_danger(g, pid, next, uid, entering) + 20.0
-            {
+            let inside = g.wdist(next, city_pos) <= CITY_STRIKE_RANGE;
+            if inside && self.entry_refused(g, pid, uid, next, entering, near > 0).0 {
                 break;
+            }
+            if inside && g.wdist(g.units[&uid].pos, city_pos) > CITY_STRIKE_RANGE {
+                self.note_near_breach_entry(g, pid, uid, next, city_pos, entering, near);
             }
             if !self.base.tactical_apply_move(g, pid, uid, next) {
                 break;
@@ -3656,6 +3690,140 @@ impl AdvancedAi {
             field.share(g);
         }
         field.group_entry_danger(tile, uid, entering)
+    }
+
+    /// Whether the approach refuses `uid` the stand `tile` inside a city's
+    /// strike ring, and the reply it reads there. The gun keeps
+    /// [`ENTRY_HP_MARGIN`] over the expected reply; a gun of a near breach
+    /// (`guns-post-for-a-near-breach`) only the reply's upper roll.
+    fn entry_refused(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        tile: Pos,
+        entering: usize,
+        near_breach: bool,
+    ) -> (bool, f64) {
+        let hp = g.units.get(&uid).map_or(0.0, |unit| f64::from(unit.hp));
+        let danger = self.entry_danger(g, pid, tile, uid, entering);
+        let refused = if near_breach {
+            // The group shares the city's blow, but any one striker may still
+            // spend all of it on this gun: a walled Toronto at 400 one-shot a
+            // full-health Bombard (live King civvis-20261005T051413Z, turn
+            // 126). Neither reading's upper roll may finish it.
+            hp <= danger.max(strongest_blow(g, pid, tile, uid)) * NEAR_BREACH_REPLY_ROLL
+        } else {
+            hp <= danger + ENTRY_HP_MARGIN
+        };
+        (refused, danger)
+    }
+
+    /// `guns-post-for-a-near-breach`: the fit siege guns of a walled siege in
+    /// Invest or Reduce that hold a firing post inside the city's strike ring
+    /// and stand within [`NEAR_BREACH_REACH`] of it, and the turns their
+    /// shots take to open the standing walls — when that is at most
+    /// [`NEAR_BREACH_TURNS`]. `None` with the gene off or the breach far.
+    ///
+    /// The approach charged every gun the city's whole reply plus
+    /// [`ENTRY_HP_MARGIN`], so a lone gun or a pair against a city whose
+    /// reply reads 60-80 held one tile outside its own range for as long as
+    /// the siege lasted. Over the 10-04/05 control runs, 537 walled
+    /// Invest/Reduce siege-turns had fit guns within seven tiles that would
+    /// open the walls in four turns or fewer, and only 42% saw a shot on the
+    /// city; the guns were posted two tiles out and walked to three. The
+    /// city strikes once a turn, so the group's guns share its blow
+    /// (`group_entry_danger`), and each enters while its health covers the
+    /// reply's upper roll.
+    fn near_breach(&self, g: &Game, pid: usize, city: &CityView) -> Option<(Vec<u32>, f64)> {
+        if !self.guns_post_for_a_near_breach || city.wall_hp <= 0 {
+            return None;
+        }
+        let siege = self.sieges.get(&city.id)?;
+        if !matches!(siege.stage, SiegeStage::Invest | SiegeStage::Reduce) {
+            return None;
+        }
+        let guns: Vec<u32> = siege
+            .posts
+            .iter()
+            .filter(|(uid, post)| {
+                let Some(unit) = g.units.get(uid) else {
+                    return false;
+                };
+                unit.owner == pid
+                    && !g.is_embarked(unit)
+                    && arm_of(g, **uid) == Arm::Siege
+                    && self.siege_member_fit(g, **uid)
+                    && g.wdist(**post, city.pos) <= CITY_STRIKE_RANGE
+                    && g.wdist(unit.pos, city.pos) <= NEAR_BREACH_REACH
+            })
+            .map(|(uid, _)| *uid)
+            .collect();
+        let per_turn: f64 = guns
+            .iter()
+            .map(|uid| wall_damage_per_shot(g, *uid, city.id))
+            .sum();
+        if per_turn <= 0.0 {
+            return None;
+        }
+        let turns = f64::from(city.wall_hp) / per_turn;
+        (turns <= NEAR_BREACH_TURNS).then_some((guns, turns))
+    }
+
+    /// `guns-post-for-a-near-breach`: the size of the near-breach group `uid`
+    /// belongs to at the city on `city_pos`, or 0.
+    fn near_breach_size(&self, g: &Game, pid: usize, uid: u32, city_pos: Pos) -> usize {
+        if !self.guns_post_for_a_near_breach {
+            return 0;
+        }
+        let Some(city) = g.city_at(city_pos).and_then(|cid| CityView::of(g, cid)) else {
+            return 0;
+        };
+        match self.near_breach(g, pid, &city) {
+            Some((group, _)) if group.contains(&uid) => group.len(),
+            _ => 0,
+        }
+    }
+
+    /// `guns-post-for-a-near-breach`: one line for a gun that steps inside the
+    /// strike ring the approach's [`ENTRY_HP_MARGIN`] would have kept it out
+    /// of.
+    #[allow(clippy::too_many_arguments)]
+    fn note_near_breach_entry(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        tile: Pos,
+        city_pos: Pos,
+        entering: usize,
+        near: usize,
+    ) {
+        if near == 0 || !self.journal().wants(crate::reasoning::Level::Decision) {
+            return;
+        }
+        let hp = g.units.get(&uid).map_or(0.0, |unit| f64::from(unit.hp));
+        let danger = self.entry_danger(g, pid, tile, uid, entering);
+        if hp > danger + ENTRY_HP_MARGIN {
+            return;
+        }
+        let Some(city) = g.city_at(city_pos).and_then(|cid| CityView::of(g, cid)) else {
+            return;
+        };
+        let turns = self
+            .near_breach(g, pid, &city)
+            .map_or(f64::INFINITY, |(_, turns)| turns);
+        let name = g
+            .cities
+            .get(&city.id)
+            .map(|c| c.name.clone())
+            .unwrap_or_default();
+        think!(self.journal(), Military, Decision,
+            "Siege of {name}: the {} enters its post for a near breach", g.units[&uid].kind;
+            "{near} gun(s) open the {}/{} walls in {turns:.1} turns; the reply at {tile:?} reads \
+             {danger:.0} against {hp:.0} health",
+            city.wall_hp, city.wall_max;
+            city.pos);
     }
 
     /// `guns-enter-together`: the size of the group `uid` enters with when
@@ -3867,7 +4035,10 @@ impl AdvancedAi {
             return false;
         }
         let entering = if group.contains(&uid) { group.len() } else { 0 };
-        f64::from(unit.hp) <= self.entry_danger(g, pid, post, uid, entering) + 20.0
+        // `guns-post-for-a-near-breach`: see `near_breach`.
+        let near = self.near_breach_size(g, pid, uid, city.pos);
+        self.entry_refused(g, pid, uid, post, entering.max(near), near > 0)
+            .0
     }
 
     /// Walk to the first goal reachable this turn, else one step toward the
@@ -4866,3 +5037,6 @@ mod tower_ring_tests;
 
 #[cfg(test)]
 mod grind_tests;
+
+#[cfg(test)]
+mod near_breach_tests;

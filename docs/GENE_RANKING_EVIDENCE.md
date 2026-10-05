@@ -286,6 +286,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `great-work-completion-value` | off (unmeasured) | Enable `great-work-completion-value` for measurement. | 1 \| 1 |
 | `guns-enter-together` | off (unmeasured) | Opt-in gene `guns-enter-together`; see `Self::guns_enter_together`. | 1 \| 1 |
 | `guns-grind-the-walls` | off (unmeasured) | Opt-in gene `guns-grind-the-walls`; see `Self::guns_grind_the_walls`. | 1 \| 1 |
+| `guns-post-for-a-near-breach` | off (unmeasured) | Opt-in gene `guns-post-for-a-near-breach`; see `Self::guns_post_for_a_near_breach`. | 1 \| 1 |
 | `guns-stay-out-of-reach` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach`; see `Self::guns_stay_out_of_reach`. | 1 \| 1 |
 | `hostile-memory-3` | off (unmeasured) | Version three also revises stale sightings when their forecast area is fully visible, using only the unit facts recorded at observation. | 1 \| 3 |
 | `housing-research-2` | off (unmeasured) | Research housing that the capped cities can actually build. | 1 \| 2 |
