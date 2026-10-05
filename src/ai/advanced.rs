@@ -7044,6 +7044,21 @@ pub struct AdvancedAi {
     /// `BasicAi::note_host_moves` and `advanced/own_column.rs`.
     own_column_is_not_a_refusal: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `prophet-race-earns-its-points`: while a Great Prophet is still open to
+    /// this seat, the race's Holy Site city builds its Shrine at once (+1
+    /// Prophet point a turn, doubling the site's one) and Revelation takes the
+    /// wildcard slot (+2 a turn, no site needed). Census of the 78 finished
+    /// control games of October 4-5: we founded in 41 and lost to a religion
+    /// once; we did not in 37 and lost to a religion 12 times. A founding
+    /// typically came 27-30 turns after the Holy Site finished, on its single
+    /// point a turn, and no game built its Shrine before its Prophet arrived
+    /// or the race closed (G147: Shrine t129). Of the six religious losses
+    /// since Astrology came early (10-04 T205431 on), G147 (site t37, race
+    /// closed t56) founds by t54 with the Shrine, game 110504 (t41, t56) by
+    /// t47 with both, and G146 and 221542 (no site; Revelation offered at t36
+    /// and t46) by t50 and t60 with Revelation alone. See
+    /// `advanced/prophet_race_points.rs`. Off by default.
+    prophet_race_earns_its_points: bool,
     /// `BasicAi::plaza_in_the_district_list`.
     plaza_in_the_district_list: bool,
     /// `recovery-needs-the-deficit`: a threatened city puts a war into
@@ -8495,6 +8510,7 @@ mod domination_research;
 mod decisive_window;
 mod culture_defense;
 mod government_plaza;
+mod prophet_race_points;
 mod standing_army_supply;
 /// Victory lanes are target contracts: their beelines and campaign objectives
 /// stay attached to the condition that can actually end (or deny) the game.
@@ -9624,6 +9640,7 @@ impl AdvancedAi {
             naval_escort_patience: false,
             own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
+            prophet_race_earns_its_points: false,
             plaza_in_the_district_list: false,
             recovery_needs_the_deficit: false,
             recovery_peace_waits: false,
@@ -19057,6 +19074,18 @@ impl AdvancedAi {
         desired = temporary;
         desired.retain(|card| g.rules.policies[*card].offered(&g.players[pid].age, g.world_era));
 
+        // `prophet-race-earns-its-points`: Revelation's +2 Prophet points a
+        // turn while the race has a Prophet for this seat. The deck prices a
+        // Great Person card at zero, so it never took the wildcard on its own
+        // (game 110504: on offer t40-t55, never slotted). Ahead of the lane's
+        // portfolio, behind the emergency cards spliced in below; once the
+        // race is won or closed it leaves the list and the slot goes back.
+        let race_card = self.race_wants_revelation(g, pid).then_some("revelation");
+        if let Some(card) = race_card {
+            desired.retain(|wanted| *wanted != card);
+            desired.insert(0, card);
+        }
+
         // Nobel Peace scores the Favor this seat generates while its host
         // clock is live. A policy can be slotted now and starts that stream on
         // the following turn, so price ordinary direct-Favor cards against the
@@ -19253,6 +19282,17 @@ impl AdvancedAi {
                         || (nobel_peace_direct_favor_cards.contains(&card)
                             && !nobel_peace_direct_favor_cards
                                 .contains(&current.as_str()))
+                        // The race's Revelation takes the wildcard seat from
+                        // an ordinary desired card, never from a defensive or
+                        // emergency one.
+                        || (race_card == Some(card)
+                            && !culture_defense_cards.contains(&current.as_str())
+                            && !nobel_peace_direct_favor_cards.contains(&current.as_str())
+                            && upgrade_card != Some(current.as_str())
+                            && builder_window_card != Some(current.as_str())
+                            && !matches!(current.as_str(), "limitanei" | "praetorium")
+                            && !(maintenance_emergency
+                                && matches!(current.as_str(), "conscription" | "levee_en_masse")))
                 })
                 .filter(|current| Self::policy_swap_fits(g, pid, current, card))
                 .cloned()
@@ -29308,6 +29348,13 @@ impl AdvancedAi {
                     self.domination_defensive_temple(g, pid, cid, item)
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
+            // `prophet-race-earns-its-points`: the race's Shrine finishes
+            // before routine rescoring can claim its Holy Site city.
+            let race_shrine_commitment = plan.threatened_city != Some(cid)
+                && committed.as_ref().is_some_and(|(_, item)| {
+                    self.race_shrine_committed(g, pid, cid, item)
+                        && Self::production_commitment_is_legal(g, pid, cid, item)
+                });
             if committed.as_ref().is_some_and(|(value, _)| {
                 !self.victory_planning
                     || (value.is_finite() && *value > -1_000.0)
@@ -29315,6 +29362,7 @@ impl AdvancedAi {
                     || live_gp_commitment
                     || domination_research_commitment
                     || defensive_temple_commitment
+                    || race_shrine_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -29324,6 +29372,7 @@ impl AdvancedAi {
                     || live_gp_commitment
                     || domination_research_commitment
                     || defensive_temple_commitment
+                    || race_shrine_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -45599,6 +45648,9 @@ impl AdvancedAi {
             {
                 self.culture_spending(g, pid);
             }
+            // `prophet-race-earns-its-points`: the race's Holy Site city
+            // starts its Shrine. Exact no-op while the gene is off.
+            self.reserve_race_shrine(g, pid, &plan);
             // Emergency and victory reservations have had their turn. Reclaim
             // useful interrupted work before either routine governor fills
             // the remaining idle cities with unrelated new investments.

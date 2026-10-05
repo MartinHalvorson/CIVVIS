@@ -3006,6 +3006,9 @@ pub const GENES: &[Gene] = &[
     // (Missionaries, Great Prophet points) a seat with no religion never
     // spends. See `ai::choose_conquest_dedications`.
     Gene { tag: "golden-dedication-serves-the-conquest", field: "golden_dedication_serves_the_conquest", kind: Kind::OptIn, enable: AdvancedAi::enable_golden_dedication_serves_the_conquest, disable: AdvancedAi::disable_golden_dedication_serves_the_conquest },
+    // The race's Holy Site builds its Shrine and Revelation takes the
+    // wildcard while a Prophet is open. See `advanced/prophet_race_points.rs`.
+    Gene { tag: "prophet-race-earns-its-points", field: "prophet_race_earns_its_points", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_earns_its_points, disable: AdvancedAi::disable_prophet_race_earns_its_points },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
