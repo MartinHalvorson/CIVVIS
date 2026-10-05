@@ -134,6 +134,9 @@ pub(crate) const FAVOR_SURPRISE_DVP: i64 = 9;
 /// `favor-spares-the-surprise-war`: a target's culture finish this many turns
 /// out or nearer still takes the surprise war.
 pub(crate) const FAVOR_SURPRISE_CLOCK_TURNS: f64 = 8.0;
+/// `declaration-needs-the-edge`: our military over the target's steady reading
+/// a plain staged declaration needs.
+pub(crate) const DECLARATION_EDGE_RATIO: f64 = 1.5;
 /// `diplomatic-contender-eliminated`: the Diplomatic Victory points at which
 /// a rival we are fighting is to be eliminated rather than passed by.
 pub(crate) const ELIMINATION_CONTENDER_DVP: i64 = 14;
@@ -1782,6 +1785,23 @@ impl AdvancedAi {
     /// seat declared on it at 95 "179 power against their 4". Over October
     /// 4-5 a rival's reading fell by three quarters in one turn and recovered
     /// to 60% within ten 21 times (diagnosed with -60).
+    /// `declaration-needs-the-edge`: whether a plain staged declaration on
+    /// `target` has the edge -- our military at [`DECLARATION_EDGE_RATIO`]
+    /// times its steady reading (`steady_rival_power`). Always with the gene
+    /// off. The declaration's urgent clock and its counters (religion,
+    /// culture, air, overwhelming power) keep their own waivers. Of the 186
+    /// live declarations of October 4-5, the 25 made under 1.5 times the
+    /// target's power took a city of theirs within 20 turns twice (0 of 15
+    /// after turn 100); one was declared at 0.24 times (game 74, t185, on
+    /// Mali behind 400 walls). Live King civvis-20261005T141932Z (game 135)
+    /// opened a surprise war on the Maya at turn 48 at 196 power against 193
+    /// because the army stood staged within reach.
+    pub(crate) fn declaration_has_the_edge(&self, g: &Game, pid: usize, target: usize) -> bool {
+        !self.declaration_needs_the_edge
+            || g.military_power(pid)
+                >= DECLARATION_EDGE_RATIO * self.steady_rival_power(g, target).max(1.0)
+    }
+
     /// `diplomatic-contender-eliminated`: the rival a Domination seat must
     /// eliminate: at war with us and holding cities, at
     /// [`ELIMINATION_CONTENDER_DVP`] Diplomatic Victory points or more, and

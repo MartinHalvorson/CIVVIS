@@ -2944,6 +2944,10 @@ pub const GENES: &[Gene] = &[
     // at 14 points and 6 cities for Korea's capital; Byzantium won on
     // Diplomacy. See `one_war::diplomatic_contender_to_eliminate`.
     Gene { tag: "diplomatic-contender-eliminated", field: "diplomatic_contender_eliminated", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_contender_eliminated, disable: AdvancedAi::disable_diplomatic_contender_eliminated },
+    // Oct 4-5 live: 25 staged declarations under 1.5 times the target's
+    // power took a city twice; game 135 declared on the Maya at 1.02 times.
+    // See `one_war::declaration_has_the_edge`.
+    Gene { tag: "declaration-needs-the-edge", field: "declaration_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_needs_the_edge, disable: AdvancedAi::disable_declaration_needs_the_edge },
     // Staging marches took the router's single step and stood: 47-62% of
     // live frame-0 MOVE_TOs were one tile. See `march_moves`.
     Gene { tag: "march-uses-its-moves", field: "march_uses_its_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_march_uses_its_moves, disable: AdvancedAi::disable_march_uses_its_moves },
