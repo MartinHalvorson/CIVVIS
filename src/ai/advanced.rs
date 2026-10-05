@@ -5301,6 +5301,10 @@ pub struct AdvancedAi {
     /// `campus-before-harbor-2`: version one, and the capital's first Campus
     /// before its next Settler. See `BasicAi::capital_campus_first`. Opt-in.
     campus_before_harbor_2: bool,
+    /// `counter-war-needs-parity`: an urgent counter on a non-religious clock
+    /// needs our equal power to declare or to take the front. See
+    /// `one_war::COUNTER_WAR_PARITY`. Off by default.
+    counter_war_needs_parity: bool,
     /// A standing district's first building before the delegated city
     /// governor opens another district. Opt-in gene `district-buildings-first`;
     /// see `BasicAi::district_buildings_first`.
@@ -8917,6 +8921,7 @@ impl AdvancedAi {
             denial_nearest_finish: false,
             campus_before_harbor: false,
             campus_before_harbor_2: false,
+            counter_war_needs_parity: false,
             district_buildings_first: false,
             district_buildings_first_2: false,
             culture_defense_theater: false,

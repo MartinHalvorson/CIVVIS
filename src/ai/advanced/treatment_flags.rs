@@ -4696,6 +4696,17 @@ impl AdvancedAi {
         self.base.campus_before_harbor = self.campus_before_harbor;
         self.base.capital_campus_first = false;
     }
+
+    /// Opt-in gene `counter-war-needs-parity`; see
+    /// [`Self::counter_war_needs_parity`].
+    pub fn enable_counter_war_needs_parity(&mut self) {
+        self.counter_war_needs_parity = true;
+    }
+
+    /// The twin of `enable_counter_war_needs_parity`.
+    pub fn disable_counter_war_needs_parity(&mut self) {
+        self.counter_war_needs_parity = false;
+    }
     /// See `AdvancedAi::first_granary_reserve_3`: a housing-bound city's
     /// Granary, then its Aqueduct, in both production governors.
     pub fn enable_first_granary_reserve_3(&mut self) {

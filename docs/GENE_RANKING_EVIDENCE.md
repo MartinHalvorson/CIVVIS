@@ -214,6 +214,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `connect-the-luxury-2` | off (unmeasured) | Research a first-copy luxury only when it can relieve an Amenity deficit after a legal, affordable unlock. | 1 \| 2 |
 | `conquest-takes-the-soft-city` | off (unmeasured) | `conquest-takes-the-soft-city`: rank the early conquest target by what can be taken before what is worth most. | 1 \| 1 |
 | `counter-culture-by-conquest` | off (unmeasured) | `counter-culture-by-conquest`: answer a culture leader with war aimed at its Great Works. | 1 \| 1 |
+| `counter-war-needs-parity` | off (unmeasured) | Opt-in gene `counter-war-needs-parity`; see `Self::counter_war_needs_parity`. | 1 \| 1 |
 | `culture-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 2 \| 3 |
 | `culture-counter-declares` | off (unmeasured) | Opt-in gene `culture-counter-declares`; see `Self::culture_counter_declares`. | 1 \| 1 |
 | `culture-defense-theater` | off (unmeasured) | A Theater Square while the empire's Culture trails the strongest rival's: claimed for one idle city ahead of the delegated governor (`reserve_culture_defense_theater`), and in the delegated governor ahead of the Harbor. | 1 \| 1 |

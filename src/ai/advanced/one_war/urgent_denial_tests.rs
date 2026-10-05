@@ -1008,3 +1008,38 @@ fn recovery_keeps_a_winning_war_under_the_gene() {
     }
     assert!(!ai.recovery_keeps_the_war(&g, 0, 1, &plan), "not winning");
 }
+
+/// See `COUNTER_WAR_PARITY`: under the gene a non-religious counter needs our
+/// equal power, and an urgent rival under its floor leaves the front alone.
+#[test]
+fn a_counter_war_needs_parity_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    while g.military_power(2) * COUNTER_WAR_PARITY <= g.military_power(0) {
+        g.spawn_test_unit("modern_armor", 2, (30, 2));
+    }
+    assert!(g.military_power(0) >= COUNTER_WAR_POWER_FLOOR * g.military_power(2));
+    assert!(!ai.counter_war_hopeless(&g, 0, 2), "off: no floor");
+    ai.enable_counter_war_needs_parity();
+    assert!(ai.counter_war_hopeless(&g, 0, 2), "under parity");
+    // An urgent faith under its own floor keeps the army on the front.
+    let (mut g, mut ai) = two_fronts();
+    convert(&mut g, &[0, 1, 2]);
+    assert!(ai.urgent_victory_threat(&g, 2));
+    let mut row = 2;
+    while !ai.counter_war_hopeless(&g, 0, 2) {
+        g.spawn_test_unit("modern_armor", 2, (30, row));
+        row += 1;
+    }
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(2), "off: the counter");
+    let (mut g, mut ai) = two_fronts();
+    convert(&mut g, &[0, 1, 2]);
+    let mut row = 2;
+    while !ai.counter_war_hopeless(&g, 0, 2) {
+        g.spawn_test_unit("modern_armor", 2, (30, row));
+        row += 1;
+    }
+    ai.enable_counter_war_needs_parity();
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(1), "the front stays");
+}

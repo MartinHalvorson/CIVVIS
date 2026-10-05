@@ -132,6 +132,15 @@ pub(crate) const ONE_WAR_SECOND_FRONT_HOLD_RATIO: f64 = 1.3;
 /// only other urgent declaration in forty live games opened at 0.99.
 pub(crate) const COUNTER_WAR_POWER_FLOOR: f64 = 0.7;
 
+/// `counter-war-needs-parity`: the least power, against the rival's, at
+/// which a counter-war on any other clock is opened or takes the front.
+/// Seven urgent counter declarations below parity on 2026-10-04/05 (0.24 to
+/// 0.74) took 0.14 cities between them in the next forty turns, and all
+/// seven games were lost; G83 declared on Germany at 0.70 for a science
+/// counter and lost on Religion, G92 moved the army off a staged Qusqu onto
+/// Sydney at 0.91 and stood 12-18 tiles out for 25 turns.
+pub(crate) const COUNTER_WAR_PARITY: f64 = 1.0;
+
 /// Standard turns a front siege still in Stage counts as live for
 /// `front_siege_live`. A siege past Stage counts while it is read and its
 /// city has fallen to a new low of health within this many standard turns.
@@ -411,7 +420,11 @@ impl AdvancedAi {
         // and sustained losing-tide safeguards on whichever front is chosen.
         if self.forced_target_player.is_none() {
             if let Some((rival, GrandStrategy::Conquest)) = self.actionable_victory_denial(g, pid) {
-                if enemies.contains(&rival) && self.urgent_victory_threat(g, rival) {
+                // `counter-war-needs-parity`: an urgent rival under the floor
+                // does not take the army off the front either.
+                let hopeless =
+                    self.counter_war_needs_parity && self.counter_war_hopeless(g, pid, rival);
+                if enemies.contains(&rival) && self.urgent_victory_threat(g, rival) && !hopeless {
                     // A congress jump can make a subthreshold Diplomatic
                     // score look urgent even after this rival lost its
                     // original capital. Follow the active war for that
@@ -1120,7 +1133,15 @@ impl AdvancedAi {
                 .religion
                 .as_deref()
                 .is_some_and(|faith| g.civ_follows_religion(pid, faith));
-        religious && g.military_power(pid) < COUNTER_WAR_POWER_FLOOR * g.military_power(rival)
+        // `counter-war-needs-parity`: any other clock needs our equal power.
+        let floor = if religious {
+            COUNTER_WAR_POWER_FLOOR
+        } else if self.counter_war_needs_parity {
+            COUNTER_WAR_PARITY
+        } else {
+            return false;
+        };
+        g.military_power(pid) < floor * g.military_power(rival)
     }
 
     /// Whether a siege on one of the front's cities is live: not Hold, read

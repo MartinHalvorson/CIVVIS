@@ -2396,6 +2396,9 @@ pub const GENES: &[Gene] = &[
     // the empire holds three cities: the capital trained eight Settlers by
     // turn 57 and opened no Campus until turn 66. See `BasicAi::capital_campus_first`.
     Gene { tag: "campus-before-harbor-2", field: "campus_before_harbor_2", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_harbor_2, disable: AdvancedAi::disable_campus_before_harbor_2 },
+    // Seven urgent counter declarations below parity took 0.14 cities in 40
+    // turns and lost all seven games. See `one_war::COUNTER_WAR_PARITY`.
+    Gene { tag: "counter-war-needs-parity", field: "counter_war_needs_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_war_needs_parity, disable: AdvancedAi::disable_counter_war_needs_parity },
     // The delegated city governor tried every district a city lacked before
     // any building: live King turn 100 held 15 of 45 Campuses without a
     // Library and 13 of 19 Commercial Hubs without a Market. See
