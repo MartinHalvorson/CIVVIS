@@ -2678,6 +2678,11 @@ pub const GENES: &[Gene] = &[
     // adjacent, and its bodies went to Siege Munich. See
     // `objective_board::capital_defense_contact`.
     Gene { tag: "capital-defense-holds", field: "capital_defense_holds", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_defense_holds, disable: AdvancedAi::disable_capital_defense_holds },
+    // Live King civvis-20261005T003728Z (game 89): Mashhad held in Stage
+    // from turn 183 to 225; its guns, twelve to fourteen tiles out, stepped
+    // between two tiles every frame behind one of ours in a ridge's only gap.
+    // See `siege_train::siege_stage_step`.
+    Gene { tag: "staging-column-passes-through", field: "staging_column_passes_through", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_column_passes_through, disable: AdvancedAi::disable_staging_column_passes_through },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

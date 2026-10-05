@@ -6947,6 +6947,16 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `staging-column-passes-through`: a Stage march step that brings a
+    /// unit no nearer to the city is taken across the friend in the gap
+    /// instead (`Game::pass_through_destination`). The router lets only the
+    /// first step be a tile the unit may stop on, so one of ours in a defile
+    /// turned the route sideways and the next frame turned it back: live King
+    /// civvis-20261005T003728Z (game 89) held Mashhad in Stage from turn 183
+    /// to 225 with three guns twelve to fourteen tiles out stepping between
+    /// two tiles behind a ridge. See `siege_train::siege_stage_step`. Off by
+    /// default.
+    staging_column_passes_through: bool,
     /// `second-front-kept-when-winning`: a second war on a rival we outgun
     /// `one_war::ONE_WAR_CRUSHED_RATIO` times over, or are winning
     /// (`one_war_still_winning`) and hold a city of, is not offered "one war
@@ -9128,6 +9138,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            staging_column_passes_through: false,
             second_front_kept_when_winning: false,
             second_front_kept_when_winning_2: false,
             siege_counts_posted_shooters: false,

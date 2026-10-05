@@ -704,3 +704,93 @@ fn a_walking_unit_keeps_last_turns_ring_post() {
         kept
     );
 }
+
+/// A one-tile defile toward the city with one of ours in its gap, and a
+/// single open pocket beside the marching gun's start. The router may stop
+/// only on its first step, so from the start it turns into the pocket, which
+/// is no nearer the city, and from the pocket it turns back. Live King
+/// civvis-20261005T003728Z (game 89): Mashhad's guns stepped between two
+/// tiles behind a ridge for turns. `in_pocket` starts the gun in the pocket.
+fn defile_with_a_pocket(in_pocket: bool) -> (Game, u32, u32, u32, Pos, Pos) {
+    let (mut g, cid) = walled_city();
+    let target = g.cities[&cid].pos;
+    let start = (target.0 - 7, target.1);
+    let occupied = (target.0 - 6, target.1);
+    let pocket = (start.0, start.1 + 1);
+    for tile in g.map.tiles.values_mut() {
+        let lane = tile.pos.1 == target.1 && (start.0..=target.0).contains(&tile.pos.0);
+        tile.terrain = if lane || tile.pos == pocket {
+            crate::name!("grassland")
+        } else {
+            crate::name!("mountain")
+        };
+        tile.feature = None;
+        tile.hills = false;
+    }
+    let gun = g.spawn_unit("catapult", 0, if in_pocket { pocket } else { start });
+    let screen = g.spawn_unit("swordsman", 0, occupied);
+    (g, cid, gun, screen, start, pocket)
+}
+
+/// Without the gene the march step goes into the pocket, and from the
+/// pocket back; with `staging-column-passes-through` the gun crosses its own
+/// screen and stands nearer the city, the screen unmoved.
+#[test]
+fn staging_column_crosses_the_friend_in_the_gap_instead_of_stepping_aside() {
+    let (g, cid, gun, _, start, pocket) = defile_with_a_pocket(false);
+    let target = g.cities[&cid].pos;
+    assert_eq!(march_step(&g, gun, target, STAGING_FAR), Some(pocket));
+    assert!(
+        g.wdist(pocket, target) >= g.wdist(start, target),
+        "the pocket is no nearer"
+    );
+    let (g, _, gun, _, start, _) = defile_with_a_pocket(true);
+    assert_eq!(
+        march_step(&g, gun, target, STAGING_FAR),
+        Some(start),
+        "the two-cycle"
+    );
+
+    let run = |gene: bool| {
+        let (mut g, cid, gun, screen, _, _) = defile_with_a_pocket(false);
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        let mut ai = AdvancedAi::new();
+        ai.enable_siege_train();
+        if gene {
+            ai.enable_staging_column_passes_through();
+        }
+        let screen_pos = g.units[&screen].pos;
+        ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+        assert_eq!(g.units[&screen].pos, screen_pos, "the screen stays put");
+        (g.units[&gun].pos, g.wdist(g.units[&gun].pos, city.pos))
+    };
+    let (off_pos, off_distance) = run(false);
+    assert_eq!(off_pos, pocket, "without the gene the march steps aside");
+    let (on_pos, on_distance) = run(true);
+    assert!(
+        on_distance < off_distance && on_distance > CITY_STRIKE_RANGE,
+        "the gene crosses the screen to a nearer tile outside the city's reach: {on_pos:?} at {on_distance}"
+    );
+}
+
+/// With an open lane the march step already closes; the gene leaves the
+/// turn exactly as it was.
+#[test]
+fn staging_column_gene_leaves_an_open_march_alone() {
+    let run = |gene: bool| {
+        let (mut g, cid, gun, screen, _, _) = defile_with_a_pocket(false);
+        g.remove_unit(screen);
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        let mut ai = AdvancedAi::new();
+        ai.enable_siege_train();
+        if gene {
+            ai.enable_staging_column_passes_through();
+        }
+        ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+        (g.units[&gun].pos, g.units[&gun].moves_left.to_bits())
+    };
+    let (on, off) = (run(true), run(false));
+    assert_eq!(on, off);
+}

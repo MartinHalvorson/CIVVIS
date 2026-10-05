@@ -2271,8 +2271,11 @@ impl AdvancedAi {
         });
         let gun_risk_limit = (f64::from(g.units[&uid].hp) - STAGING_GUN_HP_RESERVE).max(0.0)
             / STAGING_GUN_REPLY_TURNS;
-        // `staging-gun-trusts-its-escort`: see `STAGING_ESCORT_BODIES`.
-        let escorted_limit = |pos: Pos| -> f64 {
+        // `staging-gun-trusts-its-escort`: see `STAGING_ESCORT_BODIES`. The
+        // board is a parameter, not a capture, so the step may still move the
+        // unit while the limit is in scope.
+        let trusts_escort = self.staging_gun_trusts_its_escort;
+        let escorted_limit = |g: &Game, pos: Pos| -> f64 {
             let escorts = g
                 .nbrs(pos)
                 .into_iter()
@@ -2289,7 +2292,7 @@ impl AdvancedAi {
                         })
                 })
                 .count();
-            if self.staging_gun_trusts_its_escort && escorts >= STAGING_ESCORT_BODIES {
+            if trusts_escort && escorts >= STAGING_ESCORT_BODIES {
                 (f64::from(g.units[&uid].hp) - STAGING_GUN_HP_RESERVE).max(0.0)
             } else {
                 gun_risk_limit
@@ -2297,7 +2300,7 @@ impl AdvancedAi {
         };
         if let Some(field) = gun_danger.as_mut() {
             let risk_here = field.danger(here, uid);
-            if risk_here > escorted_limit(here) {
+            if risk_here > escorted_limit(g, here) {
                 let safer = g
                     .nbrs(here)
                     .into_iter()
@@ -2344,8 +2347,36 @@ impl AdvancedAi {
             if let Some(next) = march_step(g, uid, city.pos, STAGING_FAR)
                 .filter(|pos| g.can_move(uid, *pos) && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE)
             {
+                // `staging-column-passes-through`: a march step that brings
+                // the unit no nearer is the router going round one of ours
+                // in the defile: only the first step must be a tile it may
+                // stop on, so a friend in the gap turns the route sideways,
+                // and from the side tile the route turns back. Live King
+                // civvis-20261005T003728Z (game 89): Mashhad, Persia's
+                // capital, held in Stage from turn 183 to 225 with its
+                // artillery stepping (26,17) -> (26,18) -> (26,17) every
+                // frame behind a Rocket Artillery in the one gap of a
+                // mountain ridge, twelve to fourteen tiles out. Cross the
+                // friend instead, to the open tile beyond.
+                if self.staging_column_passes_through && g.wdist(next, city.pos) >= distance {
+                    if let Some(dest) = g.pass_through_destination(uid, city.pos, STAGING_FAR) {
+                        let kind = g.units[&uid].kind;
+                        if gun_danger
+                            .as_mut()
+                            .is_none_or(|field| field.danger(dest, uid) <= gun_risk_limit)
+                            && self.base.path_walk_to(g, pid, uid, dest)
+                        {
+                            think!(self.journal(), Military, Detail,
+                                "Siege of {}: the {} crosses its own column toward the staging ring", g.cities[&city.id].name, kind;
+                                "its march step led no nearer than {} tiles, round one of ours in the gap; {:?} stands {} tiles out",
+                                distance, dest, g.wdist(dest, city.pos);
+                                city.pos);
+                            return true;
+                        }
+                    }
+                }
                 if let Some(field) = gun_danger.as_mut() {
-                    if field.danger(next, uid) > escorted_limit(next) {
+                    if field.danger(next, uid) > escorted_limit(g, next) {
                         let safe = g
                             .nbrs(here)
                             .into_iter()
