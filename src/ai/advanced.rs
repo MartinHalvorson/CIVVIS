@@ -5336,10 +5336,6 @@ pub struct AdvancedAi {
     /// 650-gold reserve (10 cities) against banks of 378-485. Off by default.
     age_closer_spends_the_reserve: bool,
     // ---- append: c-d ------------------------------------------------
-    /// `counterweight-faith-is-no-threat`: a faith holding our majority is our
-    /// counterweight, not the threat, while a stronger faith stands in our
-    /// cities. See `adopted_faith_sanctuary::stronger_faith_than`.
-    counterweight_faith_is_no_threat: bool,
     /// `capital-prey-scales-the-walls`: a prey capital at peace may stand
     /// behind more wall the further its army has collapsed. See
     /// `one_war::capital_prey_walls`.
@@ -9196,7 +9192,6 @@ impl AdvancedAi {
             breaker_to_the_fastest: false,
             age_closer_spends_the_reserve: false,
             // ---- append: c-d ----------------------------------------
-            counterweight_faith_is_no_threat: false,
             capital_prey_scales_the_walls: false,
             culture_reads_the_engine_clock: false,
             capital_prey_opens_a_front_2: false,
