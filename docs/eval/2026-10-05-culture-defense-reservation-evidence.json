@@ -320,5 +320,223 @@
       },
       "actual_binary_sha256": "76fdac1079ac4842ee5a714f1536a413165b788385cdb4054ebeeb680bfcded1"
     }
+  },
+  "native_goal_diagnostics": {
+    "scope": "Recent native context for judging culture defense; revisions vary and this is not a causal policy comparison",
+    "recent_capital_audit": {
+      "selected": 24,
+      "with_event_source": 24,
+      "terminal_foreign_capitals_distribution": {
+        "0": 17,
+        "1": 6,
+        "2": 1
+      },
+      "native_domination_wins": 0,
+      "native_loss_types": {
+        "5": 6,
+        "4": 3,
+        "3": 9,
+        "6": 6
+      }
+    },
+    "last_science_loss": {
+      "run": "civvis-20261005T170117Z",
+      "pin_revision": "ea4a1ce9e9e4bb0ea1f329487a74b30b3619e737",
+      "input_sha256": {
+        "events": "949c4cbcf774a5b331bd5a37dd11fd8ecdb226c6a49b1da8933db21d3cf86fef",
+        "journal": "c5cf205676845996ab91f8ce92dcc3e525c1660cc704efa7398db7f843df83cd",
+        "one_war_source": "9c6f471e028c373347589df2433021b14486fb5dc60dbf9e429d7e46edda96fa",
+        "advanced_source": "e33eb78c8536a12813bc3ca75433a520b92718ce0d0a498cf1b9dcf31aa0cafe"
+      },
+      "observed_readings": [
+        {
+          "turn": 267,
+          "congress_turns_left": 14,
+          "rivals": [
+            {
+              "player": 1,
+              "civ": "CIVILIZATION_NORWAY",
+              "at_war": true,
+              "military": 207,
+              "dvp": 15,
+              "science_projects": [
+                "PROJECT_LAUNCH_EARTH_SATELLITE",
+                "PROJECT_LAUNCH_MOON_LANDING"
+              ],
+              "science_victory_points": 0,
+              "science_victory_points_needed": 25,
+              "science_victory_points_per_turn": 0,
+              "current_rate_science_finish_turns": null
+            },
+            {
+              "player": 2,
+              "civ": "CIVILIZATION_BRAZIL",
+              "at_war": true,
+              "military": 200,
+              "dvp": 15,
+              "science_projects": [
+                "PROJECT_LAUNCH_EARTH_SATELLITE",
+                "PROJECT_LAUNCH_MOON_LANDING",
+                "PROJECT_LAUNCH_MARS_BASE"
+              ],
+              "science_victory_points": 0,
+              "science_victory_points_needed": 25,
+              "science_victory_points_per_turn": 0,
+              "current_rate_science_finish_turns": null
+            }
+          ]
+        },
+        {
+          "turn": 269,
+          "congress_turns_left": 12,
+          "rivals": [
+            {
+              "player": 1,
+              "civ": "CIVILIZATION_NORWAY",
+              "at_war": true,
+              "military": 157,
+              "dvp": 15,
+              "science_projects": [
+                "PROJECT_LAUNCH_EARTH_SATELLITE",
+                "PROJECT_LAUNCH_MOON_LANDING"
+              ],
+              "science_victory_points": 0,
+              "science_victory_points_needed": 25,
+              "science_victory_points_per_turn": 0,
+              "current_rate_science_finish_turns": null
+            },
+            {
+              "player": 2,
+              "civ": "CIVILIZATION_BRAZIL",
+              "at_war": true,
+              "military": 123,
+              "dvp": 15,
+              "science_projects": [
+                "PROJECT_LAUNCH_EARTH_SATELLITE",
+                "PROJECT_LAUNCH_MOON_LANDING",
+                "PROJECT_LAUNCH_MARS_BASE",
+                "PROJECT_LAUNCH_EXOPLANET_EXPEDITION"
+              ],
+              "science_victory_points": 0,
+              "science_victory_points_needed": 25,
+              "science_victory_points_per_turn": 4,
+              "current_rate_science_finish_turns": 6.25
+            }
+          ]
+        },
+        {
+          "turn": 274,
+          "congress_turns_left": 7,
+          "rivals": [
+            {
+              "player": 1,
+              "civ": "CIVILIZATION_NORWAY",
+              "at_war": true,
+              "military": 241,
+              "dvp": 15,
+              "science_projects": [
+                "PROJECT_LAUNCH_EARTH_SATELLITE",
+                "PROJECT_LAUNCH_MOON_LANDING"
+              ],
+              "science_victory_points": 0,
+              "science_victory_points_needed": 25,
+              "science_victory_points_per_turn": 0,
+              "current_rate_science_finish_turns": null
+            },
+            {
+              "player": 2,
+              "civ": "CIVILIZATION_BRAZIL",
+              "at_war": true,
+              "military": 279,
+              "dvp": 15,
+              "science_projects": [
+                "PROJECT_LAUNCH_EARTH_SATELLITE",
+                "PROJECT_LAUNCH_MOON_LANDING",
+                "PROJECT_LAUNCH_MARS_BASE",
+                "PROJECT_LAUNCH_EXOPLANET_EXPEDITION"
+              ],
+              "science_victory_points": 24,
+              "science_victory_points_needed": 25,
+              "science_victory_points_per_turn": 7,
+              "current_rate_science_finish_turns": 0.14285714285714285
+            }
+          ]
+        }
+      ],
+      "journal": [
+        {
+          "turn": 267,
+          "text": "Countering Norway | its diplomacy race reads 75%"
+        },
+        {
+          "turn": 267,
+          "text": "Eliminating Norway | 15 Diplomatic Victory points that only its elimination takes off the board; 2688 power against their 207"
+        },
+        {
+          "turn": 267,
+          "text": "Campaign aimed at Norway | already at war; first objective Stavanger"
+        },
+        {
+          "turn": 269,
+          "text": "Countering Brazil | its science race reads 94%"
+        },
+        {
+          "turn": 269,
+          "text": "Eliminating Norway | 15 Diplomatic Victory points that only its elimination takes off the board; 2869 power against their 157"
+        },
+        {
+          "turn": 269,
+          "text": "Campaign aimed at Norway | already at war; first objective \u00c5lesund"
+        },
+        {
+          "turn": 274,
+          "text": "Countering Brazil | its science race reads 99%"
+        },
+        {
+          "turn": 274,
+          "text": "Eliminating Norway | 15 Diplomatic Victory points that only its elimination takes off the board; 3395 power against their 241"
+        },
+        {
+          "turn": 274,
+          "text": "Campaign aimed at Norway | already at war; first objective Bergen"
+        },
+        {
+          "turn": 274,
+          "text": "Eliminating Norway | 15 Diplomatic Victory points that only its elimination takes off the board; 3453 power against their 241"
+        },
+        {
+          "turn": 274,
+          "text": "Eliminating Norway | 15 Diplomatic Victory points that only its elimination takes off the board; 3433 power against their 266"
+        },
+        {
+          "turn": 274,
+          "text": "Campaign aimed at Norway | already at war; first objective Kristiansand"
+        }
+      ],
+      "source_path_evidence": [
+        {
+          "path": "src/ai/advanced/one_war.rs",
+          "line": 499,
+          "finding": "one_war_choose_front returns diplomatic_contender_to_eliminate before the urgent actionable-denial branch."
+        },
+        {
+          "path": "src/ai/advanced/one_war.rs",
+          "line": 1859,
+          "finding": "Diplomatic contender selection maximizes (DVP, Reverse(player_id)); equal points select the lower player ID, without another-lane finish clock."
+        },
+        {
+          "path": "src/ai/advanced.rs",
+          "line": 13931,
+          "finding": "assess also places the elimination contender before second-front/current-front selection."
+        },
+        {
+          "path": "src/ai/advanced.rs",
+          "line": 14117,
+          "finding": "City ranking puts elimination_objective_city ahead of suppression_target_city."
+        }
+      ],
+      "conclusion": "At T269 Brazil and Norway both held15 DVP. The controller named Brazil science94% as its counter but kept the campaign on Norway. Brazil was already at war, flight progress0/25 at4 per turn implied6.25 turns at the current rate, while Congress was12 turns away. Brazil won science atT274 after acceleration. The tie-break and earlier elimination precedence need controlled evaluation."
+    },
+    "implication": "Culture safety alone is insufficient. Judge interventions on original-capital progress and Domination outcomes, and test the separate contender-versus-science-deadline priority conflict."
   }
 }
