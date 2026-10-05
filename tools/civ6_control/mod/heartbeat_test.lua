@@ -104,6 +104,30 @@ for _, line in ipairs(broken.logs) do
     if line:find('"kind":"vsync_ab"', 1, true) then tries = tries + 1 end
 end
 assert(tries == 1, "a failing switch is tried once per block, not once a second")
+
+-- RECORD-ONLY ui_gap: two or more wall seconds between consecutive frames is
+-- logged with the UI clock's jump and the frame's own (capped) delta; an
+-- ordinary second of frames is not, and a host without the clock logs nothing.
+local gap = abHost({ CivvisDecides = true, RunTag = "gap-test" })
+gap.wall, gap.ui = 100, 50
+local genv = getfenv(gap.update)
+genv.Automation.GetTime = function() return gap.wall end
+genv.UI = { GetElapsedTime = function() return gap.ui end }
+gap.update(0.01)
+for _ = 1, 10 do gap.ui = gap.ui + 0.1; gap.update(0.1) end
+gap.wall = 101; gap.ui = gap.ui + 0.1; gap.update(0.1)
+assert(lastLog(gap, "ui_gap") == nil, "a one-second clock tick is not a gap")
+gap.wall = 105; gap.ui = gap.ui + 0.5; gap.turn = 20; gap.update(0.5)
+local row = lastLog(gap, "ui_gap")
+assert(row and row:find('"wall":4,"ui":0.50,"dt":0.500,"turn":20', 1, true), "a stopped loop is logged: " .. tostring(row))
+assert(row:find('"run":"gap-test"', 1, true), "the gap carries the run tag")
+gap.wall = 106; gap.update(0.1)
+local n = 0
+for _, line in ipairs(gap.logs) do if line:find('"kind":"ui_gap"', 1, true) then n = n + 1 end end
+assert(n == 1, "one gap, one row")
+genv.Automation.GetTime = nil
+gap.update(0.1); gap.update(0.1)
+print("all ui-gap checks passed")
 print("all VSync A/B checks passed")
 
 -- The HUD receives no frames while a visible leader overlay covers it.

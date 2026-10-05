@@ -111,6 +111,34 @@ function CivvisFrameClock.frame(raw)
 	return raw / scale;
 end
 
+-- RECORD-ONLY: how long this frame loop stops. G115 (civvis-20261005T091120Z)
+-- went silent 18 times for 2.5-5.4 s, 13 of them inside our own turn. At t20
+-- a strike's 30 grace ticks then landed in the same instant as the next board,
+-- so the UI thread had stopped, not the relay; the same hosts' screen
+-- captures stall for exactly 5 s while systemstatusd spins. The engine caps a
+-- long frame's `dt`, so the wall clock decides: two or more whole seconds of
+-- `Automation.GetTime()` between consecutive frames is a stop of over a
+-- second. `ui` is the UI clock's jump across it and `dt` the frame's own
+-- delta, so a hidden TopPanel (a leader screen stops this SetUpdate while the
+-- UI clock runs on) reads apart from a frozen loop.
+CivvisUiGap = {};
+function CivvisUiGap.frame(dt, uiBefore)
+	local wall = nil;
+	pcall(function() wall = Automation.GetTime(); end);
+	if type(wall) ~= "number" then return; end
+	local g = CivvisUiGap;
+	if type(g.wall) == "number" and wall - g.wall >= 2 then
+		local ui = CivvisFrameClock.last;
+		local turn = nil;
+		pcall(function() turn = tonumber(Game.GetCurrentGameTurn()); end);
+		CivvisVSyncAB.log("ui_gap", string.format('"wall":%.0f,"ui":%.2f,"dt":%.3f,"turn":%d',
+			wall - g.wall,
+			(type(ui) == "number" and type(uiBefore) == "number") and (ui - uiBefore) or -1,
+			tonumber(dt) or -1, turn or -1));
+	end
+	g.wall = wall;
+end
+
 if cfg.Play ~= false and cfg.CivvisDecides then
 	local elapsed = 0;
 	local abTurns = math.floor(tonumber(cfg.VSyncABTurns) or 0);
@@ -120,7 +148,9 @@ if cfg.Play ~= false and cfg.CivvisDecides then
 	local peekElapsed = 0;
 	local peekEvery = math.max(0.02, tonumber(cfg.OrdersPeekSeconds) or 0.05);
 	ContextPtr:SetUpdate(function(dt)
+		local uiBefore = CivvisFrameClock.last;
 		local delta = CivvisFrameClock.frame(math.max(0, tonumber(dt) or 0));
+		pcall(CivvisUiGap.frame, dt, uiBefore);
 		if abTurns > 0 then CivvisVSyncAB.frame(delta); end
 		peekElapsed = peekElapsed + delta;
 		if peekElapsed >= peekEvery then
