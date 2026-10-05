@@ -5067,6 +5067,9 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `builders-before-the-lent-floor`: see
+    /// `BasicAi::builders_before_the_lent_floor`.
+    builders_before_the_lent_floor: bool,
     /// `breaker-research-first`: decisive-window prices a unit's strategic
     /// resource (a visible one needs stock or income; a hidden one adds its
     /// revealing technology and a premium), and "modernize the standing
@@ -9419,6 +9422,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            builders_before_the_lent_floor: false,
             breaker_research_first: false,
             breach_support_reads_the_wall_tier: false,
             breaker_reads_the_march: false,

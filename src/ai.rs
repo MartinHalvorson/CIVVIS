@@ -2628,6 +2628,10 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `builder-before-the-army-3`.
     pub(crate) builder_before_the_army_3: bool,
+    /// `builders-before-the-lent-floor`: above the genome's own army floor,
+    /// a unit for a Domination war's lent margin waits for the Builder
+    /// backlog. Set from `AdvancedAi`.
+    pub(crate) builders_before_the_lent_floor: bool,
     /// `best_military` credits the civilization's own unique unit with
     /// `UNIQUE_UNIT_POWER_CREDIT` strength for the abilities its strength
     /// column omits — the Llanero's adjacency bonus and Gran Colombia's
@@ -5641,6 +5645,7 @@ impl BasicAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             builder_before_the_army_3: false,
+            builders_before_the_lent_floor: false,
             unique_unit_preference: false,
             campus_before_the_army: false,
             campus_before_the_army_2: false,
@@ -6150,6 +6155,7 @@ impl BasicAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             builder_before_the_army_3: false,
+            builders_before_the_lent_floor: false,
             unique_unit_preference: false,
             campus_before_the_army: false,
             campus_before_the_army_2: false,
@@ -13106,6 +13112,35 @@ impl BasicAi {
                        "{} in {} ahead of a floor of {military_floor:.1} with {military} held",
                        crate::reasoning::plain(&format!("{item:?}")), g.cities[&cid].name);
                 return Some(item);
+            }
+        }
+        // `builders-before-the-lent-floor`: a Domination war lends this
+        // governor an army target above the genome's own floor (see
+        // `lent_military_floor_base`). Above that own floor, a unit for the
+        // lent margin waits while the empire is short of Builders for the
+        // ground its cities already work: the Builder backlog without its
+        // Settler gate, since the floor ranks ahead of the Settler step anyway.
+        // Over 40 live King runs (10-05, turns 1-80) the floor built 157 units
+        // in the lent margin while the empire held fewer than one Builder per
+        // two cities; a third of worked tiles were improved at turn 60 and
+        // 71% of cities grew at a half or a quarter of their rate.
+        if self.builders_before_the_lent_floor
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && can_add_military
+            && (military as f64) < military_floor
+            && self
+                .lent_military_floor_base
+                .is_some_and(|base| (military as f64) >= base * n_cities as f64)
+        {
+            if let Some(builder) = Self::builder_backlog_item(g, pid, cid, n_cities, builders) {
+                think!(self.journal, Cities, Detail,
+                       "A Builder before the lent floor's unit";
+                       "{} trains a Builder: the empire holds {builders} for {n_cities} cities and \
+                        {military} military against a lent floor of {military_floor:.1}",
+                       g.cities[&cid].name);
+                return Some(builder);
             }
         }
         // ★★★★★ THE FLOOR IS A HEADCOUNT AND CANNOT SEE A MISSING ARM.

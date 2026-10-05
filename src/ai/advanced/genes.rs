@@ -3059,6 +3059,11 @@ pub const GENES: &[Gene] = &[
     // force was dead or the rival made peace, 20-130 turns later. See
     // `early_conquest::conquest_yields_to_walls`.
     Gene { tag: "opening-yields-to-walls", field: "opening_yields_to_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_yields_to_walls, disable: AdvancedAi::disable_opening_yields_to_walls },
+    // Live King 10-05 (40 runs, t1-80): the floor built 157 units in a
+    // Domination war's lent margin while the empire held under one Builder
+    // per two cities; a third of worked tiles improved at t60. See
+    // `BasicAi::builders_before_the_lent_floor`.
+    Gene { tag: "builders-before-the-lent-floor", field: "builders_before_the_lent_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_before_the_lent_floor, disable: AdvancedAi::disable_builders_before_the_lent_floor },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
