@@ -5254,6 +5254,10 @@ pub struct AdvancedAi {
     /// `BasicAi::activation_resume_waits`.
     activation_resume_waits: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `diplomatic-contender-kept`: a crushed rival near a Diplomatic Victory
+    /// is kept at war, and the leader among them opens a second front. See
+    /// `one_war::diplomatic_contender`. Off by default.
+    diplomatic_contender_kept: bool,
     /// `decisive-window`: research and civics aimed at the cheapest
     /// assault-plus-breaker package that beats the campaign target's
     /// defender and opens its wall tier, the civilization's unique unit
@@ -8881,6 +8885,7 @@ impl AdvancedAi {
             builder_before_the_army_3: false,
             activation_resume_waits: false,
             // ---- append: c-d ----------------------------------------
+            diplomatic_contender_kept: false,
             decisive_window: false,
             domination_strikes_when_staged: false,
             capture_waits_on_the_march: false,

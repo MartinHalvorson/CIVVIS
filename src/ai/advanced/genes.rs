@@ -2657,6 +2657,10 @@ pub const GENES: &[Gene] = &[
     // on India, their Corps refused and re-planned every turn. Live-only: the
     // refused set is empty off the bridge. See `advanced/formation_refusals.rs`.
     Gene { tag: "formations-heed-refusals", field: "formations_heed_refusals", kind: Kind::OptIn, enable: AdvancedAi::enable_formations_heed_refusals, disable: AdvancedAi::disable_formations_heed_refusals },
+    // Live King 003728Z stayed at peace with Sumeria at 17 Diplomatic Victory
+    // points and 3 military while Persia won the Diplomatic Victory. See
+    // `one_war::diplomatic_contender`.
+    Gene { tag: "diplomatic-contender-kept", field: "diplomatic_contender_kept", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_contender_kept, disable: AdvancedAi::disable_diplomatic_contender_kept },
     // Live King civvis-20261004T122037Z (game 62): Yaroslavl's walls went
     // 100 -> 84 in twelve turns while the journal read "shooters 6-16 wall a
     // turn": nine archers within five tiles were counted, but the range-2

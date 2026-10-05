@@ -963,3 +963,27 @@ fn the_war_for_the_last_capital_is_kept_under_the_gene() {
     }
     assert!(!ai.last_capital_war_kept(&g, 0, 2), "a stronger holder");
 }
+
+/// See `diplomatic_contender`: under the gene, a crushed rival at fifteen
+/// Diplomatic Victory points keeps its war, and at sixteen, the leader, it
+/// opens the second front beside the war we are fighting.
+#[test]
+fn a_crushed_diplomatic_contender_is_kept_and_opened_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(1));
+    assert!(g.military_power(0) >= ONE_WAR_CRUSHED_RATIO * g.military_power(2));
+    g.players[2].dvp = DIPLOMATIC_CONTENDER_DVP;
+    let second = Some(OneWarPeace::SecondFront);
+    assert_eq!(ai.one_war_peace(&g, 0, 2), second, "off");
+    ai.enable_diplomatic_contender_kept();
+    assert_eq!(ai.one_war_peace(&g, 0, 2), None, "kept");
+    // At peace, the leader at sixteen opens the second front.
+    g.at_war.remove(&(0, 2));
+    assert_eq!(ai.one_war_second_front(&g, 0), None, "under the bar");
+    g.players[2].dvp = DIPLOMATIC_CONTENDER_LEADER_DVP;
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2), "the leader");
+    g.players[3].dvp = DIPLOMATIC_CONTENDER_LEADER_DVP + 1;
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(3), "the new leader");
+}

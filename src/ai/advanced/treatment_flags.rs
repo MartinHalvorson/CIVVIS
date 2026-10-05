@@ -5366,6 +5366,17 @@ impl AdvancedAi {
         self.formations_heed_refusals = false;
     }
 
+    /// Opt-in gene `diplomatic-contender-kept`; see
+    /// [`Self::diplomatic_contender_kept`].
+    pub fn enable_diplomatic_contender_kept(&mut self) {
+        self.diplomatic_contender_kept = true;
+    }
+
+    /// The twin of `enable_diplomatic_contender_kept`.
+    pub fn disable_diplomatic_contender_kept(&mut self) {
+        self.diplomatic_contender_kept = false;
+    }
+
     /// Opt-in gene `breaker-supply-scales-2`; see
     /// [`Self::breaker_supply_scales_2`].
     pub fn enable_breaker_supply_scales_2(&mut self) {

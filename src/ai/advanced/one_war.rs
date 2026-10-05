@@ -90,6 +90,11 @@ pub(crate) const ONE_WAR_CITY_BROKEN_FRACTION: f64 = 0.5;
 /// rival. The capture body may be a few tiles behind the guns.
 pub(crate) const ONE_WAR_FINISH_HP: i32 = 60;
 pub(crate) const ONE_WAR_FINISH_REACH: i32 = 4;
+/// `diplomatic-contender-kept`: the Diplomatic Victory points at which a
+/// crushed rival's war is kept. Twenty win; a Congress awards two or more.
+pub(crate) const DIPLOMATIC_CONTENDER_DVP: i64 = 15;
+/// The points at which the leader among them opens a second front.
+pub(crate) const DIPLOMATIC_CONTENDER_LEADER_DVP: i64 = 16;
 /// How close a land taker stands to the unwalled objective for
 /// `one_war_foothold_at_hand`: the reach `capture_opportunity_city` seizes
 /// a foothold from.
@@ -820,6 +825,42 @@ impl AdvancedAi {
         holders.next() == Some(other) && holders.all(|owner| owner == other)
     }
 
+    /// `diplomatic-contender-kept`: a living major at
+    /// [`DIPLOMATIC_CONTENDER_DVP`] Diplomatic Victory points or more that a
+    /// Domination seat outguns [`ONE_WAR_CRUSHED_RATIO`] times over. Only its
+    /// elimination takes those points off the board: a captured capital or
+    /// town removes none. Such a war is kept as a second front
+    /// (`second_front_war_kept`). Live King civvis-20261005T003728Z (game 89)
+    /// stood at peace with Sumeria from its third capture to the end, at 17
+    /// points against Sumeria's 3 military and four cities, while Persia, the
+    /// front, won the Diplomatic Victory at turn 242.
+    pub(crate) fn diplomatic_contender(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.diplomatic_contender_kept
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.players.get(other).is_some_and(|player| {
+                player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && player.dvp >= DIPLOMATIC_CONTENDER_DVP
+            })
+            && self.one_war_front_crushed(g, pid, other)
+    }
+
+    /// The Diplomatic Victory leader, when it is a `diplomatic_contender` at
+    /// [`DIPLOMATIC_CONTENDER_LEADER_DVP`] or more: one Congress from the
+    /// win. `one_war_second_front` opens its war at once.
+    fn diplomatic_contender_leader(&self, g: &Game, pid: usize) -> Option<usize> {
+        g.players
+            .iter()
+            .filter(|player| {
+                player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+            })
+            .max_by_key(|player| (player.dvp, std::cmp::Reverse(player.id)))
+            .filter(|leader| leader.dvp >= DIPLOMATIC_CONTENDER_LEADER_DVP)
+            .map(|leader| leader.id)
+            .filter(|leader| self.diplomatic_contender(g, pid, *leader))
+    }
+
     /// A front we outgun [`ONE_WAR_CRUSHED_RATIO`] times over. Peace there
     /// hands a beaten rival the turns to rebuild: on King
     /// `civvis-20260929T020236Z` the seat offered Norway peace at 812
@@ -1178,7 +1219,9 @@ impl AdvancedAi {
                     && self.one_war_still_winning(g, pid, other)
                     && g.cities.values().any(|city| {
                         city.is_capital && city.original_owner == other && city.owner == other
-                    })))
+                    }))
+                // See `diplomatic_contender`.
+                || self.diplomatic_contender(g, pid, other))
     }
 
     /// Whether a Domination seat holds `rival`'s original capital while the
@@ -1365,6 +1408,15 @@ impl AdvancedAi {
         }
         let front_state = self.one_war.as_ref()?;
         let front = front_state.target;
+        // See `diplomatic_contender`: the Diplomatic Victory leader we crush
+        // opens the second front at once, the front's refusal or not.
+        if let Some(leader) = self.diplomatic_contender_leader(g, pid).filter(|leader| {
+            *leader != front
+                && !g.is_at_war(pid, *leader)
+                && self.campaign_target_legal(g, pid, *leader)
+        }) {
+            return Some(leader);
+        }
         // An offered peace is not a refused one: the front gets a few turns
         // to accept before a second war opens beside it.
         let refused = front_state.closure_wanted_since.is_some_and(|since| {
