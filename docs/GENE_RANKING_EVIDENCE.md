@@ -307,6 +307,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `prophet-race-takes-a-district-slot` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot`; see `Self::prophet_race_takes_a_district_slot`. | — \| 2 |
 | `prophet-race-takes-a-district-slot-2` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot-2`; see `Self::prophet_race_takes_a_district_slot_2`. | — \| 2 |
 | `raids-cut-tourism` | off (unmeasured) | Opt-in gene `raids-cut-tourism`; see `Self::raids_cut_tourism`. | 1 \| 1 |
+| `ranged-before-melee` | off (unmeasured) | Opt-in gene `ranged-before-melee`; see `Self::ranged_before_melee`. | 1 \| 1 |
 | `ranged-hp-reserve` | off (unmeasured) | A ranged unit keeps `RANGED_HP_RESERVE` in hand against the lethal pool. | 1 \| 1 |
 | `raze-a-doomed-capture` | off (unmeasured) | Opt-in gene `raze-a-doomed-capture`; see `Self::raze_doomed_capture`. | 1 \| 1 |
 | `recovery-keeps-a-winning-war` | off (unmeasured) | Opt-in gene `recovery-keeps-a-winning-war`; see `Self::recovery_keeps_a_winning_war`. | 1 \| 1 |

@@ -5967,6 +5967,17 @@ impl AdvancedAi {
         self.siege_keeps_a_shooter = false;
         self.siege_wall_keepers.clear();
     }
+    /// Opt-in gene `ranged-before-melee`; see
+    /// [`Self::ranged_before_melee`].
+    pub fn enable_ranged_before_melee(&mut self) {
+        self.ranged_before_melee = true;
+    }
+
+    /// The twin of `enable_ranged_before_melee`.
+    pub fn disable_ranged_before_melee(&mut self) {
+        self.ranged_before_melee = false;
+    }
+
 
 
     /// Opt-in gene `recovery-peace-waits`; see

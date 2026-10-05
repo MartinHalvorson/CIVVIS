@@ -2917,6 +2917,12 @@ pub const GENES: &[Gene] = &[
     // (111-116) while every shooter and the gun rotated out to heal at once
     // and nothing hit the walls. See `siege_train::siege_wall_keepers`.
     Gene { tag: "siege-keeps-a-shooter", field: "siege_keeps_a_shooter", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_keeps_a_shooter, disable: AdvancedAi::disable_siege_keeps_a_shooter },
+    // 20 of 23 strike_frame_timeouts measured on October 5 were shots at a
+    // target a melee blow earlier in the same frame had already killed (live
+    // King civvis-20261005T091120Z, turn 20: a Warrior killed the Horse Archer
+    // and the Slinger's queued shot was dropped). See `civvis_orders`
+    // `ranged_before_melee`.
+    Gene { tag: "ranged-before-melee", field: "ranged_before_melee", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_before_melee, disable: AdvancedAi::disable_ranged_before_melee },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

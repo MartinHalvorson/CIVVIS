@@ -1934,6 +1934,57 @@ fn retarget_friendly_held_walks_on_board(
 #[path = "civvis_orders/own_column_tests.rs"]
 mod own_column_tests;
 
+#[cfg(test)]
+#[path = "civvis_orders/ranged_before_melee_tests.rs"]
+mod ranged_before_melee_tests;
+
+/// `ranged-before-melee`: within one frame's orders, a unit's RANGE_ATTACK on
+/// a tile moves ahead of the first melee ATTACK on that tile that precedes it,
+/// so the shot softens the target and the blow finishes it. 20 of 23
+/// strike_frame_timeouts measured on October 5 were shots at a target a melee
+/// blow earlier in the frame had already killed: live King
+/// civvis-20261005T091120Z, turn 20, a Warrior killed the Horse Archer and the
+/// Slinger's queued shot at it was dropped. A shot moves only when every
+/// earlier order of its own unit already stands before the melee blow, so no
+/// unit's own sequence changes. Returns how many shots moved.
+fn ranged_before_melee(orders: &mut Vec<Order>) -> usize {
+    let mut moved = 0;
+    let mut index = 0;
+    while index < orders.len() {
+        let is_shot = orders[index].kind == "unit"
+            && orders[index].verb.as_deref() == Some("RANGE_ATTACK")
+            && orders[index].pos.is_some();
+        if !is_shot {
+            index += 1;
+            continue;
+        }
+        let target = orders[index].pos;
+        let shooter = orders[index].subject;
+        let first_blow = orders[..index].iter().position(|order| {
+            order.kind == "unit"
+                && order.verb.as_deref() == Some("ATTACK")
+                && order.pos == target
+                && order.subject != shooter
+        });
+        let Some(blow) = first_blow else {
+            index += 1;
+            continue;
+        };
+        let own_after_blow = orders[blow..index]
+            .iter()
+            .any(|order| order.kind == "unit" && order.subject == shooter);
+        if own_after_blow {
+            index += 1;
+            continue;
+        }
+        let shot = orders.remove(index);
+        orders.insert(blow, shot);
+        moved += 1;
+        index += 1;
+    }
+    moved
+}
+
 fn coalesce_unit_paths_except(
     orders: Vec<Order>,
     sequenced: bool,
@@ -4826,6 +4877,12 @@ fn decide(
     }
     if deferred_unit_followups > 0 {
         note_bits.push(format!("deferred_unit_followups={deferred_unit_followups}"));
+    }
+    if ai.ranged_before_melee_enabled() {
+        let moved = ranged_before_melee(&mut orders);
+        if moved > 0 {
+            note_bits.push(format!("ranged_before_melee={moved}"));
+        }
     }
     if sequenced {
         // How many orders now ride the mod's per-unit queue instead of waiting

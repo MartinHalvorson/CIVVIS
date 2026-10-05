@@ -6973,6 +6973,10 @@ pub struct AdvancedAi {
     /// Recovery plan to stand three turns. See
     /// `one_war::recovery_peace_ready`.
     recovery_peace_waits: bool,
+    /// `ranged-before-melee`: the live bridge sends a frame's shots at a
+    /// target ahead of the melee blows on it. See `civvis_orders`
+    /// `ranged_before_melee`.
+    ranged_before_melee: bool,
     /// `prey-reads-a-steady-power`: the capital-prey gates read the largest
     /// of a rival's last three military readings. See
     /// `one_war::steady_rival_power`.
@@ -9484,6 +9488,7 @@ impl AdvancedAi {
             own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
             recovery_peace_waits: false,
+            ranged_before_melee: false,
             prey_reads_a_steady_power: false,
             rout_spares_the_counter: false,
             peace_asks_a_city: false,

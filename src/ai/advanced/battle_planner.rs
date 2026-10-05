@@ -1234,6 +1234,12 @@ impl AdvancedAi {
         self.dialogue_never_declares_war
     }
 
+    /// Gene `ranged-before-melee`: the live bridge orders a frame's shots at
+    /// a target ahead of the melee blows on it.
+    pub fn ranged_before_melee_enabled(&self) -> bool {
+        self.ranged_before_melee
+    }
+
     /// Apply the selected survival policy to a live bridge finishing volley.
     /// The bridge commits these actions before `take_turn`, so the ordinary
     /// battle planner cannot protect their strikers afterwards. Recheck the
