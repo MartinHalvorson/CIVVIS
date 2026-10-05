@@ -1318,11 +1318,19 @@ impl AdvancedAi {
     /// close them, and they won on Culture at 223. Across 30 recent losses the
     /// eventual winner was offered this peace within 25 turns of the end in
     /// four (G95 the Zulu at 208-222, lost on Diplomacy at 222).
+    ///
+    /// Nor a war whose land is the only road to the front
+    /// (`war_holds_the_road`, as the Recovery clause already reads it). Live
+    /// King civvis-20261005T045443Z (game 101) offered Korea this peace at
+    /// turn 184 at 1,255 power against 707 while the campaign stood on the
+    /// Maya behind Korea's land; Korea took it, its borders closed, and the
+    /// Siege of Wak Kab'nal read "0 of 8 units staged" to the end.
     pub(crate) fn stalled_peace_spares(&self, g: &Game, pid: usize, other: usize) -> bool {
         self.stalled_peace_spares_the_counter
             && self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && (self.domination_counter_target(g, pid, other)
-                || self.urgent_victory_threat(g, other))
+                || self.urgent_victory_threat(g, other)
+                || self.war_holds_the_road(g, pid, other))
     }
 
     /// Whether a Domination seat holds `rival`'s original capital while the
