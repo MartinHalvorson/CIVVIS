@@ -5046,6 +5046,10 @@ pub struct AdvancedAi {
     /// once back at `battle_planner::ROTATE_HP`; it still returns to a post
     /// only at `RETURN_HP` (`siege_train::breach_gun_fit`). Off by default.
     breach_counts_nearby_guns: bool,
+    /// `air-surge-strikes-through-urgency`: a wing in Strike keeps its own
+    /// declaration when the target's clock turns urgent. See
+    /// `air_surge::air_surge_opening`.
+    air_surge_strikes_through_urgency: bool,
     /// `breakers-stay-with-the-siege`: while a walled Siege row asks the
     /// Objective Board for guns, a siege gun serves only Siege rows and the
     /// Reserve, never a Defend, Relieve, Destroy, Escort or camp row. See
@@ -9032,6 +9036,7 @@ impl AdvancedAi {
 
             // ---- append: a-b ----------------------------------------
             breach_counts_nearby_guns: false,
+            air_surge_strikes_through_urgency: false,
             breakers_stay_with_the_siege: false,
             breach_assault: false,
             breach_assault_closes_in: false,

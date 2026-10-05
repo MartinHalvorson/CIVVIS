@@ -2801,6 +2801,10 @@ pub const GENES: &[Gene] = &[
     // turn 200 with Spain at 49 military against 1,080 and Madrid behind 100
     // walls 21 tiles out. See `one_war::capital_prey_reaches_far`.
     Gene { tag: "capital-prey-opens-a-front-2", field: "capital_prey_opens_a_front_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_prey_opens_a_front_2, disable: AdvancedAi::disable_capital_prey_opens_a_front_2 },
+    // Live King civvis-20261005T080337Z (game 111): the surge reached Strike
+    // on urgent Persia by turn 185 and handed the war to a ground declaration
+    // that waited on staging to 200. See `air_surge::air_surge_opening`.
+    Gene { tag: "air-surge-strikes-through-urgency", field: "air_surge_strikes_through_urgency", kind: Kind::OptIn, enable: AdvancedAi::enable_air_surge_strikes_through_urgency, disable: AdvancedAi::disable_air_surge_strikes_through_urgency },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

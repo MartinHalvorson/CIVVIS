@@ -452,3 +452,35 @@ fn the_surge_keeps_the_plan_on_the_rivals_spaceport() {
     ai.apply_air_surge_to_strategy(&g, 0, &mut after);
     assert_eq!(after.target_city, Some(pad), "the army stays on the Spaceport");
 }
+
+/// See `air_surge_strikes_through_urgency`: under the gene, a surge in
+/// Strike keeps the declaration through an urgent clock instead of handing
+/// it to the ordinary staged declaration; Arm still releases it.
+#[test]
+fn a_striking_wing_keeps_its_declaration_through_an_urgent_clock() {
+    let strike = |gene: bool, phase: AirSurgePhase| {
+        let (mut g, mut ai) = urgent_surging_opponent(false, false);
+        ai.victory_target = Some(VictoryTarget::Domination);
+        if gene {
+            ai.enable_air_surge_strikes_through_urgency();
+        }
+        ai.air_surge_plan.as_mut().unwrap().phase = phase;
+        let kept = ai.air_surge_opening(&mut g, 0, 1);
+        (kept, ai.air_surge_plan.is_some())
+    };
+    assert_eq!(
+        strike(false, AirSurgePhase::Strike),
+        (false, true),
+        "off: released"
+    );
+    assert_eq!(
+        strike(true, AirSurgePhase::Strike),
+        (true, true),
+        "the wing keeps it"
+    );
+    assert_eq!(
+        strike(true, AirSurgePhase::Arm),
+        (false, true),
+        "Arm still releases"
+    );
+}

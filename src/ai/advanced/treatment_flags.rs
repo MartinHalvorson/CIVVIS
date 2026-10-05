@@ -5758,6 +5758,17 @@ impl AdvancedAi {
         self.capital_prey_opens_a_front_2 = false;
     }
 
+    /// Opt-in gene `air-surge-strikes-through-urgency`; see
+    /// [`Self::air_surge_strikes_through_urgency`].
+    pub fn enable_air_surge_strikes_through_urgency(&mut self) {
+        self.air_surge_strikes_through_urgency = true;
+    }
+
+    /// The twin of `enable_air_surge_strikes_through_urgency`.
+    pub fn disable_air_surge_strikes_through_urgency(&mut self) {
+        self.air_surge_strikes_through_urgency = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
