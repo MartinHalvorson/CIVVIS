@@ -974,6 +974,20 @@ impl AdvancedAi {
         cid: u32,
         force: &[u32],
     ) -> Option<(f64, f64)> {
+        self.conversion_siege_budget_within(g, pid, cid, force, 5)
+    }
+
+    /// [`Self::conversion_siege_budget`] over the members within `radius` of
+    /// the city. `stage-musters-out-of-reach` reads it at its muster radius:
+    /// the train as it would stand on its staging ring.
+    pub(super) fn conversion_siege_budget_within(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        force: &[u32],
+        radius: i32,
+    ) -> Option<(f64, f64)> {
         let city = g.cities.get(&cid)?;
         // A siege staged outside the city's strike radius can lose current
         // sight of a city it has already found. Requiring live visibility
@@ -1007,7 +1021,7 @@ impl AdvancedAi {
             let Some(unit) = g
                 .units
                 .get(uid)
-                .filter(|u| u.owner == pid && g.wdist(u.pos, city.pos) <= 5)
+                .filter(|u| u.owner == pid && g.wdist(u.pos, city.pos) <= radius)
             else {
                 continue;
             };

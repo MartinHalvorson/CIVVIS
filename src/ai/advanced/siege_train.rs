@@ -226,6 +226,14 @@ pub(super) const MUSTER_DANGER_SHARE: f64 = 0.5;
 /// `stage-musters-out-of-reach`: members within this many tiles of the city
 /// count as gathered for the advance.
 pub(super) const MUSTER_FAR: i32 = STAGING_FAR + 3;
+/// `stage-musters-out-of-reach`: the readiness test reads the breakers and
+/// the damage budget over members this far out, since a staging gun holds
+/// on its own danger line, often behind the muster.
+pub(super) const MUSTER_BREACH_FAR: i32 = STAGING_FAR + 5;
+/// `stage-musters-out-of-reach`: standard turns a train whose mustered
+/// strength meets the bill may hold at the muster line before it closes
+/// anyway — the readiness test must never pin a train out for good.
+pub(super) const MUSTER_PATIENCE_TURNS: u32 = 8;
 /// `anvil`: a defender under this rotates into the city to heal, if the
 /// unit standing there is healthier by the margin.
 pub(super) const ANVIL_ROTATE_HP: i32 = 50;
@@ -2011,6 +2019,20 @@ impl AdvancedAi {
     /// `siege-needs-a-breaker`: what the train holds within the staging ring
     /// that can bring the walls down. See [`BreachReading`].
     fn breach_reading(&self, g: &Game, pid: usize, city: &CityView, force: &[u32]) -> BreachReading {
+        self.breach_reading_within(g, pid, city, force, STAGING_FAR)
+    }
+
+    /// [`Self::breach_reading`] over the members within `radius` of the city.
+    /// `stage-musters-out-of-reach` reads it at [`MUSTER_BREACH_FAR`]: the
+    /// breakers a mustered train would bring onto its staging ring.
+    fn breach_reading_within(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &CityView,
+        force: &[u32],
+        radius: i32,
+    ) -> BreachReading {
         let mut reading = BreachReading {
             horizon: SHOOTER_BREACH_TURNS,
             ..BreachReading::default()
@@ -2026,7 +2048,7 @@ impl AdvancedAi {
             let Some(unit) = g.units.get(uid) else {
                 continue;
             };
-            if g.wdist(unit.pos, city.pos) > STAGING_FAR {
+            if g.wdist(unit.pos, city.pos) > radius {
                 continue;
             }
             match arm_of(g, *uid) {
@@ -2063,7 +2085,7 @@ impl AdvancedAi {
                 .filter(|unit| {
                     unit.owner == pid
                         && unit.linked_to.is_none()
-                        && g.wdist(unit.pos, city.pos) <= STAGING_FAR
+                        && g.wdist(unit.pos, city.pos) <= radius
                         && breach_support_works(g, unit.id, city.id)
                 })
                 .count();
@@ -2371,22 +2393,72 @@ impl AdvancedAi {
         // `capture-holds-the-ring`: see `dying_open_city`.
         let dying = self.dying_open_city(&city);
         // `stage-musters-out-of-reach`: the train may close on its staging
-        // ring when the Stage -> Invest step below would fire with the members
-        // gathered within `MUSTER_FAR` standing on the ring — the bill met,
-        // the walls answered (damage ready, opened by the guns, or ground),
-        // nothing barring them — so the body closes only when the siege will
-        // invest; until then it musters out of reach.
+        // ring when the Stage -> Invest step below would fire with the
+        // mustered members standing on the ring — the bill met by the members
+        // within `MUSTER_FAR`, the walls answered and no breaker hold read
+        // over the members within `MUSTER_BREACH_FAR` (breakers and damage
+        // budget alike: a staging gun holds on its own danger line) — so the
+        // body closes only when the siege will invest. A train whose muster
+        // meets the bill closes anyway after `MUSTER_PATIENCE_TURNS` in Stage.
         if self.stage_musters_out_of_reach {
             let mustered: f64 = force
                 .iter()
                 .filter(|uid| g.wdist(g.units[uid].pos, city.pos) <= MUSTER_FAR)
                 .map(|uid| unit_power(g, *uid))
                 .sum();
-            let ready = dying
-                || (((arena && gathered) || mustered >= bill || breach_taker.is_some())
-                    && (damage_entry_ready || opens_walls || grind)
-                    && !no_breaker);
-            self.stage_muster_ready.insert(cid, ready);
+            let no_breaker_mustered = !arena
+                && self.siege_needs_a_breaker
+                && {
+                    let mut reading =
+                        self.breach_reading_within(g, pid, &city, &force, MUSTER_BREACH_FAR);
+                    reading.air_walls = self.air_breach_walls(g, pid, cid);
+                    if strength >= DOMINANT_BILL_SHARE * bill {
+                        reading.horizon = SHOOTER_BREACH_TURNS_DOMINANT;
+                    }
+                    reading.leaves_walls_shut(&city)
+                };
+            let budget_mustered =
+                self.conversion_siege_budget_within(g, pid, cid, &force, MUSTER_BREACH_FAR);
+            let ready_mustered = !self.siege_positive_damage_budget
+                || budget_mustered.is_some_and(|(turns, endurance)| turns <= endurance * 0.8);
+            let continues_mustered = !self.siege_positive_damage_budget
+                || budget_mustered.is_some_and(|(turns, endurance)| turns <= endurance);
+            let entry_mustered = ready_mustered
+                || (self.siege_positive_damage_budget
+                    && city.wall_hp > 0
+                    && city.wall_hp < city.wall_max
+                    && continues_mustered);
+            let billed = (arena && gathered) || mustered >= bill || breach_taker.is_some();
+            let patience = self.sieges.get(&cid).is_some_and(|siege| {
+                siege.stage == SiegeStage::Stage
+                    && turn.saturating_sub(siege.entered)
+                        >= g.standard_duration(MUSTER_PATIENCE_TURNS)
+            });
+            let walls_answered = billed && (entry_mustered || grind) && !no_breaker_mustered;
+            let ready = dying || walls_answered || (billed && patience);
+            let was = self.stage_muster_ready.insert(cid, ready);
+            if ready
+                && was == Some(false)
+                && self.journal().wants(crate::reasoning::Level::Decision)
+            {
+                let reason = if dying {
+                    "dying"
+                } else if walls_answered {
+                    "ready"
+                } else {
+                    "patience"
+                };
+                let name = g
+                    .cities
+                    .get(&cid)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_default();
+                think!(self.journal(), Military, Decision,
+                    "Siege of {name}: the mustered train closes: {reason}";
+                    "{mustered:.0} strength within {MUSTER_FAR} tiles against a bill of {bill:.0}; \
+                     walls answered {walls_answered}, breaker hold {no_breaker_mustered}";
+                    city.pos);
+            }
         }
         let record = self.sieges.entry(cid).or_insert(Siege {
             stage: SiegeStage::Stage,
