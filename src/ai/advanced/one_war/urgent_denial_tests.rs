@@ -1070,6 +1070,39 @@ fn a_crushed_contender_at_war_takes_the_front_under_version_two() {
     assert_eq!(ai.one_war_front(), Some(1), "under the bar");
 }
 
+/// See `diplomatic_contender_to_eliminate`: under the gene a rival at war at
+/// 14 points and at our mercy takes the front, below version two's bar of
+/// 15, and its nearest city -- not its capital -- is the objective. Live King
+/// civvis-20261005T134450Z (game 133) left Byzantium at 14 for Korea's
+/// capital, and Byzantium won on Diplomacy.
+#[test]
+fn a_contender_at_fourteen_holds_the_front_under_the_elimination_gene() {
+    let (mut g, mut ai) = two_fronts();
+    g.players[2].dvp = ELIMINATION_CONTENDER_DVP;
+    ai.enable_diplomatic_contender_kept_2();
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(1), "version two waits for 15");
+    ai.enable_diplomatic_contender_eliminated();
+    assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), Some(2));
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(2), "the contender at fourteen");
+    // Its nearest city is the objective, not its capital.
+    let capital = g.player_city_ids(2)[0];
+    let near = g.found_city_for(2, (12, 16), None);
+    assert!(g.cities[&capital].is_capital);
+    assert_eq!(ai.elimination_objective_city(&g, 0, 2), Some(near));
+    // Under fourteen, or inside twice its power, it is passed by.
+    g.players[2].dvp = ELIMINATION_CONTENDER_DVP - 1;
+    assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), None);
+    g.players[2].dvp = ELIMINATION_CONTENDER_DVP;
+    let mut row = 2;
+    while g.military_power(0) >= ELIMINATION_POWER_RATIO * g.military_power(2) {
+        g.spawn_test_unit("modern_armor", 2, (30, row));
+        row += 1;
+    }
+    assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), None);
+}
+
 /// See `capital_prey_beside_the_front`: under the gene, the weakest rival
 /// beside the front whose own capital stands open within reach is named; a
 /// walled capital or a real army leaves it a near miss, and a war on such a

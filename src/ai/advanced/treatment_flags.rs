@@ -6046,6 +6046,17 @@ impl AdvancedAi {
         self.conquest_opening_stays_near = false;
     }
 
+    /// Opt-in gene `diplomatic-contender-eliminated`; see
+    /// [`Self::diplomatic_contender_eliminated`].
+    pub fn enable_diplomatic_contender_eliminated(&mut self) {
+        self.diplomatic_contender_eliminated = true;
+    }
+
+    /// The twin of `enable_diplomatic_contender_eliminated`.
+    pub fn disable_diplomatic_contender_eliminated(&mut self) {
+        self.diplomatic_contender_eliminated = false;
+    }
+
     /// Opt-in gene `breaker-reads-the-march`; see
     /// [`Self::breaker_reads_the_march`].
     pub fn enable_breaker_reads_the_march(&mut self) {

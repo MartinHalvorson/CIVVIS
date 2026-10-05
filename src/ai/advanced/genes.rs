@@ -2940,6 +2940,10 @@ pub const GENES: &[Gene] = &[
     // their siege and were born 13 tiles out against 7 for our nearest city.
     // See `siege_production::BREAKER_MARCH_FACTOR`.
     Gene { tag: "breaker-reads-the-march", field: "breaker_reads_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_reads_the_march, disable: AdvancedAi::disable_breaker_reads_the_march },
+    // Live King civvis-20261005T134450Z (game 133): the front left Byzantium
+    // at 14 points and 6 cities for Korea's capital; Byzantium won on
+    // Diplomacy. See `one_war::diplomatic_contender_to_eliminate`.
+    Gene { tag: "diplomatic-contender-eliminated", field: "diplomatic_contender_eliminated", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_contender_eliminated, disable: AdvancedAi::disable_diplomatic_contender_eliminated },
     // Staging marches took the router's single step and stood: 47-62% of
     // live frame-0 MOVE_TOs were one tile. See `march_moves`.
     Gene { tag: "march-uses-its-moves", field: "march_uses_its_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_march_uses_its_moves, disable: AdvancedAi::disable_march_uses_its_moves },

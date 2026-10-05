@@ -134,6 +134,12 @@ pub(crate) const FAVOR_SURPRISE_DVP: i64 = 9;
 /// `favor-spares-the-surprise-war`: a target's culture finish this many turns
 /// out or nearer still takes the surprise war.
 pub(crate) const FAVOR_SURPRISE_CLOCK_TURNS: f64 = 8.0;
+/// `diplomatic-contender-eliminated`: the Diplomatic Victory points at which
+/// a rival we are fighting is to be eliminated rather than passed by.
+pub(crate) const ELIMINATION_CONTENDER_DVP: i64 = 14;
+/// `diplomatic-contender-eliminated`: our military over that rival's steady
+/// reading at which the elimination front holds.
+pub(crate) const ELIMINATION_POWER_RATIO: f64 = 2.0;
 /// `overwhelming-power-declares`: our military over the target's steady
 /// reading at which a Domination seat declares without a staged siege.
 pub(crate) const OVERWHELMING_POWER_RATIO: f64 = 4.0;
@@ -480,6 +486,13 @@ impl AdvancedAi {
         let capital_handoff = current
             .and_then(|front| self.domination_followup_target(g, pid, Some(front)))
             .filter(|target| enemies.contains(target));
+        // See `diplomatic_contender_to_eliminate`: ahead of every other clock.
+        if let Some(contender) = self
+            .diplomatic_contender_to_eliminate(g, pid)
+            .filter(|rival| enemies.contains(rival))
+        {
+            return Some(contender);
+        }
         // `diplomatic-contender-kept-2`: the crushed Diplomatic Victory
         // contender with the most points among the wars already running
         // takes the front ahead of every other clock. See
@@ -1769,6 +1782,73 @@ impl AdvancedAi {
     /// seat declared on it at 95 "179 power against their 4". Over October
     /// 4-5 a rival's reading fell by three quarters in one turn and recovered
     /// to 60% within ten 21 times (diagnosed with -60).
+    /// `diplomatic-contender-eliminated`: the rival a Domination seat must
+    /// eliminate: at war with us and holding cities, at
+    /// [`ELIMINATION_CONTENDER_DVP`] Diplomatic Victory points or more, and
+    /// under our military [`ELIMINATION_POWER_RATIO`] times over its steady
+    /// reading; the one with the most points. Only elimination takes those
+    /// points off the board -- a captured capital or town removes none -- so
+    /// the front holds on it until it holds no city, ahead of a second front
+    /// and of the next capital (`domination_followup_target`). Fourteen, not
+    /// [`DIPLOMATIC_CONTENDER_DVP`]: a leader the rivals' B has knocked to 14
+    /// is exactly the one they stop ganging on (0 of 15 after-B sessions at
+    /// 14 or less) and that takes +5 at the next session. Live King
+    /// civvis-20261005T134450Z (game 133) took Constantinople at t209, then
+    /// moved the front to Korea's capital at t218 while Byzantium sat at 14
+    /// points with 6 cities at 6-8 times less military than ours; Byzantium
+    /// took +5 to 19 at t221 and won on Diplomacy at 241.
+    pub(crate) fn diplomatic_contender_to_eliminate(&self, g: &Game, pid: usize) -> Option<usize> {
+        if !self.diplomatic_contender_eliminated
+            || self.forced_target_player.is_some()
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        {
+            return None;
+        }
+        let ours = g.military_power(pid);
+        self.one_war_enemies(g, pid)
+            .into_iter()
+            .filter(|rival| {
+                g.players[*rival].dvp >= ELIMINATION_CONTENDER_DVP
+                    && ours >= ELIMINATION_POWER_RATIO * self.steady_rival_power(g, *rival).max(1.0)
+            })
+            .max_by_key(|rival| (g.players[*rival].dvp, std::cmp::Reverse(*rival)))
+    }
+
+    /// `diplomatic-contender-eliminated`: the contender's city nearest the
+    /// field army's median unit (our nearest city when there is no army).
+    /// Elimination needs every city, so the capital has no precedence.
+    pub(crate) fn elimination_objective_city(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> Option<u32> {
+        let army = self.campaign_field_army(g, pid);
+        let ours = g.player_city_ids(pid);
+        g.cities
+            .values()
+            .filter(|city| city.owner == rival)
+            .map(|city| {
+                let mut distances: Vec<i32> = army
+                    .iter()
+                    .map(|uid| g.wdist(g.units[uid].pos, city.pos))
+                    .collect();
+                distances.sort_unstable();
+                let reach = distances
+                    .get(distances.len() / 2)
+                    .copied()
+                    .unwrap_or_else(|| {
+                        ours.iter()
+                            .map(|mine| g.wdist(g.cities[mine].pos, city.pos))
+                            .min()
+                            .unwrap_or(i32::MAX)
+                    });
+                (reach, city.id)
+            })
+            .min()
+            .map(|(_, city)| city)
+    }
+
     /// `overwhelming-power-declares`: whether a Domination seat at
     /// [`OVERWHELMING_POWER_RATIO`] times `target`'s steady power
     /// (`steady_rival_power`) declares without a staged siege. Before a war

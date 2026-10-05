@@ -5346,6 +5346,10 @@ pub struct AdvancedAi {
     /// 650-gold reserve (10 cities) against banks of 378-485. Off by default.
     age_closer_spends_the_reserve: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `diplomatic-contender-eliminated`: a Diplomatic Victory contender at
+    /// war with us and at our mercy holds the front until it holds no city,
+    /// nearest city first. See `one_war::diplomatic_contender_to_eliminate`.
+    diplomatic_contender_eliminated: bool,
     /// `counterweight-faith-is-no-threat`: a faith holding our majority is our
     /// counterweight, not the threat, while a stronger faith stands in our
     /// cities. See `adopted_faith_sanctuary::stronger_faith_than`.
@@ -9275,6 +9279,7 @@ impl AdvancedAi {
             breaker_to_the_fastest: false,
             age_closer_spends_the_reserve: false,
             // ---- append: c-d ----------------------------------------
+            diplomatic_contender_eliminated: false,
             counterweight_faith_is_no_threat: false,
             capital_prey_scales_the_walls: false,
             culture_reads_the_engine_clock: false,
@@ -13768,9 +13773,15 @@ impl AdvancedAi {
             // desk agree on which war this is. See `advanced/one_war.rs`.
             // A second front the Domination plan must open (the next
             // capital, an urgent clock) takes the plan's target first.
-            self.one_war_second_front(g, pid)
-                // See `second_front_waits_for_the_front`.
-                .filter(|rival| !self.second_front_waits_for_the_front(g, pid, *rival))
+            // See `diplomatic_contender_to_eliminate`: ahead of a second front
+            // and of the capital hop.
+            self.diplomatic_contender_to_eliminate(g, pid)
+                .filter(|rival| active_fronts.contains(rival))
+                .or_else(|| {
+                    self.one_war_second_front(g, pid)
+                        // See `second_front_waits_for_the_front`.
+                        .filter(|rival| !self.second_front_waits_for_the_front(g, pid, *rival))
+                })
                 .or_else(|| {
                     self.one_war_front()
                         .filter(|front| active_fronts.contains(front))
@@ -13887,6 +13898,15 @@ impl AdvancedAi {
             } else {
                 None
             };
+        // See `diplomatic_contender_to_eliminate`.
+        if let Some(rival) = target_player
+            .filter(|rival| self.diplomatic_contender_to_eliminate(g, pid) == Some(*rival))
+        {
+            think!(self.journal(), Strategy, Strategy,
+                   "Eliminating {}", g.players[rival].civ;
+                   "{} Diplomatic Victory points that only its elimination takes off the board; {:.0} power against their {:.0}",
+                   g.players[rival].dvp, g.military_power(pid), g.military_power(rival));
+        }
         let suppression_target = actionable_denial
             .filter(|(rival, counter)| {
                 *counter == GrandStrategy::Conquest && target_player == Some(*rival)
@@ -13933,6 +13953,13 @@ impl AdvancedAi {
                 domination_finish
                     .filter(|(rival, _)| target_player == Some(*rival) && g.is_at_war(pid, *rival))
                     .map(|(_, capital)| capital)
+            })
+            // See `elimination_objective_city`: elimination takes every city,
+            // so the nearest comes first, not the capital.
+            .or_else(|| {
+                self.diplomatic_contender_to_eliminate(g, pid)
+                    .filter(|rival| target_player == Some(*rival))
+                    .and_then(|rival| self.elimination_objective_city(g, pid, rival))
             })
             .or_else(|| {
                 if matches!(suppression_target, Some((_, GrandStrategy::Religion))) {
