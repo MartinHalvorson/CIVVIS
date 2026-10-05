@@ -1445,3 +1445,39 @@ fn a_rout_spares_the_rival_we_are_countering_under_the_gene() {
     }
     assert_eq!(ai.one_war_peace(&g, 0, 2), rout, "a stronger rival");
 }
+
+/// See `engine_culture_clock`: the clock is the earliest projected finish of
+/// the valid readings in the window, through the -1 readings between them,
+/// and "none" once the window holds no valid reading.
+#[test]
+fn the_engine_culture_clock_takes_the_earliest_recent_finish() {
+    let (mut g, mut ai) = two_fronts();
+    ai.enable_culture_reads_the_engine_clock();
+    let read = |g: &mut Game, ai: &mut AdvancedAi, turn: u32, turns: f64| {
+        g.turn = turn;
+        std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
+            .entry(2)
+            .or_default()
+            .culture_turns_to_victory = Some(turns);
+        ai.record_engine_culture_clock(g, 0);
+    };
+    // Game 116's Brazil, turns 160-166.
+    read(&mut g, &mut ai, 160, 53.0);
+    read(&mut g, &mut ai, 161, 51.0);
+    read(&mut g, &mut ai, 162, 13.0);
+    read(&mut g, &mut ai, 163, 7.0);
+    // Finishes 213, 212, 175, 170: the earliest, 170, is seven turns out.
+    assert_eq!(ai.engine_culture_clock(&g, 2), Some(Some(7.0)));
+    read(&mut g, &mut ai, 164, -1.0);
+    assert_eq!(
+        ai.engine_culture_clock(&g, 2),
+        Some(Some(6.0)),
+        "through -1"
+    );
+    read(&mut g, &mut ai, 170, -1.0);
+    assert_eq!(
+        ai.engine_culture_clock(&g, 2),
+        Some(None),
+        "too long without a reading"
+    );
+}

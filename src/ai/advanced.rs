@@ -3346,6 +3346,10 @@ pub struct AdvancedAi {
     /// `denial-nearest-finish`: each rival's recent (turn, foreign tourists,
     /// bar) readings. See `AdvancedAi::record_culture_curves`.
     culture_curves: BTreeMap<usize, Vec<(u32, i64, i64)>>,
+    /// `culture-reads-the-engine-clock`: each rival's recent valid engine
+    /// readings as (turn read, projected finish turn). See
+    /// `denial_nearest_finish::engine_culture_clock`.
+    engine_culture_finish: BTreeMap<usize, Vec<(u32, f64)>>,
 
     /// Whether the empire will open an **ancient rush**: pick the nearest
     /// weak neighbour before the walls go up, march a small stack to their
@@ -8999,6 +9003,7 @@ impl AdvancedAi {
             projected_stock_denial: false,
             stock_pressure_history: BTreeMap::new(),
             culture_curves: BTreeMap::new(),
+            engine_culture_finish: BTreeMap::new(),
             early_rush: false,
             timed_war: false,
             selective_timed_war: false,
@@ -44639,6 +44644,8 @@ impl AdvancedAi {
         }
         // `denial-nearest-finish`: one culture-curve reading per rival.
         self.record_culture_curves(g, pid);
+        // See `engine_culture_clock`: one reading per rival per turn.
+        self.record_engine_culture_clock(g, pid);
         self.maintain_war_plan(g, pid);
         // The air surge's own lifecycle, after the melee appointment so the
         // two can never both own the grand strategy in the same turn: the
