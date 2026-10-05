@@ -6046,6 +6046,17 @@ impl AdvancedAi {
         self.conquest_opening_stays_near = false;
     }
 
+    /// Opt-in gene `science-ladder-reads-the-clock`; see
+    /// [`Self::science_ladder_reads_the_clock`].
+    pub fn enable_science_ladder_reads_the_clock(&mut self) {
+        self.science_ladder_reads_the_clock = true;
+    }
+
+    /// The twin of `enable_science_ladder_reads_the_clock`.
+    pub fn disable_science_ladder_reads_the_clock(&mut self) {
+        self.science_ladder_reads_the_clock = false;
+    }
+
     /// See `BasicAi::plaza_in_the_district_list`.
     pub fn enable_plaza_in_the_district_list(&mut self) {
         self.plaza_in_the_district_list = true;

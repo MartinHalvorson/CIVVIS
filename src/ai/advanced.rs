@@ -553,6 +553,14 @@ const RECOVERY_THREAT_POWER_RATIO: f64 = 2.0;
 /// `campaign-weighs-the-tourism-leader`: the march, in tiles, a campaign
 /// gives up to fight the rival leading the board's tourism.
 const TOURISM_LEADER_TILES: f64 = 8.0;
+/// `science-ladder-reads-the-clock`: the median turns from each launch to
+/// the rival's Science victory over the 11 Science losses of October 4-5 with
+/// the launches on record (Earth Satellite 50, Moon Landing 40, Mars Base 19,
+/// Exoplanet Expedition 7).
+const SCIENCE_TURNS_AFTER_SATELLITE: f64 = 50.0;
+const SCIENCE_TURNS_AFTER_MOON: f64 = 40.0;
+const SCIENCE_TURNS_AFTER_MARS: f64 = 19.0;
+const SCIENCE_TURNS_AFTER_EXOPLANET: f64 = 7.0;
 /// `campaign-weighs-the-tourism-leader`: the tourism a turn below which no
 /// rival leads the race.
 const TOURISM_LEADER_FLOOR: f64 = 50.0;
@@ -7291,6 +7299,9 @@ pub struct AdvancedAi {
     /// from the ring walks as far as its movement reaches toward it, not the
     /// router's single step. See `siege_train::close_to_staging`.
     siege_members_use_their_moves: bool,
+    /// `science-ladder-reads-the-clock`: a rival's space race reads on the
+    /// same finish clock as its culture race. See `science_race_pressure`.
+    science_ladder_reads_the_clock: bool,
     /// `science-denounce-waits-for-the-race`: the science denial's
     /// denunciation names only a rival physically in the space race. See
     /// `science_threat_denunciation`.
@@ -9630,6 +9641,7 @@ impl AdvancedAi {
 
             // ---- append: s-s ----------------------------------------
             siege_members_use_their_moves: false,
+            science_ladder_reads_the_clock: false,
             science_denounce_waits_for_the_race: false,
             stale_swap_reads_the_march: false,
             second_front_keeps_its_war: false,
@@ -12499,6 +12511,40 @@ impl AdvancedAi {
         }
     }
 
+    /// `science-ladder-reads-the-clock`: `science_launch_progress`, raised to
+    /// the finish clock a culture race reads on (`engine_culture_pressure`:
+    /// 100 at a finish now, 75 at `DENIAL_FINISH_HORIZON` turns) at the median
+    /// turns each launch has left (`SCIENCE_TURNS_AFTER_*`): 58 after the
+    /// Earth Satellite, 67 after the Moon Landing, 84 after the Mars Base, 94
+    /// after the Exoplanet Expedition, against the ladder's 25, 45, 65 and 78.
+    /// Live King civvis-20261005T152615Z (game 139): Mongolia launched the
+    /// Mars Base at turn 198 and read 65 while the counter stayed on Spain,
+    /// whose culture clock read 56-85 from turn 160 and never finished;
+    /// Mongolia was named at 210, launched at 213 and won on Science at 222,
+    /// never at war with us. The ladder with the gene off.
+    fn science_race_pressure(&self, g: &Game, pid: usize) -> i32 {
+        let ladder = Self::science_launch_progress(g, pid);
+        if !self.science_ladder_reads_the_clock {
+            return ladder;
+        }
+        let projects = &g.players[pid].science_projects;
+        let turns = if projects.contains("exoplanet_expedition") {
+            SCIENCE_TURNS_AFTER_EXOPLANET
+        } else if projects.contains("launch_mars_colony") {
+            SCIENCE_TURNS_AFTER_MARS
+        } else if projects.contains("launch_moon_landing") {
+            SCIENCE_TURNS_AFTER_MOON
+        } else if projects.contains("launch_earth_satellite") {
+            SCIENCE_TURNS_AFTER_SATELLITE
+        } else {
+            return ladder;
+        };
+        let clock = (100.0 - turns * 100.0 / (4.0 * denial_nearest_finish::DENIAL_FINISH_HORIZON))
+            .round()
+            .clamp(0.0, 100.0) as i32;
+        ladder.max(clock)
+    }
+
     /// Public victory-screen information distilled into a single urgency
     /// signal. Strong opponents must be judged by how close they are to ending
     /// the game, not only by how cheap their nearest city looks to capture.
@@ -12525,7 +12571,8 @@ impl AdvancedAi {
             .filter(|candidate| g.players[*candidate].alive)
             .collect();
 
-        let science = Self::science_launch_progress(g, pid)
+        let science = self
+            .science_race_pressure(g, pid)
             // `science_chain_alarm`: the prerequisite chain a rival has already
             // climbed, which the launch ladder above scores as nothing. The
             // unearned 25 base of `rocketry_readiness` is dropped so a rival

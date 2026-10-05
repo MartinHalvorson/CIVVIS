@@ -367,3 +367,24 @@ fn a_threatened_city_leaves_a_winning_war_out_of_recovery_under_the_gene() {
     ai.enable_recovery_needs_the_deficit();
     assert_ne!(ai.assess(&g, 0).strategy, GrandStrategy::Recovery);
 }
+
+/// `science-ladder-reads-the-clock`: each launch reads on the culture
+/// race's finish clock -- 58, 67, 84, 94 -- against the ladder's 25, 45, 65
+/// and 78 with the gene off.
+#[test]
+fn the_science_ladder_reads_the_finish_clock_under_the_gene() {
+    let (mut g, _, _) = board();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    for (project, off, on) in [
+        ("launch_earth_satellite", 25, 58),
+        ("launch_moon_landing", 45, 67),
+        ("launch_mars_colony", 65, 84),
+        ("exoplanet_expedition", 78, 94),
+    ] {
+        g.players[2].science_projects.insert(project.to_string());
+        ai.disable_science_ladder_reads_the_clock();
+        assert_eq!(ai.science_race_pressure(&g, 2), off, "{project} off");
+        ai.enable_science_ladder_reads_the_clock();
+        assert_eq!(ai.science_race_pressure(&g, 2), on, "{project} on");
+    }
+}

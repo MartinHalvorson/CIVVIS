@@ -2968,6 +2968,10 @@ pub const GENES: &[Gene] = &[
     // Master's Chapel and no Faith-bought land units; up to 3,590 Faith
     // unspent. See `BasicAi::plaza_in_the_district_list`.
     Gene { tag: "plaza-in-the-district-list", field: "plaza_in_the_district_list", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_in_the_district_list, disable: AdvancedAi::disable_plaza_in_the_district_list },
+    // Live King civvis-20261005T152615Z (game 139): Mongolia's Mars Base read
+    // 65 under a culture clock that never finished; Mongolia won on Science.
+    // See `AdvancedAi::science_race_pressure`.
+    Gene { tag: "science-ladder-reads-the-clock", field: "science_ladder_reads_the_clock", kind: Kind::OptIn, enable: AdvancedAi::enable_science_ladder_reads_the_clock, disable: AdvancedAi::disable_science_ladder_reads_the_clock },
     // Staging marches took the router's single step and stood: 47-62% of
     // live frame-0 MOVE_TOs were one tile. See `march_moves`.
     Gene { tag: "march-uses-its-moves", field: "march_uses_its_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_march_uses_its_moves, disable: AdvancedAi::disable_march_uses_its_moves },
