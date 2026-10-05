@@ -11355,8 +11355,14 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		-- else in either direction: a counter that slips another item onto
 		-- our side, swaps the copy for another, doubles it, or keeps it off
 		-- theirs is walked away from.
+		-- A Favor block may come back larger, never smaller: the ceiling was
+		-- priced on the block asked.
 		local want = pending.want or "OPEN_BORDERS";
-		matches = theirs[want] == 1 and next(mine) == nil;
+		if want == "FAVOR" then
+			matches = (theirs[want] or 0) >= (pending.want_amount or 1) and next(mine) == nil;
+		else
+			matches = theirs[want] == 1 and next(mine) == nil;
+		end
 		for key, _ in pairs(theirs) do
 			if key ~= want then matches = false; end
 		end
@@ -13211,9 +13217,19 @@ local function applyOrder(player, pid, row, turn)
 	-- anyone is not bought back. Their RESOURCES item, one copy, thirty
 	-- turns, nothing on our side; EQUALIZE; the handler closes only at or
 	-- under the ceiling, and only when their side is exactly that copy.
+	--
+	-- ★★★ AND THEIR FAVOR, BEFORE A CONTESTED SESSION. `FAVOR=N` (CIVVIS's
+	-- `append_favor_buy_order`, gene `favor-bought-before-congress`) asks for
+	-- N of the rival's Diplomatic Favor as a lump, clipped to the bank the
+	-- engine says they hold (the item's own max, as the sale clips ours); a
+	-- clipped block shrinks the ceiling with it, and a block under 10 is not
+	-- worth the deal window. The handler closes at or under the ceiling when
+	-- their side holds that much Favor or more and nothing else.
 	if kind == "buy" then
 		local luxury = verb == "LUXURY_ANY" or string.find(verb, "^RESOURCE_") ~= nil;
-		if verb ~= "OPEN_BORDERS" and not luxury then return false, "buy_unknown_item"; end
+		local favorAsk = tonumber(string.match(verb, "^FAVOR=(%d+)$"));
+		if favorAsk ~= nil and (favorAsk <= 0 or DealItemTypes.FAVOR == nil) then favorAsk = nil; end
+		if verb ~= "OPEN_BORDERS" and not luxury and favorAsk == nil then return false, "buy_unknown_item"; end
 		if luxury and verb ~= "LUXURY_ANY"
 				and try(function() return GameInfo.Resources[verb]; end, nil) == nil then
 			return false, "buy_unknown_item";
@@ -13230,7 +13246,7 @@ local function applyOrder(player, pid, row, turn)
 		if not try(function() return Players[subject]:IsMajor(); end, false) then
 			return false, "buy_not_major";
 		end
-		if not luxury and try(function() return diplomacy:HasOpenBordersFrom(subject); end, false) then
+		if verb == "OPEN_BORDERS" and try(function() return diplomacy:HasOpenBordersFrom(subject); end, false) then
 			return false, "buy_already_open";
 		end
 		local trade = CivvisTrade;
@@ -13257,8 +13273,21 @@ local function applyOrder(player, pid, row, turn)
 			DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
 			local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
 			if deal == nil then return false, "no_working_deal"; end
-			local want, name = "OPEN_BORDERS", "OPEN_BORDERS";
-			if luxury then
+			local want, name, wantAmount = "OPEN_BORDERS", "OPEN_BORDERS", favorAsk or 1;
+			if favorAsk ~= nil then
+				local item = deal:AddItemOfType(DealItemTypes.FAVOR, subject);
+				if item == nil then return false, "no_favor_item"; end
+				item:SetDuration(0);
+				local cap = try(function() return item:GetMaxAmount(); end, nil);
+				if cap ~= nil and cap < wantAmount then wantAmount = cap; end
+				if wantAmount < 10 or not pcall(function() item:SetAmount(wantAmount); end)
+						or not try(function() return item:IsValid(); end, true) then
+					pcall(function() deal:RemoveItemByID(item:GetID()); end);
+					return false, "buy_no_favor";
+				end
+				ceiling = math.floor(ceiling * wantAmount / favorAsk);
+				want, name = "FAVOR", "FAVOR=" .. tostring(wantAmount);
+			elseif luxury then
 				-- Owner first: the RIVAL's tradeable resources, the column the
 				-- shipped screen fills for their side of the table.
 				local possible = try(function()
@@ -13319,6 +13348,7 @@ local function applyOrder(player, pid, row, turn)
 			-- `want` is the key the handler matches their side against.
 			trade.pending[subject] = {
 				turn = turn, ceiling = ceiling, direction = "buy", verb = name, want = want,
+				want_amount = wantAmount,
 			};
 			CivvisTrade.ask(pid, subject, "EQUALIZE", "buy", turn);
 			return true, "asked", name;
@@ -13336,7 +13366,8 @@ local function applyOrder(player, pid, row, turn)
 		if not submitted and (reason == "no_agreement_type" or reason == "no_agreement_item"
 				or reason == "agreement_invalid" or reason == "invalid_deal"
 				or reason == "buy_no_luxury" or reason == "no_resource_item"
-				or reason == "resource_invalid") then
+				or reason == "resource_invalid" or reason == "buy_no_favor"
+				or reason == "no_favor_item") then
 			-- The engine will not sell passage here right now — usually a
 			-- missing Early Empire on one side — or has no luxury the seat
 			-- lacks on its table; do not re-ask every turn for the same

@@ -1021,6 +1021,87 @@ check("an invalid copy item is removed", linvalid.removed and #linvalid.removed,
 check("an invalid copy item starts the cooldown", trade.asked[4], 196)
 check("no luxury guard opened a session", rawget(_G, "SESSION_OPENED"), nil)
 
+-- ─── the favor purchase ─────────────────────────────────────────────────────
+-- `FAVOR=N` on the buy arm: THEIR favor, a lump clipped to the bank the
+-- engine says they hold, EQUALIZE; the handler closes when their side holds
+-- that much favor or more against our gold at or under the ceiling.
+local function favorOrder(pid, subject, player, turn, ceiling, verb)
+	return applyOrder(player, pid, {
+		kind = "buy", subject = tostring(subject), verb = verb or "FAVOR=37", x = ceiling, y = 0,
+	}, turn)
+end
+
+reset()
+local fasks, fasksPlayer = fixture({})
+ok, why = favorOrder(7, 3, fasksPlayer, 210, 296)
+check("favor ask is submitted", ok, true)
+check("favor ask says asked", why, "buy_asked")
+local block = itemOfKind(fasks, DealItemTypes.FAVOR)
+check("the favor is THEIRS to give", block and block.owner, 3)
+check("the favor is the block asked", block and block.amount, 37)
+check("the favor is a lump", block and block.duration, 0)
+check("nothing of ours goes on the favor table", #fasks.items, 1)
+check("the favor ask is EQUALIZE", fasks.sends[1][1], "equalize")
+check("no PROPOSED goes out on the favor ask", callAt(fasks, "send_proposed"), nil)
+check("the pending favor ask knows what it wants", trade.pending[3].want, "FAVOR")
+check("the pending favor ask knows how much", trade.pending[3].want_amount, 37)
+check("the pending favor ask keeps the ceiling", trade.pending[3].ceiling, 296)
+check("the favor offer names the block", eventField(lastEvent("deal_offer"), "want"), "FAVOR=37")
+
+-- Their bank is smaller than the ask: the block is clipped and the ceiling
+-- shrinks with it; under ten points nothing is asked and the cooldown runs.
+reset()
+local fclip, fclipPlayer = fixture({ favorMax = 20 })
+ok, why = favorOrder(7, 3, fclipPlayer, 216, 296)
+check("a clipped favor ask is submitted", why, "buy_asked")
+check("the clipped block is their bank", itemOfKind(fclip, DealItemTypes.FAVOR).amount, 20)
+check("the clipped ceiling shrinks with it", trade.pending[3].ceiling, 160)
+reset()
+local fpoor, fpoorPlayer = fixture({ favorMax = 5 })
+ok, why = favorOrder(7, 3, fpoorPlayer, 216, 296)
+check("a near-empty bank is not worth the window", why, "buy_no_favor")
+check("the empty favor item is removed", fpoor.removed and #fpoor.removed, 1)
+check("a near-empty bank starts the cooldown", trade.asked[3], 216)
+check("a near-empty bank sends nothing", fpoor.sends, nil)
+ok, why = favorOrder(7, 4, fpoorPlayer, 216, 296, "FAVOR=0")
+check("an empty block is unknown", why, "buy_unknown_item")
+
+-- The rival prices 37 favor at 250 lump: under the ceiling, closed.
+reset()
+local ffair, ffairPlayer = fixture({})
+favorOrder(7, 3, ffairPlayer, 222, 296)
+local fgot = fixture({ incoming = {
+	{ kind = DealItemTypes.FAVOR, from = 3, duration = 0, amount = 37 },
+	{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 250 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a fair favor price is accepted", fgot.sends and fgot.sends[1][1], "accepted")
+check("the favor close is in the ledger", eventField(lastEvent("deal_closed"), "pay"), "250")
+check("the favor close names what it wanted", eventField(lastEvent("deal_closed"), "want"), "FAVOR")
+check("the answer settles the favor buy", trade.pending[3], nil)
+
+-- A smaller block, a price over the ceiling, or anything of ours besides
+-- gold: declined.
+for _, case in ipairs({
+	{ "a smaller favor block is declined", 30, 200, nil },
+	{ "a favor price over the ceiling is declined", 37, 300, nil },
+	{ "our favor slipped onto the table is declined", 37, 200,
+		{ kind = DealItemTypes.FAVOR, from = 7, duration = 0, amount = 10 } },
+}) do
+	reset()
+	local _, askPlayer = fixture({})
+	favorOrder(7, 3, askPlayer, 228, 296)
+	local answer = {
+		{ kind = DealItemTypes.FAVOR, from = 3, duration = 0, amount = case[2] },
+		{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = case[3] },
+	}
+	if case[4] ~= nil then answer[#answer + 1] = case[4] end
+	local declined = fixture({ incoming = answer })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check(case[1], declined.sends, nil)
+	check(case[1] .. " (settled)", trade.pending[3], nil)
+end
+
 -- ─── wiring ─────────────────────────────────────────────────────────────────
 local src = assert(io.open(here .. "/CivvisControlAgent.lua")):read("*a")
 local sellAt = assert(src:find('if kind == "sell" then', 1, true))

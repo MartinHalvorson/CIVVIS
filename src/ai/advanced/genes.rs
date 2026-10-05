@@ -2892,6 +2892,10 @@ pub const GENES: &[Gene] = &[
     // from the capital took their city, 0 of 42 named further out. See
     // `early_conquest::CONQUEST_NEAR_REACH_TILES`.
     Gene { tag: "conquest-opening-stays-near", field: "conquest_opening_stays_near", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_opening_stays_near, disable: AdvancedAi::disable_conquest_opening_stays_near },
+    // Diplomatic losses of October 2-5: about half met the deciding session
+    // at 0-40 Favor while holding 200-1,000 Gold, and rivals paid us about
+    // 5.5 Gold a point. See `append_favor_buy_order` in `civvis_orders`.
+    Gene { tag: "favor-bought-before-congress", field: "favor_bought_before_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_favor_bought_before_congress, disable: AdvancedAi::disable_favor_bought_before_congress },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -5968,6 +5968,23 @@ impl AdvancedAi {
         self.recovery_peace_waits = false;
     }
 
+    /// Opt-in gene `favor-bought-before-congress`; see
+    /// [`Self::favor_bought_before_congress`].
+    pub fn enable_favor_bought_before_congress(&mut self) {
+        self.favor_bought_before_congress = true;
+    }
+
+    /// The twin of `enable_favor_bought_before_congress`.
+    pub fn disable_favor_bought_before_congress(&mut self) {
+        self.favor_bought_before_congress = false;
+    }
+
+    /// Whether the gene is on; the live bridge asks before it plans the
+    /// purchase (`append_favor_buy_order` in `civvis_orders`).
+    pub fn favor_bought_before_congress_enabled(&self) -> bool {
+        self.favor_bought_before_congress
+    }
+
     /// Opt-in gene `favor-spares-the-surprise-war`; see
     /// [`Self::favor_spares_the_surprise_war`].
     pub fn enable_favor_spares_the_surprise_war(&mut self) {

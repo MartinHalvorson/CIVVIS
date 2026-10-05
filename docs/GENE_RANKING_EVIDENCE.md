@@ -260,6 +260,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `domination-strikes-when-staged` | off (unmeasured) | Opt-in gene `domination-strikes-when-staged`; see `Self::domination_strikes_when_staged`. | 1 \| 1 |
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |
 | `faith-counter-waits-for-match-point` | off (unmeasured) | Opt-in gene `faith-counter-waits-for-match-point`; see `Self::faith_counter_waits_for_match_point`. | 1 \| 1 |
+| `favor-bought-before-congress` | off (unmeasured) | Opt-in gene `favor-bought-before-congress`; see `Self::favor_bought_before_congress`. | 1 \| 1 |
 | `favor-spares-the-surprise-war` | off (unmeasured) | Opt-in gene `favor-spares-the-surprise-war`; see `Self::favor_spares_the_surprise_war`. | 1 \| 1 |
 | `find-the-capital` | off (unmeasured) | Opt-in gene `find-the-capital`; see `Self::find_the_capital`. | 1 \| 1 |
 | `first-granary-reserve-2` | off (unmeasured) | Reserve a Granary only when its housing accelerates the next citizen within the construction and growth budget. | 1 \| 3 |

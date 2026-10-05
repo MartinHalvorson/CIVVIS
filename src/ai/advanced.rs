@@ -5933,6 +5933,11 @@ pub struct AdvancedAi {
     /// the stock Ilkum commitment would hold Urban Planning out again.
     colonization_earns_its_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `favor-bought-before-congress`: the live bridge buys a block of a
+    /// peaceful rival's Diplomatic Favor in the turns before a World Congress
+    /// session while a Diplomatic Victory contender stands and our bank is
+    /// low. Read by the bridge through `favor_bought_before_congress_enabled`.
+    favor_bought_before_congress: bool,
     /// `favor-spares-the-surprise-war`: with a Diplomatic Victory contender
     /// standing, a war opens by the denouncement's Formal War, not a surprise
     /// war. See `one_war::favor_spares_surprise`.
@@ -9341,6 +9346,7 @@ impl AdvancedAi {
             colonization_earns_its_slot: false,
             colonization_earns_its_slot_2: false,
             // ---- append: e-f ----------------------------------------
+            favor_bought_before_congress: false,
             favor_spares_the_surprise_war: false,
             faith_counter_waits_for_match_point: false,
             find_the_capital: false,

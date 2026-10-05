@@ -2995,6 +2995,104 @@ fn append_favor_sale_order(
     None
 }
 
+// ★★★ FAVOR BOUGHT BEFORE THE SESSION THAT DECIDES THE GAME
+// (`favor-bought-before-congress`, opt-in). A bought World Congress vote is
+// cheap on this host — the ballot's cumulative ladder reads 4, 12, 24, 40, 60
+// and 84 Favor for two to seven votes — and the Diplomatic Victory is won and
+// denied a single vote at a time: live King civvis-20261005T051413Z (game
+// 102) lost the +2 to the Aztecs 6-5, 5-4 and 4-3 at three sessions running.
+// Yet about half of the Diplomatic losses of October 2-5 met the deciding
+// session at 0-40 Favor while holding 200-1,000 Gold (game 126: 0 Favor from
+// turn 212 to the turn-221 session, 185-341 Gold), and rivals had paid us
+// about 5.5 Gold a point (median of forty favor sales on record). So, while a
+// player stands at `FAVOR_BUY_LEADER_DVP` or more and the next session is at
+// most `FAVOR_BUY_SESSION_TURNS` away, a bank under `FAVOR_BUY_TARGET` asks
+// one peaceful rival for the shortfall, in a block of `FAVOR_BUY_MIN` to
+// `FAVOR_BUY_MAX`, at up to `FAVOR_BUY_PRICE` Gold a point, with
+// `FAVOR_BUY_GOLD_RESERVE` kept back. The highest-DVP rival at peace is asked
+// first: Favor taken from a contender is a vote it no longer casts. The order
+// rides the `buy` arm with `FAVOR=N`; the agent clips the block to the bank
+// the engine says that rival holds and closes only at or under the ceiling.
+const FAVOR_BUY_LEADER_DVP: i64 = 10;
+const FAVOR_BUY_SESSION_TURNS: i64 = 5;
+const FAVOR_BUY_TARGET: f64 = 100.0;
+const FAVOR_BUY_MIN: i32 = 20;
+const FAVOR_BUY_MAX: i32 = 80;
+const FAVOR_BUY_PRICE: f64 = 8.0;
+const FAVOR_BUY_GOLD_RESERVE: i64 = 100;
+
+/// Why no favor purchase order was appended this turn, for the note; `None`
+/// when one was. Nothing with the gene off.
+fn append_favor_buy_order(
+    enabled: bool,
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    if !enabled {
+        return Some("favor_buy_hold:gene");
+    }
+    let top_dvp = state
+        .rivals
+        .iter()
+        .filter_map(|rival| rival.dvp)
+        .chain(state.dvp)
+        .max()
+        .unwrap_or(0);
+    if top_dvp < FAVOR_BUY_LEADER_DVP {
+        return Some("favor_buy_hold:no_contender");
+    }
+    let Some(turns_left) = state.congress_turns_left else {
+        return Some("favor_buy_hold:session_unknown");
+    };
+    if !(0..=FAVOR_BUY_SESSION_TURNS).contains(&turns_left) {
+        return Some("favor_buy_hold:session_far");
+    }
+    let Some(favor) = state.favor.filter(|favor| favor.is_finite()) else {
+        return Some("favor_buy_hold:unknown");
+    };
+    let shortfall = (FAVOR_BUY_TARGET - favor).floor() as i32;
+    if shortfall < FAVOR_BUY_MIN {
+        return Some("favor_buy_hold:banked");
+    }
+    // A sale of ours this turn (`CIVVIS_SELL_IDLE_FAVOR`) is never bought
+    // back in the same batch.
+    if orders.iter().any(|order| {
+        order.kind == "sell"
+            && order
+                .verb
+                .as_deref()
+                .is_some_and(|verb| verb.contains("FAVOR="))
+    }) {
+        return Some("favor_buy_hold:selling");
+    }
+    let affordable =
+        ((state.gold - FAVOR_BUY_GOLD_RESERVE).max(0) as f64 / FAVOR_BUY_PRICE).floor() as i32;
+    let amount = shortfall.min(FAVOR_BUY_MAX).min(affordable);
+    if amount < FAVOR_BUY_MIN {
+        return Some("favor_buy_hold:treasury");
+    }
+    let seller = state
+        .rivals
+        .iter()
+        .filter(|rival| !rival.at_war)
+        .filter(|rival| {
+            !orders.iter().any(|order| {
+                matches!(order.kind, "sell" | "buy") && order.subject == Some(rival.player as i64)
+            })
+        })
+        .max_by_key(|rival| (rival.dvp.unwrap_or(0), std::cmp::Reverse(rival.player)));
+    let Some(seller) = seller else {
+        return Some("favor_buy_hold:no_seller");
+    };
+    orders.push(Order {
+        kind: "buy",
+        subject: Some(seller.player as i64),
+        verb: Some(format!("FAVOR={amount}")),
+        pos: Some(((amount as f64 * FAVOR_BUY_PRICE).floor() as i32, 0)),
+    });
+    None
+}
+
 // ★★★★★ THE WORK SOLD TO SEAT THE PERSON. A cultural Great Person the host
 // will not let activate anywhere is out of space by the host's own account —
 // see `StateGreatPerson::slot_starved`, which asks whether this person can
@@ -4423,6 +4521,20 @@ fn decide(
             // Only the holds worth a glance in the ledger: a bank sitting on
             // a plan that would sell it, with nobody to sell to.
             if why == "favor_hold:no_buyer" || why == "favor_hold:contender" {
+                note_bits.push(why.to_string());
+            }
+        }
+    }
+    match append_favor_buy_order(
+        ai.favor_bought_before_congress_enabled(),
+        state,
+        &mut orders,
+    ) {
+        None => note_bits.push("favor_buy=1".to_string()),
+        Some(why) => {
+            // The holds worth a glance: a session at hand and a bank short of
+            // it, with the treasury or the sellers missing.
+            if why == "favor_buy_hold:treasury" || why == "favor_buy_hold:no_seller" {
                 note_bits.push(why.to_string());
             }
         }
@@ -15963,6 +16075,113 @@ mod tests {
         assert_eq!(peace_tribute_cap(&state, true), 12);
         state.gold = 0;
         assert_eq!(peace_tribute_cap(&state, true), 0);
+    }
+
+    #[test]
+    fn favor_is_bought_before_a_contested_session() {
+        // Game 126 at turn 217: 0 Favor, 249 Gold, the session four turns
+        // out, Sweden at 15 points and at war with us, two rivals at peace.
+        let state = StateSnapshot {
+            turn: 217,
+            favor: Some(0.0),
+            gold: 249,
+            dvp: Some(11),
+            congress_turns_left: Some(4),
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    dvp: Some(6),
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 3,
+                    dvp: Some(15),
+                    at_war: true,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 4,
+                    dvp: Some(9),
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+
+        // The gene off, nothing.
+        let mut orders = Vec::new();
+        assert_eq!(
+            append_favor_buy_order(false, &state, &mut orders),
+            Some("favor_buy_hold:gene")
+        );
+        assert!(orders.is_empty());
+
+        // On: (249 - 100) / 8 = 18 points affordable is under the block
+        // minimum; at 400 Gold, 37 points from the highest-DVP rival at peace.
+        assert_eq!(
+            append_favor_buy_order(true, &state, &mut orders),
+            Some("favor_buy_hold:treasury")
+        );
+        let mut rich = state.clone();
+        rich.gold = 400;
+        assert_eq!(append_favor_buy_order(true, &rich, &mut orders), None);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].kind, "buy");
+        assert_eq!(orders[0].subject, Some(4), "not the rival at war");
+        assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=37"));
+        assert_eq!(orders[0].pos, Some((296, 0)));
+
+        // A rival with a deal already heading its way is passed over; with
+        // none left, nobody sells.
+        assert_eq!(append_favor_buy_order(true, &rich, &mut orders), None);
+        assert_eq!(orders[1].subject, Some(2));
+        assert_eq!(
+            append_favor_buy_order(true, &rich, &mut orders),
+            Some("favor_buy_hold:no_seller")
+        );
+
+        // A deep treasury buys the block cap, never past the target.
+        let mut deep = rich.clone();
+        deep.gold = 2_000;
+        let mut orders = Vec::new();
+        append_favor_buy_order(true, &deep, &mut orders);
+        assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=80"));
+        deep.favor = Some(70.0);
+        let mut orders = Vec::new();
+        append_favor_buy_order(true, &deep, &mut orders);
+        assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=30"));
+        deep.favor = Some(85.0);
+        assert_eq!(
+            append_favor_buy_order(true, &deep, &mut Vec::new()),
+            Some("favor_buy_hold:banked")
+        );
+
+        // No contender, a far session, or our own sale this turn: nothing.
+        let mut calm = rich.clone();
+        calm.dvp = Some(4);
+        for rival in &mut calm.rivals {
+            rival.dvp = Some(9);
+        }
+        assert_eq!(
+            append_favor_buy_order(true, &calm, &mut Vec::new()),
+            Some("favor_buy_hold:no_contender")
+        );
+        let mut far = rich.clone();
+        far.congress_turns_left = Some(12);
+        assert_eq!(
+            append_favor_buy_order(true, &far, &mut Vec::new()),
+            Some("favor_buy_hold:session_far")
+        );
+        let mut selling = vec![Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("FAVOR=40".to_string()),
+            pos: Some((80, 0)),
+        }];
+        assert_eq!(
+            append_favor_buy_order(true, &rich, &mut selling),
+            Some("favor_buy_hold:selling")
+        );
     }
 
     #[test]
