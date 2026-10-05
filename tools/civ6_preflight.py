@@ -43,6 +43,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -181,7 +182,81 @@ def check_installed(report: Report) -> None:
             report.ok(path.name, "matches worktree source")
 
 
-def check_bundle(report: Report) -> None:
+# ★ A VALID CODESIGN VERDICT IS REUSED WHILE THE BUNDLE IS UNCHANGED. Each
+# live game is a one-attempt batch, so this preflight runs at every game
+# boundary, and `codesign -v` on Civ6.app was most of it: 2.3 s warm, ~3.7 s
+# cold, of a ~6 s preflight (G100's launch, 2026-10-05). The verdict depends
+# only on the bundle's own files, so a pass is kept for SEAL_CACHE_TTL_S
+# against a cheap fingerprint of them, and anything else (a Steam update, a
+# file left inside the bundle, the mod still installed) asks codesign again.
+# Only a VALID verdict is kept: a broken one is recomputed for its
+# attribution. Opt-in (`--cache-seal`, which the climb passes), so a hand-run
+# preflight still checks everything.
+SEAL_CACHE = Path.home() / ".cache" / "civvis" / "preflight-seal.json"
+SEAL_CACHE_TTL_S = 4 * 3600
+
+
+def bundle_fingerprint(bundle: Path) -> dict | None:
+    """Cheap facts that change whenever the bundle a verdict was given for does."""
+    def stamp(path: Path) -> list:
+        status = path.stat()
+        return [status.st_mtime_ns, status.st_size]
+
+    try:
+        contents = bundle / "Contents"
+        return {
+            "bundle": str(bundle.resolve()),
+            "info": stamp(contents / "Info.plist"),
+            "seal": stamp(contents / "_CodeSignature" / "CodeResources"),
+            "macos": sorted([entry.name, *stamp(entry)]
+                            for entry in (contents / "MacOS").iterdir()),
+            "dlc": sorted([entry.name, entry.stat().st_mtime_ns]
+                          for entry in (contents / "Assets" / "DLC").iterdir()),
+        }
+    except OSError:
+        return None
+
+
+def cached_seal(cache: Path, bundle: Path, now: float | None = None) -> dict | None:
+    """The kept valid verdict for this very bundle, or None to ask codesign."""
+    try:
+        kept = json.loads(cache.read_text())
+    except (OSError, ValueError):
+        return None
+    now = time.time() if now is None else now
+    if not isinstance(kept, dict) or not isinstance(kept.get("at"), (int, float)):
+        return None
+    if not 0 <= now - kept["at"] <= SEAL_CACHE_TTL_S:
+        return None
+    fingerprint = bundle_fingerprint(bundle)
+    if fingerprint is None or kept.get("fingerprint") != fingerprint:
+        return None
+    seal = kept.get("seal")
+    if not isinstance(seal, dict) or seal.get("state") != "valid":
+        return None
+    return {**seal, "cached_at": kept["at"]}
+
+
+def remember_seal(cache: Path, bundle: Path, seal: dict, now: float | None = None) -> None:
+    """Keep a valid verdict with the fingerprint it was given for."""
+    if seal.get("state") != "valid":
+        try:
+            cache.unlink()
+        except OSError:
+            pass
+        return
+    fingerprint = bundle_fingerprint(bundle)
+    if fingerprint is None:
+        return
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps({"at": time.time() if now is None else now,
+                                     "fingerprint": fingerprint, "seal": seal}))
+    except OSError:
+        pass
+
+
+def check_bundle(report: Report, cache: Path | None = None) -> None:
     """Is the game still signed — and if not, is it OUR doing or somebody's?
 
     ⚠ THIS CHECK EXISTS BECAUSE THE HARNESS UNSIGNS THE GAME AND NEVER SAID SO.
@@ -209,7 +284,12 @@ def check_bundle(report: Report) -> None:
     from civ6_control import install
 
     try:
-        seal = install.signature_report()
+        bundle = install.bundle_dir() if cache is not None else None
+        seal = cached_seal(cache, bundle) if bundle is not None else None
+        if seal is None:
+            seal = install.signature_report()
+            if bundle is not None:
+                remember_seal(cache, bundle, seal)
     except SystemExit as exc:
         # `civ6_env.install_dir` exits when the game is not installed. Preflight
         # is routinely run on machines that only ever edit the mod.
@@ -217,6 +297,9 @@ def check_bundle(report: Report) -> None:
         return
 
     report.seal = seal
+    if seal.get("cached_at") is not None:
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(seal["cached_at"]))
+        print(f"  preflight: cached pass from {stamp} (codesign; bundle unchanged)")
     if seal["state"] == "valid":
         report.ok("codesign", "valid on disk — the mod is not installed")
     elif seal["state"] in ("unknown", "no-bundle"):
@@ -541,6 +624,9 @@ def main() -> int:
                         help="skip cargo test (the slow check)")
     parser.add_argument("--orders-bin", default=None,
                         help="probe this decider's --serve protocol")
+    parser.add_argument("--cache-seal", action="store_true",
+                        help="reuse a valid codesign verdict while the game bundle "
+                             "is unchanged (the climb's per-game preflight)")
     args = parser.parse_args()
 
     report = Report()
@@ -548,7 +634,7 @@ def main() -> int:
     check_modinfo(report)
     check_python(report)
     check_installed(report)
-    check_bundle(report)
+    check_bundle(report, SEAL_CACHE if args.cache_seal else None)
     check_host(report)
     if not args.skip_engine:
         check_engine(report)
