@@ -7435,6 +7435,9 @@ pub struct AdvancedAi {
     /// -60's fork). See `one_war::second_front_waits_for_its_war`. Off by
     /// default.
     second_front_waits_for_its_war: bool,
+    /// `staging-gun-reads-the-shared-danger`: a Stage gun's danger readings
+    /// take the shared field. See `siege_train::stage_gun_danger`.
+    staging_gun_reads_the_shared_danger: bool,
     /// `stage-musters-out-of-reach`: while a siege train cannot yet close,
     /// its melee and shooters muster out of the defenders' reach instead of
     /// waiting on the staging ring. See `siege_train::muster_step`.
@@ -9814,6 +9817,7 @@ impl AdvancedAi {
             stall_breaker_waited: None,
             stall_stage_seen: None,
             second_front_waits_for_its_war: false,
+            staging_gun_reads_the_shared_danger: false,
             stage_musters_out_of_reach: false,
             stage_muster_ready: BTreeMap::new(),
             stranded_settler_leaves_the_corridor: false,

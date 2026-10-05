@@ -6425,6 +6425,17 @@ impl AdvancedAi {
         self.stage_musters_out_of_reach = false;
     }
 
+    /// Opt-in gene `staging-gun-reads-the-shared-danger`; see
+    /// [`Self::staging_gun_reads_the_shared_danger`].
+    pub fn enable_staging_gun_reads_the_shared_danger(&mut self) {
+        self.staging_gun_reads_the_shared_danger = true;
+    }
+
+    /// The twin of `enable_staging_gun_reads_the_shared_danger`.
+    pub fn disable_staging_gun_reads_the_shared_danger(&mut self) {
+        self.staging_gun_reads_the_shared_danger = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
