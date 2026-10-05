@@ -21302,9 +21302,20 @@ local function tick()
 						-- Below the floor too: game 102's Aztecs went 5 -> 10 -> 15
 						-- -> 20 with the leader by points under 12 at two of those
 						-- sessions, each +2 taken by a 4-6 vote block.
+						-- ★★ FROM 16 THE RIVALS GANG ON THE LEADER: NO CLAIM, NO
+						-- REDIRECT. Across October 2-5 the rivals voted B on a
+						-- leader at 16 in 57% of sessions, at 18 in all five; of
+						-- the five outvotes cast at 16 or more (with game 134,
+						-- civvis-20261005T140105Z t241: 432 Favor on 15 A votes
+						-- against a 34-15 B), B won four and none gave us the +2,
+						-- while every deny at 16-17 ended on B. The ballot then
+						-- votes with the gang (and the participation point) instead
+						-- of casting A into it. `DiploVictoryGangCertain` (16).
+						local ganged = (tonumber(leaderPoints) or 0)
+							>= (tonumber(cfg.DiploVictoryGangCertain) or 16);
 						if ourIdx ~= nil and ((budget >= claim
 							and (tonumber(leaderPoints) or 0) < floor)
-							or (cfg.DiploVictoryOutvoteClaim ~= false
+							or (cfg.DiploVictoryOutvoteClaim ~= false and not ganged
 								and tonumber(envoyTally.wc_rival_block) ~= nil
 								and budget >= (tonumber(cfg.DiploVictoryOutvoteFactor) or 2)
 									* math.max(tonumber(envoyTally.wc_rival_block), 1))) then
@@ -21316,7 +21327,7 @@ local function tick()
 						end
 						-- See `CivvisCongressRedirect`: a +2 we can take from a
 						-- contender goes to us or a rival far behind instead.
-						if mode ~= "claim" and mode ~= "outvote" then
+						if mode ~= "claim" and mode ~= "outvote" and not ganged then
 							local to, count, how = CivvisCongressRedirect(
 								envoyTally.wc_rival_blocks_seen or envoyTally.wc_rival_blocks,
 								candidates, pid, budget, maxVotes, cfg, envoyTally.wc_dvp_won);

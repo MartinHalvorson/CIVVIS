@@ -171,8 +171,13 @@ tally.wc_rival_block = 5
 config.DiploVictoryOutvoteClaim = false
 ballot("outvote off", 439, 15, nil, 2, "deny", 10)
 config.DiploVictoryOutvoteClaim = nil
--- Match point spends the whole bank on the outvote too.
-ballot("match point outvote", 439, 18, nil, 1, "outvote", 15)
+-- Match point spends the whole bank, on the denial: from 16 the rivals gang
+-- on the leader, and an A claim is cast into their B (game 134 t241).
+ballot("match point denies with the gang", 439, 18, nil, 2, "deny", 15)
+ballot("a leader at 16 is denied, not outvoted", 439, 16, nil, 2, "deny", 10)
+config.DiploVictoryGangCertain = 19
+ballot("a later gang threshold keeps the outvote", 439, 18, nil, 1, "outvote", 15)
+config.DiploVictoryGangCertain = nil
 -- Game 102 (T051413Z) t181: 171 Favor with the leader on 8, below the floor;
 -- the largest rival A block at t162 was 2, and the bank had fallen from 190
 -- since that session. A draining bank is spent whole (9 votes), and 9 votes
