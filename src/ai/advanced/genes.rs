@@ -2726,6 +2726,11 @@ pub const GENES: &[Gene] = &[
     // deadline passed before the force ever assembled" -- the release in 9 of
     // the last 24 live games. See `early_conquest::conquest_force_estimate`.
     Gene { tag: "conquest-opening-needs-the-production", field: "conquest_opening_needs_the_production", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_opening_needs_the_production, disable: AdvancedAi::disable_conquest_opening_needs_the_production },
+    // Live King civvis-20261005T051413Z (game 102): Toronto's breach reading
+    // counted only its own force's guns and read 0 while three healthy
+    // Bombards of Uruk's force stood at its ring. See
+    // `siege_train::nearby_gun_city`.
+    Gene { tag: "breach-counts-nearby-guns", field: "breach_counts_nearby_guns", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_counts_nearby_guns, disable: AdvancedAi::disable_breach_counts_nearby_guns },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
