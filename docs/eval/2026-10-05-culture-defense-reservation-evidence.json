@@ -89,9 +89,9 @@
     ]
   },
   "remaining": [
-    "Finish six-game firing screen and analyze actual completed rows.",
-    "Finish simulator outcome probes; judge Domination and original-capital holdings rather than all victory wins.",
-    "Complete local final-revision tests and ship only through green checks.",
+    "Finish registered16 candidate and8 alternative simulator pairs; evaluate Domination wins and original-capital conversion, with the complete cohort rather than a favorable subset.",
+    "Decide whether to retain or reject the candidate from complete evidence; do not ship it merely because gates can pass.",
+    "Before marking ready, merge latest origin/main and finish accurate validation and green checks.",
     "Verify promising policies in controlled native games before claiming native win-rate improvement."
   ],
   "candidate_replay": {
@@ -538,5 +538,585 @@
       "conclusion": "At T269 Brazil and Norway both held15 DVP. The controller named Brazil science94% as its counter but kept the campaign on Norway. Brazil was already at war, flight progress0/25 at4 per turn implied6.25 turns at the current rate, while Congress was12 turns away. Brazil won science atT274 after acceleration. The tie-break and earlier elimination precedence need controlled evaluation."
     },
     "implication": "Culture safety alone is insufficient. Judge interventions on original-capital progress and Domination outcomes, and test the separate contender-versus-science-deadline priority conflict."
-  }
+  },
+  "firing_screen": {
+    "status": "complete",
+    "completed_utc": "2026-10-05T19:04:20.581982+00:00",
+    "games": 6,
+    "seats": 36,
+    "raw_path": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-05/culture-building-reservation/candidate-harness/firing-screen.jsonl",
+    "raw_sha256": "b8fc38ad30de79dca2c909b5391b04c945fedaf42ccf84457f387fcbcf10edf7",
+    "analysis_artifact": "docs/gene_screens/fires/culture-defense-finishes-theater.json",
+    "analysis_sha256": "c7aa694d9a2453d897338296bfd148270d280e6c1bff22b5bfed1c1241a9e89f",
+    "profile": {
+      "all_seats": true,
+      "barbarian_difficulty": "deity",
+      "baseline": "best",
+      "batch": {
+        "seed_first": 100510200,
+        "seed_last": 100510205,
+        "target_games": 6,
+        "target_seats": 36
+      },
+      "build": {
+        "binary_sha256": "76fdac1079ac4842ee5a714f1536a413165b788385cdb4054ebeeb680bfcded1",
+        "commit": "",
+        "commit_source": "unstamped",
+        "dirty": false,
+        "genes_sha256": "d617c56483632e23a4921b540f470fbd05e5c8bbab1fc84107d75e26e63584cd"
+      },
+      "city_states": 9,
+      "contested_field": "",
+      "contested_field_genes": "",
+      "design": "independent",
+      "difficulty": "king",
+      "difficulty_rotate": "",
+      "height": 46,
+      "kind": "header",
+      "map": "continents",
+      "native_competitions": true,
+      "p_default_on": 0.75,
+      "p_on": 0.5,
+      "player_contract": "observed-player-v1",
+      "players": 6,
+      "randomize_civs": true,
+      "rivals": "",
+      "speed": "online",
+      "start_seed": 100510200,
+      "target_mix": "civvis,science,culture,religion,diplomatic,domination,score",
+      "turns": 250,
+      "victories": "science,culture,religious,diplomatic,domination,score",
+      "victory_mask": "",
+      "width": 74,
+      "gene_pool_size": 473,
+      "screened_tags": [
+        "culture-defense-finishes-theater"
+      ]
+    },
+    "batch": {
+      "complete_games": 6,
+      "complete_seats": 36,
+      "completion": 1.0,
+      "partial": false,
+      "read": "screen complete \u00b7 36 of 36 intended seats (100.0%) \u00b7 seeds 100510200..100510205 reserved",
+      "seed_window": [
+        100510200,
+        100510205
+      ],
+      "seed_window_played": [
+        100510200,
+        100510205
+      ],
+      "target_games": 6,
+      "target_seats": 36
+    },
+    "n_on": 18,
+    "n_off": 18,
+    "win_on": 0.05555555555555555,
+    "win_off": 0.2777777777777778,
+    "win_delta_pp": -22.22222222222222,
+    "clustered_win_se_pp": 11.828681053830602,
+    "win_z": -1.8786728732554483,
+    "share_delta_pp": -2.3026794528808403,
+    "interpretation": "Genuine six-game firing proof; adverse but unresolved small-screen outcome signal. UNSTAMPED owned archive build, not a ledger promotion batch. No native win-rate estimate.",
+    "actual_varied_tags": [
+      "culture-defense-finishes-theater"
+    ]
+  },
+  "local_validation": {
+    "command": "cargo test --profile ci --locked",
+    "source_revision": "c13b9b70a",
+    "returncode": 0,
+    "passed": 4622,
+    "ignored": 54,
+    "log": "/tmp/civvis-3992-final-local-tests.log",
+    "source_note": "No Rust changes after this successful required suite; the new artifact and evidence update are documentation only."
+  },
+  "partial_outcome_probes": {
+    "candidate": {
+      "snapshot_utc": "2026-10-05T19:04:20.581982+00:00",
+      "registered_pairs": 16,
+      "completed_pairs": 4,
+      "completed_prefix_sha256": "cbcd409d3695d623fdb6860bdd7d9577d2f01a9137db682b0d4acf6266849fdb",
+      "rows_path": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-05/culture-building-reservation/candidate-harness/pairs.jsonl",
+      "scope": "Simulator four-player Gran Colombia King proxy, not native Firaxis outcomes",
+      "off_domination_wins": 0,
+      "on_domination_wins": 0,
+      "off_terminal_foreign_capitals": 0,
+      "on_terminal_foreign_capitals": 0,
+      "results": [
+        {
+          "seed": 100510000,
+          "off": {
+            "focal_domination_won": false,
+            "focal_score": 450,
+            "turn": 187,
+            "victory": "science",
+            "winner": 2,
+            "conquest": {
+              "advanced_flight_observed_turn": 160,
+              "first_bomber_observed_turn": 170,
+              "first_focal_major_declaration_observed_turn": 133,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": null,
+              "first_major_war_observed_turn": 133,
+              "flight_observed_turn": 143,
+              "focal_major_declarations": 1,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [],
+              "own_original_capital_held_at_end": true,
+              "peak_bombers": 1
+            }
+          },
+          "on": {
+            "focal_domination_won": false,
+            "focal_score": 238,
+            "turn": 192,
+            "victory": "science",
+            "winner": 2,
+            "conquest": {
+              "advanced_flight_observed_turn": null,
+              "first_bomber_observed_turn": null,
+              "first_focal_major_declaration_observed_turn": 133,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": null,
+              "first_major_war_observed_turn": 133,
+              "flight_observed_turn": 162,
+              "focal_major_declarations": 1,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [],
+              "own_original_capital_held_at_end": false,
+              "peak_bombers": 0
+            }
+          }
+        },
+        {
+          "seed": 100510001,
+          "off": {
+            "focal_domination_won": false,
+            "focal_score": 467,
+            "turn": 193,
+            "victory": "science",
+            "winner": 1,
+            "conquest": {
+              "advanced_flight_observed_turn": 165,
+              "first_bomber_observed_turn": null,
+              "first_focal_major_declaration_observed_turn": null,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": null,
+              "first_major_war_observed_turn": 153,
+              "flight_observed_turn": 151,
+              "focal_major_declarations": 0,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [],
+              "own_original_capital_held_at_end": true,
+              "peak_bombers": 0
+            }
+          },
+          "on": {
+            "focal_domination_won": false,
+            "focal_score": 495,
+            "turn": 189,
+            "victory": "science",
+            "winner": 1,
+            "conquest": {
+              "advanced_flight_observed_turn": 168,
+              "first_bomber_observed_turn": null,
+              "first_focal_major_declaration_observed_turn": null,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": null,
+              "first_major_war_observed_turn": 160,
+              "flight_observed_turn": 154,
+              "focal_major_declarations": 0,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [],
+              "own_original_capital_held_at_end": true,
+              "peak_bombers": 0
+            }
+          }
+        },
+        {
+          "seed": 100510002,
+          "off": {
+            "focal_domination_won": false,
+            "focal_score": 482,
+            "turn": 189,
+            "victory": "science",
+            "winner": 3,
+            "conquest": {
+              "advanced_flight_observed_turn": 131,
+              "first_bomber_observed_turn": null,
+              "first_focal_major_declaration_observed_turn": 136,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": null,
+              "first_major_war_observed_turn": 136,
+              "flight_observed_turn": 122,
+              "focal_major_declarations": 1,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [],
+              "own_original_capital_held_at_end": true,
+              "peak_bombers": 0
+            }
+          },
+          "on": {
+            "focal_domination_won": false,
+            "focal_score": 462,
+            "turn": 191,
+            "victory": "science",
+            "winner": 3,
+            "conquest": {
+              "advanced_flight_observed_turn": 131,
+              "first_bomber_observed_turn": null,
+              "first_focal_major_declaration_observed_turn": 136,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": null,
+              "first_major_war_observed_turn": 136,
+              "flight_observed_turn": 122,
+              "focal_major_declarations": 1,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [],
+              "own_original_capital_held_at_end": true,
+              "peak_bombers": 0
+            }
+          }
+        },
+        {
+          "seed": 100510003,
+          "off": {
+            "focal_domination_won": false,
+            "focal_score": 645,
+            "turn": 188,
+            "victory": "culture",
+            "winner": 3,
+            "conquest": {
+              "advanced_flight_observed_turn": 145,
+              "first_bomber_observed_turn": 149,
+              "first_focal_major_declaration_observed_turn": 154,
+              "first_foreign_capital_held_observed_turn": 180,
+              "first_major_city_held_observed_turn": 155,
+              "first_major_war_observed_turn": 154,
+              "flight_observed_turn": 133,
+              "focal_major_declarations": 1,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [
+                40
+              ],
+              "foreign_major_cities_observed_held": [
+                40,
+                211,
+                434,
+                542
+              ],
+              "own_original_capital_held_at_end": true,
+              "peak_bombers": 4
+            }
+          },
+          "on": {
+            "focal_domination_won": false,
+            "focal_score": 546,
+            "turn": 179,
+            "victory": "culture",
+            "winner": 3,
+            "conquest": {
+              "advanced_flight_observed_turn": 143,
+              "first_bomber_observed_turn": 146,
+              "first_focal_major_declaration_observed_turn": 149,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": 150,
+              "first_major_war_observed_turn": 149,
+              "flight_observed_turn": 131,
+              "focal_major_declarations": 1,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [
+                671
+              ],
+              "own_original_capital_held_at_end": true,
+              "peak_bombers": 3
+            }
+          }
+        }
+      ]
+    },
+    "general_alternative": {
+      "snapshot_utc": "2026-10-05T19:04:20.581982+00:00",
+      "registered_pairs": 8,
+      "completed_pairs": 5,
+      "completed_prefix_sha256": "9d2fc3201ed8198c4d584ef7118997494e7c2e143f5f2c5f82bf1e448207f341",
+      "rows_path": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-05/culture-building-reservation/general-policy-proxy/pairs.jsonl",
+      "scope": "Simulator four-player Gran Colombia King proxy, not native Firaxis outcomes",
+      "off_domination_wins": 0,
+      "on_domination_wins": 0,
+      "off_terminal_foreign_capitals": 0,
+      "on_terminal_foreign_capitals": 0,
+      "results": [
+        {
+          "seed": 100510100,
+          "off": {
+            "focal_domination_won": false,
+            "focal_score": 662,
+            "turn": 206,
+            "victory": "science",
+            "winner": 3,
+            "conquest": {
+              "advanced_flight_observed_turn": 134,
+              "first_bomber_observed_turn": 143,
+              "first_focal_major_declaration_observed_turn": 27,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": 133,
+              "first_major_war_observed_turn": 27,
+              "flight_observed_turn": 124,
+              "focal_major_declarations": 2,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [
+                247
+              ],
+              "own_original_capital_held_at_end": true,
+              "peak_bombers": 7
+            }
+          },
+          "on": {
+            "focal_domination_won": false,
+            "focal_score": 624,
+            "turn": 185,
+            "victory": "culture",
+            "winner": 3,
+            "conquest": {
+              "advanced_flight_observed_turn": 133,
+              "first_bomber_observed_turn": 142,
+              "first_focal_major_declaration_observed_turn": 27,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": 151,
+              "first_major_war_observed_turn": 27,
+              "flight_observed_turn": 124,
+              "focal_major_declarations": 2,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [
+                94,
+                113,
+                247
+              ],
+              "own_original_capital_held_at_end": true,
+              "peak_bombers": 4
+            }
+          }
+        },
+        {
+          "seed": 100510101,
+          "off": {
+            "focal_domination_won": false,
+            "focal_score": 148,
+            "turn": 207,
+            "victory": "science",
+            "winner": 3,
+            "conquest": {
+              "advanced_flight_observed_turn": null,
+              "first_bomber_observed_turn": null,
+              "first_focal_major_declaration_observed_turn": 40,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": null,
+              "first_major_war_observed_turn": 40,
+              "flight_observed_turn": null,
+              "focal_major_declarations": 1,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [],
+              "own_original_capital_held_at_end": false,
+              "peak_bombers": 0
+            }
+          },
+          "on": {
+            "focal_domination_won": false,
+            "focal_score": 280,
+            "turn": 147,
+            "victory": "religious",
+            "winner": 3,
+            "conquest": {
+              "advanced_flight_observed_turn": null,
+              "first_bomber_observed_turn": null,
+              "first_focal_major_declaration_observed_turn": 40,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": null,
+              "first_major_war_observed_turn": 40,
+              "flight_observed_turn": null,
+              "focal_major_declarations": 1,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [],
+              "own_original_capital_held_at_end": true,
+              "peak_bombers": 0
+            }
+          }
+        },
+        {
+          "seed": 100510102,
+          "off": {
+            "focal_domination_won": false,
+            "focal_score": 481,
+            "turn": 198,
+            "victory": "science",
+            "winner": 2,
+            "conquest": {
+              "advanced_flight_observed_turn": 127,
+              "first_bomber_observed_turn": 143,
+              "first_focal_major_declaration_observed_turn": 136,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": null,
+              "first_major_war_observed_turn": 136,
+              "flight_observed_turn": 111,
+              "focal_major_declarations": 1,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [],
+              "own_original_capital_held_at_end": true,
+              "peak_bombers": 4
+            }
+          },
+          "on": {
+            "focal_domination_won": false,
+            "focal_score": 191,
+            "turn": 162,
+            "victory": "culture",
+            "winner": 2,
+            "conquest": {
+              "advanced_flight_observed_turn": 133,
+              "first_bomber_observed_turn": null,
+              "first_focal_major_declaration_observed_turn": 115,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": null,
+              "first_major_war_observed_turn": 115,
+              "flight_observed_turn": 113,
+              "focal_major_declarations": 1,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [],
+              "own_original_capital_held_at_end": false,
+              "peak_bombers": 0
+            }
+          }
+        },
+        {
+          "seed": 100510103,
+          "off": {
+            "focal_domination_won": false,
+            "focal_score": 420,
+            "turn": 181,
+            "victory": "science",
+            "winner": 3,
+            "conquest": {
+              "advanced_flight_observed_turn": 165,
+              "first_bomber_observed_turn": null,
+              "first_focal_major_declaration_observed_turn": null,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": null,
+              "first_major_war_observed_turn": 129,
+              "flight_observed_turn": 151,
+              "focal_major_declarations": 0,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [],
+              "own_original_capital_held_at_end": true,
+              "peak_bombers": 0
+            }
+          },
+          "on": {
+            "focal_domination_won": false,
+            "focal_score": 343,
+            "turn": 182,
+            "victory": "science",
+            "winner": 3,
+            "conquest": {
+              "advanced_flight_observed_turn": 174,
+              "first_bomber_observed_turn": null,
+              "first_focal_major_declaration_observed_turn": null,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": null,
+              "first_major_war_observed_turn": 140,
+              "flight_observed_turn": 139,
+              "focal_major_declarations": 0,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [],
+              "own_original_capital_held_at_end": false,
+              "peak_bombers": 0
+            }
+          }
+        },
+        {
+          "seed": 100510104,
+          "off": {
+            "focal_domination_won": false,
+            "focal_score": 155,
+            "turn": 216,
+            "victory": "science",
+            "winner": 3,
+            "conquest": {
+              "advanced_flight_observed_turn": null,
+              "first_bomber_observed_turn": null,
+              "first_focal_major_declaration_observed_turn": null,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": null,
+              "first_major_war_observed_turn": 136,
+              "flight_observed_turn": null,
+              "focal_major_declarations": 0,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [],
+              "own_original_capital_held_at_end": false,
+              "peak_bombers": 0
+            }
+          },
+          "on": {
+            "focal_domination_won": false,
+            "focal_score": 155,
+            "turn": 216,
+            "victory": "science",
+            "winner": 3,
+            "conquest": {
+              "advanced_flight_observed_turn": null,
+              "first_bomber_observed_turn": null,
+              "first_focal_major_declaration_observed_turn": null,
+              "first_foreign_capital_held_observed_turn": null,
+              "first_major_city_held_observed_turn": null,
+              "first_major_war_observed_turn": 136,
+              "flight_observed_turn": null,
+              "focal_major_declarations": 0,
+              "focal_minor_declarations": 0,
+              "foreign_capitals_held_at_end": 0,
+              "foreign_capitals_observed_held": [],
+              "foreign_major_cities_observed_held": [],
+              "own_original_capital_held_at_end": false,
+              "peak_bombers": 0
+            }
+          }
+        }
+      ]
+    }
+  },
+  "decision": "Keep default off and draft pending the complete registered outcome cohort. Firing and tests are necessary checks; this evidence does not justify promotion or a native win-rate claim."
 }
