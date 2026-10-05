@@ -2716,6 +2716,11 @@ pub const GENES: &[Gene] = &[
     // three religions were founded first. See
     // `BasicAi::prophet_race_takes_a_district_slot_2`.
     Gene { tag: "prophet-race-takes-a-district-slot-2", field: "prophet_race_takes_a_district_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_takes_a_district_slot_2, disable: AdvancedAi::disable_prophet_race_takes_a_district_slot_2 },
+    // Live King civvis-20261005T033442Z (game 96): Trebuchets marched alone
+    // into the reach of Khmer Cuirassiers seen the turn before and lost in
+    // the fog, and were one-shot at turns 145 and 146. See
+    // `siege_train::siege_stage_step`.
+    Gene { tag: "staging-gun-remembers-hostiles", field: "staging_gun_remembers_hostiles", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_remembers_hostiles, disable: AdvancedAi::disable_staging_gun_remembers_hostiles },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

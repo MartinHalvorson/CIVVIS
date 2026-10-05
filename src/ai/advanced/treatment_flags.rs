@@ -5555,6 +5555,17 @@ impl AdvancedAi {
         self.base.prophet_race_takes_a_district_slot_2 = false;
     }
 
+    /// Opt-in gene `staging-gun-remembers-hostiles`; see
+    /// [`Self::staging_gun_remembers_hostiles`].
+    pub fn enable_staging_gun_remembers_hostiles(&mut self) {
+        self.staging_gun_remembers_hostiles = true;
+    }
+
+    /// The twin of `enable_staging_gun_remembers_hostiles`.
+    pub fn disable_staging_gun_remembers_hostiles(&mut self) {
+        self.staging_gun_remembers_hostiles = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

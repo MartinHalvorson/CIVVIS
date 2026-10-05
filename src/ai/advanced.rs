@@ -6985,6 +6985,17 @@ pub struct AdvancedAi {
     /// Domination army answers. See `one_war::stalled_peace_spares`. Off by
     /// default.
     stalled_peace_spares_the_counter: bool,
+    /// `staging-gun-remembers-hostiles`: the Stage march prices a hostile it
+    /// saw this turn or last and lost in the fog. The danger field reads only
+    /// units on the board, so a lone gun walked into the reach of cavalry the
+    /// seat had just seen: live King civvis-20261005T033442Z (game 96) lost
+    /// two Trebuchets at turns 145 and 146 to Khmer Cuirassiers last seen at
+    /// turn 144 four to seven tiles from the tiles the guns marched to; each
+    /// one-shot a full-health gun. A remembered melee hostile strikes anywhere
+    /// within its movement for every turn since the sighting plus one, with
+    /// its full-health blow. See `siege_train::siege_stage_step` and
+    /// `AdvancedAi::remembered_strikers`. Off by default.
+    staging_gun_remembers_hostiles: bool,
     /// `staging-column-passes-through`: a Stage march step that brings a
     /// unit no nearer to the city is taken across the friend in the gap
     /// instead (`Game::pass_through_destination`). The router lets only the
@@ -9189,6 +9200,7 @@ impl AdvancedAi {
 
             // ---- append: s-s ----------------------------------------
             stalled_peace_spares_the_counter: false,
+            staging_gun_remembers_hostiles: false,
             staging_column_passes_through: false,
             second_front_kept_when_winning: false,
             second_front_kept_when_winning_2: false,
@@ -9312,6 +9324,7 @@ impl AdvancedAi {
             || self.hostile_memory_2
             || self.hostile_memory_3
             || self.live_settler_capture_lessons
+            || self.staging_gun_remembers_hostiles
         {
             self.remember_visible_hostiles(g, pid);
         }
