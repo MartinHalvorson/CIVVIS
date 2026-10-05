@@ -323,60 +323,184 @@ now = 90.0
 check("a turn that advanced is never a stall", queue.checkAiPhaseStall(), false)
 ContextPtr = liveContext
 
--- 6. The debug timescale arm (default off). It runs `timescale N` through
--- AutoProfiler.RunCommand, measures the UI clock against the wall clock at
--- every turn end, and reverts if the UI clock drifts; game end reverts too.
+-- 6. The debug timescale arm (default off) and the real-seconds clock under
+-- it. `timescale N` speeds the UI clock up (G95: 1.94x), so every mod timer
+-- runs on CivvisClock (the UI clock divided by the commanded scale, rebased
+-- when the scale changes); every turn end checks that over >= 30 s windows
+-- and reverts on any disagreement; game end reverts too.
 local agentSource = io.open(here .. "/CivvisControlAgent.lua"):read("*a")
 check("Initialize asks for the timescale", has(agentSource, "pcall(CivvisQueue.startTimescale, cfg.DebugTimeScale);"), true)
 check("turn end checks the clock", has(agentSource, "\tpcall(CivvisQueue.checkTimescaleClock);\nend;"), true)
 check("victory reverts it", has(agentSource, 'pcall(CivvisQueue.resetTimescale, "game_over");'), true)
 check("our defeat reverts it", has(agentSource, 'pcall(CivvisQueue.resetTimescale, "defeated");'), true)
+-- No duration reads the raw UI clock: only CivvisClock itself and emit's
+-- last-resort timestamp do.
+local rawReads = 0
+for line in agentSource:gmatch("[^\n]+") do
+	if line:find("UI.GetElapsedTime(", 1, true) and not line:match("^%s*%-%-") then
+		rawReads = rawReads + 1
+	end
+end
+check("only CivvisClock and emit's fallback read the raw UI clock", rawReads, 2)
+
+local clock = rawget(_G, "CivvisClock")
 local commands = {}
-AutoProfiler = { RunCommand = function(cmd) commands[#commands + 1] = cmd; return "ok:" .. cmd end }
+local revertThrows = false
+AutoProfiler = { RunCommand = function(cmd)
+	if revertThrows and cmd == "timescale 1" then error("console gone") end
+	commands[#commands + 1] = cmd
+end }
 local wallNow = 1000
 Automation.GetTime = function() return wallNow end
-now = 100.0
-queue.timescale = nil
+local function fresh()
+	queue.timescale = nil
+	clock.scale, clock.offset = 1, 0
+	ExposedMembers = {}
+	commands = {}
+end
+local function ack(name, scale)
+	ExposedMembers.CivvisClockAck.scale[name] = scale
+	ExposedMembers.CivvisClockAck.at[name] = now
+end
+local function lastTimescale() local e = events("timescale"); return e[#e] end
+
+-- The clock: the UI clock itself at scale 1, continuous across a rescale.
+fresh()
+now = 100.25
+check("at scale 1 the clock IS the UI clock", clock.now(), 100.25)
+check("rescaling shares the scale", clock.setScale(2), true)
+check("…with every context", ExposedMembers.CivvisTimeScale, 2)
+check("…without a jump", clock.now(), 100.25)
+now = 120.25
+check("20 UI seconds at 2x are 10 real ones", clock.now(), 110.25)
+clock.setScale(1)
+check("back at 1, still no jump", clock.now(), 110.25)
+now = 130.25
+check("…and real time again", clock.now(), 120.25)
+
+-- Off unless asked; refused without a shared table.
+fresh()
 check("off unless asked", queue.startTimescale(nil), false)
 check("…or asked for 1", queue.startTimescale(1), false)
+check("…or for nonsense", queue.startTimescale(100), false)
 check("nothing ran", #commands, 0)
+ExposedMembers = setmetatable({}, { __newindex = function() error("read-only") end })
+check("no shared table, no timescale", queue.startTimescale(2), false)
+check("…the console untouched", #commands, 0)
+check("…and the clock unscaled", clock.scale, 1)
+
+-- Applied: the command, the shared scale and a fresh acknowledgement table.
+fresh()
+now, wallNow = 200.0, 2000
 check("asked for 2, it runs", queue.startTimescale(2), true)
 check("…the console command", commands[1], "timescale 2")
-check("…and journals the result", has(events("timescale")[1], '"result":"ok:timescale 2"'), true)
+check("…journaled", has(lastTimescale(), '"phase":"applied"'), true)
+check("…the clock divides by 2", clock.scale, 2)
+check("…every context is told", ExposedMembers.CivvisTimeScale, 2)
+check("…acknowledgements start empty", next(ExposedMembers.CivvisClockAck.at), nil)
 check("a second start is refused", queue.startTimescale(2), false)
--- A UI clock that keeps real time: logged, left alone.
-wallNow, now = 1005, 105.0
-queue.checkTimescaleClock()
-check("no verdict before 10 s of wall time", #events("timescale_clock"), 0)
-wallNow, now = 1012, 112.0
-queue.checkTimescaleClock()
-check("a real-time UI clock is logged", has(events("timescale_clock")[1], '"ratio":1'), true)
-check("…and kept", #commands, 1)
--- A UI clock that runs fast: the mod's timers would fire early, so revert.
-wallNow, now = 1020, 140.0
-queue.checkTimescaleClock()
-check("a fast UI clock reverts the timescale", commands[2], "timescale 1")
-check("…saying why", has(events("timescale")[2], '"why":"ui_clock_scaled"'), true)
-queue.checkTimescaleClock()
-check("…once", #commands, 2)
--- A slow UI clock reverts too.
-queue.timescale = nil
-now, wallNow = 200.0, 2000
+
+-- At 2x the AI-phase stall still waits 30 REAL seconds (60 UI seconds).
+local stallTurn = 30
+Game.GetCurrentGameTurn = function() return stallTurn end
+local liveContext2 = rawget(_G, "ContextPtr")
+ContextPtr = { LookUpControl = function() return { IsHidden = function() return true end } end }
+queue.endTurnWait = { turn = stallTurn, emitted = true, ended_at = clock.now() }
+now = 240.0
+check("40 UI seconds at 2x are not a stall", queue.checkAiPhaseStall(), false)
+now = 261.0
+check("30.5 real seconds are", queue.checkAiPhaseStall(), true)
+check("…reported in real seconds", has(events("ai_phase_stall")[#events("ai_phase_stall")], '"waited":30.5'), true)
+ContextPtr = liveContext2
+
+-- A correct conversion is kept: 60 UI seconds in 30 wall seconds read as 30.
+fresh()
+now, wallNow = 300.0, 3000
 queue.startTimescale(2)
-wallNow, now = 2020, 210.0
+now, wallNow = 330.0, 3015
+ack("Heartbeat", 2)
 queue.checkTimescaleClock()
-check("a slow UI clock reverts as well", commands[#commands], "timescale 1")
--- Game end reverts; a failing RunCommand is journaled and never retried.
-queue.timescale = nil
+check("no verdict before 30 s of wall time", #events("timescale_clock"), 0)
+now, wallNow = 360.0, 3030
+ack("Heartbeat", 2); ack("DiplomacyActionView", 2)
+ExposedMembers.CivvisFrameClock = { scale = 2, ratio = 1.0, at = now }
+queue.checkTimescaleClock()
+local clk = events("timescale_clock")[#events("timescale_clock")]
+check("the UI clock ran 2x", has(clk, '"ratio":2'), true)
+check("…the real clock kept wall time", has(clk, '"real_ratio":1'), true)
+check("…the Heartbeat saw the scale", has(clk, '"heartbeat":true'), true)
+check("…its frames kept pace", has(clk, '"frame_ratio":1'), true)
+check("…so the timescale stays", #commands, 1)
+-- The next window starts where this one ended.
+now, wallNow = 380.0, 3040
+queue.checkTimescaleClock()
+check("windows do not overlap", #events("timescale_clock"), 1)
+
+-- A Heartbeat that never saw the scale (no ack since the timescale): revert.
+fresh()
+now, wallNow = 400.0, 4000
+queue.startTimescale(2)
+now, wallNow = 460.0, 4030
+queue.checkTimescaleClock()
+check("no Heartbeat acknowledgement reverts", commands[2], "timescale 1")
+check("…saying why", has(lastTimescale(), '"why":"heartbeat_unscaled"'), true)
+check("…and the clock is real time again", clock.scale, 1)
+check("…for every context", ExposedMembers.CivvisTimeScale, 1)
+
+-- A context that read a different scale since the timescale: revert.
+fresh()
+now, wallNow = 500.0, 5000
+queue.startTimescale(2)
+now, wallNow = 560.0, 5030
+ack("Heartbeat", 2); ack("WonderBuiltPopup", 1)
+queue.checkTimescaleClock()
+check("an unscaled context reverts", has(lastTimescale(), '"why":"context_unscaled"'), true)
+check("…naming it", has(events("timescale_clock")[#events("timescale_clock")], '"unscaled":["WonderBuiltPopup"]'), true)
+
+-- Frame deltas that do not scale with the UI clock: revert.
+fresh()
+now, wallNow = 600.0, 6000
+queue.startTimescale(2)
+now, wallNow = 660.0, 6030
+ack("Heartbeat", 2)
+ExposedMembers.CivvisFrameClock = { scale = 2, ratio = 0.5, at = now }
+queue.checkTimescaleClock()
+check("slow frame deltas revert", has(lastTimescale(), '"why":"frame_clock_off"'), true)
+
+-- An engine that runs faster than commanded: the real clock is off; revert.
+fresh()
+now, wallNow = 700.0, 7000
+queue.startTimescale(2)
+now, wallNow = 790.0, 7030
+ack("Heartbeat", 2)
+queue.checkTimescaleClock()
+check("a 3x UI clock under scale 2 reverts", has(lastTimescale(), '"why":"real_clock_off"'), true)
+check("…its real ratio", has(events("timescale_clock")[#events("timescale_clock")], '"real_ratio":1.5'), true)
+
+-- A revert the console refuses leaves the engine scaled, so the clock keeps
+-- dividing; game end reverts a kept timescale.
+fresh()
+now, wallNow = 800.0, 8000
+queue.startTimescale(2)
+revertThrows = true
+check("a failed revert reports false", queue.resetTimescale("game_over"), false)
+check("…and the clock still divides", clock.scale, 2)
+revertThrows = false
+fresh()
+now, wallNow = 900.0, 9000
 queue.startTimescale(2)
 check("game end reverts", queue.resetTimescale("game_over"), true)
-check("…with the reason", has(events("timescale")[#events("timescale")], '"why":"game_over"'), true)
-queue.timescale = nil
+check("…with the reason", has(lastTimescale(), '"why":"game_over"'), true)
+check("…once", queue.resetTimescale("game_over"), false)
+
+-- A raising RunCommand: journaled, never applied, nothing to revert.
+fresh()
 AutoProfiler = { RunCommand = function() error("console unavailable") end }
 check("a raising RunCommand reports not applied", queue.startTimescale(2), false)
-check("…with the error journaled", has(events("timescale")[#events("timescale")], "console unavailable"), true)
+check("…with the error journaled", has(lastTimescale(), "console unavailable"), true)
+check("…the clock unscaled", clock.scale, 1)
 check("…and nothing to revert", queue.resetTimescale("game_over"), false)
-queue.timescale = nil
+fresh()
 AutoProfiler = nil
 Automation.GetTime = nil
 

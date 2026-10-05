@@ -943,7 +943,7 @@ else
 	local reported = false;
 	local desktopReportedAt = -1;   -- attempts count at the last ask, -1 = never
 	local heartbeatFrames = 0;      -- tick() calls since load, hidden ones included
-	local heartbeatSeconds = 0;     -- fDTime accumulated over those same calls
+	local heartbeatSeconds = 0;     -- real seconds over those same calls
 	local controllerPulseSeconds = 0;
 	local dialogueFadeExpired = false;
 
@@ -1132,7 +1132,28 @@ else
 		return true, true;
 	end
 
+	-- ★ REAL SECONDS. The engine's debug `timescale` speeds frame deltas up
+	-- with the UI clock, and the deal hold, the close delay, the fade and
+	-- wonder timeouts and this context's agent pulse all count them. So each
+	-- delta is divided by the scale the agent shares in
+	-- `ExposedMembers.CivvisTimeScale` (1 when it is missing or nonsense), and
+	-- the scale this context read is acknowledged in `CivvisClockAck`, which
+	-- the agent checks before it keeps the timescale.
+	local function realSeconds(fDTime)
+		local raw = math.max(0, tonumber(fDTime) or 0);
+		local scale = nil;
+		pcall(function() scale = tonumber(ExposedMembers.CivvisTimeScale); end);
+		if scale == nil or scale ~= scale or scale < 1 or scale > 8 then scale = 1; end
+		pcall(function()
+			local ack = ExposedMembers.CivvisClockAck;
+			ack.scale[NAME] = scale;
+			ack.at[NAME] = UI.GetElapsedTime();
+		end);
+		return raw / scale;
+	end
+
 	local function tick(fDTime)
+		local realDT = realSeconds(fDTime);
 		-- ★★★★ PROOF THAT THE UI THREAD IS STILL ALIVE WHILE THE GAME IS NOT.
 		--
 		-- The dominant way a run now dies is a parked Game Core: the agent reports
@@ -1160,7 +1181,7 @@ else
 		-- heartbeats stopping too means the whole process is gone and only the
 		-- outside watchdog can help.
 		heartbeatFrames = heartbeatFrames + 1;
-		heartbeatSeconds = heartbeatSeconds + (tonumber(fDTime) or 0);
+		heartbeatSeconds = heartbeatSeconds + realDT;
 		if heartbeatFrames >= HEARTBEAT_FRAMES then
 			report("ui_heartbeat", string.format(',"frames":%d,"seconds":%.1f,"up":%s',
 			                                     heartbeatFrames, heartbeatSeconds,
@@ -1183,7 +1204,7 @@ else
 		-- Use the same guarded agent wakeup here; keep deal holds and native
 		-- close handling below intact. One long frame produces only one pulse.
 		if cfg.Play ~= false and cfg.CivvisDecides then
-			controllerPulseSeconds = controllerPulseSeconds + math.max(0, tonumber(fDTime) or 0);
+			controllerPulseSeconds = controllerPulseSeconds + realDT;
 			if controllerPulseSeconds >= 1 then
 				controllerPulseSeconds = 0;
 				pcall(function() LuaEvents.CivvisControlPulse(NAME); end);
@@ -1195,7 +1216,7 @@ else
 			remaining = SECONDS;
 			shown = 0;
 		end
-		local dt = math.max(0, tonumber(fDTime) or 0);
+		local dt = realDT;
 		local civvisDealView = NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView";
 		if civvisDealView and dealHold > 0 then
 			dealHold = dealHold - dt;
