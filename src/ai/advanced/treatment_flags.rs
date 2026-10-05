@@ -4861,7 +4861,6 @@ impl AdvancedAi {
     /// See `BasicAi::builder_before_the_army`: the delegated city governor's
     /// Builder quota ahead of the Monument, the Settler and the military floor.
     pub fn enable_builder_before_the_army(&mut self) {
-        self.disable_builder_before_the_army_4();
         self.disable_builder_before_the_army_2();
         self.disable_builder_before_the_army_3();
         self.builder_before_the_army = true;
@@ -4877,7 +4876,6 @@ impl AdvancedAi {
     /// See `BasicAi::builder_before_the_army_2`: version 1's step, only while
     /// the empire has no Builder standing or queued. Exclusive with version 1.
     pub fn enable_builder_before_the_army_2(&mut self) {
-        self.disable_builder_before_the_army_4();
         self.disable_builder_before_the_army();
         self.disable_builder_before_the_army_3();
         self.builder_before_the_army_2 = true;
@@ -5083,7 +5081,6 @@ impl AdvancedAi {
     /// then one per three unimproved worked tiles behind the Campus step and
     /// a due Settler. Exclusive with versions 1 and 2.
     pub fn enable_builder_before_the_army_3(&mut self) {
-        self.disable_builder_before_the_army_4();
         self.disable_builder_before_the_army();
         self.disable_builder_before_the_army_2();
         self.builder_before_the_army_3 = true;
@@ -5615,20 +5612,17 @@ impl AdvancedAi {
         self.dialogue_never_declares_war = false;
     }
 
-    /// See `BasicAi::builder_before_the_army_4`: version 3 capped at one
-    /// Builder per city. Exclusive with versions 1 to 3.
-    pub fn enable_builder_before_the_army_4(&mut self) {
-        self.disable_builder_before_the_army();
-        self.disable_builder_before_the_army_2();
-        self.disable_builder_before_the_army_3();
-        self.builder_before_the_army_4 = true;
-        self.base.builder_before_the_army_4 = true;
+    /// See `BasicAi::builder_cap_is_one_per_city`: raises
+    /// `builder-before-the-army-3`'s cap; nothing without it.
+    pub fn enable_builder_cap_is_one_per_city(&mut self) {
+        self.builder_cap_is_one_per_city = true;
+        self.base.builder_cap_is_one_per_city = true;
     }
 
-    /// The twin of `enable_builder_before_the_army_4`.
-    pub fn disable_builder_before_the_army_4(&mut self) {
-        self.builder_before_the_army_4 = false;
-        self.base.builder_before_the_army_4 = false;
+    /// The twin of `enable_builder_cap_is_one_per_city`.
+    pub fn disable_builder_cap_is_one_per_city(&mut self) {
+        self.builder_cap_is_one_per_city = false;
+        self.base.builder_cap_is_one_per_city = false;
     }
 
     /// See `BasicAi::settler_before_distant_raiders`.

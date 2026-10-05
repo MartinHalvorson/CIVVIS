@@ -200,6 +200,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `builder-before-the-army` | off (unmeasured) | The delegated city governor's own Builder quota ahead of the Monument, the Settler and the military floor. | — \| 3 |
 | `builder-before-the-army-2` | off (unmeasured) | `builder-before-the-army-2`: the same step, only while the empire has no Builder standing or queued. | — \| 3 |
 | `builder-before-the-army-3` | off (unmeasured) | `builder-before-the-army-3`: version 2's first Builder, then one per three unimproved worked tiles. | — \| 3 |
+| `builder-cap-is-one-per-city` | off (unmeasured) | `builder-cap-is-one-per-city`: version 3's Builder cap at one per city. | 1 \| 1 |
 | `builder-charge-window` | off (unmeasured) | Slot Serfdom while a queued Builder is close to completion. | 1 \| 1 |
 | `builder-workforce-recovery-3` | off (unmeasured) | Count local repair jobs as well as new improvements when replacing a lost Builder, retaining v2's three-job threshold. | 2 \| 3 |
 | `builders-work-through-raiders` | off (unmeasured) | `builders-work-through-raiders`: the live capture lessons' reach holds keep Settlers only. | 1 \| 1 |
@@ -285,6 +286,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `sanctuary-yields-a-held-queue` | off (unmeasured) | Opt-in gene `sanctuary-yields-a-held-queue`; see `Self::sanctuary_yields_a_held_queue`. | 1 \| 1 |
 | `second-front-kept-when-winning` | off (unmeasured) | Opt-in gene `second-front-kept-when-winning`; see `Self::second_front_kept_when_winning`. | — \| 2 |
 | `second-front-kept-when-winning-2` | off (unmeasured) | Opt-in gene `second-front-kept-when-winning-2`; see `Self::second_front_kept_when_winning_2`. | — \| 2 |
+| `settler-before-distant-raiders` | off (unmeasured) | A due Settler before the barbarian-defense build while no hostile stands within three tiles. | 1 \| 1 |
 | `settler-before-the-navy` | off (unmeasured) | The delegated city governor's navy step yields to a due Settler. | 1 \| 1 |
 | `settler-detour-stays-near` | off (unmeasured) | `settler-detour-stays-near`: a threat detour's fallback must lie about as close as the site it leaves. | 1 \| 1 |
 | `shared-danger` | off (unmeasured) | Opt-in gene `shared-danger`; see `Self::shared_danger`. | 1 \| 1 |

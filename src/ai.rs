@@ -2535,16 +2535,17 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `builder-before-the-army-3`.
     pub(crate) builder_before_the_army_3: bool,
-    /// `builder_before_the_army_3` with its cap raised from one Builder per
-    /// two cities to one per city. 56 live King games with version 3 armed
-    /// (2026-10-04T083931Z on) still worked 21 unimproved land tiles against
-    /// 17 improved at t100 in the middle half by production, with 2.7
-    /// Builders; ten-city empires sat at the five-Builder cap with 28-31
-    /// tiles waiting. A Builder costs 37 production at t90 (median five
-    /// turns) for three improvements.
+    /// `builder-cap-is-one-per-city`: `builder_before_the_army_3`'s cap
+    /// raised from one Builder per two cities to one per city (it modifies
+    /// version 3 and does nothing without it). 56 live King games with
+    /// version 3 armed (2026-10-04T083931Z on) still worked 21 unimproved
+    /// land tiles against 17 improved at t100 in the middle half by
+    /// production, with 2.7 Builders; the n/2 cap bound in 19% of t70-120
+    /// samples (ten-city empires with 28-31 tiles waiting). A Builder costs
+    /// 37 production at t90 (median five turns) for three improvements.
     ///
-    /// Set from `AdvancedAi` by the opt-in gene `builder-before-the-army-4`.
-    pub(crate) builder_before_the_army_4: bool,
+    /// Set from `AdvancedAi` by the opt-in gene `builder-cap-is-one-per-city`.
+    pub(crate) builder_cap_is_one_per_city: bool,
     /// `settler-before-distant-raiders`: a due Settler (`settler_due`)
     /// outranks the barbarian-defense build (`barbarian_defense_item`: a
     /// shooter, a defender, Walls) unless a hostile military unit stands
@@ -5527,7 +5528,7 @@ impl BasicAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             builder_before_the_army_3: false,
-            builder_before_the_army_4: false,
+            builder_cap_is_one_per_city: false,
             settler_before_distant_raiders: false,
             unique_unit_preference: false,
             campus_before_the_army: false,
@@ -6030,7 +6031,7 @@ impl BasicAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             builder_before_the_army_3: false,
-            builder_before_the_army_4: false,
+            builder_cap_is_one_per_city: false,
             settler_before_distant_raiders: false,
             unique_unit_preference: false,
             campus_before_the_army: false,
@@ -12665,8 +12666,7 @@ impl BasicAi {
         // Settlers out first, and an early rush still assembles its stack.
         if (self.builder_before_the_army
             || self.builder_before_the_army_2
-            || self.builder_before_the_army_3
-            || self.builder_before_the_army_4)
+            || self.builder_before_the_army_3)
             && !self.minor
             && !self.barb
             && !emergency_defense
@@ -12813,13 +12813,13 @@ impl BasicAi {
         }
         // `builder-before-the-army-3`: Builders for the unimproved ground the
         // cities already work, behind the Campus step and a due Settler.
-        if (self.builder_before_the_army_3 || self.builder_before_the_army_4)
+        if self.builder_before_the_army_3
             && !self.minor
             && !self.barb
             && !emergency_defense
             && !self.settler_due(g, pid, cid, n_cities, settlers)
         {
-            let cap = if self.builder_before_the_army_4 {
+            let cap = if self.builder_cap_is_one_per_city {
                 n_cities
             } else {
                 n_cities.div_ceil(2)
@@ -15657,10 +15657,7 @@ impl BasicAi {
         if n_cities < 2 {
             return None;
         }
-        let quota = if self.builder_before_the_army_2
-            || self.builder_before_the_army_3
-            || self.builder_before_the_army_4
-        {
+        let quota = if self.builder_before_the_army_2 || self.builder_before_the_army_3 {
             1
         } else {
             ((self.w.builder_per_city * n_cities as f64).ceil() as usize)
@@ -15708,7 +15705,8 @@ impl BasicAi {
 
     /// See `builder_before_the_army_3`: a Builder while the empire holds (or
     /// has queued) fewer than one per three unimproved worked tiles, at most
-    /// `cap` (one per two cities; one per city under version 4), and this
+    /// `cap` (one per two cities; one per city under
+    /// `builder_cap_is_one_per_city`), and this
     /// city finishes one within
     /// `LENT_FLOOR_MAX_BUILD_TURNS`.
     pub(crate) fn builder_backlog_item(
@@ -24365,8 +24363,8 @@ mod tests {
         let pick = |version: u8, settlers: usize, builders: usize| {
             let mut ai = BasicAi::new();
             ai.builder_before_the_army_2 = version == 2;
-            ai.builder_before_the_army_3 = version == 3;
-            ai.builder_before_the_army_4 = version == 4;
+            ai.builder_before_the_army_3 = version >= 3;
+            ai.builder_cap_is_one_per_city = version == 4;
             ai.pick_item(&game, 0, cid, 3, settlers, builders, 1, 0, 0, 0, 0)
         };
         let is_builder =
@@ -24387,10 +24385,10 @@ mod tests {
             "the fixture is due a Settler"
         );
         assert!(!is_builder(&pick(3, 0, 1)), "a due Settler comes first");
-        // Version 4 lifts the cap to one Builder per city.
+        // `builder_cap_is_one_per_city` lifts the cap to one Builder per city.
         assert!(
             is_builder(&pick(4, 1, 2)),
-            "version 4 trains a third Builder for three cities"
+            "the per-city cap trains a third Builder for three cities"
         );
         assert_eq!(
             pick(4, 1, 3),

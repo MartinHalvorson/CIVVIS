@@ -5253,9 +5253,9 @@ pub struct AdvancedAi {
     /// `builder-before-the-army-3`: version 2's first Builder, then one per
     /// three unimproved worked tiles. See `BasicAi::builder_before_the_army_3`.
     builder_before_the_army_3: bool,
-    /// `builder-before-the-army-4`: version 3 with one Builder per city as
-    /// the cap. See `BasicAi::builder_before_the_army_4`.
-    builder_before_the_army_4: bool,
+    /// `builder-cap-is-one-per-city`: version 3's Builder cap at one per city.
+    /// See `BasicAi::builder_cap_is_one_per_city`.
+    builder_cap_is_one_per_city: bool,
     /// A Great Person activation path does not resume over a queued district
     /// that already holds production. HostOnly gene `activation-resume-waits`
     /// (the activation needs come only from the live host); see
@@ -8993,7 +8993,7 @@ impl AdvancedAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             builder_before_the_army_3: false,
-            builder_before_the_army_4: false,
+            builder_cap_is_one_per_city: false,
             activation_resume_waits: false,
             activation_keeps_its_building: false,
             breaker_keeps_its_queue: false,
