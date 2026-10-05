@@ -1656,16 +1656,25 @@ impl AdvancedAi {
     /// Kongo on 15 points; Favor fell 195 -> 91 under two held capitals, and
     /// at turn 201, the last two voters, Kongo's 8 A votes beat the 7 that
     /// 91 Favor buys and it won on Diplomacy, one capital short of our
-    /// Domination. A rival's eliminated civilization is never revived: its
-    /// capital would rejoin the Domination count.
+    /// Domination.
+    ///
+    /// A town founded by an eliminated major is liberated too: that revives
+    /// the civilization, worth 200 Favor (FAVOR_FOR_REVIVE_PLAYER), and leaves
+    /// the Domination count as it was -- every original capital is needed
+    /// whoever holds it. Its original capital itself is never handed back.
+    /// Three October games had such a town in a third party's hands, among
+    /// them game 114 (civvis-20261005T084952Z), whose Mamuell Mapu, founded by
+    /// the Mapuche we eliminated, Vietnam held from turn 169 while Vietnam
+    /// won on Diplomacy at 240 against our empty bank.
     pub(crate) fn liberation_funds_the_congress(&self, g: &Game, pid: usize, city: u32) -> bool {
         self.liberation_funds_the_congress
             && self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && g.cities.get(&city).is_some_and(|city| {
                 city.original_owner != pid
-                    && g.players
-                        .get(city.original_owner)
-                        .is_some_and(|founder| founder.is_minor)
+                    && g.players.get(city.original_owner).is_some_and(|founder| {
+                        founder.is_minor
+                            || (!founder.alive && !founder.is_barbarian && !city.is_capital)
+                    })
             })
             && g.players.iter().any(|rival| {
                 rival.id != pid

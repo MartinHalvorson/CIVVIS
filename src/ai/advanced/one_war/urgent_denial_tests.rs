@@ -1371,6 +1371,20 @@ fn a_captured_city_state_city_funds_the_congress_under_a_diplomatic_threat() {
         !ai.liberation_funds_the_congress(&g, 0, town),
         "no Diplomatic threat"
     );
+    // A town of an eliminated major revives it; its capital never goes back.
+    g.players[2].dvp = LIBERATION_DVP_FLOOR;
+    let dead_town = g.found_city_for(1, (14, 18), None);
+    g.cities.get_mut(&dead_town).unwrap().owner = 0;
+    g.cities.get_mut(&dead_town).unwrap().is_capital = false;
+    g.players[1].alive = false;
+    assert!(
+        ai.liberation_funds_the_congress(&g, 0, dead_town),
+        "revives the eliminated"
+    );
+    assert!(
+        !ai.liberation_funds_the_congress(&g, 0, major_town),
+        "never its capital"
+    );
 }
 
 /// See `engine_culture_clock`: under the gene, the host's own turns to a
