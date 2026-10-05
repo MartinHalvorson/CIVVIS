@@ -6584,6 +6584,10 @@ pub struct AdvancedAi {
     /// 10.0 unimproved hills at t100.
     improvement_upgrades_count: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `overwhelming-power-declares`: a Domination seat holding
+    /// `one_war::OVERWHELMING_POWER_RATIO` times its target's power declares
+    /// without a staged siege. See `one_war::overwhelming_power_declares`.
+    overwhelming_power_declares: bool,
     /// `liberation-funds-the-congress`: a Domination seat facing a
     /// Diplomatic Victory threat liberates a captured city-state city for its
     /// 100 Favor. See `one_war::liberation_funds_the_congress`.
@@ -9424,6 +9428,7 @@ impl AdvancedAi {
             industrial_hub: false,
             improvement_upgrades_count: false,
             // ---- append: l-o ----------------------------------------
+            overwhelming_power_declares: false,
             liberation_funds_the_congress: false,
             melee_storms_an_open_city: false,
             last_capital_war_kept: false,
@@ -22212,9 +22217,16 @@ impl AdvancedAi {
             || faith_counter_due;
         // See `culture_counter_due`.
         let culture_counter_ready = !staged && self.culture_counter_due(g, pid, target);
+        // See `overwhelming_power_declares`: at that ratio the war itself
+        // writes the Siege row that brings the army to the ring.
+        let overwhelming_ready = !staged && self.overwhelming_power_declares(g, pid, target);
         if close_enough
             && ready
-            && (staged || air_ready || religion_counter_ready || culture_counter_ready)
+            && (staged
+                || air_ready
+                || religion_counter_ready
+                || culture_counter_ready
+                || overwhelming_ready)
         {
             // `coalition_before_war`: invite the target's neighbours to a
             // joint war first, and hold while an answer is due. See
@@ -22251,6 +22263,8 @@ impl AdvancedAi {
                         // siege; the line read "staged" for 41 of 71 such
                         // October 4-5 declarations with 0-2 bodies on the ring.
                         "the war lets the army condemn the faith taking our cities, before any siege is staged"
+                    } else if overwhelming_ready {
+                        "an overwhelming army needs no staged siege: the war writes the Siege row that brings it to the ring"
                     } else {
                         "the army is staged within reach of the first objective"
                     };

@@ -2900,6 +2900,10 @@ pub const GENES: &[Gene] = &[
     // at an army median of 15-20 tiles while walled Jabalpur stood 4 from our
     // city. See `stale_domination_objective_city`.
     Gene { tag: "stale-swap-reads-the-march", field: "stale_swap_reads_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_stale_swap_reads_the_march, disable: AdvancedAi::disable_stale_swap_reads_the_march },
+    // Live King civvis-20261005T130519Z (game 131): the war on the Inca held
+    // from turn 105 to 125 at 5-13 times their power for a staged siege no
+    // board row ordered. See `one_war::overwhelming_power_declares`.
+    Gene { tag: "overwhelming-power-declares", field: "overwhelming_power_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_overwhelming_power_declares, disable: AdvancedAi::disable_overwhelming_power_declares },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

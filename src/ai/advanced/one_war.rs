@@ -134,6 +134,9 @@ pub(crate) const FAVOR_SURPRISE_DVP: i64 = 9;
 /// `favor-spares-the-surprise-war`: a target's culture finish this many turns
 /// out or nearer still takes the surprise war.
 pub(crate) const FAVOR_SURPRISE_CLOCK_TURNS: f64 = 8.0;
+/// `overwhelming-power-declares`: our military over the target's steady
+/// reading at which a Domination seat declares without a staged siege.
+pub(crate) const OVERWHELMING_POWER_RATIO: f64 = 4.0;
 
 /// `liberation-funds-the-congress`: the Diplomatic Victory points at which a
 /// rival makes a captured city-state city worth its liberation Favor; the
@@ -1763,6 +1766,26 @@ impl AdvancedAi {
     /// seat declared on it at 95 "179 power against their 4". Over October
     /// 4-5 a rival's reading fell by three quarters in one turn and recovered
     /// to 60% within ten 21 times (diagnosed with -60).
+    /// `overwhelming-power-declares`: whether a Domination seat at
+    /// [`OVERWHELMING_POWER_RATIO`] times `target`'s steady power
+    /// (`steady_rival_power`) declares without a staged siege. Before a war
+    /// the Objective Board writes no Siege row, so nothing orders the army
+    /// onto the objective's ring, and the staged checks wait on units that
+    /// only drift there; once the war opens the row exists and the army
+    /// converges. Live King civvis-20261005T130519Z (game 131) held its war
+    /// on the Inca every turn from 105 to 125 -- "the Siege row for
+    /// Antawaylla asks 232-309 strength and 33-66 is staged on its ring in
+    /// 1-2 bodies" -- at 906 power against 70, then 1316 against 159; game
+    /// 130 waited on Maastricht at turn 101 with no Siege row on the board.
+    /// Another major war, the Defend row, the named objective, the
+    /// declaration range and the war opening (casus belli first) all stand.
+    pub(crate) fn overwhelming_power_declares(&self, g: &Game, pid: usize, target: usize) -> bool {
+        self.overwhelming_power_declares
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.military_power(pid)
+                >= OVERWHELMING_POWER_RATIO * self.steady_rival_power(g, target).max(1.0)
+    }
+
     pub(crate) fn steady_rival_power(&self, g: &Game, rival: usize) -> f64 {
         let now = g.military_power(rival);
         if !self.prey_reads_a_steady_power {

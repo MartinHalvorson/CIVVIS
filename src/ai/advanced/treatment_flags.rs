@@ -6001,6 +6001,17 @@ impl AdvancedAi {
         self.conquest_opening_stays_near = false;
     }
 
+    /// Opt-in gene `overwhelming-power-declares`; see
+    /// [`Self::overwhelming_power_declares`].
+    pub fn enable_overwhelming_power_declares(&mut self) {
+        self.overwhelming_power_declares = true;
+    }
+
+    /// The twin of `enable_overwhelming_power_declares`.
+    pub fn disable_overwhelming_power_declares(&mut self) {
+        self.overwhelming_power_declares = false;
+    }
+
     /// Opt-in gene `stale-swap-reads-the-march`; see
     /// [`Self::stale_swap_reads_the_march`].
     pub fn enable_stale_swap_reads_the_march(&mut self) {

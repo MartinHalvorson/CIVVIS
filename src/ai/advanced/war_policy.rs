@@ -298,6 +298,11 @@ impl AdvancedAi {
                 short.count
             )));
         }
+        // See `overwhelming_power_declares`: before a war the board writes no
+        // Siege row, so nothing orders the army onto this ring.
+        if self.overwhelming_power_declares(g, pid, target) {
+            return Some(Ok(()));
+        }
         let need = self.war_policy_siege_need(g, pid, city.id);
         let staged = self.staged_campaign_units(g, pid, target, city.pos);
         let strength = Self::campaign_strength_of(g, &staged);
@@ -693,6 +698,48 @@ mod tests {
             panic!("a second front must hold the declaration");
         };
         assert!(reason.contains("another major war"), "{reason}");
+    }
+
+    /// `overwhelming-power-declares`: at four times the target's power a
+    /// Domination seat's declaration does not wait on the staged ring; with
+    /// the gene off, or short of four times, it does.
+    #[test]
+    fn an_overwhelming_army_declares_without_a_staged_ring() {
+        use super::super::one_war::OVERWHELMING_POWER_RATIO;
+        let mut g = flat_board(37, &[at(6, 8), at(20, 8)]);
+        let target = city_of(&g, 1, at(20, 8));
+        let plan = conquest(&g, Some(target));
+        // Eight swordsmen at home, none on the objective's ring; one warrior
+        // of theirs.
+        for col in 0..8 {
+            spawn(&mut g, "swordsman", 0, at(4 + col, 12));
+        }
+        spawn(&mut g, "warrior", 1, at(22, 8));
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_objective_board();
+        ai.enable_war_policy_via_board();
+        assert!(
+            g.military_power(0) >= OVERWHELMING_POWER_RATIO * g.military_power(1).max(1.0),
+            "{} against {}",
+            g.military_power(0),
+            g.military_power(1)
+        );
+        assert!(
+            matches!(ai.war_policy_declaration(&g, 0, 1, &plan), Some(Err(_))),
+            "the gene off, the declaration waits on the ring"
+        );
+        ai.enable_overwhelming_power_declares();
+        assert!(ai.overwhelming_power_declares(&g, 0, 1));
+        assert_eq!(ai.war_policy_declaration(&g, 0, 1, &plan), Some(Ok(())));
+        // Short of four times, the ring rule is back.
+        for col in 0..6 {
+            spawn(&mut g, "swordsman", 1, at(24 + col, 4));
+        }
+        assert!(!ai.overwhelming_power_declares(&g, 0, 1));
+        assert!(matches!(
+            ai.war_policy_declaration(&g, 0, 1, &plan),
+            Some(Err(_))
+        ));
     }
 
     /// A Domination seat countering a rival's clock at twice its power does
