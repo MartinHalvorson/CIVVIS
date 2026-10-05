@@ -5782,6 +5782,17 @@ impl AdvancedAi {
         self.base.victor_first_for_a_short_runway = false;
     }
 
+    /// Opt-in gene `liberation-funds-the-congress`; see
+    /// [`Self::liberation_funds_the_congress`].
+    pub fn enable_liberation_funds_the_congress(&mut self) {
+        self.liberation_funds_the_congress = true;
+    }
+
+    /// The twin of `enable_liberation_funds_the_congress`.
+    pub fn disable_liberation_funds_the_congress(&mut self) {
+        self.liberation_funds_the_congress = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

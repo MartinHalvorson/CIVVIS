@@ -275,6 +275,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `lane-delegates-production` | off (unmeasured) | Until the development half ends, an assigned lane's cities take the unassigned seat's production dispatch. | — \| 2 |
 | `lane-delegates-production-2` | off (unmeasured) | Version two: an assigned lane's cities take the unassigned seat's production dispatch for the whole game. | — \| 2 |
 | `last-capital-war-kept` | off (unmeasured) | Opt-in gene `last-capital-war-kept`; see `Self::last_capital_war_kept`. | 1 \| 1 |
+| `liberation-funds-the-congress` | off (unmeasured) | Opt-in gene `liberation-funds-the-congress`; see `Self::liberation_funds_the_congress`. | 1 \| 1 |
 | `monument-first` | off (unmeasured) | A city's Monument ahead of the military floor and the Settler step in the delegated city governor. | 1 \| 1 |
 | `one-sanctuary` | off (unmeasured) | Opt-in gene `one-sanctuary`; see `Self::one_sanctuary`. | 1 \| 1 |
 | `one-war-swaps-a-stalled-front` | off (unmeasured) | Opt-in gene `one-war-swaps-a-stalled-front`; see `Self::one_war_swaps_a_stalled_front`. | 1 \| 1 |

@@ -6488,6 +6488,10 @@ pub struct AdvancedAi {
     /// 10.0 unimproved hills at t100.
     improvement_upgrades_count: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `liberation-funds-the-congress`: a Domination seat facing a
+    /// Diplomatic Victory threat liberates a captured city-state city for its
+    /// 100 Favor. See `one_war::liberation_funds_the_congress`.
+    liberation_funds_the_congress: bool,
     /// `last-capital-war-kept`: no peace with the holder of the last original
     /// capital Domination needs. See `one_war::last_capital_war_kept`. Off
     /// by default.
@@ -9275,6 +9279,7 @@ impl AdvancedAi {
             industrial_hub: false,
             improvement_upgrades_count: false,
             // ---- append: l-o ----------------------------------------
+            liberation_funds_the_congress: false,
             last_capital_war_kept: false,
             one_war_swaps_a_stalled_front: false,
             monument_first: false,
@@ -44229,6 +44234,10 @@ impl AdvancedAi {
                 Action::LiberateCity { .. } => {
                     if strategy == GrandStrategy::Diplomacy {
                         value += 100.0;
+                    }
+                    // See `liberation_funds_the_congress`.
+                    if self.liberation_funds_the_congress(before, pid, city_id) {
+                        value += one_war::LIBERATION_CONGRESS_VALUE;
                     }
                     if before.players[city.original_owner].is_minor {
                         value += if strategy == GrandStrategy::Diplomacy {

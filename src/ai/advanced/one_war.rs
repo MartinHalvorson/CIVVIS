@@ -116,6 +116,14 @@ pub(crate) const CAPITAL_PREY_POWER: f64 = 0.15;
 /// may stand behind: Ancient Walls, which the army opens in a few turns.
 pub(crate) const CAPITAL_PREY_WALLS: i32 = 100;
 
+/// `liberation-funds-the-congress`: the Diplomatic Victory points at which a
+/// rival makes a captured city-state city worth its liberation Favor; the
+/// Congress denial floor.
+pub(crate) const LIBERATION_DVP_FLOOR: i64 = 12;
+/// `liberation-funds-the-congress`: the disposition value of that liberation,
+/// above any small city's keep value.
+pub(crate) const LIBERATION_CONGRESS_VALUE: f64 = 400.0;
+
 /// `bleeding-capital-loyalty`: the Loyalty runway, in turns, under which a
 /// captured original capital is bleeding.
 pub(crate) const BLEEDING_CAPITAL_RUNWAY: f64 = 6.0;
@@ -1609,6 +1617,38 @@ impl AdvancedAi {
     /// peace twice the same turn (the opening's "taken every city it knows
     /// of" with Kwadukuza still in the fog, and the campaign's "has taken its
     /// 1 city"), and the city was the Zulu's again by turn 71.
+    /// `liberation-funds-the-congress`: whether liberating captured `city` is
+    /// worth its Favor: a Domination seat, the city founded by a city-state,
+    /// and a living rival on at least [`LIBERATION_DVP_FLOOR`] Diplomatic
+    /// Victory points. Liberating a city-state's city is worth 100 Favor
+    /// (FAVOR_FOR_LIBERATE_CITY_STATE), about seven bought Congress votes,
+    /// and a city-state's city is no Domination progress. Domination drains
+    /// the bank it would need: each foreign original capital we hold costs 5
+    /// Favor a turn (FAVOR_PER_OWNED_ORIGINAL_CAPITAL). Live King
+    /// civvis-20261005T081917Z (game 112) kept Singapore at turn 191 with
+    /// Kongo on 15 points; Favor fell 195 -> 91 under two held capitals, and
+    /// at turn 201, the last two voters, Kongo's 8 A votes beat the 7 that
+    /// 91 Favor buys and it won on Diplomacy, one capital short of our
+    /// Domination. A rival's eliminated civilization is never revived: its
+    /// capital would rejoin the Domination count.
+    pub(crate) fn liberation_funds_the_congress(&self, g: &Game, pid: usize, city: u32) -> bool {
+        self.liberation_funds_the_congress
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.cities.get(&city).is_some_and(|city| {
+                city.original_owner != pid
+                    && g.players
+                        .get(city.original_owner)
+                        .is_some_and(|founder| founder.is_minor)
+            })
+            && g.players.iter().any(|rival| {
+                rival.id != pid
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && rival.dvp >= LIBERATION_DVP_FLOOR
+            })
+    }
+
     /// `bleeding-capital-loyalty`: a captured original capital of ours whose
     /// Loyalty runway (`BasicAi::loyalty_emergency`) is under
     /// [`BLEEDING_CAPITAL_RUNWAY`] turns. A capture starts at 50 Loyalty;

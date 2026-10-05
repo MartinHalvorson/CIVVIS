@@ -1345,3 +1345,30 @@ fn a_captured_capital_near_its_flip_is_bleeding() {
     g.cities.get_mut(&capital).unwrap().loyalty = 50.0;
     assert_eq!(ai.bleeding_capital(&g, 0), None);
 }
+
+/// See `liberation_funds_the_congress`: a captured city-state city is
+/// liberated for its Favor while a rival reaches the Diplomatic floor; a
+/// major's city, or no Diplomatic threat, keeps the ordinary disposition.
+#[test]
+fn a_captured_city_state_city_funds_the_congress_under_a_diplomatic_threat() {
+    let (mut g, mut ai) = two_fronts();
+    // Player 3 stands in for a city-state whose city we took.
+    let town = g.player_city_ids(3)[0];
+    g.players[3].is_minor = true;
+    g.cities.get_mut(&town).unwrap().owner = 0;
+    let major_town = g.player_city_ids(1)[0];
+    g.cities.get_mut(&major_town).unwrap().owner = 0;
+    g.players[2].dvp = LIBERATION_DVP_FLOOR;
+    assert!(!ai.liberation_funds_the_congress(&g, 0, town), "off");
+    ai.enable_liberation_funds_the_congress();
+    assert!(ai.liberation_funds_the_congress(&g, 0, town));
+    assert!(
+        !ai.liberation_funds_the_congress(&g, 0, major_town),
+        "a major's city"
+    );
+    g.players[2].dvp = LIBERATION_DVP_FLOOR - 1;
+    assert!(
+        !ai.liberation_funds_the_congress(&g, 0, town),
+        "no Diplomatic threat"
+    );
+}

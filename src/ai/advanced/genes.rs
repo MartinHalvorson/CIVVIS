@@ -2809,6 +2809,10 @@ pub const GENES: &[Gene] = &[
     // capital, to Loyalty five turns after taking it, with no Loyalty card
     // and its Governor unestablished. See `one_war::bleeding_capital`.
     Gene { tag: "bleeding-capital-loyalty", field: "bleeding_capital_loyalty", kind: Kind::OptIn, enable: AdvancedAi::enable_bleeding_capital_loyalty, disable: AdvancedAi::disable_bleeding_capital_loyalty },
+    // Live King civvis-20261005T081917Z (game 112) kept Singapore at turn
+    // 191 with Kongo on 15 points and lost on Diplomacy at 202 by one vote's
+    // Favor. See `one_war::liberation_funds_the_congress`.
+    Gene { tag: "liberation-funds-the-congress", field: "liberation_funds_the_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_liberation_funds_the_congress, disable: AdvancedAi::disable_liberation_funds_the_congress },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
