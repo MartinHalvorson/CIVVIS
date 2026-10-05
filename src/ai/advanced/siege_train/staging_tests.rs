@@ -893,3 +893,138 @@ fn a_remembered_hostile_in_sight_is_not_counted_twice() {
         strikers[0].blow
     );
 }
+
+/// `stage-march-keeps-to-land`: a catapult on a spit inside a three-tile
+/// ring of coast, eight tiles west of the walled city. With `road` the spit
+/// runs west through the ring to the mainland, so a dry road leads round
+/// the water, longer than `march_step`'s limit; without it there is none.
+/// Live King civvis-20261005T045443Z (game 101): the strait was 10 to 15
+/// tiles and the road round it 51 to 57.
+fn gun_behind_a_strait(road: bool) -> (Game, u32, u32, Pos) {
+    let (mut g, cid) = walled_city();
+    let target = g.cities[&cid].pos;
+    let start = (target.0 - 8, target.1);
+    for pos in g.map.tiles.keys().copied().collect::<Vec<_>>() {
+        let ring = (1..=3).contains(&g.wdist(pos, start));
+        let spit = road && pos.1 == start.1 && pos.0 < start.0;
+        let tile = g.map.tiles.get_mut(&pos).unwrap();
+        tile.terrain = if ring && !spit {
+            crate::name!("coast")
+        } else {
+            crate::name!("grassland")
+        };
+        tile.feature = None;
+        tile.hills = false;
+    }
+    g.players[0].techs.insert(crate::name!("shipbuilding"));
+    let gun = g.spawn_unit("catapult", 0, start);
+    let wet_step = g
+        .route_step(gun, target, STAGING_FAR)
+        .expect("fixture: an ordinary route");
+    assert!(
+        g.map.get(wet_step).is_some_and(|tile| g.rules.is_water(tile)),
+        "fixture: the ordinary march steps into the water ({wet_step:?})"
+    );
+    assert_eq!(
+        dry_march_step(&g, gun, target, STAGING_FAR),
+        None,
+        "fixture: no dry road within march_step's limit"
+    );
+    assert_eq!(march_step(&g, gun, target, STAGING_FAR), Some(wet_step));
+    (g, cid, gun, start)
+}
+
+/// The Stage march of `gun_behind_a_strait(road)`: where the gun stands
+/// after one step, and whether it is still on land.
+fn stage_across_a_strait(road: bool, gene: bool, come_ashore: bool) -> (Pos, bool, u64) {
+    let (mut g, cid, gun, _) = gun_behind_a_strait(road);
+    let city = CityView::of(&g, cid).unwrap();
+    let plan = plan_against(&g, cid);
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    if come_ashore {
+        ai.enable_come_ashore();
+    } else {
+        ai.disable_come_ashore();
+    }
+    if gene {
+        ai.enable_stage_march_keeps_to_land();
+    }
+    ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+    let unit = &g.units[&gun];
+    let dry = g.map.get(unit.pos).is_some_and(|tile| !g.rules.is_water(tile));
+    (unit.pos, dry, unit.moves_left.to_bits())
+}
+
+/// Without the gene the gun steps into the strait, where `come-ashore`
+/// lands it at home the next turn; with it, the gun takes the land road.
+#[test]
+fn stage_march_takes_the_land_road_round_a_strait() {
+    let (g, cid, gun, start) = gun_behind_a_strait(true);
+    let target = g.cities[&cid].pos;
+    let StageMarch::Dry { step, dry, wet } = stage_march(&g, gun, target, STAGING_FAR) else {
+        panic!("a dry road round the strait");
+    };
+    assert_eq!(step, (start.0 - 1, start.1), "the road leaves along the spit");
+    assert!(dry > wet.saturating_mul(2).max(wet + DRY_MARCH_SLACK), "{dry} against {wet}");
+    assert!(dry <= STAGE_DRY_LIMIT);
+
+    let (off_pos, off_dry, _) = stage_across_a_strait(true, false, true);
+    assert!(!off_dry, "without the gene the gun embarks at {off_pos:?}");
+    let (on_pos, on_dry, _) = stage_across_a_strait(true, true, true);
+    assert_eq!(on_pos, step, "the gene walks the land road");
+    assert!(on_dry);
+}
+
+/// With no dry road at all the gene holds the gun on land rather than
+/// embark it; `close_to_staging`, the Invest march, holds too.
+#[test]
+fn stage_march_holds_on_land_with_no_road_round_the_water() {
+    let (g, cid, gun, start) = gun_behind_a_strait(false);
+    let target = g.cities[&cid].pos;
+    assert!(matches!(
+        stage_march(&g, gun, target, STAGING_FAR),
+        StageMarch::Hold { .. }
+    ));
+    let (off_pos, off_dry, _) = stage_across_a_strait(false, false, true);
+    assert!(!off_dry, "without the gene the gun embarks at {off_pos:?}");
+    let (on_pos, on_dry, _) = stage_across_a_strait(false, true, true);
+    assert_eq!(on_pos, start);
+    assert!(on_dry);
+
+    let (mut g, cid, gun, start) = gun_behind_a_strait(false);
+    let city = CityView::of(&g, cid).unwrap();
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_come_ashore();
+    ai.enable_stage_march_keeps_to_land();
+    assert!(ai.close_to_staging(&mut g, 0, gun, &city).is_some());
+    assert_eq!(g.units[&gun].pos, start, "the Invest march holds as well");
+}
+
+/// Without `come-ashore` an embarked unit is not landed again, so the gene
+/// leaves the crossing alone; on an open dry march it changes nothing.
+#[test]
+fn stage_march_gene_leaves_a_crossing_without_come_ashore_and_a_dry_march_alone() {
+    for road in [true, false] {
+        assert_eq!(
+            stage_across_a_strait(road, true, false),
+            stage_across_a_strait(road, false, false)
+        );
+    }
+    let run = |gene: bool| {
+        let (mut g, cid, gun, screen, _, _) = defile_with_a_pocket(false);
+        g.remove_unit(screen);
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        let mut ai = AdvancedAi::new();
+        ai.enable_siege_train();
+        ai.enable_come_ashore();
+        if gene {
+            ai.enable_stage_march_keeps_to_land();
+        }
+        ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+        (g.units[&gun].pos, g.units[&gun].moves_left.to_bits())
+    };
+    assert_eq!(run(true), run(false));
+}

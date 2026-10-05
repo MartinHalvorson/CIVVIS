@@ -7051,6 +7051,13 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `stage-march-keeps-to-land`: a Stage or approach march of a land unit
+    /// standing on land takes the dry road however long it runs, or holds,
+    /// rather than stepping into the water, whenever `come-ashore` is on and
+    /// the ordinary route crosses water. An embarked unit is landed again at
+    /// home by `come-ashore` the next turn, so the crossing never completes.
+    /// See `siege_train::StageMarch`. Off by default.
+    stage_march_keeps_to_land: bool,
     /// `stalled-peace-spares-the-counter`: the fatigue clause's "the war has
     /// stalled" peace is not offered to a rival whose victory clock the
     /// Domination army answers. See `one_war::stalled_peace_spares`. Off by
@@ -9297,6 +9304,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            stage_march_keeps_to_land: false,
             stalled_peace_spares_the_counter: false,
             staging_gun_remembers_hostiles: false,
             staging_column_passes_through: false,

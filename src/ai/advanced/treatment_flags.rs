@@ -5716,6 +5716,16 @@ impl AdvancedAi {
         self.base.own_column_is_not_a_refusal = false;
     }
 
+    /// Opt-in gene `stage-march-keeps-to-land`; see
+    /// [`Self::stage_march_keeps_to_land`].
+    pub fn enable_stage_march_keeps_to_land(&mut self) {
+        self.stage_march_keeps_to_land = true;
+    }
+
+    /// The twin of `enable_stage_march_keeps_to_land`.
+    pub fn disable_stage_march_keeps_to_land(&mut self) {
+        self.stage_march_keeps_to_land = false;
+    }
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -996,6 +996,50 @@ pub(super) fn march_step(g: &Game, uid: u32, to: Pos, range: i32) -> Option<Pos>
     dry_march_step(g, uid, to, range).or_else(|| g.route_step(uid, to, range))
 }
 
+/// `stage-march-keeps-to-land`: the longest dry road a Stage or approach
+/// march takes instead of the water. Twice the 60-column map's width, so a
+/// road round a strait or through a neighbour is in reach.
+pub(super) const STAGE_DRY_LIMIT: usize = 128;
+
+/// `stage-march-keeps-to-land`: how a land unit standing on land marches
+/// when its ordinary route crosses water. [`march_step`] takes a dry road
+/// only up to twice the ordinary route (and never past 64 steps); beyond
+/// that it embarks, and `come-ashore`'s `disembark_step` lands the unit
+/// again at home the next turn, before the train moves it, so the crossing
+/// never completes. Live King civvis-20261005T045443Z (game 101): the guns
+/// for Wak Kab'nal stood 14 to 18 tiles out from turn 150 to 227, the end of
+/// the record, stepping into the coast and back each turn; the strait was 10
+/// to 15 tiles and the land road round it 51 to 57.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum StageMarch {
+    /// The ordinary [`march_step`], unchanged.
+    Ordinary,
+    /// The first step of the dry road, `dry` steps long against the
+    /// ordinary route's `wet`.
+    Dry { step: Pos, dry: usize, wet: usize },
+    /// No dry road within [`STAGE_DRY_LIMIT`]; the unit holds on land.
+    Hold { wet: usize },
+}
+
+/// See [`StageMarch`]. `Ordinary` unless `uid` is a land unit on land
+/// whose ordinary route to within `range` of `to` is shorter than every dry
+/// road: an ordinary route that is already dry, and an unreachable goal,
+/// keep [`march_step`]. A dry road inside `march_step`'s own limit yields
+/// the same first step here, the search being the same breadth-first one.
+pub(super) fn stage_march(g: &Game, uid: u32, to: Pos, range: i32) -> StageMarch {
+    if !keeps_to_land(g, uid) || g.wdist(g.units[&uid].pos, to) <= range {
+        return StageMarch::Ordinary;
+    }
+    let Some(wet) = g.route_distance(uid, to, range) else {
+        return StageMarch::Ordinary;
+    };
+    match g.route_step_dry(uid, to, range, STAGE_DRY_LIMIT) {
+        Some((_, dry)) if dry <= wet => StageMarch::Ordinary,
+        Some((step, dry)) => StageMarch::Dry { step, dry, wet },
+        None => StageMarch::Hold { wet },
+    }
+}
+
 /// The dry-land half of [`march_step`]: `None` for a unit at sea or not on
 /// land, when no acceptable dry route exists, or when the ordinary route is
 /// no longer than the dry one (it already keeps to land).
@@ -2450,7 +2494,26 @@ impl AdvancedAi {
             return self.base.fortify_or_stop(g, pid, uid);
         }
         if distance > STAGING_FAR {
-            if let Some(next) = march_step(g, uid, city.pos, STAGING_FAR)
+            // `stage-march-keeps-to-land`: see `StageMarch`. Off, or without
+            // `come-ashore`, the march is the ordinary one.
+            let dry_march = if self.stage_march_keeps_to_land && self.base.come_ashore {
+                stage_march(g, uid, city.pos, STAGING_FAR)
+            } else {
+                StageMarch::Ordinary
+            };
+            if let StageMarch::Hold { wet } = dry_march {
+                think!(self.journal(), Military, Detail,
+                    "Siege of {}: the {} holds on land short of the water", g.cities[&city.id].name, g.units[&uid].kind;
+                    "the march crosses water in {} steps and come-ashore lands an embarked unit at home; no dry road opens within {} steps",
+                    wet, STAGE_DRY_LIMIT;
+                    city.pos);
+                return self.base.fortify_or_stop(g, pid, uid);
+            }
+            let marched = match dry_march {
+                StageMarch::Dry { step, .. } => Some(step),
+                _ => march_step(g, uid, city.pos, STAGING_FAR),
+            };
+            if let Some(next) = marched
                 .filter(|pos| g.can_move(uid, *pos) && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE)
             {
                 // `staging-column-passes-through`: a march step that brings
@@ -2463,8 +2526,14 @@ impl AdvancedAi {
                 // artillery stepping (26,17) -> (26,18) -> (26,17) every
                 // frame behind a Rocket Artillery in the one gap of a
                 // mountain ridge, twelve to fourteen tiles out. Cross the
-                // friend instead, to the open tile beyond.
-                if self.staging_column_passes_through && g.wdist(next, city.pos) >= distance {
+                // friend instead, to the open tile beyond. A dry road round
+                // the water leads no nearer by design, and the crossing's
+                // destination is read by straight distance, toward the water.
+                let on_dry_road = matches!(dry_march, StageMarch::Dry { .. });
+                if self.staging_column_passes_through
+                    && !on_dry_road
+                    && g.wdist(next, city.pos) >= distance
+                {
                     if let Some(dest) = g.pass_through_destination(uid, city.pos, STAGING_FAR) {
                         let kind = g.units[&uid].kind;
                         if gun_danger.as_mut().is_none_or(|field| {
@@ -2522,13 +2591,25 @@ impl AdvancedAi {
                         return self.base.fortify_or_stop(g, pid, uid);
                     }
                 }
+                if let StageMarch::Dry { dry, wet, .. } = dry_march {
+                    think!(self.journal(), Military, Detail,
+                        "Siege of {}: the {} takes the land road toward the staging ring", g.cities[&city.id].name, g.units[&uid].kind;
+                        "the march crosses water in {} steps and come-ashore lands an embarked unit at home; the dry road runs {} steps, first {:?}",
+                        wet, dry, next;
+                        city.pos);
+                }
                 return self.base.tactical_apply_move(g, pid, uid, next);
             }
             // A staging column can fill every legal adjacent stopping tile.
             // Walk through a friendly screen to an open tile beyond it, using
             // the same whole-path legality and movement bookkeeping as the
             // general mover. The destination remains outside the strike ring.
-            if let Some(dest) = g.pass_through_destination(uid, city.pos, STAGING_FAR) {
+            // Not on a dry road: the crossing's destination is read by
+            // straight distance, toward the water.
+            if let Some(dest) = (!matches!(dry_march, StageMarch::Dry { .. }))
+                .then(|| g.pass_through_destination(uid, city.pos, STAGING_FAR))
+                .flatten()
+            {
                 if gun_danger.as_mut().is_none_or(|field| {
                     if remembers {
                         field.danger(dest, uid) + fog_blow(g, dest) <= gun_risk_limit
@@ -2626,7 +2707,18 @@ impl AdvancedAi {
         if g.wdist(g.units[&uid].pos, city.pos) <= STAGING_FAR {
             return None;
         }
-        let next = march_step(g, uid, city.pos, STAGING_FAR).filter(|pos| g.can_move(uid, *pos))?;
+        // `stage-march-keeps-to-land`: see `StageMarch`.
+        let dry_march = if self.stage_march_keeps_to_land && self.base.come_ashore {
+            stage_march(g, uid, city.pos, STAGING_FAR)
+        } else {
+            StageMarch::Ordinary
+        };
+        let next = match dry_march {
+            StageMarch::Ordinary => march_step(g, uid, city.pos, STAGING_FAR),
+            StageMarch::Dry { step, .. } => Some(step),
+            StageMarch::Hold { .. } => return Some(self.base.fortify_or_stop(g, pid, uid)),
+        }
+        .filter(|pos| g.can_move(uid, *pos))?;
         Some(self.base.tactical_apply_move(g, pid, uid, next))
     }
 

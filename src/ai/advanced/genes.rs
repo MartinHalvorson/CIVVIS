@@ -2781,6 +2781,13 @@ pub const GENES: &[Gene] = &[
     // our own column held at frame start is congestion, not a refusal either.
     // See `advanced/own_column.rs`.
     Gene { tag: "own-column-is-not-a-refusal", field: "own_column_is_not_a_refusal", kind: Kind::OptIn, enable: AdvancedAi::enable_own_column_is_not_a_refusal, disable: AdvancedAi::disable_own_column_is_not_a_refusal },
+    // Live King civvis-20261005T045443Z (game 101): the Wak Kab'nal guns
+    // stood 14-18 tiles out from turn 150 to 227, the end of the record,
+    // stepping into the coast and back each turn: the strait was 10-15 tiles,
+    // the land road 51-57, and `come-ashore` landed every embarked unit at
+    // home the next turn.
+    // See `siege_train::StageMarch`.
+    Gene { tag: "stage-march-keeps-to-land", field: "stage_march_keeps_to_land", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_march_keeps_to_land, disable: AdvancedAi::disable_stage_march_keeps_to_land },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
