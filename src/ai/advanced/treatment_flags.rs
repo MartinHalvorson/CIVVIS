@@ -5590,6 +5590,17 @@ impl AdvancedAi {
         self.conquest_opening_needs_the_production = false;
     }
 
+    /// Opt-in gene `war-bill-prices-the-tier-gap`; see
+    /// [`Self::war_bill_prices_the_tier_gap`].
+    pub fn enable_war_bill_prices_the_tier_gap(&mut self) {
+        self.war_bill_prices_the_tier_gap = true;
+    }
+
+    /// The twin of `enable_war_bill_prices_the_tier_gap`.
+    pub fn disable_war_bill_prices_the_tier_gap(&mut self) {
+        self.war_bill_prices_the_tier_gap = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

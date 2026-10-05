@@ -219,6 +219,21 @@ pub(crate) const CAMPAIGN_DEFENDER_RADIUS: i32 = 6;
 pub(crate) const CAMPAIGN_RING: i32 = 2;
 /// A body with no army to average has this strength: a Warrior's.
 const DEFAULT_BODY_STRENGTH: f64 = 20.0;
+/// `war-bill-prices-the-tier-gap`: a unit tier ahead on the field multiplies
+/// the bill by `exp(gap / TIER_GAP_SCALE)`, where the gap is the strength by
+/// which the rival's best land unit outclasses ours (melee against melee,
+/// ranged against ranged). Twenty-five strength is roughly one era of land
+/// units: Archer 25 to Crossbowman 40, Swordsman 36 to Musketman 55.
+pub(crate) const TIER_GAP_SCALE: f64 = 25.0;
+/// `war-bill-prices-the-tier-gap`: the bill is never raised more than this
+/// many times over, so a gap read from a stale or partial roster cannot make
+/// every city of a rival unaffordable forever.
+pub(crate) const TIER_GAP_FACTOR_CAP: f64 = 3.0;
+/// `war-bill-prices-the-tier-gap`: from this gap on, out-muscling a rival
+/// [`CAMPAIGN_OVERWHELMING_RATIO`] times no longer waives its tech lead.
+/// Fifteen strength is a Crossbowman over an Archer, a Musketman over a
+/// Man-at-Arms: the margin by which one side one-shots the other's line.
+pub(crate) const TIER_GAP_NO_WAIVER: f64 = 15.0;
 
 /// The campaign this controller has drawn against one neighbour.
 #[derive(Clone, Debug, PartialEq)]
@@ -464,7 +479,10 @@ impl AdvancedAi {
             .sum();
         let walls = city.wall_hp.max(0) as f64 / 100.0 * WALL_STRENGTH_PER_100_HP;
         let at_city = (g.city_strength(city_id) - edge).max(0.0) + walls;
-        let strength = (defenders + at_city) * CAMPAIGN_SUPERIORITY;
+        // See `war_bill_tier_factor`: exactly 1.0 with the gene off.
+        let strength = (defenders + at_city)
+            * CAMPAIGN_SUPERIORITY
+            * self.war_bill_tier_factor(g, pid, city.owner);
         let bodies = ((strength / average_body.max(1.0)).ceil() as usize).max(CAMPAIGN_MIN_BODIES)
             + CAMPAIGN_SPARE_BODIES;
         let holdable = !Self::should_defer_city_capture(g, pid, city_id)
@@ -475,6 +493,106 @@ impl AdvancedAi {
             bodies,
             holdable,
         }
+    }
+
+    /// `war-bill-prices-the-tier-gap`: the strongest melee and ranged land
+    /// strength `owner` has on the field: its own living land military
+    /// units. A tier unlocked but not fielded fights no battle (live King
+    /// civvis-20261005T045443Z, game 101, had Crossbowmen unlocked and
+    /// fielded Archers).
+    fn tier_fielded_land(g: &Game, owner: usize) -> (f64, f64) {
+        let mut melee: f64 = 0.0;
+        let mut ranged: f64 = 0.0;
+        for unit in g.units.values().filter(|unit| unit.owner == owner) {
+            let spec = &g.rules.units[unit.kind];
+            if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+                continue;
+            }
+            if spec.is_melee_capable() {
+                melee = melee.max(spec.strength);
+            }
+            ranged = ranged.max(spec.ranged_strength);
+        }
+        (melee, ranged)
+    }
+
+    /// `war-bill-prices-the-tier-gap`: the strongest melee and ranged land
+    /// strength `owner` can train now — its own catalogue (uniques for its
+    /// civilization, foreign uniques dropped), unlocked by its techs and
+    /// civics and not obsolete — or has already fielded, whichever is more.
+    /// Strategic resources are not required: an AI with Gunpowder nearly
+    /// always holds the Niter for its Musketmen.
+    fn tier_unlocked_land(g: &Game, owner: usize) -> (f64, f64) {
+        let (mut melee, mut ranged) = Self::tier_fielded_land(g, owner);
+        for unit in Self::player_unit_catalog(g, owner) {
+            let spec = &g.rules.units[unit];
+            if spec.class != "military"
+                || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                || !Self::war_unit_unlocked(g, owner, unit)
+            {
+                continue;
+            }
+            if spec.is_melee_capable() {
+                melee = melee.max(spec.strength);
+            }
+            ranged = ranged.max(spec.ranged_strength);
+        }
+        (melee, ranged)
+    }
+
+    /// `war-bill-prices-the-tier-gap`: the strength by which `rival`'s best
+    /// land units outclass ours — the larger of melee over melee and ranged
+    /// over ranged — or zero when we match or out-tier it. An army that
+    /// fields no ranged unit meets the rival's ranged line with its melee
+    /// line. Zero with the gene off.
+    pub(crate) fn war_bill_tier_gap(&self, g: &Game, pid: usize, rival: usize) -> f64 {
+        if !self.war_bill_prices_the_tier_gap || rival == pid || rival >= g.players.len() {
+            return 0.0;
+        }
+        let (our_melee, our_ranged) = Self::tier_fielded_land(g, pid);
+        let (their_melee, their_ranged) = Self::tier_unlocked_land(g, rival);
+        let our_ranged = if our_ranged > 0.0 {
+            our_ranged
+        } else {
+            our_melee
+        };
+        (their_melee - our_melee).max(their_ranged - our_ranged).max(0.0)
+    }
+
+    /// `war-bill-prices-the-tier-gap`: what a city of `rival` costs over its
+    /// tech-edge bill. Live King civvis-20261005T045443Z (game 101) planned
+    /// Gwangju at 2.85 times Korea's power and five techs behind; the bill's
+    /// tech edge (1.5 a tech, +7.5 a defender) priced a Musketman (55) and a
+    /// Hwacha (60) as if they were our Men-at-Arms (45) and Archers (25).
+    /// Hwachas one-shot four full-health Archers and the siege never brought
+    /// Gwangju under 181. `exp(gap / 25)`, capped at [`TIER_GAP_FACTOR_CAP`];
+    /// exactly 1.0 with the gene off or no gap.
+    pub(crate) fn war_bill_tier_factor(&self, g: &Game, pid: usize, rival: usize) -> f64 {
+        let gap = self.war_bill_tier_gap(g, pid, rival);
+        if gap <= 0.0 {
+            return 1.0;
+        }
+        (gap / TIER_GAP_SCALE).exp().min(TIER_GAP_FACTOR_CAP)
+    }
+
+    /// [`NeighbourAppraisal::weak_enough`], except that under
+    /// `war-bill-prices-the-tier-gap` out-muscling a rival does not waive a
+    /// tech deficit that stands a unit tier ([`TIER_GAP_NO_WAIVER`]) behind
+    /// it: numbers do not answer a line that one-shots ours.
+    pub(crate) fn campaign_weak_enough(
+        &self,
+        g: &Game,
+        pid: usize,
+        appraisal: &NeighbourAppraisal,
+    ) -> bool {
+        if !appraisal.weak_enough() {
+            return false;
+        }
+        if self.war_bill_tier_gap(g, pid, appraisal.rival) < TIER_GAP_NO_WAIVER {
+            return true;
+        }
+        appraisal.power_ratio >= CAMPAIGN_POWER_RATIO
+            && appraisal.tech_lead >= -(CAMPAIGN_TECH_DEFICIT_MAX as i64)
     }
 
     /// The nearest of our cities to `pos`.
@@ -508,7 +626,7 @@ impl AdvancedAi {
             let Some(appraisal) = self.appraise_neighbour(g, pid, rival) else {
                 continue;
             };
-            if !appraisal.weak_enough() {
+            if !self.campaign_weak_enough(g, pid, &appraisal) {
                 continue;
             }
             for city in g.cities.values().filter(|city| city.owner == rival) {
@@ -607,7 +725,7 @@ impl AdvancedAi {
             return None;
         }
         let appraisal = self.appraise_neighbour(g, pid, target)?;
-        if !appraisal.weak_enough() {
+        if !self.campaign_weak_enough(g, pid, &appraisal) {
             return None;
         }
         let army = self.campaign_field_army(g, pid);
@@ -663,7 +781,7 @@ impl AdvancedAi {
         let Some(appraisal) = self.appraise_neighbour(g, pid, plan.target) else {
             return false;
         };
-        if !appraisal.weak_enough() {
+        if !self.campaign_weak_enough(g, pid, &appraisal) {
             return false;
         }
         let army = self.campaign_field_army(g, pid);
@@ -1214,6 +1332,123 @@ mod tests {
         ai.maintain_city_campaign(&mut game, 0);
         assert!(ai.campaign.is_some(), "and a fresh one after it");
         assert_eq!(game.players[0].counters.get("campaign:planned"), Some(&2));
+    }
+
+    /// Units of `kind` for `pid` on the free tiles two out from `around`.
+    fn units_of(game: &mut Game, kind: &str, pid: usize, around: Pos, count: usize) {
+        let ring: Vec<Pos> = game
+            .wring(around, 2)
+            .into_iter()
+            .filter(|pos| game.city_at(*pos).is_none() && game.unit_ids_at(*pos).is_empty())
+            .collect();
+        assert!(ring.len() >= count);
+        for pos in ring.into_iter().take(count) {
+            let uid = game.spawn_test_unit(kind, pid, pos);
+            fresh(game, uid);
+        }
+    }
+
+    /// `war-bill-prices-the-tier-gap`, live King civvis-20261005T045443Z
+    /// (game 101) in miniature: we field Warriors and Archers at more than
+    /// twice the rival's power, the rival fields a Musketman and a
+    /// Crossbowman and leads by ten techs. Off, the bill is the tech-edge
+    /// bill and numbers waive the deficit; on, the 35-strength tier gap
+    /// (Musketman 55 over Warrior 20) triples the bill and withholds the
+    /// waiver.
+    #[test]
+    fn a_rival_a_tier_ahead_triples_the_bill_and_is_not_weak_enough() {
+        let mut game = flat_board(80_331, &[(6, 10), (18, 10)]);
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        game.found_city_for(0, (6, 4), None);
+        warriors(&mut game, 0, home, 10);
+        units_of(&mut game, "archer", 0, (6, 4), 2);
+        let theirs = game.cities[&game.player_city_ids(1)[0]].pos;
+        units_of(&mut game, "musketman", 1, theirs, 1);
+        units_of(&mut game, "crossbowman", 1, theirs, 1);
+        give_techs(&mut game, 1, 10);
+        let target = game.player_city_ids(1)[0];
+
+        let mut ai = AdvancedAi::new();
+        let appraisal = ai.appraise_neighbour(&game, 0, 1).unwrap();
+        assert!(
+            appraisal.power_ratio >= CAMPAIGN_OVERWHELMING_RATIO,
+            "the fixture out-muscles the rival: {appraisal:?}"
+        );
+        assert_eq!(appraisal.tech_lead, -10);
+        assert!(appraisal.weak_enough(), "numbers waive the deficit");
+
+        // Off: no gap, no factor, the shipped verdict and bill.
+        assert_eq!(ai.war_bill_tier_gap(&game, 0, 1), 0.0);
+        assert_eq!(ai.war_bill_tier_factor(&game, 0, 1), 1.0);
+        assert!(ai.campaign_weak_enough(&game, 0, &appraisal));
+        let off = ai.campaign_city_requirement(&game, 0, target, &appraisal, 20.0);
+
+        ai.enable_war_bill_prices_the_tier_gap();
+        assert_eq!(ai.war_bill_tier_gap(&game, 0, 1), 55.0 - 20.0);
+        assert_eq!(ai.war_bill_tier_factor(&game, 0, 1), TIER_GAP_FACTOR_CAP);
+        let on = ai.campaign_city_requirement(&game, 0, target, &appraisal, 20.0);
+        assert!(
+            (on.strength - off.strength * TIER_GAP_FACTOR_CAP).abs() < 1e-9,
+            "{} vs {}",
+            on.strength,
+            off.strength
+        );
+        assert!(on.bodies > off.bodies, "{on:?} vs {off:?}");
+        assert!(
+            !ai.campaign_weak_enough(&game, 0, &appraisal),
+            "a tier behind, numbers no longer waive ten techs"
+        );
+    }
+
+    /// A small gap scales the bill smoothly and keeps the waiver; no gap, or
+    /// a rival we out-tier, leaves both exactly as shipped.
+    #[test]
+    fn a_small_or_no_tier_gap_keeps_the_bill_and_the_waiver() {
+        // A Spearman (25) over our Warrior (20): the rival's best ranged is
+        // its Slinger (15) against our Archer (25), so the gap is 5.
+        let mut game = flat_board(80_333, &[(6, 10), (18, 10)]);
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        game.found_city_for(0, (6, 4), None);
+        warriors(&mut game, 0, home, 10);
+        units_of(&mut game, "archer", 0, (6, 4), 1);
+        let theirs = game.cities[&game.player_city_ids(1)[0]].pos;
+        units_of(&mut game, "spearman", 1, theirs, 1);
+        let target = game.player_city_ids(1)[0];
+        let mut ai = AdvancedAi::new();
+        let appraisal = ai.appraise_neighbour(&game, 0, 1).unwrap();
+        let off = ai.campaign_city_requirement(&game, 0, target, &appraisal, 20.0);
+        ai.enable_war_bill_prices_the_tier_gap();
+        assert_eq!(ai.war_bill_tier_gap(&game, 0, 1), 5.0);
+        let factor = ai.war_bill_tier_factor(&game, 0, 1);
+        assert!((factor - (5.0f64 / TIER_GAP_SCALE).exp()).abs() < 1e-12);
+        let on = ai.campaign_city_requirement(&game, 0, target, &appraisal, 20.0);
+        assert!((on.strength - off.strength * factor).abs() < 1e-9);
+        assert_eq!(
+            ai.campaign_weak_enough(&game, 0, &appraisal),
+            appraisal.weak_enough(),
+            "under the waiver threshold the verdict is the shipped one"
+        );
+
+        // We out-tier the rival: Musketmen and Crossbowmen against its
+        // Warriors. No gap, no factor.
+        let mut game = flat_board(80_335, &[(6, 10), (18, 10)]);
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        units_of(&mut game, "musketman", 0, home, 2);
+        units_of(&mut game, "crossbowman", 0, home, 2);
+        let theirs = game.cities[&game.player_city_ids(1)[0]].pos;
+        warriors(&mut game, 1, theirs, 2);
+        let mut ai = AdvancedAi::new();
+        ai.enable_war_bill_prices_the_tier_gap();
+        assert_eq!(ai.war_bill_tier_gap(&game, 0, 1), 0.0);
+        assert_eq!(ai.war_bill_tier_factor(&game, 0, 1), 1.0);
+    }
+
+    /// The gene is a native opt-in, off in both controllers.
+    #[test]
+    fn war_bill_prices_the_tier_gap_is_a_native_opt_in_off_in_both_controllers() {
+        opt_in_off_in_both_controllers("war-bill-prices-the-tier-gap", |ai| {
+            ai.war_bill_prices_the_tier_gap
+        });
     }
 
     /// Version two refuses a merely empire-wide or nearby army: it needs the

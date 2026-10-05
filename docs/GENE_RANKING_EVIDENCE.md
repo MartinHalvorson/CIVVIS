@@ -312,6 +312,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `upkeep-reserve` | off (unmeasured) | Upgrade passes keep one and a half turns of the army's bill in the treasury instead of a flat 30 Gold at war. | 1 \| 1 |
 | `victory-deadline-budget` | off (unmeasured) | Enable `victory-deadline-budget` for measurement. | 1 \| 1 |
 | `victory-portfolio` | off (unmeasured) | Preserve victory objectives across temporary expansion and war postures. | 1 \| 1 |
+| `war-bill-prices-the-tier-gap` | off (unmeasured) | Opt-in gene `war-bill-prices-the-tier-gap`; see `Self::war_bill_prices_the_tier_gap`. | 1 \| 1 |
 
 ## Removed from the code
 

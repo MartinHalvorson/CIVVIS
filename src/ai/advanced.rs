@@ -7318,6 +7318,13 @@ pub struct AdvancedAi {
     /// `BasicAi::settler_before_the_navy`.
     settler_before_the_navy: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `war-bill-prices-the-tier-gap`: the campaign bill and the weaker-
+    /// neighbour test price the unit tier a rival fields, not only its tech
+    /// count. Live King civvis-20261005T045443Z (game 101) planned Gwangju at
+    /// 2.85 times Korea's power while Korean Hwachas (60) and Musketmen (55)
+    /// faced our Archers and Men-at-Arms. See
+    /// `city_campaign::war_bill_tier_factor`. Off by default.
+    war_bill_prices_the_tier_gap: bool,
     /// Upgrade passes keep one and a half turns of the army's bill in the
     /// treasury instead of a flat 30 Gold at war. Opt-in gene
     /// `upkeep-reserve`; see `gold_and_cards::UPKEEP_RESERVE_TURNS`.
@@ -9272,6 +9279,7 @@ impl AdvancedAi {
 
             settler_before_the_navy: false,
             // ---- append: t-z ----------------------------------------
+            war_bill_prices_the_tier_gap: false,
             upkeep_reserve: false,
             trade_growth_to_district: false,
             trade_production_to_launch: false,
