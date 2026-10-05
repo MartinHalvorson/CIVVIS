@@ -5986,6 +5986,11 @@ pub struct AdvancedAi {
     /// city; `builder-before-the-army-3` queues Builders often enough that
     /// the stock Ilkum commitment would hold Urban Planning out again.
     colonization_earns_its_slot_2: bool,
+    /// `counterfaith-leaves-two-holdouts`: an adopted faith whose founder is
+    /// alive is a safe counterweight only while at least two living majors
+    /// besides us and that founder do not follow it. See
+    /// `adopted_faith_sanctuary::counterfaith_is_safe`.
+    counterfaith_leaves_two_holdouts: bool,
     // ---- append: e-f ------------------------------------------------
     /// `favor-bought-before-congress`: the live bridge buys a block of a
     /// peaceful rival's Diplomatic Favor in the turns before a World Congress
@@ -9519,6 +9524,7 @@ impl AdvancedAi {
             campus_before_the_army_3: false,
             colonization_earns_its_slot: false,
             colonization_earns_its_slot_2: false,
+            counterfaith_leaves_two_holdouts: false,
             // ---- append: e-f ----------------------------------------
             favor_bought_before_congress: false,
             favor_spares_the_surprise_war: false,
@@ -24812,7 +24818,7 @@ impl AdvancedAi {
             };
             if majority == threat
                 || (self.active_victory_target(g) == Some(VictoryTarget::Domination)
-                    && !Self::safe_adopted_counterfaith(g, pid, majority))
+                    && !self.counterfaith_is_safe(g, pid, majority))
             {
                 continue;
             }

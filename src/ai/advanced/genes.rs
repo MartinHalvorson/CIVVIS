@@ -3009,6 +3009,12 @@ pub const GENES: &[Gene] = &[
     // The race's Holy Site builds its Shrine and Revelation takes the
     // wildcard while a Prophet is open. See `advanced/prophet_race_points.rs`.
     Gene { tag: "prophet-race-earns-its-points", field: "prophet_race_earns_its_points", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_earns_its_points, disable: AdvancedAi::disable_prophet_race_earns_its_points },
+    // Live King civvis-20261005T191828Z (game 155): with Vietnam gone, 13
+    // Missionaries bought in Confucian Bogota and Thang Long as the "safe"
+    // counterfaith (Maya alone held out) took our cities from 0 of 10
+    // Confucian at turn 100 to 10 of 11 at 178; Babylon won on Religion at
+    // 232. See `adopted_faith_sanctuary::counterfaith_is_safe`.
+    Gene { tag: "counterfaith-leaves-two-holdouts", field: "counterfaith_leaves_two_holdouts", kind: Kind::OptIn, enable: AdvancedAi::enable_counterfaith_leaves_two_holdouts, disable: AdvancedAi::disable_counterfaith_leaves_two_holdouts },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

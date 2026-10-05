@@ -6299,6 +6299,17 @@ impl AdvancedAi {
         self.prophet_race_earns_its_points = false;
     }
 
+    /// Opt-in gene `counterfaith-leaves-two-holdouts`; see
+    /// [`Self::counterfaith_is_safe`].
+    pub fn enable_counterfaith_leaves_two_holdouts(&mut self) {
+        self.counterfaith_leaves_two_holdouts = true;
+    }
+
+    /// The twin of `enable_counterfaith_leaves_two_holdouts`.
+    pub fn disable_counterfaith_leaves_two_holdouts(&mut self) {
+        self.counterfaith_leaves_two_holdouts = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

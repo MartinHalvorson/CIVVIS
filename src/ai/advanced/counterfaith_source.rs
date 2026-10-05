@@ -27,7 +27,7 @@ impl AdvancedAi {
             let Some(threat) = self.adopted_faith_threat(g, pid) else {
                 return Vec::new();
             };
-            if faith == threat || !Self::safe_adopted_counterfaith(g, pid, faith) {
+            if faith == threat || !self.counterfaith_is_safe(g, pid, faith) {
                 return Vec::new();
             }
         }

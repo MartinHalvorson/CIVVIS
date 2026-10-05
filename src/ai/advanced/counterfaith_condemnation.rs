@@ -21,7 +21,7 @@ impl AdvancedAi {
             return false;
         }
         self.adopted_faith_threat(g, pid)
-            .is_some_and(|threat| faith != threat && Self::safe_adopted_counterfaith(g, pid, faith))
+            .is_some_and(|threat| faith != threat && self.counterfaith_is_safe(g, pid, faith))
     }
 }
 

@@ -20,7 +20,7 @@ impl AdvancedAi {
                 !counterfaith_only
                     || (unit.charges > 0
                         && unit.religion.as_deref().is_some_and(|faith| {
-                            faith != threat && Self::safe_adopted_counterfaith(g, pid, faith)
+                            faith != threat && self.counterfaith_is_safe(g, pid, faith)
                         }))
             })
             .count()
