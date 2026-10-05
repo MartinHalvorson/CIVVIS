@@ -20105,6 +20105,22 @@ CivvisQueue.startTimescaleAB = function(spec, turns)
 	return CivvisQueue.startTimescale(a);
 end;
 
+-- ★ AFTER THE LOAD, NOT DURING IT. Initialize runs in the middle of Civ VI's
+-- load (G102: agent loaded at +68 s, turn 1 at +81 s), and with `timescale 3`
+-- applied there the load ran ~10 s longer: Start Game -> turn 1 (net log,
+-- "Validating App Game Configuration" -> "InitialTurnProcessing=1") took 24,
+-- 21, 22 and 27 s in the four 3x games G99-G102, against 13-15 s at 1x and 2x
+-- (median 13 s over 45 games). So the scale is applied at the first
+-- LocalPlayerTurnBegin: every turn still runs at it, and the load runs at 1x.
+CivvisQueue.startPendingTimescale = function()
+	if not CivvisQueue.timescalePending then return false; end
+	CivvisQueue.timescalePending = false;
+	if cfg.DebugTimeScaleAB ~= nil then
+		return CivvisQueue.startTimescaleAB(cfg.DebugTimeScaleAB, cfg.DebugTimeScaleABTurns);
+	end
+	return CivvisQueue.startTimescale(cfg.DebugTimeScale);
+end;
+
 CivvisQueue.checkTimescaleClock = function()
 	local ts = CivvisQueue.timescale;
 	if ts == nil or not ts.applied or ts.reverted then return; end
@@ -21509,6 +21525,7 @@ end
 
 local function onLocalPlayerTurnBegin()
 	ensureStarted();
+	pcall(CivvisQueue.startPendingTimescale);
 	pcall(CivvisQueue.timescaleBlock, try(function() return Game.GetCurrentGameTurn(); end, nil));
 	CivvisTrade.pollPeace();
 	tick();
@@ -21830,11 +21847,8 @@ function Initialize()
 		autoprofiler = try(function() return type(AutoProfiler); end, "error"),
 		run_command = try(function() return type(AutoProfiler.RunCommand); end, "error"),
 	});
-	if cfg.DebugTimeScaleAB ~= nil then
-		pcall(CivvisQueue.startTimescaleAB, cfg.DebugTimeScaleAB, cfg.DebugTimeScaleABTurns);
-	else
-		pcall(CivvisQueue.startTimescale, cfg.DebugTimeScale);
-	end
+	-- The timescale waits for turn 1: see CivvisQueue.startPendingTimescale.
+	CivvisQueue.timescalePending = true;
 	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse); end);
 	pcall(function() LuaEvents.CivvisControlPeek.Add(CivvisQueue.onPeekPulse); end);
 	for name, handler in pairs({
