@@ -2862,6 +2862,10 @@ pub const GENES: &[Gene] = &[
     // from turn 137, most to one blow of a hostile seen at turn start. See
     // `advanced/guns_stay_out_of_reach.rs`.
     Gene { tag: "guns-stay-out-of-reach", field: "guns_stay_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach, disable: AdvancedAi::disable_guns_stay_out_of_reach },
+    // Live King civvis-20261005T101841Z (game 120): Australia at 7% of our
+    // power, Canberra behind 200 walls, failed the 100-wall gate. See
+    // `one_war::capital_prey_walls`.
+    Gene { tag: "capital-prey-scales-the-walls", field: "capital_prey_scales_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_prey_scales_the_walls, disable: AdvancedAi::disable_capital_prey_scales_the_walls },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

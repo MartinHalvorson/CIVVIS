@@ -1494,3 +1494,29 @@ fn the_engine_culture_clock_takes_the_earliest_recent_finish() {
         "too long without a reading"
     );
 }
+
+/// See `capital_prey_walls`: under the gene a prey with no army may stand
+/// behind Medieval walls, never more; one near our power bound keeps the
+/// Ancient bar.
+#[test]
+fn a_collapsed_prey_capital_may_stand_behind_more_wall_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    ai.enable_capital_prey_opens_a_front();
+    let capital = g
+        .cities
+        .values()
+        .find(|city| city.owner == 3 && city.is_capital)
+        .map(|city| city.id)
+        .unwrap();
+    g.cities.get_mut(&capital).unwrap().wall_hp = CAPITAL_PREY_WALLS + 100;
+    let (_, near) = ai.capital_prey_beside_the_front(&g, 0, Some(1));
+    assert!(near.contains(&(3, "walls")), "off");
+    ai.enable_capital_prey_scales_the_walls();
+    assert_eq!(ai.capital_prey_beside_the_front(&g, 0, Some(1)).0, Some(3));
+    g.cities.get_mut(&capital).unwrap().wall_hp = CAPITAL_PREY_MAX_WALLS + 100;
+    let (_, near) = ai.capital_prey_beside_the_front(&g, 0, Some(1));
+    assert!(near.contains(&(3, "walls")), "past the Medieval bar");
+    assert_eq!(ai.capital_prey_walls(0.0, 400.0), CAPITAL_PREY_MAX_WALLS);
+    assert_eq!(ai.capital_prey_walls(40.0, 400.0), 150);
+    assert_eq!(ai.capital_prey_walls(60.0, 400.0), CAPITAL_PREY_WALLS);
+}

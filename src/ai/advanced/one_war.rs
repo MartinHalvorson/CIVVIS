@@ -115,6 +115,10 @@ pub(crate) const CAPITAL_PREY_POWER: f64 = 0.15;
 /// `capital-prey-opens-a-front`: the most wall hit points the prey capital
 /// may stand behind: Ancient Walls, which the army opens in a few turns.
 pub(crate) const CAPITAL_PREY_WALLS: i32 = 100;
+/// `capital-prey-scales-the-walls`: the most wall hit points a prey capital
+/// at peace may stand behind however far its army has collapsed: Medieval
+/// Walls, which `guns-enter-together` and the air breach open.
+pub(crate) const CAPITAL_PREY_MAX_WALLS: i32 = 300;
 
 /// `liberation-funds-the-congress`: the Diplomatic Victory points at which a
 /// rival makes a captured city-state city worth its liberation Favor; the
@@ -1521,7 +1525,7 @@ impl AdvancedAi {
             let power = g.military_power(rival.id);
             let at_war = g.is_at_war(pid, rival.id);
             let weak = power <= CAPITAL_PREY_POWER * ours;
-            let soft = at_war || capital.wall_hp <= CAPITAL_PREY_WALLS;
+            let soft = at_war || capital.wall_hp <= self.capital_prey_walls(power, ours);
             // A prey already at war still needs a road: an overseas or far
             // capital would take the plan's target from the front for a march
             // the army cannot make (see `declarable_in_reach`).
@@ -1567,6 +1571,25 @@ impl AdvancedAi {
             }
         }
         (best.map(|(_, rival)| rival), near_misses)
+    }
+
+    /// The most wall a prey capital at peace may stand behind:
+    /// [`CAPITAL_PREY_WALLS`], and under `capital-prey-scales-the-walls` that
+    /// bar raised in proportion as the prey's share of our power falls under
+    /// [`CAPITAL_PREY_POWER`] -- 150 at a tenth, 200 at 7.5% -- up to
+    /// [`CAPITAL_PREY_MAX_WALLS`]. Live King civvis-20261005T101841Z (game
+    /// 120) logged "Capital prey near miss: Australia | fails the walls gate"
+    /// at turn 94; at turn 100 Australia held 31 military against our 435
+    /// (7%), Canberra known behind 200 walls. `declaration-waits-for-the-breaker`
+    /// still holds the war until a breaker stands on the ring (diagnosed by
+    /// -60).
+    fn capital_prey_walls(&self, power: f64, ours: f64) -> i32 {
+        if !self.capital_prey_scales_the_walls || ours <= 0.0 {
+            return CAPITAL_PREY_WALLS;
+        }
+        let share = (power / ours).max(1e-9);
+        let scaled = f64::from(CAPITAL_PREY_WALLS) * CAPITAL_PREY_POWER / share;
+        (scaled.min(f64::from(CAPITAL_PREY_MAX_WALLS)).round() as i32).max(CAPITAL_PREY_WALLS)
     }
 
     /// The turns until `prey`'s original capital is expected to fall: our

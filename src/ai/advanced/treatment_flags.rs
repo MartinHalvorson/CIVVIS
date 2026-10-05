@@ -5902,6 +5902,17 @@ impl AdvancedAi {
         self.guns_stay_out_of_reach = false;
     }
 
+    /// Opt-in gene `capital-prey-scales-the-walls`; see
+    /// [`Self::capital_prey_scales_the_walls`].
+    pub fn enable_capital_prey_scales_the_walls(&mut self) {
+        self.capital_prey_scales_the_walls = true;
+    }
+
+    /// The twin of `enable_capital_prey_scales_the_walls`.
+    pub fn disable_capital_prey_scales_the_walls(&mut self) {
+        self.capital_prey_scales_the_walls = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
