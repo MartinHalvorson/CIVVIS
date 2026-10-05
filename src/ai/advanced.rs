@@ -6203,6 +6203,10 @@ pub struct AdvancedAi {
     /// the campaign's target city soonest. Opt-in gene `front-weighted-floor`;
     /// see `BasicAi::front_weighted_floor`.
     front_weighted_floor: bool,
+    /// `front-weighted-floor-2`: while the floor is unmet, a city near the
+    /// campaign's target builds the floor's unit ahead of its economy steps.
+    /// See `BasicAi::front_weighted_floor_2`.
+    front_weighted_floor_2: bool,
     // ---- append: g-k ------------------------------------------------
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     great_work_completion_value: bool,
@@ -9057,6 +9061,7 @@ impl AdvancedAi {
             first_granary_reserve_3: false,
 
             front_weighted_floor: false,
+            front_weighted_floor_2: false,
             // ---- append: g-k ----------------------------------------
             great_work_completion_value: false,
             industrial_chain_debt: false,
@@ -13851,14 +13856,39 @@ impl AdvancedAi {
     /// it. The speed-aware deadline similarly extends the raw turn-150 gene on
     /// slower or longer games without removing the endgame reserve.
     fn delegated_cities(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        // `front-weighted-floor`: the campaign's target city, for the floor's
-        // arrival test in `BasicAi::pick_item`.
-        self.base.front_objective = (self.front_weighted_floor
+        // `front-weighted-floor`: the front for the floor's arrival test in
+        // `BasicAi::pick_item`. The live siege the most land bodies are
+        // assigned to, else the campaign's target city: the plan's target can
+        // move on while the board still besieges the old one (live King
+        // 2026-10-04T235724Z t108: Siege of Trabzon, plan target elsewhere).
+        self.base.front_objective = ((self.front_weighted_floor || self.front_weighted_floor_2)
             && self.victory_target == Some(VictoryTarget::Domination))
-        .then(|| plan.target_city.and_then(|city| g.cities.get(&city)))
-        .flatten()
-        .filter(|city| city.owner != pid)
-        .map(|city| city.pos);
+        .then(|| {
+            self.sieges
+                .keys()
+                .filter_map(|city| g.cities.get(city))
+                .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
+                .max_by_key(|city| {
+                    (
+                        self.force_groups
+                            .iter()
+                            .filter(|group| {
+                                group.domain == ForceDomain::Land && group.objective == city.pos
+                            })
+                            .map(|group| group.units.len())
+                            .sum::<usize>(),
+                        std::cmp::Reverse(city.id),
+                    )
+                })
+                .map(|city| city.pos)
+                .or_else(|| {
+                    plan.target_city
+                        .and_then(|city| g.cities.get(&city))
+                        .filter(|city| city.owner != pid)
+                        .map(|city| city.pos)
+                })
+        })
+        .flatten();
         let restore_space_race = self.base.exclude_space_race;
         self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
         let restore_military = self.base.w.mil_per_city;

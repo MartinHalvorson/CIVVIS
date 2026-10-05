@@ -3137,6 +3137,19 @@ impl AdvancedAi {
         self.base.front_objective = None;
     }
 
+    /// See `BasicAi::front_weighted_floor_2`: a city near the campaign's
+    /// target builds the floor's unit ahead of its economy steps.
+    pub fn enable_front_weighted_floor_2(&mut self) {
+        self.front_weighted_floor_2 = true;
+        self.base.front_weighted_floor_2 = true;
+    }
+
+    /// The twin of `enable_front_weighted_floor_2`.
+    pub fn disable_front_weighted_floor_2(&mut self) {
+        self.front_weighted_floor_2 = false;
+        self.base.front_weighted_floor_2 = false;
+    }
+
     /// See `BasicAi::activation_resume_waits`: an activation path waits for a
     /// queued district that already holds production.
     pub fn enable_activation_resume_waits(&mut self) {

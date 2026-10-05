@@ -2455,6 +2455,15 @@
           "first-granary-reserve-3": null
         }
       },
+      "front-weighted-floor": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "front-weighted-floor": null,
+          "front-weighted-floor-2": null
+        }
+      },
       "government-ladder": {
         "rule_on": [
           "government-ladder-2"
