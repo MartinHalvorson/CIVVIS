@@ -334,7 +334,14 @@ ContextPtr = liveContext
 -- when the scale changes); every turn end checks that over >= 30 s windows
 -- and reverts on any disagreement; game end reverts too.
 local agentSource = io.open(here .. "/CivvisControlAgent.lua"):read("*a")
-check("Initialize asks for the timescale", has(agentSource, "pcall(CivvisQueue.startTimescale, cfg.DebugTimeScale);"), true)
+check("Initialize only marks the timescale pending", has(agentSource, "CivvisQueue.timescalePending = true;"), true)
+check("…turn begin starts it, after the load", has(agentSource,
+	"\tensureStarted();\n\tpcall(CivvisQueue.startPendingTimescale);"), true)
+queue.timescalePending = nil
+check("nothing pending, nothing starts", queue.startPendingTimescale(), false)
+queue.timescalePending = true
+pcall(queue.startPendingTimescale)
+check("a pending start runs once", queue.timescalePending, false)
 check("turn end checks the clock", has(agentSource, "\tpcall(CivvisQueue.checkTimescaleClock);\nend;"), true)
 check("victory reverts it", has(agentSource, 'pcall(CivvisQueue.resetTimescale, "game_over");'), true)
 check("our defeat reverts it", has(agentSource, 'pcall(CivvisQueue.resetTimescale, "defeated");'), true)
@@ -530,8 +537,8 @@ check("…once", queue.resetTimescale("game_over"), false)
 -- The in-game A/B: two scales alternate in blocks of turns, each switch a
 -- console command plus a clock rebase that restarts the check's window.
 fresh()
-check("source: Initialize prefers the A/B", has(agentSource,
-	"pcall(CivvisQueue.startTimescaleAB, cfg.DebugTimeScaleAB, cfg.DebugTimeScaleABTurns);"), true)
+check("source: the pending start prefers the A/B", has(agentSource,
+	"return CivvisQueue.startTimescaleAB(cfg.DebugTimeScaleAB, cfg.DebugTimeScaleABTurns);"), true)
 check("source: every turn begin picks the block's scale", has(agentSource,
 	"pcall(CivvisQueue.timescaleBlock, try(function() return Game.GetCurrentGameTurn(); end, nil));"), true)
 check("a nonsense A/B is refused", queue.startTimescaleAB("3", 10), false)
