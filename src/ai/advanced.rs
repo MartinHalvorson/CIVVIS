@@ -16270,10 +16270,15 @@ impl AdvancedAi {
                                 .filter(|window| window.tech_goal.map(Name::as_str) == Some(goal))
                             {
                                 format!(
-                                    "decisive-window: the {step} step toward {}; {}{} beats {}'s best defender ({:.0}) by {:.0}{} in {:.0} turns",
+                                    "decisive-window: the {step} step toward {}; {}{} {} {}'s best defender ({:.0}) by {:.0}{} in {:.0} turns",
                                     plain(goal),
                                     plain(window.assault.as_str()),
                                     if window.unique { " (our unique unit)" } else { "" },
+                                    if window.margin >= decisive_window::DECISIVE_MARGIN {
+                                        "beats".to_string()
+                                    } else {
+                                        format!("at {:.1}x their power faces", window.power_ratio)
+                                    },
                                     g.players[window.target].civ,
                                     window.defender,
                                     window.margin,

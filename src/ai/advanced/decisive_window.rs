@@ -45,6 +45,11 @@
 //! goal. A package already unlocked means the window is OPEN: no goal, and
 //! every other research lane keeps the slot.
 //!
+//! The margin relaxes with numbers: at [`DOMINANT_POWER`] times the target's
+//! military power the assault only has to match its best defender, and at
+//! [`OVERWHELMING_POWER`] any assault counts, so the package is the breaker
+//! alone.
+//!
 //! Air units count as breakers on the same damage test, so when the target
 //! reaches Urban Defenses this goal and the air surge's bomber beeline agree
 //! instead of competing.
@@ -69,6 +74,17 @@ pub(super) const DECISIVE_RESEARCH_HORIZON: u32 = 50;
 /// The assault must out-strength the defender by this much: 30·e^(5/25) ≈ 37
 /// damage a blow against ≈ 24 taken — the first margin that wins trades.
 pub(super) const DECISIVE_MARGIN: f64 = 5.0;
+/// Military power over the target at which the assault only has to match
+/// its best defender (margin 0) rather than beat it by [`DECISIVE_MARGIN`].
+pub(super) const DOMINANT_POWER: f64 = 2.0;
+/// Military power over the target at which numbers carry the assault and the
+/// package is a breaker alone: any assault this civilization can field
+/// counts. Live King G94 (civvis-20261005T024614Z) fought Portugal at 5-8x
+/// its power from t79, and the window read "no package" every turn t73-t135
+/// because no unit outclassed Portugal's best defender, so Military
+/// Engineering (Trebuchets, the breaker for the 200-HP walls Lisbon raised
+/// at t86) waited until t111 while Catapults could not open them.
+pub(super) const OVERWHELMING_POWER: f64 = 3.0;
 /// Strength credited to the civilization's own unique unit for the abilities
 /// the strength column omits.
 pub(super) const UNIQUE_MARGIN: f64 = 5.0;
@@ -100,6 +116,8 @@ pub(crate) struct DecisiveWindow {
     /// The target's strongest defender against this assault.
     pub(crate) defender: f64,
     pub(crate) margin: f64,
+    /// Our military power over the target's when the window was priced.
+    pub(crate) power_ratio: f64,
     pub(crate) unique: bool,
     /// Turns until both halves are unlocked at the current rates; 0 = open.
     pub(crate) turns: f64,
@@ -395,6 +413,14 @@ impl AdvancedAi {
             return None;
         }
         let target = self.decisive_window_target(g, pid, plan)?;
+        let power_ratio = g.military_power(pid) / g.military_power(target).max(1.0);
+        let required_margin = if power_ratio >= OVERWHELMING_POWER {
+            f64::NEG_INFINITY
+        } else if power_ratio >= DOMINANT_POWER {
+            0.0
+        } else {
+            DECISIVE_MARGIN
+        };
         let (_, tier) = self.decisive_wall_tier(g, target);
         let wall_pool = (tier * WALL_TIER_HP) as f64;
         let city_strength = self.decisive_city_strength(g, target, tier);
@@ -456,7 +482,7 @@ impl AdvancedAi {
             let defender = Self::decisive_defender(g, target, spec);
             let margin =
                 spec.strength + if is_unique { UNIQUE_MARGIN } else { 0.0 } - defender;
-            if margin + f64::EPSILON < DECISIVE_MARGIN {
+            if margin + f64::EPSILON < required_margin {
                 continue;
             }
             let (assault_tech, assault_civic) = unlock_of(g, spec);
@@ -511,6 +537,7 @@ impl AdvancedAi {
                     wall_tier: tier,
                     defender,
                     margin,
+                    power_ratio,
                     unique: is_unique,
                     turns,
                     tech_goal,
