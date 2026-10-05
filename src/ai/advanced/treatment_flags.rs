@@ -6046,6 +6046,17 @@ impl AdvancedAi {
         self.conquest_opening_stays_near = false;
     }
 
+    /// Opt-in gene `campaign-weighs-the-tourism-leader`; see
+    /// [`Self::campaign_weighs_the_tourism_leader`].
+    pub fn enable_campaign_weighs_the_tourism_leader(&mut self) {
+        self.campaign_weighs_the_tourism_leader = true;
+    }
+
+    /// The twin of `enable_campaign_weighs_the_tourism_leader`.
+    pub fn disable_campaign_weighs_the_tourism_leader(&mut self) {
+        self.campaign_weighs_the_tourism_leader = false;
+    }
+
     /// Opt-in gene `recovery-needs-the-deficit`; see
     /// [`Self::recovery_needs_the_deficit`].
     pub fn enable_recovery_needs_the_deficit(&mut self) {

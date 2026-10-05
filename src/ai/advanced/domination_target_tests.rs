@@ -511,3 +511,41 @@ fn a_distant_capital_yields_to_a_near_city_when_the_army_body_is_far() {
     );
     g.remove_unit(screen);
 }
+
+/// `campaign-weighs-the-tourism-leader`: the rival leading the board's
+/// tourism by the margin, over the floor, gets `TOURISM_LEADER_TILES` of march
+/// in the campaign's rival ranking; a close race or a thin one gets none.
+#[test]
+fn the_campaign_weighs_the_tourism_leader_under_the_gene() {
+    let mut g = Game::new_full(3, 40, 24, 109_106_002, 300, 0, false);
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+    }
+    g.found_city_for(0, crate::hex::offset_to_axial(4, 8), None);
+    g.found_city_for(1, crate::hex::offset_to_axial(20, 8), None);
+    g.found_city_for(2, crate::hex::offset_to_axial(20, 18), None);
+    let set = |g: &mut Game, one: f64, two: f64| {
+        g.observed_tourism_per_turn =
+            std::sync::Arc::new([(1, one), (2, two)].into_iter().collect());
+    };
+    set(&mut g, 200.0, 60.0);
+    assert_eq!(AdvancedAi::tourism_leader(&g, 0), Some(1));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    let off = ai.campaign_target_value_with_culture(&g, 0, 1, None);
+    let other_off = ai.campaign_target_value_with_culture(&g, 0, 2, None);
+    ai.enable_campaign_weighs_the_tourism_leader();
+    let on = ai.campaign_target_value_with_culture(&g, 0, 1, None);
+    assert!(
+        (off - on - TOURISM_LEADER_TILES * 7.0).abs() < 1e-9,
+        "off {off} on {on}"
+    );
+    assert_eq!(
+        ai.campaign_target_value_with_culture(&g, 0, 2, None),
+        other_off
+    );
+    set(&mut g, 70.0, 60.0);
+    assert_eq!(AdvancedAi::tourism_leader(&g, 0), None, "inside the margin");
+    set(&mut g, 40.0, 10.0);
+    assert_eq!(AdvancedAi::tourism_leader(&g, 0), None, "under the floor");
+}
