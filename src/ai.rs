@@ -13365,6 +13365,36 @@ impl BasicAi {
         if let Some(monument) = Self::civ_building(g, pid, cid, "monument") {
             return Some(monument);
         }
+        // `plaza-in-the-district-list`: the standing Plaza's Warlord's Throne,
+        // then its Grand Master's Chapel, and the empire's first Plaza in the
+        // capital -- ahead of `district-buildings-first`, whose Library,
+        // Shrine and Temple otherwise hold the capital's queue every turn
+        // (live King civvis-20261005T161132Z, game 142: armed, buildable from
+        // turn 38, no Plaza by 81), and which would take any tier-one Plaza
+        // building. A Prophet race still open goes first. See
+        // `plaza_building_item` and `plaza_item`.
+        if self.plaza_in_the_district_list && !self.minor && !self.barb {
+            if let Some(item) = Self::plaza_building_item(g, pid, cid) {
+                return Some(item);
+            }
+            let prophet_race_open = self.enter_prophet_race
+                && !self.skip_prophet_race
+                && g.players[pid].religion.is_none()
+                && !g.cities.values().any(|other| {
+                    other.owner == pid
+                        && (g.city_has_district_family(other, crate::name!("holy_site"))
+                            || matches!(
+                                other.queue.first(),
+                                Some(Item::District { district, .. })
+                                    if g.district_family(*district) == "holy_site"
+                            ))
+                });
+            if !prophet_race_open {
+                if let Some(item) = Self::plaza_item(g, pid, cid) {
+                    return Some(item);
+                }
+            }
+        }
         // `district-buildings-first`: the building that makes a standing
         // district pay before the city opens another district.
         if self.district_buildings_first && !self.minor && !self.barb {
@@ -13384,13 +13414,6 @@ impl BasicAi {
         if self.culture_defense_theater && !self.minor && !self.barb {
             if let Some(item) = Self::culture_defense_theater_item(g, pid, cid, n_cities) {
                 return Some(self.race_takes_the_district_slot(g, pid, cid, item));
-            }
-        }
-        // `plaza-in-the-district-list`: the standing Plaza's Warlord's Throne,
-        // then its Grand Master's Chapel. See `plaza_building_item`.
-        if self.plaza_in_the_district_list && !self.minor && !self.barb {
-            if let Some(item) = Self::plaza_building_item(g, pid, cid) {
-                return Some(item);
             }
         }
         // Coastal infrastructure is part of the water strategy, not an
@@ -16039,6 +16062,25 @@ impl BasicAi {
                                 if g.district_family(*district) == "government_plaza"
                         ))
             })
+    }
+
+    /// `plaza-in-the-district-list`: the empire's first Government Plaza for
+    /// `cid` when `plaza_wanted_here`, on the site whose district yields are
+    /// highest (ties to the lowest tile), if the city can produce it there.
+    pub(crate) fn plaza_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if !Self::plaza_wanted_here(g, pid, cid) {
+            return None;
+        }
+        let plaza = Self::civ_district(g, pid, "government_plaza");
+        g.district_sites(cid, plaza)
+            .into_iter()
+            .map(|pos| (g.district_yields(plaza, pos).total(), pos))
+            .max_by(|a, b| a.0.total_cmp(&b.0).then(b.1.cmp(&a.1)))
+            .map(|(_, pos)| Item::District {
+                district: Name::new(&plaza),
+                pos,
+            })
+            .filter(|item| g.can_produce(pid, cid, item))
     }
 
     /// `plaza-in-the-district-list`: the next Government Plaza building for a
@@ -22813,6 +22855,13 @@ mod tests {
             BasicAi::plaza_building_item(&g, 0, city),
             None,
             "no Plaza yet"
+        );
+        assert!(
+            matches!(
+                BasicAi::plaza_item(&g, 0, city),
+                Some(Item::District { district, .. }) if district == "government_plaza"
+            ),
+            "the capital's Plaza"
         );
         let site = g.cities[&city]
             .owned_tiles
