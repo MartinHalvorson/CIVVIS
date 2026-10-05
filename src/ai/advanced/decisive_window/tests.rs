@@ -303,3 +303,116 @@ fn nationalism_is_the_civic_goal_inside_the_horizon() {
         None
     );
 }
+
+/// `found-against-a-rival-faith`: with a decisive window pending, a rival
+/// faith at the early-warning bar (two of four majors) still wins Astrology
+/// for a faithless conqueror, and the window's research goal stands down
+/// whatever order the two forced-goal arms merge in.
+#[test]
+fn a_pending_window_yields_astrology_to_the_faith_veto() {
+    let mut g = Game::new_full(4, 34, 20, 76_108, 300, 0, false);
+    for pid in 0..3 {
+        let settler = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| g.units[unit].kind == "settler")
+            .unwrap();
+        let at = g.units[&settler].pos;
+        g.remove_unit(settler);
+        g.found_city_for(pid, at, None);
+    }
+    let home = g.cities[&g.player_city_ids(0)[0]].pos;
+    let second = g
+        .wdisk(home, 6)
+        .into_iter()
+        .find(|pos| {
+            g.wdist(*pos, home) >= 4
+                && !g.rules.is_water(&g.map.tiles[pos])
+                && g.units_at(*pos).is_empty()
+                && g.cities.values().all(|city| g.wdist(city.pos, *pos) >= 4)
+        })
+        .unwrap();
+    g.found_city_for(0, second, None);
+    g.current = 0;
+    g.turn = 110;
+    g.record_contact(0, 1);
+    g.players[0].civ = "Gran Colombia".to_string();
+    g.players[1].civ = "Egypt".to_string();
+    learn(&mut g, 1, &["siege_tactics", "gunpowder", "military_tactics"]);
+    learn(&mut g, 0, &["printing", "castles", "gunpowder", "animal_husbandry"]);
+    g.players[0].techs.remove(&name!("astrology"));
+    g.players[0].strategic_resources.insert(name!("horses"), 40.0);
+    g.players[0].strategic_resources.insert(name!("niter"), 40.0);
+    quote_cheap(&mut g, 0);
+    let faith = "Rival Faith".to_string();
+    g.players[1].religion = Some(faith.clone());
+    for pid in [1, 2] {
+        for city in g.player_city_ids(pid) {
+            g.cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert(faith.clone(), 5_000.0);
+        }
+    }
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(g.player_city_ids(1)[0]),
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_decisive_window();
+    ai.battlefront_observation = false;
+
+    let window = ai.decisive_window(&g, 0, &plan).expect("a pending window");
+    let goal = window.tech_goal.expect("the window owes research");
+    assert_eq!(
+        ai.decisive_window_research_goal(&g, 0, Some(&window)),
+        Some(goal),
+        "without the faith gene the window keeps its goal"
+    );
+    let mut off = g.clone();
+    off.players[0].research = None;
+    ai.advanced_research(&mut off, 0, &plan);
+    let picked = off.players[0].research.clone().expect("a pick");
+    assert!(ai.tech_leads_to(&off, &picked, goal.as_str()), "{picked}");
+
+    ai.enable_found_against_a_rival_faith();
+    assert!(ai.faith_veto_due(&g, 0));
+    assert_eq!(
+        ai.decisive_window_research_goal(&g, 0, Some(&window)),
+        None,
+        "the faith veto takes the slot from the window"
+    );
+    assert!(ai.prophet_race_enterable_for(&g, 0, Some(VictoryTarget::Domination)));
+    let mut on = g.clone();
+    on.players[0].research = None;
+    ai.advanced_research(&mut on, 0, &plan);
+    assert_eq!(
+        on.players[0].research.as_deref(),
+        Some("astrology"),
+        "a pending window still lets the faith Astrology win"
+    );
+
+    // Once Astrology is known the veto has nothing left to research, and the
+    // window takes the slot back although `faith_veto_due` still holds (live
+    // G80 yielded four more times after its t35 Astrology).
+    let mut known = g.clone();
+    known.players[0].techs.insert(name!("astrology"));
+    assert!(ai.faith_veto_due(&known, 0), "the veto itself stays due");
+    let window = ai.decisive_window(&known, 0, &plan).expect("still pending");
+    assert_eq!(
+        ai.decisive_window_research_goal(&known, 0, Some(&window)),
+        window.tech_goal,
+        "the window resumes once Astrology is known"
+    );
+    known.players[0].research = None;
+    ai.advanced_research(&mut known, 0, &plan);
+    let picked = known.players[0].research.clone().expect("a pick");
+    let goal = window.tech_goal.expect("a goal");
+    assert!(ai.tech_leads_to(&known, &picked, goal.as_str()), "{picked}");
+}

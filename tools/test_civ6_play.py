@@ -200,8 +200,17 @@ class SharedDesktopRescueTests(unittest.TestCase):
         tree = ast.parse(Path(civ6_play.__file__).read_text())
         callback = next(n for n in ast.walk(tree)
                         if isinstance(n, ast.FunctionDef) and n.name == "record")
-        code = compile(ast.Module(body=[callback], type_ignores=[]),
+        # The relay queues rescues (`DesktopRescueQueue`); run them inline
+        # here so the rescue's own decisions stay under test.
+        rescue = next(n for n in ast.walk(tree)
+                      if isinstance(n, ast.FunctionDef) and n.name == "desktop_rescue")
+        code = compile(ast.Module(body=[rescue, callback], type_ignores=[]),
                        civ6_play.__file__, "exec")
+
+        class InlineRescues:
+            def submit(self, _screen, rescue_call):
+                rescue_call()
+                return True
         ledger = io.StringIO()
         with patch.object(civ6_play, "shared_desktop_in_use", return_value=True) as shared, \
              patch.object(civ6_play.popup_clear, "capture_pause_reason") as capture, \
@@ -211,7 +220,7 @@ class SharedDesktopRescueTests(unittest.TestCase):
              patch.object(civ6_play, "dismiss_world_congress_between_turns") as congress, \
              patch.object(civ6_play, "press_escape") as escape:
             namespace = dict(vars(civ6_play), events=ledger, state={"turn": 24},
-                             run_dir=Path("/unused"))
+                             run_dir=Path("/unused"), desktop_rescues=InlineRescues())
             exec(code, namespace)
             for kind in ("autoclose_desktop", "autoclose_stuck"):
                 for screen in ("DiplomacyActionView", "WorldCongressBetweenTurns",
@@ -1065,6 +1074,61 @@ class Civ6PlayTest(unittest.TestCase):
         )
         sleep.assert_called_once_with(1.0)
 
+    def test_the_first_board_is_relayed_while_a_capture_is_still_running(self) -> None:
+        """G73: the board waited 11.2 s behind two failed captures."""
+        import threading as _threading
+        bounds = (864, 33, 864, 542)
+        calls, active, overlap = [], [0], [False]
+        guard = _threading.Lock()
+        capture = {}
+
+        def board_ready():
+            with guard:
+                active[0] += 1
+                if active[0] > 1:
+                    overlap[0] = True
+            calls.append(time.monotonic())
+            time.sleep(0.002)
+            with guard:
+                active[0] -= 1
+            return True
+
+        def slow_screenshot(path, **_kw):
+            capture["start"] = time.monotonic()
+            time.sleep(0.3)
+            capture["end"] = time.monotonic()
+
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot", side_effect=slow_screenshot), \
+             patch.object(civ6_play, "_leader_intro_visible", return_value=False):
+            started = time.monotonic()
+            self.assertFalse(civ6_play.advance_leader_intro(
+                bounds, "LEADER_TRAJAN", Path(temporary), 1, retries=3,
+                poll_s=0.01, board_ready=board_ready, relay_s=0.02))
+        during = [t for t in calls if capture["start"] <= t <= capture["end"]]
+        self.assertTrue(during, "the log was drained while the capture ran")
+        self.assertLess(calls[0] - started, 0.1, "the board is relayed at once")
+        self.assertFalse(overlap[0], "the log is never drained by two threads at once")
+        after = len(calls)
+        time.sleep(0.1)
+        self.assertEqual(len(calls), after, "the relay stops with the probe")
+
+    def test_the_relay_does_not_end_the_probe_before_the_screen_is_read(self) -> None:
+        bounds = (864, 33, 864, 542)
+        order = []
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot",
+                          side_effect=lambda path, **_kw: (time.sleep(0.05), order.append("shot"))), \
+             patch.object(civ6_play, "_leader_intro_visible",
+                          side_effect=lambda *a: (order.append("proof"), True)[1]), \
+             patch.object(civ6_play, "click_at") as click:
+            self.assertTrue(civ6_play.advance_leader_intro(
+                bounds, "LEADER_TRAJAN", Path(temporary), 1, retries=3,
+                poll_s=0.01, board_ready=lambda: True, relay_s=0.01))
+        click.assert_called_once()
+        self.assertEqual(order[:2], ["shot", "proof"],
+                         "a visible card is still clicked even with the board relayed")
+
     def test_live_run_holds_macos_awake_for_its_process_lifetime(self) -> None:
         with patch.object(civ6_play.sys, "platform", "darwin"), \
              patch.object(civ6_play.os, "getpid", return_value=4321), \
@@ -1784,6 +1848,39 @@ class Civ6PlayTest(unittest.TestCase):
             civ6_play.seat_matches_requested(event, args(leader=None)),
             (True, True, True),
         )
+
+    def test_a_seat_with_the_wrong_counts_for_its_size_is_refused(self) -> None:
+        """Static map defaults skip the UI's per-size count reset; the seat
+        must still carry the size's own majors and city-states
+        (`MapSizes.xml`: Small 6/9, Tiny 4/6)."""
+        event = {
+            "difficulty": "DIFFICULTY_SETTLER", "size": "MAPSIZE_SMALL",
+            "speed": "GAMESPEED_ONLINE", "map": "Continents.lua",
+            "leader": "LEADER_TRAJAN", "modes": [],
+            "ruleset": "RULESET_EXPANSION_2", "players": 6, "city_states": 9,
+        }
+        self.assertEqual(civ6_play.setup_drift(event, args()), [])
+        self.assertEqual(civ6_play.seat_matches_requested(event, args()), (True, True, True))
+        tiny_with_small_counts = {**event, "size": "MAPSIZE_TINY"}
+        self.assertEqual(civ6_play.setup_drift(tiny_with_small_counts, args(map_size="MAPSIZE_TINY")),
+                         ["players 6 != 4", "city_states 9 != 6"])
+        self.assertEqual(
+            civ6_play.seat_matches_requested(tiny_with_small_counts, args(map_size="MAPSIZE_TINY")),
+            (False, True, True))
+        self.assertEqual(civ6_play.setup_drift({**event, "city_states": 12}, args()),
+                         ["city_states 12 != 9"])
+
+    def test_unreported_counts_are_unverified_not_wrong(self) -> None:
+        event = {"size": "MAPSIZE_TINY"}
+        self.assertEqual(civ6_play.setup_drift(event, args()), [])
+        self.assertEqual(civ6_play.setup_drift({**event, "players": None, "city_states": "?"}, args()), [])
+        self.assertEqual(civ6_play.setup_drift({**event, "players": True}, args()), [])
+        self.assertEqual(civ6_play.setup_drift({"size": "MAPSIZE_UNKNOWN", "players": 99}, args()), [])
+
+    def test_the_live_lane_seat_passes(self) -> None:
+        """The seat every 2026-10-04 game reported (G61-G65)."""
+        live = {"players": 4, "size": "MAPSIZE_TINY", "map": "Pangaea.lua", "city_states": 6}
+        self.assertEqual(civ6_play.setup_drift(live, args(map_size="MAPSIZE_TINY")), [])
 
 
 class SetupRowReadbackTest(unittest.TestCase):
@@ -3713,6 +3810,71 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         self.assertEqual(third, [{"text": "Settler"}])
         self.assertEqual(fourth, [{"text": "Settler"}])
 
+    def _window_shot(self, folder: Path) -> Path:
+        from PIL import Image
+        shot = folder / "setup.png"
+        Image.new("RGB", (3456, 2234), (10, 10, 10)).save(shot)
+        return shot
+
+    def test_a_window_read_maps_its_boxes_back_to_the_full_capture(self) -> None:
+        seen = {}
+
+        def recognize(path):
+            from PIL import Image
+            seen["path"] = Path(path)
+            seen["size"] = Image.open(path).size
+            return [{"text": "Single Player", "x": 0.5, "y": 0.5, "width": 0.1, "height": 0.1}]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = self._window_shot(Path(temporary))
+            with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+                 patch.object(civ6_play.macos_ocr, "recognize", side_effect=recognize):
+                observations = civ6_play.recognize_once(shot, (0, 33, 864, 542))
+        # Window +8 pt each side at 2x: x 0..1744, y 50..1166 of 3456x2234.
+        self.assertEqual(seen["size"], (1744, 1116))
+        self.assertNotEqual(seen["path"], shot)
+        self.assertFalse(seen["path"].exists(), "the temporary crop is removed")
+        box = observations[0]
+        self.assertEqual(box["text"], "Single Player")
+        self.assertAlmostEqual(box["x"], (0.5 * 1744 + 0) / 3456)
+        self.assertAlmostEqual(box["y"], (0.5 * 1116 + 50) / 2234)
+        self.assertAlmostEqual(box["width"], 0.1 * 1744 / 3456)
+        self.assertAlmostEqual(box["height"], 0.1 * 1116 / 2234)
+
+    def test_window_and_full_reads_are_cached_apart(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = self._window_shot(Path(temporary))
+            with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+                 patch.object(civ6_play.macos_ocr, "recognize",
+                              return_value=[{"text": "x", "x": 0, "y": 0, "width": 0, "height": 0}]
+                              ) as recognize:
+                civ6_play.recognize_once(shot)
+                civ6_play.recognize_once(shot, (0, 33, 864, 542))
+                civ6_play.recognize_once(shot)
+                civ6_play.recognize_once(shot, (0, 33, 864, 542))
+        self.assertEqual(recognize.call_count, 2)
+
+    def test_an_unreadable_image_falls_back_to_the_full_capture(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = Path(temporary) / "broken.png"
+            shot.write_bytes(b"not a png")
+            with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+                 patch.object(civ6_play.macos_ocr, "recognize",
+                              return_value=[{"text": "Create Game"}]) as recognize:
+                observations = civ6_play.recognize_once(shot, (0, 33, 864, 542))
+        recognize.assert_called_once_with(shot)
+        self.assertEqual(observations, [{"text": "Create Game"}])
+
+    def test_the_setup_readers_read_the_window_only(self) -> None:
+        import inspect
+        for fn, call in ((civ6_play._setup_current_value, "recognize_once(path, bounds)"),
+                         (civ6_play._setup_current_leader, "recognize_once(path, bounds)"),
+                         (civ6_play._map_picker_labels, "_menu_ocr_observations(path, bounds)"),
+                         (civ6_play._observed_label_points, "_menu_ocr_observations(path, bounds)")):
+            self.assertIn(call, inspect.getsource(fn), fn.__name__)
+        # Recovery's menu check keeps the whole desktop (no window bounds there).
+        self.assertIn("_menu_ocr_observations(path)", inspect.getsource(civ6_play._main_menu_visible))
+
     def test_a_missing_capture_is_not_cached_and_still_raises(self) -> None:
         with patch.object(civ6_play.macos_ocr, "recognize",
                           side_effect=OSError("no such file")):
@@ -4382,8 +4544,8 @@ class VSyncABSwitchTest(unittest.TestCase):
         self.assertIn("tonumber(cfg.VSyncABTurns)", lua)
 
 
-class TheLegalSplashIsNotTheMenu(unittest.TestCase):
-    """The copyright splash's text lines must not be clicked as menu rows."""
+class TheIntroScreensAreNotTheMenu(unittest.TestCase):
+    """An intro screen's text -- logo or legal splash -- must not be clicked as menu rows."""
 
     SPLASH = [
         {"text": "SID MEIER'S"}, {"text": "CIVILIZATION VI"},
@@ -4391,34 +4553,144 @@ class TheLegalSplashIsNotTheMenu(unittest.TestCase):
         {"text": "© 1997 – 2020 by RAD Game Tools, Inc. Uses Granny Animation."},
         {"text": "2006- 2020 Audiokinetic Inc. All rights reserved."},
     ]
+    # G67 civvis-20261004T171152Z `menu-attempt1.png`: read as six menu rows.
+    LOGO = [{"text": "FIRAXIS"}, {"text": "GAMES"}]
     MENU = [
         {"text": "Single Player"}, {"text": "Multiplayer"}, {"text": "Game Options"},
         {"text": "Additional Content"}, {"text": "Tutorial"}, {"text": "Exit to Desktop"},
+    ]
+    # G67 `menu-attempt2.png`: the promo banner reads beside the rows.
+    PROMO_MENU = [
+        {"text": "SID MEIER'S"}, {"text": "CIVILIZATION VII"}, {"text": "PLAY AS"},
+        {"text": "NAPOLEON"}, {"text": "LEARN MORE"}, {"text": "• Multiplayer"},
+        {"text": "Game Options"}, {"text": "Benchmark"},
     ]
 
     def _visible(self, observations) -> bool:
         with mock.patch.object(civ6_play, "_menu_crop_ocr",
                                lambda _path, _bounds: observations):
-            return civ6_play._legal_splash_visible(Path("menu-attempt1.png"),
+            return civ6_play._intro_screen_visible(Path("menu-attempt1.png"),
                                                    (0, 33, 864, 542))
 
-    def test_the_splash_is_recognised_by_its_own_words(self) -> None:
+    def test_the_legal_splash_is_an_intro_screen(self) -> None:
         self.assertTrue(self._visible(self.SPLASH))
 
-    def test_the_main_menu_is_not_the_splash(self) -> None:
+    def test_the_firaxis_logo_is_an_intro_screen(self) -> None:
+        self.assertTrue(self._visible(self.LOGO))
+
+    def test_the_main_menu_is_not_an_intro_screen(self) -> None:
         self.assertFalse(self._visible(self.MENU))
 
-    def test_an_unreadable_frame_is_not_the_splash(self) -> None:
+    def test_a_menu_with_its_promo_banner_is_not_an_intro_screen(self) -> None:
+        self.assertFalse(self._visible(self.PROMO_MENU))
+
+    def test_an_unreadable_frame_is_not_an_intro_screen(self) -> None:
+        # Nothing read keeps the row fallback a host without vision needs.
         self.assertFalse(self._visible([]))
 
-    def test_the_menu_read_waits_out_the_splash_before_trusting_rows(self) -> None:
+    def test_the_menu_read_waits_out_an_intro_before_trusting_rows(self) -> None:
         import inspect
         source = inspect.getsource(civ6_play.bootstrap_game)
         reader = source.split("def read_top_menu():")[1].split("top = _poll_screen(read_top_menu)")[0]
-        self.assertIn("if point is None and _legal_splash_visible(menushot, bounds):", reader)
+        self.assertIn("if point is None and _intro_screen_visible(menushot, bounds):", reader)
         # Checked only when the label read failed, and before the row
-        # fallback that mistook the copyright lines for nine menu rows.
-        self.assertLess(reader.index("_legal_splash_visible(menushot, bounds)"),
+        # fallback that mistook the splash's lines and the logo for rows.
+        self.assertLess(reader.index("_intro_screen_visible(menushot, bounds)"),
                         reader.index("vision.menu_rows(menushot, bounds)"))
-        splash = reader.split("_legal_splash_visible(menushot, bounds):")[1].split("\n")[1]
-        self.assertEqual(splash.strip(), "return None")
+        intro = reader.split("_intro_screen_visible(menushot, bounds):")[1].split("\n")[1]
+        self.assertEqual(intro.strip(), "return None")
+
+
+class DesktopRescueRunsOffTheRelay(unittest.TestCase):
+    """A desktop rescue must never hold the event relay (`record`)."""
+
+    def test_submit_returns_while_a_rescue_is_still_running(self) -> None:
+        import threading as _threading
+        queue = civ6_play.DesktopRescueQueue()
+        release = _threading.Event()
+        started = _threading.Event()
+
+        def slow_rescue():
+            started.set()
+            release.wait(5.0)
+
+        before = time.monotonic()
+        self.assertTrue(queue.submit("DiplomacyActionView", slow_rescue))
+        self.assertLess(time.monotonic() - before, 0.5, "submit must not wait for the rescue")
+        self.assertTrue(started.wait(2.0))
+        # The shim re-asks while its screen is up; one rescue per screen is enough.
+        self.assertFalse(queue.submit("DiplomacyActionView", lambda: None))
+        ran = []
+        self.assertTrue(queue.submit("DiplomacyDealView", lambda: ran.append("deal")))
+        release.set()
+        self.assertTrue(queue.drain(5.0))
+        self.assertEqual(ran, ["deal"], "a different screen queues behind the running one")
+        self.assertTrue(queue.submit("DiplomacyActionView", lambda: ran.append("again")))
+        self.assertTrue(queue.drain(5.0))
+        self.assertEqual(ran, ["deal", "again"], "a finished screen can be rescued again")
+        queue.close(1.0)
+
+    def test_a_failing_rescue_does_not_stop_the_worker(self) -> None:
+        queue = civ6_play.DesktopRescueQueue()
+
+        def broken():
+            raise RuntimeError("capture helper exploded")
+
+        ran = []
+        with mock.patch("sys.stderr", new=io.StringIO()):
+            self.assertTrue(queue.submit("DiplomacyActionView", broken))
+            self.assertTrue(queue.drain(5.0))
+        self.assertTrue(queue.submit("DiplomacyActionView", lambda: ran.append(1)))
+        self.assertTrue(queue.drain(5.0))
+        self.assertEqual(ran, [1])
+        queue.close(1.0)
+
+    def test_drain_gives_up_at_its_bound(self) -> None:
+        import threading as _threading
+        queue = civ6_play.DesktopRescueQueue()
+        release = _threading.Event()
+        queue.submit("DiplomacyActionView", lambda: release.wait(5.0))
+        self.assertFalse(queue.drain(0.1))
+        release.set()
+        self.assertTrue(queue.drain(5.0))
+        queue.close(1.0)
+
+    def test_the_relay_only_queues_the_rescue(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play._play)
+        record = source.split("    def record(event: dict) -> None:")[1].split("    def finished(")[0]
+        branch = record.split('elif kind in ("autoclose_desktop", "autoclose_stuck"):')[1]
+        branch = branch.split("        elif kind == ")[0]
+        self.assertIn("desktop_rescues.submit(", branch)
+        for blocking in ("dismiss_visually_confirmed_popup", "screenshot(", "press_escape(",
+                         "capture_pause_reason"):
+            self.assertNotIn(blocking, branch)
+        rescue = source.split("    def desktop_rescue(")[1].split("    def record(")[0]
+        self.assertIn("dismiss_visually_confirmed_popup(diagnostic_path=shot)", rescue)
+        self.assertIn('run_dir / f"autoclose-stuck-turn-{turn}.png"', rescue)
+        # Nothing else drives the desktop while a rescue might be.
+        self.assertIn("desktop_rescues.drain(30.0)\n        dismiss_leader_dialogue()", source)
+        self.assertIn("desktop_rescues.close(30.0)\n    game_stopped = launcher.stop()", source)
+
+
+class TheFinalScreenHoldIsForTheWinClip(unittest.TestCase):
+    """A loss's recording is deleted, so its final screen is held only briefly."""
+
+    def test_a_win_keeps_the_full_hold(self) -> None:
+        self.assertEqual(civ6_play.end_game_hold_seconds(
+            {"kind": "victory", "won": True}, 10.0), 10.0)
+
+    def test_a_loss_or_elimination_is_a_short_look(self) -> None:
+        for outcome in ({"kind": "victory", "won": False}, {"kind": "defeat"}, {}):
+            self.assertEqual(civ6_play.end_game_hold_seconds(outcome, 10.0),
+                             civ6_play.LOSS_SCREEN_HOLD_S)
+
+    def test_a_shorter_request_is_never_lengthened(self) -> None:
+        self.assertEqual(civ6_play.end_game_hold_seconds({"won": False}, 1.0), 1.0)
+
+    def test_the_run_uses_it(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play._play)
+        self.assertIn('hold = end_game_hold_seconds(state["outcome"], args.end_game_seconds)',
+                      source)
+        self.assertIn("time.sleep(hold)", source)

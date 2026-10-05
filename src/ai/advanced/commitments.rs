@@ -798,6 +798,25 @@ impl AdvancedAi {
                     && g.wdist(unit.pos, at) <= CAPTURE_PRESENCE_RADIUS
             })
         };
+        // `capture-waits-on-the-march`: see `advanced/capture_march.rs`.
+        let march_target = self
+            .war_plan
+            .as_ref()
+            .map(|plan| plan.objective_city)
+            .or_else(|| {
+                self.plan
+                    .as_ref()
+                    .filter(|plan| plan.strategy == GrandStrategy::Conquest)
+                    .and_then(|plan| plan.target_city)
+            });
+        let marching = march_target
+            .filter(|cid| self.capture_marching(g, pid, *cid))
+            .map(|cid| (cid, "while its army marches in"));
+        let march_note = |cid: u32| {
+            marching
+                .filter(|(city, _)| *city == cid)
+                .map(|(_, why)| why)
+        };
         let appointed = self.war_plan.as_ref().and_then(|plan| {
             let city = g.cities.get(&plan.objective_city)?;
             let phases_to_go = match plan.phase {
@@ -818,7 +837,10 @@ impl AdvancedAi {
                 declared,
                 present: declared && presence(g, city.pos),
                 waiting: declared
-                    .then(|| self.capture_waits_on_the_train(g, pid, plan.objective_city))
+                    .then(|| {
+                        self.capture_waits_on_the_train(g, pid, plan.objective_city)
+                            .or_else(|| march_note(plan.objective_city))
+                    })
                     .flatten(),
             })
         });
@@ -845,7 +867,10 @@ impl AdvancedAi {
                 declared,
                 present: declared && presence(g, city.pos),
                 waiting: declared
-                    .then(|| self.capture_waits_on_the_train(g, pid, cid))
+                    .then(|| {
+                        self.capture_waits_on_the_train(g, pid, cid)
+                            .or_else(|| march_note(cid))
+                    })
                     .flatten(),
             })
         });
@@ -2269,6 +2294,58 @@ mod tests {
         println!("gene counters:");
         for (key, n) in &gene_counters {
             println!("  {key:<40}{n}");
+        }
+    }
+
+    /// See `advanced/capture_march.rs`: a declared objective whose nearest
+    /// land soldier keeps closing in is not stood down as "nobody went"
+    /// under `capture-waits-on-the-march`.
+    #[test]
+    fn a_marching_army_keeps_its_objective() {
+        for gene in [false, true] {
+            let (mut game, target) = conquest_fixture();
+            let goal = game.cities[&target].pos;
+            let mut ai = AdvancedAi::new();
+            ai.enable_capture_go_or_stand_down();
+            if gene {
+                ai.enable_capture_waits_on_the_march();
+            }
+            aim(&mut ai, &game, target);
+            // A soldier ten tiles out, stepped one tile closer each turn.
+            let start = game
+                .wdisk(goal, 10)
+                .into_iter()
+                .find(|pos| {
+                    game.wdist(*pos, goal) == 10
+                        && !game.rules.is_water(&game.map.tiles[pos])
+                        && game.units_at(*pos).is_empty()
+                })
+                .expect("land ten tiles out");
+            let walker = game.spawn_test_unit("warrior", 0, start);
+            for _ in 0..=CAPTURE_GO_TURNS {
+                ai.reconcile_commitments(&mut game, 0);
+                let here = game.units[&walker].pos;
+                let step = game.nbrs(here).into_iter().find(|pos| {
+                    game.wdist(*pos, goal) < game.wdist(here, goal)
+                        && game.wdist(*pos, goal) > CAPTURE_PRESENCE_RADIUS
+                        && game
+                            .map
+                            .tiles
+                            .get(pos)
+                            .is_some_and(|tile| !game.rules.is_water(tile))
+                        && game.units_at(*pos).is_empty()
+                        && game.city_at(*pos).is_none()
+                });
+                if let Some(step) = step {
+                    game.relocate(walker, step);
+                }
+                game.turn += 1;
+            }
+            assert_eq!(
+                ai.capture_stood_down.contains_key(&target),
+                !gene,
+                "gene {gene}: a marching army is not 'nobody went'"
+            );
         }
     }
 }

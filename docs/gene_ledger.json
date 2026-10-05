@@ -2145,6 +2145,15 @@
           "border-parity-3": null
         }
       },
+      "breaker-supply-scales": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "breaker-supply-scales": null,
+          "breaker-supply-scales-2": null
+        }
+      },
       "builder-before-the-army": {
         "rule_on": [],
         "head": null,

@@ -1045,6 +1045,19 @@ fn siege_posts(
     force: &[u32],
     taker: Option<u32>,
 ) -> BTreeMap<u32, Pos> {
+    siege_posts_keeping(g, pid, city, force, taker, &BTreeMap::new())
+}
+
+/// [`siege_posts`], keeping each unit still walking in on last turn's post
+/// (`previous`) while that post still serves.
+fn siege_posts_keeping(
+    g: &Game,
+    pid: usize,
+    city: &CityView,
+    force: &[u32],
+    taker: Option<u32>,
+    previous: &BTreeMap<u32, Pos>,
+) -> BTreeMap<u32, Pos> {
     let mut posts: BTreeMap<u32, Pos> = BTreeMap::new();
     let mut ring_taken: BTreeSet<Pos> = BTreeSet::new();
     let open_land = |pos: Pos| {
@@ -1082,6 +1095,24 @@ fn siege_posts(
     );
     for uid in order {
         let here = g.units[&uid].pos;
+        // A unit still walking in keeps last turn's post while it stays free
+        // and reachable. Redrawn spread-first every turn, the post swung
+        // across the city as the ring filled and emptied: live King
+        // civvis-20261004T144618Z (game 62) walked the Warrior carrying the
+        // Siege Tower four, seven, four, seven tiles from Yaroslavl between
+        // turns 89 and 95 (a frame-0 trace at turn 91 shows post_step taking
+        // it from four tiles out to six), and the walls fell from 100 to 84
+        // in twelve turns of Reduce.
+        if let Some(kept) = previous.get(&uid).copied().filter(|pos| {
+            ring_free.contains(pos)
+                && !ring_taken.contains(pos)
+                && g.unit_can_traverse(uid, *pos)
+                && siege_route_step(g, pid, uid, *pos, city.pos).is_some()
+        }) {
+            posts.insert(uid, kept);
+            ring_taken.insert(kept);
+            continue;
+        }
         let mut candidates: Vec<Pos> = ring_free
             .iter()
             .copied()
@@ -1146,6 +1177,23 @@ fn siege_posts(
         // range-2 tile had a line to it, and the guns stood three and four
         // tiles out for 22 turns of Invest while the walls went 164 -> 200.
         // An adjacent tile always has the line.
+        // As for melee: last turn's firing post while it still serves.
+        let kept = previous.get(&uid).copied().filter(|pos| {
+            *pos != here
+                && g.wdist(*pos, city.pos) <= range
+                && Some(*pos) != corridor
+                && !fire_taken.contains(pos)
+                && !ring_taken.contains(pos)
+                && open_land(*pos)
+                && g.unit_can_traverse(uid, *pos)
+                && g.unit_has_line_of_sight_from(uid, *pos, city.pos)
+                && g.unit_ids_at(*pos).is_empty()
+        });
+        if let Some(pos) = kept {
+            posts.insert(uid, pos);
+            fire_taken.insert(pos);
+            continue;
+        }
         let best = (1..=range).rev().find_map(|distance| {
             g.wring(city.pos, distance)
                 .into_iter()
@@ -1177,6 +1225,54 @@ fn siege_posts(
         }
     }
     posts
+}
+
+/// `siege-counts-posted-shooters`: does this shooter put its shot on the
+/// walls? Only from a firing post `siege_posts` can give it — the range band
+/// holds few free tiles, and a shooter with none fortifies where it stands
+/// (live King civvis-20261004T122037Z, game 62: archer u43 three tiles from
+/// Yaroslavl with range 2) — and only with no hostile unit within its reach of
+/// that post, since `siege_shooter_step` shoots a unit before the city while
+/// the walls stand.
+fn shooter_hits_walls(g: &Game, pid: usize, uid: u32, posts: &BTreeMap<u32, Pos>) -> bool {
+    let Some(post) = posts.get(&uid).copied() else {
+        return false;
+    };
+    let range = g.unit_attack_range(uid).max(1);
+    !g.wdisk(post, range)
+        .into_iter()
+        .any(|pos| pos != post && strongest_hostile_at(g, pid, pos).is_some())
+}
+
+/// A land shooter of the train: what [`posted_shooters`] gives posts to.
+pub(super) fn is_siege_shooter(g: &Game, uid: u32) -> bool {
+    arm_of(g, uid) == Arm::Shooter
+}
+
+/// `siege-counts-posted-shooters`: the shooters of `force` that hold a firing
+/// post on `cid` (`.0`), and those of them whose shot goes to the walls
+/// (`.1`). See [`shooter_hits_walls`].
+pub(super) fn posted_shooters(
+    g: &Game,
+    pid: usize,
+    cid: u32,
+    force: &[u32],
+) -> (BTreeSet<u32>, BTreeSet<u32>) {
+    let Some(city) = CityView::of(g, cid) else {
+        return (BTreeSet::new(), BTreeSet::new());
+    };
+    let posts = siege_posts(g, pid, &city, force, None);
+    let posted: BTreeSet<u32> = force
+        .iter()
+        .copied()
+        .filter(|uid| arm_of(g, *uid) == Arm::Shooter && posts.contains_key(uid))
+        .collect();
+    let walls = posted
+        .iter()
+        .copied()
+        .filter(|uid| shooter_hits_walls(g, pid, *uid, &posts))
+        .collect();
+    (posted, walls)
 }
 
 impl AdvancedAi {
@@ -1510,6 +1606,10 @@ impl AdvancedAi {
             horizon: SHOOTER_BREACH_TURNS,
             ..BreachReading::default()
         };
+        // `siege-counts-posted-shooters`: see `shooter_hits_walls`.
+        let wall_shooters = self
+            .siege_counts_posted_shooters
+            .then(|| posted_shooters(g, pid, city.id, force).1);
         let mut users = false;
         for uid in force {
             let Some(unit) = g.units.get(uid) else {
@@ -1522,7 +1622,9 @@ impl AdvancedAi {
                 Arm::Siege if self.siege_member_fit(g, *uid) => reading.guns += 1,
                 Arm::Siege => reading.wounded_guns += 1,
                 Arm::Shooter if self.siege_member_fit(g, *uid) => {
-                    reading.shooter_walls += wall_damage_per_shot(g, *uid, city.id);
+                    if wall_shooters.as_ref().is_none_or(|shooters| shooters.contains(uid)) {
+                        reading.shooter_walls += wall_damage_per_shot(g, *uid, city.id);
+                    }
                 }
                 Arm::Melee if breach_support_user(g, *uid) => {
                     users = true;
@@ -1942,7 +2044,7 @@ impl AdvancedAi {
             stage,
             SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take
         ) {
-            siege_posts(g, pid, &city, &force, taker)
+            siege_posts_keeping(g, pid, &city, &force, taker, &record.posts)
         } else {
             BTreeMap::new()
         };

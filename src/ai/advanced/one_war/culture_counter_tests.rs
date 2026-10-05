@@ -99,3 +99,54 @@ fn a_culture_race_behind_another_lane_is_still_countered() {
     assert!(ai.culture_lane_threat(&g, 1));
     assert!(ai.domination_counter_target(&g, 0, 1));
 }
+
+/// See `culture_embargo_target`: with the gene, a culture rival at match
+/// point whose cities we have not found is declared on anyway; without
+/// the gene it is not (Maya, game 64).
+#[test]
+fn an_unlocated_culture_rival_is_declared_on_under_the_gene() {
+    for gene in [false, true] {
+        let (mut g, mut ai, plan) = fixture(4);
+        for city in g.player_city_ids(1) {
+            g.cities.remove(&city);
+        }
+        assert!(g.player_city_ids(1).is_empty() && g.players[1].alive);
+        if gene {
+            ai.enable_culture_counter_declares();
+        }
+        assert_eq!(ai.culture_embargo_target(&g, 0).is_some(), gene);
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        assert_eq!(g.is_at_war(0, 1), gene, "gene {gene}");
+    }
+}
+
+/// See `strike_when_staged`: a denouncement opening becomes the surprise war
+/// for a staged Domination army at twice the target's power, only with the
+/// gene, only when staged, and only over the ratio.
+#[test]
+fn a_staged_army_strikes_instead_of_denouncing_under_the_gene() {
+    let (g, mut ai, _) = fixture(4);
+    let denounce = crate::game::Action::Denounce { player: 1 };
+    assert!(g.military_power(0) >= 2.0 * g.military_power(1));
+    assert_eq!(
+        ai.strike_when_staged(&g, 0, 1, &denounce, true),
+        None,
+        "off"
+    );
+    ai.enable_domination_strikes_when_staged();
+    assert_eq!(
+        ai.strike_when_staged(&g, 0, 1, &denounce, true),
+        Some(crate::game::Action::DeclareWar { player: 1 })
+    );
+    assert_eq!(
+        ai.strike_when_staged(&g, 0, 1, &denounce, false),
+        None,
+        "not staged"
+    );
+    let (weak, _, _) = fixture(1);
+    assert_eq!(
+        ai.strike_when_staged(&weak, 0, 1, &denounce, true),
+        None,
+        "under the ratio"
+    );
+}

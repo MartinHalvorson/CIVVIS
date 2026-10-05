@@ -166,6 +166,31 @@ impl AdvancedAi {
             })
     }
 
+    /// `sanctuary-yields-a-held-queue`: a city whose queue another rule
+    /// holds is not taken for the sanctuary. Walls or a defensive repair at
+    /// the head, a land defender while the city shows siege evidence, or a
+    /// district that already holds production. Live King
+    /// 2026-10-04T205431Z: Bogotá swapped its Holy Site for a Great Person's
+    /// Theater Square every frame from turn 251 to 254, and T212049Z:
+    /// Guayaquil's Holy Site and its walls traded places five times from
+    /// turn 148 to 152, so neither finished.
+    pub(super) fn sanctuary_queue_held(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(head) = g.cities[&cid].queue.first() else {
+            return false;
+        };
+        if Self::sanctuary_item(g, head) {
+            return false;
+        }
+        match head {
+            Item::Unit { .. } | Item::Formation { .. } => {
+                Self::active_queue_answers_siege(g, head)
+                    && self.base.besieged_city_item(g, pid, cid).is_some()
+            }
+            Item::District { .. } => g.item_invested_production(cid, head) > 0.0,
+            _ => Self::active_queue_answers_siege(g, head),
+        }
+    }
+
     fn sanctuary_item(g: &Game, item: &Item) -> bool {
         match item {
             Item::District { district, .. } => g.district_family(*district).as_str() == "holy_site",
@@ -206,6 +231,8 @@ impl AdvancedAi {
             .into_iter()
             .filter(|cid| {
                 Some(*cid) != threatened
+                    && !(self.sanctuary_yields_a_held_queue
+                        && self.sanctuary_queue_held(g, pid, *cid))
                     && g.city_religion(&g.cities[cid]).is_some_and(|faith| {
                         if let Some(own) = founded {
                             faith == own

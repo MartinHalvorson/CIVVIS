@@ -66,6 +66,167 @@ class EventLogBridgeTest(unittest.TestCase):
             )
 
 
+class HeldLastRecordTest(unittest.TestCase):
+    """`Automation.Log` writes a record's newline only when the next record comes.
+
+    The last record logged -- a replan frame's `state` -- used to wait as an
+    unterminated tail until something else was logged (~0.2 s). A prefixed tail
+    that parses whole is the complete record: relay it now, once.
+    """
+
+    def _tail(self, root: Path) -> "tuple[watch.LogTail, Path]":
+        log = root / "Automation.log"
+        log.write_text("")
+        return watch.LogTail(log), log
+
+    def _append(self, log: Path, text: str) -> None:
+        with log.open("a") as output:
+            output.write(text)
+
+    def test_a_complete_record_without_its_newline_is_relayed_at_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tail, log = self._tail(Path(temporary))
+            state = {"kind": "state", "turn": 7, "frame": 1}
+            self._append(log, line({"kind": "replan_frame", "turn": 7}) + PREFIX + json.dumps(state))
+            self.assertEqual([e["kind"] for e in tail.poll()], ["replan_frame", "state"])
+            self.assertEqual(tail.poll(), [], "nothing new, nothing relayed")
+            self._append(log, "\n")
+            self.assertEqual(tail.poll(), [], "its newline does not relay it twice")
+            self._append(log, line({"kind": "await", "polls": 1}))
+            self.assertEqual([e["kind"] for e in tail.poll()], ["await"])
+
+    def test_the_newline_and_the_next_record_together_relay_only_the_next(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tail, log = self._tail(Path(temporary))
+            self._append(log, PREFIX + json.dumps({"kind": "state", "turn": 1}))
+            self.assertEqual(len(tail.poll()), 1)
+            self._append(log, "\n" + PREFIX + json.dumps({"kind": "export_timing", "turn": 1}))
+            self.assertEqual([e["kind"] for e in tail.poll()], ["export_timing"],
+                             "the next held record is relayed whole too")
+
+    def test_a_half_written_record_still_waits(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tail, log = self._tail(Path(temporary))
+            payload = PREFIX + json.dumps({"kind": "state", "turn": 2, "units": [{"id": 1}]})
+            self._append(log, payload[:payload.index("}") + 1])   # a nested object closed
+            self.assertEqual(tail.poll(), [], "a nested brace is not the record's end")
+            self._append(log, payload[payload.index("}") + 1:])
+            self.assertEqual(len(tail.poll()), 1)
+            self._append(log, "\n")
+            self.assertEqual(tail.poll(), [])
+
+    def test_a_tail_that_grows_after_relay_is_never_relayed_twice(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tail, log = self._tail(Path(temporary))
+            self._append(log, PREFIX + json.dumps({"kind": "await", "polls": 1}))
+            self.assertEqual(len(tail.poll()), 1)
+            self._append(log, " trailing")
+            self.assertEqual(tail.poll(), [])
+            self._append(log, "\n")
+            self.assertEqual(tail.poll(), [])
+
+    def test_only_objects_are_relayed_from_the_tail(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tail, log = self._tail(Path(temporary))
+            self._append(log, PREFIX + "12")
+            self.assertEqual(tail.poll(), [])
+            self._append(log, "3\n")
+            self.assertEqual(tail.poll(), [], "a non-object record is not an event")
+
+    def test_a_truncated_log_forgets_what_it_relayed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tail, log = self._tail(Path(temporary))
+            record = PREFIX + json.dumps({"kind": "loaded", "version": 2})
+            self._append(log, line({"kind": "seat"}) + record)
+            self.assertEqual(len(tail.poll()), 2)
+            log.write_text(record)   # a new game rewrote the log from the start
+            self.assertEqual([e["kind"] for e in tail.poll()], ["loaded"])
+
+    def test_the_bridge_relays_a_held_record_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            log = root / "Automation.log"
+            event = {"kind": "state", "run": "live", "turn": 3}
+            log.write_text(PREFIX + json.dumps(event))
+            bridge = EventLogBridge(root / "run", tag="live", log_path=log)
+            self.assertEqual(bridge.pump(), 1)
+            with log.open("a") as output:
+                output.write("\n")
+            self.assertEqual(bridge.pump(), 0)
+
+
+class GameLivenessTest(unittest.TestCase):
+    """The relay asks `ps` only to (re)list; known pids are checked by syscall."""
+
+    def _liveness(self, listings, running):
+        clock = {"t": 0.0}
+        calls = []
+
+        def game_pids():
+            calls.append(clock["t"])
+            return listings.pop(0) if listings else []
+
+        def kill(pid, signal):
+            outcome = running.get(pid, ProcessLookupError)
+            if outcome is not True:
+                raise outcome()
+
+        live = watch.GameLiveness(relist_s=10.0, clock=lambda: clock["t"])
+        return live, clock, calls, game_pids, kill
+
+    def test_a_known_running_pid_needs_no_ps(self) -> None:
+        live, clock, calls, game_pids, kill = self._liveness([[4242], [4242]], {4242: True})
+        with patch.object(watch.env, "game_pids", game_pids), \
+             patch.object(watch.os, "kill", kill):
+            for step in range(44):
+                clock["t"] = step * 0.25
+                self.assertTrue(live.alive())
+        self.assertEqual(calls, [0.0, 0.0 + 10.0], "one listing, one 10 s refresh")
+
+    def test_an_exit_is_confirmed_by_a_real_listing(self) -> None:
+        running = {4242: True}
+        live, clock, calls, game_pids, kill = self._liveness([[4242], []], running)
+        with patch.object(watch.env, "game_pids", game_pids), \
+             patch.object(watch.os, "kill", kill):
+            self.assertTrue(live.alive())
+            del running[4242]
+            clock["t"] = 0.25
+            self.assertFalse(live.alive(), "a gone pid is re-listed, and empty is an exit")
+        self.assertEqual(len(calls), 2)
+
+    def test_a_restarted_game_is_found_by_the_relisting(self) -> None:
+        running = {4242: True}
+        live, clock, calls, game_pids, kill = self._liveness([[4242], [5151]], running)
+        with patch.object(watch.env, "game_pids", game_pids), \
+             patch.object(watch.os, "kill", kill):
+            self.assertTrue(live.alive())
+            del running[4242]; running[5151] = True
+            clock["t"] = 0.25
+            self.assertTrue(live.alive())
+            clock["t"] = 0.5
+            self.assertTrue(live.alive())
+        self.assertEqual(len(calls), 2, "the new pid is then checked by syscall")
+
+    def test_a_pid_owned_by_another_user_is_running(self) -> None:
+        live, clock, calls, game_pids, kill = self._liveness([[7]], {7: PermissionError})
+        with patch.object(watch.env, "game_pids", game_pids), \
+             patch.object(watch.os, "kill", kill):
+            self.assertTrue(live.alive())
+            clock["t"] = 1.0
+            self.assertTrue(live.alive())
+        self.assertEqual(len(calls), 1)
+
+    def test_a_timed_out_listing_keeps_the_last_answer(self) -> None:
+        # env.game_pids returns the last known pids when `ps` times out; the
+        # liveness check passes that through rather than calling it an exit.
+        live, clock, calls, game_pids, kill = self._liveness([[4242], [4242]], {})
+        with patch.object(watch.env, "game_pids", game_pids), \
+             patch.object(watch.os, "kill", kill):
+            self.assertTrue(live.alive())
+            clock["t"] = 0.25
+            self.assertTrue(live.alive())
+
+
 class FollowTest(unittest.TestCase):
     def test_locked_interval_does_not_consume_timeout(self) -> None:
         class Tail:
@@ -95,18 +256,23 @@ class RelayCadenceTest(unittest.TestCase):
 
     def _run(self, tail, **kw):
         now = {"t": 0.0}
-        pids = {"calls": 0}
+        passes = {"calls": 0}
+        self.ps_calls = 0
 
         def game_pids():
-            pids["calls"] += 1
+            self.ps_calls += 1
             return [1]
+
+        def each_poll():
+            passes["calls"] += 1
 
         with patch.object(watch.time, "monotonic", lambda: now["t"]), \
              patch.object(watch.time, "sleep",
                           lambda s: now.__setitem__("t", now["t"] + s)), \
              patch.object(watch.env, "game_pids", game_pids):
-            reason = watch.follow(tail, on_event=lambda _e: None, **kw)
-        return reason, now["t"], pids["calls"]
+            reason = watch.follow(tail, on_event=lambda _e: None,
+                                  each_poll=each_poll, **kw)
+        return reason, now["t"], passes["calls"]
 
     def test_a_board_written_mid_sleep_is_relayed_before_the_next_pass(self) -> None:
         class Tail:
@@ -139,6 +305,8 @@ class RelayCadenceTest(unittest.TestCase):
         self.assertEqual(upkeep, 4)
         # Ten reads per half-second sleep plus one per pass.
         self.assertGreaterEqual(Tail.polls, 40)
+        # The game's pid is re-checked by syscall; `ps` lists once per 10 s.
+        self.assertEqual(self.ps_calls, 1)
 
     def test_without_read_s_the_loop_sleeps_once_per_pass(self) -> None:
         class Tail:

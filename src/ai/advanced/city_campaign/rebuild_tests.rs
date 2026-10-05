@@ -213,3 +213,40 @@ fn completed_foothold_does_not_end_the_active_domination_front() {
         "only the active Domination front inherits the longer war"
     );
 }
+
+/// See `unseen_prey`: under the gene, a Domination campaign that took the
+/// last city it could see of a rival it outguns does not sue for peace.
+#[test]
+fn a_beaten_rival_in_the_fog_is_not_offered_peace_under_the_gene() {
+    let offered = |gene: bool| {
+        let mut game = board(&[(0, (6, 12)), (1, (17, 15)), (2, (24, 12))]);
+        let border = game.city_at((17, 15)).unwrap();
+        for _ in 0..3 {
+            game.spawn_test_unit("swordsman", 0, (7, 12));
+        }
+        let mut ai = campaign(&board(&[
+            (0, (6, 12)),
+            (1, (14, 12)),
+            (1, (17, 15)),
+            (2, (24, 12)),
+        ]));
+        ai.campaign.as_mut().unwrap().cities = vec![border];
+        ai.plan.as_mut().unwrap().target_city = Some(border);
+        ai.victory_target = Some(super::super::VictoryTarget::Domination);
+        ai.enable_one_war_at_a_time();
+        if gene {
+            ai.enable_peace_waits_for_unseen_prey();
+        }
+        game.cities.get_mut(&border).unwrap().owner = 0;
+        ai.maintain_city_campaign(&mut game, 0);
+        assert_eq!(ai.campaign.as_ref().unwrap().taken, 1);
+        ai.one_war_observe(&game, 0);
+        assert_eq!(ai.one_war_front(), None, "no city of the rival is known");
+        ai.city_campaign_diplomacy(&mut game, 0);
+        game.pending_deals
+            .iter()
+            .any(|deal| deal.from == 0 && deal.to == 1 && deal.peace)
+    };
+    assert!(offered(false), "off, the campaign sues for peace");
+    assert!(!offered(true), "the fogged rival keeps its war");
+}

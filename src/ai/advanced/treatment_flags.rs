@@ -5187,6 +5187,118 @@ impl AdvancedAi {
         self.breaker_before_the_war = false;
     }
 
+    /// Opt-in gene `second-front-kept-when-winning`; see
+    /// [`Self::second_front_kept_when_winning`].
+    pub fn enable_second_front_kept_when_winning(&mut self) {
+        self.second_front_kept_when_winning = true;
+    }
+
+    /// The twin of `enable_second_front_kept_when_winning`.
+    pub fn disable_second_front_kept_when_winning(&mut self) {
+        self.second_front_kept_when_winning = false;
+    }
+
+    /// Opt-in gene `peace-waits-for-unseen-prey`; see
+    /// [`Self::peace_waits_for_unseen_prey`].
+    pub fn enable_peace_waits_for_unseen_prey(&mut self) {
+        self.peace_waits_for_unseen_prey = true;
+    }
+
+    /// The twin of `enable_peace_waits_for_unseen_prey`.
+    pub fn disable_peace_waits_for_unseen_prey(&mut self) {
+        self.peace_waits_for_unseen_prey = false;
+    }
+
+    /// Opt-in gene `front-finishes-its-siege`; see
+    /// [`Self::front_finishes_its_siege`].
+    pub fn enable_front_finishes_its_siege(&mut self) {
+        self.front_finishes_its_siege = true;
+    }
+
+    /// The twin of `enable_front_finishes_its_siege`.
+    pub fn disable_front_finishes_its_siege(&mut self) {
+        self.front_finishes_its_siege = false;
+    }
+
+    /// Opt-in gene `peace-waits-for-the-foothold`; see
+    /// [`Self::peace_waits_for_the_foothold`].
+    pub fn enable_peace_waits_for_the_foothold(&mut self) {
+        self.peace_waits_for_the_foothold = true;
+    }
+
+    /// The twin of `enable_peace_waits_for_the_foothold`.
+    pub fn disable_peace_waits_for_the_foothold(&mut self) {
+        self.peace_waits_for_the_foothold = false;
+    }
+
+    /// Opt-in gene `sanctuary-yields-a-held-queue`; see
+    /// [`Self::sanctuary_yields_a_held_queue`].
+    pub fn enable_sanctuary_yields_a_held_queue(&mut self) {
+        self.sanctuary_yields_a_held_queue = true;
+    }
+
+    /// The twin of `enable_sanctuary_yields_a_held_queue`.
+    pub fn disable_sanctuary_yields_a_held_queue(&mut self) {
+        self.sanctuary_yields_a_held_queue = false;
+    }
+
+    /// Opt-in gene `prophet-race-takes-a-district-slot`; see
+    /// [`Self::prophet_race_takes_a_district_slot`].
+    pub fn enable_prophet_race_takes_a_district_slot(&mut self) {
+        self.prophet_race_takes_a_district_slot = true;
+        self.base.prophet_race_takes_a_district_slot = true;
+    }
+
+    /// The twin of `enable_prophet_race_takes_a_district_slot`.
+    pub fn disable_prophet_race_takes_a_district_slot(&mut self) {
+        self.prophet_race_takes_a_district_slot = false;
+        self.base.prophet_race_takes_a_district_slot = false;
+    }
+
+    /// Opt-in gene `found-against-a-rival-faith`; see
+    /// [`Self::found_against_a_rival_faith`].
+    pub fn enable_found_against_a_rival_faith(&mut self) {
+        self.found_against_a_rival_faith = true;
+    }
+
+    /// The twin of `enable_found_against_a_rival_faith`.
+    pub fn disable_found_against_a_rival_faith(&mut self) {
+        self.found_against_a_rival_faith = false;
+    }
+
+    /// Opt-in gene `domination-strikes-when-staged`; see
+    /// [`Self::domination_strikes_when_staged`].
+    pub fn enable_domination_strikes_when_staged(&mut self) {
+        self.domination_strikes_when_staged = true;
+    }
+
+    /// The twin of `enable_domination_strikes_when_staged`.
+    pub fn disable_domination_strikes_when_staged(&mut self) {
+        self.domination_strikes_when_staged = false;
+    }
+
+    /// Opt-in gene `capture-waits-on-the-march`; see
+    /// [`Self::capture_waits_on_the_march`].
+    pub fn enable_capture_waits_on_the_march(&mut self) {
+        self.capture_waits_on_the_march = true;
+    }
+
+    /// The twin of `enable_capture_waits_on_the_march`.
+    pub fn disable_capture_waits_on_the_march(&mut self) {
+        self.capture_waits_on_the_march = false;
+    }
+
+    /// Opt-in gene `one-war-swaps-a-stalled-front`; see
+    /// [`Self::one_war_swaps_a_stalled_front`].
+    pub fn enable_one_war_swaps_a_stalled_front(&mut self) {
+        self.one_war_swaps_a_stalled_front = true;
+    }
+
+    /// The twin of `enable_one_war_swaps_a_stalled_front`.
+    pub fn disable_one_war_swaps_a_stalled_front(&mut self) {
+        self.one_war_swaps_a_stalled_front = false;
+    }
+
     /// Opt-in gene `culture-counter-declares`; see
     /// [`Self::culture_counter_declares`].
     pub fn enable_culture_counter_declares(&mut self) {
@@ -5209,6 +5321,17 @@ impl AdvancedAi {
         self.formations_heed_refusals = false;
     }
 
+    /// Opt-in gene `breaker-supply-scales-2`; see
+    /// [`Self::breaker_supply_scales_2`].
+    pub fn enable_breaker_supply_scales_2(&mut self) {
+        self.breaker_supply_scales_2 = true;
+    }
+
+    /// The twin of `enable_breaker_supply_scales_2`.
+    pub fn disable_breaker_supply_scales_2(&mut self) {
+        self.breaker_supply_scales_2 = false;
+    }
+
     /// Opt-in gene `breaker-supply-scales`; see
     /// [`Self::breaker_supply_scales`].
     pub fn enable_breaker_supply_scales(&mut self) {
@@ -5228,6 +5351,17 @@ impl AdvancedAi {
     /// The twin of `enable_breach_assault`.
     pub fn disable_breach_assault(&mut self) {
         self.breach_assault = false;
+    }
+
+    /// Opt-in gene `siege-counts-posted-shooters`; see
+    /// [`Self::siege_counts_posted_shooters`].
+    pub fn enable_siege_counts_posted_shooters(&mut self) {
+        self.siege_counts_posted_shooters = true;
+    }
+
+    /// The twin of `enable_siege_counts_posted_shooters`.
+    pub fn disable_siege_counts_posted_shooters(&mut self) {
+        self.siege_counts_posted_shooters = false;
     }
 
     // ---- append: a-b ------------------------------------------------

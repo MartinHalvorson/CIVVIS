@@ -1,0 +1,2 @@
+# civ6_play mod/harness arms read per game (#3941). Names: stalled-operation-release
+stalled-operation-release

@@ -275,9 +275,19 @@ def dismiss_crash_dialogs() -> None:
     Best effort by design: it must never raise, and it must never click anything
     that is not a dialog button it can name.
     """
+    # Only the owners that run: asking System Events for an absent process
+    # costs ~2-3.6 s each (`computer_control.running_process_names`), which
+    # was ~12-25 s of this sweep in every teardown with only Steam up.
+    owners = ("Steam", "Civilization VI", "Civ6", "ReportCrash", "Problem Reporter")
+    try:
+        running = desktop_control.running_process_names()
+    except Exception:  # noqa: BLE001 — best effort, see above
+        running = None
+    if running is not None:
+        owners = tuple(owner for owner in owners if owner in running)
     script = """
     tell application "System Events"
-        repeat with procName in {"Steam", "Civilization VI", "Civ6", "ReportCrash", "Problem Reporter"}
+        repeat with procName in {%s}
             try
                 if exists (process procName) then
                     tell process procName
@@ -295,8 +305,9 @@ def dismiss_crash_dialogs() -> None:
             end try
         end repeat
     end tell
-    """
-    run(["osascript", "-e", script], timeout=25.0)
+    """ % ", ".join(f'"{owner}"' for owner in owners)
+    if owners:
+        run(["osascript", "-e", script], timeout=25.0)
     # Newer macOS crash alerts belong to UserNotificationCenter. Chrome can
     # leave one over the display too. Its other windows may be permission
     # prompts, so use the text-gated crash-only path.
@@ -436,8 +447,18 @@ def remember_cleanup_game_processes(tag: str) -> list[dict]:
         # process whose second-resolution ``lstart`` does not prove it began
         # after that preparation; losing a recovery is safer than adopting an
         # orphan that was already on the desktop.
+        # ⚠⚠ BUT `lstart` IS TRUNCATED TO THE SECOND, and the game starts within
+        # milliseconds of this receipt (live G73: receipt 19:07:40.977, Civ VI
+        # 19:07:41). A process that began in the receipt's own second reads
+        # as that second's :00, i.e. BEFORE the fractional launch epoch, and
+        # was rejected: live King civvis-20261004T185259Z (game 72) froze at
+        # t126 with an empty `game_processes`, teardown refused "foreign run
+        # with no readable tag", and the autosave resume never ran — a game
+        # holding two capitals at 698 vs 456 power, thrown away on a coin flip
+        # of sub-second timing. Compare against the launch SECOND: the
+        # baseline above already excludes every process that predates it.
         started_epoch = _process_start_epoch(started)
-        if started_epoch is None or started_epoch <= launch_epoch:
+        if started_epoch is None or started_epoch < math.floor(launch_epoch):
             continue
         if known.get(pid) != started:
             known[pid] = started
@@ -3145,18 +3166,23 @@ def main() -> int:
                 # play process killed by signal, which is the case that motivated the
                 # explicit terminate in the first place.
                 play_log.close()
-                # Older embedding tests and operators may supply a cleanup
-                # callback that returns None; only an explicit False is a
-                # refusal from the built-in ownership guard.
-                cleanup_ok = teardown(run_tag) is not False
-                torn_down = cleanup_ok
-                if why == "frozen" and cleanup_ok:
+                # ★ SNAPSHOT A FROZEN GAME'S NATIVE LOGS BEFORE TEARDOWN, WHATEVER
+                # TEARDOWN DECIDES. Copying them is read-only. It used to wait for
+                # a proven cleanup, so live King civvis-20261004T185259Z (game 72),
+                # whose teardown was refused, kept no DiplomacyManager.csv, and the
+                # next launch overwrote the only record of what wedged it.
+                if why == "frozen":
                     try:
                         manifest = civ6_native_log_snapshot.snapshot(
                             env.logs_dir(), RUN_ROOT / run_tag / "native-freeze-logs")
                         print(f"[resume] native log snapshot: {manifest}", flush=True)
                     except OSError as error:
                         print(f"[resume] native log snapshot failed: {error}", flush=True)
+                # Older embedding tests and operators may supply a cleanup
+                # callback that returns None; only an explicit False is a
+                # refusal from the built-in ownership guard.
+                cleanup_ok = teardown(run_tag) is not False
+                torn_down = cleanup_ok
                 # The run is over: write up every settler it lost to capture,
                 # beside its events, before the row is read.
                 write_settler_capture_dossiers(run_tag)

@@ -292,6 +292,33 @@ fn domination_finishes_a_breached_city_before_peace_for_another_rival() {
     assert_eq!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
 }
 
+/// See `one_war_foothold_at_hand`: under the gene, an unwalled objective
+/// with a taker beside it holds the victory-threat peace; walls, another
+/// objective, or a taker four tiles out release it.
+#[test]
+fn an_open_foothold_holds_the_counter_peace_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
+    convert(&mut g, &[0, 1, 2]);
+    g.at_war.remove(&(0, 2));
+    let city = g.player_city_ids(1)[0];
+    assert_eq!(g.cities[&city].wall_hp, 0, "the fixture's city is unwalled");
+    let taker = g.spawn_test_unit("modern_armor", 0, (13, 12));
+    let counter = Some(OneWarPeace::VictoryThreat);
+    assert_eq!(ai.one_war_peace(&g, 0, 1), counter, "off");
+    ai.enable_peace_waits_for_the_foothold();
+    assert_eq!(ai.one_war_peace(&g, 0, 1), None, "held");
+    g.cities.get_mut(&city).unwrap().wall_hp = 100;
+    assert_eq!(ai.one_war_peace(&g, 0, 1), counter, "walls");
+    g.cities.get_mut(&city).unwrap().wall_hp = 0;
+    ai.plan.as_mut().unwrap().target_city = None;
+    assert_eq!(ai.one_war_peace(&g, 0, 1), counter, "not the objective");
+    ai.plan.as_mut().unwrap().target_city = Some(city);
+    g.remove_unit(taker);
+    g.spawn_test_unit("modern_armor", 0, (10, 12));
+    assert_eq!(ai.one_war_peace(&g, 0, 1), counter, "too far");
+}
+
 /// On the live Cree front, peace was offered for a stale war counter while
 /// the capital had 41 HP, no walls, and a healthy infantry four tiles away.
 /// The same bounded capture window must hold against fatigue as well as an
@@ -551,6 +578,32 @@ fn a_second_front_on_an_urgent_rival_is_kept() {
     assert_eq!(ai.one_war_peace(&g, 0, 2), None);
 }
 
+/// See `second_front_kept_when_winning`: under the gene, a second war on a
+/// rival we crush is kept, and one we are winning while we hold a city of
+/// theirs; one we merely outgun is still closed.
+#[test]
+fn a_beaten_second_front_is_kept_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(1));
+    assert!(g.military_power(0) >= ONE_WAR_CRUSHED_RATIO * g.military_power(2));
+    let second = Some(OneWarPeace::SecondFront);
+    assert_eq!(ai.one_war_peace(&g, 0, 2), second, "off");
+    ai.enable_second_front_kept_when_winning();
+    assert_eq!(ai.one_war_peace(&g, 0, 2), None, "crushed");
+    let mut row = 2;
+    while g.military_power(0) >= ONE_WAR_CRUSHED_RATIO * g.military_power(2) {
+        g.spawn_test_unit("modern_armor", 2, (30, row));
+        row += 1;
+    }
+    assert!(g.military_power(0) >= ONE_WAR_WINNING_RATIO * g.military_power(2));
+    assert_eq!(ai.one_war_peace(&g, 0, 2), second, "winning, nothing taken");
+    let taken = g.found_city_for(2, (27, 16), None);
+    g.cities.get_mut(&taken).unwrap().owner = 0;
+    assert_eq!(ai.one_war_peace(&g, 0, 2), None, "winning, a city taken");
+}
+
 /// Live King civvis-20261004T025448Z (game 45): a counter the war cannot
 /// answer without a siege (a culture or science clock) takes no second front
 /// before it is urgent, so the army stays on the prey front's siege.
@@ -740,6 +793,41 @@ fn a_stalled_front_siege_stops_holding_the_faith_counter() {
     assert!(ai.second_front_waits_for_the_front(&g, 0, 2));
 }
 
+/// See `front_siege_to_finish`: under the gene, an urgent counter already at
+/// war waits for the front's live siege of an unwalled city; walls, or a
+/// siege still in Stage, release the army.
+#[test]
+fn the_front_finishes_its_siege_before_an_urgent_counter() {
+    use crate::ai::advanced::siege_train::{Siege, SiegeStage};
+    let front_after = |gene: bool, walls: i32, stage: SiegeStage| {
+        let (mut g, mut ai) = two_fronts();
+        convert(&mut g, &[0, 1, 2]);
+        assert!(ai.urgent_victory_threat(&g, 2));
+        if gene {
+            ai.enable_front_finishes_its_siege();
+        }
+        let front_city = g.player_city_ids(1)[0];
+        g.cities.get_mut(&front_city).unwrap().wall_hp = walls;
+        let siege = Siege {
+            stage,
+            taker: None,
+            entered: g.turn - 1,
+            assessed: g.turn,
+            posts: Default::default(),
+            short_since: None,
+        };
+        ai.sieges.insert(front_city, siege);
+        ai.one_war_observe(&g, 0);
+        ai.one_war_front()
+    };
+    // Off, the counter moves the army; on, the siege is finished first.
+    assert_eq!(front_after(false, 0, SiegeStage::Invest), Some(2));
+    assert_eq!(front_after(true, 0, SiegeStage::Invest), Some(1));
+    // A walled city does not hold it, nor does a siege still staging.
+    assert_eq!(front_after(true, 100, SiegeStage::Invest), Some(2));
+    assert_eq!(front_after(true, 0, SiegeStage::Stage), Some(2));
+}
+
 /// The live seat renumbers cities every turn; the front's health reading is
 /// keyed by tile, so a renumbered city still reads as itself.
 #[test]
@@ -752,4 +840,45 @@ fn the_front_reads_city_health_by_tile() {
         front.city_health.get(&city.pos),
         Some(&(city.hp, city.wall_hp))
     );
+}
+
+/// See `stalled_front_swap`: a front whose cities have shown no new low of
+/// health for the stall window yields, under the gene, to a weak enemy
+/// holding a capital Domination needs (the Maori, game 65).
+#[test]
+fn a_stalled_front_yields_to_a_weak_enemy_holding_a_needed_capital() {
+    for gene in [false, true] {
+        let (mut g, mut ai) = two_fronts();
+        if gene {
+            ai.enable_one_war_swaps_a_stalled_front();
+        }
+        // Rival 1, the front, is strong enough to stall us; rival 2 is weak.
+        arm_the_front(&mut g);
+        g.turn += g.standard_duration(FRONT_STALL_TURNS) + 1;
+        ai.one_war_observe(&g, 0);
+        let expected = if gene { Some(2) } else { Some(1) };
+        assert_eq!(ai.one_war_front(), expected, "gene {gene}");
+    }
+}
+
+/// See `counter_war_hopeless`: a rival whose faith holds our majority is a
+/// religious clock for the power floor even when another lane leads.
+#[test]
+fn a_faith_holding_our_majority_is_religious_for_the_power_floor() {
+    let (mut g, ai) = two_fronts();
+    convert(&mut g, &[0, 2]);
+    assert!(g.civ_follows_religion(0, "islam"));
+    // Make rival 2 strong enough that we stand under the floor.
+    let mut row = 2;
+    while g.military_power(0) >= COUNTER_WAR_POWER_FLOOR * g.military_power(2) {
+        g.spawn_test_unit("modern_armor", 2, (30, row));
+        row += 1;
+    }
+    assert!(ai.counter_war_hopeless(&g, 0, 2));
+    // Without the faith in our cities, a non-religious lead is not hopeless.
+    let mut free = g.clone();
+    free.players[2].religion = None;
+    if ai.rival_pressure(&free, 2).0 != GrandStrategy::Religion {
+        assert!(!ai.counter_war_hopeless(&free, 0, 2));
+    }
 }

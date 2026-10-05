@@ -633,3 +633,24 @@ fn a_high_walled_target_is_supplied_with_guns_in_parallel() {
         }
     }
 }
+
+/// See `SUPPLY_STRENGTH_WINDOW`: under `breaker-supply-scales-2` a
+/// high-walled original capital takes a second gun while one already
+/// stands; a high-walled town does not.
+#[test]
+fn version_two_supplies_only_a_capital_in_parallel() {
+    for capital in [false, true] {
+        let (mut g, mut ai, plan, _home, target) = siege_gap_case();
+        ai.enable_lane_delegates_production_2();
+        ai.enable_breaker_supply_scales_2();
+        g.players[0]
+            .techs
+            .insert(crate::name::Name::new("military_engineering"));
+        g.cities.get_mut(&target).unwrap().is_capital = capital;
+        assert!(g.city_max_wall_hp(&g.cities[&target]) >= super::SUPPLY_WALL_HP);
+        let home = g.player_city_ids(0)[0];
+        g.spawn_unit("catapult", 0, g.cities[&home].pos);
+        let reserved = ai.reserve_delegated_domination_siege(&mut g, 0, &plan);
+        assert_eq!(reserved.is_some(), capital, "capital {capital}");
+    }
+}

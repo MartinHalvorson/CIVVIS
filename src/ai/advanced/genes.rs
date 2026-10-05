@@ -2591,6 +2591,48 @@ pub const GENES: &[Gene] = &[
     // "damage ready" — two Archers shot it and the melee held the ring, so it
     // healed every turn and built walls. See `siege_train::breach_assault_blow`.
     Gene { tag: "breach-assault", field: "breach_assault", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_assault, disable: AdvancedAi::disable_breach_assault },
+    // Version 1 measured -9.7 +/- 5.3 pp: only the capitals Domination
+    // needs, no displaced building. See `siege_production::SUPPLY_STRENGTH_WINDOW`.
+    Gene { tag: "breaker-supply-scales-2", field: "breaker_supply_scales_2", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales_2, disable: AdvancedAi::disable_breaker_supply_scales_2 },
+    // Live King 201619Z offered Gaul "one war at a time" peace at 843 power
+    // against 140; Gaul rebuilt to 911 and won on Religion. 223225Z offered
+    // it to Canada at 407 against 138 after taking Brantford. See
+    // `AdvancedAi::second_front_kept_when_winning`.
+    Gene { tag: "second-front-kept-when-winning", field: "second_front_kept_when_winning", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_kept_when_winning, disable: AdvancedAi::disable_second_front_kept_when_winning },
+    // Live King 213648Z took Babylon's only known city at turn 81, at six
+    // times its power, and offered peace; Babylon held six cities at 207.
+    // See `one_war::unseen_prey`.
+    Gene { tag: "peace-waits-for-unseen-prey", field: "peace_waits_for_unseen_prey", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_unseen_prey, disable: AdvancedAi::disable_peace_waits_for_unseen_prey },
+    // Live King 212049Z left unwalled Viseu in Invest, damage ready in 3.2
+    // turns, for an urgent counter sixteen tiles away. See
+    // `one_war::front_siege_to_finish`.
+    Gene { tag: "front-finishes-its-siege", field: "front_finishes_its_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_front_finishes_its_siege, disable: AdvancedAi::disable_front_finishes_its_siege },
+    // Live King 212049Z made peace with the Zulu beside unwalled
+    // Umgungundlovu, a seized foothold, to declare on Portugal at even power.
+    // See `one_war::one_war_foothold_at_hand`.
+    Gene { tag: "peace-waits-for-the-foothold", field: "peace_waits_for_the_foothold", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_the_foothold, disable: AdvancedAi::disable_peace_waits_for_the_foothold },
+    // Live King 212049Z: Guayaquil's Holy Site and its walls traded the queue
+    // five times in five turns. See
+    // `adopted_faith_sanctuary::sanctuary_queue_held`.
+    Gene { tag: "sanctuary-yields-a-held-queue", field: "sanctuary_yields_a_held_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_sanctuary_yields_a_held_queue, disable: AdvancedAi::disable_sanctuary_yields_a_held_queue },
+    // Live King 205431Z held the Prophet race open from turn 30 to 60 and
+    // opened two Campuses, no Holy Site, at the campus-first steps. See
+    // `BasicAi::prophet_race_takes_a_district_slot`.
+    Gene { tag: "prophet-race-takes-a-district-slot", field: "prophet_race_takes_a_district_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_takes_a_district_slot, disable: AdvancedAi::disable_prophet_race_takes_a_district_slot },
+    // Live King 183907Z: our faithless cities were converted by passive
+    // pressure alone; game 70 left two religion slots open. See
+    // `advanced/faith_veto.rs`.
+    Gene { tag: "found-against-a-rival-faith", field: "found_against_a_rival_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_found_against_a_rival_faith, disable: AdvancedAi::disable_found_against_a_rival_faith },
+    // 19 of 29 live "Declaring war" lines on 2026-10-04 sent a denouncement;
+    // the staged army waited. See `strike_when_staged`.
+    Gene { tag: "domination-strikes-when-staged", field: "domination_strikes_when_staged", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_strikes_when_staged, disable: AdvancedAi::disable_domination_strikes_when_staged },
+    // Live King 174103Z stood down six Dutch objectives in 95 turns with the
+    // army still on the road. See `advanced/capture_march.rs`.
+    Gene { tag: "capture-waits-on-the-march", field: "capture_waits_on_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_waits_on_the_march, disable: AdvancedAi::disable_capture_waits_on_the_march },
+    // Live King 160213Z fought Germany for 92 turns without a capture while
+    // the at-war Maori held the capital it needed. See
+    // `one_war::stalled_front_swap`.
+    Gene { tag: "one-war-swaps-a-stalled-front", field: "one_war_swaps_a_stalled_front", kind: Kind::OptIn, enable: AdvancedAi::enable_one_war_swaps_a_stalled_front, disable: AdvancedAi::disable_one_war_swaps_a_stalled_front },
     // Live King 122037Z held war on France "for staging" from turn 163 to its
     // Culture win at 181, at 2 to 4 times its power. See
     // `one_war::culture_counter_due`.
@@ -2599,6 +2641,13 @@ pub const GENES: &[Gene] = &[
     // on India, their Corps refused and re-planned every turn. Live-only: the
     // refused set is empty off the bridge. See `advanced/formation_refusals.rs`.
     Gene { tag: "formations-heed-refusals", field: "formations_heed_refusals", kind: Kind::OptIn, enable: AdvancedAi::enable_formations_heed_refusals, disable: AdvancedAi::disable_formations_heed_refusals },
+    // Live King civvis-20261004T122037Z (game 62): Yaroslavl's walls went
+    // 100 -> 84 in twelve turns while the journal read "shooters 6-16 wall a
+    // turn": nine archers within five tiles were counted, but the range-2
+    // band had room for few of them and those that fired shot units first.
+    // G64's Canberra read "6.9 turns" at turn 125 and fell at 148. See
+    // `siege_train::shooter_hits_walls`.
+    Gene { tag: "siege-counts-posted-shooters", field: "siege_counts_posted_shooters", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_counts_posted_shooters, disable: AdvancedAi::disable_siege_counts_posted_shooters },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

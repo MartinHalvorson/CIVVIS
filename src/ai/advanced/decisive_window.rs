@@ -532,6 +532,38 @@ impl AdvancedAi {
         best.map(|(_, window)| window)
     }
 
+    /// The research goal the window hands `advanced_research`: its next
+    /// technology, except while `found-against-a-rival-faith`'s Astrology arm
+    /// owns the slot (`faith_arm_wants_astrology`). Both arms sit in one
+    /// forced-goal match and the faith arm is meant to be the higher one, but
+    /// a merge can reorder them; one Ancient node toward a religion of our
+    /// own outranks the window either way. Live King G69-G71 were three
+    /// straight Religious losses on faithless cities, while a pending window
+    /// held research from t69 to t99 in G52.
+    pub(super) fn decisive_window_research_goal(
+        &self,
+        g: &Game,
+        pid: usize,
+        window: Option<&DecisiveWindow>,
+    ) -> Option<Name> {
+        window
+            .and_then(|window| window.tech_goal)
+            .filter(|_| !self.faith_arm_wants_astrology(g, pid))
+    }
+
+    /// The faith arm's own predicate, restated: the veto is due, the Prophet
+    /// race is open to us, and Astrology is still unknown. ⚠ `faith_veto_due`
+    /// alone stays true for as long as the seat has no religion. Live King
+    /// G80 (civvis-20261004T212049Z) researched Astrology at t35, and the
+    /// window yielded at t57, t62, t67 and t84 anyway (Military Tactics,
+    /// Apprenticeship, Engineering, Military Engineering), with nothing left
+    /// for the faith arm to research.
+    fn faith_arm_wants_astrology(&self, g: &Game, pid: usize) -> bool {
+        self.faith_veto_due(g, pid)
+            && self.prophet_race_enterable_for(g, pid, self.victory_target)
+            && !g.players[pid].techs.contains(&crate::name!("astrology"))
+    }
+
     /// The technology the decisive window needs next; `None` once it is open.
     pub(super) fn decisive_window_tech_goal(
         &self,

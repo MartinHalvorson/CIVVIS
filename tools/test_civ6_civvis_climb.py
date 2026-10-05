@@ -38,6 +38,34 @@ class CrashAlertCleanupTest(unittest.TestCase):
              mock.patch.object(climb.desktop_control, "dismiss_modals", side_effect=OSError("unavailable")):
             climb.dismiss_crash_dialogs()
 
+    def _sweep(self, running):
+        with mock.patch.object(climb, "run", return_value="") as run, \
+             mock.patch.object(climb.desktop_control, "running_process_names",
+                               **({"side_effect": running} if isinstance(running, Exception)
+                                  else {"return_value": running})), \
+             mock.patch.object(climb.desktop_control, "dismiss_modals", return_value=[]) as dismiss:
+            climb.dismiss_crash_dialogs()
+        dismiss.assert_called_once_with(crashes_only=True)
+        return [call.args[0] for call in run.call_args_list if call.args[0][0] == "osascript"]
+
+    def test_the_sweep_asks_only_for_owners_that_run(self):
+        # Measured: each absent owner costs System Events ~2-3.6 s to deny.
+        scripts = self._sweep({"steam_osx", "Steam", "Finder"})
+        self.assertEqual(len(scripts), 1)
+        self.assertIn('{"Steam"}', scripts[0][2])
+        for absent in ("Civilization VI", "Civ6", "ReportCrash", "Problem Reporter"):
+            self.assertNotIn(f'"{absent}"', scripts[0][2])
+
+    def test_no_running_owner_means_no_applescript_at_all(self):
+        self.assertEqual(self._sweep({"Finder"}), [])
+
+    def test_an_unknown_process_list_keeps_every_owner(self):
+        for unknown in (None, RuntimeError("System Events unavailable")):
+            scripts = self._sweep(unknown)
+            self.assertEqual(len(scripts), 1)
+            self.assertIn('{"Steam", "Civilization VI", "Civ6", "ReportCrash", '
+                          '"Problem Reporter"}', scripts[0][2])
+
 
 class BusyOnlyCountsARealGame(unittest.TestCase):
     """`pgrep -f` matches command lines, so anything that NAMES the harness hits.
@@ -423,6 +451,37 @@ class ExitConfirmationRecoveryTests(unittest.TestCase):
                             climb, "_process_start_epoch", return_value=2):
                     recorded = climb.remember_cleanup_game_processes(self.TAG)
                 self.assertEqual([{"pid": 202, "started": "new"}], recorded)
+            finally:
+                climb.RUN_ROOT = old_root
+
+    def test_remember_adopts_a_game_started_in_the_receipts_own_second(self):
+        # `lstart` is whole seconds; the game starts within milliseconds of
+        # the receipt (live G72 froze with an empty receipt and its resume
+        # was refused). Same second as the receipt: ours. A second earlier:
+        # not proven, and still refused.
+        with tempfile.TemporaryDirectory() as temporary:
+            old_root = climb.RUN_ROOT
+            climb.RUN_ROOT = Path(temporary)
+            try:
+                path = climb._cleanup_ownership_path(self.TAG)
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps({
+                    "tag": self.TAG,
+                    "player_pid": 99,
+                    "launch_epoch": 1000.546,
+                    "baseline_game_processes": [],
+                    "game_processes": [],
+                }))
+                epochs = {"same-second": 1000.0, "second-before": 999.0}
+                with mock.patch.object(
+                        climb, "_game_process_identities", return_value=[
+                            {"pid": 202, "started": "same-second"},
+                            {"pid": 303, "started": "second-before"},
+                        ]), mock.patch.object(
+                            climb, "_process_start_epoch",
+                            side_effect=lambda stamp: epochs[stamp]):
+                    recorded = climb.remember_cleanup_game_processes(self.TAG)
+                self.assertEqual([{"pid": 202, "started": "same-second"}], recorded)
             finally:
                 climb.RUN_ROOT = old_root
 

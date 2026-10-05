@@ -226,15 +226,15 @@ fn a_great_persons_plot_offers_nothing_and_blocks_the_civilian_layer() {
         !game.can_move(warrior, plot),
         "a foreign civilian blocks the step at peace"
     );
+    // At war too: Firaxis captures no Great Person. Live King
+    // civvis-20261004T160213Z (game 65): a helicopter ordered onto a
+    // Babylonian Great Scientist's plot at war stood still three turns.
     game.at_war.insert((0, 1));
     assert!(
-        game.can_move(warrior, plot),
-        "and at war the military step is a capture"
+        !game.can_move(warrior, plot),
+        "a foreign Great Person blocks the military step at war as well"
     );
-    assert!(
-        !game.can_move(builder, plot),
-        "which a builder still cannot make"
-    );
+    assert!(!game.can_move(builder, plot));
 
     // Gone: the plot is ordinary ground again.
     game.great_person_plots.remove(&plot);

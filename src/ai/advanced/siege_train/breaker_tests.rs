@@ -430,3 +430,70 @@ fn a_dominant_train_gives_its_shooters_longer_to_breach() {
         "the shooters are the breaker"
     );
 }
+
+/// `siege-counts-posted-shooters`: live King civvis-20261004T122037Z (game
+/// 62) read Yaroslavl at "shooters 6-16 wall a turn" off the archers within
+/// five tiles while its walls fell 16 points in twelve turns: the range band
+/// held few free tiles, and a shooter with a hostile unit in reach shoots that
+/// first while the walls stand.
+#[test]
+fn only_shooters_with_a_firing_post_and_a_clear_reach_count_toward_the_walls() {
+    let (mut g, cid) = medieval_city();
+    mirrored(&mut g);
+    let center = g.cities[&cid].pos;
+    // Water beside the city and mountain two out, but for two firing tiles.
+    let open: Vec<Pos> = at_distance(&g, cid, 2)[..2].to_vec();
+    for pos in g.wring(center, 1) {
+        g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("coast");
+    }
+    for pos in g.wring(center, 2) {
+        if !open.contains(&pos) {
+            g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
+        }
+    }
+    let bows: Vec<u32> = at_distance(&g, cid, 3)[..5]
+        .iter()
+        .map(|pos| g.spawn_unit("crossbowman", 0, *pos))
+        .collect();
+    let city = CityView::of(&g, cid).unwrap();
+    let per_shot = wall_damage_per_shot(&g, bows[0], cid);
+    assert!(per_shot > 0.0);
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_siege_needs_a_breaker();
+    let every_bow = ai.breach_reading(&g, 0, &city, &bows).shooter_walls;
+    assert!((every_bow - 5.0 * per_shot).abs() < 1e-6, "{every_bow} vs {per_shot}");
+
+    ai.enable_siege_counts_posted_shooters();
+    let (posted, walls) = posted_shooters(&g, 0, cid, &bows);
+    assert_eq!((posted.len(), walls.len()), (2, 2), "two firing tiles, two posts");
+    let counted = ai.breach_reading(&g, 0, &city, &bows).shooter_walls;
+    assert!((counted - 2.0 * per_shot).abs() < 1e-6, "{counted} vs {per_shot}");
+
+    // A defender within reach of one post draws that bow's shot.
+    let posts = siege_posts(&g, 0, &city, &bows, None);
+    let first = posts[posted.iter().next().unwrap()];
+    let other = posts[posted.iter().nth(1).unwrap()];
+    let guard = g
+        .wring(first, 1)
+        .into_iter()
+        .filter(|pos| {
+            g.wdist(*pos, other) > 2
+                && g.map.get(*pos).is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
+                && g.unit_ids_at(*pos).is_empty()
+                && *pos != center
+        })
+        .min()
+        .or_else(|| {
+            g.wring(first, 1).into_iter().find(|pos| {
+                g.map.get(*pos).is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
+                    && g.unit_ids_at(*pos).is_empty()
+            })
+        })
+        .expect("a passable tile beside the post");
+    g.spawn_unit("warrior", 1, guard);
+    let (_, walls) = posted_shooters(&g, 0, cid, &bows);
+    assert!(walls.len() < 2, "the defender draws a shot: {walls:?}");
+    let drawn = ai.breach_reading(&g, 0, &city, &bows).shooter_walls;
+    assert!(drawn < counted, "{drawn} < {counted}");
+}
