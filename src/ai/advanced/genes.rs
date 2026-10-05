@@ -2948,6 +2948,10 @@ pub const GENES: &[Gene] = &[
     // power took a city twice; game 135 declared on the Maya at 1.02 times.
     // See `one_war::declaration_has_the_edge`.
     Gene { tag: "declaration-needs-the-edge", field: "declaration_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_needs_the_edge, disable: AdvancedAi::disable_declaration_needs_the_edge },
+    // Live King civvis-20261005T141932Z (game 135): one capital (Madrid)
+    // from Domination, the front drifted to commitments and a second front;
+    // the Maya won on Diplomacy. See `one_war::domination_finish_front`.
+    Gene { tag: "domination-finish-holds-the-front", field: "domination_finish_holds_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_finish_holds_the_front, disable: AdvancedAi::disable_domination_finish_holds_the_front },
     // Staging marches took the router's single step and stood: 47-62% of
     // live frame-0 MOVE_TOs were one tile. See `march_moves`.
     Gene { tag: "march-uses-its-moves", field: "march_uses_its_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_march_uses_its_moves, disable: AdvancedAi::disable_march_uses_its_moves },
