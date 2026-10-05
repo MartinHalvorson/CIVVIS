@@ -13600,7 +13600,9 @@ pub fn rebuild_from_state(
     game.host_previews = Arc::new(host_previews_from(&state.host_previews, &unit_ids));
 
     // The readings that must survive whatever the board passes scored on their
-    // way there. See `HOST_STATE_STEPS`.
+    // way there. See `HOST_STATE_STEPS`. Finish still needs the completed
+    // city-ID map: an own native city's positive ID must resolve on a fresh
+    // board just as it does in the persistent context used by sync.
     run_host_steps(
         &mut HostStepCtx::new(
             &mut game,
@@ -13609,7 +13611,8 @@ pub fn rebuild_from_state(
             &mut unmapped,
             &mut no_treasury,
             pass,
-        ),
+        )
+        .with_board(&known_city_ids, &minor_assignments, &seat_of_host),
         HostPhase::Finish,
     );
     Reconstruction {

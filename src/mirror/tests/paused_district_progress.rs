@@ -74,6 +74,44 @@ fn paused_native_district_work_survives_fresh_reconstruction() {
             ),
             0.0
         );
+        // The imported balance must be usable by the existing queue switch,
+        // not merely visible through an accessor. This is an offline clone,
+        // not a native actuation or evidence that the war veto should change.
+        let mut model = mirror.game.clone();
+        model
+            .apply(
+                0,
+                &crate::game::Action::Produce {
+                    city: cid,
+                    item: campus(),
+                },
+            )
+            .unwrap();
+        assert_eq!(model.cities[&cid].production, 40.0);
+        assert_eq!(model.item_invested_production(cid, &campus()), 40.0);
+        assert_eq!(model.item_remaining_cost_for_city(0, cid, &campus()), 33.0);
+    }
+}
+
+#[test]
+fn shared_finish_step_has_city_identity_on_fresh_and_refresh_paths() {
+    let (base_snapshot, mut state) = fixture();
+    for host_id in [7, 0] {
+        state.cities[0].id = host_id;
+        let mut snapshot = base_snapshot.clone();
+        for tile in snapshot.revealed.values_mut() {
+            tile.oc = Some(host_id);
+        }
+        let mut mirror = build(&snapshot, &state);
+        let cid = mirror.cid_of[&host_id];
+        assert_eq!(mirror.game.item_invested_production(cid, &campus()), 40.0);
+        assert_eq!(mirror.game.item_cost_for_city(0, cid, &campus()), 73.0);
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.item_invested_production(cid, &campus()), 40.0);
+        assert_eq!(
+            mirror.game.item_remaining_cost_for_city(0, cid, &campus()),
+            33.0
+        );
     }
 }
 
