@@ -5935,6 +5935,17 @@ impl AdvancedAi {
         self.prey_reads_a_steady_power = false;
     }
 
+    /// Opt-in gene `counterweight-faith-is-no-threat`; see
+    /// [`Self::counterweight_faith_is_no_threat`].
+    pub fn enable_counterweight_faith_is_no_threat(&mut self) {
+        self.counterweight_faith_is_no_threat = true;
+    }
+
+    /// The twin of `enable_counterweight_faith_is_no_threat`.
+    pub fn disable_counterweight_faith_is_no_threat(&mut self) {
+        self.counterweight_faith_is_no_threat = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

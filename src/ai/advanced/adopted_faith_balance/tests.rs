@@ -108,3 +108,64 @@ fn a_mixed_corps_buys_only_the_missing_counterfaith_defender() {
     assert_eq!(g.units.len(), before + 1);
     assert_eq!(g.players[0].faith, faith);
 }
+
+/// See `stronger_faith_than`: four majors as in game 123. Our counterweight
+/// (Catholicism, three of our five cities) reads as the threat with the gene
+/// off, so it is held and the stronger Protestantism may spread; under the
+/// gene Protestantism, which holds Vietnam as well as its founder, is the
+/// threat.
+#[test]
+fn a_counterweight_holding_our_majority_is_no_threat_under_the_gene() {
+    let mut g = Game::new_full(4, 40, 24, 367_201, 300, 0, false);
+    for uid in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(uid);
+    }
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.resource = None;
+    }
+    let home =
+        [(4, 4), (10, 4), (4, 10), (10, 10), (16, 10)].map(|pos| g.found_city_for(0, pos, None));
+    let dutch = g.found_city_for(1, (30, 4), None);
+    let french = g.found_city_for(2, (30, 12), None);
+    let vietnamese = g.found_city_for(3, (30, 20), None);
+    g.players[1].religion = Some("Protestantism".into());
+    g.players[2].religion = Some("Catholicism".into());
+    let faith_of = |cid: u32| -> &'static str {
+        if cid == french || home[..3].contains(&cid) {
+            "Catholicism"
+        } else {
+            "Protestantism"
+        }
+    };
+    for cid in home.into_iter().chain([dutch, french, vietnamese]) {
+        let faith = faith_of(cid);
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.pop = 4;
+        city.atheist_pressure = 0.0;
+        city.pressure.clear();
+        city.pressure.insert(faith.into(), 1000.0);
+    }
+    g.current = 0;
+    g.turn = 121;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert_eq!(
+        ai.adopted_faith_threat(&g, 0).as_deref(),
+        Some("Catholicism"),
+        "off"
+    );
+    assert!(!ai.adopted_faith_spread_allowed(&g, 0, "Catholicism"));
+    assert!(ai.adopted_faith_spread_allowed(&g, 0, "Protestantism"));
+    ai.enable_counterweight_faith_is_no_threat();
+    assert_eq!(
+        AdvancedAi::stronger_faith_than(&g, 0, "Catholicism").as_deref(),
+        Some("Protestantism")
+    );
+    assert_eq!(
+        ai.adopted_faith_threat(&g, 0).as_deref(),
+        Some("Protestantism")
+    );
+    assert!(ai.adopted_faith_spread_allowed(&g, 0, "Catholicism"));
+    assert!(!ai.adopted_faith_spread_allowed(&g, 0, "Protestantism"));
+}

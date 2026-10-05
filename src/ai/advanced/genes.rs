@@ -2872,6 +2872,10 @@ pub const GENES: &[Gene] = &[
     // Live King civvis-20261005T103704Z (game 121) read America at 4 for
     // one turn and declared on it. See `one_war::steady_rival_power`.
     Gene { tag: "prey-reads-a-steady-power", field: "prey_reads_a_steady_power", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_reads_a_steady_power, disable: AdvancedAi::disable_prey_reads_a_steady_power },
+    // Live King civvis-20261005T110504Z (game 123) held its Catholic
+    // counterweight and spread Protestantism, the winner's faith, in its own
+    // cities. See `adopted_faith_sanctuary::stronger_faith_than`.
+    Gene { tag: "counterweight-faith-is-no-threat", field: "counterweight_faith_is_no_threat", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_faith_is_no_threat, disable: AdvancedAi::disable_counterweight_faith_is_no_threat },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
