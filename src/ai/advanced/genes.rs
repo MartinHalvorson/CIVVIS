@@ -2971,6 +2971,7 @@ pub const GENES: &[Gene] = &[
     // read Reduce at walls 15/100 for turns 71-78 with 1-2 of 4-10 members
     // staged, the rest one tile a turn behind. See `close_to_staging`.
     Gene { tag: "siege-members-use-their-moves", field: "siege_members_use_their_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_members_use_their_moves, disable: AdvancedAi::disable_siege_members_use_their_moves },
+    Gene { tag: "guns-grind-the-walls", field: "guns_grind_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_grind_the_walls, disable: AdvancedAi::disable_guns_grind_the_walls },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -2272,6 +2272,22 @@ impl AdvancedAi {
                 arm_of(g, *uid) == Arm::Melee
                     && g.wdist(g.units[uid].pos, city.pos) <= STAGING_FAR
             });
+        // `guns-grind-the-walls`: a fit gun at the ring opens walls the
+        // melee cannot yet touch even when the whole capture outlasts the
+        // train's endurance. The budget prices the walls and the city as one
+        // stand under the city's fire, so a lone gun against Renaissance Walls
+        // read 15 turns against 7 of endurance and the train held outside its
+        // own range: over the 10-05 control runs 430 such turns (66 sieges)
+        // had the force at least half staged, a fit gun, and walls up, while
+        // a damaged wall stayed where the guns left it on 933 of 1011 turns.
+        // The guns and shooters invest and grind; the melee keep the staging
+        // ring (`grinding_sieges`) until the walls open to them or the budget
+        // reads the assault ready, and the bill still gates the entry.
+        let grind = self.guns_grind_the_walls
+            && !arena
+            && !walls_open_to_melee(&city)
+            && breach.is_some_and(|reading| reading.guns > 0)
+            && !damage_entry_ready;
         if self.siege_needs_a_breaker {
             if no_breaker {
                 let nearest = nearest_breaker(g, pid, &city);
@@ -2334,7 +2350,8 @@ impl AdvancedAi {
                     || (!damage_can_continue
                         && breach_taker.is_none()
                         && !held_breach
-                        && !opens_walls)
+                        && !opens_walls
+                        && !grind)
                     || no_breaker)
             {
                 // A Hold over a city that is not ours is a capture that never
@@ -2355,7 +2372,7 @@ impl AdvancedAi {
                     // the whole-force bill and positive-damage gate, but let
                     // a healthy, reachable capturer exploit that breach.
                     if ((arena && gathered) || staged >= bill || breach_taker.is_some())
-                        && (damage_entry_ready || opens_walls)
+                        && (damage_entry_ready || opens_walls || grind)
                         && !no_breaker
                     {
                         stage = SiegeStage::Invest;
@@ -2420,6 +2437,11 @@ impl AdvancedAi {
         } else {
             BTreeMap::new()
         };
+        if grind && matches!(stage, SiegeStage::Invest | SiegeStage::Reduce) {
+            self.grinding_sieges.insert(cid);
+        } else {
+            self.grinding_sieges.remove(&cid);
+        }
 
         match stage {
             SiegeStage::Stage => self.census.siege_stage_turns += 1,
@@ -2471,6 +2493,8 @@ impl AdvancedAi {
                         " — nothing to open the walls, so the train holds outside the city's reach"
                     } else if opens_walls {
                         " — no taker in reach yet, so the train opens the walls first"
+                    } else if grind {
+                        " — the guns grind the walls while the melee wait outside the city's reach"
                     } else {
                         ""
                     }
@@ -2526,6 +2550,15 @@ impl AdvancedAi {
             if let Some(acted) = self.spotter_step(g, pid, uid, &city) {
                 return Some(acted);
             }
+        }
+        // `guns-grind-the-walls`: while the guns grind walls the melee
+        // cannot yet touch, the melee hold the staging ring out of the
+        // city's reach instead of a post beside it.
+        if self.grinding_sieges.contains(&cid)
+            && matches!(siege.stage, SiegeStage::Invest | SiegeStage::Reduce)
+            && arm_of(g, uid) == Arm::Melee
+        {
+            return Some(self.siege_stage_step(g, pid, uid, &city, plan));
         }
         if siege.taker == Some(uid) {
             return Some(self.taker_step(g, pid, uid, &city));
@@ -4830,3 +4863,6 @@ mod keeper_tests;
 
 #[cfg(test)]
 mod tower_ring_tests;
+
+#[cfg(test)]
+mod grind_tests;

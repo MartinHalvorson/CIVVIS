@@ -6445,6 +6445,13 @@ pub struct AdvancedAi {
     /// See `BasicAi::front_weighted_floor_2`.
     front_weighted_floor_2: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `guns-grind-the-walls`: a fit siege gun at the ring opens walls the
+    /// melee cannot yet touch while the melee keep the staging ring, even
+    /// when the whole capture outlasts the train's endurance. See
+    /// `assess_siege`.
+    guns_grind_the_walls: bool,
+    /// `guns-grind-the-walls`: the sieges whose guns grind this turn.
+    grinding_sieges: BTreeSet<u32>,
     /// `guns-enter-together`: two or more fit siege guns of a walled siege
     /// whose posts lie inside the city's strike ring step in together, and
     /// the city's strike — once a turn — is charged once across them. See
@@ -9484,6 +9491,8 @@ impl AdvancedAi {
             front_weighted_floor: false,
             front_weighted_floor_2: false,
             // ---- append: g-k ----------------------------------------
+            guns_grind_the_walls: false,
+            grinding_sieges: BTreeSet::new(),
             guns_enter_together: false,
             guns_stay_out_of_reach: false,
             great_work_completion_value: false,
