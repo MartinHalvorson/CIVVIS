@@ -507,6 +507,26 @@ fn breach_support_user(g: &Game, uid: u32) -> bool {
         .is_some_and(|unit| crate::ai::siege_support::eligible_attacker(&g.rules.units[unit.kind]))
 }
 
+/// `staging-gun-reads-the-shared-danger`: a Stage gun's danger reading at
+/// `pos`. `siege_stage_step` shares its field under `shared-danger`, as its
+/// own comment says the battle planner and the reinforcement step read it,
+/// but every reading took `DangerField::danger`, which ignores the shares:
+/// each staging gun read every hostile's blow as its own and held further
+/// out than the train it marched with. Under the gene the reading is the
+/// rotation's (`rotation_danger`), never under the strongest single blow.
+fn stage_gun_danger(
+    field: &mut super::battle_planner::DangerField,
+    pos: Pos,
+    uid: u32,
+    shared: bool,
+) -> f64 {
+    if shared {
+        field.rotation_danger(pos, uid)
+    } else {
+        field.danger(pos, uid)
+    }
+}
+
 /// `guns-post-for-a-near-breach`: the heaviest single blow — a unit's, a
 /// City Center's or an Encampment's — that would land on `uid` standing on
 /// `tile` next turn.
@@ -2758,6 +2778,9 @@ impl AdvancedAi {
             }
             field
         });
+        // `staging-gun-reads-the-shared-danger`: the field above is shared,
+        // and the readings below take the share. See `stage_gun_danger`.
+        let shared_stage = self.staging_gun_reads_the_shared_danger && self.shared_danger;
         let gun_risk_limit = (f64::from(g.units[&uid].hp) - STAGING_GUN_HP_RESERVE).max(0.0)
             / STAGING_GUN_REPLY_TURNS;
         // `staging-gun-trusts-its-escort`: see `STAGING_ESCORT_BODIES`. The
@@ -2812,7 +2835,7 @@ impl AdvancedAi {
         };
         let remembers = !remembered.is_empty();
         if let Some(field) = gun_danger.as_mut() {
-            let risk_here = field.danger(here, uid);
+            let risk_here = stage_gun_danger(field, here, uid, shared_stage);
             if risk_here > escorted_limit(g, here) {
                 let safer = g
                     .nbrs(here)
@@ -2820,7 +2843,7 @@ impl AdvancedAi {
                     .filter(|pos| {
                         g.can_move(uid, *pos) && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE
                     })
-                    .map(|pos| (field.danger(pos, uid), g.wdist(pos, city.pos), pos))
+                    .map(|pos| (stage_gun_danger(field, pos, uid, shared_stage), g.wdist(pos, city.pos), pos))
                     .filter(|(risk, _, _)| *risk + 1.0 < risk_here)
                     .min_by(|a, b| {
                         a.0.total_cmp(&b.0)
@@ -2911,9 +2934,9 @@ impl AdvancedAi {
                         let kind = g.units[&uid].kind;
                         if gun_danger.as_mut().is_none_or(|field| {
                             if remembers {
-                                field.danger(dest, uid) + fog_blow(g, dest) <= gun_risk_limit
+                                stage_gun_danger(field, dest, uid, shared_stage) + fog_blow(g, dest) <= gun_risk_limit
                             } else {
-                                field.danger(dest, uid) <= gun_risk_limit
+                                stage_gun_danger(field, dest, uid, shared_stage) <= gun_risk_limit
                             }
                         }) && self.base.path_walk_to(g, pid, uid, dest)
                         {
@@ -2928,7 +2951,7 @@ impl AdvancedAi {
                 }
                 if let Some(field) = gun_danger.as_mut() {
                     let mut risk_at = |g: &Game, pos: Pos| -> f64 {
-                        let seen = field.danger(pos, uid);
+                        let seen = stage_gun_danger(field, pos, uid, shared_stage);
                         if remembers {
                             seen + fog_blow(g, pos)
                         } else {
@@ -2972,7 +2995,7 @@ impl AdvancedAi {
                     let outside_and_safe = |g: &Game, pos: Pos, _: &[Pos]| {
                         g.wdist(pos, city.pos) > CITY_STRIKE_RANGE
                             && gun_danger.as_mut().is_none_or(|field| {
-                                let seen = field.danger(pos, uid);
+                                let seen = stage_gun_danger(field, pos, uid, shared_stage);
                                 let risk = if remembers {
                                     seen + fog_blow(g, pos)
                                 } else {
@@ -3016,9 +3039,9 @@ impl AdvancedAi {
             {
                 if gun_danger.as_mut().is_none_or(|field| {
                     if remembers {
-                        field.danger(dest, uid) + fog_blow(g, dest) <= gun_risk_limit
+                        stage_gun_danger(field, dest, uid, shared_stage) + fog_blow(g, dest) <= gun_risk_limit
                     } else {
-                        field.danger(dest, uid) <= gun_risk_limit
+                        stage_gun_danger(field, dest, uid, shared_stage) <= gun_risk_limit
                     }
                 }) && self.base.path_walk_to(g, pid, uid, dest)
                 {

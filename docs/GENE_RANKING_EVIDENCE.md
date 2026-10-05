@@ -366,6 +366,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `stage-march-keeps-to-land` | off (unmeasured) | Opt-in gene `stage-march-keeps-to-land`; see `Self::stage_march_keeps_to_land`. | 1 \| 1 |
 | `stage-musters-out-of-reach` | off (unmeasured) | Opt-in gene `stage-musters-out-of-reach`; see `Self::stage_musters_out_of_reach`. | 1 \| 1 |
 | `staging-column-passes-through` | off (unmeasured) | Opt-in gene `staging-column-passes-through`; see `Self::staging_column_passes_through`. | 1 \| 1 |
+| `staging-gun-reads-the-shared-danger` | off (unmeasured) | Opt-in gene `staging-gun-reads-the-shared-danger`; see `Self::staging_gun_reads_the_shared_danger`. | 1 \| 1 |
 | `staging-gun-remembers-hostiles` | off (unmeasured) | Opt-in gene `staging-gun-remembers-hostiles`; see `Self::staging_gun_remembers_hostiles`. | 1 \| 1 |
 | `staging-gun-trusts-its-escort` | off (unmeasured) | Opt-in gene `staging-gun-trusts-its-escort`; see `Self::staging_gun_trusts_its_escort`. | 1 \| 1 |
 | `stale-swap-reads-the-march` | off (unmeasured) | Opt-in gene `stale-swap-reads-the-march`; see `Self::stale_swap_reads_the_march`. | 1 \| 1 |

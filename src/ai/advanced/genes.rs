@@ -3080,6 +3080,10 @@ pub const GENES: &[Gene] = &[
     // while their siege read Stage, 772 on the staging ring itself, walking
     // in one by one. See `siege_train::muster_step`.
     Gene { tag: "stage-musters-out-of-reach", field: "stage_musters_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_musters_out_of_reach, disable: AdvancedAi::disable_stage_musters_out_of_reach },
+    // siege_stage_step shared its danger field and then read the unshared
+    // sum: each staging gun read every hostile's blow as its own and held
+    // behind its train. See `siege_train::stage_gun_danger`.
+    Gene { tag: "staging-gun-reads-the-shared-danger", field: "staging_gun_reads_the_shared_danger", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_reads_the_shared_danger, disable: AdvancedAi::disable_staging_gun_reads_the_shared_danger },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
