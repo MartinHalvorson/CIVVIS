@@ -135,6 +135,8 @@ pub(super) struct RememberedStriker {
     pub(super) from: Pos,
     pub(super) reach: i32,
     pub(super) blow: f64,
+    /// Turns since the seat last saw it: 0 this turn, 1 the last.
+    pub(super) elapsed: u32,
 }
 /// The bill is the defence within [`DEFENDER_RADIUS`] plus the city and its
 /// walls at [`WALL_STRENGTH_PER_100_HP`] a hundred, times this.
@@ -1651,7 +1653,7 @@ impl AdvancedAi {
         // `breach-counts-nearby-guns`: a fit gun at another walled city's
         // ring serves that city, and one at this city's ring serves this one,
         // whichever row the board gave it. See `nearby_gun_city`.
-        if self.breach_counts_nearby_guns {
+        if self.nearby_guns_join() {
             members.retain(|uid| {
                 self.nearby_gun_city(g, pid, plan, *uid)
                     .is_none_or(|cid| cid == city.id)
@@ -1762,7 +1764,7 @@ impl AdvancedAi {
     /// healthy Bombards of Uruk's force stood four and five tiles from
     /// Toronto, eight to ten from Uruk, with Toronto between them and it.
     fn nearby_gun_city(&self, g: &Game, pid: usize, plan: &StrategicPlan, uid: u32) -> Option<u32> {
-        if !self.breach_counts_nearby_guns {
+        if !self.nearby_guns_join() {
             return None;
         }
         let unit = g.units.get(&uid)?;
@@ -2660,17 +2662,24 @@ impl AdvancedAi {
         // units on the board, and a hostile that walked into the fog is not
         // on it. Price the ones the seat saw this turn or last. Off, the
         // list is empty and every reading below is the field's alone.
-        let remembered = if self.staging_gun_remembers_hostiles && arm_of(g, uid) == Arm::Siege {
+        let remembering = self.staging_gun_remembers_hostiles && arm_of(g, uid) == Arm::Siege;
+        let mut remembered = if remembering {
             self.remembered_strikers(g, pid, uid)
         } else {
             Vec::new()
         };
+        // `guns-enter-together`: see `staging_fog_terms`.
+        let (fog_share, fresh_only) = self.staging_fog_terms(g, pid, city, uid);
+        if fresh_only {
+            remembered.retain(|striker| striker.elapsed == 0);
+        }
         let fog_blow = |g: &Game, pos: Pos| -> f64 {
             remembered
                 .iter()
                 .filter(|striker| g.wdist(striker.from, pos) <= striker.reach)
                 .map(|striker| striker.blow)
                 .fold(0.0, f64::max)
+                / fog_share
         };
         let remembers = !remembered.is_empty();
         if let Some(field) = gun_danger.as_mut() {
@@ -3486,6 +3495,50 @@ impl AdvancedAi {
             .collect()
     }
 
+    /// Whether a fit gun near a walled siege serves it whatever row the
+    /// board gave it (`nearby_gun_city`): `breach-counts-nearby-guns`, and
+    /// `guns-enter-together`, whose group a gun the board holds in its
+    /// Reserve five tiles off never joined. Live King
+    /// civvis-20261005T091120Z (game 115): a Reserve force with Bombards
+    /// held five tiles from Krakow from turn 145 to 176 while the siege
+    /// counted one or two guns.
+    fn nearby_guns_join(&self) -> bool {
+        self.breach_counts_nearby_guns || self.guns_enter_together
+    }
+
+    /// `guns-enter-together`: the Stage march's remembered-hostile terms for
+    /// the gun `uid`: the number of fit siege guns marching on `city` that
+    /// share a remembered hostile's one strike (those within three tiles of
+    /// the staging ring), and whether a hostile seen only last turn is
+    /// dropped because two of them already stand on the ring. Off, (1,
+    /// false). Live King civvis-20261005T091120Z (game 115): fit Bombards sat
+    /// four and five tiles from Krakow for about 95 turns, "holds short of a
+    /// hostile seen in the fog ... its blow there reads 48-55 against a limit
+    /// of 27", twelve times between turns 150 and 174.
+    fn staging_fog_terms(&self, g: &Game, pid: usize, city: &CityView, uid: u32) -> (f64, bool) {
+        if !self.guns_enter_together || arm_of(g, uid) != Arm::Siege {
+            return (1.0, false);
+        }
+        let guns: Vec<i32> = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid
+                    && !g.is_embarked(unit)
+                    && arm_of(g, unit.id) == Arm::Siege
+                    && self.siege_member_fit(g, unit.id)
+            })
+            .map(|unit| g.wdist(unit.pos, city.pos))
+            .filter(|distance| *distance <= STAGING_FAR + 3)
+            .collect();
+        let marching = guns.len().max(1) as f64;
+        let on_ring = guns
+            .iter()
+            .filter(|distance| **distance <= STAGING_FAR)
+            .count();
+        (marching, on_ring >= 2)
+    }
+
     /// `guns-enter-together`: whether a fit gun of the train can put a shot
     /// on the walls from where it stands or from its post. A gun whose post
     /// sits inside the strike ring and whose entry the approach would refuse
@@ -3961,6 +4014,7 @@ impl AdvancedAi {
                     from: record.pos,
                     reach: moves * (elapsed + 1),
                     blow: expected_damage(effective_strength(spec.strength, 100), defence),
+                    elapsed: elapsed as u32,
                 })
             })
             .collect()
