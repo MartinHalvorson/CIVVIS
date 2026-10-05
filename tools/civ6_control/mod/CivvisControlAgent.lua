@@ -4868,10 +4868,27 @@ end
 
 -- Later governments are strictly stronger and unlock more slots, so the
 -- newest unlocked one is taken whenever the game will allow the change.
+--
+-- ★★★ BUT NOT WHILE CIVVIS DECIDES. CIVVIS owns the government (its own
+-- `government` order, `CIVVIS_OWNED_BLOCKERS`), and when it means to stay it
+-- sends nothing; the prompt then survives `civvis_complete` and the forfeit
+-- escape asks this ladder for one real answer. "Newest unlocked" is the last
+-- row of `GameInfo.Governments`, so Suffrage put the seat in Democracy and
+-- the Digital Democracy civic in Digital Democracy: on October 5, 15 of 43
+-- live runs changed government with no order of ours (11 Democracy 1-9 turns
+-- after CIVVIS chose Communism, 7 Digital Democracy after it chose Corporate
+-- Libertarianism), and the planner then read "Staying under democracy ... two
+-- turns of Anarchy is not worth paying" -- a Domination seat on one military
+-- slot for the rest of the game. Under CIVVIS the answer is "considered",
+-- never a switch; `GovernmentLadderSwitches = true` restores the old pick.
 local function chooseGovernment(player)
 	local culture = try(function() return player:GetCulture(); end);
 	if culture == nil then return nil; end
 	if not try(function() return culture:CanChangeGovernmentAtAll(); end, false) then
+		return nil;
+	end
+	if cfg.CivvisDecides and cfg.GovernmentLadderSwitches ~= true then
+		pcall(function() culture:SetGovernmentChangeConsidered(true); end);
 		return nil;
 	end
 	local current = try(function() return culture:GetCurrentGovernment(); end, -1);
