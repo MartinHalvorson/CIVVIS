@@ -13,6 +13,33 @@ impl AdvancedAi {
         self.builder_productive_alternate
     }
 
+    /// Planning can stop before its ordinary moves execute. Keep setup state
+    /// only when the authoritative unit actually reached the quoted tile.
+    pub(super) fn reconcile_builder_alternate_setup(&mut self, g: &Game) {
+        if !self.builder_productive_alternate {
+            return;
+        }
+        let mut unexecuted_targets = Vec::new();
+        self.builder_alternate_pending
+            .retain(|uid, (pos, _, due, charges)| {
+                let reached = g.units.get(uid).is_some_and(|unit| {
+                    unit.owner == g.current
+                        && unit.kind == "builder"
+                        && unit.charges == *charges
+                        && unit.pos == *pos
+                });
+                if !reached {
+                    unexecuted_targets.push((*uid, *pos));
+                }
+                g.turn <= *due && reached
+            });
+        for (uid, pos) in unexecuted_targets {
+            if self.builder_targets.get(&uid) == Some(&pos) {
+                self.builder_targets.remove(&uid);
+            }
+        }
+    }
+
     /// Complete a setup quote only on its next turn, under a new safety and
     /// yield check. Support and all ordinary emergency operations run first.
     pub(super) fn builder_prepared_alternate_step(
@@ -25,8 +52,20 @@ impl AdvancedAi {
             return None;
         }
         self.builder_alternate_pending
-            .retain(|builder, (_, _, due)| g.units.contains_key(builder) && g.turn <= *due);
-        let (pos, improvement, due) = self.builder_alternate_pending.get(&uid).copied()?;
+            .retain(|_, (_, _, due, _)| g.turn <= *due);
+        let (pos, improvement, due, charges) = self.builder_alternate_pending.get(&uid).copied()?;
+        // A fresh host/native observation can omit an unexecuted setup move.
+        // Do not let its intent suppress ordinary retries in the same turn.
+        if g.units
+            .get(&uid)
+            .is_none_or(|unit| unit.pos != pos || unit.charges != charges)
+        {
+            self.builder_alternate_pending.remove(&uid);
+            if self.builder_targets.get(&uid) == Some(&pos) {
+                self.builder_targets.remove(&uid);
+            }
+            return None;
+        }
         if g.turn < due {
             return Some(false);
         }
@@ -79,7 +118,11 @@ impl AdvancedAi {
         if g.apply(pid, &action).is_err() {
             return None;
         }
-        self.builder_targets.remove(&uid);
+        // Keep the quote while this may still be a disposable planning world.
+        // The authoritative charge receipt (or a fresh host observation)
+        // retires it; an interrupted frame must be able to retry the work.
+        self.builder_alternate_pending
+            .insert(uid, (pos, improvement, due, charges));
         self.note_first_luxury_opened(g, pid, pos, &improvement);
         think!(self.journal(), Expansion, Decision, "Builder completes prepared productive alternate work";
             "Builder {uid} improves {improvement} at {pos:?}; renewed city Production +{:.2}, Food and Science retained",
@@ -240,7 +283,7 @@ impl AdvancedAi {
             if setup {
                 self.builder_targets.insert(uid, pos);
                 self.builder_alternate_pending
-                    .insert(uid, (pos, improvement, g.turn + 1));
+                    .insert(uid, (pos, improvement, g.turn + 1, g.units[&uid].charges));
                 think!(self.journal(), Expansion, Decision, "Builder prepares productive alternate work";
                     "Builder {uid} walks to {pos:?} for {improvement}; quoted next-turn city Production +{:.2}, no live charge spent",
                     after.production - before.production; pos);

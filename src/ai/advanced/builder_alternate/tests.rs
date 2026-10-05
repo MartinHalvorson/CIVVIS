@@ -116,6 +116,7 @@ fn exhausted_movement_cannot_be_borrowed_for_the_operation() {
         g.map.tiles[&alternate].improvement,
         Some(crate::name!("mine"))
     );
+    ai.reconcile_builder_alternate_setup(&g);
     assert!(!ai.builder_alternate_pending.contains_key(&builder));
 }
 
@@ -140,6 +141,186 @@ fn prepared_work_rechecks_a_new_capture_threat() {
     assert_eq!(serde_json::to_vec(&g).unwrap(), before);
     assert!(g.map.tiles[&alternate].improvement.is_none());
     assert!(!ai.builder_alternate_pending.contains_key(&builder));
+}
+
+#[test]
+fn an_unexecuted_setup_frame_does_not_suppress_ordinary_retries() {
+    let (mut canonical, mut ai, builder, alternate, _) = fixture();
+    canonical.map.tiles.get_mut(&alternate).unwrap().hills = true;
+    let memory = ai.observed_movement_memory();
+    let mut planned = canonical.speculative_clone();
+    assert!(ai.builder_productive_alternate_step(
+        &mut planned,
+        0,
+        builder,
+        GrandStrategy::Science,
+        &HashSet::new()
+    ));
+    assert!(ai.builder_alternate_pending.contains_key(&builder));
+    assert_ne!(planned.units[&builder].pos, canonical.units[&builder].pos);
+    // The native executor stopped before this move, as after a finishing
+    // volley. Reconciliation receives the untouched authoritative board.
+    let before = serde_json::to_vec(&canonical).unwrap();
+    ai.reconcile_observed_movement(&canonical, memory, &[]);
+    assert!(!ai.builder_alternate_pending.contains_key(&builder));
+    assert!(!ai.builder_targets.contains_key(&builder));
+    assert_eq!(
+        ai.builder_prepared_alternate_step(&mut canonical, 0, builder),
+        None
+    );
+    assert_eq!(serde_json::to_vec(&canonical).unwrap(), before);
+}
+
+#[test]
+fn an_executed_setup_receipt_preserves_next_turn_work() {
+    let (mut canonical, mut ai, builder, alternate, _) = fixture();
+    canonical.map.tiles.get_mut(&alternate).unwrap().hills = true;
+    let memory = ai.observed_movement_memory();
+    let from = canonical.units[&builder].pos;
+    let charges = canonical.units[&builder].charges;
+    let mut planned = canonical.speculative_clone();
+    assert!(ai.builder_productive_alternate_step(
+        &mut planned,
+        0,
+        builder,
+        GrandStrategy::Science,
+        &HashSet::new()
+    ));
+    canonical
+        .apply(
+            0,
+            &Action::MoveTo {
+                unit: builder,
+                to: alternate,
+            },
+        )
+        .unwrap();
+    ai.reconcile_observed_movement(&canonical, memory, &[(builder, from, alternate)]);
+    assert!(ai.builder_alternate_pending.contains_key(&builder));
+    assert_eq!(canonical.units[&builder].charges, charges);
+    canonical.turn += 1;
+    let allowance = canonical.unit_max_moves(builder);
+    canonical.units.get_mut(&builder).unwrap().moves_left = allowance;
+    assert_eq!(
+        ai.builder_prepared_alternate_step(&mut canonical, 0, builder),
+        Some(true)
+    );
+    assert_eq!(canonical.units[&builder].charges, charges - 1);
+    ai.reconcile_builder_alternate_setup(&canonical);
+    assert!(!ai.builder_alternate_pending.contains_key(&builder));
+}
+
+#[test]
+fn an_interrupted_improvement_retries_until_the_charge_receipt_arrives() {
+    let (mut canonical, mut ai, builder, alternate, _) = fixture();
+    canonical.map.tiles.get_mut(&alternate).unwrap().hills = true;
+    assert!(ai.builder_productive_alternate_step(
+        &mut canonical,
+        0,
+        builder,
+        GrandStrategy::Science,
+        &HashSet::new()
+    ));
+    canonical.turn += 1;
+    let allowance = canonical.unit_max_moves(builder);
+    canonical.units.get_mut(&builder).unwrap().moves_left = allowance;
+    let charges = canonical.units[&builder].charges;
+    let mut planned = canonical.speculative_clone();
+    assert_eq!(
+        ai.builder_prepared_alternate_step(&mut planned, 0, builder),
+        Some(true)
+    );
+    assert_eq!(planned.units[&builder].charges, charges - 1);
+    assert!(ai.builder_alternate_pending.contains_key(&builder));
+    ai.reconcile_builder_alternate_setup(&canonical);
+    assert!(ai.builder_alternate_pending.contains_key(&builder));
+    assert_eq!(canonical.units[&builder].charges, charges);
+    assert_eq!(
+        ai.builder_prepared_alternate_step(&mut canonical, 0, builder),
+        Some(true)
+    );
+    ai.reconcile_builder_alternate_setup(&canonical);
+    assert!(!ai.builder_alternate_pending.contains_key(&builder));
+    assert_eq!(canonical.units[&builder].charges, charges - 1);
+}
+
+#[test]
+fn a_planned_last_charge_survives_until_the_authoritative_unit_disappears() {
+    let (mut canonical, mut ai, builder, alternate, _) = fixture();
+    canonical.map.tiles.get_mut(&alternate).unwrap().hills = true;
+    canonical.units.get_mut(&builder).unwrap().charges = 1;
+    let other = canonical.spawn_test_unit("builder", 0, (6, 5));
+    assert!(ai.builder_productive_alternate_step(
+        &mut canonical,
+        0,
+        builder,
+        GrandStrategy::Science,
+        &HashSet::new()
+    ));
+    canonical.turn += 1;
+    let allowance = canonical.unit_max_moves(builder);
+    canonical.units.get_mut(&builder).unwrap().moves_left = allowance;
+    let mut planned = canonical.speculative_clone();
+    assert_eq!(
+        ai.builder_prepared_alternate_step(&mut planned, 0, builder),
+        Some(true)
+    );
+    assert!(!planned.units.contains_key(&builder));
+    // Another unit's planning must not purge the still-unexecuted receipt.
+    assert_eq!(
+        ai.builder_prepared_alternate_step(&mut planned, 0, other),
+        None
+    );
+    ai.reconcile_builder_alternate_setup(&canonical);
+    assert!(ai.builder_alternate_pending.contains_key(&builder));
+    assert_eq!(
+        ai.builder_prepared_alternate_step(&mut canonical, 0, builder),
+        Some(true)
+    );
+    assert!(!canonical.units.contains_key(&builder));
+    ai.reconcile_builder_alternate_setup(&canonical);
+    assert!(!ai.builder_alternate_pending.contains_key(&builder));
+}
+
+#[test]
+fn an_unexecuted_setup_in_a_fresh_host_frame_does_not_wait_for_next_turn() {
+    let (mut canonical, mut ai, builder, alternate, _) = fixture();
+    canonical.map.tiles.get_mut(&alternate).unwrap().hills = true;
+    let mut planned = canonical.speculative_clone();
+    assert!(ai.builder_productive_alternate_step(
+        &mut planned,
+        0,
+        builder,
+        GrandStrategy::Science,
+        &HashSet::new()
+    ));
+    let before = serde_json::to_vec(&canonical).unwrap();
+    assert_eq!(
+        ai.builder_prepared_alternate_step(&mut canonical, 0, builder),
+        None
+    );
+    assert!(!ai.builder_alternate_pending.contains_key(&builder));
+    assert!(!ai.builder_targets.contains_key(&builder));
+    assert_eq!(serde_json::to_vec(&canonical).unwrap(), before);
+}
+
+#[test]
+fn cancelling_an_unexecuted_quote_preserves_a_later_different_job() {
+    let (mut canonical, mut ai, builder, alternate, preferred) = fixture();
+    canonical.map.tiles.get_mut(&alternate).unwrap().hills = true;
+    let memory = ai.observed_movement_memory();
+    let mut planned = canonical.speculative_clone();
+    assert!(ai.builder_productive_alternate_step(
+        &mut planned,
+        0,
+        builder,
+        GrandStrategy::Science,
+        &HashSet::new()
+    ));
+    ai.builder_targets.insert(builder, preferred);
+    ai.reconcile_observed_movement(&canonical, memory, &[]);
+    assert!(!ai.builder_alternate_pending.contains_key(&builder));
+    assert_eq!(ai.builder_targets.get(&builder), Some(&preferred));
 }
 
 #[test]

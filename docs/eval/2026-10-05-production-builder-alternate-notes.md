@@ -146,3 +146,37 @@ Builder routing gain can establish the whole goal of high-level production
 competitiveness. The next wider investigation must address city population,
 housing, food surplus and productive worker execution without repeating the
 rejected broad Food-priority and fixed-opening-order changes.
+
+
+V2 frozen games are running independently of the worktree. During Emperor
+map 61008600, a T55 planning thought says Builder 207 prepares a lumber mill
+at (4,20), but authoritative action deltas through T57 contain no move by
+that Builder; its authoritative position remains (4,21) with three charges.
+Subsequent same-turn planning encounters the stored next-turn quote and
+withholds retries. This is a speculative intention, not accepted setup work.
+The native player executor can stop before ordinary movement after its
+finishing volley or a refusal, then reobserve; it already reconciles actual
+movement history on that authoritative board. V3 adds the pending quote to
+that reconciliation and checks observed position before waiting for its due
+turn. Three receipt/fresh-frame regressions are compiling. No V3 passing
+fixture, full suite, game result, or production claim is made yet. V2 games
+will finish their frozen protocol but cannot establish a promotable change
+with this known state bug.
+
+Before the new reconciliation call-site edit, actual open advanced.rs patches
+were inspected: #3580, #3791, #3796, #3800 and #3845 do not touch
+`reconcile_observed_movement`. The shared-file claims remain recorded.
+
+
+The first V3 movement-receipt revision passes 12 focused O0 fixtures plus
+three toggle guards. Retiring its matching unexecuted target and preserving
+a later different job then passes 13 fixtures plus three guards. Those are
+intermediate-source results, not validation of the final receipt revision.
+Review also identified premature completion retirement: a disposable frame
+can propose an improvement, consume its last charge, and remove its local
+unit without the native executor ever running that order. The final V3 quote
+records the original charge count and survives a proposed completion until
+an authoritative charge receipt or fresh host observation confirms it. Its
+bounded date pruning preserves a last-charge preview long enough to receive
+that receipt. Two additional interrupted-completion/last-charge regressions
+are compiling; no final V3 pass or strength result is claimed yet.

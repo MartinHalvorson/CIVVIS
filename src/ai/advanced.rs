@@ -4965,7 +4965,7 @@ pub struct AdvancedAi {
     /// Productive alternate work after a refused normal Builder route.
     builder_productive_alternate: bool,
     /// One quoted setup operation, due on the following native turn.
-    builder_alternate_pending: BTreeMap<u32, (Pos, Name, u32)>,
+    builder_alternate_pending: BTreeMap<u32, (Pos, Name, u32, i32)>,
     /// `befriend-the-strongest`: offer a friendship to the strongest
     /// neighbour at peace. See `advanced/protective_friendship.rs`.
     befriend_the_strongest: bool,
@@ -42283,6 +42283,7 @@ impl AdvancedAi {
             self.base.record_path_step(g, uid, from);
             self.base.record_move_refusal_watch(g, uid, from, to);
         }
+        self.reconcile_builder_alternate_setup(g);
     }
 
     /// Engine adapters call this only on a disposable, observation-limited
