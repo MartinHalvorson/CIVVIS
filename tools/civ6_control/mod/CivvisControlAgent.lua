@@ -19779,6 +19779,10 @@ CivvisQueue.onLocalTurnEnd = function()
 		blockers = w.blockers,
 		quick_movement = try(function() return UserConfiguration.IsQuickMovement(); end, nil),
 		quick_combat = try(function() return UserConfiguration.IsQuickCombat(); end, nil),
+		-- The UI clock at this moment: against the relay's wall-clock `utc`,
+		-- consecutive turns show whether the UI clock runs at real time (a
+		-- debug timescale could change that, and every mod timer runs on it).
+		ui_now = now,
 		-- Locks still held by a UI context as our turn ends (the AutoClose
 		-- ledger); a normal turn ends with none.
 		held_locks = try(function() return ExposedMembers.CivvisEventLocks.count; end, nil),
@@ -21535,6 +21539,16 @@ end;
 
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false });
+	-- RECORD-ONLY. Combat visualization is a serial event the game core waits
+	-- on (G93: +0.69 s of AI phase per visible combat, even with QuickCombat).
+	-- The engine's console has `timescale <value>`, and Firaxis's own
+	-- Automation_Profile.lua reaches console commands through
+	-- `AutoProfiler.RunCommand`. Whether that table exists in this context
+	-- decides whether a timescale arm is possible at all.
+	emit("debug_api", {
+		autoprofiler = try(function() return type(AutoProfiler); end, "error"),
+		run_command = try(function() return type(AutoProfiler.RunCommand); end, "error"),
+	});
 	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse); end);
 	pcall(function() LuaEvents.CivvisControlPeek.Add(CivvisQueue.onPeekPulse); end);
 	for name, handler in pairs({
