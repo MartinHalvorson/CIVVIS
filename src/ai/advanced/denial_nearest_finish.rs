@@ -74,6 +74,17 @@ pub(crate) const ENGINE_NO_PATH_CULTURE_CAP: i32 = 50;
 /// projected finish of the engine's valid readings is kept.
 pub(crate) const ENGINE_CLOCK_WINDOW: u32 = 5;
 
+/// `culture-reads-the-engine-clock`: the visiting tourists under which the
+/// engine's clock reads "no path". The host projects one turn's tourist gain
+/// against a bar it holds still, and early domestic counts are single
+/// digits: live King civvis-20261005T101841Z (game 120) read Cree at 15 and
+/// 14 turns on turns 70 and 72 with 2-3 visitors against our 6-7 and
+/// declared a surprise war at 1.17 times their power "close enough to winning
+/// that waiting loses it". Of the 66 readings of 0-30 turns in the October
+/// 4-5 runs, every one of the 28 followed by that rival's Culture Victory
+/// came with 20 or more visitors; the floor removes 17 of the 38 others.
+pub(crate) const ENGINE_CLOCK_MIN_TOURISTS: i64 = 20;
+
 impl AdvancedAi {
     /// One reading per living rival per turn: its foreign tourists and the
     /// largest domestic count among the others, which it must pass.
@@ -134,12 +145,17 @@ impl AdvancedAi {
     /// finish turn (turn read plus turns reported) among the valid readings of
     /// the last [`ENGINE_CLOCK_WINDOW`] turns, counted down to this turn -- the
     /// best recent pace, early rather than late for a denial clock -- and
-    /// "none" once the window holds no valid reading.
+    /// "none" once the window holds no valid reading. Under
+    /// [`ENGINE_CLOCK_MIN_TOURISTS`] visitors the clock reads "none" whatever
+    /// the host projects.
     pub(super) fn engine_culture_clock(&self, g: &Game, rival: usize) -> Option<Option<f64>> {
         if !self.culture_reads_the_engine_clock {
             return None;
         }
         let reading = g.culture_turns_to_victory(rival)?;
+        if g.foreign_tourists(rival) < ENGINE_CLOCK_MIN_TOURISTS {
+            return Some(None);
+        }
         let mut finishes: Vec<(u32, f64)> = self
             .engine_culture_finish
             .get(&rival)
@@ -162,7 +178,8 @@ impl AdvancedAi {
 
     /// `culture-reads-the-engine-clock`: record each living rival's valid
     /// engine reading for this turn as its projected finish turn, keeping
-    /// [`ENGINE_CLOCK_WINDOW`] turns of them.
+    /// [`ENGINE_CLOCK_WINDOW`] turns of them. A reading under
+    /// [`ENGINE_CLOCK_MIN_TOURISTS`] visitors is not kept.
     pub(super) fn record_engine_culture_clock(&mut self, g: &Game, pid: usize) {
         if !self.culture_reads_the_engine_clock {
             return;
@@ -181,6 +198,7 @@ impl AdvancedAi {
             if let Some(turns) = g
                 .culture_turns_to_victory(rival)
                 .filter(|turns| *turns >= 0.0)
+                .filter(|_| g.foreign_tourists(rival) >= ENGINE_CLOCK_MIN_TOURISTS)
             {
                 history.push((g.turn, f64::from(g.turn) + turns));
             }

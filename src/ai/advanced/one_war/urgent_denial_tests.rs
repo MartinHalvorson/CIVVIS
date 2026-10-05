@@ -1394,10 +1394,11 @@ fn a_captured_city_state_city_funds_the_congress_under_a_diplomatic_threat() {
 fn the_engine_culture_clock_replaces_the_tourist_ratio_under_the_gene() {
     let (mut g, mut ai) = two_fronts();
     let set = |g: &mut Game, turns: Option<f64>| {
-        std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
+        let stats = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
             .entry(2)
-            .or_default()
-            .culture_turns_to_victory = turns;
+            .or_default();
+        stats.culture_turns_to_victory = turns;
+        stats.foreign_tourists = Some(40);
     };
     set(&mut g, Some(3.0));
     assert_eq!(ai.engine_culture_pressure(&g, 2, 40), 40, "off");
@@ -1414,6 +1415,17 @@ fn the_engine_culture_clock_replaces_the_tourist_ratio_under_the_gene() {
     assert_eq!(ai.engine_culture_pressure(&g, 2, 70), 50);
     set(&mut g, None);
     assert_eq!(ai.engine_culture_pressure(&g, 2, 70), 70, "no reading");
+    // Game 120's Cree at turn 70: 15 turns on 3 visitors is no path.
+    set(&mut g, Some(15.0));
+    assert_eq!(ai.projected_culture_finish(&g, 2), Some(15.0));
+    std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
+        .entry(2)
+        .or_default()
+        .foreign_tourists = Some(3);
+    assert_eq!(ai.projected_culture_finish(&g, 2), None, "under the floor");
+    assert_eq!(ai.engine_culture_pressure(&g, 2, 40), 40);
+    ai.record_engine_culture_clock(&g, 0);
+    assert!(ai.engine_culture_finish.get(&2).is_none_or(Vec::is_empty));
 }
 
 /// See `rout_spares_the_counter`: under the gene, a rout window against the
@@ -1455,10 +1467,11 @@ fn the_engine_culture_clock_takes_the_earliest_recent_finish() {
     ai.enable_culture_reads_the_engine_clock();
     let read = |g: &mut Game, ai: &mut AdvancedAi, turn: u32, turns: f64| {
         g.turn = turn;
-        std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
+        let stats = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
             .entry(2)
-            .or_default()
-            .culture_turns_to_victory = Some(turns);
+            .or_default();
+        stats.culture_turns_to_victory = Some(turns);
+        stats.foreign_tourists = Some(40);
         ai.record_engine_culture_clock(g, 0);
     };
     // Game 116's Brazil, turns 160-166.
