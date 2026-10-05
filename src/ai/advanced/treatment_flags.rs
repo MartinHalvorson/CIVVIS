@@ -6046,6 +6046,18 @@ impl AdvancedAi {
         self.conquest_opening_stays_near = false;
     }
 
+    /// See `BasicAi::plaza_in_the_district_list`.
+    pub fn enable_plaza_in_the_district_list(&mut self) {
+        self.plaza_in_the_district_list = true;
+        self.base.plaza_in_the_district_list = true;
+    }
+
+    /// The twin of `enable_plaza_in_the_district_list`.
+    pub fn disable_plaza_in_the_district_list(&mut self) {
+        self.plaza_in_the_district_list = false;
+        self.base.plaza_in_the_district_list = false;
+    }
+
     /// Opt-in gene `contender-at-peace-is-the-target`; see
     /// [`Self::contender_at_peace_is_the_target`].
     pub fn enable_contender_at_peace_is_the_target(&mut self) {

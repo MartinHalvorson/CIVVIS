@@ -2745,6 +2745,20 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `industry-in-the-district-list`.
     pub(crate) industry_in_the_district_list: bool,
+    /// `plaza-in-the-district-list`: the empire's first Government Plaza at
+    /// the front of the capital's district list, then the Plaza's Warlord's
+    /// Throne and Grand Master's Chapel ahead of the Harbor. The delegated
+    /// governor's list was the Campus, Commercial Hub, Holy Site and Theater
+    /// only, so the cities it builds for never opened a Plaza: 7 of 30 live
+    /// runs (October 5) built one, the earliest at turn 81 and most after
+    /// 159, against a district buildable from turns 27-40 at 30 production.
+    /// Without it there is no Grand Master's Chapel, the one building that
+    /// lets Faith buy land units (`faith_purchase_land_units`), and those runs
+    /// ended on 960-3,590 unspent Faith. See `plaza_wanted_here` and
+    /// `plaza_building_item`.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `plaza-in-the-district-list`.
+    pub(crate) plaza_in_the_district_list: bool,
     /// `industrial-hub`: one Industrial Zone, in the city whose zone site
     /// reaches the most own cities within a Factory's regional range (at
     /// least `INDUSTRIAL_HUB_MIN_REACH`), then its Workshop, its Factory and
@@ -5564,6 +5578,7 @@ impl BasicAi {
             industry_before_the_army_2: false,
             industry_before_the_army_3: false,
             industry_in_the_district_list: false,
+            plaza_in_the_district_list: false,
             industrial_hub: false,
             district_buildings_first: false,
             capital_library_first: false,
@@ -6072,6 +6087,7 @@ impl BasicAi {
             industry_before_the_army_2: false,
             industry_before_the_army_3: false,
             industry_in_the_district_list: false,
+            plaza_in_the_district_list: false,
             industrial_hub: false,
             district_buildings_first: false,
             capital_library_first: false,
@@ -13370,6 +13386,13 @@ impl BasicAi {
                 return Some(self.race_takes_the_district_slot(g, pid, cid, item));
             }
         }
+        // `plaza-in-the-district-list`: the standing Plaza's Warlord's Throne,
+        // then its Grand Master's Chapel. See `plaza_building_item`.
+        if self.plaza_in_the_district_list && !self.minor && !self.barb {
+            if let Some(item) = Self::plaza_building_item(g, pid, cid) {
+                return Some(item);
+            }
+        }
         // Coastal infrastructure is part of the water strategy, not an
         // accidental fallback after every land district. A harbor also gives
         // later naval production somewhere sensible to concentrate.
@@ -13502,6 +13525,17 @@ impl BasicAi {
                 let depth = if self.district_coverage_2 { 0.75 } else { 0.5 };
                 *weight *= 1.0 - depth * (have / total);
             }
+        }
+        // `plaza-in-the-district-list`: the empire's first Government Plaza
+        // at the front of the capital's list. A live Prophet race below still
+        // goes ahead of it. See `plaza_wanted_here`.
+        if self.plaza_in_the_district_list
+            && !self.minor
+            && !self.barb
+            && Self::plaza_wanted_here(g, pid, cid)
+        {
+            let top = dpri.iter().map(|(_, w)| *w).fold(0.0_f64, f64::max);
+            dpri.push(("government_plaza", top + 1.0));
         }
         // `enter-the-prophet-race-2`: the empire's first Holy Site goes to the
         // front while the race is open. The reservation below still limits
@@ -15986,6 +16020,40 @@ impl BasicAi {
             pos,
         };
         g.can_produce(pid, cid, &item).then_some(item)
+    }
+
+    /// `plaza-in-the-district-list`: whether `cid` is our own original
+    /// capital and no city of ours holds a Government Plaza or has one first
+    /// in its queue.
+    pub(crate) fn plaza_wanted_here(g: &Game, pid: usize, cid: u32) -> bool {
+        let city = &g.cities[&cid];
+        city.owner == pid
+            && city.is_capital
+            && city.original_owner == pid
+            && !g.cities.values().any(|other| {
+                other.owner == pid
+                    && (g.city_has_district_family(other, crate::name!("government_plaza"))
+                        || matches!(
+                            other.queue.first(),
+                            Some(Item::District { district, .. })
+                                if g.district_family(*district) == "government_plaza"
+                        ))
+            })
+    }
+
+    /// `plaza-in-the-district-list`: the next Government Plaza building for a
+    /// city that holds the Plaza -- the Warlord's Throne (the conquest tier:
+    /// production in captured cities), then the Grand Master's Chapel (Faith
+    /// buys land units). A Plaza with another tier-one building goes straight
+    /// to the Chapel; one with both, or a tier the host has not unlocked,
+    /// offers nothing.
+    pub(crate) fn plaza_building_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if !g.city_has_district_family(&g.cities[&cid], crate::name!("government_plaza")) {
+            return None;
+        }
+        ["warlords_throne", "grand_masters_chapel"]
+            .into_iter()
+            .find_map(|building| Self::civ_building(g, pid, cid, building))
     }
 
     fn civ_building(g: &Game, pid: usize, cid: u32, family: &str) -> Option<Item> {
@@ -22720,6 +22788,69 @@ mod tests {
         assert!(
             !matches!(choice, Some(Item::Unit { ref unit }) if g.rules.units[unit].class == "military"),
             "a peaceful city-state at its force budget must prefer infrastructure or idle"
+        );
+    }
+
+    /// `plaza-in-the-district-list`: the capital wants the empire's one
+    /// Government Plaza until a city holds it; the Plaza's city then builds
+    /// the Warlord's Throne, then the Grand Master's Chapel.
+    #[test]
+    fn plaza_in_the_district_list_wants_one_plaza_then_its_tier_buildings() {
+        let mut g = Game::new_full(1, 24, 16, 91_770, 120, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| g.units[unit].kind == "settler")
+            .unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = g.player_city_ids(0)[0];
+        g.players[0].civics.insert(crate::name!("state_workforce"));
+        assert!(
+            BasicAi::plaza_wanted_here(&g, 0, city),
+            "the capital, no Plaza"
+        );
+        assert_eq!(
+            BasicAi::plaza_building_item(&g, 0, city),
+            None,
+            "no Plaza yet"
+        );
+        let site = g.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| {
+                let tile = &g.map.tiles[position];
+                *position != g.cities[&city].pos
+                    && tile.district.is_none()
+                    && !g.rules.is_water(tile)
+                    && g.rules.is_passable(tile)
+            })
+            .unwrap();
+        g.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("government_plaza"));
+        g.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("government_plaza"), site);
+        assert!(!BasicAi::plaza_wanted_here(&g, 0, city), "one per empire");
+        assert!(
+            matches!(
+                BasicAi::plaza_building_item(&g, 0, city),
+                Some(Item::Building { building }) if building == "warlords_throne"
+            ),
+            "the conquest tier first"
+        );
+        g.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("warlords_throne"));
+        assert!(
+            matches!(
+                BasicAi::plaza_building_item(&g, 0, city),
+                Some(Item::Building { building }) if building == "grand_masters_chapel"
+            ),
+            "then the Chapel"
         );
     }
 
