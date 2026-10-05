@@ -1452,6 +1452,101 @@ fn the_banking_arm_ranks_only_where_era_score_is_the_objective() {
 }
 
 #[test]
+fn a_golden_age_dedicates_to_the_conquest_under_the_gene() {
+    use crate::ai::{choose_conquest_dedications, choose_dedications, DedicationChoice};
+
+    // A Classical Golden Age offers Exodus, Free Inquiry, Monumentality and
+    // Pen, Brush and Voice. Banking keeps the alphabetical Exodus; the
+    // conquest order takes Monumentality.
+    let mut game = two_player_game();
+    game.world_era = 1;
+    game.players[0].age = "golden".to_string();
+    game.players[0].dedication_choices = 1;
+    game.players[0]
+        .last_era_triggers
+        .insert("eureka".to_string(), 6);
+    let mut stock = game.clone();
+    choose_dedications(&mut stock, 0, DedicationChoice::Banking);
+    assert!(stock.players[0]
+        .dedications
+        .contains("exodus_of_the_evangelists"));
+
+    let chosen = choose_conquest_dedications(&mut game, 0, DedicationChoice::Banking);
+    assert_eq!(
+        chosen.iter().map(|name| name.as_str()).collect::<Vec<_>>(),
+        ["monumentality"]
+    );
+    assert!(game.players[0].dedications.contains("monumentality"));
+    assert!(!game.players[0]
+        .dedications
+        .contains("exodus_of_the_evangelists"));
+
+    // An Industrial Golden Age takes To Arms!.
+    let mut industrial = two_player_game();
+    industrial.world_era = 4;
+    industrial.players[0].age = "golden".to_string();
+    industrial.players[0].dedication_choices = 1;
+    choose_conquest_dedications(&mut industrial, 0, DedicationChoice::Banking);
+    assert!(industrial.players[0].dedications.contains("to_arms"));
+}
+
+#[test]
+fn a_heroic_age_takes_the_top_three_of_the_conquest_order() {
+    use crate::ai::{choose_conquest_dedications, DedicationChoice};
+
+    let mut game = two_player_game();
+    game.world_era = 1;
+    game.players[0].age = "heroic".to_string();
+    game.players[0].dedication_choices = 3;
+
+    let chosen = choose_conquest_dedications(&mut game, 0, DedicationChoice::Banking);
+    assert_eq!(
+        chosen.iter().map(|name| name.as_str()).collect::<Vec<_>>(),
+        ["monumentality", "free_inquiry", "pen_brush_and_voice"]
+    );
+    assert!(!game.players[0]
+        .dedications
+        .contains("exodus_of_the_evangelists"));
+}
+
+#[test]
+fn an_age_that_banks_keeps_its_choice_under_the_conquest_gene() {
+    use crate::ai::{choose_conquest_dedications, choose_dedications, DedicationChoice};
+
+    // A Normal or Dark Age banks Era Score: the gene defers to the strategy's
+    // own choice, so the outcome is the stock one.
+    for age in ["normal", "dark"] {
+        let mut game = two_player_game();
+        game.world_era = 1;
+        game.players[0].age = age.to_string();
+        game.players[0].dedication_choices = 1;
+        game.players[0]
+            .last_era_triggers
+            .insert("eureka".to_string(), 6);
+        let mut stock = game.clone();
+        choose_dedications(&mut stock, 0, DedicationChoice::Banking);
+
+        let chosen = choose_conquest_dedications(&mut game, 0, DedicationChoice::Banking);
+        assert!(chosen.is_empty(), "a {age} age is not the conquest order's");
+        assert_eq!(game.players[0].dedications, stock.players[0].dedications);
+        assert!(game.players[0].dedications.contains("free_inquiry"));
+    }
+
+    // Georgia's Strength in Unity banks in a Golden Age too.
+    let mut georgia = two_player_game();
+    georgia.world_era = 1;
+    georgia.players[0].civ = "Georgia".to_string();
+    georgia.players[0].age = "golden".to_string();
+    georgia.players[0].dedication_choices = 1;
+    georgia.players[0]
+        .last_era_triggers
+        .insert("eureka".to_string(), 6);
+    let chosen = choose_conquest_dedications(&mut georgia, 0, DedicationChoice::Banking);
+    assert!(chosen.is_empty());
+    assert!(georgia.players[0].dedications.contains("free_inquiry"));
+}
+
+#[test]
 fn every_catalogued_moment_pays_its_score_only_inside_its_window() {
     let mut game = two_player_game();
     let catalogue: Vec<_> = game

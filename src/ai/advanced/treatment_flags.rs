@@ -6277,6 +6277,17 @@ impl AdvancedAi {
         self.guns_post_for_a_near_breach = false;
     }
 
+    /// Opt-in gene `golden-dedication-serves-the-conquest`; see
+    /// [`Self::golden_dedication_serves_the_conquest`].
+    pub fn enable_golden_dedication_serves_the_conquest(&mut self) {
+        self.golden_dedication_serves_the_conquest = true;
+    }
+
+    /// The twin of `enable_golden_dedication_serves_the_conquest`.
+    pub fn disable_golden_dedication_serves_the_conquest(&mut self) {
+        self.golden_dedication_serves_the_conquest = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

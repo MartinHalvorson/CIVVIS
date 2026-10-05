@@ -911,8 +911,7 @@ pub(crate) fn choose_dedications(g: &mut Game, pid: usize, choice: DedicationCho
         // measured number where it is the literal objective and leaves the
         // rest alone. Georgia is the shipped exception: Strength in Unity also
         // pays the Normal-Age half during Golden and Heroic Ages.
-        let banking = !matches!(g.players[pid].age.as_str(), "golden" | "heroic")
-            || g.civ_effect(pid, "golden_dedication_era_score") > 0.0;
+        let banking = dedication_banks(g, pid);
         let rank = match choice {
             DedicationChoice::Alphabetical => false,
             DedicationChoice::Measured => true,
@@ -942,6 +941,86 @@ pub(crate) fn choose_dedications(g: &mut Game, pid: usize, choice: DedicationCho
         if !progressed {
             return;
         }
+    }
+}
+
+/// Whether this age's Dedication is read as the Era Score it banks: a Normal
+/// or Dark Age, or Georgia's Strength in Unity in any age. See
+/// [`choose_dedications`].
+fn dedication_banks(g: &Game, pid: usize) -> bool {
+    !matches!(g.players[pid].age.as_str(), "golden" | "heroic")
+        || g.civ_effect(pid, "golden_dedication_era_score") > 0.0
+}
+
+/// `golden-dedication-serves-the-conquest`: the Golden-half order a
+/// domination seat takes its Golden and Heroic Age Dedications in.
+///
+/// Under `Banking` a Golden or Heroic Age does not rank, so the choice falls
+/// to the alphabetical tie-break, which leads with Exodus of the Evangelists.
+/// Over the 10-04/05 live King control runs (88 games) Exodus took 57 of 81
+/// Medieval Golden Ages, and the Heroic Ages took Exodus, Free Inquiry and
+/// Monumentality in that order. Exodus's Golden half moves Missionaries and
+/// pays Great Prophet points, which a seat with no religion never spends.
+/// The order puts first the halves a conquest spends: To Arms! (+25%
+/// Production toward military units, +50% combat experience), Sky and Stars
+/// (air experience and the flight Eurekas the air surge rides), Monumentality
+/// (Settlers and Builders 30% cheaper and bought with Faith, Builders +2
+/// Movement), then the economy, with Exodus last.
+pub(crate) const CONQUEST_GOLDEN_DEDICATIONS: [&str; 12] = [
+    "to_arms",
+    "sky_and_stars",
+    "monumentality",
+    "free_inquiry",
+    "reform_the_coinage",
+    "heartbeat_of_steam",
+    "automaton_warfare",
+    "pen_brush_and_voice",
+    "hic_sunt_dracones",
+    "bodyguard_of_lies",
+    "wish_you_were_here",
+    "exodus_of_the_evangelists",
+];
+
+/// `golden-dedication-serves-the-conquest`: in a Golden or Heroic Age, take
+/// the offered Dedications in [`CONQUEST_GOLDEN_DEDICATIONS`] order (a name
+/// the list does not carry goes after it, alphabetically). In an age that
+/// banks Era Score, defer to [`choose_dedications`] with `fallback`, so that
+/// choice is unchanged. Returns the Dedications this call chose by the
+/// conquest order.
+pub(crate) fn choose_conquest_dedications(
+    g: &mut Game,
+    pid: usize,
+    fallback: DedicationChoice,
+) -> Vec<Name> {
+    if pid >= g.players.len() || dedication_banks(g, pid) {
+        choose_dedications(g, pid, fallback);
+        return Vec::new();
+    }
+    let place = |name: &Name| {
+        CONQUEST_GOLDEN_DEDICATIONS
+            .iter()
+            .position(|preferred| *preferred == name.as_str())
+            .unwrap_or(CONQUEST_GOLDEN_DEDICATIONS.len())
+    };
+    let mut chosen = Vec::new();
+    loop {
+        let mut offered = g.available_dedications(pid);
+        if offered.is_empty() {
+            return chosen;
+        }
+        offered.sort_by(|left, right| place(left).cmp(&place(right)).then(left.cmp(right)));
+        let Some(dedication) = offered.into_iter().find(|dedication| {
+            g.apply(
+                pid,
+                &Action::ChooseDedication {
+                    dedication: *dedication,
+                },
+            )
+            .is_ok()
+        }) else {
+            return chosen;
+        };
+        chosen.push(dedication);
     }
 }
 

@@ -6649,6 +6649,11 @@ pub struct AdvancedAi {
     /// tied a Farm; live King games since builder-before-the-army-2 worked
     /// 10.0 unimproved hills at t100.
     improvement_upgrades_count: bool,
+    /// `golden-dedication-serves-the-conquest`: a Golden or Heroic Age takes
+    /// its Dedications in the conquest order, not the alphabetical tie-break
+    /// that led with Exodus of the Evangelists. See
+    /// `ai::choose_conquest_dedications`.
+    golden_dedication_serves_the_conquest: bool,
     // ---- append: l-o ------------------------------------------------
     /// `luxury-buy-asks`: the live bridge asks a peaceful rival for a luxury
     /// copy (`append_luxury_buy_order` in `civvis_orders`). Off: no rival
@@ -9575,6 +9580,7 @@ impl AdvancedAi {
             industry_in_the_district_list: false,
             industrial_hub: false,
             improvement_upgrades_count: false,
+            golden_dedication_serves_the_conquest: false,
             // ---- append: l-o ----------------------------------------
             luxury_buy_asks: false,
             overwhelming_power_declares: false,
@@ -21914,7 +21920,19 @@ impl AdvancedAi {
         } else {
             self.recovery_since = None;
         }
-        crate::ai::choose_dedications(g, pid, self.base.w.dedication_choice);
+        if self.golden_dedication_serves_the_conquest {
+            let age = g.players[pid].age.clone();
+            for dedication in
+                crate::ai::choose_conquest_dedications(g, pid, self.base.w.dedication_choice)
+            {
+                think!(self.journal(), Diplomacy, Decision,
+                       "Dedicating the {age} age to {}", dedication.as_str();
+                       "golden-dedication-serves-the-conquest: the Golden half a conquest \
+                        spends first, ahead of the alphabetical Exodus of the Evangelists");
+            }
+        } else {
+            crate::ai::choose_dedications(g, pid, self.base.w.dedication_choice);
+        }
         self.propose_protective_friendship(g, pid);
         let incoming: Vec<u32> = g
             .pending_deals

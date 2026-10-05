@@ -3000,6 +3000,12 @@ pub const GENES: &[Gene] = &[
     // three and held there, the approach charging each the city's whole
     // reply plus 20. See `siege_train::near_breach`.
     Gene { tag: "guns-post-for-a-near-breach", field: "guns_post_for_a_near_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_post_for_a_near_breach, disable: AdvancedAi::disable_guns_post_for_a_near_breach },
+    // Live King 10-04/05 (88 games): a Golden or Heroic Age does not rank its
+    // Dedication, so the alphabetical tie-break took Exodus of the
+    // Evangelists in 57 of 81 Medieval Golden Ages, whose Golden half
+    // (Missionaries, Great Prophet points) a seat with no religion never
+    // spends. See `ai::choose_conquest_dedications`.
+    Gene { tag: "golden-dedication-serves-the-conquest", field: "golden_dedication_serves_the_conquest", kind: Kind::OptIn, enable: AdvancedAi::enable_golden_dedication_serves_the_conquest, disable: AdvancedAi::disable_golden_dedication_serves_the_conquest },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
