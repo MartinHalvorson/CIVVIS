@@ -1,0 +1,97 @@
+{
+  "schema": 1,
+  "candidate": "culture-defense-finishes-theater",
+  "candidate_default": "off",
+  "scope": "Decision reach and regression verification. No established native win-rate gain.",
+  "motivation": {
+    "run": "civvis-20261005T155755Z",
+    "turn": 190,
+    "completed_theaters": 5,
+    "amphitheaters": 0,
+    "native_outcome": "lost to Culture at turn 211"
+  },
+  "rust_ci": {
+    "revision": "9852f561c",
+    "run_url": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/37342881951",
+    "passed": 4622,
+    "skipped": 50,
+    "reservation_tests_passed": 7,
+    "overall_gate": "failed after Rust tests because the new gene lacks firing evidence"
+  },
+  "existing_alternative": {
+    "tag": "culture-building-catchup-3",
+    "scope": "Both arms read identical full event histories and use the same immutable 3188e7c07 decider binary. Candidate enables only the existing general catch-up tag. These proposals do not measure completed buildings or counterfactual wins.",
+    "replays": [
+      {
+        "run": "civvis-20261005T155755Z",
+        "source_sha256": "fd4d07299b0e34764a484a4aa0e98e86322cf1b38407d9d72ab244aa27dfb42c",
+        "binary_sha256": {
+          "baseline": "8b1323de0e0289bf4d8573edd9cd8a5759ccee374319a7f906c7df07685f2ced",
+          "candidate": "8b1323de0e0289bf4d8573edd9cd8a5759ccee374319a7f906c7df07685f2ced"
+        },
+        "force_file_sha256": "ec542ddf5e2d9c55d1a067c4f4de869e0404770c790ecec3f944900cfaf6e7c5",
+        "frames": 594,
+        "changed_order_frames": 202,
+        "changed_native_action_frames": 314,
+        "only_enabled_tag": [
+          "culture-building-catchup-3"
+        ],
+        "removed_tags": [],
+        "theater_proposal_frames": 52,
+        "unique_cities": 6,
+        "first_theater_proposal": {
+          "turn": 98,
+          "frame": 0,
+          "city": "Caracas",
+          "city_id": 196610,
+          "kind": "produce",
+          "verb": "BUILDING_AMPHITHEATER",
+          "observed_queue": null,
+          "observed_buildings": [
+            "BUILDING_MONUMENT",
+            "BUILDING_WALLS"
+          ]
+        },
+        "returncodes": {
+          "baseline": 0,
+          "candidate": 0
+        }
+      },
+      {
+        "run": "civvis-20261005T150407Z",
+        "source_sha256": "6e0b250282f79bb015dca5e61e28adf53784ab2412ee290eb09f938d624ca3ae",
+        "binary_sha256": {
+          "baseline": "8b1323de0e0289bf4d8573edd9cd8a5759ccee374319a7f906c7df07685f2ced",
+          "candidate": "8b1323de0e0289bf4d8573edd9cd8a5759ccee374319a7f906c7df07685f2ced"
+        },
+        "force_file_sha256": "1ca7595969c74d3841b9189b3071c882b347c2d0048a8114adc61410ec34f04e",
+        "frames": 703,
+        "changed_order_frames": 171,
+        "changed_native_action_frames": 294,
+        "only_enabled_tag": [
+          "culture-building-catchup-3"
+        ],
+        "removed_tags": [],
+        "theater_proposal_frames": 51,
+        "unique_cities": 6,
+        "first_theater_proposal": {
+          "turn": 76,
+          "frame": 0,
+          "city_id": 262147,
+          "kind": "produce",
+          "verb": "BUILDING_AMPHITHEATER"
+        },
+        "returncodes": {
+          "baseline": 0,
+          "candidate": 0
+        }
+      }
+    ]
+  },
+  "remaining": [
+    "Finish candidate build and compare it with general catch-up.",
+    "Generate actual game firing evidence.",
+    "Compare simulator Domination outcomes and original capital holdings.",
+    "Verify any promising policy in native games before claiming native win-rate improvement."
+  ]
+}
