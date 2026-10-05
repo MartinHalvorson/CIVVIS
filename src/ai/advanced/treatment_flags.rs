@@ -6046,6 +6046,17 @@ impl AdvancedAi {
         self.conquest_opening_stays_near = false;
     }
 
+    /// Opt-in gene `declaration-needs-the-edge`; see
+    /// [`Self::declaration_needs_the_edge`].
+    pub fn enable_declaration_needs_the_edge(&mut self) {
+        self.declaration_needs_the_edge = true;
+    }
+
+    /// The twin of `enable_declaration_needs_the_edge`.
+    pub fn disable_declaration_needs_the_edge(&mut self) {
+        self.declaration_needs_the_edge = false;
+    }
+
     /// Opt-in gene `diplomatic-contender-eliminated`; see
     /// [`Self::diplomatic_contender_eliminated`].
     pub fn enable_diplomatic_contender_eliminated(&mut self) {

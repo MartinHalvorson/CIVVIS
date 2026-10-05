@@ -1103,6 +1103,27 @@ fn a_contender_at_fourteen_holds_the_front_under_the_elimination_gene() {
     assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), None);
 }
 
+/// See `declaration_has_the_edge`: under the gene a plain staged war needs
+/// 1.5 times the target's steady power; with the gene off it always has it.
+#[test]
+fn a_staged_war_needs_the_edge_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    assert!(ai.declaration_has_the_edge(&g, 0, 2), "off");
+    ai.enable_declaration_needs_the_edge();
+    assert!(
+        ai.declaration_has_the_edge(&g, 0, 2),
+        "four armors against a warrior"
+    );
+    let mut row = 2;
+    while g.military_power(0) >= DECLARATION_EDGE_RATIO * g.military_power(2) {
+        g.spawn_test_unit("modern_armor", 2, (30, row));
+        row += 1;
+    }
+    assert!(!ai.declaration_has_the_edge(&g, 0, 2), "short of 1.5 times");
+    ai.disable_declaration_needs_the_edge();
+    assert!(ai.declaration_has_the_edge(&g, 0, 2), "off again");
+}
+
 /// See `capital_prey_beside_the_front`: under the gene, the weakest rival
 /// beside the front whose own capital stands open within reach is named; a
 /// walled capital or a real army leaves it a near miss, and a war on such a

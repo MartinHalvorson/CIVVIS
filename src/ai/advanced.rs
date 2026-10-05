@@ -5346,6 +5346,10 @@ pub struct AdvancedAi {
     /// 650-gold reserve (10 cities) against banks of 378-485. Off by default.
     age_closer_spends_the_reserve: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `declaration-needs-the-edge`: a plain staged declaration needs
+    /// `one_war::DECLARATION_EDGE_RATIO` times the target's steady power.
+    /// See `one_war::declaration_has_the_edge`.
+    declaration_needs_the_edge: bool,
     /// `diplomatic-contender-eliminated`: a Diplomatic Victory contender at
     /// war with us and at our mercy holds the front until it holds no city,
     /// nearest city first. See `one_war::diplomatic_contender_to_eliminate`.
@@ -9279,6 +9283,7 @@ impl AdvancedAi {
             breaker_to_the_fastest: false,
             age_closer_spends_the_reserve: false,
             // ---- append: c-d ----------------------------------------
+            declaration_needs_the_edge: false,
             diplomatic_contender_eliminated: false,
             counterweight_faith_is_no_threat: false,
             capital_prey_scales_the_walls: false,
@@ -22356,6 +22361,17 @@ impl AdvancedAi {
         let overwhelming_ready = !staged
             && objective
                 .is_some_and(|(_, pos)| self.overwhelming_power_declares(g, pid, target, pos));
+        // See `declaration_has_the_edge`: the plain staged war needs the edge;
+        // an urgent clock and the counters' own waivers do not.
+        let edge =
+            urgent_denial || faith_counter_due || self.declaration_has_the_edge(g, pid, target);
+        if close_enough && ready && staged && !edge {
+            think!(self.journal(), Military, Detail,
+                   "Holding off war with {}", g.players[target].civ;
+                   "{my_power:.0} power against their {target_power:.0}: a staged war short of {:.1} times their power took a city of theirs within 20 turns in 2 of 25 live declarations",
+                   one_war::DECLARATION_EDGE_RATIO);
+        }
+        let staged = staged && edge;
         if close_enough
             && ready
             && (staged
