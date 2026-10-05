@@ -291,6 +291,23 @@ do
     -- Frame deltas that do not scale while the UI clock does read 0.5.
     for _ = 1, 120 do h.ui = h.ui + 0.2; h.update(0.1) end
     assert(env.ExposedMembers.CivvisFrameClock.ratio == 0.5, "unscaled frame deltas read 0.5")
+    -- Only consecutive frames count. A hidden HUD (a leader screen stops this
+    -- SetUpdate while the UI clock runs on: G98 read 0.48) and a long hitch
+    -- whose delta the engine caps are gaps, not missing frame time.
+    env.ExposedMembers.CivvisFrameClock = nil
+    env.CivvisFrameClock.raw, env.CivvisFrameClock.ui = 0, 0  -- a fresh window
+    for _ = 1, 60 do frame(0.1) end
+    h.ui = h.ui + 5.0                       -- 5 UI-s with no frames at all
+    for _ = 1, 30 do frame(0.1) end
+    h.ui = h.ui + 0.8; h.update(0.2)        -- one long frame, its delta capped
+    for _ = 1, 30 do frame(0.1) end
+    fc = env.ExposedMembers.CivvisFrameClock
+    assert(fc ~= nil and fc.ratio == 1, "a hidden stretch and a capped hitch read 1, not 0.48: " .. tostring(fc and fc.ratio))
+    -- Unscaled deltas still read 0.5 in every ordinary frame.
+    env.ExposedMembers.CivvisFrameClock = nil
+    env.CivvisFrameClock.raw, env.CivvisFrameClock.ui = 0, 0
+    for _ = 1, 120 do h.ui = h.ui + 0.2; h.update(0.1) end
+    assert(env.ExposedMembers.CivvisFrameClock.ratio == 0.5, "unscaled deltas across consecutive frames read 0.5")
     -- A missing or nonsense scale reads as 1, and is acknowledged as 1.
     env.ExposedMembers.CivvisTimeScale = "fast"
     frame(0.1)
