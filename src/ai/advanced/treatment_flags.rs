@@ -6357,6 +6357,17 @@ impl AdvancedAi {
         self.flipped_capital_finishes = false;
     }
 
+    /// Opt-in gene `opening-yields-to-walls`; see
+    /// [`Self::opening_yields_to_walls`].
+    pub fn enable_opening_yields_to_walls(&mut self) {
+        self.opening_yields_to_walls = true;
+    }
+
+    /// The twin of `enable_opening_yields_to_walls`.
+    pub fn disable_opening_yields_to_walls(&mut self) {
+        self.opening_yields_to_walls = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

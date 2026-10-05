@@ -245,6 +245,14 @@ pub(crate) const CONQUEST_APPROACHING_GRACE_TURNS: u32 = 12;
 /// shipped campaign gives an unlaunched plan.
 pub(crate) const CONQUEST_ABANDON_TURNS: u32 = 20;
 
+/// `opening-yields-to-walls`: city health at or above which a declared
+/// opening that has taken nothing reads as not having dented its target once
+/// [`CONQUEST_ABANDON_TURNS`] standard turns of war have passed. The three
+/// openings that converted on 10-04/05 had their target at 129 or less by the
+/// thirteenth turn of the war and took it by the fifteenth; the stalled ones
+/// sat at 178-200.
+pub(crate) const CONQUEST_UNDENTED_HP: i32 = 150;
+
 /// The war's own kills per loss at or above which the campaign extends to
 /// the rival's next city. One is break-even, and the live rate is 0.45: a
 /// campaign trading at par is already twice the empire's ordinary rate.
@@ -714,6 +722,37 @@ impl AdvancedAi {
             .get(&city)
             .is_some_and(|target| g.city_max_wall_hp(target) > 0)
             .then_some(city)
+    }
+
+    /// `opening-yields-to-walls`: why a declared opening that has taken nothing
+    /// should ask for terms and stand down, if it should. Its target walled up
+    /// while the empire holds and queues no Battering Ram or Siege Tower, or the
+    /// war has run [`CONQUEST_ABANDON_TURNS`] standard turns with the city still
+    /// at [`CONQUEST_UNDENTED_HP`] or more. `None` with the gene off, once a
+    /// city has been taken, and for a vanished city. Live King
+    /// civvis-20261005T204024Z (game 161) declared on Kongo at turn 29 for an
+    /// unwalled Mbanza Kongo; it walled up at 41 and the war still stood at 75
+    /// with four cities of ours. Over the 10-04/05 control runs the 13 openings
+    /// that took nothing all ran until the strike force was dead or the rival
+    /// made peace, 20 to 130 turns after declaring, and the empire stood one
+    /// city behind the openings-free games at turn 75 and two at turn 100.
+    pub(super) fn conquest_yields_to_walls(
+        &self,
+        g: &Game,
+        pid: usize,
+        opening: &ConquestOpening,
+        declared: u32,
+    ) -> Option<&'static str> {
+        if !self.opening_yields_to_walls || opening.taken > 0 {
+            return None;
+        }
+        let city = g.cities.get(&opening.city)?;
+        if g.city_max_wall_hp(city) > 0 && Self::conquest_breakers_held(g, pid) == 0 {
+            return Some("the target walled up before the strike landed and no breaker is held");
+        }
+        let at_war = g.turn.saturating_sub(declared);
+        (at_war >= g.standard_duration(CONQUEST_ABANDON_TURNS) && city.hp >= CONQUEST_UNDENTED_HP)
+            .then_some("the strike has not dented the city in the whole patience window")
     }
 
     /// Wall breakers the empire holds or has queued anywhere.
@@ -1559,6 +1598,17 @@ impl AdvancedAi {
                     let target = opening.target;
                     self.conquest_sue_for_peace(g, pid, target);
                     self.conquest_release(g, "the whole strike force is gone");
+                    return;
+                }
+                // `opening-yields-to-walls`: see `conquest_yields_to_walls`.
+                if let Some(why) = self.conquest_yields_to_walls(g, pid, opening, declared) {
+                    let (target, city) = (opening.target, opening.city);
+                    think!(self.journal(), Military, Strategy,
+                           "The conquest opening yields at {}", g.cities[&city].name;
+                           "{why}; asking {} for terms", g.players[target].civ;
+                           g.cities[&city].pos);
+                    self.conquest_sue_for_peace(g, pid, target);
+                    self.conquest_release(g, why);
                     return;
                 }
             } else {

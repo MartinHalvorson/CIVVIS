@@ -2194,3 +2194,92 @@ fn a_rival_city_ten_tiles_out_is_named_over_its_far_capital() {
     );
     assert_eq!(on.conquest_near_noted, None, "nothing was left alone");
 }
+
+// ------------------------------------------------- opening-yields-to-walls
+
+/// A declared opening with its force at the rally, for the yield tests.
+fn declared_opening(gene: bool) -> (Game, AdvancedAi, u32) {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = opened(&mut game);
+    if gene {
+        ai.enable_opening_yields_to_walls();
+    }
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        1,
+        CONQUEST_RANGED + CONQUEST_MELEE,
+    );
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_declaration(&mut game, 0));
+    let target = ai.conquest_opening.as_ref().unwrap().city;
+    (game, ai, target)
+}
+
+fn wall_up(game: &mut Game, cid: u32) {
+    let city = game.cities.get_mut(&cid).unwrap();
+    city.buildings.push(name!("walls"));
+    city.wall_hp = 100;
+}
+
+#[test]
+fn opening_yields_to_walls_is_a_native_opt_in_off_in_both_controllers() {
+    opt_in_off_in_both_controllers("opening-yields-to-walls", |ai| ai.opening_yields_to_walls);
+}
+
+/// Live King civvis-20261005T204024Z (game 161): Mbanza Kongo was unwalled
+/// at the turn-29 declaration and walled at 41, with no Ram anywhere; the
+/// war still stood at turn 75.
+#[test]
+fn a_target_that_walls_up_with_no_breaker_held_ends_the_opening() {
+    for gene in [false, true] {
+        let (mut game, mut ai, target) = declared_opening(gene);
+        game.turn += 1;
+        wall_up(&mut game, target);
+        ai.maintain_conquest_opening(&mut game, 0);
+        if gene {
+            assert!(ai.conquest_opening.is_none(), "on: the opening stands down");
+            assert!(ai.peace_offers.contains(&1), "on: and asks for terms");
+            assert!(!ai.conquest_owns_the_campaign());
+        } else {
+            assert!(ai.conquest_opening.is_some(), "off: the war keeps the opening");
+            assert!(!ai.peace_offers.contains(&1));
+        }
+    }
+}
+
+#[test]
+fn a_held_breaker_keeps_the_opening_through_the_walls() {
+    let (mut game, mut ai, target) = declared_opening(true);
+    game.turn += 1;
+    wall_up(&mut game, target);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    bodies(&mut game, 0, "battering_ram", rally, 2, 1);
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_some(), "a Ram can still open the walls");
+    assert!(!ai.peace_offers.contains(&1));
+}
+
+#[test]
+fn an_undented_city_ends_the_opening_after_the_patience_window() {
+    let (mut game, mut ai, target) = declared_opening(true);
+    let declared = ai.conquest_opening.as_ref().unwrap().declared.unwrap();
+    let window = game.standard_duration(CONQUEST_ABANDON_TURNS);
+
+    game.turn = declared + window - 1;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_some(), "inside the window the war keeps going");
+
+    game.cities.get_mut(&target).unwrap().hp = 120;
+    game.turn = declared + window;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_some(), "a dented city keeps the opening");
+
+    game.cities.get_mut(&target).unwrap().hp = 200;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_none(), "an undented city ends it");
+    assert!(ai.peace_offers.contains(&1));
+}

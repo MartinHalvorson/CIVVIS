@@ -3044,6 +3044,14 @@ pub const GENES: &[Gene] = &[
     // rule or wartime front ever named it. See
     // `victory_heuristics::free_city_finish`.
     Gene { tag: "flipped-capital-finishes", field: "flipped_capital_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_flipped_capital_finishes, disable: AdvancedAi::disable_flipped_capital_finishes },
+    // `opening-yields-to-walls`: a declared conquest opening that has taken
+    // nothing asks for terms and stands down when its target walls up with
+    // no breaker held, or after the patience window with the city undented.
+    // 13 of 16 openings on 10-04/05 took nothing, 9 of their targets walled
+    // up 1-38 turns after the declaration, and each war ran until the strike
+    // force was dead or the rival made peace, 20-130 turns later. See
+    // `early_conquest::conquest_yields_to_walls`.
+    Gene { tag: "opening-yields-to-walls", field: "opening_yields_to_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_yields_to_walls, disable: AdvancedAi::disable_opening_yields_to_walls },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
