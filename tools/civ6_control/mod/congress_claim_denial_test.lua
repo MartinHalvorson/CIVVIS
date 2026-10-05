@@ -22,7 +22,10 @@ local function upvalue(fn, key, replacement)
     error("missing upvalue " .. key)
 end
 local tick = upvalue(CivvisQueue.onUiPulse, "tick")
-local config = { Play = true, CivvisDecides = false, CounterResolutions = false }
+-- `ParticipationDenial` is off for the Diplomatic Victory checks below and
+-- exercised by its own case at the end.
+local config = { Play = true, CivvisDecides = false, CounterResolutions = false,
+    ParticipationDenial = false }
 upvalue(tick, "cfg", config)
 local hooks = {}
 Events = setmetatable({ WorldCongressStage1 = { Add = function(fn) hooks.stage = fn end } },
@@ -171,6 +174,24 @@ ballot("drain spending off", 171, 8, nil, 1, "outvote", 5)
 config.DiploVictorySpendDraining = nil
 tally.wc_rival_block = nil
 tally.wc_review_favor = nil
+
+-- `CivvisParticipationDenialOption`: with the leader on 19, the Migration
+-- Treaty -- whose leader votes A on itself -- draws three B votes on the
+-- leader from what the Diplomatic Victory ballot leaves (569 - 544 = 25), and
+-- the Diplomatic Victory ballot is unchanged. The Trade Treaty, with no record
+-- of the leader's vote, keeps its free vote.
+config.ParticipationDenial = nil
+requests, submits = {}, 0
+bank, leaderPoints = 569, 19
+config.DiploVictoryVoteFloor = nil
+local _, deniedSpent = vote(0)
+check("participation denial leaves the diplomatic ballot", requests[1].votes, 17)
+check("participation denial option", requests[2].option, 2)
+check("participation denial names the leader", requests[2].selection, 3)
+check("participation denial votes", requests[2].votes, 3)
+check("participation denial cost", deniedSpent, costs[16] + costs[2])
+check("participation denial leaves an unknown vote free", requests[3].votes, 1)
+config.ParticipationDenial = false
 
 if failures > 0 then os.exit(1) end
 print("all Congress claim/denial checks passed")

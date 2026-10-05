@@ -15780,6 +15780,48 @@ CivvisCongressBallotBank = function(favor, leaderPoints, config, draining)
 	return bank - (tonumber(config.DiploVictoryClaimReserve) or 120);
 end
 
+-- ★★★ CONGRESS PARTICIPATION IS A DIPLOMATIC VICTORY POINT, AND IT CAN BE
+-- DENIED. At every session a major gains, besides the Diplomatic Victory
+-- resolution's +2/-2 on its target, ONE point for every resolution -- the
+-- Diplomatic Victory one included -- whose winning option AND target match
+-- its own vote ("Congress Participation", LOC_DVP_TOOLTIP_AGREEING_RESOLUTIONS).
+-- That rule predicts 1,951 of 1,976 recorded player-sessions exactly across
+-- the October control runs. Live King civvis-20261005T060002Z (game 104):
+-- Greece went 7 -> 12 at turn 182 (+2 target, +1 on the Diplomatic Victory
+-- resolution, +1 each on World Ideology and Military Advisory) and won on
+-- Diplomacy at 242. A leader's vote on the other resolutions is predictable
+-- enough to vote against: Border Control and Migration Treaty draw option A
+-- on the voter itself (93% and 66% of rival votes), the rest repeat the
+-- voter's option of the last session on that type. Replayed over every
+-- session where the leader stood at 12 or more, three votes on the option
+-- opposite that prediction took 13 of the leader's 38 participation points
+-- for 12 Favor a resolution (Online table); one vote moved nothing, and four
+-- or five took no more. Returns the option to vote, or nil to leave the
+-- ballot as it is. `lastOption` is keyed "<ResolutionType>:<player>" by the
+-- review emitter. Off with `ParticipationDenial = false`. Exported globally
+-- to stay below the chunk-local limit.
+CivvisParticipationDenialOption = function(rtype, leader, pid, leaderPoints, lastOption, config)
+	config = type(config) == "table" and config or {};
+	if config.ParticipationDenial == false or rtype == nil
+		or rtype == "WC_RES_DIPLOVICTORY" then
+		return nil;
+	end
+	leader = tonumber(leader);
+	if leader == nil or leader < 0 or leader == tonumber(pid) then return nil; end
+	if (tonumber(leaderPoints) or 0) < (tonumber(config.ParticipationDenialFloor)
+		or tonumber(config.DiploVictoryVoteFloor) or 12) then
+		return nil;
+	end
+	local predicted = nil;
+	if rtype == "WC_RES_BORDER_CONTROL" or rtype == "WC_RES_MIGRATION_TREATY" then
+		predicted = 1;
+	elseif type(lastOption) == "table" then
+		predicted = tonumber(lastOption[tostring(rtype) .. ":" .. tostring(leader)]);
+	end
+	if predicted ~= 1 and predicted ~= 2 then return nil; end
+	return 3 - predicted;
+end
+
 -- A ballot is verified against all three native selection fields, not just
 -- its size. WorldCongressPopup.lua:1915-1919 reads PlayerID, OptionChosen,
 -- and Votes; :1935-1940 reads ResolutionTarget for that same voter.
@@ -19402,6 +19444,10 @@ local function beginTurn(player, pid, turn)
 		-- on the Diplomatic Victory resolution: the block an A ballot must
 		-- outvote to take the +2 (`wc_rival_block`, read by the ballot).
 		local rivalBlock = nil;
+		-- Each voter's option per resolution type, for
+		-- `CivvisParticipationDenialOption` at the next ballot.
+		local lastOption = envoyTally.wc_last_option or {};
+		envoyTally.wc_last_option = lastOption;
 		for i, r in pairs(review.Resolutions or {}) do
 			if type(i) == "number" and type(r) == "table" and r.Type ~= nil then
 				local info = GameInfo.Resolutions[r.Type];
@@ -19417,6 +19463,7 @@ local function beginTurn(player, pid, turn)
 							and votes > (rivalBlock or 0) then
 							rivalBlock = votes;
 						end
+						lastOption[rtype .. ":" .. tostring(who)] = option;
 						local target = sel.ResolutionTarget;
 						voters[#voters + 1] = { player = who, option = option, votes = votes,
 							target = target };
@@ -20912,6 +20959,27 @@ local function tick()
 						end
 					elseif BAN_FIRST[rtype] then
 						option = 2;
+					end
+					-- See `CivvisParticipationDenialOption`: against a leader on
+					-- the denial floor, the option its own vote is predicted
+					-- not to take, with three votes when Favor allows. On a
+					-- player-target resolution option B names the leader.
+					local deny = CivvisParticipationDenialOption(rtype, leader, pid,
+						leaderPoints, envoyTally.wc_last_option, cfg);
+					if deny ~= nil then
+						option = deny;
+						if r.TargetType == "PlayerType" then
+							for idx, t in pairs(targets) do
+								if tonumber(t) == ((deny == 2) and leader or pid) then selection = idx; end
+							end
+						end
+						local want = tonumber(cfg.ParticipationDenialVotes) or 3;
+						local price = tonumber(costs[want - 1]);
+						if want > 1 and price ~= nil and price <= favor then
+							votes = want;
+							favor = favor - price;
+							spent = spent + price;
+						end
 					end
 					local params = {};
 					params[PlayerOperations.PARAM_RESOLUTION_TYPE] = info.Hash;
