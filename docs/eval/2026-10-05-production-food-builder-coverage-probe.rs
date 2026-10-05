@@ -1,5 +1,5 @@
 use civvis::ai::{run_game_observed, AdvancedAi, Ai, VictoryTarget};
-use civvis::game::{Game, GameOptions};
+use civvis::game::{Action, Game, GameOptions};
 use std::collections::BTreeSet;
 
 fn farm_opportunities(g: &Game) -> serde_json::Value {

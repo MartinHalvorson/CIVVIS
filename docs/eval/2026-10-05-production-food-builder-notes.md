@@ -27,3 +27,7 @@ controls to measure frequency beyond these three checkpoints and record known
 hostile reach. Its complete action histories and final worlds must reproduce
 the preceding controls before the observations guide an intervention. No fresh
 strength test or native controller edit has started.
+
+The first whole-turn probe compile caught a missing Action import before any
+replay started. It was corrected; that failed compile is retained separately
+and is not passing validation.
