@@ -5284,6 +5284,9 @@ pub struct AdvancedAi {
     /// The objective tile, our nearest land soldier's best distance to it,
     /// and the turn it was set. See `advanced/capture_march.rs`.
     capture_march: Option<(crate::Pos, i32, u32)>,
+    /// `stall-rebases-on-new-walls`: the capture objective's tile and the
+    /// wall pool last read there. See `rebase_capture_on_new_walls`.
+    capture_walls_seen: Option<(crate::Pos, i32)>,
     /// `culture-counter-declares`: an urgent culture rival is declared on at
     /// `one_war::CULTURE_COUNTER_RATIO` times its power without waiting for a
     /// staged siege. See `one_war::culture_counter_due`. Off by default.
@@ -7023,6 +7026,10 @@ pub struct AdvancedAi {
     /// down falls back to Stage only under `HELD_BREACH_ABORT_SHARE` of the
     /// bill. See `siege_train::HELD_BREACH_WALL_SHARE`. Off by default.
     siege_holds_a_breach: bool,
+    /// `stall-rebases-on-new-walls`: a capture objective that builds walls
+    /// mid-siege starts its stall reading again. See
+    /// `commitments::rebase_capture_on_new_walls`. Off by default.
+    stall_rebases_on_new_walls: bool,
     /// `siege-ranged-floor`: a Siege row asks for
     /// `objective_board::SIEGE_RANGED_FLOOR` ranged bodies whatever its bill,
     /// so the city's own hit points and heal are paid for. Off by default.
@@ -8921,6 +8928,7 @@ impl AdvancedAi {
             domination_strikes_when_staged: false,
             capture_waits_on_the_march: false,
             capture_march: None,
+            capture_walls_seen: None,
             culture_counter_declares: false,
             denial_needs_a_road: false,
             denial_nearest_finish: false,
@@ -9158,6 +9166,7 @@ impl AdvancedAi {
             siege_needs_a_breaker: false,
             siege_budget_counts_what_fires: false,
             siege_holds_a_breach: false,
+            stall_rebases_on_new_walls: false,
             siege_ranged_floor: false,
             siege_rally_holds: false,
             siege_train_scales_with_walls: false,

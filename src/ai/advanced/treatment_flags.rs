@@ -4867,6 +4867,17 @@ impl AdvancedAi {
         self.siege_holds_a_breach = false;
     }
 
+    /// Opt-in gene `stall-rebases-on-new-walls`; see
+    /// [`Self::stall_rebases_on_new_walls`].
+    pub fn enable_stall_rebases_on_new_walls(&mut self) {
+        self.stall_rebases_on_new_walls = true;
+    }
+
+    /// The twin of `enable_stall_rebases_on_new_walls`.
+    pub fn disable_stall_rebases_on_new_walls(&mut self) {
+        self.stall_rebases_on_new_walls = false;
+    }
+
     /// Opt-in gene `siege-ranged-floor`; see [`Self::siege_ranged_floor`].
     pub fn enable_siege_ranged_floor(&mut self) {
         self.siege_ranged_floor = true;

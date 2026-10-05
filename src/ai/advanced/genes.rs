@@ -2470,6 +2470,10 @@ pub const GENES: &[Gene] = &[
     // they stood at 400 again eight turns later. See
     // `siege_train::HELD_BREACH_WALL_SHARE`.
     Gene { tag: "siege-holds-a-breach", field: "siege_holds_a_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_holds_a_breach, disable: AdvancedAi::disable_siege_holds_a_breach },
+    // Live King 021048Z stood down Kwadukuza as "not pushed to a new low"
+    // while its new walls fell from 64 to 28. See
+    // `commitments::rebase_capture_on_new_walls`.
+    Gene { tag: "stall-rebases-on-new-walls", field: "stall_rebases_on_new_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_stall_rebases_on_new_walls, disable: AdvancedAi::disable_stall_rebases_on_new_walls },
     // Live King 115745Z sieged unwalled Pest with one Archer shot a turn
     // while ten bodies held in reserve; the city walled at turn 78. See
     // `objective_board::SIEGE_RANGED_FLOOR`.
