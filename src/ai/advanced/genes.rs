@@ -2664,6 +2664,11 @@ pub const GENES: &[Gene] = &[
     // G64's Canberra read "6.9 turns" at turn 125 and fell at 148. See
     // `siege_train::shooter_hits_walls`.
     Gene { tag: "siege-counts-posted-shooters", field: "siege_counts_posted_shooters", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_counts_posted_shooters, disable: AdvancedAi::disable_siege_counts_posted_shooters },
+    // Live King civvis-20261005T003728Z (game 89): Mashhad held in Stage
+    // from turn 183 to 225; its guns, twelve to fourteen tiles out, stepped
+    // between two tiles every frame behind one of ours in a ridge's only gap.
+    // See `siege_train::siege_stage_step`.
+    Gene { tag: "staging-column-passes-through", field: "staging_column_passes_through", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_column_passes_through, disable: AdvancedAi::disable_staging_column_passes_through },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

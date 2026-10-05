@@ -5409,6 +5409,17 @@ impl AdvancedAi {
         self.siege_counts_posted_shooters = false;
     }
 
+    /// Opt-in gene `staging-column-passes-through`; see
+    /// [`Self::staging_column_passes_through`].
+    pub fn enable_staging_column_passes_through(&mut self) {
+        self.staging_column_passes_through = true;
+    }
+
+    /// The twin of `enable_staging_column_passes_through`.
+    pub fn disable_staging_column_passes_through(&mut self) {
+        self.staging_column_passes_through = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
