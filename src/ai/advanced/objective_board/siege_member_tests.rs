@@ -193,3 +193,172 @@ fn a_gun_stays_with_the_walled_siege() {
     ai.rebuild_force_groups(&g, 0, &conquest(&g, Some(target)));
     assert_eq!(row_of(&ai, gun), Some(ObjectiveKey::Defend(home)));
 }
+
+/// `breaker-recruits-the-nearest-gun`: a walled siege held for want of a
+/// breaker, its one gun fourteen tiles out, takes a fit gun of ours eight
+/// tiles from the city that the board left in the Reserve. October 5 live:
+/// on the rows held "nothing to open the walls" the nearest gun we owned
+/// stood within 15 tiles on 1791 of ~2300, and of the guns tracked over held
+/// spans 155 stood parked while 21 arrived.
+#[test]
+fn a_held_siege_recruits_the_nearest_owned_gun() {
+    for recruits in [false, true] {
+        let mut g = flat_board(374_614, &[at(6, 10), at(30, 10)], false);
+        let target = g.city_at(at(30, 10)).unwrap();
+        let walled = g.cities.get_mut(&target).unwrap();
+        walled.buildings = vec![crate::name!("walls")];
+        walled.wall_hp = 100;
+        let city_pos = walled.pos;
+        war(&mut g, 0, 1);
+        for row in 8..=12 {
+            g.spawn_test_unit("swordsman", 0, at(24, row));
+        }
+        // The train's own gun, fourteen tiles out on the road.
+        let far = g.spawn_test_unit("catapult", 0, at(16, 10));
+        let mut ai = on();
+        ai.enable_siege_needs_a_breaker();
+        if recruits {
+            ai.enable_breaker_recruits_the_nearest_gun();
+        }
+        let plan = conquest(&g, Some(target));
+        ai.rebuild_force_groups(&g, 0, &plan);
+        assert_eq!(
+            row_of(&ai, far),
+            Some(ObjectiveKey::Siege(target)),
+            "fixture: the far gun meets the row's gun count"
+        );
+        // A second gun, eight tiles from the city, after the row was met;
+        // the train held for a breaker last turn.
+        let near = g.spawn_test_unit("catapult", 0, at(22, 10));
+        assert_eq!(g.wdist(g.units[&near].pos, city_pos), 8, "fixture");
+        ai.siege_breaker_waits.insert(
+            city_pos,
+            crate::ai::advanced::siege_train::BreakerWait {
+                since: g.turn,
+                last: g.turn,
+                nearest: 14,
+                nearest_turn: g.turn,
+            },
+        );
+        g.turn += 1;
+        ai.rebuild_force_groups(&g, 0, &plan);
+        if recruits {
+            assert_eq!(row_of(&ai, near), Some(ObjectiveKey::Siege(target)), "the near gun joins");
+            assert_eq!(row_of(&ai, far), Some(ObjectiveKey::Siege(target)), "the far gun stays");
+        } else {
+            assert_ne!(
+                row_of(&ai, near),
+                Some(ObjectiveKey::Siege(target)),
+                "control: the met row leaves the near gun out"
+            );
+        }
+        // No breaker wait: nothing is recruited.
+        let mut quiet = on();
+        quiet.enable_siege_needs_a_breaker();
+        quiet.enable_breaker_recruits_the_nearest_gun();
+        let mut g2 = flat_board(374_614, &[at(6, 10), at(30, 10)], false);
+        let target2 = g2.city_at(at(30, 10)).unwrap();
+        let walled2 = g2.cities.get_mut(&target2).unwrap();
+        walled2.buildings = vec![crate::name!("walls")];
+        walled2.wall_hp = 100;
+        war(&mut g2, 0, 1);
+        for row in 8..=12 {
+            g2.spawn_test_unit("swordsman", 0, at(24, row));
+        }
+        let far2 = g2.spawn_test_unit("catapult", 0, at(16, 10));
+        let plan2 = conquest(&g2, Some(target2));
+        quiet.rebuild_force_groups(&g2, 0, &plan2);
+        let near2 = g2.spawn_test_unit("catapult", 0, at(22, 10));
+        g2.turn += 1;
+        quiet.rebuild_force_groups(&g2, 0, &plan2);
+        assert_eq!(row_of(&quiet, far2), Some(ObjectiveKey::Siege(target2)));
+        assert_ne!(
+            row_of(&quiet, near2),
+            Some(ObjectiveKey::Siege(target2)),
+            "no breaker wait, no recruit"
+        );
+    }
+}
+
+/// `breaker-recruits-the-nearest-gun`: a gun another Siege row holds, a gun
+/// beyond `BREAKER_RECRUIT_REACH`, and the last soldier in a city of ours
+/// stay where they are; the nearest free gun within reach is the one taken.
+#[test]
+fn the_recruit_leaves_another_sieges_gun_alone() {
+    let mut g = flat_board(374_615, &[at(6, 10), at(30, 10)], false);
+    let target = g.city_at(at(30, 10)).unwrap();
+    let walled = g.cities.get_mut(&target).unwrap();
+    walled.buildings = vec![crate::name!("walls")];
+    walled.wall_hp = 100;
+    let city_pos = walled.pos;
+    war(&mut g, 0, 1);
+    for row in 8..=12 {
+        g.spawn_test_unit("swordsman", 0, at(24, row));
+    }
+    let mut ai = on();
+    ai.enable_siege_needs_a_breaker();
+    ai.enable_breaker_recruits_the_nearest_gun();
+    let plan = conquest(&g, Some(target));
+    ai.rebuild_force_groups(&g, 0, &plan);
+    // Three guns after the board: one held by another siege's force at
+    // seven tiles, one free at nine, one free at seventeen.
+    let held = g.spawn_test_unit("catapult", 0, at(23, 10));
+    let free = g.spawn_test_unit("catapult", 0, at(21, 10));
+    let beyond = g.spawn_test_unit("catapult", 0, at(13, 10));
+    assert_eq!(g.wdist(g.units[&held].pos, city_pos), 7, "fixture");
+    assert_eq!(g.wdist(g.units[&free].pos, city_pos), 9, "fixture");
+    assert_eq!(g.wdist(g.units[&beyond].pos, city_pos), 17, "fixture");
+    ai.siege_breaker_waits.insert(
+        city_pos,
+        crate::ai::advanced::siege_train::BreakerWait {
+            since: g.turn,
+            last: g.turn,
+            nearest: 7,
+            nearest_turn: g.turn,
+        },
+    );
+    let rows = ai.objective_board().rows.clone();
+    let mut forces = ai.objective_board().forces.clone();
+    forces.push(TaskForce {
+        id: 9_999,
+        objective_key: ObjectiveKey::Siege(9_999),
+        domain: ForceDomain::Land,
+        units: vec![held],
+        rally: at(23, 10),
+        doctrine_state: ForcePosture::Muster,
+        aimed_at: at(23, 10),
+        formed: g.turn,
+    });
+    let mut assignment: BTreeMap<u32, usize> = BTreeMap::new();
+    for (index, force) in forces.iter().enumerate() {
+        for uid in &force.units {
+            assignment.insert(*uid, index);
+        }
+    }
+    let pool = ai.board_pool(&g, 0);
+    let facts: BTreeMap<u32, UnitFacts> =
+        pool.iter().map(|uid| (*uid, UnitFacts::of(&g, *uid))).collect();
+    assert!(
+        rows.iter().any(|row| row.key == ObjectiveKey::Siege(target)),
+        "fixture: a Siege row"
+    );
+    let recruits = ai.recruit_breakers(&g, 0, &rows, &pool, &facts, &mut forces, &mut assignment);
+    assert_eq!(recruits, vec![(target, free, 9)], "{recruits:?}");
+    let siege = forces
+        .iter()
+        .find(|force| force.objective_key == ObjectiveKey::Siege(target))
+        .unwrap();
+    assert!(siege.units.contains(&free));
+    assert!(!siege.units.contains(&held) && !siege.units.contains(&beyond));
+    assert!(forces
+        .iter()
+        .any(|force| force.objective_key == ObjectiveKey::Siege(9_999) && force.units == vec![held]));
+
+    // With the gene off the pass recruits nothing.
+    ai.disable_breaker_recruits_the_nearest_gun();
+    let mut forces_off = ai.objective_board().forces.clone();
+    let mut assignment_off: BTreeMap<u32, usize> = BTreeMap::new();
+    assert!(ai
+        .recruit_breakers(&g, 0, &rows, &pool, &facts, &mut forces_off, &mut assignment_off)
+        .is_empty());
+}

@@ -2940,6 +2940,11 @@ pub const GENES: &[Gene] = &[
     // their siege and were born 13 tiles out against 7 for our nearest city.
     // See `siege_production::BREAKER_MARCH_FACTOR`.
     Gene { tag: "breaker-reads-the-march", field: "breaker_reads_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_reads_the_march, disable: AdvancedAi::disable_breaker_reads_the_march },
+    // October 5 live: of ~2300 siege rows held "nothing to open the walls",
+    // 57 had no siege unit in the empire; the nearest gun stood within 15
+    // tiles on 1791, outside the force or behind a farther one. See
+    // `objective_board::recruit_breakers`.
+    Gene { tag: "breaker-recruits-the-nearest-gun", field: "breaker_recruits_the_nearest_gun", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_recruits_the_nearest_gun, disable: AdvancedAi::disable_breaker_recruits_the_nearest_gun },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

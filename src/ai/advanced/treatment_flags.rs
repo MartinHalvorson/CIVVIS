@@ -6100,6 +6100,17 @@ impl AdvancedAi {
         self.stale_swap_reads_the_march = false;
     }
 
+    /// Opt-in gene `breaker-recruits-the-nearest-gun`; see
+    /// [`Self::breaker_recruits_the_nearest_gun`].
+    pub fn enable_breaker_recruits_the_nearest_gun(&mut self) {
+        self.breaker_recruits_the_nearest_gun = true;
+    }
+
+    /// The twin of `enable_breaker_recruits_the_nearest_gun`.
+    pub fn disable_breaker_recruits_the_nearest_gun(&mut self) {
+        self.breaker_recruits_the_nearest_gun = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

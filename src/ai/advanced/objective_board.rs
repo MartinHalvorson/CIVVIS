@@ -134,6 +134,11 @@ const SIEGE_RALLY_SWITCH_MARGIN: i32 = 2;
 pub const DEFEND_MARGIN: f64 = 1.2;
 /// `siege-needs-a-breaker`: the most siege guns a walled Siege row asks for.
 pub const BREAKER_GUNS_MAX: usize = 3;
+/// `breaker-recruits-the-nearest-gun`: how far, in tiles from the city, a
+/// siege held for want of a breaker reaches for a gun of ours that is not in
+/// its force. October 5 live: on the rows held "nothing to open the walls",
+/// the nearest gun we owned stood within 6 tiles on 599 and 7-15 on 1192.
+pub const BREAKER_RECRUIT_REACH: i32 = 15;
 /// A Siege row's requirement is the campaign bill times this.
 pub const SIEGE_MARGIN: f64 = 1.25;
 /// `siege-ranged-floor`: the ranged bodies a Siege row asks for whatever its
@@ -2003,6 +2008,20 @@ impl AdvancedAi {
         if self.siege_needs_a_breaker && !arena {
             self.breach_support_joins_the_siege(g, &rows, &pool, &facts, &mut forces, &mut assignment);
         }
+        // `breaker-recruits-the-nearest-gun`: see `recruit_breakers`.
+        if self.breaker_recruits_the_nearest_gun && !arena {
+            for (cid, uid, distance) in
+                self.recruit_breakers(g, pid, &rows, &pool, &facts, &mut forces, &mut assignment)
+            {
+                let city = &g.cities[&cid];
+                let name = &city.name;
+                think!(self.journal(), Military, Decision,
+                    "Siege of {name}: recruits the {} from {distance} tiles for the walls", g.units[&uid].kind;
+                    "walls {}/{} and no fit gun of the train nearer; the gun leaves its post for the siege",
+                    city.wall_hp, g.city_max_wall_hp(city);
+                    city.pos);
+            }
+        }
         // Leftovers: the Reserve, per domain — on an arena, the top force.
         for domain in [ForceDomain::Land, ForceDomain::Sea] {
             // ⚠ Last turn's Reserve members were seeded into `assignment`
@@ -2250,6 +2269,118 @@ impl AdvancedAi {
                 forces[index].units.push(*uid);
             }
         }
+    }
+
+    /// `breaker-recruits-the-nearest-gun`: every walled Siege row whose train
+    /// held outside the city's reach for want of a breaker this turn or the
+    /// last (`siege_breaker_waits`) takes into its land force the nearest fit
+    /// land siege gun of ours within [`BREAKER_RECRUIT_REACH`] of the city,
+    /// when it stands nearer than every fit gun the force already has. One
+    /// gun a row a turn, the rows in rank order. Never a gun another Siege
+    /// row, a Defend or a Relieve row holds, nor the last soldier in a city
+    /// of ours. The board met a row's gun count with any gun on its roster,
+    /// however far, and the breach reading counts only those within
+    /// `siege_train::STAGING_FAR`: October 5 live, 57 of ~2300 rows held
+    /// "nothing to open the walls" had no siege unit in the empire at all,
+    /// and of the guns tracked over held spans 155 stood parked, 21 arrived.
+    /// Returns `(city, gun, tiles)` for each recruit. Empty with the gene off.
+    #[allow(clippy::too_many_arguments)]
+    fn recruit_breakers(
+        &self,
+        g: &Game,
+        pid: usize,
+        rows: &[Objective],
+        pool: &[u32],
+        facts: &BTreeMap<u32, UnitFacts>,
+        forces: &mut [TaskForce],
+        assignment: &mut BTreeMap<u32, usize>,
+    ) -> Vec<(u32, u32, i32)> {
+        let mut recruits = Vec::new();
+        if !self.breaker_recruits_the_nearest_gun {
+            return recruits;
+        }
+        let fit_gun = |uid: u32| {
+            facts
+                .get(&uid)
+                .is_some_and(|unit| unit.siege && unit.domain == ForceDomain::Land)
+                && g.units
+                    .get(&uid)
+                    .is_some_and(|unit| unit.linked_to.is_none() && !g.is_embarked(unit))
+                && self.siege_member_fit(g, uid)
+        };
+        // The last soldier on a city tile of ours stays home.
+        let last_defender = |uid: u32| {
+            let pos = g.units[&uid].pos;
+            g.city_at(pos)
+                .is_some_and(|cid| g.cities.get(&cid).is_some_and(|city| city.owner == pid))
+                && g.unit_ids_at(pos)
+                    .iter()
+                    .filter(|other| **other != uid)
+                    .all(|other| {
+                        g.units.get(other).is_none_or(|unit| {
+                            unit.owner != pid || g.rules.units[unit.kind].class != "military"
+                        })
+                    })
+        };
+        for row in rows {
+            let ObjectiveKey::Siege(cid) = row.key else {
+                continue;
+            };
+            if row.kind != ObjectiveKind::Siege || !row.land {
+                continue;
+            }
+            let Some(city) = g.cities.get(&cid) else {
+                continue;
+            };
+            let held = city.wall_hp > 0
+                && self
+                    .siege_breaker_waits
+                    .get(&city.pos)
+                    .is_some_and(|wait| g.turn.saturating_sub(wait.last) <= 1);
+            if !held {
+                continue;
+            }
+            let Some(index) = forces
+                .iter()
+                .position(|force| force.objective_key == row.key && force.domain == ForceDomain::Land)
+            else {
+                continue;
+            };
+            let force_best = forces[index]
+                .units
+                .iter()
+                .filter(|uid| fit_gun(**uid))
+                .map(|uid| g.wdist(g.units[uid].pos, city.pos))
+                .min()
+                .unwrap_or(i32::MAX);
+            let candidate = pool
+                .iter()
+                .copied()
+                .filter(|uid| fit_gun(*uid) && !forces[index].units.contains(uid))
+                .filter(|uid| {
+                    assignment.get(uid).is_none_or(|current| {
+                        !matches!(
+                            forces[*current].objective_key,
+                            ObjectiveKey::Siege(_) | ObjectiveKey::Defend(_) | ObjectiveKey::Relieve(_)
+                        )
+                    })
+                })
+                .filter(|uid| !last_defender(*uid))
+                .map(|uid| (g.wdist(g.units[&uid].pos, city.pos), uid))
+                .filter(|(distance, _)| *distance <= BREAKER_RECRUIT_REACH && *distance < force_best)
+                .min();
+            let Some((distance, uid)) = candidate else {
+                continue;
+            };
+            if let Some(current) = assignment.insert(uid, index) {
+                if current != index {
+                    forces[current].units.retain(|other| *other != uid);
+                }
+            }
+            forces[index].units.push(uid);
+            recruits.push((cid, uid, distance));
+        }
+        recruits
     }
 
     /// The land force of the top-ranked Siege row, raised if it has none,
