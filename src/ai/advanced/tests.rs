@@ -51367,3 +51367,45 @@ fn a_rival_faith_at_the_bar_opens_the_prophet_race_for_a_faithless_conqueror() {
     }
     assert!(!ai.faith_veto_due(&quiet, 0));
 }
+
+/// See `AdvancedAi::breaker_commitment_holds`: a queued siege gun with
+/// production in it keeps its city's queue against the strategic scorer,
+/// unless the city is threatened or nothing is invested yet.
+#[test]
+fn a_reserved_gun_keeps_its_queue_against_the_scorer() {
+    let mut game = Game::new(2, 24, 16, 61_501, 200, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let city = game.player_city_ids(0)[0];
+    let gun = Item::Unit { unit: crate::name!("catapult") };
+    assert!(game.rules.units[&crate::name!("catapult")].siege);
+    {
+        let c = game.cities.get_mut(&city).unwrap();
+        c.queue = vec![gun.clone()];
+        c.production = 20.0;
+    }
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.breaker_commitment_holds(&game, city, &gun, &plan), "off by default");
+    ai.enable_breaker_keeps_its_queue();
+    assert!(ai.breaker_commitment_holds(&game, city, &gun, &plan));
+    let threatened = StrategicPlan { threatened_city: Some(city), ..plan.clone() };
+    assert!(!ai.breaker_commitment_holds(&game, city, &gun, &threatened), "a threatened city gives it up");
+    game.cities.get_mut(&city).unwrap().production = 0.0;
+    assert!(!ai.breaker_commitment_holds(&game, city, &gun, &plan), "nothing invested yet");
+    let horse = Item::Unit { unit: crate::name!("horseman") };
+    assert!(!ai.breaker_commitment_holds(&game, city, &horse, &plan), "not a gun");
+}
+

@@ -3150,6 +3150,26 @@ impl AdvancedAi {
         self.base.front_weighted_floor_2 = false;
     }
 
+    /// See `AdvancedAi::breaker_commitment_holds`.
+    pub fn enable_breaker_keeps_its_queue(&mut self) {
+        self.breaker_keeps_its_queue = true;
+    }
+
+    /// The twin of `enable_breaker_keeps_its_queue`.
+    pub fn disable_breaker_keeps_its_queue(&mut self) {
+        self.breaker_keeps_its_queue = false;
+    }
+
+    /// See `AdvancedAi::breaker_to_the_fastest`.
+    pub fn enable_breaker_to_the_fastest(&mut self) {
+        self.breaker_to_the_fastest = true;
+    }
+
+    /// The twin of `enable_breaker_to_the_fastest`.
+    pub fn disable_breaker_to_the_fastest(&mut self) {
+        self.breaker_to_the_fastest = false;
+    }
+
     /// See `BasicAi::activation_resume_waits`: an activation path waits for a
     /// queued district that already holds production.
     pub fn enable_activation_resume_waits(&mut self) {

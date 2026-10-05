@@ -2496,6 +2496,11 @@ pub const GENES: &[Gene] = &[
     // Live King 235724Z: version 1 never bound (army 30-58% of its floor);
     // see `BasicAi::front_weighted_floor_2`.
     Gene { tag: "front-weighted-floor-2", field: "front_weighted_floor_2", kind: Kind::OptIn, enable: AdvancedAi::enable_front_weighted_floor_2, disable: AdvancedAi::disable_front_weighted_floor_2 },
+    // Live King 024614Z: reserved catapults displaced and built far from
+    // Lisbon; see `AdvancedAi::breaker_commitment_holds` and
+    // `siege_production.rs`.
+    Gene { tag: "breaker-keeps-its-queue", field: "breaker_keeps_its_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_keeps_its_queue, disable: AdvancedAi::disable_breaker_keeps_its_queue },
+    Gene { tag: "breaker-to-the-fastest", field: "breaker_to_the_fastest", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_to_the_fastest, disable: AdvancedAi::disable_breaker_to_the_fastest },
     // Live King 205431Z: Bogota alternated a Holy Site and a Theater Square
     // every frame from t251; see `BasicAi::activation_resume_waits`.
     Gene { tag: "activation-resume-waits", field: "activation_resume_waits", kind: Kind::HostOnly, enable: AdvancedAi::enable_activation_resume_waits, disable: AdvancedAi::disable_activation_resume_waits },

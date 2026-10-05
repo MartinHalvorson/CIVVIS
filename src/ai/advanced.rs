@@ -5253,6 +5253,15 @@ pub struct AdvancedAi {
     /// (the activation needs come only from the live host); see
     /// `BasicAi::activation_resume_waits`.
     activation_resume_waits: bool,
+    /// The strategic scorer does not displace a queued siege unit that holds
+    /// production while its city is not threatened. Opt-in gene
+    /// `breaker-keeps-its-queue`; see `AdvancedAi::breaker_commitment_holds`.
+    breaker_keeps_its_queue: bool,
+    /// The walled-assault gun reservation takes a busy city whose arrival
+    /// beats the best idle one by `BREAKER_FASTEST_MARGIN` turns and
+    /// `BREAKER_FASTEST_RATIO`, not by eight turns and half again. Opt-in gene
+    /// `breaker-to-the-fastest`; see `siege_production.rs`.
+    breaker_to_the_fastest: bool,
     // ---- append: c-d ------------------------------------------------
     /// `capital-defense-holds`: a damaged city of ours with a hostile beside
     /// it keeps its Defend row whatever the pressure ratio reads, and a
@@ -8924,6 +8933,8 @@ impl AdvancedAi {
             builder_before_the_army_2: false,
             builder_before_the_army_3: false,
             activation_resume_waits: false,
+            breaker_keeps_its_queue: false,
+            breaker_to_the_fastest: false,
             // ---- append: c-d ----------------------------------------
             capital_defense_holds: false,
             diplomatic_contender_kept: false,
@@ -28763,7 +28774,13 @@ impl AdvancedAi {
                             *current_item != item
                                 && ((self.victory_planning
                                     && (*current <= -1_000.0 || !current.is_finite()))
-                                    || score > *current + current.abs() * (preempt_margin - 1.0))
+                                    || (score > *current + current.abs() * (preempt_margin - 1.0)
+                                        && !self.breaker_commitment_holds(
+                                            g,
+                                            cid,
+                                            current_item,
+                                            plan,
+                                        )))
                         }
                         None => true,
                     };
@@ -35356,6 +35373,32 @@ impl AdvancedAi {
             return Some(false);
         }
         Some(self.base.fortify_or_stop(g, pid, uid))
+    }
+
+    /// See `breaker_keeps_its_queue`: whether a queued siege unit holding
+    /// production keeps its city's queue against the strategic scorer. Live
+    /// King 2026-10-05T024614Z t93: Caracas 'switches to horseman, displacing
+    /// catapult at 71', then to a spearman, while Lisbon's walls stood; its
+    /// guns reached the front only from t126. A threatened city still gives
+    /// the queue up, and the under-fire defense writer is a separate step.
+    pub(super) fn breaker_commitment_holds(
+        &self,
+        g: &Game,
+        cid: u32,
+        current: &Item,
+        plan: &StrategicPlan,
+    ) -> bool {
+        if !self.breaker_keeps_its_queue {
+            return false;
+        }
+        let Item::Unit { unit } = current else {
+            return false;
+        };
+        let city = &g.cities[&cid];
+        g.rules.units.get(unit).is_some_and(|spec| spec.siege)
+            && g.item_invested_production(cid, current) > f64::EPSILON
+            && plan.threatened_city != Some(cid)
+            && !(city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
     }
 
     /// The host-only frontier half of the settlement Loyalty guard. It is

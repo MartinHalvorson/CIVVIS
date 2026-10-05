@@ -32,6 +32,14 @@ pub(super) const SUPPLY_DISPLACE_ARRIVAL: f64 = 10.0;
 /// arrives within this many turns of the soonest.
 pub(super) const SUPPLY_STRENGTH_WINDOW: f64 = 3.0;
 
+/// See `AdvancedAi::breaker_to_the_fastest`: how much sooner, in turns, and
+/// by what ratio a busy city must put the gun at the walls to take it from
+/// the best idle one. Live King 2026-10-05T024614Z t83: idle Cumana's gun
+/// would reach Lisbon in about 20 turns, Bogota's in 11, and the eight-turn,
+/// half-again bar sent it to Cumana.
+const BREAKER_FASTEST_MARGIN: f64 = 3.0;
+const BREAKER_FASTEST_RATIO: f64 = 1.2;
+
 impl AdvancedAi {
     /// Whether the wall-breaker reservation reads `owner` as at war: a war
     /// being fought, or, under `breaker-before-the-war`, the Conquest plan's
@@ -350,7 +358,13 @@ impl AdvancedAi {
             let best_fresh = pick(true);
             match (best_idle, best_fresh) {
                 (Some(idle), Some(fresh))
-                    if fresh.0 <= 30.0 && idle.0 >= fresh.0 + 8.0 && idle.0 >= fresh.0 * 1.5 =>
+                    if fresh.0 <= 30.0
+                        && if self.breaker_to_the_fastest {
+                            idle.0 >= fresh.0 + BREAKER_FASTEST_MARGIN
+                                && idle.0 >= fresh.0 * BREAKER_FASTEST_RATIO
+                        } else {
+                            idle.0 >= fresh.0 + 8.0 && idle.0 >= fresh.0 * 1.5
+                        } =>
                 {
                     Some((fresh.0, fresh.1, fresh.2, Some(idle.0)))
                 }
