@@ -5649,6 +5649,15 @@ impl BasicAi {
     }
 
     /// Enable the baseline half of the capital-settler-after-completion gene.
+    /// Whether the capital is still inside the opening book's first four
+    /// builds AND a population-two Settler gene (`capital-settler-after-completion`
+    /// or `rapid-city-expansion-2`) will queue a Settler the next time the
+    /// capital's queue empties, ahead of anything the strategic layer asks
+    /// for. `conquest-opening-needs-the-production` prices that Settler.
+    pub(crate) fn book_settler_ahead(&self) -> bool {
+        (self.capital_settler_after_completion || self.rapid_city_expansion_2) && self.book_pos < 4
+    }
+
     pub(crate) fn enable_capital_settler_after_completion(&mut self) {
         self.capital_settler_after_completion = true;
     }

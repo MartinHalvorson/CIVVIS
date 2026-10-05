@@ -5268,6 +5268,11 @@ pub struct AdvancedAi {
     /// `breaker-to-the-fastest`; see `siege_production.rs`.
     breaker_to_the_fastest: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `conquest-opening-needs-the-production`: the early conquest opening
+    /// names its target only when the capital can raise and march the strike
+    /// force inside the window the opening would get. See
+    /// `early_conquest::conquest_force_estimate`. Off by default.
+    conquest_opening_needs_the_production: bool,
     /// `capital-defense-holds`: a damaged city of ours with a hostile beside
     /// it keeps its Defend row whatever the pressure ratio reads, and a
     /// capital we hold under attack is an urgent Defend that outranks every
@@ -5423,6 +5428,9 @@ pub struct AdvancedAi {
     /// controller started after turn one is a resumed game whose opening
     /// was lost with the old process. See `conquest_naming_deadline`.
     conquest_first_turn: Option<u32>,
+    /// `conquest-opening-needs-the-production`: the turn the last refused
+    /// opening was journalled. `None` whenever the gene is off.
+    conquest_feasibility_noted: Option<u32>,
     /// The denial war `science_threat_denial` opened and has not yet closed.
     denial_war: Option<science_threat_denial::DenialWar>,
     /// Arm the culture defence at 30 percent of the victory bar instead of
@@ -8962,6 +8970,7 @@ impl AdvancedAi {
             breaker_keeps_its_queue: false,
             breaker_to_the_fastest: false,
             // ---- append: c-d ----------------------------------------
+            conquest_opening_needs_the_production: false,
             capital_defense_holds: false,
             diplomatic_contender_kept: false,
             diplomatic_contender_kept_2: false,
@@ -8998,6 +9007,7 @@ impl AdvancedAi {
             conquest_opening: None,
             conquest_closed: false,
             conquest_first_turn: None,
+            conquest_feasibility_noted: None,
             denial_war: None,
             culture_threat_early: false,
             culture_building_catchup: false,
