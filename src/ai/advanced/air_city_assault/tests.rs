@@ -501,3 +501,62 @@ fn a_soldier_spots_an_unseen_city_for_the_wing() {
     assert_eq!(run(false), (false, false, false), "no cavalry, no volley");
     assert_eq!(run(true), (true, true, true), "spotted and bombed");
 }
+
+/// Live King civvis-20261005T084952Z (game 114) turn 196: Curitiba at walls 0,
+/// city 1 after "2 sorties with no cavalry in reach"; the bodies within eight
+/// tiles could not advance, and the city stood at 20 the next turn. Under
+/// `air-volley-needs-a-road` a breached city is bombed only when a melee body
+/// can walk to it; standing walls are still worth the volley alone.
+#[test]
+fn a_breached_city_waits_for_a_body_with_a_road_in() {
+    let breached = |gene: bool, walled: bool, boxed: bool| {
+        let (mut g, mut ai, plan, cavalry, _) = fixture();
+        g.remove_unit(cavalry);
+        ai.air_surge = false;
+        ai.enable_air_surge_2();
+        if gene {
+            ai.enable_air_volley_needs_a_road();
+        }
+        let cid = plan.target_city.unwrap();
+        let walls = if walled { 400 } else { 0 };
+        g.cities.get_mut(&cid).unwrap().wall_hp = walls;
+        std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, 400);
+        let body = g.spawn_test_unit("infantry", 0, (16, 10));
+        assert!(g.wdist(g.units[&body].pos, (20, 10)) <= AIR_ASSAULT_FOLLOWUP_REACH);
+        if boxed {
+            let ring: Vec<_> = g.nbrs((16, 10)).into_iter().collect();
+            for p in ring {
+                g.map.tiles.get_mut(&p).unwrap().terrain = crate::name!("mountain");
+            }
+            assert_eq!(g.route_distance(body, (20, 10), 1), None);
+        }
+        let gate = ai.air_assault_followup_routed(&g, 0, cid, (20, 10));
+        ai.observe_air_assault_frame(BTreeSet::from([(20, 10)]), 2);
+        let start = g.cities[&cid].hp;
+        ai.plan_air_city_assault(&mut g, 0, &plan);
+        (
+            gate,
+            g.cities[&cid].wall_hp < walls || g.cities[&cid].hp < start,
+        )
+    };
+    assert_eq!(
+        breached(true, false, true),
+        (false, false),
+        "no road in: the breach is not re-bombed"
+    );
+    assert_eq!(
+        breached(true, false, false).0,
+        true,
+        "a body that can walk in keeps the volley"
+    );
+    assert_eq!(
+        breached(true, true, true),
+        (true, true),
+        "standing walls are bombed regardless"
+    );
+    assert_eq!(
+        breached(false, false, true),
+        (true, true),
+        "the gene off, eight tiles suffice"
+    );
+}

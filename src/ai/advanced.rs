@@ -5059,6 +5059,10 @@ pub struct AdvancedAi {
     /// once back at `battle_planner::ROTATE_HP`; it still returns to a post
     /// only at `RETURN_HP` (`siege_train::breach_gun_fit`). Off by default.
     breach_counts_nearby_guns: bool,
+    /// `air-volley-needs-a-road`: a cavalry-free volley at a city whose walls
+    /// are already down flies only when a melee body can walk to it in two
+    /// turns. See `air_city_assault::air_assault_followup_routed`.
+    air_volley_needs_a_road: bool,
     /// `bleeding-capital-loyalty`: Limitanei while a captured original
     /// capital bleeds, and Victor first for a short runway. See
     /// `one_war::bleeding_capital`.
@@ -9108,6 +9112,7 @@ impl AdvancedAi {
             // ---- append: a-b ----------------------------------------
             breach_reads_the_air: false,
             breach_counts_nearby_guns: false,
+            air_volley_needs_a_road: false,
             bleeding_capital_loyalty: false,
             air_surge_strikes_through_urgency: false,
             breakers_stay_with_the_siege: false,

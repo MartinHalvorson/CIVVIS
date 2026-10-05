@@ -5880,6 +5880,17 @@ impl AdvancedAi {
         self.find_the_capital = false;
     }
 
+    /// Opt-in gene `air-volley-needs-a-road`; see
+    /// [`Self::air_volley_needs_a_road`].
+    pub fn enable_air_volley_needs_a_road(&mut self) {
+        self.air_volley_needs_a_road = true;
+    }
+
+    /// The twin of `enable_air_volley_needs_a_road`.
+    pub fn disable_air_volley_needs_a_road(&mut self) {
+        self.air_volley_needs_a_road = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

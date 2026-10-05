@@ -2854,6 +2854,10 @@ pub const GENES: &[Gene] = &[
     // -13.5 a turn; G114 Curitiba sat at walls 0, health 1 with its body six
     // to twelve tiles out. See `siege_train::capture_hold`.
     Gene { tag: "capture-holds-the-ring", field: "capture_holds_the_ring", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_holds_the_ring, disable: AdvancedAi::disable_capture_holds_the_ring },
+    // Live King civvis-20261005T084952Z (game 114) bombed Curitiba to walls
+    // 0, city 1 at turn 196 with no body able to walk in; it healed to 20.
+    // See `air_city_assault::air_assault_followup_routed`.
+    Gene { tag: "air-volley-needs-a-road", field: "air_volley_needs_a_road", kind: Kind::OptIn, enable: AdvancedAi::enable_air_volley_needs_a_road, disable: AdvancedAi::disable_air_volley_needs_a_road },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

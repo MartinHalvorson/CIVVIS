@@ -26,6 +26,9 @@ const AIR_ASSAULT_TAKER_REACH: i32 = 6;
 /// sorties with no cavalry in reach; walls 0, city 1; captured false")
 /// with nobody coming, and the city healed; Coba took the same at turn 193.
 const AIR_ASSAULT_FOLLOWUP_REACH: i32 = 8;
+/// `air-volley-needs-a-road`: the turns of its own movement within which a
+/// follow-up body's route must reach the city's ring.
+const AIR_ASSAULT_FOLLOWUP_TURNS: f64 = 2.0;
 /// How many takers, strongest first, the capture search simulates.
 const AIR_ASSAULT_CAPTURE_TRIES: usize = 6;
 /// Aircraft one volley may commit to the city.
@@ -260,7 +263,11 @@ impl AdvancedAi {
             // volley was then refused by the host as second strikes. Cavalry
             // is needed to see a hidden city and to take a breached one; the
             // walls of a city the empire can see fall to the wing alone.
-            if ready && visible && self.air_surge_2 && Self::air_assault_followup_near(g, pid, target)
+            if ready
+                && visible
+                && self.air_surge_2
+                && Self::air_assault_followup_near(g, pid, target)
+                && self.air_assault_followup_routed(g, pid, cid, target)
             {
                 return self.air_assault_volley(g, pid, plan, cid, target, &aircraft, reserved);
             }
@@ -711,6 +718,33 @@ impl AdvancedAi {
                 && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
                 && unit.hp >= AIR_ASSAULT_BREACH_TAKER_HP
                 && g.wdist(unit.pos, target) <= AIR_ASSAULT_FOLLOWUP_REACH
+        })
+    }
+
+    /// `air-volley-needs-a-road`: with the city's walls already down, the
+    /// volley only lowers health that heals by the next turn, so it waits for
+    /// a healthy land melee body whose own route reaches the city's ring
+    /// within [`AIR_ASSAULT_FOLLOWUP_TURNS`] turns of its movement. Standing
+    /// walls are worth bombing alone; the gene off, it always passes. Live King
+    /// civvis-20261005T084952Z (game 114) bombed Curitiba to walls 0, city 1
+    /// at turn 196 ("2 sorties with no cavalry in reach"): the nearest bodies
+    /// read "this unit's group cannot advance from here", and the city stood
+    /// at 20 the next turn.
+    fn air_assault_followup_routed(&self, g: &Game, pid: usize, cid: u32, target: Pos) -> bool {
+        if !self.air_volley_needs_a_road || g.cities.get(&cid).is_none_or(|city| city.wall_hp > 0) {
+            return true;
+        }
+        g.player_unit_ids(pid).into_iter().any(|uid| {
+            let unit = &g.units[&uid];
+            let spec = &g.rules.units[unit.kind];
+            spec.class == "military"
+                && spec.is_melee_capable()
+                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                && unit.hp >= AIR_ASSAULT_BREACH_TAKER_HP
+                && g.wdist(unit.pos, target) <= AIR_ASSAULT_FOLLOWUP_REACH
+                && g.route_distance(uid, target, 1).is_some_and(|steps| {
+                    steps as f64 <= AIR_ASSAULT_FOLLOWUP_TURNS * spec.moves.max(1.0)
+                })
         })
     }
 
