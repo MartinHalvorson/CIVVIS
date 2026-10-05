@@ -6233,6 +6233,17 @@ impl AdvancedAi {
         self.breaker_research_first = false;
     }
 
+    /// Opt-in gene `breach-support-reads-the-wall-tier`; see
+    /// [`Self::breach_support_reads_the_wall_tier`].
+    pub fn enable_breach_support_reads_the_wall_tier(&mut self) {
+        self.breach_support_reads_the_wall_tier = true;
+    }
+
+    /// The twin of `enable_breach_support_reads_the_wall_tier`.
+    pub fn disable_breach_support_reads_the_wall_tier(&mut self) {
+        self.breach_support_reads_the_wall_tier = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -6572,6 +6572,15 @@ pub struct Game {
     /// derive this from wall buildings and leave the override empty.
     #[serde(default)]
     pub observed_city_max_wall_hp: Arc<BTreeMap<u32, i32>>,
+    /// `breach-support-reads-the-wall-tier`: read a mirrored city's wall tier
+    /// from its observed wall pool when deciding whether a Battering Ram or a
+    /// Siege Tower works on it. A rival city's record carries its wall bars,
+    /// not its buildings, so `city_building_effect` read no immunity from
+    /// Medieval or Renaissance Walls it could not see. Set by the seat each
+    /// turn; native games leave the observed pool empty, so it changes nothing
+    /// there.
+    #[serde(default)]
+    pub observed_wall_tier_rules: bool,
     /// Sites a HOST ruleset forbids for a reason CIVVIS's own rules cannot see.
     ///
     /// ★★★★ Empty in an ordinary game, and load-bearing when CIVVIS is driving a
@@ -7566,6 +7575,7 @@ impl From<GameSer> for Game {
             observed_city_strength: Arc::new(s.observed_city_strength),
             observed_city_ranged_strength: Arc::new(s.observed_city_ranged_strength),
             observed_city_max_wall_hp: Arc::new(s.observed_city_max_wall_hp),
+            observed_wall_tier_rules: false,
             // Not carried in a save: host refusals are rebuilt from the run's event
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: Arc::new(BTreeSet::new()),
@@ -8284,6 +8294,7 @@ impl Game {
             observed_city_strength: Arc::new(BTreeMap::new()),
             observed_city_ranged_strength: Arc::new(BTreeMap::new()),
             observed_city_max_wall_hp: Arc::new(BTreeMap::new()),
+            observed_wall_tier_rules: false,
             blocked_city_sites: Arc::new(BTreeSet::new()),
             host_observed: Arc::new(BTreeSet::new()),
             observed_appeal: Arc::new(BTreeMap::new()),

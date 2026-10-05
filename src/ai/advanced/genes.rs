@@ -2988,6 +2988,7 @@ pub const GENES: &[Gene] = &[
     // turns for a breaker. Resources priced; modernization yields while a
     // siege is held for its breaker. See `advanced/decisive_window.rs`.
     Gene { tag: "breaker-research-first", field: "breaker_research_first", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_research_first, disable: AdvancedAi::disable_breaker_research_first },
+    Gene { tag: "breach-support-reads-the-wall-tier", field: "breach_support_reads_the_wall_tier", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_support_reads_the_wall_tier, disable: AdvancedAi::disable_breach_support_reads_the_wall_tier },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

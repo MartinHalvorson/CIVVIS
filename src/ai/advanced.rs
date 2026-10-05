@@ -5065,6 +5065,10 @@ pub struct AdvancedAi {
     /// army" yields while a siege is held for a wall-breaker. See
     /// `advanced/decisive_window.rs`.
     breaker_research_first: bool,
+    /// `breach-support-reads-the-wall-tier`: the seat reads a mirrored
+    /// city's wall tier from its observed wall pool when it decides whether a
+    /// Battering Ram or Siege Tower works on it (`Game::observed_wall_tier_rules`).
+    breach_support_reads_the_wall_tier: bool,
     /// `breaker-reads-the-march`: the wall-breaker reservation prices a gun's
     /// road at the speed live guns actually close on a siege. See
     /// `siege_production::BREAKER_MARCH_FACTOR`.
@@ -9275,6 +9279,7 @@ impl AdvancedAi {
 
             // ---- append: a-b ----------------------------------------
             breaker_research_first: false,
+            breach_support_reads_the_wall_tier: false,
             breaker_reads_the_march: false,
             breach_reads_the_air: false,
             breach_counts_nearby_guns: false,
@@ -45050,6 +45055,8 @@ impl AdvancedAi {
     }
 
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
+        // `breach-support-reads-the-wall-tier`: see `Game::observed_wall_tier_rules`.
+        g.observed_wall_tier_rules = self.breach_support_reads_the_wall_tier;
         self.turn_start_policies = g.players[pid].policies.clone();
         self.air_city_assault = None;
         self.base.gun_lethal_tiles.clear();
