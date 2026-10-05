@@ -5612,6 +5612,17 @@ impl AdvancedAi {
         self.dialogue_never_declares_war = false;
     }
 
+    /// Opt-in gene `age-closer-spends-the-reserve`; see
+    /// [`Self::age_closer_spends_the_reserve`].
+    pub fn enable_age_closer_spends_the_reserve(&mut self) {
+        self.age_closer_spends_the_reserve = true;
+    }
+
+    /// The twin of `enable_age_closer_spends_the_reserve`.
+    pub fn disable_age_closer_spends_the_reserve(&mut self) {
+        self.age_closer_spends_the_reserve = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

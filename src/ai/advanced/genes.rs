@@ -2739,6 +2739,11 @@ pub const GENES: &[Gene] = &[
     // CHOICE_NEGATIVE, a surprise war (150 grievances). 100 such flips in 49 of
     // 74 October live games. See `CivvisControlAutoClose.lua`.
     Gene { tag: "dialogue-never-declares-war", field: "dialogue_never_declares_war", kind: Kind::OptIn, enable: AdvancedAi::enable_dialogue_never_declares_war, disable: AdvancedAi::disable_dialogue_never_declares_war },
+    // Live King civvis-20261005T080337Z (G111) missed a Normal Age by one era
+    // point: `age-closer-2`'s window opened (era end t107, countdown read live)
+    // but the gold operating reserve (650 at 10 cities) priced every closer
+    // out. See `AdvancedAi::age_closer_spends_the_reserve`.
+    Gene { tag: "age-closer-spends-the-reserve", field: "age_closer_spends_the_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_age_closer_spends_the_reserve, disable: AdvancedAi::disable_age_closer_spends_the_reserve },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
