@@ -230,6 +230,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `conquest-opening-needs-the-production` | off (unmeasured) | Opt-in gene `conquest-opening-needs-the-production`; see `Self::conquest_force_estimate`. | 1 \| 1 |
 | `conquest-opening-stays-near` | off (unmeasured) | Opt-in gene `conquest-opening-stays-near`; see `Self::conquest_opening_stays_near`. | 1 \| 1 |
 | `conquest-takes-the-soft-city` | off (unmeasured) | `conquest-takes-the-soft-city`: rank the early conquest target by what can be taken before what is worth most. | 1 \| 1 |
+| `contender-at-peace-is-the-target` | off (unmeasured) | Opt-in gene `contender-at-peace-is-the-target`; see `Self::contender_at_peace_is_the_target`. | 1 \| 1 |
 | `counter-culture-by-conquest` | off (unmeasured) | `counter-culture-by-conquest`: answer a culture leader with war aimed at its Great Works. | 1 \| 1 |
 | `counter-war-needs-parity` | off (unmeasured) | Opt-in gene `counter-war-needs-parity`; see `Self::counter_war_needs_parity`. | 1 \| 1 |
 | `counterweight-faith-is-no-threat` | off (unmeasured) | Opt-in gene `counterweight-faith-is-no-threat`; see `Self::counterweight_faith_is_no_threat`. | 1 \| 1 |

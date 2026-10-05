@@ -6046,6 +6046,17 @@ impl AdvancedAi {
         self.conquest_opening_stays_near = false;
     }
 
+    /// Opt-in gene `contender-at-peace-is-the-target`; see
+    /// [`Self::contender_at_peace_is_the_target`].
+    pub fn enable_contender_at_peace_is_the_target(&mut self) {
+        self.contender_at_peace_is_the_target = true;
+    }
+
+    /// The twin of `enable_contender_at_peace_is_the_target`.
+    pub fn disable_contender_at_peace_is_the_target(&mut self) {
+        self.contender_at_peace_is_the_target = false;
+    }
+
     /// Opt-in gene `campaign-weighs-the-tourism-leader`; see
     /// [`Self::campaign_weighs_the_tourism_leader`].
     pub fn enable_campaign_weighs_the_tourism_leader(&mut self) {

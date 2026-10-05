@@ -1873,6 +1873,49 @@ impl AdvancedAi {
             .max_by_key(|rival| (g.players[*rival].dvp, std::cmp::Reverse(*rival)))
     }
 
+    /// `contender-at-peace-is-the-target`: with no war running, the rival a
+    /// Domination seat goes to war on next: at peace with us and holding
+    /// cities, at [`ELIMINATION_CONTENDER_DVP`] Diplomatic Victory points or
+    /// more, under our military [`ELIMINATION_POWER_RATIO`] times over its
+    /// steady reading, legal to target, and with a city inside the
+    /// declaration range; the one with the most points. Ahead of the denial
+    /// counter's pick in `assess`. `diplomatic_contender_to_eliminate` holds a
+    /// front on a contender we already fight, and the second-front leader
+    /// rule needs a war already running. Live King civvis-20261005T150407Z
+    /// (game 138) finished Georgia at turn 200 and aimed at Ethiopia, then at
+    /// 201 -- Ethiopia on 14 points at 2,171 power against 549 -- the counter
+    /// named Mali's space race and the war went to Mali. Ethiopia took +5 to
+    /// 19 at the 202 session, was never at war with us, and won on Diplomacy
+    /// at 235.
+    pub(crate) fn diplomatic_contender_at_peace(&self, g: &Game, pid: usize) -> Option<usize> {
+        if !self.contender_at_peace_is_the_target
+            || self.forced_target_player.is_some()
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !self.one_war_enemies(g, pid).is_empty()
+        {
+            return None;
+        }
+        let ours = g.military_power(pid);
+        g.players
+            .iter()
+            .filter(|rival| {
+                rival.id != pid
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && rival.dvp >= ELIMINATION_CONTENDER_DVP
+                    && !g.is_at_war(pid, rival.id)
+                    && self.campaign_target_legal(g, pid, rival.id)
+                    && ours
+                        >= ELIMINATION_POWER_RATIO * self.steady_rival_power(g, rival.id).max(1.0)
+                    && g.player_city_ids(rival.id)
+                        .iter()
+                        .any(|city| Self::city_within_declaration_range(g, pid, g.cities[city].pos))
+            })
+            .max_by_key(|rival| (rival.dvp, std::cmp::Reverse(rival.id)))
+            .map(|rival| rival.id)
+    }
+
     /// `diplomatic-contender-eliminated`: the contender's city nearest the
     /// field army's median unit (our nearest city when there is no army).
     /// Elimination needs every city, so the capital has no precedence.

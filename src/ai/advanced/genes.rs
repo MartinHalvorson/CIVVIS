@@ -2960,6 +2960,10 @@ pub const GENES: &[Gene] = &[
     // 40 turns; the tourism leader 40 turns out was the winner 18 times in
     // 30. See `AdvancedAi::tourism_leader`.
     Gene { tag: "campaign-weighs-the-tourism-leader", field: "campaign_weighs_the_tourism_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_campaign_weighs_the_tourism_leader, disable: AdvancedAi::disable_campaign_weighs_the_tourism_leader },
+    // Live King civvis-20261005T150407Z (game 138): Ethiopia on 14 points at
+    // a quarter of our power was passed for Mali at 201 and won on Diplomacy
+    // at 235. See `one_war::diplomatic_contender_at_peace`.
+    Gene { tag: "contender-at-peace-is-the-target", field: "contender_at_peace_is_the_target", kind: Kind::OptIn, enable: AdvancedAi::enable_contender_at_peace_is_the_target, disable: AdvancedAi::disable_contender_at_peace_is_the_target },
     // Staging marches took the router's single step and stood: 47-62% of
     // live frame-0 MOVE_TOs were one tile. See `march_moves`.
     Gene { tag: "march-uses-its-moves", field: "march_uses_its_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_march_uses_its_moves, disable: AdvancedAi::disable_march_uses_its_moves },
