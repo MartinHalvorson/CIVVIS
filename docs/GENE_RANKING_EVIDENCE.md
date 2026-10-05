@@ -265,6 +265,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `last-capital-war-kept` | off (unmeasured) | Opt-in gene `last-capital-war-kept`; see `Self::last_capital_war_kept`. | 1 \| 1 |
 | `monument-first` | off (unmeasured) | A city's Monument ahead of the military floor and the Settler step in the delegated city governor. | 1 \| 1 |
 | `one-sanctuary` | off (unmeasured) | Opt-in gene `one-sanctuary`; see `Self::one_sanctuary`. | 1 \| 1 |
+| `one-walled-siege-at-a-time` | off (unmeasured) | Opt-in gene `one-walled-siege-at-a-time`; see `Self::one_walled_siege_at_a_time`. | 1 \| 1 |
 | `one-war-swaps-a-stalled-front` | off (unmeasured) | Opt-in gene `one-war-swaps-a-stalled-front`; see `Self::one_war_swaps_a_stalled_front`. | 1 \| 1 |
 | `opening-force-keeps-its-members` | off (unmeasured) | Opt-in gene `opening-force-keeps-its-members`; see `Self::opening_force_keeps_its_members`. | 1 \| 1 |
 | `peace-waits-for-the-foothold` | off (unmeasured) | Opt-in gene `peace-waits-for-the-foothold`; see `Self::peace_waits_for_the_foothold`. | 1 \| 1 |

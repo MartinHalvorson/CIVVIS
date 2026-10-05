@@ -472,6 +472,11 @@ pub struct ObjectiveBoard {
     /// Hit points a city has been losing a turn.
     damage_rate: BTreeMap<u32, f64>,
     requisitions: Vec<Requisition>,
+    /// `one-walled-siege-at-a-time`: the walled siege the guns serve.
+    one_siege: Option<one_walled_siege::ChosenSiege>,
+    /// `one-walled-siege-at-a-time`: released sieges, by position, and the
+    /// turn they rejoin the choice.
+    one_siege_released: BTreeMap<Pos, u32>,
 }
 
 /// The facts about one of our field units the allocation reads.
@@ -1616,6 +1621,12 @@ impl AdvancedAi {
         for force in &mut forces {
             force.units.retain(|uid| pool_set.contains(uid));
         }
+        // `one-walled-siege-at-a-time`: one walled Siege row takes the guns;
+        // the others keep a screen. See `one_walled_siege`.
+        let one_siege = self.one_walled_siege(g, &rows, &pool, &facts, &forces);
+        if let Some(one) = &one_siege {
+            one.trim_lower_forces(g, &rows, &facts, &mut forces);
+        }
         // `breakers-stay-with-the-siege`: see `breaker_rows_ask`. A gun last
         // turn's board sent elsewhere comes back to the pool for the siege.
         let breakers_stay = self.breakers_stay_with_the_siege && breaker_rows_ask(&rows);
@@ -1713,11 +1724,17 @@ impl AdvancedAi {
                 let mut have = force_index.map_or(ForceNeed::default(), |index| {
                     have_of(&forces[index], &facts)
                 });
+                let requirement = one_siege
+                    .as_ref()
+                    .map_or(row.requirement, |one| one.need(row.key, domain, row.requirement));
                 loop {
-                    let unmet = row.requirement.unmet(&have);
+                    let unmet = requirement.unmet(&have);
                     if unmet.is_zero() {
                         break;
                     }
+                    let chosen_short = one_siege
+                        .as_ref()
+                        .is_some_and(|one| one.chosen_short(&rows, &forces, &facts));
                     let stop = match row.kind {
                         ObjectiveKind::Defend | ObjectiveKind::Relieve => 2,
                         ObjectiveKind::Siege => 3,
@@ -1749,6 +1766,14 @@ impl AdvancedAi {
                         }
                         // See `breaker_rows_ask`.
                         if breakers_stay && unit.siege && row.kind != ObjectiveKind::Siege {
+                            continue;
+                        }
+                        // See `one_walled_siege`.
+                        if unit.siege
+                            && one_siege
+                                .as_ref()
+                                .is_some_and(|one| one.bars_gun(&row, chosen_short))
+                        {
                             continue;
                         }
                         let distance = g.wdist(unit.pos, row.at);
@@ -1816,6 +1841,9 @@ impl AdvancedAi {
                                 // contribution to what its row would lack
                                 // without it.
                                 let need_there = need_of(there.objective_key, &rows);
+                                let need_there = one_siege.as_ref().map_or(need_there, |one| {
+                                    one.need(there.objective_key, there.domain, need_there)
+                                });
                                 let mut have_there = have_of(there, &facts);
                                 have_there.remove(unit);
                                 let unmet_there = need_there.unmet(&have_there);
@@ -1929,9 +1957,16 @@ impl AdvancedAi {
         // Deter row says a neighbour outguns us or a Defend or Relieve row is
         // still short.
         if !arena {
-            if let Some(index) =
-                self.campaign_surplus_force(g, pid, &rows, &mut forces, &facts, &mut next_id)
-            {
+            let lower = one_siege.as_ref().map(|one| &one.lower);
+            if let Some(index) = self.campaign_surplus_force(
+                g,
+                pid,
+                &rows,
+                lower,
+                &mut forces,
+                &facts,
+                &mut next_id,
+            ) {
                 // Last turn's Reserve members are seeded into `assignment`
                 // with the Reserve's index, as the leftovers pass below
                 // records; they are the surplus, not taken bodies. Live King
@@ -1980,7 +2015,16 @@ impl AdvancedAi {
         // Medieval Walls). One whose effect works on the top walled Siege
         // row's city joins that row's land force.
         if self.siege_needs_a_breaker && !arena {
-            self.breach_support_joins_the_siege(g, &rows, &pool, &facts, &mut forces, &mut assignment);
+            let lower = one_siege.as_ref().map(|one| &one.lower);
+            self.breach_support_joins_the_siege(
+                g,
+                &rows,
+                lower,
+                &pool,
+                &facts,
+                &mut forces,
+                &mut assignment,
+            );
         }
         // Leftovers: the Reserve, per domain — on an arena, the top force.
         for domain in [ForceDomain::Land, ForceDomain::Sea] {
@@ -2082,7 +2126,11 @@ impl AdvancedAi {
                 have.siege += part.siege;
                 have.bodies += part.bodies;
             }
-            let unmet = row.requirement.unmet(&have);
+            // `one-walled-siege-at-a-time`: a lower walled row asks a screen.
+            let requirement = one_siege.as_ref().map_or(row.requirement, |one| {
+                one.need(row.key, ForceDomain::Land, row.requirement)
+            });
+            let unmet = requirement.unmet(&have);
             if unmet.is_zero() {
                 continue;
             }
@@ -2173,13 +2221,18 @@ impl AdvancedAi {
         &self,
         g: &Game,
         rows: &[Objective],
+        lower: Option<&BTreeSet<ObjectiveKey>>,
         pool: &[u32],
         facts: &BTreeMap<u32, UnitFacts>,
         forces: &mut [TaskForce],
         assignment: &mut BTreeMap<u32, usize>,
     ) {
+        // `one-walled-siege-at-a-time`: never a lower walled row.
+        let screened = |key: &ObjectiveKey| lower.is_some_and(|lower| lower.contains(key));
         let Some((key, cid)) = rows.iter().find_map(|row| match row.key {
-            ObjectiveKey::Siege(cid) if row.kind == ObjectiveKind::Siege && row.land => {
+            ObjectiveKey::Siege(cid)
+                if row.kind == ObjectiveKind::Siege && row.land && !screened(&row.key) =>
+            {
                 let city = g.cities.get(&cid)?;
                 let max = g.city_max_wall_hp(city);
                 (max > 0
@@ -2240,6 +2293,7 @@ impl AdvancedAi {
         g: &Game,
         pid: usize,
         rows: &[Objective],
+        lower: Option<&BTreeSet<ObjectiveKey>>,
         forces: &mut Vec<TaskForce>,
         facts: &BTreeMap<u32, UnitFacts>,
         next_id: &mut u32,
@@ -2272,9 +2326,12 @@ impl AdvancedAi {
         {
             return None;
         }
-        let row = rows
-            .iter()
-            .find(|row| row.kind == ObjectiveKind::Siege && row.land)?;
+        // `one-walled-siege-at-a-time`: never a lower walled row.
+        let row = rows.iter().find(|row| {
+            row.kind == ObjectiveKind::Siege
+                && row.land
+                && !lower.is_some_and(|lower| lower.contains(&row.key))
+        })?;
         let ObjectiveKey::Siege(cid) = row.key else {
             return None;
         };
@@ -3730,6 +3787,8 @@ mod tests {
     }
 }
 
+mod one_walled_siege;
+
 #[cfg(test)]
 mod rebuild_tests;
 
@@ -3742,3 +3801,6 @@ mod defense_priority_tests;
 
 #[cfg(test)]
 mod siege_member_tests;
+
+#[cfg(test)]
+mod one_walled_siege_tests;

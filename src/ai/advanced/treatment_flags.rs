@@ -5590,6 +5590,17 @@ impl AdvancedAi {
         self.conquest_opening_needs_the_production = false;
     }
 
+    /// Opt-in gene `one-walled-siege-at-a-time`; see
+    /// [`Self::one_walled_siege_at_a_time`].
+    pub fn enable_one_walled_siege_at_a_time(&mut self) {
+        self.one_walled_siege_at_a_time = true;
+    }
+
+    /// The twin of `enable_one_walled_siege_at_a_time`.
+    pub fn disable_one_walled_siege_at_a_time(&mut self) {
+        self.one_walled_siege_at_a_time = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

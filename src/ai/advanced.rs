@@ -6401,6 +6401,10 @@ pub struct AdvancedAi {
     /// 10.0 unimproved hills at t100.
     improvement_upgrades_count: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `one-walled-siege-at-a-time`: while walled Siege rows ask for guns,
+    /// one of them recruits them and the others hold a screen. See
+    /// `objective_board::one_walled_siege`. Off by default.
+    one_walled_siege_at_a_time: bool,
     /// `last-capital-war-kept`: no peace with the holder of the last original
     /// capital Domination needs. See `one_war::last_capital_war_kept`. Off
     /// by default.
@@ -9142,6 +9146,7 @@ impl AdvancedAi {
             industrial_hub: false,
             improvement_upgrades_count: false,
             // ---- append: l-o ----------------------------------------
+            one_walled_siege_at_a_time: false,
             last_capital_war_kept: false,
             one_war_swaps_a_stalled_front: false,
             monument_first: false,
