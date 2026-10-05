@@ -2805,6 +2805,10 @@ pub const GENES: &[Gene] = &[
     // on urgent Persia by turn 185 and handed the war to a ground declaration
     // that waited on staging to 200. See `air_surge::air_surge_opening`.
     Gene { tag: "air-surge-strikes-through-urgency", field: "air_surge_strikes_through_urgency", kind: Kind::OptIn, enable: AdvancedAi::enable_air_surge_strikes_through_urgency, disable: AdvancedAi::disable_air_surge_strikes_through_urgency },
+    // Live King civvis-20261005T081917Z (game 112) lost Xanadu, Mongolia's
+    // capital, to Loyalty five turns after taking it, with no Loyalty card
+    // and its Governor unestablished. See `one_war::bleeding_capital`.
+    Gene { tag: "bleeding-capital-loyalty", field: "bleeding_capital_loyalty", kind: Kind::OptIn, enable: AdvancedAi::enable_bleeding_capital_loyalty, disable: AdvancedAi::disable_bleeding_capital_loyalty },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

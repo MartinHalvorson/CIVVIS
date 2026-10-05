@@ -5769,6 +5769,19 @@ impl AdvancedAi {
         self.air_surge_strikes_through_urgency = false;
     }
 
+    /// Opt-in gene `bleeding-capital-loyalty`; see
+    /// [`Self::bleeding_capital_loyalty`].
+    pub fn enable_bleeding_capital_loyalty(&mut self) {
+        self.bleeding_capital_loyalty = true;
+        self.base.victor_first_for_a_short_runway = true;
+    }
+
+    /// The twin of `enable_bleeding_capital_loyalty`.
+    pub fn disable_bleeding_capital_loyalty(&mut self) {
+        self.bleeding_capital_loyalty = false;
+        self.base.victor_first_for_a_short_runway = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

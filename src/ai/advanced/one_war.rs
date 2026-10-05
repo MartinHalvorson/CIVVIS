@@ -116,6 +116,10 @@ pub(crate) const CAPITAL_PREY_POWER: f64 = 0.15;
 /// may stand behind: Ancient Walls, which the army opens in a few turns.
 pub(crate) const CAPITAL_PREY_WALLS: i32 = 100;
 
+/// `bleeding-capital-loyalty`: the Loyalty runway, in turns, under which a
+/// captured original capital is bleeding.
+pub(crate) const BLEEDING_CAPITAL_RUNWAY: f64 = 6.0;
+
 /// `capital-prey-opens-a-front-2`: the most military a prey may hold, as a
 /// share of ours, for its original capital to reach past the declaration
 /// range, out to [`CAPITAL_PREY_DEEP_REACH`].
@@ -1605,6 +1609,28 @@ impl AdvancedAi {
     /// peace twice the same turn (the opening's "taken every city it knows
     /// of" with Kwadukuza still in the fog, and the campaign's "has taken its
     /// 1 city"), and the city was the Zulu's again by turn 71.
+    /// `bleeding-capital-loyalty`: a captured original capital of ours whose
+    /// Loyalty runway (`BasicAi::loyalty_emergency`) is under
+    /// [`BLEEDING_CAPITAL_RUNWAY`] turns. A capture starts at 50 Loyalty;
+    /// live King civvis-20261005T081917Z (game 112) took Xanadu at turn 119
+    /// and lost it to the Free Cities at 124 at -6.5 to -14.5 a turn, a
+    /// Governor appointed but not established and no Loyalty card slotted;
+    /// civvis-20261005T061801Z lost Athens in two turns at -22. Limitanei
+    /// (+2 with the garrison) and Victor's three-turn establishment
+    /// (`BasicAi::victor_first_for_a_short_runway`) buy the turns to take
+    /// the city exerting the pressure.
+    pub(crate) fn bleeding_capital(&self, g: &Game, pid: usize) -> Option<u32> {
+        g.cities
+            .values()
+            .filter(|city| city.owner == pid && city.is_capital && city.original_owner != pid)
+            .find(|city| {
+                self.base
+                    .loyalty_emergency(g, city.id)
+                    .is_some_and(|turns| turns < BLEEDING_CAPITAL_RUNWAY)
+            })
+            .map(|city| city.id)
+    }
+
     pub(crate) fn holds_bleeding_capital_of(&self, g: &Game, pid: usize, rival: usize) -> bool {
         self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && g.cities.values().any(|city| {

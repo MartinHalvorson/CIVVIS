@@ -249,6 +249,10 @@ pub(crate) const HOME_CAMP_RADIUS: i32 = 9;
 /// The loyalty level the governor logic has always treated as an emergency.
 /// Retained as a floor so making the rule rate-aware never makes it blinder
 /// than it was.
+/// `bleeding-capital-loyalty`: an ordinary Governor's establishment turns
+/// (`data/governors.json`; Victor's are three). A Loyalty runway shorter
+/// than this flips the city before that Governor's +8 arrives.
+pub(crate) const VICTOR_SHORT_RUNWAY_TURNS: f64 = 5.0;
 const LOYALTY_LEVEL_ALARM: f64 = 70.0;
 
 /// The share of the army a bounded barbarian response may claim. Half, because
@@ -2436,6 +2440,11 @@ pub struct BasicAi {
     /// (about 15 turns), and all three religions were founded without us;
     /// the Cree won on Religion at 135 with 560 of our Faith unspent.
     pub(crate) prophet_race_takes_a_district_slot_2: bool,
+    /// `bleeding-capital-loyalty` (AdvancedAi): the Loyalty emergency takes
+    /// Victor, who establishes in three turns, ahead of an unassigned
+    /// five-turn Governor when the city's runway is under
+    /// [`VICTOR_SHORT_RUNWAY_TURNS`].
+    pub(crate) victor_first_for_a_short_runway: bool,
     /// Build a building that MAKES SCIENCE before one that does not.
     ///
     /// Buildings are picked cheapest-first, and that order is deliberate policy
@@ -5525,6 +5534,7 @@ impl BasicAi {
             enter_prophet_race: false,
             prophet_race_takes_a_district_slot: false,
             prophet_race_takes_a_district_slot_2: false,
+            victor_first_for_a_short_runway: false,
             science_building_first: false,
             housing_reserve: false,
             campus_before_harbor: false,
@@ -6031,6 +6041,7 @@ impl BasicAi {
             enter_prophet_race: false,
             prophet_race_takes_a_district_slot: false,
             prophet_race_takes_a_district_slot_2: false,
+            victor_first_for_a_short_runway: false,
             science_building_first: false,
             housing_reserve: false,
             campus_before_harbor: false,
@@ -9036,6 +9047,12 @@ impl BasicAi {
             });
         let Some(target) = target else { return false };
         let target_loyalty = g.cities[&target].loyalty;
+        // `victor_first_for_a_short_runway`: a city that flips before an
+        // ordinary Governor establishes needs Victor's three turns.
+        let short_runway = self.victor_first_for_a_short_runway
+            && self
+                .loyalty_emergency(g, target)
+                .is_some_and(|turns| turns < VICTOR_SHORT_RUNWAY_TURNS);
         let action = g
             .legal_actions_within(pid, ActionFamilies::EMPIRE)
             .into_iter()
@@ -9056,8 +9073,16 @@ impl BasicAi {
                 (state.city.is_none()
                     || (source_loyalty >= 90.0 && source_loyalty - target_loyalty >= 20.0))
                     .then_some((
-                        state.city.is_none(),
-                        governor == "victor",
+                        if short_runway {
+                            governor == "victor"
+                        } else {
+                            state.city.is_none()
+                        },
+                        if short_runway {
+                            state.city.is_none()
+                        } else {
+                            governor == "victor"
+                        },
                         source_loyalty,
                         std::cmp::Reverse(*governor),
                         action,
@@ -22415,6 +22440,48 @@ mod tests {
 
         assert!(BasicAi::new().reassign_governor_for_loyalty(&mut game, 0));
         assert_eq!(game.players[0].governor_roster["victor"].city, Some(second));
+    }
+
+    /// `victor_first_for_a_short_runway`: a city about to flip takes Victor,
+    /// who establishes in three turns, ahead of an unassigned Governor; a
+    /// longer runway keeps the unassigned Governor first.
+    #[test]
+    fn a_short_loyalty_runway_takes_victor_before_an_unassigned_governor() {
+        let run = |flag: bool, loyalty: f64| {
+            let (mut game, source, target) = island_colony_game(1);
+            let second_settler = game.spawn_test_unit("settler", 0, target);
+            let second = game.found_city_for(0, game.units[&second_settler].pos, None);
+            let first = game.city_at(source).unwrap();
+            game.players[0]
+                .counters
+                .insert("district_governor_titles".to_string(), 1);
+            game.apply(
+                0,
+                &Action::AppointGovernor {
+                    governor: crate::name!("victor"),
+                    city: first,
+                },
+            )
+            .unwrap();
+            game.players[0].governor_roster.insert(
+                "pingala".to_string(),
+                crate::game::GovernorState {
+                    city: None,
+                    assigned_turn: 0,
+                    disabled_until: 0,
+                    promotions: std::collections::BTreeSet::new(),
+                },
+            );
+            game.cities.get_mut(&first).unwrap().loyalty = 100.0;
+            game.cities.get_mut(&second).unwrap().loyalty = loyalty;
+            let mut ai = BasicAi::new();
+            ai.victor_first_for_a_short_runway = flag;
+            assert!(ai.reassign_governor_for_loyalty(&mut game, 0));
+            game.players[0].governor_roster["victor"].city == Some(second)
+        };
+        assert!(!run(false, 3.0), "off: the unassigned Governor goes");
+        assert!(run(true, 3.0), "a short runway takes Victor");
+        assert!(!run(true, 35.0), "a long runway keeps the unassigned first");
     }
 
     #[test]

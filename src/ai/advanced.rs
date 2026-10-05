@@ -5046,6 +5046,10 @@ pub struct AdvancedAi {
     /// once back at `battle_planner::ROTATE_HP`; it still returns to a post
     /// only at `RETURN_HP` (`siege_train::breach_gun_fit`). Off by default.
     breach_counts_nearby_guns: bool,
+    /// `bleeding-capital-loyalty`: Limitanei while a captured original
+    /// capital bleeds, and Victor first for a short runway. See
+    /// `one_war::bleeding_capital`.
+    bleeding_capital_loyalty: bool,
     /// `air-surge-strikes-through-urgency`: a wing in Strike keeps its own
     /// declaration when the target's clock turns urgent. See
     /// `air_surge::air_surge_opening`.
@@ -9036,6 +9040,7 @@ impl AdvancedAi {
 
             // ---- append: a-b ----------------------------------------
             breach_counts_nearby_guns: false,
+            bleeding_capital_loyalty: false,
             air_surge_strikes_through_urgency: false,
             breakers_stay_with_the_siege: false,
             breach_assault: false,
@@ -18151,6 +18156,11 @@ impl AdvancedAi {
         // hypothetical loyalty benefit.
         if self.loyalty_policy_needed(g, pid) {
             desired.insert(0, "praetorium");
+        }
+        // `bleeding-capital-loyalty`: Limitanei's +2 with the garrison while a
+        // captured original capital bleeds. See `one_war::bleeding_capital`.
+        if self.bleeding_capital_loyalty && self.bleeding_capital(g, pid).is_some() {
+            desired.insert(0, "limitanei");
         }
 
         // ⚠ FRONT of the list, not appended: these portfolios are preference

@@ -1327,3 +1327,21 @@ fn a_deeply_collapsed_prey_reaches_past_the_declaration_range() {
         "more than a tenth"
     );
 }
+
+/// See `bleeding_capital`: a captured original capital under the runway is
+/// bleeding; a healthy one is not.
+#[test]
+fn a_captured_capital_near_its_flip_is_bleeding() {
+    let (mut g, ai) = two_fronts();
+    let capital = g
+        .cities
+        .values()
+        .find(|city| city.owner == 1 && city.is_capital)
+        .map(|city| city.id)
+        .unwrap();
+    g.cities.get_mut(&capital).unwrap().owner = 0;
+    g.cities.get_mut(&capital).unwrap().loyalty = 4.0;
+    assert_eq!(ai.bleeding_capital(&g, 0), Some(capital));
+    g.cities.get_mut(&capital).unwrap().loyalty = 50.0;
+    assert_eq!(ai.bleeding_capital(&g, 0), None);
+}
