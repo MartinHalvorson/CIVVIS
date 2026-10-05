@@ -82,3 +82,63 @@ fn a_ready_train_keeps_the_ordinary_stage_step() {
     ai.siege_stage_step(&mut g, 0, warrior, &city, &plan);
     assert_eq!(g.units[&warrior].pos, ring, "a train that can close holds its ring");
 }
+
+/// `staging-gun-reads-the-shared-danger`: two hostile Warriors reach a
+/// staging gun's tile beside two of our soldiers. Each Warrior strikes once,
+/// at one of the three; the unshared reading charges the gun both blows, the
+/// shared one their split, never under the stronger single blow. Under the
+/// gene the Stage step reads the shared one and the gun never holds further
+/// out than it does today.
+#[test]
+fn a_staging_gun_reads_the_shared_danger_only_under_the_gene() {
+    let mut outcomes = Vec::new();
+    for gene in [false, true] {
+        let (mut g, cid) = walled_city();
+        let city = g.cities[&cid].pos;
+        for tile in g.map.tiles.values_mut() {
+            if tile.pos != city {
+                tile.terrain = crate::name!("grassland");
+                tile.feature = None;
+                tile.hills = false;
+            }
+        }
+        g.map_script = crate::setup::MapScript::Pangaea;
+        g.turn = 30;
+        g.at_war.insert((0, 1));
+        let start = (city.0 - 8, city.1);
+        let gun = g.spawn_unit("catapult", 0, start);
+        for pos in g
+            .nbrs(start)
+            .into_iter()
+            .filter(|pos| g.wdist(*pos, city) == 8)
+            .take(2)
+            .collect::<Vec<_>>()
+        {
+            g.spawn_unit("warrior", 0, pos);
+        }
+        g.spawn_unit("warrior", 1, (start.0 + 2, start.1));
+        g.spawn_unit("warrior", 1, (start.0 + 2, start.1 - 1));
+        let mut field = super::super::battle_planner::DangerField::with_reach(&g, 0, true);
+        field.share(&g);
+        let unshared = stage_gun_danger(&mut field, start, gun, false);
+        let shared = stage_gun_danger(&mut field, start, gun, true);
+        assert!(
+            shared < unshared && unshared > 0.0,
+            "fixture: shared {shared:.1} under unshared {unshared:.1}"
+        );
+        let view = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        let mut ai = AdvancedAi::new();
+        ai.enable_siege_train();
+        ai.enable_shared_danger();
+        if gene {
+            ai.enable_staging_gun_reads_the_shared_danger();
+        }
+        ai.siege_stage_step(&mut g, 0, gun, &view, &plan);
+        outcomes.push(g.wdist(g.units[&gun].pos, city));
+    }
+    assert!(
+        outcomes[1] <= outcomes[0],
+        "the shared reading never holds a gun further out: {outcomes:?}"
+    );
+}
