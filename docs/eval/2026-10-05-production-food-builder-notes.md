@@ -11,3 +11,19 @@ exhausts movement may be priced with the input Builder's start-of-frame allowanc
 on a separate static copy; that case is not a same-turn action, a simulated
 future turn, or capture-safety proof. No game, controller decision, engine yield,
 cost or private profile is changed. Compilation and input freezing are pending.
+
+The normal optimized snapshot probe compiled and evaluated all 24 assigned
+consumed views. Every source file hash and parent board remained unchanged.
+Four Emperor and seven Deity structural Farm models added Food without losing
+tile Production. No Emperor case increased city Production immediately. Two
+Deity cases increased city Production by 0.65 and 1.00, respectively, with
+unchanged city Food and Science; citizen assignments changed. Both had a foreign
+military unit one hex away in the input, which may be neutral. The second case
+needed a fresh allowance for its static operation, and neither is an executed
+job or capture-safety proof.
+
+A passive whole-turn coverage replay is now prepared on the same eight consumed
+controls to measure frequency beyond these three checkpoints and record known
+hostile reach. Its complete action histories and final worlds must reproduce
+the preceding controls before the observations guide an intervention. No fresh
+strength test or native controller edit has started.
