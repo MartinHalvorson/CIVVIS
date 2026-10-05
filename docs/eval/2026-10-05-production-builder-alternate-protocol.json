@@ -1,0 +1,51 @@
+{
+  "scope": "Opt-in productive alternate after refused ordinary Builder route; native games, not Firaxis verification",
+  "arms": [
+    "control",
+    "candidate"
+  ],
+  "candidate_flag": "builder_productive_alternate",
+  "configuration": "AdvancedAi targeting Domination plus enable_live_bridge, stock adaptive rivals; same default weights in both arms",
+  "map": {
+    "majors": 4,
+    "minors": 6,
+    "width": 60,
+    "height": 38,
+    "script": "Pangaea",
+    "turns": 150,
+    "speed": "Online",
+    "focal_civ": "gran_colombia",
+    "focal_difficulty_exempt": true
+  },
+  "consumed_diagnostics": {
+    "emperor": [
+      61008600,
+      61008601,
+      61008602,
+      61008603
+    ],
+    "deity": [
+      61008700,
+      61008701,
+      61008702,
+      61008703
+    ]
+  },
+  "gate_before_fresh_samples": "Useful executed alternate improvements before T75 at both difficulties; no lower survival and no more than 10% Science loss. Reject or revise before fresh testing if coverage or average P75 fails. No summing repeated modeled jobs as actual work.",
+  "primary": "Mean Production at pre-action T75; eliminated or early-ended focal seat counted as zero",
+  "secondary": [
+    "T25/T50/T100/T125/T150 Production",
+    "Science at T75 and final",
+    "focal survival",
+    "actual accepted improvements matching alternate journal decisions",
+    "complete action/final/journal streams",
+    "byte-equivalence of controls against previous consumed controls"
+  ],
+  "future_fresh_screen": "Only after consumed coverage and primary pass; use fresh seeds selected and frozen before play, followed by disjoint confirmation. No sample selection from outcomes.",
+  "fresh_samples_played": 0,
+  "normal_optimized_artifact_required": true,
+  "capture_checks": "Existing reach and direct Barbarian capture-risk checks on all route positions; no borrowed guards, restored moves, changed safety thresholds or engine changes",
+  "price_limit": 6,
+  "after_walk_attribution": true,
+  "before_play_protocol": true
+}

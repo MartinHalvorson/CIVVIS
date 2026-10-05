@@ -4544,6 +4544,19 @@ impl AdvancedAi {
         self.domination_specializes_earlier = false;
     }
 
+    /// Opt in to productive same-turn work after a refused Builder route.
+    pub fn enable_builder_productive_alternate(&mut self) {
+        self.builder_productive_alternate = true;
+    }
+    /// Withhold the alternate-work experiment.
+    pub fn disable_builder_productive_alternate(&mut self) {
+        self.builder_productive_alternate = false;
+    }
+    /// Read back the experimental flag for frozen comparisons.
+    pub fn builder_productive_alternate_enabled(&self) -> bool {
+        self.builder_productive_alternate
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

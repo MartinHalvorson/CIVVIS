@@ -4962,6 +4962,8 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Productive same-turn alternate work after a refused normal Builder route.
+    builder_productive_alternate: bool,
     /// `befriend-the-strongest`: offer a friendship to the strongest
     /// neighbour at peace. See `advanced/protective_friendship.rs`.
     befriend_the_strongest: bool,
@@ -7554,6 +7556,7 @@ mod threatened_reserve;
 /// `advanced/yield_floors.rs`.
 mod yield_floors;
 
+mod builder_alternate;
 mod marginal_usefulness;
 mod production_commitment;
 mod production_compounding;
@@ -8399,6 +8402,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            builder_productive_alternate: false,
             befriend_the_strongest: false,
             beeline_orders_by_value: false,
             builders_work_through_raiders: false,
@@ -35694,7 +35698,10 @@ impl AdvancedAi {
         // sweep rather than once per tile. The borrow checker rejects the
         // guard the moment anything in here starts mutating the game.
         if self.base.builder_tries_the_next_tile {
-            return self.builder_step_to_the_first_reachable_job(g, pid, uid, strategy, &reserved);
+            let stepped =
+                self.builder_step_to_the_first_reachable_job(g, pid, uid, strategy, &reserved);
+            return stepped
+                || self.builder_productive_alternate_step(g, pid, uid, strategy, &reserved);
         }
 
         // ⚠ The `builder_tries_the_next_tile` branch above performs the same
@@ -35756,13 +35763,14 @@ impl AdvancedAi {
                 self.builder_targets.insert(uid, *pos);
             }),
         };
-        target.is_some_and(|pos| {
+        let stepped = target.is_some_and(|pos| {
             if self.builder_reach_safety_on() {
                 self.builder_step_out_of_reach(g, pid, uid, pos)
             } else {
                 self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
             }
-        })
+        });
+        stepped || self.builder_productive_alternate_step(g, pid, uid, strategy, &reserved)
     }
 
     /// Every job this Builder could take, best first, under the same score the
