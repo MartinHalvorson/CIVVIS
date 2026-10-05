@@ -7303,6 +7303,13 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `stage-musters-out-of-reach`: while a siege train cannot yet close,
+    /// its melee and shooters muster out of the defenders' reach instead of
+    /// waiting on the staging ring. See `siege_train::muster_step`.
+    stage_musters_out_of_reach: bool,
+    /// `stage-musters-out-of-reach`: per besieged city, whether the train
+    /// may close on its staging ring this turn.
+    stage_muster_ready: BTreeMap<u32, bool>,
     /// `stranded-settler-leaves-the-corridor`: a stranded early Settler drops
     /// its home corridor. See `settler_never_idles::settler_stranded`.
     stranded_settler_leaves_the_corridor: bool,
@@ -9653,6 +9660,8 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            stage_musters_out_of_reach: false,
+            stage_muster_ready: BTreeMap::new(),
             stranded_settler_leaves_the_corridor: false,
             siege_members_use_their_moves: false,
             science_ladder_reads_the_clock: false,

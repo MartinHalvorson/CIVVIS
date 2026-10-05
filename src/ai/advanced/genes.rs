@@ -3009,6 +3009,10 @@ pub const GENES: &[Gene] = &[
     // empire held two cities at t60. See
     // `settler_never_idles::settler_stranded`.
     Gene { tag: "stranded-settler-leaves-the-corridor", field: "stranded_settler_leaves_the_corridor", kind: Kind::OptIn, enable: AdvancedAi::enable_stranded_settler_leaves_the_corridor, disable: AdvancedAi::disable_stranded_settler_leaves_the_corridor },
+    // Live King 10-04/05: 59% of the 3,926 land soldiers lost in combat died
+    // while their siege read Stage, 772 on the staging ring itself, walking
+    // in one by one. See `siege_train::muster_step`.
+    Gene { tag: "stage-musters-out-of-reach", field: "stage_musters_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_musters_out_of_reach, disable: AdvancedAi::disable_stage_musters_out_of_reach },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

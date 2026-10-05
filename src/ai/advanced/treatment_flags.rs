@@ -6290,6 +6290,17 @@ impl AdvancedAi {
         self.stranded_settler_leaves_the_corridor = false;
     }
 
+    /// Opt-in gene `stage-musters-out-of-reach`; see
+    /// [`Self::stage_musters_out_of_reach`].
+    pub fn enable_stage_musters_out_of_reach(&mut self) {
+        self.stage_musters_out_of_reach = true;
+    }
+
+    /// The twin of `enable_stage_musters_out_of_reach`.
+    pub fn disable_stage_musters_out_of_reach(&mut self) {
+        self.stage_musters_out_of_reach = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
