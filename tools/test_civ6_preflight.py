@@ -137,6 +137,86 @@ class BundleSignatureTest(unittest.TestCase):
 
 
 
+class SealCacheTest(unittest.TestCase):
+    """Each live game is a one-attempt batch, so preflight runs at every game
+    boundary, and `codesign -v` on Civ6.app was most of it (2.3-3.7 s). A
+    VALID verdict is reused while the bundle's own files are unchanged."""
+
+    def setUp(self) -> None:
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.bundle = root / "Civ6.app"
+        for part in ("Contents/_CodeSignature", "Contents/MacOS",
+                     "Contents/Assets/DLC/Expansion2"):
+            (self.bundle / part).mkdir(parents=True)
+        (self.bundle / "Contents/Info.plist").write_text("plist")
+        (self.bundle / "Contents/_CodeSignature/CodeResources").write_text("seal")
+        (self.bundle / "Contents/MacOS/Civ6_Exe_Child").write_text("binary")
+        self.cache = root / "cache" / "preflight-seal.json"
+        self.calls = 0
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _run(self, state="valid", cache=True):
+        def report_seal():
+            self.calls += 1
+            return {"bundle": str(self.bundle), "state": state, "ours": [],
+                    "foreign": [], "detail": "valid on disk" if state == "valid" else "broken"}
+        report = civ6_preflight.Report()
+        with mock.patch("civ6_control.install.bundle_dir", return_value=self.bundle), \
+             mock.patch("civ6_control.install.signature_report", side_effect=report_seal), \
+             mock.patch("builtins.print") as printed:
+            civ6_preflight.check_bundle(report, self.cache if cache else None)
+        lines = " ".join(str(c.args[0]) for c in printed.call_args_list if c.args)
+        return report, lines
+
+    def test_a_valid_verdict_is_reused_while_the_bundle_is_unchanged(self) -> None:
+        self._run()
+        report, lines = self._run()
+        self.assertEqual(self.calls, 1)
+        self.assertIn("preflight: cached pass from", lines)
+        self.assertEqual(report.seal["state"], "valid")
+        self.assertEqual((report.failures, report.warnings), ([], []))
+
+    def test_any_change_to_the_bundle_asks_codesign_again(self) -> None:
+        self._run()
+        (self.bundle / "Contents/MacOS/Civ6_Exe_Child").write_text("a patched binary")
+        self._run()
+        self.assertEqual(self.calls, 2)
+        (self.bundle / "Contents/Assets/DLC/CivvisControl").mkdir()  # the mod left installed
+        self._run()
+        self.assertEqual(self.calls, 3)
+
+    def test_an_expired_verdict_asks_again(self) -> None:
+        self._run()
+        kept = __import__("json").loads(self.cache.read_text())
+        kept["at"] -= civ6_preflight.SEAL_CACHE_TTL_S + 1
+        self.cache.write_text(__import__("json").dumps(kept))
+        self._run()
+        self.assertEqual(self.calls, 2)
+
+    def test_a_broken_verdict_is_never_kept(self) -> None:
+        self._run()
+        self.cache.unlink()
+        self._run(state="broken")
+        self._run(state="broken")
+        self.assertEqual(self.calls, 3)
+        self.assertFalse(self.cache.exists())
+
+    def test_without_the_flag_every_preflight_runs_codesign(self) -> None:
+        self._run(cache=False)
+        self._run(cache=False)
+        self.assertEqual(self.calls, 2)
+        self.assertFalse(self.cache.exists())
+
+    def test_the_climb_asks_for_the_cache(self) -> None:
+        source = (Path(civ6_preflight.__file__).resolve().parent
+                  / "civ6_civvis_climb.py").read_text(encoding="utf-8")
+        self.assertIn('"--skip-engine",\n                     "--cache-seal",', source)
+
+
 class OneCodesignPerPreflightTest(unittest.TestCase):
     """`check_bundle` and `check_host` both ran codesign on the same Civ6.app,
     ~3.7 s each, and preflight runs at every live game boundary."""
