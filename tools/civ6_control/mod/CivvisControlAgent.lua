@@ -16551,12 +16551,29 @@ CivvisQueue.drain = function(player, pid, turn)
 				-- watch) runs at once. `capToTurn` already refuses a leg with no path
 				-- at issue; these had one then and lost it. A path the host cannot
 				-- be asked for (nil) decides nothing.
+				--
+				-- ★★ A DROPPED REQUEST IS ANSWERED AT TICK 2. G113
+				-- (civvis-20261005T083500Z): 464 of 525 `cannot_start` no-ops were
+				-- answered at exactly the probe tick, every one with path_count 0
+				-- and the unit `awake` or `sentry`, NOT in an operation: the host
+				-- had dropped the MOVE_TO outright, and the probe only made the
+				-- queue wait for it (~0.23 s each at 3x). So a unit that is not in
+				-- an operation is probed once at `OrderQueueIdleProbeTicks` (2).
+				-- Only a path of one plot or none acts, the same verdict as at the
+				-- probe tick. Any other answer leaves the one-shot probe for its
+				-- usual tick, and a unit in an operation (where the stalled-
+				-- operation release lives) is never probed early.
 				local unpathed = false;
+				local probeTick = entry.wait >= (tonumber(cfg.OrderQueueNoopProbeTicks) or 8);
 				if #entry.rows == 0 and entry.origin ~= nil and entry.expect ~= nil
 						and tostring(entry.opening_verb or "") == "MOVE_TO"
 						and not entry.path_probed and not entry.ready
 						and ux == entry.origin.x and uy == entry.origin.y
-						and entry.wait >= (tonumber(cfg.OrderQueueNoopProbeTicks) or 8)
+						and (probeTick or (not entry.idle_probed
+							and entry.wait >= (tonumber(cfg.OrderQueueIdleProbeTicks) or 2)
+							and try(function()
+								return UnitManager.GetActivityType(unit) ~= ActivityTypes.ACTIVITY_OPERATION;
+							end, false) == true))
 						and entry.wait < grace
 						-- WorldInput.lua:884 returns before its path read at :961
 						-- while the game core is busy. A request can still be queued
@@ -16564,7 +16581,8 @@ CivvisQueue.drain = function(player, pid, turn)
 						-- probe or label that transient read an early no-op. Arrival
 						-- and the existing grace/turn bounds remain authoritative.
 						and try(function() return UI.IsGameCoreBusy(); end, false) ~= true then
-					entry.path_probed = true;
+					entry.idle_probed = true;
+					if probeTick then entry.path_probed = true; end
 					local spentNow = moves ~= nil and moves <= 0;
 					local destination = try(function()
 						return Map.GetPlotIndex(entry.expect.x, entry.expect.y);
@@ -16588,7 +16606,7 @@ CivvisQueue.drain = function(player, pid, turn)
 					-- `stall_probe_resolved` (stepped) or the grace `move_noop`
 					-- (which carries `stall_probe`) says which. No decision reads it.
 					local attempt = CivvisBoard.moveAttempts[subject];
-					if not unpathed and not spentNow and attempt ~= nil and attempt.turn == turn
+					if probeTick and not unpathed and not spentNow and attempt ~= nil and attempt.turn == turn
 							and attempt.moves ~= nil and moves ~= nil and moves >= attempt.moves
 							and ActivityTypes.ACTIVITY_OPERATION ~= nil
 							and try(function() return UnitManager.GetActivityType(unit); end, nil)
@@ -17217,7 +17235,7 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 	entry.origin = { x = ux, y = uy };
 	entry.ready = false;
 	entry.wait = 0;
-	entry.path_probed = nil;
+	entry.path_probed, entry.idle_probed = nil, nil;
 	return true;
 end;
 

@@ -409,20 +409,34 @@ UnitManager.GetMoveToPathEx = function(unit)
 	for i = 1, n do plots[i] = i end
 	return { plots = plots, turns = {} };
 end
+host.paths[153] = 4
 host.units[145] = { id = 145, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
 host.units[146] = { id = 146, kind = "UNIT_WARRIOR", x = 4, y = 4, moves = 2 }
 host.units[147] = { id = 147, kind = "UNIT_WARRIOR", x = 7, y = 7, moves = 2 }
+host.units[153] = { id = 153, kind = "UNIT_WARRIOR", x = 10, y = 10, moves = 2, active_operation = true }
 applyOrders(player, PID, 7, {
 	row(145, "MOVE_TO", 3, 1), row(146, "MOVE_TO", 6, 4), row(147, "MOVE_TO", 9, 7),
+	row(153, "MOVE_TO", 12, 10),
 })
-host.paths[145] = 1
-for _ = 1, 7 do queue.drain(player, PID, 7) end
-check("no probe before the probe tick", queue.pendingCount(), 3)
+-- Both lose their path after issue. 145 sits idle: the host dropped the
+-- request (G113: 464 of 525 `cannot_start` no-ops, all `awake`/`sentry`), so
+-- it is answered at tick 2. 153 is in an operation, where the stalled-
+-- operation release lives, so it waits for the probe tick as before.
+host.paths[145], host.paths[153] = 1, 1
 queue.drain(player, PID, 7)
-check("an unpathed walk is answered at the probe tick", queue.pendingCount(), 2)
+check("no probe on the first tick", queue.pendingCount(), 4)
+queue.drain(player, PID, 7)
+check("a dropped request is answered at tick 2", queue.pendingCount(), 3)
 local noop = lastEvent("move_noop") or ""
 check("the early no-op is named for its unit", noop:find('"unit":145', 1, true) ~= nil, true)
-check("the early no-op reports its tick", noop:find('"ticks":8', 1, true) ~= nil, true)
+check("the early no-op reports its tick", noop:find('"ticks":2', 1, true) ~= nil, true)
+for _ = 3, 7 do queue.drain(player, PID, 7) end
+check("a unit in an operation is not probed early", queue.pendingCount(), 3)
+queue.drain(player, PID, 7)
+check("…it is answered at the probe tick", queue.pendingCount(), 2)
+noop = lastEvent("move_noop") or ""
+check("…named for its unit", noop:find('"unit":153', 1, true) ~= nil, true)
+check("…at tick 8", noop:find('"ticks":8', 1, true) ~= nil, true)
 for _ = 1, 20 do queue.drain(player, PID, 7) end
 check("a pathed walk and an unaskable host keep waiting", queue.pendingCount(), 2)
 UnitManager.GetMoveToPathEx = nil
