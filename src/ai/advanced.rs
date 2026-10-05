@@ -8484,6 +8484,7 @@ pub use science_victory_drive::ScienceDrive;
 mod domination_research;
 mod decisive_window;
 mod culture_defense;
+mod government_plaza;
 mod standing_army_supply;
 /// Victory lanes are target contracts: their beelines and campaign objectives
 /// stay attached to the condition that can actually end (or deny) the game.
@@ -45604,6 +45605,9 @@ impl AdvancedAi {
             // Builder or unit.
             // Reach both governors without changing their dispatch or opening book.
             self.reserve_culture_defense_theater(g, pid, &plan);
+            // `plaza-in-the-district-list`: the Plaza and its tier buildings
+            // take one idle queue before the development shortfall's.
+            self.reserve_government_plaza(g, pid, &plan);
             self.reserve_higher_level_investment(g, pid, &plan);
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
             // A fighting Galley cannot also be the empire's sole eye. This
