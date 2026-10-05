@@ -3609,6 +3609,11 @@ pub struct BasicAi {
     move_refusal_congested: RefCell<HashMap<u32, u32>>,
     /// Where each of our units stood when this frame's movement began.
     frame_own_tiles: HashMap<Pos, Vec<u32>>,
+    /// `guns-stay-out-of-reach`: per siege gun, the tiles it can reach this
+    /// turn where one visible hostile's blow would destroy it, with that
+    /// blow. Written by the advanced controller each frame; empty with the
+    /// gene off. See `advanced/guns_stay_out_of_reach.rs`.
+    gun_lethal_tiles: HashMap<u32, HashMap<Pos, f64>>,
     /// Melee units the ancient-rush lane wants in hand, or 0 when no rush is
     /// running. Set once a turn by `AdvancedAi` from its strategic plan.
     ///
@@ -5646,6 +5651,7 @@ impl BasicAi {
             host_move_feedback_active: false,
             move_refusal_congested: RefCell::new(HashMap::new()),
             frame_own_tiles: HashMap::new(),
+            gun_lethal_tiles: HashMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -6153,6 +6159,7 @@ impl BasicAi {
             host_move_feedback_active: false,
             move_refusal_congested: RefCell::new(HashMap::new()),
             frame_own_tiles: HashMap::new(),
+            gun_lethal_tiles: HashMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -14428,6 +14435,16 @@ impl BasicAi {
             // around terrain while returning home.
             if from_home <= MINOR_DEFENSE_RADIUS && to_home > MINOR_DEFENSE_RADIUS {
                 return false;
+            }
+        }
+        // `guns-stay-out-of-reach`: a gun does not step onto a tile where one
+        // visible hostile's blow destroys it, unless the step lowers the
+        // blow it stands under. Empty with the gene off.
+        if let Some(lethal) = self.gun_lethal_tiles.get(&uid) {
+            if let Some(blow) = lethal.get(&to) {
+                if lethal.get(&from).is_none_or(|here| blow >= here) {
+                    return false;
+                }
             }
         }
         // `live-move-refusal-break`: a step this unit has provably been

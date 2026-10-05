@@ -5891,6 +5891,17 @@ impl AdvancedAi {
         self.air_volley_needs_a_road = false;
     }
 
+    /// Opt-in gene `guns-stay-out-of-reach`; see
+    /// [`Self::guns_stay_out_of_reach`].
+    pub fn enable_guns_stay_out_of_reach(&mut self) {
+        self.guns_stay_out_of_reach = true;
+    }
+
+    /// The twin of `enable_guns_stay_out_of_reach`.
+    pub fn disable_guns_stay_out_of_reach(&mut self) {
+        self.guns_stay_out_of_reach = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

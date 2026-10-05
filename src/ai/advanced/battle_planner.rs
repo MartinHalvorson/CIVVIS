@@ -425,7 +425,7 @@ type Blows = Arc<Vec<(Option<u32>, f64)>>;
 /// The tag on a structure's blow source: a city id with this bit set is its
 /// City Center's strike, and with [`ENCAMPMENT_SOURCE`] set as well, its
 /// Encampment's.
-const STRUCTURE_SOURCE: u32 = 1 << 31;
+pub(super) const STRUCTURE_SOURCE: u32 = 1 << 31;
 const ENCAMPMENT_SOURCE: u32 = 1 << 30;
 
 /// The danger field for one frame of the board: what every visible hostile

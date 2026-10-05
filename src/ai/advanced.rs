@@ -6377,6 +6377,10 @@ pub struct AdvancedAi {
     /// the city's strike — once a turn — is charged once across them. See
     /// `siege_train::entry_group`.
     guns_enter_together: bool,
+    /// `guns-stay-out-of-reach`: a siege gun does not end a step where one
+    /// visible hostile could destroy it with a single blow. See
+    /// `advanced/guns_stay_out_of_reach.rs`.
+    guns_stay_out_of_reach: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     great_work_completion_value: bool,
     /// `industrial-chain-debt`: an Industrial Zone owes its Workshop,
@@ -8159,6 +8163,7 @@ mod fire_plan;
 /// the kill plan and the heal rotation — ahead of the per-unit ladder. One
 /// opt-in gene; see `advanced/battle_planner.rs`.
 mod battle_planner;
+mod guns_stay_out_of_reach;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
 /// Close as a body, and screen the shooters: two opt-in genes in the deployed
@@ -9329,6 +9334,7 @@ impl AdvancedAi {
             front_weighted_floor_2: false,
             // ---- append: g-k ----------------------------------------
             guns_enter_together: false,
+            guns_stay_out_of_reach: false,
             great_work_completion_value: false,
             industrial_chain_debt: false,
             guard_breaks_the_pin: false,
@@ -43725,6 +43731,12 @@ impl AdvancedAi {
             // first. Empty with the gene off. See `advanced/fire_plan.rs`.
             self.plan_fire(g, pid);
         }
+        // `guns-stay-out-of-reach`: the tiles each siege gun must not end on,
+        // read once the turn's kills are settled, and a gun already standing
+        // on one steps off it. Nothing with the gene off. See
+        // `advanced/guns_stay_out_of_reach.rs`.
+        self.mark_gun_lethal_tiles(g, pid);
+        self.guns_step_out_of_reach(g, pid);
         let mut air_assault_units = self.plan_air_city_assault(g, pid, plan);
         // `air-surge-2` raiders: spare surge cavalry pillage behind the wing.
         // Nothing is read outside a Domination surge at war. See
@@ -44533,6 +44545,7 @@ impl AdvancedAi {
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         self.turn_start_policies = g.players[pid].policies.clone();
         self.air_city_assault = None;
+        self.base.gun_lethal_tiles.clear();
         self.builder_support.clear();
         self.battlefront_frame = None;
         self.settlement_atlas.borrow_mut().clear();

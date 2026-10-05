@@ -2858,6 +2858,10 @@ pub const GENES: &[Gene] = &[
     // 0, city 1 at turn 196 with no body able to walk in; it healed to 20.
     // See `air_city_assault::air_assault_followup_routed`.
     Gene { tag: "air-volley-needs-a-road", field: "air_volley_needs_a_road", kind: Kind::OptIn, enable: AdvancedAi::enable_air_volley_needs_a_road, disable: AdvancedAi::disable_air_volley_needs_a_road },
+    // Live King civvis-20261005T093932Z (game 117) lost eleven siege guns
+    // from turn 137, most to one blow of a hostile seen at turn start. See
+    // `advanced/guns_stay_out_of_reach.rs`.
+    Gene { tag: "guns-stay-out-of-reach", field: "guns_stay_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach, disable: AdvancedAi::disable_guns_stay_out_of_reach },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
