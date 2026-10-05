@@ -211,6 +211,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `builder-before-the-army-3` | off (unmeasured) | `builder-before-the-army-3`: version 2's first Builder, then one per three unimproved worked tiles. | — \| 3 |
 | `builder-charge-window` | off (unmeasured) | Slot Serfdom while a queued Builder is close to completion. | 1 \| 1 |
 | `builder-workforce-recovery-3` | off (unmeasured) | Count local repair jobs as well as new improvements when replacing a lost Builder, retaining v2's three-job threshold. | 2 \| 3 |
+| `builders-before-the-lent-floor` | off (unmeasured) | Opt-in gene `builders-before-the-lent-floor`; see `Self::builders_before_the_lent_floor`. | 1 \| 1 |
 | `builders-work-through-raiders` | off (unmeasured) | `builders-work-through-raiders`: the live capture lessons' reach holds keep Settlers only. | 1 \| 1 |
 | `campaign-weighs-the-tourism-leader` | off (unmeasured) | Opt-in gene `campaign-weighs-the-tourism-leader`; see `Self::campaign_weighs_the_tourism_leader`. | 1 \| 1 |
 | `campus-before-harbor` | off (unmeasured) | `campus-before-harbor`: see `BasicAi::campus_before_harbor`. | — \| 2 |

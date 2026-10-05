@@ -3044,6 +3044,11 @@ pub const GENES: &[Gene] = &[
     // rule or wartime front ever named it. See
     // `victory_heuristics::free_city_finish`.
     Gene { tag: "flipped-capital-finishes", field: "flipped_capital_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_flipped_capital_finishes, disable: AdvancedAi::disable_flipped_capital_finishes },
+    // Live King 10-05 (40 runs, t1-80): the floor built 157 units in a
+    // Domination war's lent margin while the empire held under one Builder
+    // per two cities; a third of worked tiles improved at t60. See
+    // `BasicAi::builders_before_the_lent_floor`.
+    Gene { tag: "builders-before-the-lent-floor", field: "builders_before_the_lent_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_before_the_lent_floor, disable: AdvancedAi::disable_builders_before_the_lent_floor },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
