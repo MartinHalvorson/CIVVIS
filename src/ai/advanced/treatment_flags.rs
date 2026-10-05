@@ -5924,6 +5924,17 @@ impl AdvancedAi {
         self.faith_counter_waits_for_match_point = false;
     }
 
+    /// Opt-in gene `prey-reads-a-steady-power`; see
+    /// [`Self::prey_reads_a_steady_power`].
+    pub fn enable_prey_reads_a_steady_power(&mut self) {
+        self.prey_reads_a_steady_power = true;
+    }
+
+    /// The twin of `enable_prey_reads_a_steady_power`.
+    pub fn disable_prey_reads_a_steady_power(&mut self) {
+        self.prey_reads_a_steady_power = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
