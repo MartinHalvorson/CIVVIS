@@ -39,6 +39,15 @@
 use super::AdvancedAi;
 
 impl AdvancedAi {
+    /// Reserve an existing Theater's culture buildings before broad production.
+    pub fn enable_culture_defense_finishes_theater(&mut self) {
+        self.culture_defense_finishes_theater = true;
+    }
+
+    pub fn disable_culture_defense_finishes_theater(&mut self) {
+        self.culture_defense_finishes_theater = false;
+    }
+
     /// Enable `victory-deadline-budget` for measurement.
     pub fn enable_victory_deadline_budget(&mut self) {
         self.victory_deadline_budget = true;

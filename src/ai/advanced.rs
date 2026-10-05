@@ -3564,6 +3564,10 @@ pub struct AdvancedAi {
     /// Firaxis-only, alongside `tally_culture`: it prices the Settler seat's
     /// tally. Off for ordinary and frozen controllers.
     pub culture_building_debt: bool,
+    /// Complete an existing Theater's culture buildings in one safe idle
+    /// queue while our Culture trails the field. Independent opt-in
+    /// `culture-defense-finishes-theater`; see `culture_defense_buildings`.
+    culture_defense_finishes_theater: bool,
     /// A specialty district owes its own buildings, whatever the lane.
     ///
     /// ★★★★★ THE SEAT BUILDS THE DISTRICT AND NEVER THE BUILDING INSIDE IT.
@@ -7366,6 +7370,7 @@ mod civilian_safety;
 /// resource-aware version. See `advanced/coastal_sites.rs`.
 mod coastal_sites;
 mod culture_defensive_research;
+mod culture_defense_buildings;
 /// Two Deity habits: chase eurekas with Builders and with the production
 /// queue. Two opt-in genes; see `advanced/deity_habits.rs`.
 mod deity_habits;
@@ -8324,6 +8329,7 @@ impl AdvancedAi {
             opening_settler_waits: false,
             tally_culture: false,
             culture_building_debt: false,
+            culture_defense_finishes_theater: false,
             great_work_veto_by_district: false,
             bank_envoys: false,
             frontier_loyalty: false,
@@ -42719,6 +42725,7 @@ impl AdvancedAi {
             // city before the generic strategic scorer can refill it with a
             // Builder or unit.
             // Reach both governors without changing their dispatch or opening book.
+            self.reserve_culture_defense_building(g, pid, &plan);
             self.reserve_higher_level_investment(g, pid, &plan);
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
             // A fighting Galley cannot also be the empire's sole eye. This
