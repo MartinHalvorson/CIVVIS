@@ -5376,6 +5376,13 @@ pub struct AdvancedAi {
     /// 650-gold reserve (10 cities) against banks of 378-485. Off by default.
     age_closer_spends_the_reserve: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `declaration-needs-the-edge-2`: version 2 of `declaration-needs-the-edge`.
+    /// A plain staged declaration passes at
+    /// `one_war::DECLARATION_PEAK_EDGE_RATIO` times the target's peak power of
+    /// the last `one_war::DECLARATION_PEAK_TURNS` turns, or at version 1's
+    /// ratio of its steady power when it makes less Production than we do.
+    /// Takes precedence over version 1. See `one_war::declaration_edge_2`.
+    declaration_needs_the_edge_2: bool,
     /// `contender-at-peace-is-the-target`: at peace, the Diplomatic Victory
     /// contender at our mercy is the campaign's rival. See
     /// `one_war::diplomatic_contender_at_peace`.
@@ -5987,6 +5994,10 @@ pub struct AdvancedAi {
     /// the stock Ilkum commitment would hold Urban Planning out again.
     colonization_earns_its_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `faith-counter-needs-the-edge`: the religion counter declares without
+    /// a staged siege only at `one_war::DECLARATION_EDGE_RATIO` times the
+    /// rival's steady power. See `one_war::faith_counter_has_the_edge`.
+    faith_counter_needs_the_edge: bool,
     /// `favor-bought-before-congress`: the live bridge buys a block of a
     /// peaceful rival's Diplomatic Favor in the turns before a World Congress
     /// session while a Diplomatic Victory contender stands and our bank is
@@ -7044,6 +7055,10 @@ pub struct AdvancedAi {
     /// `BasicAi::note_host_moves` and `advanced/own_column.rs`.
     own_column_is_not_a_refusal: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `declaration-needs-the-edge-2`: each rival's military readings of the
+    /// last `one_war::DECLARATION_PEAK_TURNS` turns. See
+    /// `one_war::peak_rival_power`.
+    rival_power_peak_seen: BTreeMap<usize, Vec<(u32, f64)>>,
     /// `prophet-race-earns-its-points`: while a Great Prophet is still open to
     /// this seat, the race's Holy Site city builds its Shrine at once (+1
     /// Prophet point a turn, doubling the site's one) and Revelation takes the
@@ -9397,6 +9412,7 @@ impl AdvancedAi {
             breaker_to_the_fastest: false,
             age_closer_spends_the_reserve: false,
             // ---- append: c-d ----------------------------------------
+            declaration_needs_the_edge_2: false,
             contender_at_peace_is_the_target: false,
             campaign_weighs_the_tourism_leader: false,
             domination_finish_holds_the_front: false,
@@ -9520,6 +9536,7 @@ impl AdvancedAi {
             colonization_earns_its_slot: false,
             colonization_earns_its_slot_2: false,
             // ---- append: e-f ----------------------------------------
+            faith_counter_needs_the_edge: false,
             favor_bought_before_congress: false,
             favor_spares_the_surprise_war: false,
             faith_counter_waits_for_match_point: false,
@@ -9640,6 +9657,7 @@ impl AdvancedAi {
             naval_escort_patience: false,
             own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
+            rival_power_peak_seen: BTreeMap::new(),
             prophet_race_earns_its_points: false,
             plaza_in_the_district_list: false,
             recovery_needs_the_deficit: false,
@@ -22657,11 +22675,20 @@ impl AdvancedAi {
         // siege bill. Live King civvis-20261003T113755Z read "the army has not
         // finished staging" at turns 145-150 at 578-602 power against 210-362
         // while Khmer Buddhism took our cities, and lost at 153.
-        let religion_counter_ready = (urgent_denial
+        let urgent_religion_counter = urgent_denial
             && self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && self.rival_victory_pressure(g, target).strategy == GrandStrategy::Religion
-            && my_power >= target_power)
-            || faith_counter_due;
+            && my_power >= target_power;
+        // See `faith_counter_has_the_edge`: under the gene the urgent counter
+        // needs the edge too, as `faith_counter_due` already does.
+        let faith_edge = self.faith_counter_has_the_edge(g, pid, target);
+        if close_enough && urgent_religion_counter && !faith_edge {
+            think!(self.journal(), Military, Detail,
+                   "Holding the faith counter on {}", g.players[target].civ;
+                   "{my_power:.0} power against their steady {:.0}: a counter war short of {:.1} times their power took no city in October 4-5's three",
+                   self.steady_rival_power(g, target), one_war::DECLARATION_EDGE_RATIO);
+        }
+        let religion_counter_ready = (urgent_religion_counter && faith_edge) || faith_counter_due;
         // See `culture_counter_due`.
         let culture_counter_ready = !staged && self.culture_counter_due(g, pid, target);
         // See `overwhelming_power_declares`: at that ratio the war itself
@@ -22674,10 +22701,20 @@ impl AdvancedAi {
         let edge =
             urgent_denial || faith_counter_due || self.declaration_has_the_edge(g, pid, target);
         if close_enough && ready && staged && !edge {
-            think!(self.journal(), Military, Detail,
-                   "Holding off war with {}", g.players[target].civ;
-                   "{my_power:.0} power against their {target_power:.0}: a staged war short of {:.1} times their power took a city of theirs within 20 turns in 2 of 25 live declarations",
-                   one_war::DECLARATION_EDGE_RATIO);
+            if self.declaration_needs_the_edge_2 {
+                let reading = self.declaration_edge_2(g, pid, target);
+                think!(self.journal(), Military, Detail,
+                       "Holding off war with {}", g.players[target].civ;
+                       "{:.2} times their 30-turn peak ({:.0}) and {:.2} times their steady power ({:.0}), at {:.0} Production against their {:.0}: a staged war needs {:.1} times the peak, or {:.1} times the steady power against a rival out-produced",
+                       reading.peak_ratio(), reading.peak, reading.steady_ratio(), reading.steady,
+                       reading.our_production, reading.their_production,
+                       one_war::DECLARATION_PEAK_EDGE_RATIO, one_war::DECLARATION_EDGE_RATIO);
+            } else {
+                think!(self.journal(), Military, Detail,
+                       "Holding off war with {}", g.players[target].civ;
+                       "{my_power:.0} power against their {target_power:.0}: a staged war short of {:.1} times their power took a city of theirs within 20 turns in 2 of 25 live declarations",
+                       one_war::DECLARATION_EDGE_RATIO);
+            }
         }
         let staged = staged && edge;
         if close_enough

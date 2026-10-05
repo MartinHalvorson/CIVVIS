@@ -3009,6 +3009,18 @@ pub const GENES: &[Gene] = &[
     // The race's Holy Site builds its Shrine and Revelation takes the
     // wildcard while a Prophet is open. See `advanced/prophet_race_points.rs`.
     Gene { tag: "prophet-race-earns-its-points", field: "prophet_race_earns_its_points", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_earns_its_points, disable: AdvancedAi::disable_prophet_race_earns_its_points },
+    // Version 2 of `declaration-needs-the-edge` (2026-10-05): a staged
+    // declaration needs twice the target's 30-turn peak power, or version 1's
+    // 1.5 times its steady power against a rival out-produced. Live King
+    // October 4-5: 45 of 180 declarations were routs, the rival out-building
+    // us (its Production over ours read AUC 0.80); the rule blocks 29 of the
+    // 30 staged routs for 2 of 26 captures. See `one_war::declaration_edge_2`.
+    Gene { tag: "declaration-needs-the-edge-2", field: "declaration_needs_the_edge_2", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_needs_the_edge_2, disable: AdvancedAi::disable_declaration_needs_the_edge_2 },
+    // The religion counter's waiver of the staged siege needs 1.5 times the
+    // rival's steady power. Live King game 152 countered Indonesia at 358
+    // against 350, was routed, took nothing, and lost to its religion. See
+    // `one_war::faith_counter_has_the_edge`.
+    Gene { tag: "faith-counter-needs-the-edge", field: "faith_counter_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_counter_needs_the_edge, disable: AdvancedAi::disable_faith_counter_needs_the_edge },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

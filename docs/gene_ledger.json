@@ -2339,6 +2339,15 @@
           "culture-lane-forecast-2": null
         }
       },
+      "declaration-needs-the-edge": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "declaration-needs-the-edge": null,
+          "declaration-needs-the-edge-2": null
+        }
+      },
       "diplomatic-contender-kept": {
         "rule_on": [],
         "head": null,
