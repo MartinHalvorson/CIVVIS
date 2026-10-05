@@ -492,6 +492,10 @@ pub(super) struct BreachReading {
     pub(super) guns: usize,
     /// Siege guns within the staging ring the battle planner holds out to heal.
     pub(super) wounded_guns: usize,
+    /// `guns-enter-together`: fit siege guns within the staging ring the
+    /// approach keeps off their posts this turn (`gun_barred_from_its_post`),
+    /// not counted in `guns`. Zero with the gene off.
+    pub(super) barred_guns: usize,
     /// Rams and towers that work on these walls, within the staging ring or
     /// carried by a member, while a melee member can use one.
     pub(super) support: usize,
@@ -1823,6 +1827,8 @@ impl AdvancedAi {
             .siege_counts_posted_shooters
             .then(|| posted_shooters(g, pid, city.id, force).1);
         let mut users = false;
+        // `guns-enter-together`: see `gun_barred_from_its_post`.
+        let group = self.entry_group(g, pid, city);
         for uid in force {
             let Some(unit) = g.units.get(uid) else {
                 continue;
@@ -1831,6 +1837,12 @@ impl AdvancedAi {
                 continue;
             }
             match arm_of(g, *uid) {
+                Arm::Siege
+                    if self.breach_gun_fit(g, *uid)
+                        && self.gun_barred_from_its_post(g, pid, *uid, city, &group) =>
+                {
+                    reading.barred_guns += 1;
+                }
                 Arm::Siege if self.breach_gun_fit(g, *uid) => reading.guns += 1,
                 Arm::Siege => reading.wounded_guns += 1,
                 Arm::Shooter if self.siege_member_fit(g, *uid) => {
@@ -2296,11 +2308,19 @@ impl AdvancedAi {
             };
             let breach_note = match breach {
                 Some(reading) => format!(
-                    "; breakers: {} gun(s) fit, {} healing, {} ram/tower, shooters {:.0} wall a turn{}",
+                    "; breakers: {} gun(s) fit, {} healing, {} ram/tower, shooters {:.0} wall a turn{}{}",
                     reading.guns,
                     reading.wounded_guns,
                     reading.support,
                     reading.shooter_walls,
+                    if reading.barred_guns > 0 {
+                        format!(
+                            ", {} gun(s) kept off their posts inside the city's strike",
+                            reading.barred_guns
+                        )
+                    } else {
+                        String::new()
+                    },
                     if no_breaker {
                         " — nothing to open the walls, so the train holds outside the city's reach"
                     } else if opens_walls {
@@ -3164,6 +3184,9 @@ impl AdvancedAi {
         city_pos: Pos,
     ) -> Option<bool> {
         let mut moved = false;
+        // `guns-enter-together`: see `entry_group`. Read once, before the
+        // first step, so a gun's own step cannot change the group it is in.
+        let entering = self.entering_with(g, pid, uid, city_pos);
         for _ in 0..4 {
             let unit = g.units.get(&uid)?;
             if unit.pos == goal || unit.moves_left <= 0.0 {
@@ -3186,7 +3209,7 @@ impl AdvancedAi {
                     .filter(|dest| {
                         dry_stand(g, uid, *dest)
                             && (g.wdist(*dest, city_pos) > CITY_STRIKE_RANGE
-                                || hp > self.approach_danger(g, pid, *dest, uid) + 20.0)
+                                || hp > self.entry_danger(g, pid, *dest, uid, entering) + 20.0)
                     })
                 {
                     moved = self.base.path_walk_to(g, pid, uid, dest);
@@ -3197,7 +3220,7 @@ impl AdvancedAi {
             // than one city or Encampment. Do not march a body into a stand
             // where the forward model expects the next volley to finish it.
             if g.wdist(next, city_pos) <= CITY_STRIKE_RANGE
-                && f64::from(unit.hp) <= self.approach_danger(g, pid, next, uid) + 20.0
+                && f64::from(unit.hp) <= self.entry_danger(g, pid, next, uid, entering) + 20.0
             {
                 break;
             }
@@ -3223,6 +3246,114 @@ impl AdvancedAi {
         let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
         field.share(g);
         field.rotation_danger(tile, uid)
+    }
+
+    /// The approach's danger reading for `uid` stepping onto `tile`, as one
+    /// of `entering` guns entering together (`entry_group`); below two it is
+    /// `approach_danger`'s.
+    fn entry_danger(&self, g: &Game, pid: usize, tile: Pos, uid: u32, entering: usize) -> f64 {
+        if entering < 2 {
+            return self.approach_danger(g, pid, tile, uid);
+        }
+        let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
+        if self.shared_danger {
+            field.share(g);
+        }
+        field.group_entry_danger(tile, uid, entering)
+    }
+
+    /// `guns-enter-together`: the size of the group `uid` enters with when
+    /// it walks toward its post at the city on `city_pos`, or 0 when it walks
+    /// alone (the gene off, an unwalled city, or a unit outside the group).
+    fn entering_with(&self, g: &Game, pid: usize, uid: u32, city_pos: Pos) -> usize {
+        if !self.guns_enter_together {
+            return 0;
+        }
+        let Some(city) = g.city_at(city_pos).and_then(|cid| CityView::of(g, cid)) else {
+            return 0;
+        };
+        let group = self.entry_group(g, pid, &city);
+        if group.contains(&uid) {
+            group.len()
+        } else {
+            0
+        }
+    }
+
+    /// `guns-enter-together`: the fit siege guns of a walled siege whose
+    /// posts lie inside the city's strike ring and that stand on them, within
+    /// one tile of the ring, or within this turn's reach of them. The city
+    /// strikes once a turn, so two or more stepping in together share its
+    /// blow; alone, each read the whole of it and none entered. Live King
+    /// civvis-20261005T051413Z (game 102): four fit Bombards at 100 hp stood
+    /// three tiles from walled Toronto from turn 137 to 145 with posts at
+    /// two, the approach read ~108 on every post against a Bombard, and not
+    /// one Bombard fired in twenty turns; the walls went 400 -> 391.
+    fn entry_group(&self, g: &Game, pid: usize, city: &CityView) -> Vec<u32> {
+        if !self.guns_enter_together || city.wall_hp <= 0 {
+            return Vec::new();
+        }
+        let Some(siege) = self.sieges.get(&city.id) else {
+            return Vec::new();
+        };
+        siege
+            .posts
+            .iter()
+            .filter(|(uid, post)| {
+                let Some(unit) = g.units.get(uid) else {
+                    return false;
+                };
+                unit.owner == pid
+                    && !g.is_embarked(unit)
+                    && arm_of(g, **uid) == Arm::Siege
+                    && self.siege_member_fit(g, **uid)
+                    && g.wdist(**post, city.pos) <= CITY_STRIKE_RANGE
+                    && (unit.pos == **post
+                        || g.wdist(unit.pos, city.pos) <= CITY_STRIKE_RANGE + 1
+                        || (unit.moves_left > 0.0 && g.reachable(**uid).contains(post)))
+            })
+            .map(|(uid, _)| *uid)
+            .collect()
+    }
+
+    /// `guns-enter-together`: whether a fit gun of the train can put a shot
+    /// on the walls from where it stands or from its post. A gun whose post
+    /// sits inside the strike ring and whose entry the approach would refuse
+    /// — it is not part of an entering group — fires nothing however many
+    /// turns it stands three tiles out, so the breach reading does not count
+    /// it as a breaker. A gun with no post (the siege still in Stage) is not
+    /// judged here.
+    fn gun_barred_from_its_post(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        city: &CityView,
+        group: &[u32],
+    ) -> bool {
+        if !self.guns_enter_together || city.wall_hp <= 0 {
+            return false;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        let range = g.unit_attack_range(uid).max(1);
+        if g.wdist(unit.pos, city.pos) <= range {
+            return false;
+        }
+        let Some(post) = self
+            .sieges
+            .get(&city.id)
+            .and_then(|siege| siege.posts.get(&uid))
+            .copied()
+        else {
+            return false;
+        };
+        if g.wdist(post, city.pos) > CITY_STRIKE_RANGE {
+            return false;
+        }
+        let entering = if group.contains(&uid) { group.len() } else { 0 };
+        f64::from(unit.hp) <= self.entry_danger(g, pid, post, uid, entering) + 20.0
     }
 
     /// Walk to the first goal reachable this turn, else one step toward the
@@ -4200,3 +4331,6 @@ mod linked_support_tests;
 #[cfg(test)]
 #[path = "siege_train/tests.rs"]
 mod obstacle_routing_tests;
+
+#[cfg(test)]
+mod entry_tests;

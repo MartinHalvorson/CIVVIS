@@ -5737,6 +5737,17 @@ impl AdvancedAi {
         self.breach_counts_nearby_guns = false;
     }
 
+    /// Opt-in gene `guns-enter-together`; see
+    /// [`Self::guns_enter_together`].
+    pub fn enable_guns_enter_together(&mut self) {
+        self.guns_enter_together = true;
+    }
+
+    /// The twin of `enable_guns_enter_together`.
+    pub fn disable_guns_enter_together(&mut self) {
+        self.guns_enter_together = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

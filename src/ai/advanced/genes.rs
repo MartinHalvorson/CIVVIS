@@ -2793,6 +2793,12 @@ pub const GENES: &[Gene] = &[
     // Bombards of Uruk's force stood at its ring. See
     // `siege_train::nearby_gun_city`.
     Gene { tag: "breach-counts-nearby-guns", field: "breach_counts_nearby_guns", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_counts_nearby_guns, disable: AdvancedAi::disable_breach_counts_nearby_guns },
+    // Live King civvis-20261005T051413Z (game 102): four fit Bombards stood
+    // three tiles from walled Toronto from turn 137 to 145, one tile outside
+    // their range, and never fired: every post inside the strike ring read
+    // the city's whole blow (~108 against a Bombard) on each gun. See
+    // `siege_train::entry_group`.
+    Gene { tag: "guns-enter-together", field: "guns_enter_together", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_enter_together, disable: AdvancedAi::disable_guns_enter_together },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
