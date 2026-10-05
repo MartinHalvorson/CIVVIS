@@ -996,6 +996,10 @@ def build_config(args: argparse.Namespace) -> dict:
         # mod timer runs on it). Combat visualization, which the game core
         # waits on, was ~10 min of a 262-turn game (G93). Off unless set.
         "DebugTimeScale": getattr(args, "debug_timescale", None),
+        # An in-game A/B of two timescales ("3,4"), alternating every
+        # DebugTimeScaleABTurns turns (10); takes precedence over DebugTimeScale.
+        "DebugTimeScaleAB": getattr(args, "debug_timescale_ab", None),
+        "DebugTimeScaleABTurns": getattr(args, "debug_timescale_ab_turns", None) or 10,
         # ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. A MOVE_TO whose
         # host path outran the turn was queued, and the host walked the unit
         # along it at the start of the next turn before the brain could act. Now
@@ -4395,6 +4399,7 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "MoveFallback": args.move_fallback,
             "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
             "DebugTimeScale": getattr(args, "debug_timescale", None),
+            "DebugTimeScaleAB": getattr(args, "debug_timescale_ab", None),
             "ReplanFrames": getattr(args, "replan_frames", None),
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
@@ -5428,6 +5433,7 @@ def _play(args: argparse.Namespace) -> int:
             "MoveFallback": args.move_fallback,
             "StalledOperationRelease": getattr(args, "stalled_operation_release", False),
             "DebugTimeScale": getattr(args, "debug_timescale", None),
+            "DebugTimeScaleAB": getattr(args, "debug_timescale_ab", None),
             "ReplanFrames": args.replan_frames,
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
@@ -5649,6 +5655,9 @@ TREE_MOD_ARMS = {
     "debug-timescale-2": ("debug_timescale", 2.0),
     "debug-timescale-3": ("debug_timescale", 3.0),
     "debug-timescale-4": ("debug_timescale", 4.0),
+    # In-game A/Bs of two timescales in 10-turn blocks (one game, same board).
+    "debug-timescale-ab-2-3": ("debug_timescale_ab", "2,3"),
+    "debug-timescale-ab-3-4": ("debug_timescale_ab", "3,4"),
 }
 
 
@@ -5958,6 +5967,12 @@ def main(argv: list[str] | None = None) -> int:
                          "without a step (`stall_probe`) at the probe tick instead of "
                          "waiting out the 30-tick grace: the same `move_noop` answer, "
                          "about 3 s sooner per stalled leg")
+    ap.add_argument("--debug-timescale-ab", dest="debug_timescale_ab", default=None,
+                    help="an in-game A/B of two timescales, e.g. '3,4': the agent "
+                         "alternates them every --debug-timescale-ab-turns turns and "
+                         "tags each turn with its scale (end_turn_wait.scale)")
+    ap.add_argument("--debug-timescale-ab-turns", dest="debug_timescale_ab_turns",
+                    type=int, default=None, help="block length of the timescale A/B (10)")
     ap.add_argument("--debug-timescale", dest="debug_timescale", type=float, default=None,
                     help="run the engine console's `timescale N` at game start (via "
                          "AutoProfiler.RunCommand) to shorten the combat visualization "
