@@ -22152,6 +22152,11 @@ impl AdvancedAi {
                         "a ready aircraft can disrupt the rival's Theater Square immediately"
                     } else if culture_counter_ready {
                         "the war ends the open borders and trade route that carry their tourism to us while the army stages"
+                    } else if !staged && religion_counter_ready {
+                        // The religion counter declares without a staged
+                        // siege; the line read "staged" for 41 of 71 such
+                        // October 4-5 declarations with 0-2 bodies on the ring.
+                        "the war lets the army condemn the faith taking our cities, before any siege is staged"
                     } else {
                         "the army is staged within reach of the first objective"
                     };
