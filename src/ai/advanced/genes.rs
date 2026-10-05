@@ -2872,6 +2872,10 @@ pub const GENES: &[Gene] = &[
     // Live King civvis-20261005T103704Z (game 121) read America at 4 for
     // one turn and declared on it. See `one_war::steady_rival_power`.
     Gene { tag: "prey-reads-a-steady-power", field: "prey_reads_a_steady_power", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_reads_a_steady_power, disable: AdvancedAi::disable_prey_reads_a_steady_power },
+    // Live King openings of 2026-10-04/05: 4 of 7 named ten or fewer tiles
+    // from the capital took their city, 0 of 42 named further out. See
+    // `early_conquest::CONQUEST_NEAR_REACH_TILES`.
+    Gene { tag: "conquest-opening-stays-near", field: "conquest_opening_stays_near", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_opening_stays_near, disable: AdvancedAi::disable_conquest_opening_stays_near },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
