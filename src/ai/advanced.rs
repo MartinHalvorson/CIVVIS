@@ -6939,6 +6939,10 @@ pub struct AdvancedAi {
     /// `BasicAi::note_host_moves` and `advanced/own_column.rs`.
     own_column_is_not_a_refusal: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `ranged-before-melee`: the live bridge sends a frame's shots at a
+    /// target ahead of the melee blows on it. See `civvis_orders`
+    /// `ranged_before_melee`.
+    ranged_before_melee: bool,
     /// `prey-reads-a-steady-power`: the capital-prey gates read the largest
     /// of a rival's last three military readings. See
     /// `one_war::steady_rival_power`.
@@ -9429,6 +9433,7 @@ impl AdvancedAi {
             naval_escort_patience: false,
             own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
+            ranged_before_melee: false,
             prey_reads_a_steady_power: false,
             rout_spares_the_counter: false,
             peace_asks_a_city: false,
