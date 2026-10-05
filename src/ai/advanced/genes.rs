@@ -2884,6 +2884,10 @@ pub const GENES: &[Gene] = &[
     // a median of 2 turns; 7 were accepted at 1.5 times the rival's power.
     // See `one_war::recovery_peace_ready`.
     Gene { tag: "recovery-peace-waits", field: "recovery_peace_waits", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_peace_waits, disable: AdvancedAi::disable_recovery_peace_waits },
+    // Live King civvis-20261005T114715Z (game 126): the culture counter's
+    // surprise war drained 184 Favor to 0 while Sweden rose to 17 points. See
+    // `one_war::favor_spares_surprise`.
+    Gene { tag: "favor-spares-the-surprise-war", field: "favor_spares_the_surprise_war", kind: Kind::OptIn, enable: AdvancedAi::enable_favor_spares_the_surprise_war, disable: AdvancedAi::disable_favor_spares_the_surprise_war },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

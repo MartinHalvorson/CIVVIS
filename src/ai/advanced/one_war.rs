@@ -128,6 +128,12 @@ pub(crate) const SECOND_FRONT_MEMORY_TURNS: u32 = 10;
 /// `recovery-peace-waits`: the turns a Recovery plan stands before its
 /// "not the war the recovery plan is fighting" peace is offered.
 pub(crate) const RECOVERY_PEACE_PATIENCE: u32 = 3;
+/// `favor-spares-the-surprise-war`: the Diplomatic Victory points at which a
+/// rival makes Favor worth more than the five turns a Formal War costs.
+pub(crate) const FAVOR_SURPRISE_DVP: i64 = 9;
+/// `favor-spares-the-surprise-war`: a target's culture finish this many turns
+/// out or nearer still takes the surprise war.
+pub(crate) const FAVOR_SURPRISE_CLOCK_TURNS: f64 = 8.0;
 
 /// `liberation-funds-the-congress`: the Diplomatic Victory points at which a
 /// rival makes a captured city-state city worth its liberation Favor; the
@@ -1017,6 +1023,37 @@ impl AdvancedAi {
             || self
                 .recovery_since
                 .is_some_and(|since| g.turn.saturating_sub(since) >= RECOVERY_PEACE_PATIENCE)
+    }
+
+    /// `favor-spares-the-surprise-war`: whether a surprise war on `target`
+    /// gives way to the denouncement and its Formal War five turns on, because
+    /// a living rival stands at [`FAVOR_SURPRISE_DVP`] or more Diplomatic
+    /// Victory points -- the Congress ballots that hold it back are bought
+    /// with Favor -- unless `target`'s culture finish reads within
+    /// [`FAVOR_SURPRISE_CLOCK_TURNS`] or its faith is at match point. A
+    /// surprise war sets the target's grievances against us at 300 and the
+    /// Favor they cost runs every turn. Live King civvis-20261005T114715Z
+    /// (game 126): Favor rose 4-6 a turn from 162 to 186; the culture
+    /// counter's surprise war on Sweden at 187 turned it to -3 to -5 a turn
+    /// (about 110 Favor in 14 turns, 184 -> 0 by 212) while Sweden climbed
+    /// from 11 to 17 Diplomatic Victory points, and the session at 221 cast
+    /// one free vote; a Holy War on Byzantium at 240, with a casus belli,
+    /// drained nothing (read by -60). Of the 15 Diplomatic losses of October
+    /// 4-5, 8 met their last session at 0 Favor. 51 of the 147 declarations
+    /// of those days were surprise wars, 36 of them neither urgent nor a
+    /// culture embargo.
+    pub(crate) fn favor_spares_surprise(&self, g: &Game, pid: usize, target: usize) -> bool {
+        if !self.favor_spares_the_surprise_war {
+            return false;
+        }
+        let contender = g.players.iter().any(|p| {
+            p.id != pid && p.alive && !p.is_minor && !p.is_barbarian && p.dvp >= FAVOR_SURPRISE_DVP
+        });
+        let clock_out = self
+            .observed_culture_finish(g, target)
+            .is_some_and(|turns| turns <= FAVOR_SURPRISE_CLOCK_TURNS)
+            || self.faith_at_match_point(g, target);
+        contender && !clock_out
     }
 
     pub(crate) fn recovery_keeps_the_war(

@@ -1623,3 +1623,42 @@ fn recovery_peace_waits_for_a_standing_recovery_under_the_gene() {
     ai.advanced_diplomacy(&mut g, 0, &plan);
     assert!(!ai.recovery_peace_ready(&g), "the spell ended");
 }
+
+/// See `favor_spares_surprise`: with a rival on 18 Diplomatic Victory points
+/// the urgent war on it opens by denouncement under the gene, a surprise war
+/// with it off; no contender, or a faith at match point, keeps the surprise.
+#[test]
+fn favor_spares_the_surprise_war_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    g.at_war.remove(&(0, 2));
+    g.players[2].dvp = 18;
+    assert!(
+        ai.urgent_victory_threat(&g, 2),
+        "fixture: an urgent Diplomatic clock"
+    );
+    let surprise = |g: &Game, ai: &AdvancedAi| {
+        matches!(
+            ai.preferred_war_opening(g, 0, 2),
+            Some(crate::game::Action::DeclareWar { .. })
+        )
+    };
+    let denounce = |g: &Game, ai: &AdvancedAi| {
+        matches!(
+            ai.preferred_war_opening(g, 0, 2),
+            Some(crate::game::Action::Denounce { .. })
+        )
+    };
+    assert!(!ai.favor_spares_surprise(&g, 0, 2), "off");
+    assert!(surprise(&g, &ai), "off: the surprise war");
+    ai.enable_favor_spares_the_surprise_war();
+    assert!(ai.favor_spares_surprise(&g, 0, 2));
+    assert!(denounce(&g, &ai), "the denouncement first");
+    // No rival at the bar: the surprise war stands.
+    g.players[2].dvp = FAVOR_SURPRISE_DVP - 1;
+    assert!(!ai.favor_spares_surprise(&g, 0, 2));
+    // A faith at match point is a clock nearly out.
+    g.players[3].dvp = FAVOR_SURPRISE_DVP;
+    convert(&mut g, &[0, 1, 2]);
+    assert!(ai.faith_at_match_point(&g, 2));
+    assert!(!ai.favor_spares_surprise(&g, 0, 2));
+}

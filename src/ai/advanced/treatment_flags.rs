@@ -5968,6 +5968,17 @@ impl AdvancedAi {
         self.recovery_peace_waits = false;
     }
 
+    /// Opt-in gene `favor-spares-the-surprise-war`; see
+    /// [`Self::favor_spares_the_surprise_war`].
+    pub fn enable_favor_spares_the_surprise_war(&mut self) {
+        self.favor_spares_the_surprise_war = true;
+    }
+
+    /// The twin of `enable_favor_spares_the_surprise_war`.
+    pub fn disable_favor_spares_the_surprise_war(&mut self) {
+        self.favor_spares_the_surprise_war = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

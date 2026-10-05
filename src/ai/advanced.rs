@@ -5926,6 +5926,10 @@ pub struct AdvancedAi {
     /// the stock Ilkum commitment would hold Urban Planning out again.
     colonization_earns_its_slot_2: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `favor-spares-the-surprise-war`: with a Diplomatic Victory contender
+    /// standing, a war opens by the denouncement's Formal War, not a surprise
+    /// war. See `one_war::favor_spares_surprise`.
+    favor_spares_the_surprise_war: bool,
     /// `faith-counter-waits-for-match-point`: a faith taking our cities is
     /// declared on without a staged siege only at the religion lane's match
     /// point. See `one_war::faith_at_match_point`.
@@ -9328,6 +9332,7 @@ impl AdvancedAi {
             colonization_earns_its_slot: false,
             colonization_earns_its_slot_2: false,
             // ---- append: e-f ----------------------------------------
+            favor_spares_the_surprise_war: false,
             faith_counter_waits_for_match_point: false,
             find_the_capital: false,
             front_finishes_its_capital: false,
@@ -20384,8 +20389,16 @@ impl AdvancedAi {
                 _ => None,
             });
         }
-        if urgent {
+        // See `favor_spares_surprise`: with Favor at stake the urgent war is
+        // a Formal War too, unless its clock is nearly out.
+        let spared = urgent && self.favor_spares_surprise(g, pid, target);
+        if urgent && !spared {
             surprise
+        } else if spared && !denounced {
+            legal.iter().find_map(|action| match action {
+                Action::Denounce { player } if *player == target => Some(action.clone()),
+                _ => None,
+            })
         } else {
             // The denouncement is active but its five-turn preparation period
             // has not elapsed, so preserve the army and wait for Formal War.
@@ -20413,6 +20426,8 @@ impl AdvancedAi {
         if !self.domination_strikes_when_staged
             || !staged
             || !matches!(opening, Action::Denounce { .. })
+            // See `favor_spares_surprise`.
+            || self.favor_spares_surprise(g, pid, target)
             || self.active_victory_target(g) != Some(VictoryTarget::Domination)
             || g.military_power(pid) < STRIKE_WHEN_STAGED_RATIO * g.military_power(target).max(1.0)
         {
