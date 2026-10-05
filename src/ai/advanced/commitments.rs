@@ -1210,6 +1210,8 @@ impl AdvancedAi {
                 }
             }
         }
+        // `siege-target-needs-a-road`: see `advanced/siege_road.rs`.
+        self.reconcile_siege_roads(g, pid);
         let ledger = &mut self.commitments;
         ledger.cities_seen = g
             .cities
@@ -1222,7 +1224,9 @@ impl AdvancedAi {
 
     /// `capture-go-or-stand-down` family: either version is on.
     pub(super) fn capture_stand_down_on(&self) -> bool {
-        self.capture_go_or_stand_down || self.capture_go_or_stand_down_2
+        self.capture_go_or_stand_down
+            || self.capture_go_or_stand_down_2
+            || self.siege_target_needs_a_road
     }
 
     /// `capture-go-or-stand-down`: whether the gene holds this city out of
@@ -1233,6 +1237,9 @@ impl AdvancedAi {
                 .capture_stood_down
                 .get(&city)
                 .is_some_and(|until| g.turn < *until)
+            // `siege-target-needs-a-road`: a road stand-down lifts when the
+            // border that shut the road opens.
+            && !self.siege_road_reopened(g, city)
     }
 
     /// `commitment-owner-acts`: the owners the unit pass left standing act

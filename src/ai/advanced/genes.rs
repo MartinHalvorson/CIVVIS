@@ -3044,6 +3044,13 @@ pub const GENES: &[Gene] = &[
     // rule or wartime front ever named it. See
     // `victory_heuristics::free_city_finish`.
     Gene { tag: "flipped-capital-finishes", field: "flipped_capital_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_flipped_capital_finishes, disable: AdvancedAi::disable_flipped_capital_finishes },
+    // `siege-target-needs-a-road`: half or more of a siege train held on land
+    // for want of a road three turns running stands the capture down, and its
+    // owner leaves the campaign while no land road reaches it. Live King
+    // civvis-20261005T200350Z (game 158): Apu's road ran through Poland's
+    // closed borders; 7 to 18 units mustered at 0% ready from turn 129 to 160.
+    // See `advanced/siege_road.rs`.
+    Gene { tag: "siege-target-needs-a-road", field: "siege_target_needs_a_road", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_target_needs_a_road, disable: AdvancedAi::disable_siege_target_needs_a_road },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

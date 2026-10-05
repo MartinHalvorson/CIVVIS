@@ -7346,6 +7346,21 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-target-needs-a-road`: a siege whose train is held on land for
+    /// want of a road (`stage-march-keeps-to-land`'s hold) by half or more of
+    /// its units three turns running is stood down at once, whatever the
+    /// breaker and muster waits say, and its owner leaves the campaign while
+    /// no land road from our cities reaches it. Live King
+    /// civvis-20261005T200350Z (game 158) mustered 7 to 18 units for Apu at
+    /// 0% ready from turn 129 to 160, the land road shut by Poland's closed
+    /// borders; over the 10-04/05 control runs 19 border-blocked siege
+    /// windows (306 siege-turns) converted 0 times. See
+    /// `advanced/siege_road.rs`. Off by default.
+    siege_target_needs_a_road: bool,
+    /// `siege-target-needs-a-road`: this turn's march outcomes per siege.
+    siege_road_tally: BTreeMap<u32, siege_road::RoadTally>,
+    /// `siege-target-needs-a-road`: captures stood down for want of a road.
+    siege_road_closed: BTreeMap<u32, siege_road::RoadClosed>,
     /// `stall-waits-for-the-breach`: a siege train still gathering on its
     /// staging ring around the breaker it waited for is not a siege that is
     /// not winning. `siege_mustering` counts its window from the turn the
@@ -8443,6 +8458,10 @@ mod siege_production;
 /// — an enemy city to take, a city of ours to hold. Two opt-in genes; see
 /// `advanced/siege_train.rs`.
 mod siege_train;
+
+/// `siege-target-needs-a-road`: a siege the army cannot walk to is stood
+/// down. See `advanced/siege_road.rs`.
+mod siege_road;
 
 /// `march-uses-its-moves`: a march toward a siege ring walks as far as its
 /// movement carries it. See `advanced/march_moves.rs`.
@@ -9750,6 +9769,9 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_target_needs_a_road: false,
+            siege_road_tally: BTreeMap::new(),
+            siege_road_closed: BTreeMap::new(),
             stall_waits_for_the_breach: false,
             stall_breaker_waited: None,
             stall_stage_seen: None,
@@ -14893,6 +14915,12 @@ impl AdvancedAi {
             return false;
         };
         if other == pid || !player.alive || player.is_barbarian {
+            return false;
+        }
+        // `siege-target-needs-a-road`: a rival whose siege was stood down for
+        // want of a road, with no land road from our cities to any of its
+        // cities, is out of the ranking while the road stays shut.
+        if self.siege_road_cuts_off(g, pid, other) {
             return false;
         }
 

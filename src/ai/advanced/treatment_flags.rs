@@ -6357,6 +6357,17 @@ impl AdvancedAi {
         self.flipped_capital_finishes = false;
     }
 
+    /// Opt-in gene `siege-target-needs-a-road`; see
+    /// [`Self::reconcile_siege_roads`].
+    pub fn enable_siege_target_needs_a_road(&mut self) {
+        self.siege_target_needs_a_road = true;
+    }
+
+    /// The twin of `enable_siege_target_needs_a_road`.
+    pub fn disable_siege_target_needs_a_road(&mut self) {
+        self.siege_target_needs_a_road = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

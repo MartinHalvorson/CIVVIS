@@ -2824,12 +2824,22 @@ impl AdvancedAi {
             } else {
                 StageMarch::Ordinary
             };
+            // `siege-target-needs-a-road`: see `advanced/siege_road.rs`.
+            let shut_by = self.note_stage_march(g, uid, city.id, &dry_march);
             if let StageMarch::Hold { wet } = dry_march {
-                think!(self.journal(), Military, Detail,
-                    "Siege of {}: the {} holds on land short of the water", g.cities[&city.id].name, g.units[&uid].kind;
-                    "the march crosses water in {} steps and come-ashore lands an embarked unit at home; no dry road opens within {} steps",
-                    wet, STAGE_DRY_LIMIT;
-                    city.pos);
+                if let Some(owner) = shut_by {
+                    think!(self.journal(), Military, Detail,
+                        "Siege of {}: the {} holds short of {}'s closed borders", g.cities[&city.id].name, g.units[&uid].kind, owner;
+                        "the land road to the staging ring runs through {}'s territory, closed to us; the march crosses water in {} steps",
+                        owner, wet;
+                        city.pos);
+                } else {
+                    think!(self.journal(), Military, Detail,
+                        "Siege of {}: the {} holds on land short of the water", g.cities[&city.id].name, g.units[&uid].kind;
+                        "the march crosses water in {} steps and come-ashore lands an embarked unit at home; no dry road opens within {} steps",
+                        wet, STAGE_DRY_LIMIT;
+                        city.pos);
+                }
                 return self.base.fortify_or_stop(g, pid, uid);
             }
             let marched = match dry_march {
