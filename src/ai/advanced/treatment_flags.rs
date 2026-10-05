@@ -5988,6 +5988,8 @@ impl AdvancedAi {
     /// The twin of `enable_conquest_opening_stays_near`.
     pub fn disable_conquest_opening_stays_near(&mut self) {
         self.conquest_opening_stays_near = false;
+    }
+
     /// See `BasicAi::builder_cap_is_one_per_city`: raises
     /// `builder-before-the-army-3`'s cap; nothing without it.
     pub fn enable_builder_cap_is_one_per_city(&mut self) {
