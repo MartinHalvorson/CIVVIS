@@ -2242,7 +2242,8 @@ def _leader_intro_button_ocr(path: Path,
 def advance_leader_intro(bounds: tuple[int, int, int, int],
                          leader: str | None, run_dir: Path, attempt: int,
                          *, retries: int = 4, poll_s: float = 1.0,
-                         board_ready=None, relay_s: float | None = None) -> bool:
+                         board_ready=None, relay_s: float | None = None,
+                         defer_s: float = 0.0) -> bool:
     """Click the leader card's Begin Game control after visual confirmation.
 
     ``board_ready`` decides only after the screen has failed the exact intro
@@ -2285,6 +2286,24 @@ def advance_leader_intro(bounds: tuple[int, int, int, int],
         pump = threading.Thread(target=relay, name="intro-relay", daemon=True)
         pump.start()
     try:
+        # ★ DEFERRED (`--leader-intro-defer`, off unless armed): the agent
+        # dismisses the load screen itself -- the card was clicked 0 times in
+        # 92 October play logs -- while these captures run INSIDE Civ VI's
+        # load (G102: one took 22.6 s, and that load took 28 s against
+        # G100's 21 s). So for `defer_s` only drain the log; a live board in
+        # that window proves the intro is gone, exactly as below. Without one
+        # the probe runs as before: the safety net for an agent that never
+        # loaded.
+        if defer_s > 0 and board_ready is not None:
+            deadline = time.monotonic() + defer_s
+            while time.monotonic() < deadline:
+                if ready_now():
+                    print("[setup] live board arrived while the leader-intro probe "
+                          "was deferred; no capture during the load", flush=True)
+                    return False
+                time.sleep(max(0.0, min(poll_s, deadline - time.monotonic())))
+            print(f"[setup] no live board within {defer_s:.0f}s; probing the "
+                  "leader intro", flush=True)
         for retry in range(retries):
             shot = run_dir / f"leader-intro-attempt{attempt}-{retry}.png"
             screenshot(shot)
@@ -3580,7 +3599,8 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         intro_retries = max(4, min(60, int(verify_s / 2)))
         advance_leader_intro(bounds, args.leader, run_dir, attempt,
                              retries=intro_retries, poll_s=2.0,
-                             board_ready=board_is_ready, relay_s=0.05)
+                             board_ready=board_is_ready, relay_s=0.05,
+                             defer_s=float(getattr(args, "leader_intro_defer", 0.0) or 0.0))
         if board_seen["value"]:
             # A direct host transition can open the board without ever drawing
             # the leader card.  Its state has already been relayed above, so do
@@ -5782,6 +5802,9 @@ TREE_MOD_ARMS = {
     "debug-timescale-2": ("debug_timescale", 2.0),
     "debug-timescale-3": ("debug_timescale", 3.0),
     "debug-timescale-4": ("debug_timescale", 4.0),
+    # Hold the leader-intro probe's captures for 45 s while the game loads
+    # (`advance_leader_intro`'s defer_s); probe only if no board arrives.
+    "leader-intro-defer": ("leader_intro_defer", 45.0),
 }
 
 
@@ -6087,6 +6110,10 @@ def main(argv: list[str] | None = None) -> int:
                          "without a step (`stall_probe`) at the probe tick instead of "
                          "waiting out the 30-tick grace: the same `move_noop` answer, "
                          "about 3 s sooner per stalled leg")
+    ap.add_argument("--leader-intro-defer", dest="leader_intro_defer", type=float,
+                    default=0.0,
+                    help="seconds to wait for a live board before the leader-intro "
+                         "probe takes any capture (0 = probe at once, as before)")
     ap.add_argument("--debug-timescale", dest="debug_timescale", type=float, default=None,
                     help="run the engine console's `timescale N` at game start (via "
                          "AutoProfiler.RunCommand) to shorten the combat visualization "
