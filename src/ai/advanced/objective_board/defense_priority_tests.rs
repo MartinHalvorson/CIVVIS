@@ -92,3 +92,121 @@ fn lower_urgent_defense_does_not_take_the_higher_citys_only_guard() {
         .unwrap();
     assert_eq!(force.objective_key, ObjectiveKey::Defend(first));
 }
+
+/// `capital-defense-holds`, the board of live King civvis-20261005T013110Z
+/// (game 91) at turn 40: Bogota at 20 of 200, a German unit beside it, and
+/// our defenders standing close enough that the pressure ratio reads under
+/// [`BASTION_PRESSURE`]. Off, the Defend row lapses; on, it stays and is
+/// urgent, so the capital's guard is not handed to a Siege.
+mod capital_defense_holds {
+    use super::super::tests::{at, conquest, flat_board, on, war};
+    use super::*;
+
+    /// Our capital at (6, 8) at 20 hp with a hostile warrior beside it and
+    /// four of our warriors around it; the rival's capital at (30, 8) is the
+    /// plan's target, so a Siege row stands. Returns the game, our capital
+    /// and the rival's.
+    fn bogota_at_turn_40() -> (Game, u32, u32) {
+        let mut g = flat_board(374501, &[at(6, 8), at(30, 8)], false);
+        let capital = g.city_at(at(6, 8)).unwrap();
+        let munich = g.city_at(at(30, 8)).unwrap();
+        g.cities.get_mut(&capital).unwrap().pop = 6;
+        war(&mut g, 0, 1);
+        g.spawn_test_unit("warrior", 1, at(7, 8));
+        for pos in [at(5, 8), at(6, 7), at(5, 9), at(6, 9)] {
+            g.spawn_test_unit("warrior", 0, pos);
+        }
+        g.cities.get_mut(&capital).unwrap().hp = 20;
+        (g, capital, munich)
+    }
+
+    fn board(g: &Game, ai: &mut AdvancedAi, target: Option<u32>) -> Vec<Objective> {
+        ai.rebuild_force_groups(g, 0, &conquest(g, target));
+        ai.objective_board().rows.clone()
+    }
+
+    #[test]
+    fn the_setup_reads_under_the_pressure_gate() {
+        let (g, capital, _) = bogota_at_turn_40();
+        let pressure = AdvancedAi::city_pressure(&g, 0, capital);
+        assert!(
+            pressure < BASTION_PRESSURE,
+            "our defenders hold the ratio under the gate: {pressure}"
+        );
+    }
+
+    #[test]
+    fn off_the_defend_row_of_a_falling_capital_lapses() {
+        let (g, capital, munich) = bogota_at_turn_40();
+        let mut ai = on();
+        let rows = board(&g, &mut ai, Some(munich));
+        assert!(
+            !rows.iter().any(|row| row.key == ObjectiveKey::Defend(capital)),
+            "the shipped gate drops the row: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn on_the_capital_keeps_an_urgent_defend_ahead_of_the_siege() {
+        let (g, capital, munich) = bogota_at_turn_40();
+        let mut ai = on();
+        ai.enable_capital_defense_holds();
+        let rows = board(&g, &mut ai, Some(munich));
+        let defend = rows
+            .iter()
+            .position(|row| row.key == ObjectiveKey::Defend(capital))
+            .expect("the capital keeps its Defend row");
+        assert!(rows[defend].urgent, "a capital under attack is urgent");
+        let siege = rows
+            .iter()
+            .position(|row| row.key == ObjectiveKey::Siege(munich))
+            .expect("the target's Siege row stands");
+        assert!(defend < siege, "the capital outranks the siege: {rows:?}");
+    }
+
+    #[test]
+    fn on_a_damaged_town_keeps_its_row_but_not_the_capitals_urgency() {
+        let (mut g, _, _) = bogota_at_turn_40();
+        let town = g.found_city_for(0, at(6, 16), None);
+        g.spawn_test_unit("warrior", 1, at(7, 16));
+        for pos in [at(5, 16), at(6, 15), at(5, 17), at(6, 17)] {
+            g.spawn_test_unit("warrior", 0, pos);
+        }
+        g.cities.get_mut(&town).unwrap().hp = 60;
+        assert!(!g.cities[&town].is_capital);
+        assert!(AdvancedAi::city_pressure(&g, 0, town) < BASTION_PRESSURE);
+        let mut ai = on();
+        ai.enable_capital_defense_holds();
+        let rows = board(&g, &mut ai, None);
+        let row = rows
+            .iter()
+            .find(|row| row.key == ObjectiveKey::Defend(town))
+            .expect("a damaged town with a hostile beside it keeps its row");
+        assert!(!row.urgent, "only a capital is marked urgent: {row:?}");
+    }
+
+    #[test]
+    fn on_a_healthy_capital_or_a_distant_hostile_reads_as_off() {
+        // Full health, hostile beside it: no row either way.
+        let (mut g, capital, _) = bogota_at_turn_40();
+        g.cities.get_mut(&capital).unwrap().hp = 200;
+        let mut ai = on();
+        ai.enable_capital_defense_holds();
+        let rows = board(&g, &mut ai, None);
+        assert!(!rows.iter().any(|row| row.key == ObjectiveKey::Defend(capital)));
+        // Damaged, but the hostile three tiles out: no contact, no row.
+        let (mut g, capital, _) = bogota_at_turn_40();
+        let near = g
+            .units
+            .values()
+            .find(|unit| unit.owner == 1)
+            .map(|unit| unit.id)
+            .unwrap();
+        g.units.get_mut(&near).unwrap().pos = at(9, 8);
+        assert!(AdvancedAi::city_pressure(&g, 0, capital) < BASTION_PRESSURE);
+        let mut ai = on();
+        ai.enable_capital_defense_holds();
+        let rows = board(&g, &mut ai, None);
+        assert!(!rows.iter().any(|row| row.key == ObjectiveKey::Defend(capital)));
+    }
+}

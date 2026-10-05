@@ -5420,6 +5420,17 @@ impl AdvancedAi {
         self.siege_counts_posted_shooters = false;
     }
 
+    /// Opt-in gene `capital-defense-holds`; see
+    /// [`Self::capital_defense_contact`].
+    pub fn enable_capital_defense_holds(&mut self) {
+        self.capital_defense_holds = true;
+    }
+
+    /// The twin of `enable_capital_defense_holds`.
+    pub fn disable_capital_defense_holds(&mut self) {
+        self.capital_defense_holds = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

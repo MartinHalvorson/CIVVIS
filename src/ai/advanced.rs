@@ -5254,6 +5254,12 @@ pub struct AdvancedAi {
     /// `BasicAi::activation_resume_waits`.
     activation_resume_waits: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `capital-defense-holds`: a damaged city of ours with a hostile beside
+    /// it keeps its Defend row whatever the pressure ratio reads, and a
+    /// capital we hold under attack is an urgent Defend that outranks every
+    /// offensive row. See `objective_board::capital_defense_contact`. Off by
+    /// default.
+    capital_defense_holds: bool,
     /// `diplomatic-contender-kept`: a crushed rival near a Diplomatic Victory
     /// is kept at war, and the leader among them opens a second front. See
     /// `one_war::diplomatic_contender`. Off by default.
@@ -8885,6 +8891,7 @@ impl AdvancedAi {
             builder_before_the_army_3: false,
             activation_resume_waits: false,
             // ---- append: c-d ----------------------------------------
+            capital_defense_holds: false,
             diplomatic_contender_kept: false,
             decisive_window: false,
             domination_strikes_when_staged: false,

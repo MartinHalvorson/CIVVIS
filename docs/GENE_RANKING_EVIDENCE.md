@@ -206,6 +206,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-before-the-army-2` | off (unmeasured) | `campus-before-the-army-2`: the same Campus and Library, behind the Monument and the capital Settler. | — \| 3 |
 | `campus-before-the-army-3` | off (unmeasured) | `campus-before-the-army-3`: version 2, on through the University and the Research Lab. | — \| 3 |
 | `capital-campaign-router` | off (unmeasured) | Enable `capital-campaign-router` for measurement. | 1 \| 1 |
+| `capital-defense-holds` | off (unmeasured) | Opt-in gene `capital-defense-holds`; see `Self::capital_defense_contact`. | 1 \| 1 |
 | `capture-hold-chain` | off (unmeasured) | Enable `capture-hold-chain` for measurement. | 1 \| 1 |
 | `capture-waits-on-the-march` | off (unmeasured) | Opt-in gene `capture-waits-on-the-march`; see `Self::capture_waits_on_the_march`. | 1 \| 1 |
 | `colonization-earns-its-slot` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot`; see `Self::colonization_earns_its_slot`. | — \| 2 |

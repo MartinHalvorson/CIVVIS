@@ -190,6 +190,14 @@ pub const NO_DEADLINE_HORIZON: f64 = 10.0;
 pub const DESTROY_ENGAGE_EXCHANGE: f64 = 1.5;
 /// A Defend deadline is never under this.
 pub const DEFEND_DEADLINE_FLOOR: u32 = 2;
+/// `capital-defense-holds`: a hostile military unit this close to a
+/// damaged city of ours keeps the city's Defend row on the board whatever
+/// the pressure ratio reads, and puts a capital we hold under attack. Live
+/// King civvis-20261005T013110Z (game 91): four defenders reached Bogota at
+/// turns 38-39, raised the ratio's friendly strength, and the Defend row
+/// lapsed at turn 40 with the capital at 20 of 200 and German units beside
+/// it; its bodies joined Siege Munich and Bogota fell at turn 42.
+pub const CAPITAL_DEFENSE_CONTACT: i32 = 2;
 /// Hostile units this close to each other are one force.
 pub const FORCE_LINK: i32 = 3;
 /// A Destroy force that has lost its exact row keeps its identity for a row
@@ -774,6 +782,25 @@ impl AdvancedAi {
             || (g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id))
     }
 
+    /// `capital-defense-holds`: an observed hostile military unit at war with
+    /// us stands within [`CAPITAL_DEFENSE_CONTACT`] of `at`. The pressure
+    /// ratio a Defend row is gated on falls as our defenders arrive, so it
+    /// retires the row of a city that is still being taken; contact does not.
+    pub(super) fn capital_defense_contact(
+        &self,
+        g: &Game,
+        pid: usize,
+        at: Pos,
+        visible: &crate::world::TileBits,
+    ) -> bool {
+        g.units
+            .values()
+            .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
+            .filter(|unit| g.wdist(unit.pos, at) <= CAPITAL_DEFENSE_CONTACT)
+            .any(|unit| self.observed(g, pid, visible, unit))
+    }
+
     /// Hostile military strength within `radius` of `at`, visible in the
     /// turn-start frame, with the remembered term the belief arm adds.
     fn hostile_strength_near(
@@ -1009,9 +1036,17 @@ impl AdvancedAi {
                 .city_health
                 .insert(*cid, (turn, health));
             let danger = self.city_pressure_with_belief(g, pid, *cid, visible);
-            if danger < BASTION_PRESSURE {
+            // `capital-defense-holds`: a damaged city with a hostile beside it
+            // keeps its row through the pressure gate, and a capital we hold
+            // under attack is an urgent Defend. Both read false when off.
+            let contact =
+                self.capital_defense_holds && self.capital_defense_contact(g, pid, *pos, visible);
+            let damaged = city.hp < super::CITY_MAX_HP;
+            if danger < BASTION_PRESSURE && !(contact && damaged) {
                 continue;
             }
+            let capital_under_attack =
+                self.capital_defense_holds && city.is_capital && (contact || damaged);
             defended.insert(*cid);
             let hostile = self.hostile_strength_near(g, pid, *pos, THREAT_RELIEF_RADIUS, visible);
             let need = ForceNeed {
@@ -1057,7 +1092,7 @@ impl AdvancedAi {
                 land: true,
                 sea: false,
                 label: city.name.clone(),
-                urgent: false,
+                urgent: capital_under_attack,
             });
             // Relieve: what the units within reach cannot supply.
             let local: f64 = pool
@@ -1489,7 +1524,9 @@ impl AdvancedAi {
                 .map(|unit| unit.travel_turns(g, row.at, THREAT_RELIEF_RADIUS))
                 .min()
                 .unwrap_or(u32::MAX);
-            row.urgent = deadline <= relief;
+            // `capital-defense-holds` marks a capital under attack urgent at
+            // the row's creation; every other row is built not urgent.
+            row.urgent = row.urgent || deadline <= relief;
         }
         Self::order_board_rows(rows);
     }

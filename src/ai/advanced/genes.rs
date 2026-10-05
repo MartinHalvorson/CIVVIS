@@ -2668,6 +2668,12 @@ pub const GENES: &[Gene] = &[
     // G64's Canberra read "6.9 turns" at turn 125 and fell at 148. See
     // `siege_train::shooter_hits_walls`.
     Gene { tag: "siege-counts-posted-shooters", field: "siege_counts_posted_shooters", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_counts_posted_shooters, disable: AdvancedAi::disable_siege_counts_posted_shooters },
+    // Live King 013110Z (game 91): Germany took Bogota at turn 42. Four
+    // defenders raised the pressure ratio's denominator, the Defend row
+    // lapsed at turn 40 with the capital at 20 of 200 and Germans
+    // adjacent, and its bodies went to Siege Munich. See
+    // `objective_board::capital_defense_contact`.
+    Gene { tag: "capital-defense-holds", field: "capital_defense_holds", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_defense_holds, disable: AdvancedAi::disable_capital_defense_holds },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
