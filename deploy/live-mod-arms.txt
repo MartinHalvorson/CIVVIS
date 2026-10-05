@@ -1,3 +1,4 @@
-# civ6_play mod/harness arms read per game (#3941). Names: stalled-operation-release, debug-timescale-3 (#3968, 3x one-game trial)
+# civ6_play mod/harness arms read per game (#3941). Names: stalled-operation-release, debug-timescale-3 (standing), leader-intro-defer (#3976 one-game A/B)
 stalled-operation-release
 debug-timescale-3
+leader-intro-defer
