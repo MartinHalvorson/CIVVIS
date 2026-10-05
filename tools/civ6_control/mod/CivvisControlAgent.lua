@@ -19177,6 +19177,10 @@ local function beginTurn(player, pid, turn)
 		local review = wc:GetReview(pid);
 		if type(review) ~= "table" then return; end
 		local resolutions, signature = {}, {};
+		-- The largest block a rival cast for option A ("+2 to the target")
+		-- on the Diplomatic Victory resolution: the block an A ballot must
+		-- outvote to take the +2 (`wc_rival_block`, read by the ballot).
+		local rivalBlock = nil;
 		for i, r in pairs(review.Resolutions or {}) do
 			if type(i) == "number" and type(r) == "table" and r.Type ~= nil then
 				local info = GameInfo.Resolutions[r.Type];
@@ -19188,6 +19192,10 @@ local function beginTurn(player, pid, turn)
 						local votes = tonumber(sel.Votes) or 0;
 						local option = tonumber(sel.OptionChosen) or 0;
 						if option == 1 then a = a + votes; else b = b + votes; end
+						if rtype == "WC_RES_DIPLOVICTORY" and option == 1 and who ~= pid
+							and votes > (rivalBlock or 0) then
+							rivalBlock = votes;
+						end
 						local target = sel.ResolutionTarget;
 						voters[#voters + 1] = { player = who, option = option, votes = votes,
 							target = target };
@@ -19236,6 +19244,7 @@ local function beginTurn(player, pid, turn)
 				end
 			end
 		end
+		if rivalBlock ~= nil then envoyTally.wc_rival_block = rivalBlock; end
 		if #resolutions == 0 and #proposals == 0 then return; end
 		table.sort(signature);
 		local key = table.concat(signature, "|");
@@ -20548,12 +20557,34 @@ local function tick()
 						-- Native t201 of civvis-20260927T132350Z-cont1: our 13
 						-- A/self votes joined the leader's 14 A votes against 18 B
 						-- votes; the leader, not us, received the +2 and won.
-						if ourIdx ~= nil and budget >= claim
-							and (tonumber(leaderPoints) or 0) < floor then
+						--
+						-- ★★★ AND FROM THE FLOOR, A CLAIM THAT OUTVOTES EVERY BLOCK.
+						-- Option A's +2 lands on whoever casts the largest A block,
+						-- and each rival votes A for itself: a B ballot against the
+						-- leader we picked does nothing to the rival with the
+						-- biggest block. Live King civvis-20261005T042226Z (game
+						-- 99) cast 10 B votes against Mapuche (15 DVP, picked on a
+						-- tie by score) at t221; option A won 14-10, Brazil's 8 A
+						-- votes for itself took the +2, and Brazil won on Diplomacy
+						-- at 222. Those 10 votes as an A claim were the biggest
+						-- block. So from the floor, when the session's share of the
+						-- bank buys `DiploVictoryOutvoteFactor` (2) times the largest
+						-- rival A block of the last session (`wc_rival_block`), the
+						-- ballot claims instead ("outvote"). The factor covers a
+						-- rival block that grew since (Brazil 4 -> 8); native t201
+						-- of T132350Z-cont1, our 13 against the leader's 14, stays a
+						-- denial. Off with `DiploVictoryOutvoteClaim = false`.
+						if ourIdx ~= nil and ((budget >= claim
+							and (tonumber(leaderPoints) or 0) < floor)
+							or (cfg.DiploVictoryOutvoteClaim ~= false
+								and (tonumber(leaderPoints) or 0) >= floor
+								and tonumber(envoyTally.wc_rival_block) ~= nil
+								and budget >= (tonumber(cfg.DiploVictoryOutvoteFactor) or 2)
+									* math.max(tonumber(envoyTally.wc_rival_block), 1))) then
 							option = 1;
 							selection = ourIdx;
 							n = budget;
-							mode = "claim";
+							mode = ((tonumber(leaderPoints) or 0) < floor) and "claim" or "outvote";
 						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;

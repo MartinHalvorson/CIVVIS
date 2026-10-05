@@ -1317,14 +1317,17 @@ class ProtectedInstallTest(unittest.TestCase):
         arm = voter.split('if rtype == "WC_RES_DIPLOVICTORY" then', 1)[1].split("elseif r.TargetType", 1)[0]
         self.assertIn("local claim = tonumber(cfg.DiploVictoryClaimVotes) or 12;", arm)
         self.assertIn("if tonumber(t) == pid then ourIdx = idx; end", arm)
-        self.assertIn("if ourIdx ~= nil and budget >= claim", arm)
-        self.assertIn("and (tonumber(leaderPoints) or 0) < floor then", arm)
-        claim = arm.index("if ourIdx ~= nil and budget >= claim")
+        # Below the floor the large-bank claim; from it, the claim that
+        # outvotes the last session's largest rival A block ("outvote").
+        self.assertIn("if ourIdx ~= nil and ((budget >= claim", arm)
+        self.assertIn("and (tonumber(leaderPoints) or 0) < floor)", arm)
+        self.assertIn("envoyTally.wc_rival_block", arm)
+        claim = arm.index("if ourIdx ~= nil and ((budget >= claim")
         tail = arm[claim:]
         self.assertIn("option = 1;", tail)
         self.assertIn("selection = ourIdx;", tail)
         self.assertIn("n = budget;", tail)
-        self.assertIn('mode = "claim";', tail)
+        self.assertIn('"claim" or "outvote"', tail)
         # The guarded claim still follows budget selection and precedes commit.
         gate = arm.index("if (tonumber(leaderPoints) or 0) >= floor then")
         commit = arm.index("votes = n;")
