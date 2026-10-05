@@ -16062,12 +16062,23 @@ end
 -- target too. Simulated from each previous session's blocks over October
 -- 2-5 the rule fires 46 times and carries the session in 26, taking the +2
 -- off its holder in 21 (6 the eventual winner). A session the rivals won on
--- B is left to the denial. `nil` when nothing applies; off with
+-- B is left to the denial -- but only while the leader still stands at
+-- `DiploVictoryGangFloor` (15) or more. Below it the rivals vote A for
+-- themselves again: across October 2-5 they ganged on a leader under 14
+-- points in 0-9% of sessions, at 16 in 57%, at 18 in all five, and after a
+-- B session that left the leader at 14 or less they ganged again in none of
+-- 15. Live King civvis-20261005T134450Z (game 133) knocked Byzantium from 16
+-- to 14 on B at t202; at t221 the rivals voted A for themselves (Byzantium
+-- 15, Korea 10, Canada 9), our 6 votes went to a B nobody joined, and
+-- Byzantium took +5 to 19 and won at 241 -- 6 votes on Korea's block would
+-- have carried it. The blocks are each rival's last recorded A block
+-- (`wc_rival_blocks_seen`), since a rival that voted B last time has none
+-- in that session. `nil` when nothing applies; off with
 -- `DiploVictoryRedirect = false`. Exported globally to stay below the
 -- chunk-local limit.
 CivvisCongressRedirect = function(blocks, candidates, pid, budget, maxVotes, config, lastWon)
 	config = type(config) == "table" and config or {};
-	if config.DiploVictoryRedirect == false or type(blocks) ~= "table" or lastWon == 2 then
+	if config.DiploVictoryRedirect == false or type(blocks) ~= "table" then
 		return nil;
 	end
 	budget = math.min(tonumber(budget) or 0, tonumber(maxVotes) or 1);
@@ -16076,6 +16087,9 @@ CivvisCongressRedirect = function(blocks, candidates, pid, budget, maxVotes, con
 		local p = tonumber(c.points) or 0;
 		points[tonumber(c.id) or -1] = p;
 		if p > lead then lead = p; end
+	end
+	if lastWon == 2 and lead >= (tonumber(config.DiploVictoryGangFloor) or 15) then
+		return nil;
 	end
 	-- The block the +2 goes to; on a tie, the contender with more points --
 	-- game 124 (T111622Z) t201 read Norway (5 points) and the Zulu leader
@@ -19884,6 +19898,11 @@ local function beginTurn(player, pid, turn)
 		if dvpWon ~= nil then
 			envoyTally.wc_rival_blocks = rivalBlocks;
 			envoyTally.wc_dvp_won = dvpWon;
+			-- Each rival's last recorded A block: a rival that voted B this
+			-- session keeps the block it cast before (`CivvisCongressRedirect`).
+			local seen = envoyTally.wc_rival_blocks_seen or {};
+			for who, votes in pairs(rivalBlocks or {}) do seen[who] = votes; end
+			envoyTally.wc_rival_blocks_seen = seen;
 		end
 		if #resolutions == 0 and #proposals == 0 then return; end
 		table.sort(signature);
@@ -21290,7 +21309,8 @@ local function tick()
 						-- See `CivvisCongressRedirect`: a +2 we can take from a
 						-- contender goes to us or a rival far behind instead.
 						if mode ~= "claim" and mode ~= "outvote" then
-							local to, count, how = CivvisCongressRedirect(envoyTally.wc_rival_blocks,
+							local to, count, how = CivvisCongressRedirect(
+								envoyTally.wc_rival_blocks_seen or envoyTally.wc_rival_blocks,
 								candidates, pid, budget, maxVotes, cfg, envoyTally.wc_dvp_won);
 							for idx, t in pairs(to ~= nil and targets or {}) do
 								if tonumber(t) == to then

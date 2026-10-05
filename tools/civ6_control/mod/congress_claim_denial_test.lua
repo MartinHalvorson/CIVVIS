@@ -241,6 +241,19 @@ redirect("a small block is outvoted for us", 439, 15, 1, 0, "outvote", 14)
 tally.wc_rival_blocks = { [3] = 9, [1] = 4, [2] = 5 }
 tally.wc_dvp_won = 2
 redirect("after a B session the denial stands", 371, 15, 2, 3, "deny", 10)
+-- Below the gang floor the rivals vote A for themselves again (0 of 15
+-- sessions after a B win left a leader at 14 or less ganged on): game 133's
+-- t221. Last session only the leader voted A (11); the others' last A blocks
+-- are remembered. 11 plus a quarter is 14; half of 600 buys 12 votes, which
+-- lift Gaul's 4 (counted at three of four) past it.
+tally.wc_rival_blocks = { [3] = 11 }
+tally.wc_rival_blocks_seen = { [3] = 11, [1] = 4, [2] = 5 }
+redirect("after a B session a leader at 14 is redirected", 600, 14, 1, 1, "redirect", 12)
+config.DiploVictoryGangFloor = 14
+redirect("a gang floor at 14 keeps the denial", 600, 14, 2, 3, "deny", 12)
+config.DiploVictoryGangFloor = nil
+tally.wc_rival_blocks_seen = nil
+tally.wc_rival_blocks = { [3] = 9, [1] = 4, [2] = 5 }
 tally.wc_dvp_won = 1
 -- The largest block held by a rival far behind the leader is no contender's.
 tally.wc_rival_blocks = { [1] = 9, [3] = 4 }
