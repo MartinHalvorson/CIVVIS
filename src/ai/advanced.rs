@@ -7303,6 +7303,9 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `stranded-settler-leaves-the-corridor`: a stranded early Settler drops
+    /// its home corridor. See `settler_never_idles::settler_stranded`.
+    stranded_settler_leaves_the_corridor: bool,
     /// `siege-members-use-their-moves`: in Invest and Reduce, a member far
     /// from the ring walks as far as its movement reaches toward it, not the
     /// router's single step. See `siege_train::close_to_staging`.
@@ -9650,6 +9653,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            stranded_settler_leaves_the_corridor: false,
             siege_members_use_their_moves: false,
             science_ladder_reads_the_clock: false,
             science_denounce_waits_for_the_race: false,
