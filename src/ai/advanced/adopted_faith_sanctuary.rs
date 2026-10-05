@@ -129,6 +129,42 @@ impl AdvancedAi {
             .map(|(_, _, other)| other.to_owned())
     }
 
+    /// `safe_adopted_counterfaith`, and under `counterfaith-leaves-two-holdouts`
+    /// also [`Self::counterfaith_leaves_two_holdouts_at`].
+    pub(super) fn counterfaith_is_safe(&self, g: &Game, pid: usize, faith: &str) -> bool {
+        Self::safe_adopted_counterfaith(g, pid, faith)
+            && (!self.counterfaith_leaves_two_holdouts
+                || Self::counterfaith_leaves_two_holdouts_at(g, pid, faith))
+    }
+
+    /// `counterfaith-leaves-two-holdouts`: a living founder's faith is a safe
+    /// counterweight only while at least two living majors other than us and
+    /// its founder do not follow it, so our own adoption still leaves it two
+    /// civilizations short of a Religious Victory. A faith whose founder is
+    /// gone can never win and is always safe. The shipped test
+    /// (`safe_adopted_counterfaith`) asks for one such holdout, which with
+    /// three living majors is the last one: live King
+    /// civvis-20261005T191828Z (game 155) bought 13 Missionaries in Confucian
+    /// cities from turn 106 while the Maya alone held out, took its own
+    /// cities from 0 of 10 Confucian to 10 of 11 by turn 178 while a
+    /// Sikh source (Vietnam's faith, founder eliminated at 64) bought 10,
+    /// and Babylon won on Religion at 232.
+    pub(super) fn counterfaith_leaves_two_holdouts_at(g: &Game, pid: usize, faith: &str) -> bool {
+        let Some(founder) = g.players.iter().find(|p| {
+            p.alive && !p.is_minor && !p.is_barbarian && p.religion.as_deref() == Some(faith)
+        }) else {
+            return true;
+        };
+        g.players
+            .iter()
+            .filter(|p| {
+                p.alive && !p.is_minor && !p.is_barbarian && p.id != pid && p.id != founder.id
+            })
+            .filter(|p| !g.civ_follows_religion(p.id, faith))
+            .count()
+            >= 2
+    }
+
     /// Rebuilding our religious veto must not complete another founder's win.
     pub(super) fn safe_adopted_counterfaith(g: &Game, pid: usize, faith: &str) -> bool {
         let Some(founder) = g.players.iter().find(|p| {
@@ -206,7 +242,7 @@ impl AdvancedAi {
         {
             return true;
         }
-        Self::safe_adopted_counterfaith(g, pid, faith)
+        self.counterfaith_is_safe(g, pid, faith)
             && self.adopted_faith_threat(g, pid).as_deref() != Some(faith)
     }
 
@@ -298,7 +334,7 @@ impl AdvancedAi {
                         if let Some(own) = founded {
                             faith == own
                         } else {
-                            faith != threat && Self::safe_adopted_counterfaith(g, pid, faith)
+                            faith != threat && self.counterfaith_is_safe(g, pid, faith)
                         }
                     })
             })

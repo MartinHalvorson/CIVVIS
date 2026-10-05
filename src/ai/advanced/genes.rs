@@ -3028,6 +3028,12 @@ pub const GENES: &[Gene] = &[
     // `commitments::muster_after_the_breaker` and
     // `commitments::rebase_capture_on_a_forward_step`.
     Gene { tag: "stall-waits-for-the-breach", field: "stall_waits_for_the_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_stall_waits_for_the_breach, disable: AdvancedAi::disable_stall_waits_for_the_breach },
+    // Live King civvis-20261005T191828Z (game 155): with Vietnam gone, 13
+    // Missionaries bought in Confucian Bogota and Thang Long as the "safe"
+    // counterfaith (Maya alone held out) took our cities from 0 of 10
+    // Confucian at turn 100 to 10 of 11 at 178; Babylon won on Religion at
+    // 232. See `adopted_faith_sanctuary::counterfaith_is_safe`.
+    Gene { tag: "counterfaith-leaves-two-holdouts", field: "counterfaith_leaves_two_holdouts", kind: Kind::OptIn, enable: AdvancedAi::enable_counterfaith_leaves_two_holdouts, disable: AdvancedAi::disable_counterfaith_leaves_two_holdouts },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

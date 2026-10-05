@@ -545,3 +545,44 @@ fn a_faith_at_match_point_is_the_threat_from_its_first_convert() {
     assert!(g.civ_follows_religion(1, "Orthodoxy"));
     assert_eq!(ai.adopted_faith_threat(&g, 0).as_deref(), Some("Orthodoxy"));
 }
+
+/// `counterfaith-leaves-two-holdouts`: with three living majors the shipped
+/// test calls a living founder's faith safe while one other major holds out;
+/// under the gene that last holdout is not enough.
+#[test]
+fn a_living_founders_faith_needs_two_holdouts_under_the_gene() {
+    let (g, mut ai, _, _) = fixture_with_players(3);
+    assert!(AdvancedAi::safe_adopted_counterfaith(&g, 0, "Orthodoxy"));
+    assert!(ai.counterfaith_is_safe(&g, 0, "Orthodoxy"));
+    ai.enable_counterfaith_leaves_two_holdouts();
+    assert!(!ai.counterfaith_is_safe(&g, 0, "Orthodoxy"));
+}
+
+/// A fourth major outside the faith is the second holdout: still safe.
+#[test]
+fn a_second_holdout_keeps_the_counterfaith_safe() {
+    let (mut g, mut ai, _, _) = fixture_with_players(4);
+    let fourth = g.found_city_for(3, (20, 18), None);
+    let city = g.cities.get_mut(&fourth).unwrap();
+    city.pop = 4;
+    city.atheist_pressure = 0.0;
+    city.pressure.clear();
+    city.pressure.insert("Buddhism".into(), 1000.0);
+    ai.enable_counterfaith_leaves_two_holdouts();
+    assert!(ai.counterfaith_is_safe(&g, 0, "Orthodoxy"));
+    // Converting that fourth major to the faith leaves one holdout again.
+    let city = g.cities.get_mut(&fourth).unwrap();
+    city.pressure.clear();
+    city.pressure.insert("Orthodoxy".into(), 1000.0);
+    assert!(!ai.counterfaith_is_safe(&g, 0, "Orthodoxy"));
+}
+
+/// A faith whose founder is gone can never win: always a safe counterweight.
+#[test]
+fn a_faith_without_a_living_founder_is_always_safe() {
+    let (mut g, mut ai, _, _) = fixture_with_players(3);
+    ai.enable_counterfaith_leaves_two_holdouts();
+    assert!(ai.counterfaith_is_safe(&g, 0, "Sikhism"));
+    g.players[2].alive = false;
+    assert!(ai.counterfaith_is_safe(&g, 0, "Orthodoxy"));
+}
