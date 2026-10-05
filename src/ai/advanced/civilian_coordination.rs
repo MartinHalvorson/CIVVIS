@@ -130,11 +130,11 @@ impl AdvancedAi {
 
     /// Experimental worked-production escort; absent from production defaults.
     pub fn enable_productive_builder_escort(&mut self) {
-        self.productive_builder_escort = true;
+        self.builder_productive_escort = true;
     }
 
     pub fn productive_builder_escort_enabled(&self) -> bool {
-        self.productive_builder_escort
+        self.builder_productive_escort
     }
 
     pub(super) fn plan_productive_builder_support(
@@ -143,7 +143,7 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        if !self.productive_builder_escort
+        if !self.builder_productive_escort
             || !self.live_settler_capture_lessons
             || self.active_victory_target(g).is_none()
             || self.base.minor
@@ -223,6 +223,8 @@ impl AdvancedAi {
                         || soldier.linked_to.is_some()
                         || self.guard_is_reserved_for_civilian(guard)
                         || g.wdist(soldier.pos, worker.pos) > 3
+                        || g.city_at(soldier.pos)
+                            .is_some_and(|cid| plan.threatened_city == Some(cid))
                     {
                         continue;
                     }
@@ -269,7 +271,7 @@ impl AdvancedAi {
                         },
                     );
                     think!(self.journal(), Expansion, Detail, "Guard reserves a productive Builder job";
-                        "builder {builder}, guard {guard}, {improvement} at {destination:?}; both walks and the improvement fit now under the existing survival bar"; destination);
+                        "builder {builder}, guard {guard}, {improvement} at {destination:?}; both walks fit now; improve when movement permits, with fresh validation and the existing survival bar"; destination);
                     // One new productive pair per frame; emergency pairs retain priority.
                     return;
                 }
@@ -307,7 +309,19 @@ impl AdvancedAi {
                 unit: builder,
                 improvement,
             };
-            trial.apply(pid, &action).ok()?;
+            let performed = trial.apply(pid, &action).is_ok();
+            if !performed {
+                let worker = trial.units.get(&builder)?;
+                // A hill can consume this turn's final movement. Promise only
+                // the checked joint walk, then revalidate the job next frame.
+                if worker.moves_left > 0.0 || actions.is_empty() {
+                    return None;
+                }
+                let mut operation = trial.speculative_clone();
+                let fresh_moves = operation.unit_max_moves(builder);
+                operation.units.get_mut(&builder)?.moves_left = fresh_moves;
+                operation.apply(pid, &action).ok()?;
+            }
             let guard = trial.units.get(&support.guard)?;
             if guard.hp < STACKED_GUARD_MIN_HP
                 || battle_planner::strike_danger(&trial, pid, support.destination, guard.id) + 5.0
@@ -315,7 +329,9 @@ impl AdvancedAi {
             {
                 return None;
             }
-            actions.push(action);
+            if performed {
+                actions.push(action);
+            }
         }
         Some(actions)
     }

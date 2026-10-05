@@ -8,7 +8,10 @@ cost/yield, protected pin or deployed genome is introduced.
 
 The support plan validates a guard walk, a Builder walk and the actual
 improvement together on one exact native clone. Both units must arrive this
-turn and the improvement must remain legal. The job must add net Production
+turn. The improvement executes immediately when legal. If a hill spends the
+Builder's final movement, a separate native model copy checks the operation
+with a fresh allowance; the real sequence executes only the legal joint walk
+and the next frame must revalidate the job and guard before improving. The job must add net Production
 without losing Food. A final own-city military garrison is retained, a threatened
 job city is excluded, and the guard must satisfy the existing HP and expected
 strike survival bars. Survival is checked again after the improvement so a
@@ -17,7 +20,7 @@ changed feature cannot leave the guard protected only by its old cover.
 Only one additional productive pair is reserved per frame. Existing emergency
 pairs keep priority; guards already promised to a civilian cannot be borrowed.
 The ordinary military pre-passes see the same guard reservation. Actual joint
-movement and improvement use the already checked action sequence, and a failed
+movement and any immediate improvement use the already checked action sequence, and a failed
 revalidation cannot send one half of the pair onward. The existing support
 planner's old pairs carry no productive job and keep their behavior.
 
@@ -33,3 +36,39 @@ The protocol assigns eight already-consumed Emperor/Deity maps. It requires
 accepted and actually completed escorted work before fresh evaluation. No
 fresh pilot or confirmation has been played. The native model alone cannot
 establish Firaxis parity or host citizen assignment behavior.
+
+
+The first complete focused run passed thirteen tests and failed three new
+positive-route tests; no comparative games were played. The roadless-hill
+fixture exhausted the Builder's movement before improvement. The policy now
+permits only the checked joint walk in that case, retains the guard under the
+same survival bar, and requires a new frame to check and complete the job. A
+separate road fixture covers immediate completion, and an actual native turn
+boundary covers the two-step operation. The failed run is retained separately.
+
+
+The first checkpoint's Cargo CI failed the same three positive-route fixtures.
+Its collaboration gate also caught the private flag filed in the wrong
+alphabetic append range. The field is now named builder_productive_escort in
+the existing b range; public method names stay the same. The second local fixture run completed with fifteen passes and two failed
+immediate-completion expectations; its roadless-hill turn-boundary test passed.
+The normal-library build was stopped before completion to correct the known
+append-range policy failure before freezing. The subsequent fixture compile
+was stopped before completing to correct those unchanged expectations. Neither
+stopped command is passing validation.
+No comparison games have run.
+
+
+The immediate-operation fixture now starts the Builder on its worked job and
+checks that the newly arriving guard protects its legal improvement. The full
+unit-driver fixture checks both real walks and, when movement is exhausted,
+the actual next native turn before requiring the mine. A road alone did not
+establish sufficient remaining movement in the previous fixture. The policy
+continues to demand engine-legal operations; expectations now cover both timing
+cases. This cfg(test)-only fixture edit is not an input to the concurrently
+running non-test optimized library build. Runtime source remains unchanged.
+
+The corrected focused feedback suite completed successfully: 17 passed, zero
+failed, 4,356 filtered out. The separate append-point policy suite passed all
+14 tests. These fixture results do not establish a production gain. The normal
+optimized library is still compiling; no comparative games have started.

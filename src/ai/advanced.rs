@@ -4980,7 +4980,7 @@ pub struct AdvancedAi {
     /// Slot Serfdom while a queued Builder is close to completion.
     builder_charge_window: bool,
     /// Opt-in joint guard walk and worked-production improvement.
-    productive_builder_escort: bool,
+    builder_productive_escort: bool,
     /// `boost-planner-builds`: the boost planner may make a side objective of a
     /// `building:` trigger, the largest family in the two trees, which it
     /// otherwise reads as strategic spending and never plans.
@@ -8405,7 +8405,7 @@ impl AdvancedAi {
             beeline_orders_by_value: false,
             builders_work_through_raiders: false,
             builder_charge_window: false,
-            productive_builder_escort: false,
+            builder_productive_escort: false,
             boost_planner_builds: false,
             boost_planner: false,
             boost_planner_frame: RefCell::new(boost_planner::BoostPlannerFrame::default()),

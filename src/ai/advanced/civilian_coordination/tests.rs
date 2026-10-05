@@ -211,6 +211,7 @@ fn productive_fixture() -> (Game, AdvancedAi, u32, u32) {
     let city = g.player_city_ids(0)[0];
     g.cities.get_mut(&city).unwrap().pop = 2;
     g.map.tiles.get_mut(&(3, 5)).unwrap().hills = true;
+    g.map.tiles.get_mut(&(3, 5)).unwrap().road = 1;
     g.players[0].techs.insert(crate::name!("mining"));
     let builder = g.spawn_test_unit("builder", 0, (2, 5));
     let guard = g.spawn_test_unit("warrior", 0, (3, 4));
@@ -223,8 +224,9 @@ fn productive_fixture() -> (Game, AdvancedAi, u32, u32) {
 }
 
 #[test]
-fn productive_job_is_opt_in_and_finishes_both_walks_and_the_mine() {
+fn productive_job_is_opt_in_and_finishes_the_guard_walk_and_mine() {
     let (mut g, mut ai, builder, guard) = productive_fixture();
+    g.relocate(builder, (3, 5));
     ai.plan_productive_builder_support(&g, 0, &strategy());
     assert!(ai.builder_support.is_empty());
     assert!(!ai.productive_builder_escort_enabled());
@@ -287,7 +289,47 @@ fn productive_job_reaches_the_full_unit_driver_before_military_spends_its_guard(
     let (mut g, mut ai, builder, guard) = productive_fixture();
     ai.enable_productive_builder_escort();
     ai.advanced_units(&mut g, 0, &strategy());
+    assert_eq!(g.units[&builder].pos, (3, 5));
+    assert_eq!(g.units[&guard].pos, (3, 5));
+    assert!(ai.guard_is_reserved_for_civilian(guard));
+    if g.map.tiles[&(3, 5)].improvement.is_none() {
+        let start = g.turn;
+        for _ in 0..g.players.len() + 1 {
+            if g.turn != start {
+                break;
+            }
+            let pid = g.current;
+            g.apply(pid, &Action::EndTurn).unwrap();
+        }
+        ai.advanced_units(&mut g, 0, &strategy());
+    }
     assert_eq!(g.map.tiles[&(3, 5)].improvement, Some(crate::name!("mine")));
     assert_eq!(g.units[&builder].pos, g.units[&guard].pos);
     assert!(ai.guard_is_reserved_for_civilian(guard));
+}
+
+#[test]
+fn productive_pair_waits_for_fresh_movement_before_improving_a_roadless_hill() {
+    let (mut g, mut ai, builder, guard) = productive_fixture();
+    g.map.tiles.get_mut(&(3, 5)).unwrap().road = 0;
+    ai.enable_productive_builder_escort();
+    ai.plan_productive_builder_support(&g, 0, &strategy());
+    assert!(ai.builder_support.contains_key(&builder));
+    assert_eq!(ai.builder_support_step(&mut g, 0, builder), Some(true));
+    assert_eq!(g.units[&builder].pos, (3, 5));
+    assert_eq!(g.units[&guard].pos, (3, 5));
+    assert!(g.map.tiles[&(3, 5)].improvement.is_none());
+    assert!(ai.builder_support_protects(&g, 0, builder, (3, 5)));
+    let start = g.turn;
+    for _ in 0..g.players.len() + 1 {
+        if g.turn != start {
+            break;
+        }
+        let pid = g.current;
+        g.apply(pid, &Action::EndTurn).unwrap();
+    }
+    ai.plan_builder_support(&g, 0);
+    ai.plan_productive_builder_support(&g, 0, &strategy());
+    assert_eq!(ai.builder_support_step(&mut g, 0, builder), Some(true));
+    assert_eq!(g.map.tiles[&(3, 5)].improvement, Some(crate::name!("mine")));
 }
