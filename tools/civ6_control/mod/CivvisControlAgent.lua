@@ -19931,6 +19931,8 @@ CivvisQueue.onLocalTurnEnd = function()
 		-- consecutive turns show whether the UI clock runs at real time (a
 		-- debug timescale could change that, and every mod timer runs on it).
 		ui_now = CivvisClock.raw(),
+		-- The timescale this turn ran at (the A/B's block tag).
+		scale = CivvisClock.scale,
 		-- Locks still held by a UI context as our turn ends (the AutoClose
 		-- ledger); a normal turn ends with none.
 		held_locks = try(function() return ExposedMembers.CivvisEventLocks.count; end, nil),
@@ -20068,6 +20070,39 @@ CivvisQueue.resetTimescale = function(why)
 	if ran then CivvisClock.setScale(1); end
 	emit("timescale", { phase = "reverted", why = why, ran = ran, result = tostring(result) });
 	return ran;
+end;
+
+-- ★ AN IN-GAME A/B OF TWO TIMESCALES. Across games the turn cost varies more
+-- than 2x does from 3x (G99 at 3x ran turns 1-135 slower than G97 at 2x, on
+-- a busier board), so `DebugTimeScaleAB` ("3,4") alternates the two scales in
+-- blocks of `DebugTimeScaleABTurns` (10) turns inside ONE game, the way the
+-- VSync A/B does; `end_turn_wait.scale` tags every turn with its block's
+-- scale. Each switch is a console command plus a CivvisClock rebase, and it
+-- restarts the clock check's window so no verdict mixes two scales. A switch
+-- the console refuses reverts the timescale (and so ends the A/B).
+CivvisQueue.timescaleBlock = function(turn)
+	local ts, ab = CivvisQueue.timescale, CivvisQueue.timescaleAB;
+	turn = tonumber(turn);
+	if ts == nil or not ts.applied or ts.reverted or ab == nil or turn == nil then return; end
+	local want = ab[(math.floor(turn / ab.turns) % 2) + 1];
+	if want == CivvisClock.scale then return; end
+	local ran = pcall(function() return AutoProfiler.RunCommand("timescale " .. tostring(want)); end);
+	if not ran then CivvisQueue.resetTimescale("ab_switch_failed"); return; end
+	CivvisClock.setScale(want);
+	ts.want, ts.slow_frames = want, 0;
+	ts.applied_ui, ts.ui0, ts.real0 = CivvisClock.raw(), CivvisClock.raw(), CivvisClock.now();
+	ts.wall0 = try(function() return Automation.GetTime(); end, nil);
+	emit("timescale", { phase = "ab_switch", want = want, turn = turn });
+end;
+
+CivvisQueue.startTimescaleAB = function(spec, turns)
+	local a, b = string.match(tostring(spec or ""), "^%s*([%d.]+)%s*,%s*([%d.]+)%s*$");
+	a, b, turns = tonumber(a), tonumber(b), math.floor(tonumber(turns) or 10);
+	if a == nil or b == nil or a <= 1 or b <= 1 or a > 8 or b > 8 or turns < 1 then
+		return false;
+	end
+	CivvisQueue.timescaleAB = { a, b, turns = turns };
+	return CivvisQueue.startTimescale(a);
 end;
 
 CivvisQueue.checkTimescaleClock = function()
@@ -21474,6 +21509,7 @@ end
 
 local function onLocalPlayerTurnBegin()
 	ensureStarted();
+	pcall(CivvisQueue.timescaleBlock, try(function() return Game.GetCurrentGameTurn(); end, nil));
 	CivvisTrade.pollPeace();
 	tick();
 end
@@ -21794,7 +21830,11 @@ function Initialize()
 		autoprofiler = try(function() return type(AutoProfiler); end, "error"),
 		run_command = try(function() return type(AutoProfiler.RunCommand); end, "error"),
 	});
-	pcall(CivvisQueue.startTimescale, cfg.DebugTimeScale);
+	if cfg.DebugTimeScaleAB ~= nil then
+		pcall(CivvisQueue.startTimescaleAB, cfg.DebugTimeScaleAB, cfg.DebugTimeScaleABTurns);
+	else
+		pcall(CivvisQueue.startTimescale, cfg.DebugTimeScale);
+	end
 	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse); end);
 	pcall(function() LuaEvents.CivvisControlPeek.Add(CivvisQueue.onPeekPulse); end);
 	for name, handler in pairs({
