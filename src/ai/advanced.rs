@@ -5392,6 +5392,13 @@ pub struct AdvancedAi {
     /// force inside the window the opening would get. See
     /// `early_conquest::conquest_force_estimate`. Off by default.
     conquest_opening_needs_the_production: bool,
+    /// `conquest-opening-stays-near`: the early conquest opening names only a
+    /// city within [`early_conquest::CONQUEST_NEAR_REACH_TILES`] of our
+    /// capital. See `AdvancedAi::conquest_reach`. Off by default.
+    conquest_opening_stays_near: bool,
+    /// `conquest-opening-stays-near`: the turn the opening last journalled a
+    /// city it left alone as too far.
+    conquest_near_noted: Option<u32>,
     /// `dialogue-never-declares-war`: the controller's dialogue closer never
     /// answers a leader statement with a choice whose diplomatic action
     /// declares war. Live King civvis-20261005T045443Z (game 101) answered
@@ -9229,6 +9236,8 @@ impl AdvancedAi {
             denial_incumbent: None,
             capital_prey_opens_a_front: false,
             conquest_opening_needs_the_production: false,
+            conquest_opening_stays_near: false,
+            conquest_near_noted: None,
             dialogue_never_declares_war: false,
             declaration_waits_for_the_breaker: false,
             declaration_breaker_hold: None,

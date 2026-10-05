@@ -139,6 +139,23 @@ use std::collections::BTreeSet;
 /// six or seven turns.
 pub(crate) const CONQUEST_REACH_TILES: i32 = 18;
 
+/// `conquest-opening-stays-near`: how far from our capital a target city may
+/// stand while the gene is on, in place of [`CONQUEST_REACH_TILES`].
+///
+/// The live King openings of 2026-10-04/05 (49 of them over 80 control
+/// games, Gran Colombia, four players, Pangaea): the seven named on a city
+/// ten or fewer tiles from the capital all declared, and four took their
+/// city (Nobamba, Brisbane, Tilburg, Nicomedia). The forty-two named eleven
+/// to eighteen tiles out took none. Nineteen of them released at the commit
+/// deadline with the force's six nearest bodies still six to fourteen tiles
+/// from a rally they never reached, eight lost the race to the rival's own
+/// declaration, and the nine that declared put 0.03-0.47 shots a turn into a
+/// city that heals 20 a turn and never fell. A far opening also holds the
+/// game's one opening through the whole window: in seven of those games a
+/// rival city ten or fewer tiles out came into view before turn 40 while the
+/// far opening still stood.
+pub(crate) const CONQUEST_NEAR_REACH_TILES: i32 = 10;
+
 /// The most cities a rival may be KNOWN to hold and still be an opening
 /// target. Beyond four the neighbour is no longer a small empire whose
 /// capital is a decisive prize; it is a war, and this gene is an opening.
@@ -559,14 +576,32 @@ impl AdvancedAi {
 
     /// ⭐ THE TARGET: the city this opening is for, or `None`.
     ///
-    /// A met rival, a city we have explored within [`CONQUEST_REACH_TILES`]
-    /// of our capital, an owner with at most [`CONQUEST_MAX_RIVAL_CITIES`]
-    /// known cities, and the shipped legality mask
+    /// A met rival, a city we have explored within [`Self::conquest_reach`]
+    /// of our capital ([`CONQUEST_REACH_TILES`], or
+    /// [`CONQUEST_NEAR_REACH_TILES`] under `conquest-opening-stays-near`),
+    /// an owner with at most [`CONQUEST_MAX_RIVAL_CITIES`] known cities, and
+    /// the shipped legality mask
     /// (`campaign_target_legal`: alive, not a friend or ally, not a
     /// city-state under a suzerain we may not offend). Ranked by
     /// [`TargetRank`]: the capital first, then the lightest visible
     /// garrison, then the nearest, then the lowest id.
     pub(crate) fn conquest_target(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+        self.conquest_target_within(g, pid, self.conquest_reach())
+    }
+
+    /// The reach the target scan uses: [`CONQUEST_NEAR_REACH_TILES`] with
+    /// `conquest-opening-stays-near` on, else the shipped
+    /// [`CONQUEST_REACH_TILES`].
+    pub(crate) fn conquest_reach(&self) -> i32 {
+        if self.conquest_opening_stays_near {
+            CONQUEST_NEAR_REACH_TILES
+        } else {
+            CONQUEST_REACH_TILES
+        }
+    }
+
+    /// [`Self::conquest_target`] at an explicit reach from our capital.
+    fn conquest_target_within(&self, g: &Game, pid: usize, reach: i32) -> Option<(usize, u32)> {
         if !self.early_conquest_opening {
             return None;
         }
@@ -590,7 +625,7 @@ impl AdvancedAi {
             for city in known {
                 let pos = g.cities[&city].pos;
                 let distance = g.wdist(home, pos);
-                if distance > CONQUEST_REACH_TILES {
+                if distance > reach {
                     continue;
                 }
                 let garrison = Self::conquest_visible_garrison(g, pid, city, &visible);
@@ -1715,11 +1750,42 @@ impl AdvancedAi {
         Some((first + book + build + march, deadline - now))
     }
 
+    /// `conquest-opening-stays-near`: journal the city the shipped reach
+    /// would have opened on and this gene leaves alone, once every
+    /// [`CONQUEST_FEASIBILITY_NOTE_TURNS`]. Journal only: the opening stays
+    /// unnamed, the capital keeps its own builds, and the search for a nearer
+    /// city goes on.
+    fn conquest_note_a_far_target(&mut self, g: &Game, pid: usize) {
+        if !self.conquest_opening_stays_near {
+            return;
+        }
+        let note_due = self.conquest_near_noted.is_none_or(|noted| {
+            g.turn >= noted + g.standard_duration(CONQUEST_FEASIBILITY_NOTE_TURNS)
+        });
+        if !note_due {
+            return;
+        }
+        let (Some((target, city)), Some(capital)) = (
+            self.conquest_target_within(g, pid, CONQUEST_REACH_TILES),
+            Self::conquest_capital(g, pid),
+        ) else {
+            return;
+        };
+        self.conquest_near_noted = Some(g.turn);
+        let distance = g.wdist(g.cities[&capital].pos, g.cities[&city].pos);
+        think!(self.journal(), Military, Strategy,
+               "Not opening a conquest against {}", g.players[target].civ;
+               "{} is {} tiles from the capital, past the {} an opening reaches; \
+                the capital keeps its own builds until a nearer city is charted",
+               g.cities[&city].name, distance, CONQUEST_NEAR_REACH_TILES);
+    }
+
     fn conquest_open(&mut self, g: &mut Game, pid: usize) {
         if self.conquest_closed || g.turn >= self.conquest_naming_deadline(g) {
             return;
         }
         let Some((target, city)) = self.conquest_target(g, pid) else {
+            self.conquest_note_a_far_target(g, pid);
             return;
         };
         let Some(capital) = Self::conquest_capital(g, pid) else {

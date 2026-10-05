@@ -2888,6 +2888,10 @@ pub const GENES: &[Gene] = &[
     // surprise war drained 184 Favor to 0 while Sweden rose to 17 points. See
     // `one_war::favor_spares_surprise`.
     Gene { tag: "favor-spares-the-surprise-war", field: "favor_spares_the_surprise_war", kind: Kind::OptIn, enable: AdvancedAi::enable_favor_spares_the_surprise_war, disable: AdvancedAi::disable_favor_spares_the_surprise_war },
+    // Live King openings of 2026-10-04/05: 4 of 7 named ten or fewer tiles
+    // from the capital took their city, 0 of 42 named further out. See
+    // `early_conquest::CONQUEST_NEAR_REACH_TILES`.
+    Gene { tag: "conquest-opening-stays-near", field: "conquest_opening_stays_near", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_opening_stays_near, disable: AdvancedAi::disable_conquest_opening_stays_near },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

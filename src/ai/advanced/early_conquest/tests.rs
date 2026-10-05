@@ -2112,3 +2112,85 @@ fn the_books_next_settler_is_priced_ahead_of_the_force() {
         "the population-two Settler gene's book Settler is one more Settler ahead: {without} -> {with} (settler {settler})"
     );
 }
+
+// ----------------------------------------------- conquest-opening-stays-near
+
+fn stays_near() -> AdvancedAi {
+    let mut ai = armed();
+    ai.enable_conquest_opening_stays_near();
+    ai
+}
+
+#[test]
+fn conquest_opening_stays_near_is_a_native_opt_in_off_in_both_controllers() {
+    opt_in_off_in_both_controllers("conquest-opening-stays-near", |ai| {
+        ai.conquest_opening_stays_near
+    });
+    assert_eq!(CONQUEST_NEAR_REACH_TILES, 10);
+    assert_eq!(AdvancedAi::new().conquest_reach(), CONQUEST_REACH_TILES);
+    assert_eq!(stays_near().conquest_reach(), CONQUEST_NEAR_REACH_TILES);
+}
+
+#[test]
+fn a_capital_fourteen_tiles_out_is_left_alone_and_journalled() {
+    // Seat 1's capital is fourteen tiles from ours: inside the shipped
+    // eighteen, outside the gene's ten.
+    let mut game = board(&[at(6, 12), at(20, 12)]);
+    meet_and_explore(&mut game, 1);
+    let capital = game.player_city_ids(1)[0];
+    let mut off = armed();
+    assert_eq!(
+        off.conquest_target(&game, 0),
+        Some((1, capital)),
+        "off: the shipped reach names the far capital"
+    );
+    off.maintain_conquest_opening(&mut game, 0);
+    assert!(off.conquest_opening.is_some(), "off: the opening stands");
+    assert_eq!(off.conquest_near_noted, None);
+
+    let mut on = stays_near();
+    assert_eq!(on.conquest_target(&game, 0), None, "on: fourteen tiles is past the reach");
+    on.maintain_conquest_opening(&mut game, 0);
+    assert!(on.conquest_opening.is_none(), "on: no opening is named");
+    assert_eq!(on.conquest_near_noted, Some(game.turn), "the far city is journalled");
+
+    // The note is rate-limited, not repeated every turn.
+    game.turn += 1;
+    on.maintain_conquest_opening(&mut game, 0);
+    assert_eq!(on.conquest_near_noted, Some(game.turn - 1));
+}
+
+#[test]
+fn a_rival_city_ten_tiles_out_is_named_over_its_far_capital() {
+    let mut game = board(&[at(6, 12), at(20, 12)]);
+    meet_and_explore(&mut game, 1);
+    let capital = game.player_city_ids(1)[0];
+    // A forward city of seat 1's, exactly CONQUEST_NEAR_REACH_TILES out.
+    game.found_city_for(1, at(16, 12), None);
+    let forward = game
+        .player_city_ids(1)
+        .into_iter()
+        .find(|cid| *cid != capital)
+        .expect("the forward city stands");
+    let home = game.cities[&game.player_city_ids(0)[0]].pos;
+    assert_eq!(game.wdist(home, game.cities[&forward].pos), CONQUEST_NEAR_REACH_TILES);
+
+    assert_eq!(
+        armed().conquest_target(&game, 0),
+        Some((1, capital)),
+        "off: the shipped ranking prefers the capital"
+    );
+    let mut on = stays_near();
+    assert_eq!(
+        on.conquest_target(&game, 0),
+        Some((1, forward)),
+        "on: the forward city in reach is the target"
+    );
+    on.maintain_conquest_opening(&mut game, 0);
+    assert_eq!(
+        on.conquest_opening.as_ref().map(|opening| opening.city),
+        Some(forward),
+        "on: the opening is named on it"
+    );
+    assert_eq!(on.conquest_near_noted, None, "nothing was left alone");
+}

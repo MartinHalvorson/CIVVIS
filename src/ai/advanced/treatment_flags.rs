@@ -5979,6 +5979,17 @@ impl AdvancedAi {
         self.favor_spares_the_surprise_war = false;
     }
 
+    /// Opt-in gene `conquest-opening-stays-near`; see
+    /// [`Self::conquest_opening_stays_near`].
+    pub fn enable_conquest_opening_stays_near(&mut self) {
+        self.conquest_opening_stays_near = true;
+    }
+
+    /// The twin of `enable_conquest_opening_stays_near`.
+    pub fn disable_conquest_opening_stays_near(&mut self) {
+        self.conquest_opening_stays_near = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
