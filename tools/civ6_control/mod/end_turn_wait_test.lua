@@ -457,15 +457,44 @@ queue.checkTimescaleClock()
 check("an unscaled context reverts", has(lastTimescale(), '"why":"context_unscaled"'), true)
 check("…naming it", has(events("timescale_clock")[#events("timescale_clock")], '"unscaled":["WonderBuiltPopup"]'), true)
 
--- Frame deltas that do not scale with the UI clock: revert.
+-- Frame deltas that do not scale with the UI clock read low in EVERY window:
+-- the second low window in a row reverts. One low window (a hitch) does not,
+-- and a normal window in between starts the count again.
 fresh()
 now, wallNow = 600.0, 6000
 queue.startTimescale(2)
-now, wallNow = 660.0, 6030
+local function window(ratio)
+	now, wallNow = now + 60.0, wallNow + 30
+	ack("Heartbeat", 2)
+	ExposedMembers.CivvisFrameClock = { scale = 2, ratio = ratio, at = now }
+	queue.checkTimescaleClock()
+end
+window(0.5)
+check("one low frame window is a hitch, not a verdict", #commands, 1)
+window(0.95)
+window(0.5)
+check("…and a normal window in between starts the count again", #commands, 1)
+window(0.5)
+check("unscaled frame deltas revert on the second low window in a row", has(lastTimescale(), '"why":"frame_clock_off"'), true)
+
+-- Frame deltas a little behind the UI clock (G96: 0.91, capped long frames)
+-- only slow the pulses: kept. Ahead of it would hurry them: revert.
+fresh()
+now, wallNow = 1000.0, 10000
+queue.startTimescale(2)
+now, wallNow = 1060.0, 10030
 ack("Heartbeat", 2)
-ExposedMembers.CivvisFrameClock = { scale = 2, ratio = 0.5, at = now }
+ExposedMembers.CivvisFrameClock = { scale = 2, ratio = 0.91, at = now }
 queue.checkTimescaleClock()
-check("slow frame deltas revert", has(lastTimescale(), '"why":"frame_clock_off"'), true)
+check("frame deltas at 0.91 keep the timescale", #commands, 1)
+fresh()
+now, wallNow = 1100.0, 11000
+queue.startTimescale(2)
+now, wallNow = 1160.0, 11030
+ack("Heartbeat", 2)
+ExposedMembers.CivvisFrameClock = { scale = 2, ratio = 1.2, at = now }
+queue.checkTimescaleClock()
+check("frame deltas ahead of the UI clock revert", has(lastTimescale(), '"why":"frame_clock_off"'), true)
 
 -- An engine that runs faster than commanded: the real clock is off; revert.
 fresh()
