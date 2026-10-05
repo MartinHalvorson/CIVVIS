@@ -219,6 +219,13 @@ pub(super) const NEAR_BREACH_REPLY_ROLL: f64 = 1.2;
 /// The approach's margin over the expected reply on a post inside the
 /// city's strike ring.
 pub(super) const ENTRY_HP_MARGIN: f64 = 20.0;
+/// `stage-musters-out-of-reach`: while the train cannot yet close, a melee
+/// or shooter member stands only where the shared danger reading is under
+/// this share of its health.
+pub(super) const MUSTER_DANGER_SHARE: f64 = 0.5;
+/// `stage-musters-out-of-reach`: members within this many tiles of the city
+/// count as gathered for the advance.
+pub(super) const MUSTER_FAR: i32 = STAGING_FAR + 3;
 /// `anvil`: a defender under this rotates into the city to heal, if the
 /// unit standing there is healthier by the margin.
 pub(super) const ANVIL_ROTATE_HP: i32 = 50;
@@ -1953,7 +1960,12 @@ impl AdvancedAi {
                 unit.owner == pid
                     && spec.class == "military"
                     && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
-                    && g.wdist(unit.pos, city.pos) <= STAGING_FAR
+                    && g.wdist(unit.pos, city.pos)
+                        <= if self.stage_musters_out_of_reach {
+                            MUSTER_FAR
+                        } else {
+                            STAGING_FAR
+                        }
             })
     }
 
@@ -2338,6 +2350,24 @@ impl AdvancedAi {
         }
         // `capture-holds-the-ring`: see `dying_open_city`.
         let dying = self.dying_open_city(&city);
+        // `stage-musters-out-of-reach`: the train may close on its staging
+        // ring when the Stage -> Invest step below would fire with the members
+        // gathered within `MUSTER_FAR` standing on the ring — the bill met,
+        // the walls answered (damage ready, opened by the guns, or ground),
+        // nothing barring them — so the body closes only when the siege will
+        // invest; until then it musters out of reach.
+        if self.stage_musters_out_of_reach {
+            let mustered: f64 = force
+                .iter()
+                .filter(|uid| g.wdist(g.units[uid].pos, city.pos) <= MUSTER_FAR)
+                .map(|uid| unit_power(g, *uid))
+                .sum();
+            let ready = dying
+                || (((arena && gathered) || mustered >= bill || breach_taker.is_some())
+                    && (damage_entry_ready || opens_walls || grind)
+                    && !no_breaker);
+            self.stage_muster_ready.insert(cid, ready);
+        }
         let record = self.sieges.entry(cid).or_insert(Siege {
             stage: SiegeStage::Stage,
             taker: None,
@@ -2704,6 +2734,16 @@ impl AdvancedAi {
         }
         let here = g.units[&uid].pos;
         let distance = g.wdist(here, city.pos);
+        // `stage-musters-out-of-reach`: see `muster_step`.
+        if self.stage_musters_out_of_reach
+            && arm_of(g, uid) != Arm::Siege
+            && distance > CITY_STRIKE_RANGE
+            && !self.stage_muster_ready.get(&city.id).copied().unwrap_or(true)
+        {
+            if let Some(acted) = self.muster_step(g, pid, uid, city) {
+                return acted;
+            }
+        }
         // `shared-danger`, as the battle planner and the reinforcement step
         // read it: a hostile's one blow a turn is split among the units of
         // ours in its reach. Unshared, a gun inside its own army read every
@@ -2987,6 +3027,94 @@ impl AdvancedAi {
             }
         }
         self.base.fortify_or_stop(g, pid, uid)
+    }
+
+    /// `stage-musters-out-of-reach`: a melee or shooter member of a train
+    /// that cannot yet close stands at the reachable tile nearest the city
+    /// whose shared danger reading is under [`MUSTER_DANGER_SHARE`] of its
+    /// health, and holds there; one standing over that line steps back to
+    /// the safest such tile. `None` leaves the ordinary Stage step to it.
+    ///
+    /// Stage marched every member to the staging ring alone the moment it
+    /// joined, and held it there under the defenders' reach while the bill or
+    /// a breaker was still missing. Over the 10-04/05 control runs 59% of the
+    /// 3,926 land soldiers we lost in combat died while their siege read
+    /// Stage — 772 on the three-to-five-tile ring itself — and the trains
+    /// that stood in Stage spent 7,751 siege-turns there against 2,956 in
+    /// Invest and Reduce together. Live King civvis-20261005T014503Z: the
+    /// Siege of Sydney read Stage with "0 of 10-15 units staged" from turn 133
+    /// to 159 behind 400 walls with no breaker, its Warriors, Crossbowmen and
+    /// Pike walking in one by one from eleven tiles and dying at five to
+    /// seven.
+    fn muster_step(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> Option<bool> {
+        let here = g.units.get(&uid)?.pos;
+        let limit = f64::from(g.units[&uid].hp) * MUSTER_DANGER_SHARE;
+        let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
+        if self.shared_danger {
+            field.share(g);
+        }
+        let risk_here = field.rotation_danger(here, uid);
+        let distance = g.wdist(here, city.pos);
+        let dry = |g: &Game, pos: Pos| dry_stand(g, uid, pos);
+        let mut stands: Vec<(i32, f64, Pos)> = g
+            .reachable(uid)
+            .into_iter()
+            .filter(|pos| {
+                *pos != here
+                    && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE
+                    && dry(g, *pos)
+                    && g.unit_ids_at(*pos).is_empty()
+            })
+            .map(|pos| (g.wdist(pos, city.pos), field.rotation_danger(pos, uid), pos))
+            .filter(|(_, risk, _)| *risk <= limit)
+            .collect();
+        stands.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| a.1.total_cmp(&b.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+        let name = g
+            .cities
+            .get(&city.id)
+            .map(|c| c.name.clone())
+            .unwrap_or_default();
+        if risk_here > limit {
+            // Over the line: the nearest safe stand, else the ordinary step.
+            let (_, risk, dest) = *stands.first()?;
+            let kind = g.units[&uid].kind;
+            if self.base.path_walk_to(g, pid, uid, dest) {
+                think!(self.journal(), Military, Detail,
+                    "Siege of {name}: the {kind} falls back to the muster line";
+                    "{here:?} reads {risk_here:.0} danger against a limit of {limit:.0} while the \
+                     train cannot close; {dest:?}, {} tiles out, reads {risk:.0}",
+                    g.wdist(dest, city.pos);
+                    city.pos);
+                return Some(true);
+            }
+            return None;
+        }
+        // Safe here: walk in only as far as the line, never past it.
+        if let Some((d, _, dest)) = stands.first().copied().filter(|(d, _, _)| *d < distance) {
+            let kind = g.units[&uid].kind;
+            if self.base.path_walk_to(g, pid, uid, dest) {
+                think!(self.journal(), Military, Detail,
+                    "Siege of {name}: the {kind} musters at {dest:?}";
+                    "{d} tiles from the city, the nearest stand under {limit:.0} danger while the \
+                     train cannot close";
+                    city.pos);
+                return Some(true);
+            }
+        }
+        if distance <= STAGING_FAR {
+            return None;
+        }
+        let kind = g.units[&uid].kind;
+        think!(self.journal(), Military, Detail,
+            "Siege of {name}: the {kind} holds at the muster line";
+            "{distance} tiles out; every nearer stand reads over {limit:.0} danger while the \
+             train cannot close";
+            city.pos);
+        Some(self.base.fortify_or_stop(g, pid, uid))
     }
 
     /// Invest and Reduce, melee: hold the ring and fortify; swing at the
@@ -5050,3 +5178,6 @@ mod grind_tests;
 
 #[cfg(test)]
 mod near_breach_tests;
+
+#[cfg(test)]
+mod muster_tests;

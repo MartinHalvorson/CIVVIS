@@ -3076,6 +3076,10 @@ pub const GENES: &[Gene] = &[
     // 50 border-blocked windows on 10-04/05 were shut by such a major; we
     // warred it later in 3. See `advanced/siege_road.rs`.
     Gene { tag: "blocker-becomes-the-target", field: "blocker_becomes_the_target", kind: Kind::OptIn, enable: AdvancedAi::enable_blocker_becomes_the_target, disable: AdvancedAi::disable_blocker_becomes_the_target },
+    // Live King 10-04/05: 59% of the 3,926 land soldiers lost in combat died
+    // while their siege read Stage, 772 on the staging ring itself, walking
+    // in one by one. See `siege_train::muster_step`.
+    Gene { tag: "stage-musters-out-of-reach", field: "stage_musters_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_musters_out_of_reach, disable: AdvancedAi::disable_stage_musters_out_of_reach },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
