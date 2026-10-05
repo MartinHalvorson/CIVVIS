@@ -16451,10 +16451,35 @@ CivvisQueue.drain = function(player, pid, turn)
 				-- and 04, such stalls were 18 of 489 queues in one game and
 				-- 5-24% of every game's wall clock. An arrived unit is unchanged:
 				-- the landed-path cancel above still owns that case.
+				-- ★★ ...AND ONE THAT PROVABLY CANNOT LAND IS REFUSED NOW. Held to the
+				-- grace, those follow-ups cost 12-15 queues a game at ~3.4-4.1 s each,
+				-- 41-57 s and 22-30% of all queue time (civvis-20261005T114715Z,
+				-- 123242Z, 124739Z), always ending `queue_prior_not_arrived`. The
+				-- answer is the same refusal, given as soon as the walk cannot reach
+				-- its expectation this turn: its unit has no movement left, or (one
+				-- path read at the probe tick) the host's own path lands it on a
+				-- later turn (`reachesThisTurn`'s `guard_still_capped`). A path the
+				-- host cannot be asked for decides nothing; the grace stays.
+				local cannot_land = false;
+				if active_operation and entry.expect ~= nil and not arrived and entry.wait < grace then
+					if spent then
+						cannot_land = true;
+					elseif not entry.land_probed
+							and entry.wait >= (tonumber(cfg.OrderQueueNoopProbeTicks) or 8)
+							and try(function() return UI.IsGameCoreBusy(); end, false) ~= true then
+						entry.land_probed = true;
+						local reaches, why = CivvisBoard.reachesThisTurn(unit, entry.expect.x, entry.expect.y);
+						cannot_land = not reaches and why == "guard_still_capped";
+					end
+					if cannot_land then
+						emit("queue_cannot_land", { turn = turn, unit = subject, tick = entry.wait,
+							spent = spent, at = { ux, uy }, want = { entry.expect.x, entry.expect.y } });
+					end
+				end
 				local stuck_operation = active_operation and entry.expect ~= nil
-					and not arrived and entry.wait >= grace;
+					and not arrived and (entry.wait >= grace or cannot_land);
 				local ready = (entry.ready or arrived or spent or moved_from_origin
-					or unpathed or entry.wait >= grace) and (not active_operation or stuck_operation);
+					or unpathed or cannot_land or entry.wait >= grace) and (not active_operation or stuck_operation);
 				if ready and #entry.rows > 0 then
 					local target = CivvisQueue.condemnWarPending(player, pid, entry.rows[entry.next], turn);
 					if target ~= nil then
