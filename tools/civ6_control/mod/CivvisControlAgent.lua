@@ -20031,7 +20031,8 @@ end;
 -- (Automation.GetTime ticks whole seconds): CivvisClock against the wall
 -- clock within [0.85, 1.15]; the Heartbeat has seen the scale since it was
 -- set; no context that ticked since then read a different scale; and the
--- Heartbeat's frame deltas keep pace with the UI clock. Any failure reverts
+-- Heartbeat's frame deltas are not ahead of the UI clock (<= 1.15) nor so far
+-- behind (< 0.7) that the timescale cannot be scaling them. Any failure reverts
 -- to `timescale 1`, and so does game end, so it never outlives the game.
 CivvisQueue.startTimescale = function(want)
 	want = tonumber(want);
@@ -20114,7 +20115,12 @@ CivvisQueue.checkTimescaleClock = function()
 		why = "heartbeat_unscaled";
 	elseif #unscaled > 0 then
 		why = "context_unscaled";
-	elseif frameRatio ~= nil and (frameRatio > 1.15 or frameRatio < 0.85) then
+	-- Frame deltas AHEAD of the UI clock would hurry the Heartbeat pulse and
+	-- the AutoClose holds, so the ceiling is tight. Behind it is the safe
+	-- side: G96 read 0.91-0.95 at 2x (a long frame's delta is capped, and at
+	-- 2x more frames are long), which only slows the pulses a little. The
+	-- floor catches deltas the timescale does not scale at all (0.5 at 2x).
+	elseif frameRatio ~= nil and (frameRatio > 1.15 or frameRatio < 0.7) then
 		why = "frame_clock_off";
 	end
 	if why ~= nil then CivvisQueue.resetTimescale(why); end
