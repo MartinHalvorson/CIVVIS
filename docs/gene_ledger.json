@@ -2643,6 +2643,15 @@
           "science-victory-drive-2": null
         }
       },
+      "second-front-kept-when-winning": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "second-front-kept-when-winning": null,
+          "second-front-kept-when-winning-2": null
+        }
+      },
       "settler-backlog-brake": {
         "rule_on": [
           "settler-backlog-brake-2"

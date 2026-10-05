@@ -4709,6 +4709,17 @@ impl AdvancedAi {
         self.base.campus_before_harbor = self.campus_before_harbor;
         self.base.capital_campus_first = false;
     }
+
+    /// Opt-in gene `counter-war-needs-parity`; see
+    /// [`Self::counter_war_needs_parity`].
+    pub fn enable_counter_war_needs_parity(&mut self) {
+        self.counter_war_needs_parity = true;
+    }
+
+    /// The twin of `enable_counter_war_needs_parity`.
+    pub fn disable_counter_war_needs_parity(&mut self) {
+        self.counter_war_needs_parity = false;
+    }
     /// See `AdvancedAi::first_granary_reserve_3`: a housing-bound city's
     /// Granary, then its Aqueduct, in both production governors.
     pub fn enable_first_granary_reserve_3(&mut self) {
@@ -5200,6 +5211,17 @@ impl AdvancedAi {
         self.breaker_before_the_war = false;
     }
 
+    /// Opt-in gene `breach-assault-closes-in`; see
+    /// [`Self::breach_assault_closes_in`]. Acts only beside `breach-assault`.
+    pub fn enable_breach_assault_closes_in(&mut self) {
+        self.breach_assault_closes_in = true;
+    }
+
+    /// The twin of `enable_breach_assault_closes_in`.
+    pub fn disable_breach_assault_closes_in(&mut self) {
+        self.breach_assault_closes_in = false;
+    }
+
     /// Opt-in gene `second-front-kept-when-winning`; see
     /// [`Self::second_front_kept_when_winning`].
     pub fn enable_second_front_kept_when_winning(&mut self) {
@@ -5209,6 +5231,18 @@ impl AdvancedAi {
     /// The twin of `enable_second_front_kept_when_winning`.
     pub fn disable_second_front_kept_when_winning(&mut self) {
         self.second_front_kept_when_winning = false;
+    }
+
+    /// Opt-in gene `second-front-kept-when-winning-2`; see
+    /// [`Self::second_front_kept_when_winning_2`]. Version one's terms stay
+    /// with their own flag.
+    pub fn enable_second_front_kept_when_winning_2(&mut self) {
+        self.second_front_kept_when_winning_2 = true;
+    }
+
+    /// The twin of `enable_second_front_kept_when_winning_2`.
+    pub fn disable_second_front_kept_when_winning_2(&mut self) {
+        self.second_front_kept_when_winning_2 = false;
     }
 
     /// Opt-in gene `peace-waits-for-unseen-prey`; see
@@ -5301,6 +5335,17 @@ impl AdvancedAi {
         self.capture_waits_on_the_march = false;
     }
 
+    /// Opt-in gene `recovery-keeps-a-winning-war`; see
+    /// [`Self::recovery_keeps_a_winning_war`].
+    pub fn enable_recovery_keeps_a_winning_war(&mut self) {
+        self.recovery_keeps_a_winning_war = true;
+    }
+
+    /// The twin of `enable_recovery_keeps_a_winning_war`.
+    pub fn disable_recovery_keeps_a_winning_war(&mut self) {
+        self.recovery_keeps_a_winning_war = false;
+    }
+
     /// Opt-in gene `one-war-swaps-a-stalled-front`; see
     /// [`Self::one_war_swaps_a_stalled_front`].
     pub fn enable_one_war_swaps_a_stalled_front(&mut self) {
@@ -5310,6 +5355,17 @@ impl AdvancedAi {
     /// The twin of `enable_one_war_swaps_a_stalled_front`.
     pub fn disable_one_war_swaps_a_stalled_front(&mut self) {
         self.one_war_swaps_a_stalled_front = false;
+    }
+
+    /// Opt-in gene `rout-spares-a-stronger-army`; see
+    /// [`Self::rout_spares_a_stronger_army`].
+    pub fn enable_rout_spares_a_stronger_army(&mut self) {
+        self.rout_spares_a_stronger_army = true;
+    }
+
+    /// The twin of `enable_rout_spares_a_stronger_army`.
+    pub fn disable_rout_spares_a_stronger_army(&mut self) {
+        self.rout_spares_a_stronger_army = false;
     }
 
     /// Opt-in gene `culture-counter-declares`; see
@@ -5323,6 +5379,17 @@ impl AdvancedAi {
         self.culture_counter_declares = false;
     }
 
+    /// Opt-in gene `last-capital-war-kept`; see
+    /// [`Self::last_capital_war_kept`].
+    pub fn enable_last_capital_war_kept(&mut self) {
+        self.last_capital_war_kept = true;
+    }
+
+    /// The twin of `enable_last_capital_war_kept`.
+    pub fn disable_last_capital_war_kept(&mut self) {
+        self.last_capital_war_kept = false;
+    }
+
     /// Opt-in gene `formations-heed-refusals`; see
     /// [`Self::formations_heed_refusals`].
     pub fn enable_formations_heed_refusals(&mut self) {
@@ -5332,6 +5399,17 @@ impl AdvancedAi {
     /// The twin of `enable_formations_heed_refusals`.
     pub fn disable_formations_heed_refusals(&mut self) {
         self.formations_heed_refusals = false;
+    }
+
+    /// Opt-in gene `diplomatic-contender-kept`; see
+    /// [`Self::diplomatic_contender_kept`].
+    pub fn enable_diplomatic_contender_kept(&mut self) {
+        self.diplomatic_contender_kept = true;
+    }
+
+    /// The twin of `enable_diplomatic_contender_kept`.
+    pub fn disable_diplomatic_contender_kept(&mut self) {
+        self.diplomatic_contender_kept = false;
     }
 
     /// Opt-in gene `breaker-supply-scales-2`; see
@@ -5375,6 +5453,28 @@ impl AdvancedAi {
     /// The twin of `enable_siege_counts_posted_shooters`.
     pub fn disable_siege_counts_posted_shooters(&mut self) {
         self.siege_counts_posted_shooters = false;
+    }
+
+    /// Opt-in gene `capital-defense-holds`; see
+    /// [`Self::capital_defense_contact`].
+    pub fn enable_capital_defense_holds(&mut self) {
+        self.capital_defense_holds = true;
+    }
+
+    /// The twin of `enable_capital_defense_holds`.
+    pub fn disable_capital_defense_holds(&mut self) {
+        self.capital_defense_holds = false;
+    }
+
+    /// Opt-in gene `staging-column-passes-through`; see
+    /// [`Self::staging_column_passes_through`].
+    pub fn enable_staging_column_passes_through(&mut self) {
+        self.staging_column_passes_through = true;
+    }
+
+    /// The twin of `enable_staging_column_passes_through`.
+    pub fn disable_staging_column_passes_through(&mut self) {
+        self.staging_column_passes_through = false;
     }
 
     // ---- append: a-b ------------------------------------------------

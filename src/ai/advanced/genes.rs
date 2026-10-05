@@ -2396,6 +2396,9 @@ pub const GENES: &[Gene] = &[
     // the empire holds three cities: the capital trained eight Settlers by
     // turn 57 and opened no Campus until turn 66. See `BasicAi::capital_campus_first`.
     Gene { tag: "campus-before-harbor-2", field: "campus_before_harbor_2", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_harbor_2, disable: AdvancedAi::disable_campus_before_harbor_2 },
+    // Seven urgent counter declarations below parity took 0.14 cities in 40
+    // turns and lost all seven games. See `one_war::COUNTER_WAR_PARITY`.
+    Gene { tag: "counter-war-needs-parity", field: "counter_war_needs_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_war_needs_parity, disable: AdvancedAi::disable_counter_war_needs_parity },
     // The delegated city governor tried every district a city lacked before
     // any building: live King turn 100 held 15 of 45 Campuses without a
     // Library and 13 of 19 Commercial Hubs without a Market. See
@@ -2594,6 +2597,10 @@ pub const GENES: &[Gene] = &[
     // "damage ready" — two Archers shot it and the melee held the ring, so it
     // healed every turn and built walls. See `siege_train::breach_assault_blow`.
     Gene { tag: "breach-assault", field: "breach_assault", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_assault, disable: AdvancedAi::disable_breach_assault },
+    // Live King 232618Z: unwalled The Hague at 95-134 health beside eleven
+    // staged units, horsemen three tiles out; the assault counted only melee
+    // already beside it. See `siege_train::closing_in`.
+    Gene { tag: "breach-assault-closes-in", field: "breach_assault_closes_in", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_assault_closes_in, disable: AdvancedAi::disable_breach_assault_closes_in },
     // Version 1 measured -9.7 +/- 5.3 pp: only the capitals Domination
     // needs, no displaced building. See `siege_production::SUPPLY_STRENGTH_WINDOW`.
     Gene { tag: "breaker-supply-scales-2", field: "breaker_supply_scales_2", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales_2, disable: AdvancedAi::disable_breaker_supply_scales_2 },
@@ -2602,6 +2609,10 @@ pub const GENES: &[Gene] = &[
     // it to Canada at 407 against 138 after taking Brantford. See
     // `AdvancedAi::second_front_kept_when_winning`.
     Gene { tag: "second-front-kept-when-winning", field: "second_front_kept_when_winning", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_kept_when_winning, disable: AdvancedAi::disable_second_front_kept_when_winning },
+    // Live King 232618Z offered the Netherlands that peace at 3.2 times with
+    // The Hague, its capital, the next objective, and declared again eight
+    // turns later. See `AdvancedAi::second_front_kept_when_winning_2`.
+    Gene { tag: "second-front-kept-when-winning-2", field: "second_front_kept_when_winning_2", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_kept_when_winning_2, disable: AdvancedAi::disable_second_front_kept_when_winning_2 },
     // Live King 213648Z took Babylon's only known city at turn 81, at six
     // times its power, and offered peace; Babylon held six cities at 207.
     // See `one_war::unseen_prey`.
@@ -2632,18 +2643,34 @@ pub const GENES: &[Gene] = &[
     // Live King 174103Z stood down six Dutch objectives in 95 turns with the
     // army still on the road. See `advanced/capture_march.rs`.
     Gene { tag: "capture-waits-on-the-march", field: "capture_waits_on_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_waits_on_the_march, disable: AdvancedAi::disable_capture_waits_on_the_march },
+    // Live King 014503Z offered the Inca, its only war, Recovery peace at 321
+    // power against 202 with Qusqu the objective. See
+    // `one_war::recovery_keeps_the_war`.
+    Gene { tag: "recovery-keeps-a-winning-war", field: "recovery_keeps_a_winning_war", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_keeps_a_winning_war, disable: AdvancedAi::disable_recovery_keeps_a_winning_war },
     // Live King 160213Z fought Germany for 92 turns without a capture while
     // the at-war Maori held the capital it needed. See
     // `one_war::stalled_front_swap`.
     Gene { tag: "one-war-swaps-a-stalled-front", field: "one_war_swaps_a_stalled_front", kind: Kind::OptIn, enable: AdvancedAi::enable_one_war_swaps_a_stalled_front, disable: AdvancedAi::disable_one_war_swaps_a_stalled_front },
+    // Nine rout or turned-tide peace offers at 1.5 times our rival's power on
+    // 2026-10-04/05; three were followed by a war on the same rival within
+    // 25 turns. See `AdvancedAi::rout_spares_a_stronger_army`.
+    Gene { tag: "rout-spares-a-stronger-army", field: "rout_spares_a_stronger_army", kind: Kind::OptIn, enable: AdvancedAi::enable_rout_spares_a_stronger_army, disable: AdvancedAi::disable_rout_spares_a_stronger_army },
     // Live King 122037Z held war on France "for staging" from turn 163 to its
     // Culture win at 181, at 2 to 4 times its power. See
     // `one_war::culture_counter_due`.
     Gene { tag: "culture-counter-declares", field: "culture_counter_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_counter_declares, disable: AdvancedAi::disable_culture_counter_declares },
+    // Live King 003728Z offered Phoenicia, holder of Tyre, the last capital
+    // it lacked, "the war has stalled" peace at 1.6 times its power. See
+    // `one_war::last_capital_war_kept`.
+    Gene { tag: "last-capital-war-kept", field: "last_capital_war_kept", kind: Kind::OptIn, enable: AdvancedAi::enable_last_capital_war_kept, disable: AdvancedAi::disable_last_capital_war_kept },
     // Live King 100903Z: two Rocket Artillery stood in Loja through the war
     // on India, their Corps refused and re-planned every turn. Live-only: the
     // refused set is empty off the bridge. See `advanced/formation_refusals.rs`.
     Gene { tag: "formations-heed-refusals", field: "formations_heed_refusals", kind: Kind::OptIn, enable: AdvancedAi::enable_formations_heed_refusals, disable: AdvancedAi::disable_formations_heed_refusals },
+    // Live King 003728Z stayed at peace with Sumeria at 17 Diplomatic Victory
+    // points and 3 military while Persia won the Diplomatic Victory. See
+    // `one_war::diplomatic_contender`.
+    Gene { tag: "diplomatic-contender-kept", field: "diplomatic_contender_kept", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_contender_kept, disable: AdvancedAi::disable_diplomatic_contender_kept },
     // Live King civvis-20261004T122037Z (game 62): Yaroslavl's walls went
     // 100 -> 84 in twelve turns while the journal read "shooters 6-16 wall a
     // turn": nine archers within five tiles were counted, but the range-2
@@ -2651,6 +2678,17 @@ pub const GENES: &[Gene] = &[
     // G64's Canberra read "6.9 turns" at turn 125 and fell at 148. See
     // `siege_train::shooter_hits_walls`.
     Gene { tag: "siege-counts-posted-shooters", field: "siege_counts_posted_shooters", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_counts_posted_shooters, disable: AdvancedAi::disable_siege_counts_posted_shooters },
+    // Live King 013110Z (game 91): Germany took Bogota at turn 42. Four
+    // defenders raised the pressure ratio's denominator, the Defend row
+    // lapsed at turn 40 with the capital at 20 of 200 and Germans
+    // adjacent, and its bodies went to Siege Munich. See
+    // `objective_board::capital_defense_contact`.
+    Gene { tag: "capital-defense-holds", field: "capital_defense_holds", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_defense_holds, disable: AdvancedAi::disable_capital_defense_holds },
+    // Live King civvis-20261005T003728Z (game 89): Mashhad held in Stage
+    // from turn 183 to 225; its guns, twelve to fourteen tiles out, stepped
+    // between two tiles every frame behind one of ours in a ridge's only gap.
+    // See `siege_train::siege_stage_step`.
+    Gene { tag: "staging-column-passes-through", field: "staging_column_passes_through", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_column_passes_through, disable: AdvancedAi::disable_staging_column_passes_through },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

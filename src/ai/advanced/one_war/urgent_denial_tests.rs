@@ -604,6 +604,31 @@ fn a_beaten_second_front_is_kept_under_the_gene() {
     assert_eq!(ai.one_war_peace(&g, 0, 2), None, "winning, a city taken");
 }
 
+/// See `second_front_kept_when_winning_2`: under version two, a war we are
+/// winning on a rival that still holds its own capital is kept without a
+/// city taken; a rival without its capital is still offered peace.
+#[test]
+fn a_winning_second_front_on_a_standing_capital_is_kept_under_version_two() {
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
+    let mut row = 2;
+    while g.military_power(0) >= ONE_WAR_CRUSHED_RATIO * g.military_power(2) {
+        g.spawn_test_unit("modern_armor", 2, (30, row));
+        row += 1;
+    }
+    assert!(g.military_power(0) >= ONE_WAR_WINNING_RATIO * g.military_power(2));
+    ai.one_war_observe(&g, 0);
+    let second = Some(OneWarPeace::SecondFront);
+    ai.enable_second_front_kept_when_winning();
+    assert_eq!(ai.one_war_peace(&g, 0, 2), second, "version one");
+    ai.enable_second_front_kept_when_winning_2();
+    assert_eq!(ai.one_war_peace(&g, 0, 2), None, "its capital stands");
+    let capital = g.player_city_ids(2)[0];
+    assert!(g.cities[&capital].is_capital);
+    g.cities.get_mut(&capital).unwrap().owner = 3;
+    assert_eq!(ai.one_war_peace(&g, 0, 2), second, "its capital is gone");
+}
+
 /// Live King civvis-20261004T025448Z (game 45): a counter the war cannot
 /// answer without a siege (a culture or science clock) takes no second front
 /// before it is urgent, so the army stays on the prey front's siege.
@@ -881,4 +906,140 @@ fn a_faith_holding_our_majority_is_religious_for_the_power_floor() {
     if ai.rival_pressure(&free, 2).0 != GrandStrategy::Religion {
         assert!(!ai.counter_war_hopeless(&free, 0, 2));
     }
+}
+
+/// See `rout_spares_a_stronger_army`: under the gene, a rout window against a
+/// rival we outgun 1.5 times over offers no peace; below the margin it does.
+#[test]
+fn a_rout_spares_a_stronger_army_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(1));
+    while g.military_power(0) < ONE_WAR_SECOND_FRONT_RATIO * g.military_power(1) {
+        g.spawn_test_unit("modern_armor", 0, (8, 13));
+    }
+    assert!(g.military_power(0) < ONE_WAR_WINNING_RATIO * g.military_power(1));
+    ai.one_war.as_mut().unwrap().window = VecDeque::from([(g.turn, ONE_WAR_ROUT_NET)]);
+    let mut row = 2;
+    let rout = Some(OneWarPeace::Rout);
+    assert_eq!(ai.one_war_peace(&g, 0, 1), rout, "off");
+    ai.enable_rout_spares_a_stronger_army();
+    assert_eq!(ai.one_war_peace(&g, 0, 1), None, "1.5 times over");
+    while g.military_power(0) >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(1) {
+        g.spawn_test_unit("modern_armor", 1, (16, row));
+        row += 1;
+    }
+    assert_eq!(ai.one_war_peace(&g, 0, 1), rout, "under the margin");
+}
+
+/// See `last_capital_war_kept`: under the gene, the war on the one rival that
+/// still holds an original capital, every other one ours, is kept while we
+/// are its equal; another capital still out, or a stronger rival, frees it.
+#[test]
+fn the_war_for_the_last_capital_is_kept_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    let capital_of = |g: &Game, owner: usize| {
+        g.cities
+            .values()
+            .find(|city| city.is_capital && city.original_owner == owner)
+            .map(|city| city.id)
+            .unwrap()
+    };
+    let first = capital_of(&g, 1);
+    g.cities.get_mut(&first).unwrap().owner = 0;
+    assert!(!ai.last_capital_war_kept(&g, 0, 2), "off");
+    ai.enable_last_capital_war_kept();
+    assert!(
+        !ai.last_capital_war_kept(&g, 0, 2),
+        "a third capital is still out"
+    );
+    let third = capital_of(&g, 3);
+    g.cities.get_mut(&third).unwrap().owner = 0;
+    assert!(ai.last_capital_war_kept(&g, 0, 2), "the last capital");
+    assert!(!ai.last_capital_war_kept(&g, 0, 1), "not the holder");
+    while g.military_power(2) <= g.military_power(0) {
+        g.spawn_test_unit("modern_armor", 2, (30, 2));
+    }
+    assert!(!ai.last_capital_war_kept(&g, 0, 2), "a stronger holder");
+}
+
+/// See `diplomatic_contender`: under the gene, a crushed rival at fifteen
+/// Diplomatic Victory points keeps its war, and at sixteen, the leader, it
+/// opens the second front beside the war we are fighting.
+#[test]
+fn a_crushed_diplomatic_contender_is_kept_and_opened_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    arm_the_front(&mut g);
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(1));
+    assert!(g.military_power(0) >= ONE_WAR_CRUSHED_RATIO * g.military_power(2));
+    g.players[2].dvp = DIPLOMATIC_CONTENDER_DVP;
+    let second = Some(OneWarPeace::SecondFront);
+    assert_eq!(ai.one_war_peace(&g, 0, 2), second, "off");
+    ai.enable_diplomatic_contender_kept();
+    assert_eq!(ai.one_war_peace(&g, 0, 2), None, "kept");
+    // At peace, the leader at sixteen opens the second front.
+    g.at_war.remove(&(0, 2));
+    assert_eq!(ai.one_war_second_front(&g, 0), None, "under the bar");
+    g.players[2].dvp = DIPLOMATIC_CONTENDER_LEADER_DVP;
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(2), "the leader");
+    g.players[3].dvp = DIPLOMATIC_CONTENDER_LEADER_DVP + 1;
+    assert_eq!(ai.one_war_second_front(&g, 0), Some(3), "the new leader");
+}
+
+/// See `recovery_keeps_the_war`: under the gene, a war we outgun 1.5 times
+/// over is kept when the Recovery plan's target is no war of ours; a target
+/// we are fighting, or a closer war, still takes the peace.
+#[test]
+fn recovery_keeps_a_winning_war_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    let mut plan = ai.plan.clone().unwrap();
+    plan.strategy = GrandStrategy::Recovery;
+    plan.target_player = Some(3);
+    assert!(!ai.recovery_keeps_the_war(&g, 0, 1, &plan), "off");
+    ai.enable_recovery_keeps_a_winning_war();
+    assert!(ai.recovery_keeps_the_war(&g, 0, 1, &plan), "kept");
+    plan.target_player = Some(2);
+    assert!(!ai.recovery_keeps_the_war(&g, 0, 1, &plan), "another war");
+    plan.target_player = Some(3);
+    while g.military_power(0) >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(1) {
+        g.spawn_test_unit("modern_armor", 1, (16, 20));
+    }
+    assert!(!ai.recovery_keeps_the_war(&g, 0, 1, &plan), "not winning");
+}
+
+/// See `COUNTER_WAR_PARITY`: under the gene a non-religious counter needs our
+/// equal power, and an urgent rival under its floor leaves the front alone.
+#[test]
+fn a_counter_war_needs_parity_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    while g.military_power(2) * COUNTER_WAR_PARITY <= g.military_power(0) {
+        g.spawn_test_unit("modern_armor", 2, (30, 2));
+    }
+    assert!(g.military_power(0) >= COUNTER_WAR_POWER_FLOOR * g.military_power(2));
+    assert!(!ai.counter_war_hopeless(&g, 0, 2), "off: no floor");
+    ai.enable_counter_war_needs_parity();
+    assert!(ai.counter_war_hopeless(&g, 0, 2), "under parity");
+    // An urgent faith under its own floor keeps the army on the front.
+    let (mut g, mut ai) = two_fronts();
+    convert(&mut g, &[0, 1, 2]);
+    assert!(ai.urgent_victory_threat(&g, 2));
+    let mut row = 2;
+    while !ai.counter_war_hopeless(&g, 0, 2) {
+        g.spawn_test_unit("modern_armor", 2, (30, row));
+        row += 1;
+    }
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(2), "off: the counter");
+    let (mut g, mut ai) = two_fronts();
+    convert(&mut g, &[0, 1, 2]);
+    let mut row = 2;
+    while !ai.counter_war_hopeless(&g, 0, 2) {
+        g.spawn_test_unit("modern_armor", 2, (30, row));
+        row += 1;
+    }
+    ai.enable_counter_war_needs_parity();
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(1), "the front stays");
 }

@@ -5025,6 +5025,11 @@ pub struct AdvancedAi {
     /// walls are down or opened by a ram or tower, once the siege's blows can
     /// take it within two turns. See `siege_train::breach_assault_blow`.
     breach_assault: bool,
+    /// `breach-assault-closes-in`: under `breach-assault`, healthy melee that
+    /// can reach a free tile beside a city with no wall standing, and still
+    /// strike this turn, count toward the assault and step in for it. See
+    /// `siege_train::closing_in`. Off by default.
+    breach_assault_closes_in: bool,
     /// `breaker-supply-scales-2`: an original capital Domination needs is
     /// supplied with guns in parallel, without displacing a building under
     /// way. See `siege_production::SUPPLY_STRENGTH_WINDOW`. Off by default.
@@ -5249,6 +5254,16 @@ pub struct AdvancedAi {
     /// `BasicAi::activation_resume_waits`.
     activation_resume_waits: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `capital-defense-holds`: a damaged city of ours with a hostile beside
+    /// it keeps its Defend row whatever the pressure ratio reads, and a
+    /// capital we hold under attack is an urgent Defend that outranks every
+    /// offensive row. See `objective_board::capital_defense_contact`. Off by
+    /// default.
+    capital_defense_holds: bool,
+    /// `diplomatic-contender-kept`: a crushed rival near a Diplomatic Victory
+    /// is kept at war, and the leader among them opens a second front. See
+    /// `one_war::diplomatic_contender`. Off by default.
+    diplomatic_contender_kept: bool,
     /// `decisive-window`: research and civics aimed at the cheapest
     /// assault-plus-breaker package that beats the campaign target's
     /// defender and opens its wall tier, the civilization's unique unit
@@ -5286,6 +5301,10 @@ pub struct AdvancedAi {
     /// `campus-before-harbor-2`: version one, and the capital's first Campus
     /// before its next Settler. See `BasicAi::capital_campus_first`. Opt-in.
     campus_before_harbor_2: bool,
+    /// `counter-war-needs-parity`: an urgent counter on a non-religious clock
+    /// needs our equal power to declare or to take the front. See
+    /// `one_war::COUNTER_WAR_PARITY`. Off by default.
+    counter_war_needs_parity: bool,
     /// A standing district's first building before the delegated city
     /// governor opens another district. Opt-in gene `district-buildings-first`;
     /// see `BasicAi::district_buildings_first`.
@@ -6348,6 +6367,10 @@ pub struct AdvancedAi {
     /// 10.0 unimproved hills at t100.
     improvement_upgrades_count: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `last-capital-war-kept`: no peace with the holder of the last original
+    /// capital Domination needs. See `one_war::last_capital_war_kept`. Off
+    /// by default.
+    last_capital_war_kept: bool,
     /// `one-war-swaps-a-stalled-front`: a front with no city at a new low of
     /// health for `one_war::FRONT_STALL_TURNS` yields to another enemy that
     /// holds a capital Domination needs. See `one_war::stalled_front_swap`.
@@ -6728,6 +6751,11 @@ pub struct AdvancedAi {
     /// culture rival at `air_surge::raids::RAID_TOURISM_DENIAL` more. Off by
     /// default.
     raids_cut_tourism: bool,
+    /// `rout-spares-a-stronger-army`: neither the rout nor the turned-tide
+    /// peace is offered to a rival we outgun
+    /// `one_war::ONE_WAR_SECOND_FRONT_RATIO` times over. See `one_war_peace`.
+    /// Off by default.
+    rout_spares_a_stronger_army: bool,
     /// `runaway-expander-counter`: a rival outgrowing us reads as a
     /// Domination counter clock. See `advanced/runaway_expander.rs`. Off by
     /// default.
@@ -6736,6 +6764,11 @@ pub struct AdvancedAi {
     /// will revolt before any rescue can establish. See
     /// `DOOMED_CAPTURE_TURNS`. Off by default.
     raze_doomed_capture: bool,
+    /// `recovery-keeps-a-winning-war`: the Recovery plan's "this is not the
+    /// war the recovery plan is fighting" peace spares a war we are winning
+    /// when the plan fights no other. See `one_war::recovery_keeps_the_war`.
+    /// Off by default.
+    recovery_keeps_a_winning_war: bool,
     /// The policy deck keeps the maintenance relief the host held at the
     /// turn's start and the Amenity repair card while it is what keeps a city
     /// content. Opt-in gene `policy-deck-hysteresis`; see
@@ -6922,6 +6955,16 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `staging-column-passes-through`: a Stage march step that brings a
+    /// unit no nearer to the city is taken across the friend in the gap
+    /// instead (`Game::pass_through_destination`). The router lets only the
+    /// first step be a tile the unit may stop on, so one of ours in a defile
+    /// turned the route sideways and the next frame turned it back: live King
+    /// civvis-20261005T003728Z (game 89) held Mashhad in Stage from turn 183
+    /// to 225 with three guns twelve to fourteen tiles out stepping between
+    /// two tiles behind a ridge. See `siege_train::siege_stage_step`. Off by
+    /// default.
+    staging_column_passes_through: bool,
     /// `second-front-kept-when-winning`: a second war on a rival we outgun
     /// `one_war::ONE_WAR_CRUSHED_RATIO` times over, or are winning
     /// (`one_war_still_winning`) and hold a city of, is not offered "one war
@@ -6934,6 +6977,15 @@ pub struct AdvancedAi {
     /// front; the war is only kept, so the next front opens without a
     /// declaration. See `one_war::second_front_war_kept`. Off by default.
     second_front_kept_when_winning: bool,
+    /// `second-front-kept-when-winning-2`: and a war we are winning on a
+    /// rival that still holds its own original capital, the city Domination
+    /// needs from it. Live King civvis-20261004T232618Z (game 86) offered the
+    /// Netherlands "one war at a time" peace at turn 112 at 564 power against
+    /// 177 (3.2 times, no Dutch city held, so version one let it go) for an
+    /// urgent counter on India, and declared on the Netherlands again at 120
+    /// at 613 against 183. See `one_war::second_front_war_kept`. Off by
+    /// default.
+    second_front_kept_when_winning_2: bool,
     /// `siege-counts-posted-shooters`: the siege's wall forecast counts a
     /// shooter only where it can actually fire on the walls: from a firing
     /// post `siege_posts` can give it, with no hostile unit in its reach to
@@ -8813,6 +8865,7 @@ impl AdvancedAi {
 
             // ---- append: a-b ----------------------------------------
             breach_assault: false,
+            breach_assault_closes_in: false,
             breaker_supply_scales_2: false,
             breaker_supply_scales: false,
             breaker_before_the_war: false,
@@ -8861,6 +8914,8 @@ impl AdvancedAi {
             builder_before_the_army_3: false,
             activation_resume_waits: false,
             // ---- append: c-d ----------------------------------------
+            capital_defense_holds: false,
+            diplomatic_contender_kept: false,
             decisive_window: false,
             domination_strikes_when_staged: false,
             capture_waits_on_the_march: false,
@@ -8870,6 +8925,7 @@ impl AdvancedAi {
             denial_nearest_finish: false,
             campus_before_harbor: false,
             campus_before_harbor_2: false,
+            counter_war_needs_parity: false,
             district_buildings_first: false,
             district_buildings_first_2: false,
             culture_defense_theater: false,
@@ -9020,6 +9076,7 @@ impl AdvancedAi {
             industrial_hub: false,
             improvement_upgrades_count: false,
             // ---- append: l-o ----------------------------------------
+            last_capital_war_kept: false,
             one_war_swaps_a_stalled_front: false,
             monument_first: false,
             magnus_follows_settlers: false,
@@ -9060,8 +9117,10 @@ impl AdvancedAi {
             prophet_race_takes_a_district_slot: false,
             refused_combinations: BTreeSet::new(),
             raids_cut_tourism: false,
+            rout_spares_a_stronger_army: false,
             runaway_expander_counter: false,
             raze_doomed_capture: false,
+            recovery_keeps_a_winning_war: false,
             policy_deck_hysteresis: false,
             policy_deck_hysteresis_2: false,
             reinforce_before_stall: false,
@@ -9089,7 +9148,9 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            staging_column_passes_through: false,
             second_front_kept_when_winning: false,
+            second_front_kept_when_winning_2: false,
             siege_counts_posted_shooters: false,
             sanctuary_yields_a_held_queue: false,
             staging_gun_trusts_its_escort: false,
@@ -21288,6 +21349,8 @@ impl AdvancedAi {
                 && !g.players[*other].is_minor
                 && !peace_pending
                 && !religious_interception
+                // See `last_capital_war_kept`.
+                && !self.last_capital_war_kept(g, pid, *other)
                 && (outmatched
                     // The wing's front rides out a Recovery reading. An
                     // unfought surge stands itself down after two in a row
@@ -21311,7 +21374,10 @@ impl AdvancedAi {
                         && !self.war_holds_the_road(g, pid, *other)
                         // Nor with a beaten rival in the fog. See
                         // `unseen_prey`.
-                        && !self.unseen_prey(g, pid, *other))
+                        && !self.unseen_prey(g, pid, *other)
+                        // Nor a war we are winning when the Recovery plan
+                        // fights no other. See `recovery_keeps_the_war`.
+                        && !self.recovery_keeps_the_war(g, pid, *other, plan))
                     || (self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                         && !appointed_objective)

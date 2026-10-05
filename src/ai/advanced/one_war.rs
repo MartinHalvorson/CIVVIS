@@ -90,6 +90,11 @@ pub(crate) const ONE_WAR_CITY_BROKEN_FRACTION: f64 = 0.5;
 /// rival. The capture body may be a few tiles behind the guns.
 pub(crate) const ONE_WAR_FINISH_HP: i32 = 60;
 pub(crate) const ONE_WAR_FINISH_REACH: i32 = 4;
+/// `diplomatic-contender-kept`: the Diplomatic Victory points at which a
+/// crushed rival's war is kept. Twenty win; a Congress awards two or more.
+pub(crate) const DIPLOMATIC_CONTENDER_DVP: i64 = 15;
+/// The points at which the leader among them opens a second front.
+pub(crate) const DIPLOMATIC_CONTENDER_LEADER_DVP: i64 = 16;
 /// How close a land taker stands to the unwalled objective for
 /// `one_war_foothold_at_hand`: the reach `capture_opportunity_city` seizes
 /// a foothold from.
@@ -126,6 +131,15 @@ pub(crate) const ONE_WAR_SECOND_FRONT_HOLD_RATIO: f64 = 1.3;
 /// 316 against 619. By 109 the army stood at 225 with nothing taken. The
 /// only other urgent declaration in forty live games opened at 0.99.
 pub(crate) const COUNTER_WAR_POWER_FLOOR: f64 = 0.7;
+
+/// `counter-war-needs-parity`: the least power, against the rival's, at
+/// which a counter-war on any other clock is opened or takes the front.
+/// Seven urgent counter declarations below parity on 2026-10-04/05 (0.24 to
+/// 0.74) took 0.14 cities between them in the next forty turns, and all
+/// seven games were lost; G83 declared on Germany at 0.70 for a science
+/// counter and lost on Religion, G92 moved the army off a staged Qusqu onto
+/// Sydney at 0.91 and stood 12-18 tiles out for 25 turns.
+pub(crate) const COUNTER_WAR_PARITY: f64 = 1.0;
 
 /// Standard turns a front siege still in Stage counts as live for
 /// `front_siege_live`. A siege past Stage counts while it is read and its
@@ -406,7 +420,11 @@ impl AdvancedAi {
         // and sustained losing-tide safeguards on whichever front is chosen.
         if self.forced_target_player.is_none() {
             if let Some((rival, GrandStrategy::Conquest)) = self.actionable_victory_denial(g, pid) {
-                if enemies.contains(&rival) && self.urgent_victory_threat(g, rival) {
+                // `counter-war-needs-parity`: an urgent rival under the floor
+                // does not take the army off the front either.
+                let hopeless =
+                    self.counter_war_needs_parity && self.counter_war_hopeless(g, pid, rival);
+                if enemies.contains(&rival) && self.urgent_victory_threat(g, rival) && !hopeless {
                     // A congress jump can make a subthreshold Diplomatic
                     // score look urgent even after this rival lost its
                     // original capital. Follow the active war for that
@@ -786,6 +804,100 @@ impl AdvancedAi {
             && g.military_power(pid) >= ONE_WAR_WINNING_RATIO * g.military_power(other).max(1.0)
     }
 
+    /// `last-capital-war-kept`: the war on the one rival that still holds an
+    /// original capital a Domination seat needs, every other one already
+    /// ours, is offered no peace while we are at least its equal. That war
+    /// is the game. Live King civvis-20261005T003728Z (game 89) held Uruk
+    /// and Mashhad by turn 225, Tyre the last capital it lacked, and offered
+    /// Phoenicia "the war has stalled" peace at turns 222-223 at 1,534-1,636
+    /// power against 965-995; a peace taken there costs ten turns of treaty.
+    pub(crate) fn last_capital_war_kept(&self, g: &Game, pid: usize, other: usize) -> bool {
+        if !self.last_capital_war_kept
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !g.is_at_war(pid, other)
+            || g.military_power(pid) < g.military_power(other)
+        {
+            return false;
+        }
+        let mut holders = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.id != pid
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && !g.same_team(pid, player.id)
+            })
+            .filter_map(|player| {
+                g.cities
+                    .values()
+                    .find(|city| city.is_capital && city.original_owner == player.id)
+                    .map(|city| city.owner)
+            })
+            .filter(|owner| *owner != pid);
+        holders.next() == Some(other) && holders.all(|owner| owner == other)
+    }
+
+    /// `diplomatic-contender-kept`: a living major at
+    /// [`DIPLOMATIC_CONTENDER_DVP`] Diplomatic Victory points or more that a
+    /// Domination seat outguns [`ONE_WAR_CRUSHED_RATIO`] times over. Only its
+    /// elimination takes those points off the board: a captured capital or
+    /// town removes none. Such a war is kept as a second front
+    /// (`second_front_war_kept`). Live King civvis-20261005T003728Z (game 89)
+    /// stood at peace with Sumeria from its third capture to the end, at 17
+    /// points against Sumeria's 3 military and four cities, while Persia, the
+    /// front, won the Diplomatic Victory at turn 242.
+    pub(crate) fn diplomatic_contender(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.diplomatic_contender_kept
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.players.get(other).is_some_and(|player| {
+                player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && player.dvp >= DIPLOMATIC_CONTENDER_DVP
+            })
+            && self.one_war_front_crushed(g, pid, other)
+    }
+
+    /// The Diplomatic Victory leader, when it is a `diplomatic_contender` at
+    /// [`DIPLOMATIC_CONTENDER_LEADER_DVP`] or more: one Congress from the
+    /// win. `one_war_second_front` opens its war at once.
+    fn diplomatic_contender_leader(&self, g: &Game, pid: usize) -> Option<usize> {
+        g.players
+            .iter()
+            .filter(|player| {
+                player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+            })
+            .max_by_key(|player| (player.dvp, std::cmp::Reverse(player.id)))
+            .filter(|leader| leader.dvp >= DIPLOMATIC_CONTENDER_LEADER_DVP)
+            .map(|leader| leader.id)
+            .filter(|leader| self.diplomatic_contender(g, pid, *leader))
+    }
+
+    /// `recovery-keeps-a-winning-war`: the Recovery plan offers "this is not
+    /// the war the recovery plan is fighting" peace to every war but its
+    /// target's. When that target is no war of ours, there is no other war
+    /// it fights, and a war we outgun [`ONE_WAR_SECOND_FRONT_RATIO`] times
+    /// over is kept. Forty such offers on 2026-10-04/05, sixteen to the only
+    /// war we had, four of them at 1.5 times its power or more: live King
+    /// civvis-20261005T014503Z (game 92) offered the Inca that peace at turn
+    /// 85 at 321 power against 202 with Qusqu, their capital, the campaign's
+    /// objective, and they took it at 86.
+    pub(crate) fn recovery_keeps_the_war(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+        plan: &super::StrategicPlan,
+    ) -> bool {
+        self.recovery_keeps_a_winning_war
+            && plan
+                .target_player
+                .is_none_or(|target| target == other || !g.is_at_war(pid, target))
+            && g.military_power(pid)
+                >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(other).max(1.0)
+    }
+
     /// A front we outgun [`ONE_WAR_CRUSHED_RATIO`] times over. Peace there
     /// hands a beaten rival the turns to rebuild: on King
     /// `civvis-20260929T020236Z` the seat offered Norway peace at 812
@@ -1021,7 +1133,15 @@ impl AdvancedAi {
                 .religion
                 .as_deref()
                 .is_some_and(|faith| g.civ_follows_religion(pid, faith));
-        religious && g.military_power(pid) < COUNTER_WAR_POWER_FLOOR * g.military_power(rival)
+        // `counter-war-needs-parity`: any other clock needs our equal power.
+        let floor = if religious {
+            COUNTER_WAR_POWER_FLOOR
+        } else if self.counter_war_needs_parity {
+            COUNTER_WAR_PARITY
+        } else {
+            return false;
+        };
+        g.military_power(pid) < floor * g.military_power(rival)
     }
 
     /// Whether a siege on one of the front's cities is live: not Hold, read
@@ -1138,7 +1258,15 @@ impl AdvancedAi {
                         || (self.one_war_still_winning(g, pid, other)
                             && g.cities
                                 .values()
-                                .any(|city| city.owner == pid && city.original_owner == other)))))
+                                .any(|city| city.owner == pid && city.original_owner == other))))
+                // See `second_front_kept_when_winning_2`.
+                || (self.second_front_kept_when_winning_2
+                    && self.one_war_still_winning(g, pid, other)
+                    && g.cities.values().any(|city| {
+                        city.is_capital && city.original_owner == other && city.owner == other
+                    }))
+                // See `diplomatic_contender`.
+                || self.diplomatic_contender(g, pid, other))
     }
 
     /// Whether a Domination seat holds `rival`'s original capital while the
@@ -1263,6 +1391,19 @@ impl AdvancedAi {
         if self.one_war_still_winning(g, pid, other) {
             return None;
         }
+        // `rout-spares-a-stronger-army`: a bad window at this margin is a
+        // tactical loss, not a lost war. Live King civvis-20261005T003728Z
+        // (game 89) offered Persia "the last window was a rout" peace at turn
+        // 90 at 362 power against 229 and was denouncing Persia for the next
+        // war at 92; T131543Z offered Russia the same at 615 against 410 and
+        // declared on it again at 126, T232618Z India at 605 against 329 and
+        // again at 159. If the losses go on, the margin falls and peace opens.
+        if self.rout_spares_a_stronger_army
+            && g.military_power(pid)
+                >= ONE_WAR_SECOND_FRONT_RATIO * g.military_power(other).max(1.0)
+        {
+            return None;
+        }
         if front.window_net() <= ONE_WAR_ROUT_NET {
             return Some(OneWarPeace::Rout);
         }
@@ -1312,6 +1453,15 @@ impl AdvancedAi {
         }
         let front_state = self.one_war.as_ref()?;
         let front = front_state.target;
+        // See `diplomatic_contender`: the Diplomatic Victory leader we crush
+        // opens the second front at once, the front's refusal or not.
+        if let Some(leader) = self.diplomatic_contender_leader(g, pid).filter(|leader| {
+            *leader != front
+                && !g.is_at_war(pid, *leader)
+                && self.campaign_target_legal(g, pid, *leader)
+        }) {
+            return Some(leader);
+        }
         // An offered peace is not a refused one: the front gets a few turns
         // to accept before a second war opens beside it.
         let refused = front_state.closure_wanted_since.is_some_and(|since| {
