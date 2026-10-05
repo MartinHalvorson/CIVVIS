@@ -165,7 +165,12 @@ end
 local function noteEventLock(op, id)
 	local ledger = eventLedger();
 	local key = tonumber(id);
-	if ledger == nil or key == nil then return; end
+	if key == nil then return; end
+	if ledger == nil then
+		-- No shared table in this context: still say what happened.
+		report("event_lock", string.format(',"op":"%s","id":%d,"held":-1', op, key));
+		return;
+	end
 	if op == "ref" then
 		if ledger.held[key] == nil then
 			if ledger.count >= EVENT_LOCK_CAP then
@@ -188,28 +193,75 @@ end
 local function packResults(...)
 	return { n = select("#", ...), ... };
 end
-local function installEventLedger(ui)
-	if type(ui) ~= "table" then return false; end
-	local installed = false;
-	pcall(function() installed = rawget(ui, "CivvisEventLedger") == true; end);
-	if installed then return false; end
-	local reference, release = ui.ReferenceCurrentEvent, ui.ReleaseEventID;
-	if type(reference) ~= "function" or type(release) ~= "function" then return false; end
-	return pcall(function()
-		ui.ReferenceCurrentEvent = function(...)
-			local results = packResults(reference(...));
-			pcall(noteEventLock, "ref", results[1]);
-			return unpack(results, 1, results.n);
-		end;
-		ui.ReleaseEventID = function(id, ...)
-			local results = packResults(release(id, ...));
-			pcall(noteEventLock, "release", id);
-			return unpack(results, 1, results.n);
-		end;
-		ui.CivvisEventLedger = true;
-	end) == true;
+-- Install the wrap. In place when `UI` is a plain table that takes the
+-- assignment; otherwise this context's global `UI` is shadowed by a proxy
+-- that holds only the two wrapped lock calls and hands back the REAL object
+-- for every other key (writes go through to the real UI too).
+-- ⚠ G90 (pin bbb5732): 19 DiplomacyActionView closes and no `event_lock`
+-- row, so the in-place wrap never took on this build; `UI` is not a plain
+-- table there. Each context reports what it did (`event_ledger`), and if
+-- anything fails the global `UI` is left exactly as it was.
+local function installEventLedger()
+	local ui = UI;
+	local kind = type(ui);
+	if kind ~= "table" and kind ~= "userdata" then return false, "none", kind, "no_ui"; end
+	local marked = false;
+	pcall(function() marked = ui.CivvisEventLedger == true; end);
+	if marked then return false, "already", kind, nil; end
+	local reference, release;
+	pcall(function() reference, release = ui.ReferenceCurrentEvent, ui.ReleaseEventID; end);
+	if type(reference) ~= "function" or type(release) ~= "function" then
+		return false, "none", kind, "no_lock_functions";
+	end
+	local function wrappedReference(...)
+		local results = packResults(reference(...));
+		pcall(noteEventLock, "ref", results[1]);
+		return unpack(results, 1, results.n);
+	end
+	local function wrappedRelease(id, ...)
+		local results = packResults(release(id, ...));
+		pcall(noteEventLock, "release", id);
+		return unpack(results, 1, results.n);
+	end
+	if kind == "table" then
+		local wrote = pcall(function()
+			ui.ReferenceCurrentEvent = wrappedReference;
+			ui.ReleaseEventID = wrappedRelease;
+			ui.CivvisEventLedger = true;
+		end);
+		local took = false;
+		pcall(function()
+			took = rawequal(ui.ReferenceCurrentEvent, wrappedReference)
+				and rawequal(ui.ReleaseEventID, wrappedRelease);
+		end);
+		if wrote and took then return true, "direct", kind, nil; end
+		-- Undo a partial write before shadowing.
+		pcall(function() ui.ReferenceCurrentEvent = reference; ui.ReleaseEventID = release; end);
+	end
+	local proxy = nil;
+	pcall(function()
+		proxy = setmetatable({
+			ReferenceCurrentEvent = wrappedReference,
+			ReleaseEventID = wrappedRelease,
+			CivvisEventLedger = true,
+		}, {
+			__index = function(_, key) return ui[key]; end,
+			__newindex = function(_, key, value) ui[key] = value; end,
+		});
+	end);
+	if proxy == nil then return false, "none", kind, "proxy_not_built"; end
+	local swapped = pcall(function() UI = proxy; end);
+	if swapped and rawequal(UI, proxy) then return true, "proxy", kind, nil; end
+	pcall(function() UI = ui; end);
+	return false, "none", kind, "global_not_replaced";
 end
-pcall(installEventLedger, UI);
+do
+	local ran, installed, how, uiType, why = pcall(installEventLedger);
+	if not ran then installed, how, why = false, "none", "threw"; end
+	report("event_ledger", string.format(',"installed":%s,"how":"%s","ui_type":"%s","exposed":"%s"%s',
+		tostring(installed == true), tostring(how), tostring(uiType), type(ExposedMembers),
+		why and string.format(',"why":"%s"', tostring(why)) or ""));
+end
 
 -- One screen is already replaced by a DLC, on a criterion true of every run
 -- here: GranColombia_Maya swaps NaturalDisasterPopup for fourteen lines that
