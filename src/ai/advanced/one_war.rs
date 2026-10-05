@@ -786,6 +786,40 @@ impl AdvancedAi {
             && g.military_power(pid) >= ONE_WAR_WINNING_RATIO * g.military_power(other).max(1.0)
     }
 
+    /// `last-capital-war-kept`: the war on the one rival that still holds an
+    /// original capital a Domination seat needs, every other one already
+    /// ours, is offered no peace while we are at least its equal. That war
+    /// is the game. Live King civvis-20261005T003728Z (game 89) held Uruk
+    /// and Mashhad by turn 225, Tyre the last capital it lacked, and offered
+    /// Phoenicia "the war has stalled" peace at turns 222-223 at 1,534-1,636
+    /// power against 965-995; a peace taken there costs ten turns of treaty.
+    pub(crate) fn last_capital_war_kept(&self, g: &Game, pid: usize, other: usize) -> bool {
+        if !self.last_capital_war_kept
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !g.is_at_war(pid, other)
+            || g.military_power(pid) < g.military_power(other)
+        {
+            return false;
+        }
+        let mut holders = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.id != pid
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && !g.same_team(pid, player.id)
+            })
+            .filter_map(|player| {
+                g.cities
+                    .values()
+                    .find(|city| city.is_capital && city.original_owner == player.id)
+                    .map(|city| city.owner)
+            })
+            .filter(|owner| *owner != pid);
+        holders.next() == Some(other) && holders.all(|owner| owner == other)
+    }
+
     /// A front we outgun [`ONE_WAR_CRUSHED_RATIO`] times over. Peace there
     /// hands a beaten rival the turns to rebuild: on King
     /// `civvis-20260929T020236Z` the seat offered Norway peace at 812

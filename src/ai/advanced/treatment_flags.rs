@@ -5344,6 +5344,17 @@ impl AdvancedAi {
         self.culture_counter_declares = false;
     }
 
+    /// Opt-in gene `last-capital-war-kept`; see
+    /// [`Self::last_capital_war_kept`].
+    pub fn enable_last_capital_war_kept(&mut self) {
+        self.last_capital_war_kept = true;
+    }
+
+    /// The twin of `enable_last_capital_war_kept`.
+    pub fn disable_last_capital_war_kept(&mut self) {
+        self.last_capital_war_kept = false;
+    }
+
     /// Opt-in gene `formations-heed-refusals`; see
     /// [`Self::formations_heed_refusals`].
     pub fn enable_formations_heed_refusals(&mut self) {

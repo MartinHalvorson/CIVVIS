@@ -2649,6 +2649,10 @@ pub const GENES: &[Gene] = &[
     // Culture win at 181, at 2 to 4 times its power. See
     // `one_war::culture_counter_due`.
     Gene { tag: "culture-counter-declares", field: "culture_counter_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_counter_declares, disable: AdvancedAi::disable_culture_counter_declares },
+    // Live King 003728Z offered Phoenicia, holder of Tyre, the last capital
+    // it lacked, "the war has stalled" peace at 1.6 times its power. See
+    // `one_war::last_capital_war_kept`.
+    Gene { tag: "last-capital-war-kept", field: "last_capital_war_kept", kind: Kind::OptIn, enable: AdvancedAi::enable_last_capital_war_kept, disable: AdvancedAi::disable_last_capital_war_kept },
     // Live King 100903Z: two Rocket Artillery stood in Loja through the war
     // on India, their Corps refused and re-planned every turn. Live-only: the
     // refused set is empty off the bridge. See `advanced/formation_refusals.rs`.

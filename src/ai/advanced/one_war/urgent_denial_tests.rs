@@ -932,3 +932,34 @@ fn a_rout_spares_a_stronger_army_under_the_gene() {
     }
     assert_eq!(ai.one_war_peace(&g, 0, 1), rout, "under the margin");
 }
+
+/// See `last_capital_war_kept`: under the gene, the war on the one rival that
+/// still holds an original capital, every other one ours, is kept while we
+/// are its equal; another capital still out, or a stronger rival, frees it.
+#[test]
+fn the_war_for_the_last_capital_is_kept_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    let capital_of = |g: &Game, owner: usize| {
+        g.cities
+            .values()
+            .find(|city| city.is_capital && city.original_owner == owner)
+            .map(|city| city.id)
+            .unwrap()
+    };
+    let first = capital_of(&g, 1);
+    g.cities.get_mut(&first).unwrap().owner = 0;
+    assert!(!ai.last_capital_war_kept(&g, 0, 2), "off");
+    ai.enable_last_capital_war_kept();
+    assert!(
+        !ai.last_capital_war_kept(&g, 0, 2),
+        "a third capital is still out"
+    );
+    let third = capital_of(&g, 3);
+    g.cities.get_mut(&third).unwrap().owner = 0;
+    assert!(ai.last_capital_war_kept(&g, 0, 2), "the last capital");
+    assert!(!ai.last_capital_war_kept(&g, 0, 1), "not the holder");
+    while g.military_power(2) <= g.military_power(0) {
+        g.spawn_test_unit("modern_armor", 2, (30, 2));
+    }
+    assert!(!ai.last_capital_war_kept(&g, 0, 2), "a stronger holder");
+}

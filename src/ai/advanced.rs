@@ -6349,6 +6349,10 @@ pub struct AdvancedAi {
     /// 10.0 unimproved hills at t100.
     improvement_upgrades_count: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `last-capital-war-kept`: no peace with the holder of the last original
+    /// capital Domination needs. See `one_war::last_capital_war_kept`. Off
+    /// by default.
+    last_capital_war_kept: bool,
     /// `one-war-swaps-a-stalled-front`: a front with no city at a new low of
     /// health for `one_war::FRONT_STALL_TURNS` yields to another enemy that
     /// holds a capital Domination needs. See `one_war::stalled_front_swap`.
@@ -9035,6 +9039,7 @@ impl AdvancedAi {
             industrial_hub: false,
             improvement_upgrades_count: false,
             // ---- append: l-o ----------------------------------------
+            last_capital_war_kept: false,
             one_war_swaps_a_stalled_front: false,
             monument_first: false,
             magnus_follows_settlers: false,
@@ -21280,6 +21285,8 @@ impl AdvancedAi {
                 && !g.players[*other].is_minor
                 && !peace_pending
                 && !religious_interception
+                // See `last_capital_war_kept`.
+                && !self.last_capital_war_kept(g, pid, *other)
                 && (outmatched
                     // The wing's front rides out a Recovery reading. An
                     // unfought surge stands itself down after two in a row
