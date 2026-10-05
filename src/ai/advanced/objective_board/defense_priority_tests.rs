@@ -238,6 +238,61 @@ mod capital_defense_holds {
     }
 
     #[test]
+    fn on_a_walled_capital_keeps_its_row_through_the_walls_phase() {
+        // Whole hit points, Ancient Walls at 40 of 100, a hostile beside it.
+        let (mut g, capital, _) = bogota_at_turn_40();
+        {
+            let city = g.cities.get_mut(&capital).unwrap();
+            city.hp = 200;
+            city.buildings.push(crate::name!("walls"));
+            city.wall_hp = 40;
+        }
+        assert_eq!(g.city_max_wall_hp(&g.cities[&capital]), 100);
+        assert!(AdvancedAi::city_pressure(&g, 0, capital) < BASTION_PRESSURE);
+        let mut off = on();
+        let rows = board(&g, &mut off, None);
+        assert!(!rows.iter().any(|row| row.key == ObjectiveKey::Defend(capital)));
+        let mut ai = on();
+        ai.enable_capital_defense_holds();
+        let rows = board(&g, &mut ai, None);
+        let row = rows
+            .iter()
+            .find(|row| row.key == ObjectiveKey::Defend(capital))
+            .expect("battered walls count as damage");
+        assert!(row.urgent, "a capital under bombardment is urgent: {row:?}");
+    }
+
+    #[test]
+    fn on_a_capital_with_no_hostile_beside_it_is_not_made_urgent() {
+        // Half health and pressed from five tiles out (seen by our unit seven
+        // out), so the shipped gate raises the row; that unit is inside the
+        // deadline, so the shipped relief rule leaves the row calm.
+        let mut g = flat_board(374503, &[at(6, 8), at(30, 8)], false);
+        let capital = g.city_at(at(6, 8)).unwrap();
+        g.cities.get_mut(&capital).unwrap().pop = 6;
+        war(&mut g, 0, 1);
+        for pos in [at(11, 8), at(11, 7), at(11, 9)] {
+            g.spawn_test_unit("warrior", 1, pos);
+        }
+        g.spawn_test_unit("warrior", 0, at(13, 8));
+        g.cities.get_mut(&capital).unwrap().hp = 100;
+        assert!(AdvancedAi::city_pressure(&g, 0, capital) >= BASTION_PRESSURE);
+        let urgent = |gene: bool| {
+            let mut ai = on();
+            if gene {
+                ai.enable_capital_defense_holds();
+            }
+            let rows = board(&g, &mut ai, None);
+            rows.iter()
+                .find(|row| row.key == ObjectiveKey::Defend(capital))
+                .expect("the shipped gate raises the row")
+                .urgent
+        };
+        assert!(!urgent(false), "the setup is calm off");
+        assert!(!urgent(true), "no hostile within two: the gene adds no urgency");
+    }
+
+    #[test]
     fn on_a_healthy_capital_or_a_distant_hostile_reads_as_off() {
         // Full health, hostile beside it: no row either way.
         let (mut g, capital, _) = bogota_at_turn_40();

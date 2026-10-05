@@ -1038,22 +1038,25 @@ impl AdvancedAi {
             let danger = self.city_pressure_with_belief(g, pid, *cid, visible);
             // `capital-defense-holds`: a damaged city with a hostile beside it
             // keeps its row through the pressure gate, and a capital we hold
-            // under attack is an urgent Defend. Both read false when off.
+            // with a hostile beside it, damaged or pressed, is an urgent
+            // Defend. Damage counts the walls: a walled city keeps its hit
+            // points whole until they fall. All three read false when off.
             let contact =
                 self.capital_defense_holds && self.capital_defense_contact(g, pid, *pos, visible);
-            let damaged = city.hp < super::CITY_MAX_HP;
+            let damaged = self.capital_defense_holds
+                && (city.hp < super::CITY_MAX_HP || city.wall_hp < g.city_max_wall_hp(city));
             if danger < BASTION_PRESSURE && !(contact && damaged) {
                 continue;
             }
             let capital_under_attack =
-                self.capital_defense_holds && city.is_capital && (contact || damaged);
+                city.is_capital && contact && (damaged || danger >= BASTION_PRESSURE);
             defended.insert(*cid);
             let hostile = self.hostile_strength_near(g, pid, *pos, THREAT_RELIEF_RADIUS, visible);
             // `capital-defense-holds`: a damaged city answers for only the
             // share of its strength its hit points still hold. Bogota at 20
             // of 200 subtracted its full strength and asked for 24, two
             // bodies, where at turns 38-39 it had asked for 50-56.
-            let own_strength = if self.capital_defense_holds && damaged {
+            let own_strength = if damaged {
                 g.city_strength(*cid) * f64::from(city.hp.max(0)) / f64::from(super::CITY_MAX_HP)
             } else {
                 g.city_strength(*cid)
