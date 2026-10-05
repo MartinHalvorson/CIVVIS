@@ -1570,3 +1570,35 @@ fn a_one_turn_collapse_opens_no_prey_front_under_the_gene() {
     ai.disable_prey_reads_a_steady_power();
     assert_eq!(ai.steady_rival_power(&g, 3), g.military_power(3), "off");
 }
+
+/// See `second_front_recently_named`: a faith counter named the second front
+/// and was declared on; when our converted city turns back the next turn,
+/// the gene keeps the war for its memory, and only then offers the one-war
+/// peace. The gene off offers it at once.
+#[test]
+fn a_named_second_front_keeps_its_war_under_the_gene() {
+    let run = |gene: bool| -> (Option<OneWarPeace>, Option<OneWarPeace>) {
+        let (mut g, mut ai) = two_fronts();
+        if gene {
+            ai.enable_second_front_keeps_its_war();
+        }
+        g.at_war.remove(&(0, 2));
+        convert(&mut g, &[0, 2]);
+        ai.one_war_observe(&g, 0);
+        assert_eq!(ai.one_war_second_front(&g, 0), Some(2));
+        // The declaration lands; our cities turn back from its faith.
+        g.at_war.insert((0, 2));
+        convert(&mut g, &[2]);
+        g.turn += 1;
+        ai.one_war_observe(&g, 0);
+        assert_eq!(ai.one_war_front(), Some(1));
+        let soon = ai.one_war_peace(&g, 0, 2);
+        g.turn += g.standard_duration(SECOND_FRONT_MEMORY_TURNS) + 1;
+        ai.one_war_observe(&g, 0);
+        (soon, ai.one_war_peace(&g, 0, 2))
+    };
+    assert_eq!(run(false).0, Some(OneWarPeace::SecondFront), "off");
+    let (soon, later) = run(true);
+    assert_eq!(soon, None, "the named second front keeps its war");
+    assert_eq!(later, Some(OneWarPeace::SecondFront), "past the memory");
+}

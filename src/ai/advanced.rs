@@ -3353,6 +3353,9 @@ pub struct AdvancedAi {
     /// `prey-reads-a-steady-power`: each rival's recent military readings.
     /// See `one_war::steady_rival_power`.
     rival_power_seen: BTreeMap<usize, Vec<(u32, f64)>>,
+    /// `second-front-keeps-its-war`: the last turn the plan named each rival
+    /// its second front. See `one_war::second_front_recently_named`.
+    second_front_named: BTreeMap<usize, u32>,
 
     /// Whether the empire will open an **ancient rush**: pick the nearest
     /// weak neighbour before the walls go up, march a small stack to their
@@ -7178,6 +7181,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `second-front-keeps-its-war`: a second front the plan named keeps its
+    /// war against the one-war peace for ten standard turns. See
+    /// `one_war::second_front_recently_named`.
+    second_front_keeps_its_war: bool,
     /// `stage-march-keeps-to-land`: a Stage or approach march of a land unit
     /// standing on land takes the dry road however long it runs, or holds,
     /// rather than stepping into the water, whenever `come-ashore` is on and
@@ -9039,6 +9046,7 @@ impl AdvancedAi {
             culture_curves: BTreeMap::new(),
             engine_culture_finish: BTreeMap::new(),
             rival_power_seen: BTreeMap::new(),
+            second_front_named: BTreeMap::new(),
             early_rush: false,
             timed_war: false,
             selective_timed_war: false,
@@ -9459,6 +9467,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            second_front_keeps_its_war: false,
             stage_march_keeps_to_land: false,
             stalled_peace_spares_the_counter: false,
             staging_gun_remembers_hostiles: false,

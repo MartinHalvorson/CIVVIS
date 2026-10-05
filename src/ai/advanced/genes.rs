@@ -2872,6 +2872,10 @@ pub const GENES: &[Gene] = &[
     // Live King civvis-20261005T103704Z (game 121) read America at 4 for
     // one turn and declared on it. See `one_war::steady_rival_power`.
     Gene { tag: "prey-reads-a-steady-power", field: "prey_reads_a_steady_power", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_reads_a_steady_power, disable: AdvancedAi::disable_prey_reads_a_steady_power },
+    // Live King civvis-20261005T111622Z (game 124) declared on Norway at
+    // turn 105 and offered it one-war peace the same turn. See
+    // `one_war::second_front_recently_named`.
+    Gene { tag: "second-front-keeps-its-war", field: "second_front_keeps_its_war", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_keeps_its_war, disable: AdvancedAi::disable_second_front_keeps_its_war },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

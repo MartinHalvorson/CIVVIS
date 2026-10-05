@@ -122,6 +122,9 @@ pub(crate) const CAPITAL_PREY_MAX_WALLS: i32 = 300;
 /// `prey-reads-a-steady-power`: the turns of rival military readings the prey
 /// gates take the largest of.
 pub(crate) const PREY_POWER_MEMORY_TURNS: u32 = 3;
+/// `second-front-keeps-its-war`: the standard turns a second front the plan
+/// named keeps its war against the one-war peace.
+pub(crate) const SECOND_FRONT_MEMORY_TURNS: u32 = 10;
 
 /// `liberation-funds-the-congress`: the Diplomatic Victory points at which a
 /// rival makes a captured city-state city worth its liberation Favor; the
@@ -702,6 +705,29 @@ impl AdvancedAi {
             }
         }
         self.one_war_second = self.one_war_second_front(g, pid);
+        // See `second_front_recently_named`.
+        if let Some(rival) = self.one_war_second {
+            self.second_front_named.insert(rival, g.turn);
+        }
+        let memory = g.standard_duration(SECOND_FRONT_MEMORY_TURNS);
+        self.second_front_named
+            .retain(|_, turn| g.turn.saturating_sub(*turn) <= memory);
+    }
+
+    /// `second-front-keeps-its-war`: whether the plan named `rival` its second
+    /// front within the last [`SECOND_FRONT_MEMORY_TURNS`] standard turns. A
+    /// rival stops being named the moment the war on it opens (the second
+    /// front is chosen among rivals at peace), so after the declaration only
+    /// the counter's own readings keep the war, and they flicker: live King
+    /// civvis-20261005T111622Z (game 124) declared on Norway at turn 105 when
+    /// 6 of our 11 cities followed its Orthodoxy, and offered it "one war at a
+    /// time" peace from 105 at 5 of 11. Seven of the 142 declarations of
+    /// October 4-5 drew that peace within three turns.
+    pub(crate) fn second_front_recently_named(&self, g: &Game, rival: usize) -> bool {
+        self.second_front_keeps_its_war
+            && self.second_front_named.get(&rival).is_some_and(|turn| {
+                g.turn.saturating_sub(*turn) <= g.standard_duration(SECOND_FRONT_MEMORY_TURNS)
+            })
     }
 
     /// The power ratio over `rival` a second front needs: the hold ratio for
@@ -1475,7 +1501,9 @@ impl AdvancedAi {
                 // See `diplomatic_contender`.
                 || self.diplomatic_contender(g, pid, other)
                 // See `capital_prey_kept`.
-                || self.capital_prey_kept(g, pid, other))
+                || self.capital_prey_kept(g, pid, other)
+                // See `second_front_recently_named`.
+                || self.second_front_recently_named(g, other))
     }
 
     /// `stalled-peace-spares-the-counter`: whether the fatigue clause's "the

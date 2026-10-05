@@ -5935,6 +5935,17 @@ impl AdvancedAi {
         self.prey_reads_a_steady_power = false;
     }
 
+    /// Opt-in gene `second-front-keeps-its-war`; see
+    /// [`Self::second_front_keeps_its_war`].
+    pub fn enable_second_front_keeps_its_war(&mut self) {
+        self.second_front_keeps_its_war = true;
+    }
+
+    /// The twin of `enable_second_front_keeps_its_war`.
+    pub fn disable_second_front_keeps_its_war(&mut self) {
+        self.second_front_keeps_its_war = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
