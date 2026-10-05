@@ -5690,6 +5690,19 @@ impl AdvancedAi {
         self.culture_finish_at_the_observed_bar = false;
     }
 
+    /// Opt-in gene `own-column-is-not-a-refusal`; see
+    /// [`Self::own_column_is_not_a_refusal`].
+    pub fn enable_own_column_is_not_a_refusal(&mut self) {
+        self.own_column_is_not_a_refusal = true;
+        self.base.own_column_is_not_a_refusal = true;
+    }
+
+    /// The twin of `enable_own_column_is_not_a_refusal`.
+    pub fn disable_own_column_is_not_a_refusal(&mut self) {
+        self.own_column_is_not_a_refusal = false;
+        self.base.own_column_is_not_a_refusal = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

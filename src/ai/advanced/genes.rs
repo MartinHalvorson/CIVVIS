@@ -2771,6 +2771,13 @@ pub const GENES: &[Gene] = &[
     // exported bar (median 94%). See
     // `denial_nearest_finish::projected_culture_finish_at`.
     Gene { tag: "culture-finish-at-the-observed-bar", field: "culture_finish_at_the_observed_bar", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_finish_at_the_observed_bar, disable: AdvancedAi::disable_culture_finish_at_the_observed_bar },
+    // G104 (civvis-20261005T060002Z) Siege of Sparta: the air-assault barrier
+    // withheld frame 0's ground orders, the frame-0 plan's watch and path
+    // trail survived, and the next turn barred a step the host was never sent
+    // (Rocket Artillery idle t216-223; another "going nowhere" t236). A step
+    // our own column held at frame start is congestion, not a refusal either.
+    // See `advanced/own_column.rs`.
+    Gene { tag: "own-column-is-not-a-refusal", field: "own_column_is_not_a_refusal", kind: Kind::OptIn, enable: AdvancedAi::enable_own_column_is_not_a_refusal, disable: AdvancedAi::disable_own_column_is_not_a_refusal },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

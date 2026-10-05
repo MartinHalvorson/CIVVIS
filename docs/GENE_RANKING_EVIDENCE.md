@@ -274,6 +274,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `one-sanctuary` | off (unmeasured) | Opt-in gene `one-sanctuary`; see `Self::one_sanctuary`. | 1 \| 1 |
 | `one-war-swaps-a-stalled-front` | off (unmeasured) | Opt-in gene `one-war-swaps-a-stalled-front`; see `Self::one_war_swaps_a_stalled_front`. | 1 \| 1 |
 | `opening-force-keeps-its-members` | off (unmeasured) | Opt-in gene `opening-force-keeps-its-members`; see `Self::opening_force_keeps_its_members`. | 1 \| 1 |
+| `own-column-is-not-a-refusal` | off (unmeasured) | Opt-in gene `own-column-is-not-a-refusal`; see `Self::own_column_is_not_a_refusal`. | 1 \| 1 |
 | `peace-waits-for-the-foothold` | off (unmeasured) | Opt-in gene `peace-waits-for-the-foothold`; see `Self::peace_waits_for_the_foothold`. | 1 \| 1 |
 | `peace-waits-for-unseen-prey` | off (unmeasured) | Opt-in gene `peace-waits-for-unseen-prey`; see `Self::peace_waits_for_unseen_prey`. | 1 \| 1 |
 | `policy-deck-hysteresis` | off (unmeasured) | The policy deck keeps the maintenance relief the host held at the turn's start and the Amenity repair card while it is what keeps a city content. | — \| 2 |

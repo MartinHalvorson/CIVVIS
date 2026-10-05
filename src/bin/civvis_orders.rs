@@ -1778,6 +1778,162 @@ fn wounded_local_routes(state: &civvis::mirror::StateSnapshot) -> std::collectio
 #[path = "civvis_orders/city_route_tests.rs"]
 mod city_route_tests;
 
+/// `own-column-is-not-a-refusal`: an order that moves its unit off its tile.
+fn moves_its_unit(order: &Order) -> bool {
+    order.kind == "unit" && matches!(order.verb.as_deref(), Some("MOVE_TO" | "CAPTURE" | "SWAP"))
+}
+
+/// `own-column-is-not-a-refusal`: which of the units this frame's plan moved
+/// had a move order cross to Firaxis (`sent`), and which were withheld by an
+/// outbound filter (`unsent`). Mirror ids, the planner's own.
+fn split_planned_movers<'a>(
+    orders: &[Order],
+    planned: impl Iterator<Item = (usize, &'a Action)>,
+    civ6_of: &std::collections::BTreeMap<u32, i64>,
+) -> (std::collections::BTreeSet<u32>, std::collections::BTreeSet<u32>) {
+    let moved: std::collections::BTreeSet<i64> = orders
+        .iter()
+        .filter(|order| moves_its_unit(order))
+        .filter_map(|order| order.subject)
+        .collect();
+    planned
+        .filter(|(seat, _)| *seat == 0)
+        .filter_map(|(_, action)| match action {
+            Action::Move { unit, .. } | Action::MoveTo { unit, .. } | Action::Swap { unit, .. } => {
+                Some(*unit)
+            }
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<u32>>()
+        .into_iter()
+        .partition(|uid| civ6_of.get(uid).is_some_and(|civ6| moved.contains(civ6)))
+}
+
+/// `own-column-is-not-a-refusal`: each unit's opening walk as the planner
+/// stepped it, before `coalesce_unit_paths_except` folds it into its last
+/// hex -- every `MOVE_TO` from the unit's first order until anything else.
+fn open_walk_steps(orders: &[Order]) -> std::collections::BTreeMap<i64, Vec<(i32, i32)>> {
+    let mut walks: std::collections::BTreeMap<i64, (bool, Vec<(i32, i32)>)> =
+        std::collections::BTreeMap::new();
+    for order in orders.iter().filter(|order| order.kind == "unit") {
+        let Some(subject) = order.subject else {
+            continue;
+        };
+        let step = (order.verb.as_deref() == Some("MOVE_TO")).then_some(order.pos).flatten();
+        let (open, steps) = walks.entry(subject).or_insert((true, Vec::new()));
+        match step {
+            Some(pos) if *open => steps.push(pos),
+            _ => *open = false,
+        }
+    }
+    walks
+        .into_iter()
+        .filter(|(_, (_, steps))| steps.len() >= 2)
+        .map(|(subject, (_, steps))| (subject, steps))
+        .collect()
+}
+
+/// `own-column-is-not-a-refusal`: a folded walk that ends on a hex another of
+/// our units holds is cut back to the last hex of the same walk that is free.
+///
+/// Firaxis checks stacking where a move ENDS. The planning board walked the
+/// column mate off that hex first, but the host may take the two orders the
+/// other way round, and then the whole walk is refused (`move_no_path`) and
+/// the unit loses the turn -- a column marching onto a staging ring stalls
+/// on its own back. `held(subject, hex, index)` answers whether the hex holds,
+/// at the frame's start, another of our units on the subject's stacking layer
+/// that does not move off before the order at `index`. Returns how many walks
+/// were cut back.
+fn retarget_friendly_held_walks(
+    orders: &mut [Order],
+    walk_steps: &std::collections::BTreeMap<i64, Vec<(i32, i32)>>,
+    held: impl Fn(i64, (i32, i32), usize) -> bool,
+) -> usize {
+    let mut retargeted = 0;
+    for (index, order) in orders.iter_mut().enumerate() {
+        if order.kind != "unit" || order.verb.as_deref() != Some("MOVE_TO") {
+            continue;
+        }
+        let (Some(subject), Some(end)) = (order.subject, order.pos) else {
+            continue;
+        };
+        let Some(steps) = walk_steps.get(&subject) else {
+            continue;
+        };
+        if steps.last() != Some(&end) || !held(subject, end, index) {
+            continue;
+        }
+        let free = steps[..steps.len() - 1]
+            .iter()
+            .rev()
+            .find(|hex| !held(subject, **hex, index));
+        if let Some(free) = free {
+            order.pos = Some(*free);
+            retargeted += 1;
+        }
+    }
+    retargeted
+}
+
+/// [`retarget_friendly_held_walks`] against the frame's authoritative board:
+/// our units where the host last exported them, and the order index at which
+/// each first moves off its hex.
+fn retarget_friendly_held_walks_on_board(
+    orders: &mut [Order],
+    walk_steps: &std::collections::BTreeMap<i64, Vec<(i32, i32)>>,
+    mirror_state: &civvis::mirror::LiveMirror,
+) -> usize {
+    let game = &mirror_state.game;
+    let mirror_of: std::collections::HashMap<i64, u32> = mirror_state
+        .civ6_of
+        .iter()
+        .map(|(mirror, civ6)| (*civ6, *mirror))
+        .collect();
+    let mut standing: std::collections::HashMap<(i32, i32), Vec<u32>> =
+        std::collections::HashMap::new();
+    for (uid, unit) in game.units.iter().filter(|(_, unit)| unit.owner == 0) {
+        standing
+            .entry(civvis::hex::axial_to_offset(unit.pos.0, unit.pos.1))
+            .or_default()
+            .push(*uid);
+    }
+    let mut leaves_at: std::collections::HashMap<i64, usize> = std::collections::HashMap::new();
+    for (index, order) in orders.iter().enumerate() {
+        if let (true, Some(subject)) = (moves_its_unit(order), order.subject) {
+            leaves_at.entry(subject).or_insert(index);
+        }
+    }
+    let held = |subject: i64, hex: (i32, i32), index: usize| {
+        let Some(me) = mirror_of.get(&subject) else {
+            return false;
+        };
+        let here = game
+            .units
+            .get(me)
+            .map(|unit| civvis::hex::axial_to_offset(unit.pos.0, unit.pos.1));
+        if here == Some(hex) {
+            // Its own hex: cutting a walk back to it is no walk at all.
+            return true;
+        }
+        standing.get(&hex).is_some_and(|ids| {
+            ids.iter().any(|other| {
+                other != me
+                    && game.units_share_stacking_layer(*me, *other)
+                    && !mirror_state
+                        .civ6_of
+                        .get(other)
+                        .and_then(|civ6| leaves_at.get(civ6))
+                        .is_some_and(|at| *at < index)
+            })
+        })
+    };
+    retarget_friendly_held_walks(orders, walk_steps, held)
+}
+
+#[cfg(test)]
+#[path = "civvis_orders/own_column_tests.rs"]
+mod own_column_tests;
+
 fn coalesce_unit_paths_except(
     orders: Vec<Order>,
     sequenced: bool,
@@ -3963,6 +4119,9 @@ fn decide(
     remove_active_route_traders_from_plan(&mut planned_game, mirror_state);
     let released = release_foreign_production(&mut planned_game, &mirror_state.cid_of, state, ours);
     let before = planned_game.log.len();
+    // `own-column-is-not-a-refusal`: the movement memory before this frame is
+    // planned, handed back once its orders are final. `None` with the gene off.
+    let own_column_before = ai.host_frame_movement();
     // ★★★★ BEFORE THE VOLLEY. See `AdvancedAi::observe_turn_start_hostiles`:
     // the volley below removes wounded raiders from the planning board, and
     // a settler stepping afterwards must keep pricing them — the host has
@@ -4513,11 +4672,22 @@ fn decide(
     if !local_routes.is_empty() {
         note_bits.push(format!("wounded_local_routes={}", local_routes.len()));
     }
+    let walk_steps = if ai.own_column_is_not_a_refusal_enabled() {
+        open_walk_steps(&orders)
+    } else {
+        std::collections::BTreeMap::new()
+    };
     let (causally_safe, deferred_unit_followups, coalesced_path_steps) =
         coalesce_unit_paths_except(orders, sequenced, &local_routes, &capture_tiles(state));
     orders = causally_safe;
     if coalesced_path_steps > 0 {
         note_bits.push(format!("coalesced_path_steps={coalesced_path_steps}"));
+    }
+    if !walk_steps.is_empty() {
+        let retargeted = retarget_friendly_held_walks_on_board(&mut orders, &walk_steps, mirror_state);
+        if retargeted > 0 {
+            note_bits.push(format!("own_column_retargeted={retargeted}"));
+        }
     }
     if deferred_unit_followups > 0 {
         note_bits.push(format!("deferred_unit_followups={deferred_unit_followups}"));
@@ -4815,6 +4985,18 @@ fn decide(
             verb: Some("DIALOGUE_NEVER_DECLARES_WAR".to_string()),
             pos: None,
         });
+    }
+    if own_column_before.is_some() {
+        let (sent, unsent) = split_planned_movers(
+            &orders,
+            planned_game.log.since(before).map(|(seat, action)| (*seat, action)),
+            &mirror_state.civ6_of,
+        );
+        let rolled_back =
+            ai.note_host_moves(&mirror_state.game, own_column_before, &sent, &unsent);
+        if rolled_back > 0 {
+            note_bits.push(format!("own_column_rolled_back={rolled_back}"));
+        }
     }
     let body = orders
         .iter()
