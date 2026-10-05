@@ -547,6 +547,9 @@ pub(crate) const PEACE_CITY_ASK_RATIO: f64 = 3.0;
 pub(crate) const DENIAL_SWAP_MARGIN: i32 = 10;
 /// Our military over the urgent rival's at which the far reach opens.
 pub(crate) const DENIAL_FAR_REACH_RATIO: f64 = 3.0;
+/// `recovery-needs-the-deficit`: our military over the strongest opponent's
+/// at or above which a threatened city no longer puts a war into Recovery.
+const RECOVERY_THREAT_POWER_RATIO: f64 = 2.0;
 /// A first capture this far from home can become a usable forward base before
 /// the capital march consumes the whole war. The diplomatic opening gate is
 /// wider; it does not mean an 18-tile capital is the best first siege.
@@ -6989,6 +6992,10 @@ pub struct AdvancedAi {
     /// `BasicAi::note_host_moves` and `advanced/own_column.rs`.
     own_column_is_not_a_refusal: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `recovery-needs-the-deficit`: a threatened city puts a war into
+    /// Recovery only while the army is short of `RECOVERY_THREAT_POWER_RATIO`
+    /// times the strongest opponent. See `assess`.
+    recovery_needs_the_deficit: bool,
     /// `recovery-peace-waits`: the Recovery clause's peace waits for the
     /// Recovery plan to stand three turns. See
     /// `one_war::recovery_peace_ready`.
@@ -9524,6 +9531,7 @@ impl AdvancedAi {
             naval_escort_patience: false,
             own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
+            recovery_needs_the_deficit: false,
             recovery_peace_waits: false,
             ring_fires_on_the_city: false,
             ranged_before_melee: false,
@@ -13453,8 +13461,21 @@ impl AdvancedAi {
         // posture. The comparison is useful for an adaptive seat, but a
         // targeted seat can remain below a wartime rival for the whole race;
         // only a city-level threat should interrupt its research lane.
+        // `recovery-needs-the-deficit`: a threatened city puts a war into
+        // Recovery only while the army is short of
+        // `RECOVERY_THREAT_POWER_RATIO` times the strongest opponent; above
+        // it the Board's Defend rows answer the threat and the Conquest
+        // plan's finishing front, capture opportunities and stale swaps stay
+        // on. Live King civvis-20261005T141932Z (game 135) flipped to
+        // Recovery at turn 224 at 1848 power against 645, one capital from
+        // Domination, and the finishing front fell away. Over October 4-5,
+        // Recovery turns at twice the strongest rival's power or more lost a
+        // city within 5 turns 4 times in 82, against 110 in 807 under parity.
+        let threat_recovery = threatened_city.is_some()
+            && !(self.recovery_needs_the_deficit
+                && my_power >= RECOVERY_THREAT_POWER_RATIO * recovery_opponent_power.max(1.0));
         let (strategy, because) = if at_war
-            && (threatened_city.is_some()
+            && (threat_recovery
                 || (my_power * 1.25 < recovery_opponent_power
                     && !recovery_is_stale
                     && !raid_only_war

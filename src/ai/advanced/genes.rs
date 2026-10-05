@@ -2952,6 +2952,10 @@ pub const GENES: &[Gene] = &[
     // from Domination, the front drifted to commitments and a second front;
     // the Maya won on Diplomacy. See `one_war::domination_finish_front`.
     Gene { tag: "domination-finish-holds-the-front", field: "domination_finish_holds_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_finish_holds_the_front, disable: AdvancedAi::disable_domination_finish_holds_the_front },
+    // Live King civvis-20261005T141932Z (game 135): a threatened city flipped
+    // the war to Recovery at 1848 power against 645, one capital from
+    // Domination. See `RECOVERY_THREAT_POWER_RATIO`.
+    Gene { tag: "recovery-needs-the-deficit", field: "recovery_needs_the_deficit", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_needs_the_deficit, disable: AdvancedAi::disable_recovery_needs_the_deficit },
     // Staging marches took the router's single step and stood: 47-62% of
     // live frame-0 MOVE_TOs were one tile. See `march_moves`.
     Gene { tag: "march-uses-its-moves", field: "march_uses_its_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_march_uses_its_moves, disable: AdvancedAi::disable_march_uses_its_moves },
