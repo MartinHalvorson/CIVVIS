@@ -151,7 +151,26 @@ ballot("outvote off", 439, 15, nil, 2, "deny", 10)
 config.DiploVictoryOutvoteClaim = nil
 -- Match point spends the whole bank on the outvote too.
 ballot("match point outvote", 439, 18, nil, 1, "outvote", 15)
+-- Game 102 (T051413Z) t181: 171 Favor with the leader on 8, below the floor;
+-- the largest rival A block at t162 was 2, and the bank had fallen from 190
+-- since that session. A draining bank is spent whole (9 votes), and 9 votes
+-- outvote the blocks below the floor too.
+tally.wc_rival_block = 2
+tally.wc_review_favor = 190
+ballot("game 102 t181 drains and outvotes", 171, 8, nil, 1, "outvote", 9)
+-- Not draining: the reserve stands (51 above it buys 5), still twice the block.
+tally.wc_review_favor = 150
+ballot("game 102 t181 without the drain", 171, 8, nil, 1, "outvote", 5)
+-- A block the bank cannot double keeps the probe below the floor.
+tally.wc_rival_block = 6
+tally.wc_review_favor = 190
+ballot("a block too big below the floor probes", 171, 8, nil, 2, "probe", 3)
+config.DiploVictorySpendDraining = false
+tally.wc_rival_block = 2
+ballot("drain spending off", 171, 8, nil, 1, "outvote", 5)
+config.DiploVictorySpendDraining = nil
 tally.wc_rival_block = nil
+tally.wc_review_favor = nil
 
 if failures > 0 then os.exit(1) end
 print("all Congress claim/denial checks passed")

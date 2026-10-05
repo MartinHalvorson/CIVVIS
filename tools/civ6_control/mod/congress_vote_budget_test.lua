@@ -175,6 +175,9 @@ check("below the floor, above the reserve only", ballotBank(368, 6, {}), 248)
 check("a bank inside the reserve buys nothing", ballotBank(100, 6, {}) < 0, true)
 check("configured match point", ballotBank(200, 16, { DiploVictoryMatchPoint = 16 }), 200)
 check("configured reserve", ballotBank(368, 6, { DiploVictoryClaimReserve = 0 }), 368)
+-- A draining bank (lower than right after the last session) is spent whole.
+check("a draining bank is spent whole", ballotBank(171, 8, {}, true), 171)
+check("drain spending off", ballotBank(171, 8, { DiploVictorySpendDraining = false }, true), 51)
 -- Game 95's t221 under pacing: 40 Favor at 16 points buys the three votes
 -- (12 Favor) the 6-4 session lacked.
 check("half of 40 buys three votes", voteBudget(ballotBank(40, 16, {}), onlineCosts(20), 20), 3)

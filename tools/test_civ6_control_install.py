@@ -1284,8 +1284,8 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("option = 2;", voter)
         # The bank is paced (`CivvisCongressBallotBank`) before it is priced.
         self.assertIn("CivvisCongressVoteBudget(\n", voter)
-        self.assertIn("CivvisCongressBallotBank(favor, leaderPoints, cfg), costs, maxVotes)", voter)
-        self.assertIn("CivvisCongressBallotBank = function(favor, leaderPoints, config)", source)
+        self.assertIn("CivvisCongressBallotBank(favor, leaderPoints, cfg,", voter)
+        self.assertIn("CivvisCongressBallotBank = function(favor, leaderPoints, config, draining)", source)
         self.assertIn("CivvisCongressVoteBudget = function(favor, costs, maxVotes)", source)
         budget = source.split("CivvisCongressVoteBudget = function(favor, costs, maxVotes)", 1)[1].split("\nend", 1)[0]
         self.assertIn("tonumber(costs[host]) <= bank", budget)
@@ -1327,7 +1327,7 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("option = 1;", tail)
         self.assertIn("selection = ourIdx;", tail)
         self.assertIn("n = budget;", tail)
-        self.assertIn('"claim" or "outvote"', tail)
+        self.assertIn('and "claim" or "outvote";', tail)
         # The guarded claim still follows budget selection and precedes commit.
         gate = arm.index("if (tonumber(leaderPoints) or 0) >= floor then")
         commit = arm.index("votes = n;")
@@ -1335,8 +1335,8 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertLess(claim, commit)
         # The bank is paced and measured once, against both cost tables,
         # before any gate.
-        self.assertIn("CivvisCongressBallotBank(favor, leaderPoints, cfg), costs, maxVotes)", arm)
-        budgetCall = arm.index("CivvisCongressBallotBank(favor, leaderPoints, cfg), costs, maxVotes)")
+        self.assertIn("CivvisCongressBallotBank(favor, leaderPoints, cfg,", arm)
+        budgetCall = arm.index("CivvisCongressBallotBank(favor, leaderPoints, cfg,")
         self.assertLess(budgetCall, gate)
         # And the mode is reported on every ballot row.
         self.assertIn("return cast, spent, nil, leader, leaderPoints, leaderScore, mode;", voter)

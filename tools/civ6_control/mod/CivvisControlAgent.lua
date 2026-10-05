@@ -15708,10 +15708,23 @@ end
 -- below it (the probe and the self-claim) only what is above
 -- `DiploVictoryClaimReserve` (120). Exported globally to stay below the
 -- chunk-local limit.
-CivvisCongressBallotBank = function(favor, leaderPoints, config)
+--
+-- ★★ AND A BANK THAT IS DRAINING IS SPENT WHILE IT LASTS. `draining` is true
+-- when the bank stands lower than it did right after the last session: war
+-- grievances are taking Favor every turn, and whatever this ballot holds back
+-- is gone before the next one. Live King civvis-20261005T051413Z (game 102):
+-- 190 after t162, 171 at the t181 ballot, 80 at t201, 0 by t213; the ballot
+-- held its reserve and half-banks, cast a probe and two free votes, and the
+-- Aztecs took the +2 by a single vote at three sessions running (6-5, 5-4,
+-- 4-3) on their way from 5 to 20 DVP. Off with `DiploVictorySpendDraining =
+-- false`.
+CivvisCongressBallotBank = function(favor, leaderPoints, config, draining)
 	local bank = tonumber(favor) or 0;
 	local points = tonumber(leaderPoints) or 0;
 	config = type(config) == "table" and config or {};
+	if draining and config.DiploVictorySpendDraining ~= false then
+		return bank;
+	end
 	if points >= (tonumber(config.DiploVictoryMatchPoint) or 18) then
 		return bank;
 	end
@@ -19260,6 +19273,9 @@ local function beginTurn(player, pid, turn)
 			end
 		end
 		local favorNow = tonumber(try(function() return player:GetFavor(); end, 0)) or 0;
+		-- The bank right after this session: the next ballot reads a lower
+		-- bank as a draining one (`CivvisCongressBallotBank`).
+		envoyTally.wc_review_favor = favorNow;
 		emit("wc_outcome", {
 			turn = turn, resolutions = resolutions, proposals = proposals, dvp = dvp,
 			favor = favorNow,
@@ -20519,7 +20535,10 @@ local function tick()
 						-- See `CivvisCongressBallotBank`: the share of the
 						-- bank this session may spend.
 						local budget, budgetHost, budgetStandard = CivvisCongressVoteBudget(
-							CivvisCongressBallotBank(favor, leaderPoints, cfg), costs, maxVotes);
+							CivvisCongressBallotBank(favor, leaderPoints, cfg,
+								tonumber(envoyTally.wc_review_favor) ~= nil
+									and favor < tonumber(envoyTally.wc_review_favor)),
+							costs, maxVotes);
 						envoyTally.ballot_budget =
 							{ host = budgetHost, standard = budgetStandard };
 						local n = 1;
@@ -20587,17 +20606,20 @@ local function tick()
 						-- rival block that grew since (Brazil 4 -> 8); native t201
 						-- of T132350Z-cont1, our 13 against the leader's 14, stays a
 						-- denial. Off with `DiploVictoryOutvoteClaim = false`.
+						-- Below the floor too: game 102's Aztecs went 5 -> 10 -> 15
+						-- -> 20 with the leader by points under 12 at two of those
+						-- sessions, each +2 taken by a 4-6 vote block.
 						if ourIdx ~= nil and ((budget >= claim
 							and (tonumber(leaderPoints) or 0) < floor)
 							or (cfg.DiploVictoryOutvoteClaim ~= false
-								and (tonumber(leaderPoints) or 0) >= floor
 								and tonumber(envoyTally.wc_rival_block) ~= nil
 								and budget >= (tonumber(cfg.DiploVictoryOutvoteFactor) or 2)
 									* math.max(tonumber(envoyTally.wc_rival_block), 1))) then
 							option = 1;
 							selection = ourIdx;
 							n = budget;
-							mode = ((tonumber(leaderPoints) or 0) < floor) and "claim" or "outvote";
+							mode = (budget >= claim and (tonumber(leaderPoints) or 0) < floor)
+								and "claim" or "outvote";
 						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;
