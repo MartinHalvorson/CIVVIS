@@ -2959,6 +2959,12 @@ pub const GENES: &[Gene] = &[
     // Staging marches took the router's single step and stood: 47-62% of
     // live frame-0 MOVE_TOs were one tile. See `march_moves`.
     Gene { tag: "march-uses-its-moves", field: "march_uses_its_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_march_uses_its_moves, disable: AdvancedAi::disable_march_uses_its_moves },
+    // Live King G136: decisive-window took Military Engineering at t87 for a
+    // Bombard with no Niter income until t142, and "modernize the army"
+    // spent t93-t103 on Field Cannons while the Victoria siege waited 77
+    // turns for a breaker. Resources priced; modernization yields while a
+    // siege is held for its breaker. See `advanced/decisive_window.rs`.
+    Gene { tag: "breaker-research-first", field: "breaker_research_first", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_research_first, disable: AdvancedAi::disable_breaker_research_first },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

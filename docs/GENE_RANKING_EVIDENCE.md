@@ -200,6 +200,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `breaker-before-the-war` | off (unmeasured) | Opt-in gene `breaker-before-the-war`; see `Self::breaker_before_the_war`. | 1 \| 1 |
 | `breaker-keeps-its-queue` | off (unmeasured) | The strategic scorer does not displace a queued siege unit that holds production while its city is not threatened. | 1 \| 1 |
 | `breaker-reads-the-march` | off (unmeasured) | Opt-in gene `breaker-reads-the-march`; see `Self::breaker_reads_the_march`. | 1 \| 1 |
+| `breaker-research-first` | off (unmeasured) | Opt-in gene `breaker-research-first`; see `Self::breaker_research_first`. | 1 \| 1 |
 | `breaker-supply-scales` | off (unmeasured) | Opt-in gene `breaker-supply-scales`; see `Self::breaker_supply_scales`. | — \| 2 |
 | `breaker-supply-scales-2` | off (unmeasured) | Opt-in gene `breaker-supply-scales-2`; see `Self::breaker_supply_scales_2`. | — \| 2 |
 | `breaker-to-the-fastest` | off (unmeasured) | The walled-assault gun reservation takes a busy city whose arrival beats the best idle one by `BREAKER_FASTEST_MARGIN` turns and `BREAKER_FASTEST_RATIO`, not by eight turns and half again. | 1 \| 1 |

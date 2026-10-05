@@ -85,6 +85,13 @@ pub(super) const DOMINANT_POWER: f64 = 2.0;
 /// Engineering (Trebuchets, the breaker for the 200-HP walls Lisbon raised
 /// at t86) waited until t111 while Catapults could not open them.
 pub(super) const OVERWHELMING_POWER: f64 = 3.0;
+/// `breaker-research-first`: the price premium on a package whose unit needs a
+/// strategic resource we cannot see yet. Its revealing technology joins the
+/// path; whether we will hold any is unknown, so a breaker that needs no
+/// resource wins a close call. Live King G136 (civvis-20261005T143823Z)
+/// took Military Engineering at t87 for "bombard opens tier-3 walls" and had
+/// no Niter income until t142.
+pub(super) const UNREVEALED_RESOURCE_PREMIUM: f64 = 1.5;
 /// Strength credited to the civilization's own unique unit for the abilities
 /// the strength column omits.
 pub(super) const UNIQUE_MARGIN: f64 = 5.0;
@@ -332,6 +339,69 @@ impl AdvancedAi {
             })
     }
 
+    /// `breaker-research-first`: whether `pid` is supplied with `spec`'s
+    /// strategic resource now: a stockpile or an income. A deposit without
+    /// the improvement that connects it is not supply yet (G136 owned no
+    /// Niter income until t142 and built its Bombard at t171), and a resource
+    /// still hidden is judged by its revealing technology instead.
+    fn decisive_resource_supplied(g: &Game, pid: usize, spec: &UnitSpec) -> bool {
+        let Some(resource) = spec.requires_resource else {
+            return true;
+        };
+        !g.resource_visible_to(pid, resource.as_str())
+            || g.strategic_stockpile(pid, resource) > 0.0
+            || g.strategic_resource_rate(pid, resource.as_str()) > 0.0
+    }
+
+    /// `breaker-research-first`: the technology that reveals `spec`'s
+    /// strategic resource, while we cannot see it.
+    fn decisive_hidden_resource_tech(g: &Game, pid: usize, spec: &UnitSpec) -> Option<Name> {
+        let resource = spec.requires_resource?;
+        if g.resource_visible_to(pid, resource.as_str()) {
+            return None;
+        }
+        g.rules.resources.get(resource.as_str()).and_then(|spec| spec.tech)
+    }
+
+    /// `breaker-research-first`: a siege of ours stands held for a
+    /// wall-breaker this turn (`siege-needs-a-breaker`'s wait record).
+    fn decisive_siege_held_for_a_breaker(&self, g: &Game) -> bool {
+        self.siege_breaker_waits
+            .values()
+            .any(|wait| g.turn.saturating_sub(wait.last) <= 1)
+    }
+
+    /// Whether `tech` unlocks a siege gun, ram or tower this civilization
+    /// can train.
+    fn decisive_tech_unlocks_a_breaker(g: &Game, pid: usize, tech: Name) -> bool {
+        let civ = g.players[pid].civ.as_str();
+        g.rules.units.iter().any(|(kind, spec)| {
+            spec.tech == Some(tech)
+                && spec.buildable
+                && g.player_unit_replacement(pid, *kind) == *kind
+                && spec.unique_to.as_deref().is_none_or(|owner| owner == civ)
+                && ((spec.class == "military" && spec.siege && spec.bombard_strength > 0.0)
+                    || matches!(kind.as_str(), "battering_ram" | "siege_tower"))
+        })
+    }
+
+    /// `breaker-research-first`: while a siege is held for a wall-breaker,
+    /// "modernize the standing army" does not spend the breaker's research on
+    /// a technology that unlocks none. Live King G136 researched Gunpowder,
+    /// Metal Casting's path and Ballistics (Field Cannons: ranged, not
+    /// breakers) at t93-t103 while the Victoria siege held 77 turns with
+    /// one or two fit guns.
+    pub(super) fn modernization_yields_to_the_breaker(
+        &self,
+        g: &Game,
+        pid: usize,
+        tech: Name,
+    ) -> bool {
+        self.breaker_research_first
+            && self.decisive_siege_held_for_a_breaker(g)
+            && !Self::decisive_tech_unlocks_a_breaker(g, pid, tech)
+    }
+
     /// Unknown technologies and civics on the way to every node in `techs`
     /// and `civics`, priced in turns at the empire's current rates.
     fn decisive_turns(g: &Game, pid: usize, techs: &[Name], civics: &[Name]) -> f64 {
@@ -433,7 +503,11 @@ impl AdvancedAi {
                 && spec
                     .obsolete_tech
                     .is_none_or(|tech| !g.players[pid].techs.contains(&tech))
-                && Self::decisive_resource_feasible(g, pid, spec)
+                && if self.breaker_research_first {
+                    Self::decisive_resource_supplied(g, pid, spec)
+                } else {
+                    Self::decisive_resource_feasible(g, pid, spec)
+                }
         };
         let unique = |spec: &UnitSpec| !self.civ_blind && spec.unique_to.as_deref() == Some(civ);
         let assaults: Vec<(Name, &UnitSpec)> = g
@@ -514,6 +588,17 @@ impl AdvancedAi {
                     techs.extend(tech);
                     civics.extend(civic);
                 }
+                // `breaker-research-first`: a hidden resource's revealing
+                // technology joins the path, and the package pays a premium.
+                let hidden: Vec<Name> = if self.breaker_research_first {
+                    std::iter::once(*spec)
+                        .chain(breaker.map(|(breaker, _, _)| &g.rules.units[breaker]))
+                        .filter_map(|unit| Self::decisive_hidden_resource_tech(g, pid, unit))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                techs.extend(hidden.iter().copied());
                 let turns = Self::decisive_turns(g, pid, &techs, &civics);
                 if turns > horizon {
                     continue;
@@ -524,6 +609,7 @@ impl AdvancedAi {
                 let tech_goal = [missing(&assault_tech), breaker.and_then(|(_, tech, _)| missing(&tech))]
                     .into_iter()
                     .flatten()
+                    .chain(hidden.iter().copied().filter(|tech| !g.players[pid].techs.contains(tech)))
                     .min_by(|left, right| {
                         Self::war_remaining_research_cost(g, pid, *left)
                             .total_cmp(&Self::war_remaining_research_cost(g, pid, *right))
@@ -538,7 +624,9 @@ impl AdvancedAi {
                 .into_iter()
                 .flatten()
                 .next();
-                let price = turns * if is_unique { UNIQUE_COST_SHARE } else { 1.0 };
+                let price = turns
+                    * if is_unique { UNIQUE_COST_SHARE } else { 1.0 }
+                    * if hidden.is_empty() { 1.0 } else { UNREVEALED_RESOURCE_PREMIUM };
                 let window = DecisiveWindow {
                     target,
                     assault: *kind,

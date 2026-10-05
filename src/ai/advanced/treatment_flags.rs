@@ -6155,6 +6155,17 @@ impl AdvancedAi {
         self.march_uses_its_moves = false;
     }
 
+    /// Opt-in gene `breaker-research-first`; see
+    /// [`Self::breaker_research_first`].
+    pub fn enable_breaker_research_first(&mut self) {
+        self.breaker_research_first = true;
+    }
+
+    /// The twin of `enable_breaker_research_first`.
+    pub fn disable_breaker_research_first(&mut self) {
+        self.breaker_research_first = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
