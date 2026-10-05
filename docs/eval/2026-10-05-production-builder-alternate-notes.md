@@ -37,3 +37,41 @@ shows useful work and strength, matching preceding production prototypes.
 The first local optimized build was interrupted before completion so validation
 can compile the corrected registry source. This interruption is not passing
 validation. Native gameplay remains unchanged with the private flag disabled.
+
+
+## Same-turn prototype rejected
+
+Frozen normal O3 library and standalone probe on source `317030dd3` completed
+all sixteen consumed executions. Every control action history and final world
+matched the preceding archived control exactly. Journals were contiguous, and
+both arms read back equal weights, handicaps and deployment tags except the
+explicit alternate flag. Artifact/source/compiler/dependency hashes were frozen
+before game play. The full native Cargo build remained pending at game freeze;
+its library component had completed. No complete-suite pass is claimed here.
+
+Emperor mean T75 Production was 53.675 in both arms, Science 27.5625 in both,
+survival 4/4 in both. Deity Production was 37.2375 in both, Science 22.30625 in
+both, survival 4/4 in both. No alternate improvement completed before T75. Two
+accepted native improvements matched the alternate journal: Emperor map
+61008600 quarry at T110 and 61008601 Mine at T87. Those late actions do not
+satisfy the early coverage or strength gate. No fresh screen or confirmation
+was played. Version one is rejected, not promoted.
+
+The first runner attempt created its redirected log inside the output directory
+before the runner's empty-directory assertion; it stopped before any game.
+The log was preserved outside that directory, and the successful rerun completed
+all assigned games. This preparation error supplies no passing execution.
+
+Corrected GitHub validation also identified the experimental toggle's missing
+unreachable-genome accounting and a getter placed in the toggles-only file.
+These remain explicit prototype validation failures, not successful integration
+checks. Any retained runtime must fix both; removing a rejected runtime also
+removes that new reachability debt. Native Cargo is still compiling locally;
+its current source has the same known getter placement failure.
+
+Next hypothesis, before any implementation or game: a legal owned productive
+hill/woodland may consume all movement to enter. A fallback limited to immediate
+same-turn charges then excludes ordinary setup moves, despite their ability to
+finish work on the next frame under renewed existing capture checks. A revised
+consumed-only diagnostic would preserve those checks, actual movement, resource
+premiums and reservations; never enact a charge using restored movement.
