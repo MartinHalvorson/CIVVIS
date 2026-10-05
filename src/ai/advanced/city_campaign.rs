@@ -992,6 +992,31 @@ impl AdvancedAi {
         )
     }
 
+    /// Whether a completed campaign's target is a Diplomatic Victory
+    /// contender the seat must eliminate rather than make peace with: the
+    /// `diplomatic_contender_to_eliminate` pick, or any rival at
+    /// [`super::one_war::ELIMINATION_CONTENDER_DVP`] points or more that we
+    /// outgun [`super::one_war::ELIMINATION_POWER_RATIO`] times over its
+    /// steady power.
+    fn campaign_target_is_a_contender_to_eliminate(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+    ) -> bool {
+        if self.diplomatic_contender_to_eliminate(g, pid) == Some(target) {
+            return true;
+        }
+        g.players.get(target).is_some_and(|rival| {
+            rival.alive
+                && !rival.is_minor
+                && !rival.is_barbarian
+                && rival.dvp >= super::one_war::ELIMINATION_CONTENDER_DVP
+        }) && g.military_power(pid)
+            >= super::one_war::ELIMINATION_POWER_RATIO
+                * self.steady_rival_power(g, target).max(1.0)
+    }
+
     /// The peace desk: a completed campaign offers peace until it is
     /// accepted. On the active Domination front, the war desk's fatigue,
     /// rout, and capital handoff checks decide when to stop instead.
@@ -1026,6 +1051,16 @@ impl AdvancedAi {
                 // `unseen_prey`.
                 || self.unseen_prey(g, pid, campaign.target))
         {
+            return;
+        }
+        // Nor with a Diplomatic Victory contender we outgun: only its
+        // elimination takes its points off the board, and peace switches off
+        // both elimination fronts (`diplomatic_contender_to_eliminate` needs
+        // the war; `diplomatic_contender_at_peace` needs no other war). Live
+        // King civvis-20261005T212727Z (game 165) offered Indonesia peace at
+        // turn 228 at 16 points, 1,191 power against 666, because the turn-100
+        // campaign "has taken its 1 city"; Indonesia won on Diplomacy at 266.
+        if self.campaign_target_is_a_contender_to_eliminate(g, pid, campaign.target) {
             return;
         }
         let peace_pending = g.pending_deals.iter().any(|deal| {
