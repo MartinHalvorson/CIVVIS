@@ -1,0 +1,17 @@
+{
+  "scope": "Passive rejection-reason trace of rejected same-turn prototype; no rule/priority/movement/capture changes",
+  "before_play": true,
+  "consumed_maps": {
+    "emperor": [
+      61008603
+    ],
+    "deity": [
+      61008703
+    ]
+  },
+  "flag": true,
+  "required_equivalence": "Action history and final board byte-exact to frozen version-one candidate on each assigned map",
+  "observation": "Entry, precondition and rejection counters only before native turn 75; same candidate limit and after-walk operation rules",
+  "fresh_samples_played": 0,
+  "actual_Firaxis_verification": false
+}

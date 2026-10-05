@@ -75,3 +75,17 @@ same-turn charges then excludes ordinary setup moves, despite their ability to
 finish work on the next frame under renewed existing capture checks. A revised
 consumed-only diagnostic would preserve those checks, actual movement, resource
 premiums and reservations; never enact a charge using restored movement.
+
+
+The completed normal native library suite reports 4,331 passed, one failed,
+50 ignored; Cargo exit 101 stops before the remaining targets. The sole failure
+is the getter in treatment_flags.rs. This is not a passing full suite. All six
+feature fixtures passed in that normal optimized library run.
+
+The getter was moved to its feature module. A passive entry/rejection trace now
+records the actual ordinary-unit route and fallback exclusions before T75,
+without changing choices, scores, candidate bound, movement or safety. Some
+modeled early jobs already allowed immediate work, so delayed movement cannot
+be assumed to be the decisive reason. Before any new movement treatment, two
+consumed maps must reproduce their frozen version-one candidate action histories
+and final worlds while these counters are collected. No fresh maps assigned.

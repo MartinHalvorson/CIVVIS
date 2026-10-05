@@ -35546,6 +35546,11 @@ impl AdvancedAi {
         uid: u32,
         strategy: GrandStrategy,
     ) -> bool {
+        if self.builder_productive_alternate && g.turn < 75 {
+            think!(self.journal(), Expansion, Detail, "Builder enters ordinary work before alternate";
+                "Builder {uid}: position {:?}, moves {:.1}, charges {}",
+                g.units[&uid].pos, g.units[&uid].moves_left, g.units[&uid].charges; g.units[&uid].pos);
+        }
         if let Some(acted) = self.builder_support_step(g, pid, uid) {
             return acted;
         }

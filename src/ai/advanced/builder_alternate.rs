@@ -8,6 +8,11 @@ use super::*;
 const ALTERNATE_PRICE_ATTEMPTS: usize = 6;
 
 impl AdvancedAi {
+    /// Read back the experimental flag for frozen comparisons.
+    pub fn builder_productive_alternate_enabled(&self) -> bool {
+        self.builder_productive_alternate
+    }
+
     pub(super) fn builder_productive_alternate_step(
         &mut self,
         g: &mut Game,
@@ -16,8 +21,10 @@ impl AdvancedAi {
         strategy: GrandStrategy,
         reserved: &HashSet<Pos>,
     ) -> bool {
-        if !self.builder_productive_alternate
-            || self.active_victory_target(g).is_none()
+        if !self.builder_productive_alternate {
+            return false;
+        }
+        if self.active_victory_target(g).is_none()
             || self.builder_support.contains_key(&uid)
             || !g.units.get(&uid).is_some_and(|unit| {
                 unit.owner == pid
@@ -26,9 +33,25 @@ impl AdvancedAi {
                     && unit.charges > 0
             })
         {
+            if g.turn < 75 {
+                think!(self.journal(), Expansion, Detail, "Builder alternate precondition refused";
+                    "Builder {uid}; named={}, support={}, unit={:?}",
+                    self.active_victory_target(g).is_some(), self.builder_support.contains_key(&uid),
+                    g.units.get(&uid).map(|unit| (unit.owner, unit.kind, unit.moves_left, unit.charges)));
+            }
             return false;
         }
         let current = g.units[&uid].pos;
+        let mut reserved_count = 0;
+        let mut no_city_count = 0;
+        let mut no_path_count = 0;
+        let mut unsafe_count = 0;
+        let mut no_moves_count = 0;
+        let mut improve_refused_count = 0;
+        let mut no_gain_count = 0;
+        let mut food_loss_count = 0;
+        let mut science_loss_count = 0;
+        let mut walk_refused_count = 0;
         // Use the ordinary capture model even if a screened route gene is off.
         // No guard is recruited or borrowed by this fallback.
         let reach = self.barbarian_reach(g, pid, current, civilian_safety::REACH_SCAN_RADIUS);
@@ -37,6 +60,7 @@ impl AdvancedAi {
         let mut candidates = Vec::new();
         for pos in g.reachable(uid).into_iter().chain([current]) {
             if reserved.contains(&pos) {
+                reserved_count += 1;
                 continue;
             }
             let Some(city) = g
@@ -45,9 +69,11 @@ impl AdvancedAi {
                 .and_then(|tile| tile.owner_city)
                 .filter(|city| g.cities.get(city).is_some_and(|city| city.owner == pid))
             else {
+                no_city_count += 1;
                 continue;
             };
             let Some(path) = g.path_to(uid, pos) else {
+                no_path_count += 1;
                 continue;
             };
             if !path.iter().chain(std::iter::once(&pos)).all(|step| {
@@ -56,6 +82,7 @@ impl AdvancedAi {
                         g, pid, uid, *step, &visible, &threats,
                     ) <= BUILDER_BARBARIAN_CAPTURE_RISK_LIMIT
             }) {
+                unsafe_count += 1;
                 continue;
             }
             let shortfall = self.city_production_foundation_shortfall(g, pid, city);
@@ -81,6 +108,7 @@ impl AdvancedAi {
                 .then(left.3.cmp(&right.3))
         });
         candidates.dedup_by(|left, right| left.1 == right.1 && left.3 == right.3);
+        let candidate_count = candidates.len();
         for (_, pos, city, improvement) in candidates.into_iter().take(ALTERNATE_PRICE_ATTEMPTS) {
             let mut trial = g.speculative_clone();
             if pos != current
@@ -92,6 +120,7 @@ impl AdvancedAi {
                         .get(&uid)
                         .is_none_or(|unit| unit.pos != pos || unit.moves_left <= 0.0))
             {
+                no_moves_count += 1;
                 continue;
             }
             // Attribute only the operation. Walking can itself change yields
@@ -102,6 +131,7 @@ impl AdvancedAi {
                 improvement,
             };
             if trial.apply(pid, &action).is_err() {
+                improve_refused_count += 1;
                 continue;
             }
             let after = trial.city_yields(city);
@@ -109,10 +139,14 @@ impl AdvancedAi {
                 || after.food < before.food - 1e-9
                 || after.science < before.science - 1e-9
             {
+                no_gain_count += usize::from(after.production <= before.production + 1e-9);
+                food_loss_count += usize::from(after.food < before.food - 1e-9);
+                science_loss_count += usize::from(after.science < before.science - 1e-9);
                 continue;
             }
             let walked = pos != current;
             if walked && !self.base.path_walk_to(g, pid, uid, pos) {
+                walk_refused_count += 1;
                 continue;
             }
             if g.units
@@ -133,6 +167,10 @@ impl AdvancedAi {
                 self.builder_targets.insert(uid, pos);
                 return true;
             }
+        }
+        if g.turn < 75 {
+            think!(self.journal(), Expansion, Detail, "Builder alternate coverage deferred";
+                "Builder {uid}: candidates={candidate_count}; reserved={reserved_count}; no_city={no_city_count}; no_path={no_path_count}; unsafe_path={unsafe_count}; no_moves_after_walk={no_moves_count}; improve_refused={improve_refused_count}; no_production_gain={no_gain_count}; food_loss={food_loss_count}; science_loss={science_loss_count}; walk_refused={walk_refused_count}"; current);
         }
         false
     }

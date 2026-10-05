@@ -4552,10 +4552,6 @@ impl AdvancedAi {
     pub fn disable_builder_productive_alternate(&mut self) {
         self.builder_productive_alternate = false;
     }
-    /// Read back the experimental flag for frozen comparisons.
-    pub fn builder_productive_alternate_enabled(&self) -> bool {
-        self.builder_productive_alternate
-    }
 
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
