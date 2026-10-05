@@ -119,6 +119,9 @@ pub(crate) const CAPITAL_PREY_WALLS: i32 = 100;
 /// at peace may stand behind however far its army has collapsed: Medieval
 /// Walls, which `guns-enter-together` and the air breach open.
 pub(crate) const CAPITAL_PREY_MAX_WALLS: i32 = 300;
+/// `prey-reads-a-steady-power`: the turns of rival military readings the prey
+/// gates take the largest of.
+pub(crate) const PREY_POWER_MEMORY_TURNS: u32 = 3;
 
 /// `liberation-funds-the-congress`: the Diplomatic Victory points at which a
 /// rival makes a captured city-state city worth its liberation Favor; the
@@ -1554,7 +1557,7 @@ impl AdvancedAi {
             else {
                 continue;
             };
-            let power = g.military_power(rival.id);
+            let power = self.steady_rival_power(g, rival.id);
             let at_war = g.is_at_war(pid, rival.id);
             let weak = power <= CAPITAL_PREY_POWER * ours;
             let soft = at_war || capital.wall_hp <= self.capital_prey_walls(power, ours);
@@ -1645,6 +1648,51 @@ impl AdvancedAi {
         march + CAPITAL_PREY_SIEGE_TURNS
     }
 
+    /// `prey-reads-a-steady-power`: record each living rival's military this
+    /// turn, keeping [`PREY_POWER_MEMORY_TURNS`] turns of readings.
+    pub(crate) fn record_rival_power(&mut self, g: &Game, pid: usize) {
+        if !self.prey_reads_a_steady_power {
+            self.rival_power_seen.clear();
+            return;
+        }
+        for rival in g
+            .players
+            .iter()
+            .filter(|p| p.id != pid && p.alive && !p.is_minor && !p.is_barbarian)
+            .map(|p| p.id)
+            .collect::<Vec<_>>()
+        {
+            let seen = self.rival_power_seen.entry(rival).or_default();
+            seen.retain(|(turn, _)| {
+                *turn != g.turn && g.turn.saturating_sub(*turn) < PREY_POWER_MEMORY_TURNS
+            });
+            seen.push((g.turn, g.military_power(rival)));
+        }
+    }
+
+    /// The military the prey gates read for `rival`: the host's reading, and
+    /// under `prey-reads-a-steady-power` the largest of it and the readings
+    /// of the last [`PREY_POWER_MEMORY_TURNS`] turns. The public reading
+    /// can collapse for one turn and come back: live King
+    /// civvis-20261005T103704Z (game 121) read America at 155, 147, 152, 144
+    /// and 138 over turns 90-94 at peace, 4 at 95, and 151 again by 102; the
+    /// seat declared on it at 95 "179 power against their 4". Over October
+    /// 4-5 a rival's reading fell by three quarters in one turn and recovered
+    /// to 60% within ten 21 times (diagnosed with -60).
+    pub(crate) fn steady_rival_power(&self, g: &Game, rival: usize) -> f64 {
+        let now = g.military_power(rival);
+        if !self.prey_reads_a_steady_power {
+            return now;
+        }
+        self.rival_power_seen
+            .get(&rival)
+            .into_iter()
+            .flatten()
+            .filter(|(turn, _)| g.turn.saturating_sub(*turn) < PREY_POWER_MEMORY_TURNS)
+            .map(|(_, power)| *power)
+            .fold(now, f64::max)
+    }
+
     /// `rout-spares-the-counter`: whether a bad window offers `other` no
     /// peace because it is the rival we are countering -- its clock urgent,
     /// the actionable denial's rival, or a culture lane at the threat bar --
@@ -1685,7 +1733,7 @@ impl AdvancedAi {
         self.capital_prey_opens_a_front
             && self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && g.is_at_war(pid, other)
-            && g.military_power(other) <= CAPITAL_PREY_POWER * g.military_power(pid)
+            && self.steady_rival_power(g, other) <= CAPITAL_PREY_POWER * g.military_power(pid)
             && g.cities
                 .values()
                 .any(|city| city.owner == other && city.is_capital && city.original_owner == other)
@@ -1980,7 +2028,7 @@ impl AdvancedAi {
     ) -> bool {
         self.capital_prey_opens_a_front_2
             && self.active_victory_target(g) == Some(VictoryTarget::Domination)
-            && g.military_power(rival) <= CAPITAL_PREY_DEEP_POWER * g.military_power(pid)
+            && self.steady_rival_power(g, rival) <= CAPITAL_PREY_DEEP_POWER * g.military_power(pid)
             && g.city_at(objective).is_some_and(|cid| {
                 let city = &g.cities[&cid];
                 city.owner == rival && city.is_capital && city.original_owner == rival

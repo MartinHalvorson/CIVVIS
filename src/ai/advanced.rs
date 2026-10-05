@@ -3350,6 +3350,9 @@ pub struct AdvancedAi {
     /// readings as (turn read, projected finish turn). See
     /// `denial_nearest_finish::engine_culture_clock`.
     engine_culture_finish: BTreeMap<usize, Vec<(u32, f64)>>,
+    /// `prey-reads-a-steady-power`: each rival's recent military readings.
+    /// See `one_war::steady_rival_power`.
+    rival_power_seen: BTreeMap<usize, Vec<(u32, f64)>>,
 
     /// Whether the empire will open an **ancient rush**: pick the nearest
     /// weak neighbour before the walls go up, march a small stack to their
@@ -6932,6 +6935,10 @@ pub struct AdvancedAi {
     /// `BasicAi::note_host_moves` and `advanced/own_column.rs`.
     own_column_is_not_a_refusal: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `prey-reads-a-steady-power`: the capital-prey gates read the largest
+    /// of a rival's last three military readings. See
+    /// `one_war::steady_rival_power`.
+    prey_reads_a_steady_power: bool,
     /// `rout-spares-the-counter`: a rout window offers no peace to the rival
     /// we are countering while we hold its power. See
     /// `one_war::rout_spares_the_counter`.
@@ -9031,6 +9038,7 @@ impl AdvancedAi {
             stock_pressure_history: BTreeMap::new(),
             culture_curves: BTreeMap::new(),
             engine_culture_finish: BTreeMap::new(),
+            rival_power_seen: BTreeMap::new(),
             early_rush: false,
             timed_war: false,
             selective_timed_war: false,
@@ -9410,6 +9418,7 @@ impl AdvancedAi {
             naval_escort_patience: false,
             own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
+            prey_reads_a_steady_power: false,
             rout_spares_the_counter: false,
             peace_asks_a_city: false,
             religious_threat_spares_the_front: false,
@@ -9993,6 +10002,9 @@ impl AdvancedAi {
         } else {
             self.major_war_since = None;
         }
+        // `prey-reads-a-steady-power`: before the front is chosen. See
+        // `one_war::steady_rival_power`.
+        self.record_rival_power(g, pid);
         // The front and its tide clock; exact no-op with the gene off. See
         // `advanced/one_war.rs`.
         self.one_war_observe(g, pid);
