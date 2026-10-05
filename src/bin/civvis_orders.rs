@@ -4588,13 +4588,19 @@ fn decide(
                 if rival.at_war && !already {
                     let routed = report.peace_routed.contains(seat);
                     let cap = peace_tribute_cap(state, routed);
+                    // `peace-asks-a-city`: `y` 1 asks the agent to add the
+                    // rival's nearest cedable town to the first ask.
+                    let ask_city = !routed && report.peace_asks_city.contains(seat);
                     orders.push(Order {
                         kind: "peace",
                         subject: Some(subject),
                         verb: Some("MAKE_PEACE".to_string()),
-                        pos: Some((cap, 0)),
+                        pos: Some((cap, i32::from(ask_city))),
                     });
                     note_bits.push(format!("peace_from_plan={}", rival.player));
+                    if ask_city {
+                        note_bits.push(format!("peace_city_ask={}", rival.player));
+                    }
                     if cap > 0 {
                         note_bits.push(format!("peace_tribute_cap={cap}"));
                     }

@@ -1247,3 +1247,29 @@ fn the_counter_keeps_its_rival_only_while_it_still_counts() {
     ai.disable_denial_keeps_its_rival();
     assert_eq!(ai.denial_incumbent, None);
 }
+
+/// See `peace_asks_city_from_strength`: under the gene, a white offer from
+/// three times the rival's power asks for a town; a routed front, or a rival
+/// near our strength, gets the white peace.
+#[test]
+fn a_peace_from_strength_asks_for_a_town_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    assert!(!ai.peace_asks_city_from_strength(&g, 0, 2), "off");
+    ai.enable_peace_asks_a_city();
+    assert!(
+        ai.peace_asks_city_from_strength(&g, 0, 2),
+        "a warrior against armor"
+    );
+    ai.peace_routed.insert(2);
+    assert!(!ai.peace_asks_city_from_strength(&g, 0, 2), "routed");
+    ai.peace_routed.clear();
+    let mut row = 2;
+    while g.military_power(0) >= super::super::PEACE_CITY_ASK_RATIO * g.military_power(2) {
+        g.spawn_test_unit("modern_armor", 2, (24, row));
+        row += 1;
+    }
+    assert!(
+        !ai.peace_asks_city_from_strength(&g, 0, 2),
+        "under three times"
+    );
+}

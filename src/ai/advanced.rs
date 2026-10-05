@@ -535,6 +535,13 @@ const RUSH_STAGING_RANGE: i32 = 3;
 /// four-player Tiny Pangaea's 60-tile wrapped width.
 pub(crate) const DENIAL_FAR_REACH_TILES: i32 = 30;
 
+/// `peace-asks-a-city`: the military ratio over the rival from which a white
+/// peace offer also asks it to cede a town. 70 October live games offered
+/// peace at three times the rival's power or more 239 times (187 "one war at
+/// a time", 41 "the required capital is secure"), all white, 20 accepted the
+/// next turn; a Civilization VI rival that is losing may cede a town.
+pub(crate) const PEACE_CITY_ASK_RATIO: f64 = 3.0;
+
 /// `denial-keeps-its-rival`: the pressure points (of 100) another rival must
 /// lead the incumbent counter rival by to take the counter from it.
 pub(crate) const DENIAL_SWAP_MARGIN: i32 = 10;
@@ -2039,6 +2046,8 @@ pub struct AdvancedAi {
     peace_offers: BTreeSet<usize>,
     /// The offers above the planner is routed on; see `AiReport::peace_routed`.
     peace_routed: BTreeSet<usize>,
+    /// See `PlanReport::peace_asks_city`.
+    peace_asks_city: BTreeSet<usize>,
     victory_planning: bool,
     victory_target: Option<VictoryTarget>,
     forced_target_player: Option<usize>,
@@ -6831,6 +6840,9 @@ pub struct AdvancedAi {
     /// `BasicAi::note_host_moves` and `advanced/own_column.rs`.
     own_column_is_not_a_refusal: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `peace-asks-a-city`: a white peace offer from strength also asks the
+    /// rival to cede a town on its first ask. See `PlanReport::peace_asks_city`.
+    peace_asks_a_city: bool,
     /// `religious-threat-spares-the-front`: a religious clock does not take
     /// the army off its front while our cities keep our own faith. See
     /// `one_war::religious_threat_spares_the_front`.
@@ -8807,6 +8819,7 @@ impl AdvancedAi {
             peace_until: 0,
             peace_offers: BTreeSet::new(),
             peace_routed: BTreeSet::new(),
+            peace_asks_city: BTreeSet::new(),
             victory_planning,
             victory_target,
             census: StrategyCensus::default(),
@@ -9279,6 +9292,7 @@ impl AdvancedAi {
             naval_escort_patience: false,
             own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
+            peace_asks_a_city: false,
             religious_threat_spares_the_front: false,
             prophet_race_takes_a_district_slot_2: false,
             peace_waits_for_unseen_prey: false,
@@ -21460,6 +21474,7 @@ impl AdvancedAi {
             .collect();
         self.peace_offers.clear();
         self.peace_routed.clear();
+        self.peace_asks_city.clear();
         self.religious_interception_war = self
             .religious_interception_war
             .filter(|(rival, _)| g.is_at_war(pid, *rival));
@@ -21621,6 +21636,11 @@ impl AdvancedAi {
                     || matches!(one_war_peace, Some(one_war::OneWarPeace::Rout))
                 {
                     self.peace_routed.insert(*other);
+                }
+                // `peace-asks-a-city`: a white offer made from strength asks
+                // the rival to cede a town. See `PEACE_CITY_ASK_RATIO`.
+                if self.peace_asks_city_from_strength(g, pid, *other) {
+                    self.peace_asks_city.insert(*other);
                 }
                 if let Some(peace) = one_war_peace {
                     let key = match peace {
@@ -44249,6 +44269,7 @@ impl Ai for AdvancedAi {
             assessed_turn: plan.assessed_turn,
             peace_offers: self.peace_offers.iter().copied().collect(),
             peace_routed: self.peace_routed.iter().copied().collect(),
+            peace_asks_city: self.peace_asks_city.iter().copied().collect(),
             forces: self
                 .force_groups
                 .iter()

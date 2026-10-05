@@ -86,6 +86,68 @@ function CivvisWarDeclarations.permissions(diplomacy, target)
     return facts;
 end
 
+-- ★★ `peace-asks-a-city`: A PEACE MADE FROM STRENGTH ASKS FOR A TOWN.
+-- The planner offers peace to rivals it outguns three times over to free the
+-- army ("one war at a time", "the required capital is secure"): 239 such
+-- offers in 70 October control games, every one white, 20 accepted the next
+-- turn. A Civilization VI rival that is losing may cede a town in the deal.
+-- When the order's `y` is 1 (Rust `PlanReport::peace_asks_city`) the FIRST
+-- ask adds the rival's nearest cedable town to the locked peace; the retry is
+-- white peace, so a refusal costs one retry window of a peace we wanted
+-- anyway. The town is the subject's own (SubType 0, never CEDE_OCCUPIED),
+-- valid in the host's list (capitals are not), not its Holy City, and not
+-- building a wonder. The calls are the shipped DiplomacyDealView.lua's
+-- (PopulateAvailableCities :1895, OnClickAvailableCity :1593): an engine
+-- call with the wrong argument shape can fault natively, beyond `pcall`.
+-- Returns {id, name, distance} or nil. Off with `PeaceAsksACity = false`.
+-- Exported globally to stay below the chunk-local limit.
+CivvisPeaceCityAsk = function(deal, pid, subject)
+	local possible = DealManager.GetPossibleDealItems(subject, pid, DealItemTypes.CITIES, deal);
+	if type(possible) ~= "table" then return nil; end
+	local ours = {};
+	for _, city in Players[pid]:GetCities():Members() do
+		ours[#ours + 1] = city;
+	end
+	local holy = nil;
+	pcall(function()
+		local city = CityManager.GetCity(Players[subject]:GetReligion():GetHolyCityID());
+		if city ~= nil and city:GetOwner() == subject then holy = city:GetID(); end
+	end);
+	local best, bestEntry, bestDistance = nil, nil, nil;
+	for _, entry in ipairs(possible) do
+		local id = tonumber(entry.ForType);
+		if entry.IsValid and tonumber(entry.SubType) == 0 and id ~= nil and id ~= holy then
+			local city = Players[subject]:GetCities():FindID(id);
+			local wonder = false;
+			pcall(function()
+				local row = GameInfo.Buildings[city:GetBuildQueue():GetCurrentProductionTypeHash()];
+				wonder = row ~= nil and row.IsWonder == true;
+			end);
+			if city ~= nil and not wonder then
+				local distance = nil;
+				for _, mine in ipairs(ours) do
+					local d = Map.GetPlotDistance(city:GetX(), city:GetY(), mine:GetX(), mine:GetY());
+					if distance == nil or d < distance then distance = d; end
+				end
+				if distance ~= nil and (bestDistance == nil or distance < bestDistance) then
+					best = { id = id, name = city:GetName(), distance = distance };
+					bestEntry, bestDistance = entry, distance;
+				end
+			end
+		end
+	end
+	if best == nil then return nil; end
+	local item = deal:AddItemOfType(DealItemTypes.CITIES, subject, pid, bestEntry.SubType, best.id);
+	if item == nil then return nil; end
+	item:SetSubType(bestEntry.SubType);
+	item:SetValueType(best.id);
+	if not item:IsValid(deal) then
+		deal:RemoveItemByID(item:GetID());
+		return nil;
+	end
+	return best;
+end;
+
 -- BEGIN holy-city observation
 -- ReligionScreen.lua:795 forwards every GetHolyCityID return to GetCity.
 -- Keep that call shape, but distinguish an API error from a missing city:
@@ -11129,7 +11191,10 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 				end);
 			end
 		end
+		local cityAsked = CivvisK.peaceCityAsked and CivvisK.peaceCityAsked[other];
 		emit("peace_response", { turn = turn, target = other, accepted = accepted,
+			city_asked = cityAsked and cityAsked.id or nil,
+			city_asked_turn = cityAsked and cityAsked.turn or nil,
 			deal_equal = dealEqual, equality_checked = equalityChecked,
 			submitted = submitted, submitted_action = submittedAction,
 			-- This is deliberately false until `pollPeace` observes the host
@@ -11955,7 +12020,7 @@ local function applyOrder(player, pid, row, turn)
 	-- 200-register main-chunk ceiling and make the entire mod fail to compile.
 	-- Returns `(submitted, concession, reason)`.  `submitted` names an actual
 	-- `SendWorkingDeal` call, deliberately not merely a `pcall` that did not throw.
-	local function submitMajorPeaceDeal(subject, asked, cap)
+	local function submitMajorPeaceDeal(subject, asked, cap, askCity)
 		if DealManager.HasPendingDeal(pid, subject) then
 			return false, 0, "pending";
 		end
@@ -11971,6 +12036,26 @@ local function applyOrder(player, pid, row, turn)
 		-- deal." — the shipped comment beside the UI's Make Peace action.
 		deal:Validate();
 		if not deal:IsValid() then return false, 0, "invalid_deal"; end
+
+		-- See `CivvisPeaceCityAsk`. A failed ask marks the rival, so the next
+		-- attempt goes out as the white peace rather than failing again.
+		if askCity then
+			local okAsk, city = pcall(CivvisPeaceCityAsk, deal, pid, subject);
+			deal:Validate();
+			if not okAsk or not deal:IsValid() then
+				CivvisK.peaceCityFailed = CivvisK.peaceCityFailed or {};
+				CivvisK.peaceCityFailed[subject] = turn;
+				emit("peace_city_ask", { turn = turn, target = subject, failed = true,
+					error = okAsk and "invalid_deal" or tostring(city):sub(1, 160) });
+				return false, 0, "city_ask_failed";
+			end
+			if city ~= nil then
+				CivvisK.peaceCityAsked = CivvisK.peaceCityAsked or {};
+				CivvisK.peaceCityAsked[subject] = { id = city.id, name = city.name, turn = turn };
+				emit("peace_city_ask", { turn = turn, target = subject, city = city.id,
+					name = city.name, distance = city.distance });
+			end
+		end
 
 		local concession = 0;
 		-- A free peace offer is the right first question.  Once the same rival
@@ -12627,7 +12712,12 @@ local function applyOrder(player, pid, row, turn)
 		local ok, submitted, reason;
 		if major then
 			local ran;
-			ran, submitted, concession, reason = pcall(submitMajorPeaceDeal, subject, asked, x);
+			-- `peace-asks-a-city`: the first ask of this war only (the last
+			-- ask older than two retry windows starts a new war's asking).
+			local askCity = y == 1 and cfg.PeaceAsksACity ~= false
+				and (asked == nil or (turn - asked) > 2 * (cfg.PeaceRetryTurns or 5))
+				and not (CivvisK.peaceCityFailed and CivvisK.peaceCityFailed[subject]);
+			ran, submitted, concession, reason = pcall(submitMajorPeaceDeal, subject, asked, x, askCity);
 			if not ran then
 				submitted, concession, reason = false, 0, "throw";
 			end

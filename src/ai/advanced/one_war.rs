@@ -1569,6 +1569,16 @@ impl AdvancedAi {
         march + CAPITAL_PREY_SIEGE_TURNS
     }
 
+    /// `peace-asks-a-city`: whether a white peace offer to `other` also asks
+    /// it to cede a town — not routed, from [`super::PEACE_CITY_ASK_RATIO`]
+    /// times its power.
+    pub(crate) fn peace_asks_city_from_strength(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.peace_asks_a_city
+            && !self.peace_routed.contains(&other)
+            && g.military_power(pid)
+                >= super::PEACE_CITY_ASK_RATIO * g.military_power(other).max(1.0)
+    }
+
     /// `capital-prey-opens-a-front`: whether the war on `other` is a capital
     /// prey's, kept beside the front whatever the front's siege: at war, its
     /// military at most [`CAPITAL_PREY_POWER`] of ours, and its own original

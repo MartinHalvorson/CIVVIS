@@ -5737,6 +5737,16 @@ impl AdvancedAi {
         self.breach_counts_nearby_guns = false;
     }
 
+    /// Opt-in gene `peace-asks-a-city`; see [`Self::peace_asks_a_city`].
+    pub fn enable_peace_asks_a_city(&mut self) {
+        self.peace_asks_a_city = true;
+    }
+
+    /// The twin of `enable_peace_asks_a_city`.
+    pub fn disable_peace_asks_a_city(&mut self) {
+        self.peace_asks_a_city = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

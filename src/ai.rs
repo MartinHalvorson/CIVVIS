@@ -548,6 +548,11 @@ pub struct PlanReport {
     /// median 116 Gold, three quarters of the treasury on every retry
     /// regardless of why the offer was made.
     pub peace_routed: Vec<usize>,
+    /// The subset of `peace_offers` that asks the rival to cede a town
+    /// (`peace-asks-a-city`): white offers made from at least
+    /// `PEACE_CITY_ASK_RATIO` times the rival's power. The live bridge adds
+    /// the town to the first ask only; the retry is white peace.
+    pub peace_asks_city: Vec<usize>,
     pub forces: Vec<ForceReport>,
     /// The one authority spanning target selection, research, production,
     /// treasury, staging, declaration, and exploitation.

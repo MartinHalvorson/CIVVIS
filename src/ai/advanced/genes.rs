@@ -2793,6 +2793,10 @@ pub const GENES: &[Gene] = &[
     // Bombards of Uruk's force stood at its ring. See
     // `siege_train::nearby_gun_city`.
     Gene { tag: "breach-counts-nearby-guns", field: "breach_counts_nearby_guns", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_counts_nearby_guns, disable: AdvancedAi::disable_breach_counts_nearby_guns },
+    // 70 October live games offered peace at three times the rival's power
+    // or more 239 times, every one white; 20 were accepted. See
+    // `PEACE_CITY_ASK_RATIO` and `CivvisPeaceCityAsk` in the agent.
+    Gene { tag: "peace-asks-a-city", field: "peace_asks_a_city", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_asks_a_city, disable: AdvancedAi::disable_peace_asks_a_city },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
