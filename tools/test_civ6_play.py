@@ -558,6 +558,38 @@ class AttachSummaryTests(unittest.TestCase):
                          {"spaceport_turn": 201, "launches_completed": 2,
                           "last_launch_turn": 219})
 
+    def test_setup_timing_is_inert_until_the_clock_runs(self):
+        calls = []
+        timed = civ6_play._setup_timed("step", lambda x: calls.append(x) or x * 2)
+        civ6_play.SETUP_CLOCK["t0"] = None
+        with patch("builtins.print") as printed:
+            self.assertEqual(timed(3), 6)
+        printed.assert_not_called()
+        with patch("builtins.print") as printed:
+            civ6_play.setup_clock_start()
+            self.assertEqual(timed(4), 8)
+            civ6_play.setup_mark("configured", stop=True)
+            civ6_play.setup_mark("after the stop")
+        lines = [c.args[0] for c in printed.call_args_list]
+        self.assertTrue(lines[0].startswith("[setup-time] start "))
+        self.assertRegex(lines[1], r"^\[setup-time\] step \+\d+\.\d\ds took \d+\.\d\ds$")
+        self.assertRegex(lines[2], r"^\[setup-time\] configured \+\d+\.\d\ds$")
+        self.assertEqual(len(lines), 3)
+        self.assertIsNone(civ6_play.SETUP_CLOCK["t0"])
+        self.assertEqual(calls, [3, 4])
+
+    def test_setup_timing_wraps_the_setup_steps_and_spans_launch_to_configured(self):
+        for name in ("screenshot", "click_at", "focus_game", "_main_menu_point",
+                     "_observed_label_point", "_setup_current_value"):
+            self.assertEqual(getattr(civ6_play, name).__name__, name)
+            self.assertTrue(hasattr(getattr(civ6_play, name), "__wrapped__"))
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertIn("setup_clock_start()\n    game_process = launcher.launch(", source)
+        self.assertIn('setup_mark("menu_reached")', source)
+        self.assertIn('setup_mark("configured", stop=True)', source)
+        self.assertLess(source.index('setup_mark("configured", stop=True)'),
+                        source.index('"in a configured game; the agent holds the seat'))
+
     def test_write_attached_summary_indexes_the_run_after_writing_it(self):
         import civ6_ladder
 
