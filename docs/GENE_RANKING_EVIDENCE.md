@@ -349,6 +349,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `sanctuary-yields-a-held-queue` | off (unmeasured) | Opt-in gene `sanctuary-yields-a-held-queue`; see `Self::sanctuary_yields_a_held_queue`. | 1 \| 1 |
 | `science-denounce-waits-for-the-race` | off (unmeasured) | Opt-in gene `science-denounce-waits-for-the-race`; see `Self::science_denounce_waits_for_the_race`. | 1 \| 1 |
 | `science-ladder-reads-the-clock` | off (unmeasured) | Opt-in gene `science-ladder-reads-the-clock`; see `Self::science_ladder_reads_the_clock`. | 1 \| 1 |
+| `science-leader-is-the-target` | off (unmeasured) | Opt-in gene `science-leader-is-the-target`; see `Self::science_leader_is_the_target`. | 1 \| 1 |
 | `second-front-keeps-its-war` | off (unmeasured) | Opt-in gene `second-front-keeps-its-war`; see `Self::second_front_keeps_its_war`. | 1 \| 1 |
 | `second-front-kept-when-winning` | off (unmeasured) | Opt-in gene `second-front-kept-when-winning`; see `Self::second_front_kept_when_winning`. | — \| 2 |
 | `second-front-kept-when-winning-2` | off (unmeasured) | Opt-in gene `second-front-kept-when-winning-2`; see `Self::second_front_kept_when_winning_2`. | — \| 2 |

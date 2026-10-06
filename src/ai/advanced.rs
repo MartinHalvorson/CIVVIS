@@ -7404,6 +7404,17 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `science-leader-is-the-target`: at peace, from standard turn 165 (109
+    /// at Online speed), the met rival making
+    /// `science_leader::SCIENCE_LEADER_MARGIN` times every other major's
+    /// Science a turn is the Domination campaign's rival when we hold the
+    /// declaration edge over it and can march to it, behind the actionable
+    /// denial and ahead of the elective picks. The counter reads a Science
+    /// race only from the first launch; the Science-a-turn leader at Online
+    /// turn 110 won 15 of the 23 Science losses of October 5-6 (the
+    /// tech-count leader 9). See `advanced/science_leader.rs`. Off by
+    /// default.
+    science_leader_is_the_target: bool,
     /// `siege-target-needs-a-road`: a siege whose train is held on land for
     /// want of a road (`stage-march-keeps-to-land`'s hold) by half or more of
     /// its units three turns running is stood down at once, whatever the
@@ -8562,6 +8573,10 @@ mod siege_road;
 /// `capital-taken-moves-on`: a taken capital's army moves on to the next
 /// capital. See `advanced/capital_moves_on.rs`.
 mod capital_moves_on;
+
+/// `science-leader-is-the-target`: at peace, the rival that out-researches
+/// the board is the campaign's rival. See `advanced/science_leader.rs`.
+mod science_leader;
 
 /// `march-uses-its-moves`: a march toward a siege ring walks as far as its
 /// movement carries it. See `advanced/march_moves.rs`.
@@ -9877,6 +9892,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            science_leader_is_the_target: false,
             siege_target_needs_a_road: false,
             siege_road_tally: BTreeMap::new(),
             siege_road_closed: BTreeMap::new(),
@@ -14082,6 +14098,8 @@ impl AdvancedAi {
         } else {
             None
         };
+        // `science-leader-is-the-target`: `None` with the gene off or at war.
+        let science_leader = self.science_leader_at_peace(g, pid);
         let target_player = if let Some(emergency) = &emergency_objective {
             Some(emergency.target)
         } else if let Some((rival, _)) = finishing_front {
@@ -14112,6 +14130,10 @@ impl AdvancedAi {
                         })
                         // See `road_blocker_front` (`blocker-becomes-the-target`).
                         .or_else(|| self.road_blocker_front(g, pid))
+                        // See `science_leader_at_peace`
+                        // (`science-leader-is-the-target`): behind the
+                        // counter, ahead of every elective pick below.
+                        .or(science_leader)
                         // A secured capital advances the Domination campaign
                         // to another capital owner, even when its frontier
                         // must be taken first. Otherwise prefer an eligible
@@ -14328,6 +14350,15 @@ impl AdvancedAi {
                    "Eliminating {}", g.players[rival].civ;
                    "{} Diplomatic Victory points that only its elimination takes off the board; {:.0} power against their {:.0}",
                    g.players[rival].dvp, g.military_power(pid), g.military_power(rival));
+        }
+        // See `science_leader_at_peace`.
+        if let Some(rival) = science_leader.filter(|rival| target_player == Some(*rival)) {
+            let (_, science, runner_up) =
+                Self::science_leader_by(g, pid, 1.0).unwrap_or((rival, 0.0, 0.0));
+            think!(self.journal(), Strategy, Strategy,
+                   "Science leader is the target: {}", g.players[rival].civ;
+                   "{science:.0} Science a turn against the next major's {runner_up:.0}; {:.0} power against their steady {:.0}",
+                   g.military_power(pid), self.steady_rival_power(g, rival));
         }
         let suppression_target = actionable_denial
             .filter(|(rival, counter)| {

@@ -3127,6 +3127,12 @@ pub const GENES: &[Gene] = &[
     // Hinduism from Bogota's tile on turns 49-51, two of them into our new
     // Buddhist Holy City. See `advanced/founder_faith.rs`.
     Gene { tag: "founder-spreads-only-its-faith", field: "founder_spreads_only_its_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_spreads_only_its_faith, disable: AdvancedAi::disable_founder_spreads_only_its_faith },
+    // Emperor G185-G190 (civvis-20261006T024058Z..T035131Z) all lost to
+    // Science at 202-237; the counter first named a Science race at G187
+    // t190 (the Maya; the Zulu won). The Science-a-turn leader was the winner
+    // in all five at t80/100/120, and in 15 of 23 Science losses of 10-05/06
+    // at t110 (tech-count leader 9). See `advanced/science_leader.rs`.
+    Gene { tag: "science-leader-is-the-target", field: "science_leader_is_the_target", kind: Kind::OptIn, enable: AdvancedAi::enable_science_leader_is_the_target, disable: AdvancedAi::disable_science_leader_is_the_target },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

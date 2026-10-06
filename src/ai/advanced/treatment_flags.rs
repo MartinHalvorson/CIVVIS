@@ -6524,6 +6524,17 @@ impl AdvancedAi {
         self.founder_spreads_only_its_faith = false;
     }
 
+    /// Opt-in gene `science-leader-is-the-target`; see
+    /// [`Self::science_leader_is_the_target`].
+    pub fn enable_science_leader_is_the_target(&mut self) {
+        self.science_leader_is_the_target = true;
+    }
+
+    /// The twin of `enable_science_leader_is_the_target`.
+    pub fn disable_science_leader_is_the_target(&mut self) {
+        self.science_leader_is_the_target = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
