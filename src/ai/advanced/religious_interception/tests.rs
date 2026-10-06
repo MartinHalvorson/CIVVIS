@@ -183,3 +183,143 @@ fn an_outgunned_seat_does_not_open_a_religious_interception() {
     assert!(g.units.contains_key(&missionary));
     assert_eq!(ai.religious_interception_war, None);
 }
+
+/// Live Emperor G186 (civvis-20261006T025742Z) at turn 73: we had founded a
+/// faith of our own, our cities followed the rival's, its faith held every
+/// major but one, none of its cities was located, its spreader stood beside
+/// our garrison, and a war on a weaker major (Sweden) was already running.
+/// Powers are that turn's readings: ours 341, the faith 195, Sweden 142.
+fn g186_match_point_beside_a_war() -> (Game, AdvancedAi, StrategicPlan, u32) {
+    let (mut g, ai, plan, _, missionary) = fixture();
+    g.players[0].religion = Some("Buddhism".into());
+    g.apply(0, &Action::DeclareWar { player: 2 }).unwrap();
+    Arc::make_mut(&mut g.observed_military_power).extend([(0, 341.0), (1, 195.0), (2, 142.0)]);
+    assert!(g.is_at_war(0, 2));
+    assert!(!g.is_at_war(0, 1));
+    assert!(
+        g.player_city_ids(1).is_empty(),
+        "no city of the faith is located"
+    );
+    assert!(
+        g.civ_follows_religion(0, "Islam"),
+        "our majority follows the rival faith"
+    );
+    assert!(ai.urgent_victory_threat(&g, 1));
+    (g, ai, plan, missionary)
+}
+
+#[test]
+fn a_match_point_faith_is_intercepted_beside_a_running_war_under_the_gene() {
+    let (mut g, mut ai, plan, missionary) = g186_match_point_beside_a_war();
+    ai.enable_religious_match_point_defence();
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(
+        g.is_at_war(0, 1),
+        "the match point is intercepted though another war is running"
+    );
+    assert!(
+        !g.units.contains_key(&missionary),
+        "the opening condemns the spreader it promised"
+    );
+    assert_eq!(ai.religious_interception_war, Some((1, 83)));
+    assert!(g.is_at_war(0, 2), "the running war is untouched");
+}
+
+#[test]
+fn without_the_gene_a_running_war_still_refuses_the_interception() {
+    let (mut g, mut ai, plan, missionary) = g186_match_point_beside_a_war();
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(
+        !g.is_at_war(0, 1),
+        "G186: no war on the faith while Sweden's ran"
+    );
+    assert!(g.units.contains_key(&missionary));
+    assert_eq!(ai.religious_interception_war, None);
+}
+
+#[test]
+fn the_match_point_defence_needs_the_edge_beside_a_running_war() {
+    // Short of the faith and every enemy together: 341 against 195 + 160.
+    let (mut g, mut ai, plan, missionary) = g186_match_point_beside_a_war();
+    ai.enable_religious_match_point_defence();
+    Arc::make_mut(&mut g.observed_military_power).insert(2, 160.0);
+    assert!(!ai.match_point_defence_has_the_edge(&g, 0, 1, &[2]));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(
+        !g.is_at_war(0, 1),
+        "the faith and Sweden together outgun us"
+    );
+    assert!(g.units.contains_key(&missionary));
+
+    // Short of 1.2 times the faith's power: 233 against 195 (1.19x).
+    let (mut g, mut ai, plan, missionary) = g186_match_point_beside_a_war();
+    ai.enable_religious_match_point_defence();
+    Arc::make_mut(&mut g.observed_military_power).extend([(0, 233.0), (2, 30.0)]);
+    assert!(!ai.match_point_defence_has_the_edge(&g, 0, 1, &[2]));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(
+        !g.is_at_war(0, 1),
+        "a second front under 1.2 times the faith"
+    );
+    assert!(g.units.contains_key(&missionary));
+
+    // At the edge on both readings it opens: 234 against 195 (1.20x) and 225.
+    let (mut g, mut ai, plan, missionary) = g186_match_point_beside_a_war();
+    ai.enable_religious_match_point_defence();
+    Arc::make_mut(&mut g.observed_military_power).extend([(0, 234.0), (2, 30.0)]);
+    assert!(ai.match_point_defence_has_the_edge(&g, 0, 1, &[2]));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(g.is_at_war(0, 1));
+    assert!(!g.units.contains_key(&missionary));
+}
+
+#[test]
+fn the_match_point_defence_never_opens_with_a_city_under_threat() {
+    let (mut g, mut ai, plan, missionary) = g186_match_point_beside_a_war();
+    ai.enable_religious_match_point_defence();
+    // A Swedish army beside our only city: the second front waits.
+    for _ in 0..3 {
+        g.spawn_test_unit("swordsman", 2, (3, 9));
+    }
+    assert!(ai.threatened_city(&g, 0).is_some());
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!g.is_at_war(0, 1));
+    assert!(g.units.contains_key(&missionary));
+}
+
+/// The rival's strongest lane can mask its faith: here its Diplomatic
+/// Victory points read above the religion lane's 75, so the shipped
+/// interception, which asks for a Religion-led rival, passes it by.
+#[test]
+fn a_masked_match_point_faith_is_read_on_the_religion_lane_under_the_gene() {
+    let (mut g, mut ai, _, _, missionary) = fixture();
+    // A founder, as in G186: the faithless counter cannot make the opening
+    // urgent, so only `match_point_spreaders_at_home` can.
+    g.players[0].religion = Some("Buddhism".into());
+    g.players[1].dvp = 16;
+    let (lane, progress) = ai.rival_pressure(&g, 1);
+    assert_ne!(
+        lane,
+        GrandStrategy::Religion,
+        "the faith is masked ({progress})"
+    );
+    assert!(ai.faith_at_match_point(&g, 1));
+    assert!(!ai.match_point_faith(&g, 1), "off without the gene");
+    assert!(!ai.religious_interception_opening(&mut g, 0));
+    assert!(!g.is_at_war(0, 1));
+
+    ai.enable_religious_match_point_defence();
+    assert!(ai.match_point_faith(&g, 1));
+    assert!(ai.match_point_spreaders_at_home(&g, 0, 1));
+    assert!(ai.religious_interception_opening(&mut g, 0));
+    assert!(g.is_at_war(0, 1));
+    assert!(!g.units.contains_key(&missionary));
+}
+
+#[test]
+fn religious_match_point_defence_is_a_native_opt_in_off_in_both_controllers() {
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "religious-match-point-defence",
+        |ai| ai.religious_match_point_defence,
+    );
+}

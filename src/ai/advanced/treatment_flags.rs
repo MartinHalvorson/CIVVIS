@@ -6491,6 +6491,17 @@ impl AdvancedAi {
         self.tier_gap_reads_the_fielded_line = false;
     }
 
+    /// Opt-in gene `religious-match-point-defence`; see
+    /// `AdvancedAi::match_point_defence_has_the_edge`.
+    pub fn enable_religious_match_point_defence(&mut self) {
+        self.religious_match_point_defence = true;
+    }
+
+    /// The twin of `enable_religious_match_point_defence`.
+    pub fn disable_religious_match_point_defence(&mut self) {
+        self.religious_match_point_defence = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

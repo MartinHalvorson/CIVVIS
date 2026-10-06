@@ -338,6 +338,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `recovery-needs-the-deficit` | off (unmeasured) | Opt-in gene `recovery-needs-the-deficit`; see `Self::recovery_needs_the_deficit`. | 1 \| 1 |
 | `recovery-peace-waits` | off (unmeasured) | Opt-in gene `recovery-peace-waits`; see `Self::recovery_peace_waits`. | 1 \| 1 |
 | `reinforce-before-stall` | off (unmeasured) | Enable `reinforce-before-stall` for measurement. | 1 \| 1 |
+| `religious-match-point-defence` | off (unmeasured) | Opt-in gene `religious-match-point-defence`; see `AdvancedAi::match_point_defence_has_the_edge`. | 1 \| 1 |
 | `religious-threat-spares-the-front` | off (unmeasured) | Opt-in gene `religious-threat-spares-the-front`; see `Self::religious_threat_spares_the_front`. | 1 \| 1 |
 | `research-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 1 \| 3 |
 | `ring-fires-on-the-city` | off (unmeasured) | Opt-in gene `ring-fires-on-the-city`; see `Self::ring_fires_on_the_city`. | 1 \| 1 |

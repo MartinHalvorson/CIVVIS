@@ -3107,6 +3107,13 @@ pub const GENES: &[Gene] = &[
     // our stale Archer (25) read a 1.82 tier factor while our Musketmen (55)
     // out-tiered every Nubian unit. See `city_campaign::war_bill_tier_gap`.
     Gene { tag: "tier-gap-reads-the-fielded-line", field: "tier_gap_reads_the_fielded_line", kind: Kind::OptIn, enable: AdvancedAi::enable_tier_gap_reads_the_fielded_line, disable: AdvancedAi::disable_tier_gap_reads_the_fielded_line },
+    // Live Emperor G186 (civvis-20261006T025742Z): Indonesia's Hinduism held
+    // every major but the Aztecs from turn 52, its Missionaries and Apostles
+    // stood beside our cities, no Indonesian city was ever located, and the
+    // religious interception refused every turn from 53 because a war on
+    // Sweden was running; Indonesia won on Religion at 84. See
+    // `religious_interception::match_point_defence_has_the_edge`.
+    Gene { tag: "religious-match-point-defence", field: "religious_match_point_defence", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_match_point_defence, disable: AdvancedAi::disable_religious_match_point_defence },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
