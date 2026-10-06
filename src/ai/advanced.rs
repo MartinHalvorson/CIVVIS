@@ -5400,6 +5400,10 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `declaration-waits-for-the-breach`: the last turn a declaration was
+    /// held for a breaker or the breach. See
+    /// `siege_train::declaration_hold_patience`.
+    declaration_hold_seen: u32,
     /// `declaration-waits-for-the-breach`: a staged declaration on a walled
     /// objective also waits until the force by it could breach it. See
     /// `siege_train::declaration_breach_reading`.
@@ -6039,6 +6043,10 @@ pub struct AdvancedAi {
     /// `adopted_faith_sanctuary::counterfaith_is_safe`.
     counterfaith_leaves_two_holdouts: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `unwalled-target-declares-into-the-strike`: the last turn a
+    /// declaration was held for a first-turn strike. See
+    /// `siege_train::first_strike_hold_patience`.
+    first_strike_seen: u32,
     /// `unwalled-target-declares-into-the-strike`: the unwalled objective
     /// tile the declaration first held on for a first-turn strike, and that
     /// turn. See `siege_train::first_strike_hold_patience`.
@@ -9575,6 +9583,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            declaration_hold_seen: 0,
             declaration_waits_for_the_breach: false,
             capital_taken_moves_on: false,
             declaration_needs_the_edge_2: false,
@@ -9702,6 +9711,7 @@ impl AdvancedAi {
             colonization_earns_its_slot_2: false,
             counterfaith_leaves_two_holdouts: false,
             // ---- append: e-f ----------------------------------------
+            first_strike_seen: 0,
             first_strike_hold: None,
             flipped_capital_finishes: false,
             faith_counter_needs_the_edge: false,

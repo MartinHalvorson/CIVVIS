@@ -113,6 +113,14 @@ pub(super) const FIRST_STRIKE_SHARE: f64 = 0.5;
 /// holds on one unwalled objective for its first-turn strike before it goes
 /// ahead.
 pub(super) const FIRST_STRIKE_PATIENCE: u32 = 10;
+/// `declaration-waits-for-the-breach` and
+/// `unwalled-target-declares-into-the-strike`: standard turns in a row a
+/// declaration must go unheld before its hold's patience clock restarts. A
+/// single turn the reading passed restarted it: live Emperor
+/// civvis-20261006T065830Z (game 204) held on Eger from turn 137 to 148
+/// across a ten-turn patience, its budget dipping under the line on turns
+/// 143-144.
+pub(super) const DECLARATION_HOLD_RESET: u32 = 3;
 /// A City Center strikes this far; nothing stands inside it before the
 /// train is staged.
 pub(super) const CITY_STRIKE_RANGE: i32 = 2;
@@ -612,12 +620,19 @@ impl AdvancedAi {
         short: bool,
     ) -> bool {
         let Some(pos) = objective.filter(|_| short) else {
-            self.first_strike_hold = None;
+            // An unheld turn or two keeps the clock; DECLARATION_HOLD_RESET
+            // in a row restart it.
+            if g.turn.saturating_sub(self.first_strike_seen)
+                >= g.standard_duration(DECLARATION_HOLD_RESET)
+            {
+                self.first_strike_hold = None;
+            }
             return false;
         };
         if self.first_strike_hold.is_none_or(|(held, _)| held != pos) {
             self.first_strike_hold = Some((pos, g.turn));
         }
+        self.first_strike_seen = g.turn;
         self.first_strike_hold.is_some_and(|(_, since)| {
             g.turn.saturating_sub(since) < g.standard_duration(FIRST_STRIKE_PATIENCE)
         })
@@ -654,7 +669,14 @@ impl AdvancedAi {
         holdable: bool,
     ) -> bool {
         let Some(pos) = objective.filter(|_| breaker_missing) else {
-            self.declaration_breaker_hold = None;
+            // `declaration-waits-for-the-breach`: an unheld turn or two keeps
+            // the clock; DECLARATION_HOLD_RESET in a row restart it.
+            let keep = self.declaration_waits_for_the_breach
+                && g.turn.saturating_sub(self.declaration_hold_seen)
+                    < g.standard_duration(DECLARATION_HOLD_RESET);
+            if !keep {
+                self.declaration_breaker_hold = None;
+            }
             return false;
         };
         if self
@@ -665,6 +687,9 @@ impl AdvancedAi {
                 return false;
             }
             self.declaration_breaker_hold = Some((pos, g.turn));
+        }
+        if holdable {
+            self.declaration_hold_seen = g.turn;
         }
         holdable
             && self.declaration_breaker_hold.is_some_and(|(_, since)| {
