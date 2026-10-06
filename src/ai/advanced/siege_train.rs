@@ -230,6 +230,29 @@ pub(super) const MUSTER_FAR: i32 = STAGING_FAR + 3;
 /// the damage budget over members this far out, since a staging gun holds
 /// on its own danger line, often behind the muster.
 pub(super) const MUSTER_BREACH_FAR: i32 = STAGING_FAR + 5;
+/// `stage-musters-out-of-reach`: standard turns a train that closed from the
+/// muster line keeps closing while it still meets the bill with a breaker,
+/// whatever its damage budget reads. Live King civvis-20261006T021637Z
+/// (game 183) read Kish's mustered budget at 8.8 turns against 8.4
+/// endurance, closed on turns 115, 120, 125 and 131 and fell back between:
+/// its Bombards drifted across the ten-tile reading line, eight to ten tiles
+/// out, and every fall-back pulled them out again, so no close lasted the
+/// march of a six-step road.
+pub(super) const MUSTER_COMMIT_TURNS: u32 = 5;
+
+/// `stage-musters-out-of-reach`: a train that closed at `closed`, within
+/// `window` turns of `turn`, keeps closing while the whole train still meets
+/// the bill (its members walk in from the muster line) and no breaker hold
+/// reads.
+pub(super) fn muster_commitment_holds(
+    closed: Option<u32>,
+    turn: u32,
+    window: u32,
+    billed: bool,
+    breaker_hold: bool,
+) -> bool {
+    billed && !breaker_hold && closed.is_some_and(|at| turn.saturating_sub(at) < window)
+}
 /// `bombers-open-the-siege-walls`: a bomber over a walled siege still kills a
 /// reliever this close to the besieged city when the kill is worth more than
 /// its wall strike.
@@ -1539,6 +1562,20 @@ impl AdvancedAi {
                 Some((city, siege))
             })
             .collect();
+        // `stage-musters-out-of-reach`: the muster's readiness and the turn it
+        // closed follow their city through the rebuild as the siege does. Kept
+        // under the old ids, the fresh board's next city read another city's
+        // muster: a replay of live King game 183 read Kish's train "closed
+        // since t107" on turn 115 after it had held on turns 111-114.
+        let city_of = |old: u32| next.city_at(previous.cities.get(&old)?.pos);
+        self.stage_muster_ready = std::mem::take(&mut self.stage_muster_ready)
+            .into_iter()
+            .filter_map(|(old, ready)| city_of(old).map(|city| (city, ready)))
+            .collect();
+        self.stage_muster_closed = std::mem::take(&mut self.stage_muster_closed)
+            .into_iter()
+            .filter_map(|(old, at)| city_of(old).map(|city| (city, at)))
+            .collect();
         // Only surviving siege takers own these reservations. In particular,
         // losing an objective must not leave its old taker ID reserved.
         self.reserved_units = self
@@ -2440,7 +2477,17 @@ impl AdvancedAi {
             // of the land soldiers lost died on the staging ring in Stage.
             // A muster whose walls are never answered waits at the line until
             // the commitment clock retargets it.
-            let ready = dying || walls_answered;
+            let committed = muster_commitment_holds(
+                self.stage_muster_closed.get(&cid).copied(),
+                turn,
+                g.standard_duration(MUSTER_COMMIT_TURNS),
+                strength >= bill || breach_taker.is_some(),
+                no_breaker_mustered,
+            );
+            let ready = dying || walls_answered || committed;
+            if !ready {
+                self.stage_muster_closed.remove(&cid);
+            }
             if !ready && self.journal().wants(crate::reasoning::Level::Detail) {
                 // Why the muster holds, read as its readiness reads it: live
                 // King civvis-20261006T021637Z (game 183) held Kish's train
@@ -2463,6 +2510,9 @@ impl AdvancedAi {
                     city.pos);
             }
             let was = self.stage_muster_ready.insert(cid, ready);
+            if ready && was != Some(true) {
+                self.stage_muster_closed.insert(cid, turn);
+            }
             if ready
                 && was == Some(false)
                 && self.journal().wants(crate::reasoning::Level::Decision)
@@ -2634,6 +2684,17 @@ impl AdvancedAi {
             let damage_budget = damage_budget
                 .map(|(turns, endurance)| format!("{turns:.1} turns / {endurance:.1} endurance"))
                 .unwrap_or_else(|| "unknown".to_string());
+            // `stage-musters-out-of-reach`: the muster's state, at this level
+            // so a busy turn's journal budget cannot drop it.
+            let muster_note = match (
+                self.stage_musters_out_of_reach && stage == SiegeStage::Stage,
+                self.stage_muster_ready.get(&cid),
+                self.stage_muster_closed.get(&cid),
+            ) {
+                (true, Some(true), Some(at)) => format!("; muster closed since t{at}"),
+                (true, Some(false), _) => "; muster holds".to_string(),
+                _ => String::new(),
+            };
             let taker_note = match taker {
                 Some(uid) => format!(", taker {} reserved", g.units[&uid].kind),
                 None => String::new(),
@@ -2674,7 +2735,7 @@ impl AdvancedAi {
                 "Siege of {name}: {}", stage.as_str();
                 "ring {sealed}/{ring} sealed, walls {}/{}, city {}/200, {} of {} units staged, \
                  {strength:.0} strength ({staged:.0} near) against a bill of {bill:.0}; \
-                 damage ready {damage_ready} with {damage_budget}{taker_note}{breach_note}",
+                 damage ready {damage_ready} with {damage_budget}{taker_note}{breach_note}{muster_note}",
                 city.wall_hp, city.wall_max, city.hp,
                 force.iter().filter(|uid| g.wdist(g.units[uid].pos, city.pos) <= STAGING_FAR).count(),
                 force.len();
