@@ -664,6 +664,37 @@ impl AdvancedAi {
     /// capture a civilian; the train struck the city for 4 damage in two
     /// turns and fell back to Stage by 104. Over 10-04..06, 1,206 raid
     /// orders rode out on turns a siege of ours stood in Invest or Reduce.
+    /// `invest-keeps-its-cavalry`: assess this turn's land sieges before the
+    /// raid planner reads them. The raids are planned ahead of the unit
+    /// loop, whose first siege member assesses its siege, so the raids read
+    /// last turn's record: live Emperor civvis-20261006T121545Z (game 228)
+    /// sent three Horsemen out "to raid behind the wing" at turn 116 onto
+    /// tiles beside Ngulu Mapu, a moment before its muster closed "ready" and
+    /// the siege entered Invest. `assess_siege` runs once a turn, so the
+    /// unit loop's later calls read this assessment.
+    pub(super) fn assess_sieges_before_the_raids(
+        &mut self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        if !self.invest_keeps_its_cavalry || !(self.siege_train || self.siege_positive_damage_budget)
+        {
+            return;
+        }
+        let groups: Vec<ForceGroup> = self
+            .force_groups
+            .iter()
+            .filter(|group| group.domain == ForceDomain::Land)
+            .cloned()
+            .collect();
+        for group in groups {
+            if let Some(cid) = self.siege_city_of(g, pid, plan, &group) {
+                self.assess_siege(g, pid, cid, plan, &group);
+            }
+        }
+    }
+
     pub(super) fn siege_needs_the_unit(&self, g: &Game, pid: usize, uid: u32) -> bool {
         let Some(unit) = g.units.get(&uid) else {
             return false;

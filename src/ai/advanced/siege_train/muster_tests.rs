@@ -291,6 +291,29 @@ fn a_train_gathered_nine_tiles_out_meets_its_bill() {
     );
 }
 
+/// `invest-keeps-its-cavalry`: the turn's sieges are assessed before the
+/// raid planner reads them, so a muster that closes this turn already reads
+/// closed. Live Emperor game 228 sent three Horsemen out to raid beside
+/// Ngulu Mapu the turn its muster closed. Off, the record stays last turn's.
+#[test]
+fn the_raids_read_this_turns_siege_under_the_gene() {
+    for gene in [false, true] {
+        let (g, cid, mut ai, _, plan) = mustered_train(true);
+        let before = ai.sieges[&cid].assessed;
+        assert!(before < g.turn, "fixture: last turn's record");
+        if gene {
+            ai.enable_invest_keeps_its_cavalry();
+        }
+        ai.assess_sieges_before_the_raids(&g, 0, &plan);
+        if gene {
+            assert_eq!(ai.sieges[&cid].assessed, g.turn);
+            assert_eq!(ai.stage_muster_ready.get(&cid).copied(), Some(true));
+        } else {
+            assert_eq!(ai.sieges[&cid].assessed, before);
+        }
+    }
+}
+
 #[test]
 fn a_gathered_train_without_a_breaker_holds_however_long_it_waits() {
     let (mut g, cid, mut ai, group, plan) = mustered_train(false);

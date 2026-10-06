@@ -44947,6 +44947,8 @@ impl AdvancedAi {
         // `air-surge-2` raiders: spare surge cavalry pillage behind the wing.
         // Nothing is read outside a Domination surge at war. See
         // `advanced/air_surge/raids.rs`.
+        // `invest-keeps-its-cavalry`: see `assess_sieges_before_the_raids`.
+        self.assess_sieges_before_the_raids(g, pid, plan);
         let raiders = self.plan_air_surge_raids(g, pid, plan, &air_assault_units);
         air_assault_units.extend(raiders);
         // A faithless Domination seat condemns the spreaders converting it.
