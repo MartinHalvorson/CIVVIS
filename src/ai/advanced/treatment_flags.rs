@@ -6491,6 +6491,17 @@ impl AdvancedAi {
         self.tier_gap_reads_the_fielded_line = false;
     }
 
+    /// Opt-in gene `unwalled-target-declares-into-the-strike`; see
+    /// [`Self::unwalled_target_declares_into_the_strike`].
+    pub fn enable_unwalled_target_declares_into_the_strike(&mut self) {
+        self.unwalled_target_declares_into_the_strike = true;
+    }
+
+    /// The twin of `enable_unwalled_target_declares_into_the_strike`.
+    pub fn disable_unwalled_target_declares_into_the_strike(&mut self) {
+        self.unwalled_target_declares_into_the_strike = false;
+    }
+
     /// Opt-in gene `unwalled-city-takes-the-swarm`; see
     /// [`Self::unwalled_city_takes_the_swarm`].
     pub fn enable_unwalled_city_takes_the_swarm(&mut self) {

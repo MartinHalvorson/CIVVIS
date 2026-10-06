@@ -3139,6 +3139,12 @@ pub const GENES: &[Gene] = &[
     // lost a city 3 times in 27, those over it 0 in 26. G191 embargoed India
     // with no city located. See `one_war::counter_war_has_the_emperor_edge`.
     Gene { tag: "counter-war-needs-the-emperor-edge", field: "counter_war_needs_the_emperor_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_war_needs_the_emperor_edge, disable: AdvancedAi::disable_counter_war_needs_the_emperor_edge },
+    // Live Emperor 10-06: ten siege targets went from no walls to 100 or 400
+    // in one turn once threatened, and 12 of 14 declarations on majors struck
+    // nothing on the declaration turn; G201 declared on Poland with nobody
+    // near Bydgoszcz, walled 400 the next turn. See
+    // `siege_train::first_strike_blows`.
+    Gene { tag: "unwalled-target-declares-into-the-strike", field: "unwalled_target_declares_into_the_strike", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_target_declares_into_the_strike, disable: AdvancedAi::disable_unwalled_target_declares_into_the_strike },
     // Live Emperor 10-06: G194 declared on Vietnam at 2.7x with Dong Hoi
     // already behind 200 walls and one gun, its budget 18.0 turns against 8.7
     // endurance; walls 300 by t89 and no city fell. Walled-target wars without

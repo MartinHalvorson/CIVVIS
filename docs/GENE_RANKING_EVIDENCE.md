@@ -393,6 +393,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `treasury-at-work-2-2` | off (unmeasured) | Keep the working reserve and buy the first Builder near local work. | 1 \| 2 |
 | `unique-unit-preference` | off (unmeasured) | Opt-in gene `unique-unit-preference`; see `BasicAi::unique_unit_preference`. | 1 \| 1 |
 | `unwalled-city-takes-the-swarm` | off (unmeasured) | Opt-in gene `unwalled-city-takes-the-swarm`; see `Self::unwalled_city_takes_the_swarm`. | 1 \| 1 |
+| `unwalled-target-declares-into-the-strike` | off (unmeasured) | Opt-in gene `unwalled-target-declares-into-the-strike`; see `Self::unwalled_target_declares_into_the_strike`. | 1 \| 1 |
 | `upgrade-window-campaign` | off (unmeasured) | Enable `upgrade-window-campaign` for measurement. | 1 \| 1 |
 | `upkeep-reserve` | off (unmeasured) | Upgrade passes keep one and a half turns of the army's bill in the treasury instead of a flat 30 Gold at war. | 1 \| 1 |
 | `urgent-denial-needs-the-edge` | off (unmeasured) | Opt-in gene `urgent-denial-needs-the-edge`; see `AdvancedAi::urgent_denial_has_the_edge`. | 1 \| 1 |

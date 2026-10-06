@@ -6055,6 +6055,10 @@ pub struct AdvancedAi {
     /// followed its faith when the turn began, and holds a spreader of any
     /// other faith. See `advanced/founder_faith.rs`.
     founder_spreads_only_its_faith: bool,
+    /// `unwalled-target-declares-into-the-strike`: the unwalled objective
+    /// tile the declaration first held on for a first-turn strike, and that
+    /// turn. See `siege_train::first_strike_hold_patience`.
+    first_strike_hold: Option<(Pos, u32)>,
     /// `flipped-capital-finishes`: a Free City holding the original capital
     /// whose capture completes Domination is the war that ends the game. The
     /// Free Cities seat is barbarian-flagged, so `domination_finish_at_war`,
@@ -7867,6 +7871,11 @@ pub struct AdvancedAi {
     /// `BasicAi::settler_before_the_navy`.
     settler_before_the_navy: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `unwalled-target-declares-into-the-strike`: an offensive declaration
+    /// on an objective with no walls waits until units that can strike it
+    /// this turn bring a first-turn blow. See
+    /// `siege_train::first_strike_blows`.
+    unwalled_target_declares_into_the_strike: bool,
     /// `unwalled-city-takes-the-swarm`: against a city with no standing wall
     /// (never built, `walls 0/0`, or breached to `0/N`), every fit
     /// melee member the siege budget counts is per-turn city fire, its reply
@@ -9737,6 +9746,7 @@ impl AdvancedAi {
             counterfaith_leaves_two_holdouts: false,
             // ---- append: e-f ----------------------------------------
             founder_spreads_only_its_faith: false,
+            first_strike_hold: None,
             flipped_capital_finishes: false,
             faith_counter_needs_the_edge: false,
             favor_bought_before_congress: false,
@@ -9987,6 +9997,7 @@ impl AdvancedAi {
 
             settler_before_the_navy: false,
             // ---- append: t-z ----------------------------------------
+            unwalled_target_declares_into_the_strike: false,
             unwalled_city_takes_the_swarm: false,
             turn_start_faith: None,
             tier_gap_reads_the_fielded_line: false,
@@ -23037,6 +23048,49 @@ impl AdvancedAi {
         let staged = staged && edge;
         let road_opening_ready = !staged && road_opening;
         let moving_on_ready = !staged && moving_on;
+        // `unwalled-target-declares-into-the-strike`: an offensive
+        // declaration on an objective with no walls waits, on its own
+        // patience, until units that can strike it this turn would take
+        // FIRST_STRIKE_SHARE of its health — the rival buys walls on its
+        // first turn at war. Counters, denials and rushes are never held.
+        let first_strike = if self.unwalled_target_declares_into_the_strike
+            && !urgent_denial
+            && !faith_counter_due
+            && !rushing
+        {
+            objective.and_then(|(city, _)| {
+                let health = f64::from(g.cities.get(&city)?.hp);
+                self.first_strike_blows(g, pid, city)
+                    .map(|blows| (blows, health))
+            })
+        } else {
+            None
+        };
+        let offensive = staged || overwhelming_ready || road_opening_ready || moving_on_ready;
+        let strike_short = close_enough
+            && ready
+            && offensive
+            && first_strike.is_some_and(|(blows, health)| {
+                blows < health * siege_train::FIRST_STRIKE_SHARE
+            });
+        let strike_held =
+            self.first_strike_hold_patience(g, objective.map(|(_, pos)| pos), strike_short);
+        if strike_held {
+            if let (Some(city), Some((blows, health))) =
+                (plan.target_city.and_then(|city| g.cities.get(&city)), first_strike)
+            {
+                think!(self.journal(), Military, Detail,
+                       "Holding the declaration on {} for a first-turn strike", g.players[target].civ;
+                       "{} has no walls; the units that can strike it this turn bring {blows:.0} of its \
+                        {health:.0} health, under {:.0}% — a war opened now gives it a turn to buy walls",
+                       city.name, siege_train::FIRST_STRIKE_SHARE * 100.0;
+                       city.pos);
+            }
+        }
+        let staged = staged && !strike_held;
+        let overwhelming_ready = overwhelming_ready && !strike_held;
+        let road_opening_ready = road_opening_ready && !strike_held;
+        let moving_on_ready = moving_on_ready && !strike_held;
         if close_enough
             && ready
             && (staged
