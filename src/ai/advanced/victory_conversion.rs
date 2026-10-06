@@ -994,14 +994,14 @@ impl AdvancedAi {
         // here trapped the column in Stage and also disabled its siege-unit
         // production bonus. Use the last-seen health budget until a unit
         // closes to refresh it; unknown cities still have no estimate.
-        let (wall_hp, city_hp, wall_max) = if g.player_visibility(pid).contains(&city.pos) {
-            (city.wall_hp, city.hp, g.city_max_wall_hp(city))
+        let (wall_hp, city_hp) = if g.player_visibility(pid).contains(&city.pos) {
+            (city.wall_hp, city.hp)
         } else {
             let memory = g.players[pid]
                 .remembered_cities
                 .get(&cid)
                 .filter(|memory| memory.owner == city.owner && memory.pos == city.pos)?;
-            (memory.wall_hp, memory.hp, memory.wall_max)
+            (memory.wall_hp, memory.hp)
         };
         let mut wall_dps = 0.0;
         let mut city_dps = 0.0;
@@ -1011,12 +1011,13 @@ impl AdvancedAi {
         // once the city is low (see `finishing_blow` below).
         let mut finishing_blow = 0.0_f64;
         let counts_what_fires = self.siege_budget_counts_what_fires;
-        // `unwalled-city-takes-the-swarm`: a city with no wall pool at all
-        // (`walls 0/0`) has nothing to absorb a melee blow, so every fit melee
-        // member swings each turn (`siege_train::swarm_blow`) and its blow is
-        // per-turn fire, not only the last one. A breached wall is not this:
-        // it still has a pool to rebuild.
-        let swarm = self.unwalled_city_takes_the_swarm && wall_hp <= 0 && wall_max <= 0;
+        // `unwalled-city-takes-the-swarm`: a city with no standing wall,
+        // never built (`walls 0/0`) or breached to 0, has nothing to absorb a
+        // melee blow and cannot strike (`Game::city_can_strike`), so every fit
+        // melee member swings each turn (`siege_train::swarm_blow`) and its
+        // blow is per-turn fire, not only the last one. A breached wall is
+        // repaired only after three turns unattacked.
+        let swarm = self.unwalled_city_takes_the_swarm && wall_hp <= 0;
         // `siege-counts-posted-shooters`: a shooter with no firing post fires
         // nothing, and one with a hostile unit in reach shoots that first
         // while the walls stand. See `siege_train::posted_shooters`.

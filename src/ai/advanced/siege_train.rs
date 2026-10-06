@@ -3461,6 +3461,10 @@ impl AdvancedAi {
             }
             return self.base.fortify_or_stop(g, pid, uid);
         }
+        // `unwalled-city-takes-the-swarm`: see `swarm_close`.
+        if let Some(acted) = self.swarm_close(g, pid, uid, city) {
+            return acted;
+        }
         if let Some(acted) = self.post_step(g, pid, uid, city) {
             return acted;
         }
@@ -4051,7 +4055,9 @@ impl AdvancedAi {
     }
 
     /// `unwalled-city-takes-the-swarm`: a fit melee member beside a city with
-    /// no wall pool at all strikes it every turn, whether or not this one
+    /// no standing wall (never built, or breached to 0: the city cannot
+    /// strike, `Game::city_can_strike`, and repairs a breach only after three
+    /// turns unattacked) strikes it every turn, whether or not this one
     /// blow pays alone (`siege_blow`) or the force's blows open an assault
     /// (`assault_pays`). Nothing absorbs the blow and the city heals at most
     /// 20 a turn, so the ring's swings add up where one priced alone never
@@ -4064,11 +4070,7 @@ impl AdvancedAi {
     /// takes the city lands only where the taker's would (`capture_holdable`).
     /// `None` where the member does not swing.
     fn swarm_blow(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> Option<bool> {
-        if !self.unwalled_city_takes_the_swarm
-            || city.wall_max > 0
-            || city.wall_hp > 0
-            || city.hp <= 0
-        {
+        if !self.unwalled_city_takes_the_swarm || city.wall_hp > 0 || city.hp <= 0 {
             return None;
         }
         let unit = g.units.get(&uid)?.clone();
@@ -4092,7 +4094,21 @@ impl AdvancedAi {
             .sieges
             .get(&city.id)
             .is_some_and(|siege| siege.taker == Some(uid));
-        let floor = if taker {
+        // A taker relieved by another fit melee member beside the city has
+        // no capture to keep itself for: that member takes it. Live King G191
+        // (civvis-20261006T040519Z) turn 91: the reserved Heavy Chariot at 54
+        // held beside Thebes (154, no walls) at this floor while the
+        // Swordsman that had just struck stood beside it at 85.
+        let relieved = taker
+            && g.nbrs(city.pos).into_iter().any(|pos| {
+                g.unit_ids_at(pos).iter().any(|other| {
+                    *other != uid
+                        && g.units[other].owner == pid
+                        && arm_of(g, *other) == Arm::Melee
+                        && self.siege_member_fit(g, *other)
+                })
+            });
+        let floor = if taker && !relieved {
             STORM_TAKER_SURVIVOR_HP
         } else {
             ASSAULT_SURVIVOR_HP
@@ -4127,10 +4143,97 @@ impl AdvancedAi {
             .map_or(0, |c| if c.owner == pid { 0 } else { c.hp });
         think!(self.journal(), Military, Decision,
             "Siege of {}: the {} swings at the unwalled city", g.cities[&city.id].name, unit.kind;
-            "no wall pool to absorb the blow; the city at {} has {left} left; {} hp of ours after the reply; captured {captured}",
-            city.hp, g.units.get(&uid).map_or(0, |u| u.hp);
+            "no standing wall to absorb the blow (walls {}/{}); the city at {} has {left} left; {} hp of ours after the reply; captured {captured}",
+            city.wall_hp, city.wall_max, city.hp, g.units.get(&uid).map_or(0, |u| u.hp);
             city.pos);
         Some(true)
+    }
+
+    /// `unwalled-city-takes-the-swarm`: a fit melee member off the ring of a
+    /// city with no standing wall walks to a free land ring tile it reaches this
+    /// turn with its attack still in hand, and swings (`swarm_blow`): the
+    /// post it is walking to may not be the one it reaches, and a member
+    /// that arrives a turn later meets walls. Its own post first, then the
+    /// nearest. The member keeps [`ASSAULT_SURVIVOR_HP`] past the city's
+    /// reply, and more than the hostile blows that reach the tile
+    /// (`approach_danger`) after it. Not the reserved taker, which keeps its
+    /// own step. `None` where no such tile exists; the post step follows.
+    /// Live King G191 (civvis-20261006T040519Z): Thebes stood without walls
+    /// at 200, 176 and 154 from turn 89 to 91 with the budget reading 1.8
+    /// turns; one Heavy Chariot struck at 89 and 90 and a Swordsman at 91,
+    /// while two Men-at-Arms closed one tile a turn and never reached the
+    /// ring; walls rose at 92.
+    fn swarm_close(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> Option<bool> {
+        if !self.unwalled_city_takes_the_swarm || city.wall_hp > 0 || city.hp <= 0 {
+            return None;
+        }
+        let unit = g.units.get(&uid)?.clone();
+        let distance = g.wdist(unit.pos, city.pos);
+        let siege = self.sieges.get(&city.id);
+        if arm_of(g, uid) != Arm::Melee
+            || !(2..=CLOSING_REACH).contains(&distance)
+            || unit.attacks_left <= 0
+            || unit.moves_left <= 0.0
+            || g.is_embarked(&unit)
+            || !self.siege_member_fit(g, uid)
+            || siege.is_some_and(|siege| siege.taker == Some(uid))
+        {
+            return None;
+        }
+        let post = siege.and_then(|siege| siege.posts.get(&uid)).copied();
+        let reachable: BTreeSet<Pos> = g.reachable(uid).into_iter().collect();
+        let mut ring: Vec<Pos> = g
+            .nbrs(city.pos)
+            .into_iter()
+            .filter(|pos| {
+                reachable.contains(pos)
+                    && g.unit_ids_at(*pos).is_empty()
+                    && g.map
+                        .get(*pos)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .collect();
+        ring.sort_by_key(|pos| (Some(*pos) != post, g.wdist(unit.pos, *pos), *pos));
+        let strike = Action::Attack {
+            unit: uid,
+            target: city.pos,
+        };
+        for dest in ring {
+            let mut after = g.speculative_clone();
+            if after
+                .apply(
+                    pid,
+                    &Action::MoveTo {
+                        unit: uid,
+                        to: dest,
+                    },
+                )
+                .is_err()
+                || after.units.get(&uid).map(|moved| moved.pos) != Some(dest)
+                || !after.melee_order_is_legal(pid, uid, city.pos)
+                || after.apply(pid, &strike).is_err()
+            {
+                continue;
+            }
+            let captures = after.cities.get(&city.id).is_some_and(|c| c.owner == pid);
+            let holds = after.units.get(&uid).is_some_and(|survivor| {
+                survivor.hp >= ASSAULT_SURVIVOR_HP
+                    && self.approach_danger(&after, pid, dest, uid) < f64::from(survivor.hp)
+            });
+            if !captures && !holds {
+                continue;
+            }
+            if !self.base.path_walk_to(g, pid, uid, dest) {
+                return None;
+            }
+            self.force_groups_dirty = true;
+            think!(self.journal(), Military, Decision,
+                "Siege of {}: the {} closes on the unwalled city to swing", g.cities[&city.id].name, unit.kind;
+                "{distance} tiles out, {dest:?} on the ring is in this turn's reach with the attack still in hand";
+                city.pos);
+            return Some(self.swarm_blow(g, pid, uid, city).unwrap_or(true));
+        }
+        None
     }
 
     /// Toward the unit's post for the turn, when it has one it is not on.

@@ -7828,8 +7828,8 @@ pub struct AdvancedAi {
     /// `BasicAi::settler_before_the_navy`.
     settler_before_the_navy: bool,
     // ---- append: t-z ------------------------------------------------
-    /// `unwalled-city-takes-the-swarm`: against a city with no walls at all
-    /// (no wall pool, what the Stage line prints as `walls 0/0`), every fit
+    /// `unwalled-city-takes-the-swarm`: against a city with no standing wall
+    /// (never built, `walls 0/0`, or breached to `0/N`), every fit
     /// melee member the siege budget counts is per-turn city fire, its reply
     /// charged to its endurance, and every fit melee member beside the city
     /// strikes it each turn rather than waiting for a blow that pays alone.

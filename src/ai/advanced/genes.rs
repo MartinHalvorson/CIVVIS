@@ -3111,7 +3111,9 @@ pub const GENES: &[Gene] = &[
     // unwalled, 107 never did, and 63% of those rows read "damage ready false
     // with inf turns" because a melee blow counted only as the finishing one.
     // Kish (G183, civvis-20261006T021637Z) took one blow at t96 and built
-    // walls by t98. See `conversion_siege_budget_within` and `swarm_blow`.
+    // walls by t98. A breached wall (0/N) is the same city: Angkor Wat (G193,
+    // civvis-20261006T042958Z) sat at 155-173 behind 0/200 from t96 to t99.
+    // See `conversion_siege_budget_within`, `swarm_blow` and `swarm_close`.
     Gene { tag: "unwalled-city-takes-the-swarm", field: "unwalled_city_takes_the_swarm", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_city_takes_the_swarm, disable: AdvancedAi::disable_unwalled_city_takes_the_swarm },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------

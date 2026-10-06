@@ -1,5 +1,6 @@
-//! `unwalled-city-takes-the-swarm`: against a city with no wall pool at all
-//! (`walls 0/0`) every fit melee member is per-turn fire in the siege budget,
+//! `unwalled-city-takes-the-swarm`: against a city with no standing wall
+//! (never built, `walls 0/0`, or breached, `0/N`) every fit melee member is
+//! per-turn fire in the siege budget,
 //! its reply charged to its endurance, and every fit melee member beside the
 //! city swings each turn. Live 10-05/06: 176 sieges reached a city with no
 //! walls and 107 never took it; 63% of those Stage/Invest rows read "damage
@@ -139,24 +140,49 @@ fn a_wounded_swarm_rotates_out_and_reads_no_fire() {
     assert!(turns.is_finite(), "{turns}");
 }
 
+/// A city whose walls (a 200 pool) the train has breached to 0, at `hp`.
+fn breached_city(strength: f64, hp: i32) -> (Game, u32) {
+    let (mut g, cid) = unwalled_city(strength);
+    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, 200);
+    g.cities.get_mut(&cid).unwrap().hp = hp;
+    let city = CityView::of(&g, cid).unwrap();
+    assert_eq!((city.wall_hp, city.wall_max), (0, 200), "walls 0/200");
+    (g, cid)
+}
+
 #[test]
-fn a_walled_or_breached_city_budgets_the_same_with_the_gene() {
-    for breached in [false, true] {
+fn a_breached_city_reads_a_melee_swarm_as_fire_under_the_gene() {
+    // Angkor Wat (G193, civvis-20261006T042958Z) at turns 96-99: walls 0/200,
+    // the city at 155-173.
+    let (mut g, cid) = breached_city(45.0, 155);
+    let force = melee_train(&mut g, cid, 100);
+    let (shipped, _) = budgeting(false)
+        .conversion_siege_budget(&g, 0, cid, &force)
+        .unwrap();
+    assert!(shipped.is_infinite(), "{shipped}");
+    let (turns, _) = budgeting(true)
+        .conversion_siege_budget(&g, 0, cid, &force)
+        .unwrap();
+    assert!(turns.is_finite() && turns < 6.0, "{turns}");
+}
+
+#[test]
+fn a_walled_city_budgets_the_same_with_the_gene() {
+    // Standing walls, whole or nearly down, keep the shipped budget.
+    for wall in [100, 10] {
         let (mut g, cid) = walled_city();
         g.tactics.heal = true;
-        if breached {
-            g.cities.get_mut(&cid).unwrap().wall_hp = 0;
-        }
+        g.cities.get_mut(&cid).unwrap().wall_hp = wall;
         assert!(g.city_max_wall_hp(&g.cities[&cid]) > 0);
         let mut force = melee_train(&mut g, cid, 100);
         force.push(g.spawn_unit("catapult", 0, at_distance(&g, cid, 2)[0]));
         let off = budgeting(false).conversion_siege_budget(&g, 0, cid, &force);
         let on = budgeting(true).conversion_siege_budget(&g, 0, cid, &force);
-        assert!(off.is_some(), "breached {breached}: the city is budgeted");
+        assert!(off.is_some(), "walls {wall}: the city is budgeted");
         assert_eq!(
             off.map(|(turns, endurance)| (turns.to_bits(), endurance.to_bits())),
             on.map(|(turns, endurance)| (turns.to_bits(), endurance.to_bits())),
-            "breached {breached}: a wall pool keeps the shipped budget"
+            "walls {wall}: a standing wall keeps the shipped budget"
         );
     }
 }
@@ -219,15 +245,34 @@ fn a_wounded_member_rotates_out_instead_of_swinging() {
 }
 
 #[test]
-fn a_member_beside_a_walled_or_breached_city_keeps_the_shipped_step() {
-    for breached in [false, true] {
+fn a_fit_member_beside_a_breached_city_swings_where_the_shipped_gate_holds() {
+    let mut outcome = Vec::new();
+    for gene in [false, true] {
+        let (mut g, cid) = breached_city(60.0, 155);
+        let uid = g.spawn_unit("man_at_arms", 0, ring_of(&g, cid)[0]);
+        let mut ai = AdvancedAi::new();
+        if gene {
+            ai.enable_unwalled_city_takes_the_swarm();
+        }
+        let plan = plan_against(&g, cid);
+        reducing(&mut ai, &g, cid, None);
+        let city = CityView::of(&g, cid).unwrap();
+        ai.siege_melee_step(&mut g, 0, uid, &city, &plan);
+        outcome.push((g.cities[&cid].hp, g.units[&uid].hp));
+    }
+    assert_eq!(outcome[0], (155, 100), "shipped: the member holds");
+    assert!(outcome[1].0 < 155, "the member swings: {:?}", outcome[1]);
+    assert!(outcome[1].1 >= ASSAULT_SURVIVOR_HP, "{:?}", outcome[1]);
+}
+
+#[test]
+fn a_member_beside_a_walled_city_keeps_the_shipped_step() {
+    for wall in [100, 10] {
         let mut outcome = Vec::new();
         for gene in [false, true] {
             let (mut g, cid) = walled_city();
             g.tactics.heal = true;
-            if breached {
-                g.cities.get_mut(&cid).unwrap().wall_hp = 0;
-            }
+            g.cities.get_mut(&cid).unwrap().wall_hp = wall;
             std::sync::Arc::make_mut(&mut g.observed_city_strength).insert(cid, 55.0);
             let uid = g.spawn_unit("man_at_arms", 0, ring_of(&g, cid)[0]);
             let mut ai = AdvancedAi::new();
@@ -245,7 +290,7 @@ fn a_member_beside_a_walled_or_breached_city_keeps_the_shipped_step() {
                 g.units.get(&uid).map(|u| (u.hp, u.attacks_left)),
             ));
         }
-        assert_eq!(outcome[0], outcome[1], "breached {breached}");
+        assert_eq!(outcome[0], outcome[1], "walls {wall}");
     }
 }
 
@@ -304,5 +349,147 @@ fn unwalled_city_takes_the_swarm_is_a_native_opt_in_off_in_both_controllers() {
     crate::ai::advanced::test_support::opt_in_off_in_both_controllers(
         "unwalled-city-takes-the-swarm",
         |ai| ai.unwalled_city_takes_the_swarm,
+    );
+}
+
+/// The doctrine's turn for every unit of `pid`, looped while it acts.
+fn play(ai: &mut AdvancedAi, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+    ai.rebuild_force_groups(g, pid, plan);
+    let mut ids = g.player_unit_ids(pid);
+    ids.sort_unstable();
+    for uid in ids {
+        for _ in 0..8 {
+            if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
+                break;
+            }
+            if ai.force_groups_dirty {
+                ai.rebuild_force_groups(g, pid, plan);
+                ai.force_groups_dirty = false;
+            }
+            match ai.siege_doctrine_step(g, pid, uid, plan) {
+                Some(true) => {}
+                _ => break,
+            }
+        }
+    }
+}
+
+/// Flat open grassland for six tiles round the city, so a member's reach
+/// reads its moves alone.
+fn open_ground(g: &mut Game, cid: u32) {
+    let city = g.cities[&cid].pos;
+    for pos in g.wdisk(city, 6) {
+        if pos == city {
+            continue;
+        }
+        if let Some(tile) = g.map.tiles.get_mut(&pos) {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+        }
+    }
+}
+
+/// One Man-at-Arms `distance` tiles out of the swarm's Kish, the siege in
+/// Reduce, with or without the gene: the city's health, the member's
+/// distance from it and its attacks left after `swarm_close`, and what
+/// `swarm_close` answered.
+fn closing(gene: bool, distance: i32) -> (i32, i32, i32, Option<bool>) {
+    let (mut g, cid) = unwalled_city(45.0);
+    open_ground(&mut g, cid);
+    let uid = g.spawn_unit("man_at_arms", 0, at_distance(&g, cid, distance)[0]);
+    let mut ai = AdvancedAi::new();
+    if gene {
+        ai.enable_unwalled_city_takes_the_swarm();
+    }
+    reducing(&mut ai, &g, cid, None);
+    let city = CityView::of(&g, cid).unwrap();
+    let answer = ai.swarm_close(&mut g, 0, uid, &city);
+    let unit = &g.units[&uid];
+    (
+        g.cities[&cid].hp,
+        g.wdist(unit.pos, city.pos),
+        unit.attacks_left,
+        answer,
+    )
+}
+
+#[test]
+fn a_fit_member_two_tiles_out_closes_and_swings_that_turn() {
+    assert_eq!(closing(false, 2), (200, 2, 1, None), "off: no close");
+    let (city, distance, attacks, answer) = closing(true, 2);
+    assert_eq!(answer, Some(true));
+    assert_eq!(distance, 1, "it stands on the ring");
+    assert_eq!(attacks, 0, "and swung");
+    assert!(city < 200, "the city took the blow: {city}");
+}
+
+#[test]
+fn a_member_that_cannot_swing_this_turn_leaves_the_walk_to_its_post() {
+    // Four tiles out, a Man-at-Arms (two moves) reaches no ring tile with
+    // its attack in hand: nothing moves, and the post step walks it in.
+    assert_eq!(closing(true, 4), (200, 4, 1, None));
+}
+
+#[test]
+fn a_taker_relieved_by_a_fit_member_beside_the_city_swings_at_the_member_floor() {
+    let mut outcome = Vec::new();
+    for relief in [false, true] {
+        let (mut g, cid) = unwalled_city(45.0);
+        let ring = ring_of(&g, cid);
+        let taker = g.spawn_unit("man_at_arms", 0, ring[0]);
+        g.units.get_mut(&taker).unwrap().hp = 80;
+        if relief {
+            let other = g.spawn_unit("man_at_arms", 0, ring[ring.len() - 1]);
+            g.units.get_mut(&other).unwrap().attacks_left = 0;
+        }
+        let mut ai = AdvancedAi::new();
+        ai.enable_unwalled_city_takes_the_swarm();
+        reducing(&mut ai, &g, cid, Some(taker));
+        let city = CityView::of(&g, cid).unwrap();
+        ai.taker_step(&mut g, 0, taker, &city);
+        outcome.push((g.cities[&cid].hp, g.units[&taker].hp));
+    }
+    assert_eq!(outcome[0], (200, 80), "alone, the taker keeps its reserve");
+    assert!(outcome[1].0 < 200, "relieved, it swings: {:?}", outcome[1]);
+    assert!(outcome[1].1 >= ASSAULT_SURVIVOR_HP, "{:?}", outcome[1]);
+}
+
+#[test]
+fn a_staged_swarm_closes_on_an_unwalled_city_and_swings_under_the_gene() {
+    // Live King G191 (civvis-20261006T040519Z): Thebes at 154 with no walls,
+    // the budget ready, six of the train staged; walls rose the next turn.
+    let mut outcome = Vec::new();
+    for gene in [false, true] {
+        let (mut g, cid) = unwalled_city(45.0);
+        open_ground(&mut g, cid);
+        g.cities.get_mut(&cid).unwrap().hp = 154;
+        let near: Vec<Pos> = at_distance(&g, cid, 2).into_iter().take(6).collect();
+        assert_eq!(near.len(), 6);
+        for pos in near {
+            g.spawn_unit("man_at_arms", 0, pos);
+        }
+        let mut ai = budgeting(gene);
+        ai.enable_siege_train();
+        let plan = plan_against(&g, cid);
+        play(&mut ai, &mut g, 0, &plan);
+        let swung = g
+            .player_unit_ids(0)
+            .into_iter()
+            .filter(|uid| g.units[uid].attacks_left == 0)
+            .count();
+        let city = &g.cities[&cid];
+        outcome.push((city.owner, city.hp, swung));
+    }
+    assert_eq!(
+        outcome[0],
+        (1, 154, 0),
+        "off: the train stages, nobody swings"
+    );
+    let (owner, hp, swung) = outcome[1];
+    assert!(
+        owner == 0 || (hp < 154 && swung >= 3),
+        "on: the staged melee close and swing: {:?}",
+        outcome[1]
     );
 }
