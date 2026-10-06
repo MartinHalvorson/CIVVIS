@@ -3156,6 +3156,13 @@ pub const GENES: &[Gene] = &[
     // seat paid 260 for a Great Scientist and kept two Missionaries, and
     // Mongolia won on Religion at 108. See `advanced/counterweight_bank.rs`.
     Gene { tag: "counterweight-spends-the-bank", field: "counterweight_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_spends_the_bank, disable: AdvancedAi::disable_counterweight_spends_the_bank },
+    // Live Emperor G185-G198 (civvis-20261006T024058Z..T053813Z): 5.0
+    // citizens a city at t100 against the best rival's 8.3, production per
+    // citizen at parity; 49% of city-turns t60-120 at or within one of the
+    // housing cap with no Granary, building Campus 13% / Settler 11% / Granary
+    // 5%; 61% of cities short of Amenities. See
+    // `BasicAi::housing_bound_granary_step`.
+    Gene { tag: "housing-bound-city-builds-its-granary", field: "housing_bound_city_builds_its_granary", kind: Kind::OptIn, enable: AdvancedAi::enable_housing_bound_city_builds_its_granary, disable: AdvancedAi::disable_housing_bound_city_builds_its_granary },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

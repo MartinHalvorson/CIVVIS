@@ -6749,6 +6749,12 @@ pub struct AdvancedAi {
     /// that led with Exodus of the Evangelists. See
     /// `ai::choose_conquest_dedications`.
     golden_dedication_serves_the_conquest: bool,
+    /// `housing-bound-city-builds-its-granary`: the delegated governor's
+    /// housing-bound city builds its Granary next, ahead of the economy steps
+    /// and the military floor; a city short of Amenities then takes a cheap
+    /// Amenity building or a Builder for a missing luxury. See
+    /// `BasicAi::housing_bound_city_builds_its_granary`.
+    housing_bound_city_builds_its_granary: bool,
     // ---- append: l-o ------------------------------------------------
     /// `opening-yields-to-walls`: a declared conquest opening that has taken
     /// nothing asks for terms and stands down once its target walls up with no
@@ -9842,6 +9848,7 @@ impl AdvancedAi {
             industrial_hub: false,
             improvement_upgrades_count: false,
             golden_dedication_serves_the_conquest: false,
+            housing_bound_city_builds_its_granary: false,
             // ---- append: l-o ----------------------------------------
             opening_yields_to_walls: false,
             luxury_buy_asks: false,
@@ -14901,6 +14908,12 @@ impl AdvancedAi {
         .flatten();
         let restore_space_race = self.base.exclude_space_race;
         self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
+        // `housing-bound-city-builds-its-granary`: the plan's threatened city
+        // keeps its stock defence order. Lent for the call.
+        self.base.plan_threatened_city = self
+            .housing_bound_city_builds_its_granary
+            .then_some(plan.threatened_city)
+            .flatten();
         let restore_military = self.base.w.mil_per_city;
         if let Some(per_city) = self.domination_war_military_per_city(g, pid, plan) {
             self.base.w.mil_per_city = restore_military.max(per_city);
@@ -14911,6 +14924,7 @@ impl AdvancedAi {
             self.base.exclude_space_race = restore_space_race;
             self.base.w.mil_per_city = restore_military;
             self.base.lent_military_floor_base = None;
+            self.base.plan_threatened_city = None;
             return;
         }
         let restore_target = self.base.w.city_target;
@@ -14943,6 +14957,7 @@ impl AdvancedAi {
         self.base.w.builder_per_city = restore_builders;
         self.base.w.mil_per_city = restore_military;
         self.base.lent_military_floor_base = None;
+        self.base.plan_threatened_city = None;
     }
 
     /// The delegated governor's standing army is `mil_per_city * cities` (1.0

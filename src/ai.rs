@@ -2775,6 +2775,31 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `granary-before-the-army-2`.
     pub(crate) granary_before_the_army_2: bool,
+    /// A city at (or one short of) its housing with no Granary builds the
+    /// Granary next, ahead of the Builder, Holy Site, Campus, Monument,
+    /// capital-Settler, Industry and Settler steps and the military floor
+    /// (lent war target included); a city short of Amenities then takes a
+    /// cheap Amenity building or a Builder for a luxury the empire lacks.
+    /// Never in a city the plan names threatened or that was attacked within
+    /// four turns, never during the floor's `emergency_defense`, and never
+    /// while the city holds a Settler more than half built. See
+    /// `housing_bound_granary_step`.
+    ///
+    /// Live Emperor G185-G198 (civvis-20261006T024058Z..T053813Z): our
+    /// cities held 5.0 citizens at t100 against the best rival's 8.3 while
+    /// production per citizen sat at parity; 49% of city-turns t60-120 were
+    /// at or within one of the housing cap with no Granary though Pottery
+    /// came by ~t22, and those cities built Campus 13%, Settler 11%, Builder
+    /// 6% and Library, Walls and Monument 5% each against Granary 5%. 61% of
+    /// cities were short of Amenities at t100 (about 0.6-1 each).
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene
+    /// `housing-bound-city-builds-its-granary`.
+    pub(crate) housing_bound_city_builds_its_granary: bool,
+    /// The strategic plan's threatened city, lent by
+    /// `AdvancedAi::delegated_cities` for the call and `None` outside it.
+    /// Read only by `housing_bound_granary_step`.
+    pub(crate) plan_threatened_city: Option<u32>,
     /// `industry-before-the-army`: the Industrial Zone, then its Workshop,
     /// then its Factory, ahead of the military floor for at most a third of
     /// the empire's cities at a time, from three cities on. A city opens a
@@ -5658,6 +5683,8 @@ impl BasicAi {
             activation_resume_waits: false,
             activation_keeps_its_building: false,
             granary_before_the_army_2: false,
+            housing_bound_city_builds_its_granary: false,
+            plan_threatened_city: None,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
             industry_before_the_army_3: false,
@@ -6168,6 +6195,8 @@ impl BasicAi {
             activation_resume_waits: false,
             activation_keeps_its_building: false,
             granary_before_the_army_2: false,
+            housing_bound_city_builds_its_granary: false,
+            plan_threatened_city: None,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
             industry_before_the_army_3: false,
@@ -12894,6 +12923,18 @@ impl BasicAi {
                 .economic_recovery_item(g, pid, cid, traders)
                 .or_else(|| self.upkeep_free_recovery_item(g, pid, cid));
         }
+        // `housing-bound-city-builds-its-granary`: a housing-bound city's
+        // Granary, then a short city's Amenity, ahead of every economy step
+        // and the military floor below. Local defence above still wins.
+        if self.housing_bound_city_builds_its_granary
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+        {
+            if let Some(item) = self.housing_bound_granary_step(g, pid, cid, n_cities, builders) {
+                return Some(item);
+            }
+        }
         // `monument-first`: the cheapest culture in the game before the
         // military floor and the Settler step, which otherwise kept a city
         // from ever reaching it. The capital sends the land grab's first two
@@ -16159,6 +16200,141 @@ impl BasicAi {
             pos,
         };
         g.can_produce(pid, cid, &item).then_some(item)
+    }
+
+    /// `housing-bound-city-builds-its-granary`: the city's next build when it
+    /// is housing-bound or short of Amenities. In order: its Granary while its
+    /// population is within one of its housing (the board's own figure, the
+    /// host's on a live seat); then, while its Amenity surplus is negative, the
+    /// quickest Amenity building it finishes within `FIRST_CAMPUS_MAX_TURNS`,
+    /// or a Builder for a luxury the empire lacks (see `luxury_builder_item`).
+    /// `None` in a city the plan names threatened (`plan_threatened_city`) or
+    /// that was attacked within four turns, the test the Advanced Amenity
+    /// handoffs use, and in a city holding a Settler more than half built.
+    fn housing_bound_granary_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        builders: usize,
+    ) -> Option<Item> {
+        let city = &g.cities[&cid];
+        let threatened = self.plan_threatened_city == Some(cid)
+            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
+        if threatened || Self::settler_half_built(g, pid, cid) {
+            return None;
+        }
+        let housing = g.city_housing(city);
+        if (city.pop as f64) + 1.0 >= housing {
+            if let Some(granary) = Self::civ_building(g, pid, cid, "granary") {
+                think!(self.journal, Cities, Detail,
+                       "{} builds its Granary at its housing", city.name;
+                       "population {} against housing {housing:.0}: the city grows before it \
+                        builds anything else", city.pop);
+                return Some(granary);
+            }
+        }
+        let surplus = g.city_amenity_surplus(city);
+        if surplus >= 0 {
+            return None;
+        }
+        if let Some(building) = Self::cheap_amenity_building(g, pid, cid) {
+            think!(self.journal, Cities, Detail,
+                   "{} builds an Amenity", city.name;
+                   "{} short of Amenities: {}", -surplus,
+                   crate::reasoning::plain(&format!("{building:?}")));
+            return Some(building);
+        }
+        let builder = Self::luxury_builder_item(g, pid, cid, n_cities, builders)?;
+        think!(self.journal, Cities, Detail,
+               "{} trains a Builder for a luxury", city.name;
+               "{} short of Amenities, and a luxury the empire lacks lies unimproved on our \
+                ground with {builders} Builders held", -surplus);
+        Some(builder)
+    }
+
+    /// Whether `cid` holds production for a Settler past half its price.
+    fn settler_half_built(g: &Game, pid: usize, cid: u32) -> bool {
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let cost = g.item_cost_for_city(pid, cid, &settler);
+        cost > 0.0 && g.item_invested_production(cid, &settler) > 0.5 * cost
+    }
+
+    /// The quickest building with an Amenity that `cid` can produce within
+    /// `FIRST_CAMPUS_MAX_TURNS` (an Arena in a standing Entertainment
+    /// Complex, a Stupa, ...); ties to the name.
+    fn cheap_amenity_building(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        g.rules
+            .buildings
+            .iter()
+            .filter(|(_, spec)| spec.amenity > 0.0)
+            .map(|(name, _)| Item::Building { building: *name })
+            .filter(|item| g.can_produce(pid, cid, item))
+            .map(|item| {
+                let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+                    g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
+                });
+                (turns, format!("{item:?}"), item)
+            })
+            .filter(|(turns, _, _)| *turns <= Self::FIRST_CAMPUS_MAX_TURNS)
+            .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)))
+            .map(|(_, _, item)| item)
+    }
+
+    /// A Builder while the empire holds (or has queued) fewer than the
+    /// distinct luxuries it lacks that lie unimproved on its own ground with an
+    /// improvement it can already build there -- each one an Amenity in four
+    /// cities -- capped at one per two cities, from a city that finishes one
+    /// within `LENT_FLOOR_MAX_BUILD_TURNS`.
+    fn luxury_builder_item(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        builders: usize,
+    ) -> Option<Item> {
+        let mut missing: BTreeSet<Name> = BTreeSet::new();
+        for city in g.player_city_ids(pid) {
+            for pos in &g.cities[&city].owned_tiles {
+                let Some(tile) = g.map.get(*pos) else {
+                    continue;
+                };
+                let Some(resource) = tile.resource else {
+                    continue;
+                };
+                if tile.improvement.is_some()
+                    || missing.contains(&resource)
+                    || !g
+                        .rules
+                        .resources
+                        .get(&resource)
+                        .is_some_and(|spec| spec.class == "luxury")
+                    || g.resource_access_count(pid, resource.as_str()) > 0
+                {
+                    continue;
+                }
+                let connectable = g.valid_improvements(pid, *pos).iter().any(|improvement| {
+                    let spec = &g.rules.improvements[improvement];
+                    spec.builder_buildable && spec.resources.contains(&resource)
+                });
+                if connectable {
+                    missing.insert(resource);
+                }
+            }
+        }
+        if builders >= missing.len().min(n_cities.div_ceil(2)) {
+            return None;
+        }
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        (g.can_produce(pid, cid, &builder)
+            && Self::unit_build_turns(g, pid, cid, "builder")
+                <= g.standard_duration(LENT_FLOOR_MAX_BUILD_TURNS) as f64)
+            .then_some(builder)
     }
 
     /// `plaza-in-the-district-list`: whether `cid` is our own original
@@ -24383,6 +24559,212 @@ mod tests {
             "the fixture is due a Settler"
         );
         assert_ne!(second(0), granary, "a due Settler comes first");
+    }
+
+    /// The Emperor shape of `housing_bound_city_builds_its_granary`: a capital
+    /// at its housing with Pottery and no Granary, a Settler due, the live
+    /// lineage's Monument, Campus and Builder steps armed, and a lent war
+    /// target of two units a city over an empty army.
+    fn emperor_housing_bound_capital(tag: &str, seed: u64) -> (Game, u32) {
+        let (mut game, cid) = founded_capital_fixture(tag, seed);
+        game.difficulty = "emperor".to_string();
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        for tech in ["pottery", "writing", "mining"] {
+            game.players[0].techs.insert(Name::new(tech));
+        }
+        let housing = game.city_housing(&game.cities[&cid]);
+        game.cities.get_mut(&cid).unwrap().pop = housing.floor() as i32;
+        (game, cid)
+    }
+
+    fn emperor_lineage_governor(gene: bool) -> BasicAi {
+        let mut ai = BasicAi::new();
+        ai.monument_first = true;
+        ai.campus_before_the_army_2 = true;
+        ai.builder_before_the_army_3 = true;
+        ai.granary_before_the_army_2 = true;
+        ai.housing_reserve = true;
+        ai.w.mil_per_city = 2.0;
+        ai.lent_military_floor_base = Some(1.0);
+        ai.housing_bound_city_builds_its_granary = gene;
+        ai
+    }
+
+    /// See `housing_bound_city_builds_its_granary`: on the Emperor shape the
+    /// stock governor spends the housing-bound capital on its lent army or
+    /// its due Settler; under the gene the Granary is the next build, Settler
+    /// due or not.
+    #[test]
+    fn a_housing_bound_city_builds_its_granary_first_under_the_gene() {
+        let (game, cid) = emperor_housing_bound_capital("HOUSINGGRANARY", 91_901);
+        let granary = Some(Item::Building {
+            building: crate::name!("granary"),
+        });
+        assert!(
+            BasicAi::new().settler_due(&game, 0, cid, 3, 0),
+            "the fixture is due a Settler"
+        );
+        for settlers in [0, 1] {
+            let pick = |gene: bool| {
+                emperor_lineage_governor(gene)
+                    .pick_item(&game, 0, cid, 3, settlers, 1, 1, 0, 0, 0, 0)
+            };
+            let stock = pick(false);
+            assert!(stock.is_some(), "the stock governor builds something");
+            assert_ne!(
+                stock, granary,
+                "{settlers} settlers: the stock pick is not the Granary"
+            );
+            assert_eq!(
+                pick(true),
+                granary,
+                "{settlers} settlers: the Granary comes first"
+            );
+        }
+        // A city with room to grow keeps the stock order.
+        let mut roomy = game.clone();
+        roomy.cities.get_mut(&cid).unwrap().pop = 1;
+        assert!(
+            1.0 + 1.0 < roomy.city_housing(&roomy.cities[&cid]),
+            "fixture: room to grow"
+        );
+        assert_eq!(
+            emperor_lineage_governor(true).pick_item(&roomy, 0, cid, 3, 1, 1, 1, 0, 0, 0, 0),
+            emperor_lineage_governor(false).pick_item(&roomy, 0, cid, 3, 1, 1, 1, 0, 0, 0, 0),
+            "room to grow: the stock pick"
+        );
+    }
+
+    /// See `housing_bound_granary_step`: a city the plan names threatened, a
+    /// city attacked within four turns, and a city holding a Settler more
+    /// than half built keep the stock pick under the gene.
+    #[test]
+    fn a_threatened_or_settling_city_keeps_the_stock_pick_under_the_granary_gene() {
+        let (game, cid) = emperor_housing_bound_capital("HOUSINGGRANARYTHREAT", 91_903);
+        let ask = |game: &Game, ai: &BasicAi| ai.pick_item(game, 0, cid, 3, 1, 1, 1, 0, 0, 0, 0);
+        let stock = ask(&game, &emperor_lineage_governor(false));
+        let granary = Some(Item::Building {
+            building: crate::name!("granary"),
+        });
+        assert_eq!(
+            ask(&game, &emperor_lineage_governor(true)),
+            granary,
+            "fixture: the gene fires"
+        );
+
+        let mut named = emperor_lineage_governor(true);
+        named.plan_threatened_city = Some(cid);
+        assert_eq!(ask(&game, &named), stock, "the plan's threatened city");
+
+        let mut attacked = game.clone();
+        attacked.turn = 40;
+        attacked.cities.get_mut(&cid).unwrap().last_attacked = 37;
+        assert_eq!(
+            ask(&attacked, &emperor_lineage_governor(true)),
+            ask(&attacked, &emperor_lineage_governor(false)),
+            "attacked three turns ago"
+        );
+        attacked.turn = 45;
+        assert_eq!(
+            ask(&attacked, &emperor_lineage_governor(true)),
+            granary,
+            "eight turns ago"
+        );
+
+        let mut settling = game.clone();
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let cost = settling.item_cost_for_city(0, cid, &settler);
+        settling
+            .cities
+            .get_mut(&cid)
+            .unwrap()
+            .production_progress
+            .insert(Game::item_progress_key(&settler), 0.6 * cost);
+        assert_eq!(
+            ask(&settling, &emperor_lineage_governor(true)),
+            ask(&settling, &emperor_lineage_governor(false)),
+            "a Settler 60% built"
+        );
+        settling
+            .cities
+            .get_mut(&cid)
+            .unwrap()
+            .production_progress
+            .insert(Game::item_progress_key(&settler), 0.4 * cost);
+        assert_eq!(
+            ask(&settling, &emperor_lineage_governor(true)),
+            granary,
+            "40% built"
+        );
+    }
+
+    /// See `luxury_builder_item`: a city short of Amenities, with no Granary
+    /// to build, trains a Builder for a luxury the empire lacks that lies
+    /// unimproved on its ground -- not once the empire holds a Builder for it,
+    /// and not for a luxury it already has.
+    #[test]
+    fn a_city_short_of_amenities_trains_a_builder_for_a_missing_luxury() {
+        let (mut game, cid) = emperor_housing_bound_capital("HOUSINGGRANARYLUX", 91_907);
+        game.players[0].techs.remove(&crate::name!("pottery"));
+        let center = game.cities[&cid].pos;
+        let site = game.cities[&cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|pos| *pos != center && !game.rules.is_water(&game.map.tiles[pos]))
+            .expect("an owned land tile");
+        let tile = game.map.tiles.get_mut(&site).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+        tile.improvement = None;
+        tile.resource = Some(crate::name!("salt"));
+        assert!(
+            game.valid_improvements(0, site)
+                .contains(&crate::name!("mine")),
+            "fixture: the salt takes a Mine"
+        );
+        assert_eq!(game.resource_access_count(0, "salt"), 0);
+        std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments).insert(cid, -4);
+        assert!(
+            game.city_amenity_surplus(&game.cities[&cid]) < 0,
+            "fixture: short"
+        );
+        let builder = Some(Item::Unit {
+            unit: crate::name!("builder"),
+        });
+        let ask = |game: &Game, gene: bool, builders: usize| {
+            emperor_lineage_governor(gene).pick_item(game, 0, cid, 3, 1, builders, 1, 0, 0, 0, 0)
+        };
+        assert_ne!(
+            ask(&game, false, 1),
+            builder,
+            "the stock pick is not a Builder"
+        );
+        assert_eq!(
+            ask(&game, true, 0),
+            builder,
+            "no Builder for the salt: train one"
+        );
+        assert_eq!(
+            ask(&game, true, 1),
+            ask(&game, false, 1),
+            "one Builder for one luxury"
+        );
+        let mut mined = game.clone();
+        mined.map.tiles.get_mut(&site).unwrap().improvement = Some(crate::name!("mine"));
+        assert!(
+            mined.resource_access_count(0, "salt") > 0,
+            "fixture: the salt is connected"
+        );
+        assert_eq!(
+            ask(&mined, true, 0),
+            ask(&mined, false, 0),
+            "the luxury is held"
+        );
     }
 
     /// See `settler_before_the_navy`: a coastal city due a Settler trains it

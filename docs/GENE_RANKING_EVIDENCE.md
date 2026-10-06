@@ -303,6 +303,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `guns-post-for-a-near-breach` | off (unmeasured) | Opt-in gene `guns-post-for-a-near-breach`; see `Self::guns_post_for_a_near_breach`. | 1 \| 1 |
 | `guns-stay-out-of-reach` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach`; see `Self::guns_stay_out_of_reach`. | 1 \| 1 |
 | `hostile-memory-3` | off (unmeasured) | Version three also revises stale sightings when their forecast area is fully visible, using only the unit facts recorded at observation. | 1 \| 3 |
+| `housing-bound-city-builds-its-granary` | off (unmeasured) | Opt-in gene `housing-bound-city-builds-its-granary`; see `BasicAi::housing_bound_city_builds_its_granary`. | 1 \| 1 |
 | `housing-research-2` | off (unmeasured) | Research housing that the capped cities can actually build. | 1 \| 2 |
 | `improvement-upgrades-count` | off (unmeasured) | Opt-in gene `improvement-upgrades-count`; see `Self::improvement_upgrades_count`. | 1 \| 1 |
 | `industrial-hub` | off (unmeasured) | One Industrial Zone where its Factory reaches the most cities, and its chain; see `BasicAi::industrial_hub`. | 1 \| 1 |

@@ -674,3 +674,96 @@ fn the_breaker_road_is_priced_at_the_measured_march() {
     // Movement under one is read as one, as before.
     assert!((ai.breaker_march_turns(4, 0.0) - 10.0).abs() < 1e-9);
 }
+
+/// `housing-bound-city-builds-its-granary`: the breaker reservation does not
+/// take a housing-bound city's fresh Granary for its gun under the gene; with
+/// the gene off it does (live Emperor G204, civvis-20261006T065830Z t110:
+/// "Caracas gives its fresh granary queue to the siege gun", twice). A city
+/// with room to grow still yields its fresh Granary.
+#[test]
+fn a_housing_bound_citys_fresh_granary_is_not_given_to_the_siege_gun_under_the_gene() {
+    let granary = Item::Building {
+        building: crate::name!("granary"),
+    };
+    let gun = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+    // The capital (25 Production) has just queued its Granary; a remote
+    // one-Production city is idle; the walled target needs a breaker.
+    let case = |housing_bound: bool| {
+        let (mut g, _, plan, home, target) = siege_gap_case();
+        let home_pos = g.cities[&home].pos;
+        let target_pos = g.cities[&target].pos;
+        let remote_pos = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(pos, tile)| {
+                g.wdist(**pos, home_pos) >= 6
+                    && g.wdist(**pos, target_pos) >= 6
+                    && g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+            })
+            .map(|(pos, _)| *pos)
+            .next()
+            .expect("a remote land site");
+        let remote = g.found_city_for(0, remote_pos, None);
+        g.players[0].techs.insert(crate::name!("pottery"));
+        let housing = g.city_housing(&g.cities[&home]);
+        g.cities.get_mut(&home).unwrap().pop = if housing_bound {
+            housing.floor() as i32
+        } else {
+            1
+        };
+        assert_eq!(
+            (g.cities[&home].pop as f64) + 1.0 >= housing,
+            housing_bound,
+            "fixture: housing {housing}"
+        );
+        g.apply(
+            0,
+            &Action::Produce {
+                city: home,
+                item: granary.clone(),
+            },
+        )
+        .expect("the capital can start its Granary");
+        assert_eq!(g.item_invested_production(home, &granary), 0.0);
+        for (cid, production) in [(home, 25.0), (remote, 1.0)] {
+            let before = g.city_yields(cid).production;
+            std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments)
+                .entry(cid)
+                .or_default()
+                .production += production - before;
+        }
+        (g, plan, home, remote)
+    };
+    let reserve = |g: &mut Game, plan: &StrategicPlan, gene: bool| {
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        if gene {
+            ai.enable_housing_bound_city_builds_its_granary();
+        }
+        ai.reserve_delegated_domination_siege(g, 0, plan)
+    };
+
+    let (mut off, plan, home, _) = case(true);
+    assert_eq!(
+        reserve(&mut off, &plan, false),
+        Some((home, gun.clone())),
+        "off: the fresh Granary yields to the timely siege gun"
+    );
+    let (mut on, plan, home, remote) = case(true);
+    assert_eq!(
+        reserve(&mut on, &plan, true),
+        Some((remote, gun.clone())),
+        "on: the gun goes to the slow idle city"
+    );
+    assert_eq!(on.cities[&home].queue.first(), Some(&granary));
+
+    let (mut roomy, plan, home, _) = case(false);
+    assert_eq!(
+        reserve(&mut roomy, &plan, true),
+        Some((home, gun)),
+        "room to grow: the fresh Granary is routine again"
+    );
+}

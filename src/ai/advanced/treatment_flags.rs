@@ -6579,6 +6579,19 @@ impl AdvancedAi {
         self.counterweight_spends_the_bank = false;
     }
 
+    /// Opt-in gene `housing-bound-city-builds-its-granary`; see
+    /// `BasicAi::housing_bound_city_builds_its_granary`.
+    pub fn enable_housing_bound_city_builds_its_granary(&mut self) {
+        self.housing_bound_city_builds_its_granary = true;
+        self.base.housing_bound_city_builds_its_granary = true;
+    }
+
+    /// The twin of `enable_housing_bound_city_builds_its_granary`.
+    pub fn disable_housing_bound_city_builds_its_granary(&mut self) {
+        self.housing_bound_city_builds_its_granary = false;
+        self.base.housing_bound_city_builds_its_granary = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
