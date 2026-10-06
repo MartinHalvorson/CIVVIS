@@ -5400,6 +5400,11 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `counterweight-spends-the-bank`: a faithless Domination seat whose
+    /// majority follows the threat faith keeps enough counterweight
+    /// Missionaries to break that majority, and the other Faith sinks leave
+    /// their price in the bank. See `advanced/counterweight_bank.rs`.
+    counterweight_spends_the_bank: bool,
     /// `capital-taken-moves-on`: once a rival's original capital is ours and
     /// its "the required capital is secure" peace has been refused for three
     /// standard turns, the next capital's owner is the second front and is
@@ -9568,6 +9573,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            counterweight_spends_the_bank: false,
             capital_taken_moves_on: false,
             declaration_needs_the_edge_2: false,
             contender_at_peace_is_the_target: false,
@@ -23373,7 +23379,9 @@ impl AdvancedAi {
             }
             _ => 100.0,
         };
-        let faith_reserve = self.conversion_faith_reserve(g, pid, faith_reserve);
+        let faith_reserve = self.conversion_faith_reserve(g, pid, faith_reserve)
+            // See `counterweight_faith_reserve` (`counterweight-spends-the-bank`).
+            + self.counterweight_faith_reserve(g, pid);
         let mut candidates = Vec::new();
         // Inside `age-closer-2`'s window: the cheapest priced Great Person,
         // so a window that closes nothing says what it would have cost.
@@ -25066,7 +25074,10 @@ impl AdvancedAi {
         }
         let defenders = self.religious_defense_missionary_count(g, pid, threat);
         let veto = self.religious_veto_engaged(g, pid);
-        if defenders >= 2 + Self::religious_veto_extra_spreaders(veto.as_ref()) {
+        let shipped = 2 + Self::religious_veto_extra_spreaders(veto.as_ref());
+        // See `counterweight_cap` (`counterweight-spends-the-bank`).
+        let cap = self.counterweight_cap(g, pid, threat, shipped);
+        if defenders >= cap {
             return;
         }
         for cid in g.player_city_ids(pid) {
@@ -25090,6 +25101,12 @@ impl AdvancedAi {
             )
             .is_ok()
             {
+                if defenders >= shipped {
+                    think!(self.journal(), Faith, Decision,
+                        "{} buys counterweight Missionary {} of {}", g.cities[&cid].name, defenders + 1, cap;
+                        "counterweight-spends-the-bank: {} holds our majority, and {} of our cities must leave it before that majority breaks",
+                        threat, Self::counterweight_need(g, pid, threat));
+                }
                 return;
             }
         }
@@ -26011,7 +26028,8 @@ impl AdvancedAi {
             return false;
         }
         let bank = g.players[pid].faith;
-        let reserve = 180.0;
+        // See `counterweight_faith_reserve` (`counterweight-spends-the-bank`).
+        let reserve = 180.0 + self.counterweight_faith_reserve(g, pid);
         let counts = self.counts(g, pid);
         let mut options = Vec::new();
         let memo = g.query_memo();
@@ -46254,6 +46272,8 @@ mod air_campaign;
 mod religious_interception;
 
 mod founder_faith;
+
+mod counterweight_bank;
 
 #[cfg(test)]
 mod observed_movement_memory_tests;
