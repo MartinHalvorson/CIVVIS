@@ -3139,6 +3139,12 @@ pub const GENES: &[Gene] = &[
     // lost a city 3 times in 27, those over it 0 in 26. G191 embargoed India
     // with no city located. See `one_war::counter_war_has_the_emperor_edge`.
     Gene { tag: "counter-war-needs-the-emperor-edge", field: "counter_war_needs_the_emperor_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_war_needs_the_emperor_edge, disable: AdvancedAi::disable_counter_war_needs_the_emperor_edge },
+    // Live Emperor 10-06: G194 declared on Vietnam at 2.7x with Dong Hoi
+    // already behind 200 walls and one gun, its budget 18.0 turns against 8.7
+    // endurance; walls 300 by t89 and no city fell. Walled-target wars without
+    // a breach took nothing in G188, G192 or G194. See
+    // `siege_train::declaration_breach_reading`.
+    Gene { tag: "declaration-waits-for-the-breach", field: "declaration_waits_for_the_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_waits_for_the_breach, disable: AdvancedAi::disable_declaration_waits_for_the_breach },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -6546,6 +6546,17 @@ impl AdvancedAi {
         self.counter_war_needs_the_emperor_edge = false;
     }
 
+    /// Opt-in gene `declaration-waits-for-the-breach`; see
+    /// [`Self::declaration_waits_for_the_breach`].
+    pub fn enable_declaration_waits_for_the_breach(&mut self) {
+        self.declaration_waits_for_the_breach = true;
+    }
+
+    /// The twin of `enable_declaration_waits_for_the_breach`.
+    pub fn disable_declaration_waits_for_the_breach(&mut self) {
+        self.declaration_waits_for_the_breach = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

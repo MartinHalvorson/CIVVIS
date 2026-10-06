@@ -102,6 +102,10 @@ pub(super) const STAGING_FAR: i32 = 5;
 /// `declaration-waits-for-the-breaker`: the standard turns a staged
 /// declaration holds for a breaker on one objective before it goes ahead.
 pub(super) const DECLARATION_BREAKER_PATIENCE: u32 = 10;
+/// `declaration-waits-for-the-breach`: a walled objective's budget must read
+/// its turns within this share of the force's endurance before the war opens
+/// — the margin the siege's own Stage -> Invest entry asks.
+pub(super) const DECLARATION_BREACH_SHARE: f64 = 0.8;
 /// A City Center strikes this far; nothing stands inside it before the
 /// train is staged.
 pub(super) const CITY_STRIKE_RANGE: i32 = 2;
@@ -483,6 +487,48 @@ impl AdvancedAi {
     /// with Opango behind 100 walls and its Catapult 17 tiles out; the walls
     /// stood at 200 by turn 78, the siege held "for a wall-breaker on its
     /// way" to turn 96, and the city fell at 118.
+    /// `declaration-waits-for-the-breach`: the damage budget of the force by
+    /// a walled objective — our land military within [`MUSTER_BREACH_FAR`],
+    /// air wing included — as `(turns, endurance, fit guns)`, or `None` when
+    /// a melee blow opens the walls (unwalled or breached: the early strike
+    /// and the swarm need no gun) or the city is unknown. One gun satisfies
+    /// `declaration_breaker_at_hand`, and one gun does not answer an Emperor
+    /// wall: live civvis-20261006T044739Z (game 194) declared on Vietnam at
+    /// turn 77, 409 power against 154, with Dong Hoi behind 200 walls, seven
+    /// of ten units staged and one gun fit — the siege read 18.0 turns
+    /// against 8.7 endurance that turn, the walls stood at 300 by turn 89,
+    /// and no city fell.
+    pub(super) fn declaration_breach_reading(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> Option<(f64, f64, usize)> {
+        let city = CityView::of(g, cid)?;
+        if walls_open_to_melee(&city) {
+            return None;
+        }
+        let force: Vec<u32> = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid
+                    && g.rules.units[unit.kind].class == "military"
+                    && !matches!(g.rules.units[unit.kind].domain.as_deref(), Some("sea" | "air"))
+                    && !g.is_embarked(unit)
+                    && g.wdist(unit.pos, city.pos) <= MUSTER_BREACH_FAR
+            })
+            .map(|unit| unit.id)
+            .collect();
+        let guns = force
+            .iter()
+            .filter(|uid| land_gun(g, g.units[*uid].kind) && self.siege_member_fit(g, **uid))
+            .count();
+        let (turns, endurance) =
+            self.conversion_siege_budget_within(g, pid, cid, &force, MUSTER_BREACH_FAR)?;
+        Some((turns, endurance, guns))
+    }
+
     pub(super) fn declaration_breaker_at_hand(&self, g: &Game, pid: usize, cid: u32) -> bool {
         let Some(city) = CityView::of(g, cid) else {
             return true;

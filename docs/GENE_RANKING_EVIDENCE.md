@@ -255,6 +255,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `decisive-window` | off (unmeasured) | Opt-in gene `decisive-window`; see `Self::decisive_window`. | 1 \| 1 |
 | `declaration-needs-the-edge` | off (unmeasured) | Opt-in gene `declaration-needs-the-edge`; see `Self::declaration_needs_the_edge`. | — \| 2 |
 | `declaration-needs-the-edge-2` | off (unmeasured) | Version 2 of `declaration_needs_the_edge`; one version of a family plays, so this turns version 1 off. | — \| 2 |
+| `declaration-waits-for-the-breach` | off (unmeasured) | Opt-in gene `declaration-waits-for-the-breach`; see `Self::declaration_waits_for_the_breach`. | 1 \| 1 |
 | `declaration-waits-for-the-breaker` | off (unmeasured) | Opt-in gene `declaration-waits-for-the-breaker`; see `Self::declaration_waits_for_the_breaker`. | 1 \| 1 |
 | `denial-keeps-its-rival` | off (unmeasured) | Opt-in gene `denial-keeps-its-rival`; see `Self::denial_keeps_its_rival`. | 1 \| 1 |
 | `denial-nearest-finish` | off (unmeasured) | Opt-in gene `denial-nearest-finish`; see `Self::denial_nearest_finish`. | 1 \| 1 |
