@@ -264,6 +264,33 @@ fn a_close_records_its_turn_and_a_hold_forgets_it() {
     assert_eq!(ai.stage_muster_closed.get(&cid), None);
 }
 
+/// A muster stand lies out of every ranged and city strike, so the train
+/// can gather nine or ten tiles out: its bill reads over the same radius as
+/// its budget and breakers. Live Emperor game 210 held Pella's train at "0
+/// strength within 8 tiles" for ten turns while its budget within 10 read
+/// ready and the walls fell to 0.
+#[test]
+fn a_train_gathered_nine_tiles_out_meets_its_bill() {
+    let (mut g, cid, mut ai, group, plan) = mustered_train(true);
+    let spots = super::tests::at_distance(&g, cid, MUSTER_FAR + 1);
+    for (uid, pos) in group.units.iter().zip(spots) {
+        g.units.get_mut(uid).unwrap().pos = pos;
+    }
+    assert!(
+        group
+            .units
+            .iter()
+            .all(|uid| g.wdist(g.units[uid].pos, g.cities[&cid].pos) > MUSTER_FAR),
+        "fixture: the whole train stands past the old bill line"
+    );
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(
+        ai.stage_muster_ready.get(&cid).copied(),
+        Some(true),
+        "the train nine tiles out meets its bill and closes"
+    );
+}
+
 #[test]
 fn a_gathered_train_without_a_breaker_holds_however_long_it_waits() {
     let (mut g, cid, mut ai, group, plan) = mustered_train(false);
