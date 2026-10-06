@@ -5411,6 +5411,10 @@ pub struct AdvancedAi {
     /// with no Indian city located. See `one_war::counter_war_has_the_emperor_edge`.
     /// Off by default.
     counter_war_needs_the_emperor_edge: bool,
+    /// `declaration-waits-for-the-breach`: the last turn a declaration was
+    /// held for a breaker or the breach. See
+    /// `siege_train::declaration_hold_patience`.
+    declaration_hold_seen: u32,
     /// `declaration-waits-for-the-breach`: a staged declaration on a walled
     /// objective also waits until the force by it could breach it. See
     /// `siege_train::declaration_breach_reading`.
@@ -6055,6 +6059,10 @@ pub struct AdvancedAi {
     /// followed its faith when the turn began, and holds a spreader of any
     /// other faith. See `advanced/founder_faith.rs`.
     founder_spreads_only_its_faith: bool,
+    /// `unwalled-target-declares-into-the-strike`: the last turn a
+    /// declaration was held for a first-turn strike. See
+    /// `siege_train::first_strike_hold_patience`.
+    first_strike_seen: u32,
     /// `unwalled-target-declares-into-the-strike`: the unwalled objective
     /// tile the declaration first held on for a first-turn strike, and that
     /// turn. See `siege_train::first_strike_hold_patience`.
@@ -9618,6 +9626,7 @@ impl AdvancedAi {
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
             counter_war_needs_the_emperor_edge: false,
+            declaration_hold_seen: 0,
             declaration_waits_for_the_breach: false,
             capital_taken_moves_on: false,
             declaration_needs_the_edge_2: false,
@@ -9746,6 +9755,7 @@ impl AdvancedAi {
             counterfaith_leaves_two_holdouts: false,
             // ---- append: e-f ----------------------------------------
             founder_spreads_only_its_faith: false,
+            first_strike_seen: 0,
             first_strike_hold: None,
             flipped_capital_finishes: false,
             faith_counter_needs_the_edge: false,

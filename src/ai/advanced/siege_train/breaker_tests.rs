@@ -498,6 +498,53 @@ fn only_shooters_with_a_firing_post_and_a_clear_reach_count_toward_the_walls() {
     assert!(drawn < counted, "{drawn} < {counted}");
 }
 
+/// Under `declaration-waits-for-the-breach` the declaration hold's patience
+/// is a hard cap: one turn the reading passes keeps the clock, and only
+/// `DECLARATION_HOLD_RESET` unheld turns in a row restart it. Live Emperor
+/// civvis-20261006T065830Z (game 204) held on Eger from turn 137 to 148
+/// across a ten-turn patience. Off, a passing turn restarts the clock.
+#[test]
+fn the_declaration_hold_keeps_its_clock_through_a_passing_turn() {
+    let (mut g, cid) = medieval_city();
+    let pos = g.cities[&cid].pos;
+    let patience = g.standard_duration(DECLARATION_BREAKER_PATIENCE);
+    let reset = g.standard_duration(DECLARATION_HOLD_RESET);
+    let mut on = AdvancedAi::targeting(super::super::VictoryTarget::Domination);
+    on.enable_declaration_waits_for_the_breach();
+    let mut off = AdvancedAi::targeting(super::super::VictoryTarget::Domination);
+    for ai in [&mut on, &mut off] {
+        g.turn = 100;
+        assert!(ai.declaration_hold_patience(&g, Some(pos), true, true));
+        g.turn = 101;
+        assert!(!ai.declaration_hold_patience(&g, Some(pos), false, false));
+    }
+    g.turn = 100 + patience;
+    assert!(
+        !on.declaration_hold_patience(&g, Some(pos), true, true),
+        "on: the clock kept through the passing turn runs out"
+    );
+    assert!(
+        off.declaration_hold_patience(&g, Some(pos), true, true),
+        "off: the passing turn restarted it"
+    );
+    // A run of unheld turns restarts it under the gene too.
+    let mut on = AdvancedAi::targeting(super::super::VictoryTarget::Domination);
+    on.enable_declaration_waits_for_the_breach();
+    g.turn = 100;
+    assert!(on.declaration_hold_patience(&g, Some(pos), true, true));
+    for turn in 101..=100 + reset {
+        g.turn = turn;
+        assert!(!on.declaration_hold_patience(&g, Some(pos), false, false));
+    }
+    g.turn = 101 + reset;
+    assert!(on.declaration_hold_patience(&g, Some(pos), true, true));
+    g.turn = 100 + patience;
+    assert!(
+        on.declaration_hold_patience(&g, Some(pos), true, true),
+        "restarted after {reset} unheld turns"
+    );
+}
+
 /// `unwalled-target-declares-into-the-strike`: the declaration turn's blows
 /// on a city with no walls count only what can reach it this turn — not a
 /// Warrior three tiles out, but a Horseman — at most one melee per land tile
