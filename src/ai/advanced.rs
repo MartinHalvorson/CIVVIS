@@ -7454,6 +7454,12 @@ pub struct AdvancedAi {
     /// without their larger half. Implies version 1; its enable turns
     /// version 1 off. Opt-in gene `power-the-laboratory-2`.
     power_the_laboratory_2: bool,
+    /// `parity-reads-the-front`: under `declaration-needs-production-parity`
+    /// the target's side of the gate is its Production in the cities within
+    /// `one_war::PARITY_FRONT_RADIUS` of our nearest city or of the war's
+    /// objective, not its whole empire's. See
+    /// `one_war::rival_front_production`.
+    parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
     /// `science-leader-is-the-target`: at peace, from standard turn 165 (109
@@ -9956,6 +9962,7 @@ impl AdvancedAi {
             pass_picket_2: false,
             recon_disruption: recon_disruption::ReconPlan::default(),
             power_the_laboratory_2: false,
+            parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
             science_leader_is_the_target: false,
@@ -23173,8 +23180,16 @@ impl AdvancedAi {
         // `declaration-needs-production-parity`: every opening above -- the
         // staged edge, the overwhelming waiver, the rush stack, and the
         // urgent, culture and faith counters -- also needs our Production at
-        // 0.8 times the target's. Says so itself.
-        if opens && !self.declaration_has_production_parity(g, pid, target) {
+        // 0.8 times the target's (`parity-reads-the-front`: its Production
+        // around our cities and the objective). Says so itself.
+        if opens
+            && !self.declaration_has_production_parity(
+                g,
+                pid,
+                target,
+                objective.map(|(_, pos)| pos),
+            )
+        {
             return;
         }
         if opens {

@@ -272,7 +272,7 @@ fn the_culture_counter_needs_production_parity_under_the_gene() {
             "fixture: the counter is due"
         );
         assert_eq!(
-            ai.declaration_has_production_parity(&g, 0, 1),
+            ai.declaration_has_production_parity(&g, 0, 1, None),
             declares,
             "factor {factor:?} gene {gene}"
         );

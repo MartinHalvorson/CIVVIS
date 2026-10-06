@@ -2334,7 +2334,7 @@ fn the_opening_holds_against_a_rival_that_out_produces_us_under_the_parity_gene(
 
     let (mut game, mut ai) = assembled(true);
     out_produced(&mut game);
-    assert!(!ai.declaration_has_production_parity(&game, 0, 1));
+    assert!(!ai.declaration_has_production_parity(&game, 0, 1, None));
     assert!(!ai.conquest_declaration(&mut game, 0), "held: out-produced");
     assert!(!game.is_at_war(0, 1));
     assert_eq!(ai.conquest_opening.as_ref().unwrap().declared, None);

@@ -327,6 +327,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `opening-yields-to-walls` | off (unmeasured) | Opt-in gene `opening-yields-to-walls`; see `Self::opening_yields_to_walls`. | 1 \| 1 |
 | `overwhelming-power-declares` | off (unmeasured) | Opt-in gene `overwhelming-power-declares`; see `Self::overwhelming_power_declares`. | 1 \| 1 |
 | `own-column-is-not-a-refusal` | off (unmeasured) | Opt-in gene `own-column-is-not-a-refusal`; see `Self::own_column_is_not_a_refusal`. | 1 \| 1 |
+| `parity-reads-the-front` | off (unmeasured) | Opt-in gene `parity-reads-the-front`; see `Self::rival_front_production`. | 1 \| 1 |
 | `peace-asks-a-city` | off (unmeasured) | Opt-in gene `peace-asks-a-city`; see `Self::peace_asks_a_city`. | 1 \| 1 |
 | `peace-waits-for-the-foothold` | off (unmeasured) | Opt-in gene `peace-waits-for-the-foothold`; see `Self::peace_waits_for_the_foothold`. | 1 \| 1 |
 | `peace-waits-for-unseen-prey` | off (unmeasured) | Opt-in gene `peace-waits-for-unseen-prey`; see `Self::peace_waits_for_unseen_prey`. | 1 \| 1 |

@@ -3175,6 +3175,15 @@ pub const GENES: &[Gene] = &[
     // any of the 13 games at t100, trade route capacity 1-2 until t150. See
     // `BasicAi::commercial_hub_step` and `advanced/commercial_routes.rs`.
     Gene { tag: "commercial-hub-and-traders", field: "commercial_hub_and_traders", kind: Kind::OptIn, enable: AdvancedAi::enable_commercial_hub_and_traders, disable: AdvancedAi::disable_commercial_hub_and_traders },
+    // Live Emperor G210-G211 (declaration-needs-production-parity armed):
+    // no offensive declaration in either game while our Production read 0.28
+    // to 0.79 times the target empire's, and both lost to Culture at turns
+    // 181 and 175 as the strongest military. Against the target's cities
+    // within 12 tiles of our cities or the objective (its public Production
+    // shared out by population) it read 0.83 to 2.1 on Macedon t64-117 and
+    // 1.4 to 4.4 on Rome t55-109; from t118 Macedon's capital stood on the
+    // front and held it. See `one_war::rival_front_production`.
+    Gene { tag: "parity-reads-the-front", field: "parity_reads_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_reads_the_front, disable: AdvancedAi::disable_parity_reads_the_front },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

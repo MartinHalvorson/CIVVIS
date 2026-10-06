@@ -1979,7 +1979,8 @@ impl AdvancedAi {
             return false;
         }
         // `declaration-needs-production-parity`. Says so itself.
-        if !self.declaration_has_production_parity(g, pid, opening.target) {
+        let objective = g.cities.get(&opening.city).map(|city| city.pos);
+        if !self.declaration_has_production_parity(g, pid, opening.target, objective) {
             return false;
         }
         let Some(action) = self.raid_opening(g, pid, opening.target) else {

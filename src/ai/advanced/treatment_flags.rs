@@ -6617,6 +6617,18 @@ impl AdvancedAi {
         self.base.commercial_hub_and_traders = false;
     }
 
+    /// Opt-in gene `parity-reads-the-front`; see
+    /// [`Self::rival_front_production`]. Only matters while
+    /// `declaration-needs-production-parity` is on.
+    pub fn enable_parity_reads_the_front(&mut self) {
+        self.parity_reads_the_front = true;
+    }
+
+    /// The twin of `enable_parity_reads_the_front`.
+    pub fn disable_parity_reads_the_front(&mut self) {
+        self.parity_reads_the_front = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
