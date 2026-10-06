@@ -841,6 +841,44 @@ fn a_bomber_in_strike_range_is_wall_damage_under_the_gene() {
     );
 }
 
+/// Under `siege-budget-counts-what-fires` the melee blow is the last one, not
+/// one every turn, so a train of Men-at-Arms under a Bomber read its fire on
+/// the city short of the city's heal and the budget infinite, though the
+/// Bomber strikes every turn: live King game 181 read Rome "inf turns" for
+/// twelve turns under 41-63 aircraft wall a turn. Under
+/// `air-fire-counts-on-the-city` the Bomber's blows count on the city too.
+#[test]
+fn a_bomber_s_fire_counts_on_the_city_under_the_gene() {
+    let (g, cid, melee, _) = bombed_city(6);
+    let mut off = AdvancedAi::new();
+    off.enable_siege_train();
+    off.enable_siege_needs_a_breaker();
+    off.enable_breach_reads_the_air();
+    off.enable_siege_budget_counts_what_fires();
+    let mut on = off.clone();
+    on.enable_air_fire_counts_on_the_city();
+    let air = on.air_breach_walls(&g, 0, cid);
+    assert!(
+        air > 20.0,
+        "fixture: the Bomber out-fires the city's heal ({air:.1})"
+    );
+    let budget = |ai: &AdvancedAi| ai.conversion_siege_budget(&g, 0, cid, &melee).unwrap();
+    assert!(
+        budget(&off).0.is_infinite(),
+        "off: no fire on the city but the last blow"
+    );
+    let (turns, endurance) = budget(&on);
+    assert!(
+        turns.is_finite() && turns > 1.0,
+        "on: the Bomber brings the city down too ({turns:.1} turns / {endurance:.1})"
+    );
+    assert_eq!(
+        budget(&off).1,
+        endurance,
+        "the air wing changes the fire, not the train's endurance"
+    );
+}
+
 /// A Bomber beyond its strike range of the city counts for nothing.
 #[test]
 fn a_bomber_out_of_strike_range_is_no_breaker() {

@@ -6458,6 +6458,17 @@ impl AdvancedAi {
         self.bombers_open_the_siege_walls = false;
     }
 
+    /// Opt-in gene `air-fire-counts-on-the-city`; see
+    /// [`Self::air_fire_counts_on_the_city`].
+    pub fn enable_air_fire_counts_on_the_city(&mut self) {
+        self.air_fire_counts_on_the_city = true;
+    }
+
+    /// The twin of `enable_air_fire_counts_on_the_city`.
+    pub fn disable_air_fire_counts_on_the_city(&mut self) {
+        self.air_fire_counts_on_the_city = false;
+    }
+
     /// Opt-in gene `capital-taken-moves-on`; see
     /// `AdvancedAi::capital_moves_on_next`.
     pub fn enable_capital_taken_moves_on(&mut self) {

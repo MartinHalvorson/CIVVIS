@@ -3092,6 +3092,11 @@ pub const GENES: &[Gene] = &[
     // siege stood, 30% hit that city; the rest pillaged or struck units, most
     // nine or more tiles away. See `siege_train::siege_wall_sortie`.
     Gene { tag: "bombers-open-the-siege-walls", field: "bombers_open_the_siege_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_bombers_open_the_siege_walls, disable: AdvancedAi::disable_bombers_open_the_siege_walls },
+    // Live King 10-05/06: 83% of Stage siege-turns with air support read the
+    // damage budget infinite; the bombers' blows counted on the walls only, so
+    // a melee-and-air train never out-fired the city's heal. See
+    // `victory_conversion::conversion_siege_budget_within`.
+    Gene { tag: "air-fire-counts-on-the-city", field: "air_fire_counts_on_the_city", kind: Kind::OptIn, enable: AdvancedAi::enable_air_fire_counts_on_the_city, disable: AdvancedAi::disable_air_fire_counts_on_the_city },
     // After a rival's capital fell, a refused "required capital is secure"
     // peace kept the army on its towns (median 13 siege-turns in the losses
     // another rival won); the elimination front held on a contender while a
