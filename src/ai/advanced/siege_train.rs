@@ -2441,6 +2441,27 @@ impl AdvancedAi {
             // A muster whose walls are never answered waits at the line until
             // the commitment clock retargets it.
             let ready = dying || walls_answered;
+            if !ready && self.journal().wants(crate::reasoning::Level::Detail) {
+                // Why the muster holds, read as its readiness reads it: live
+                // King civvis-20261006T021637Z (game 183) held Kish's train
+                // 25 turns at 400 walls with three Bombards and a Trebuchet
+                // six to ten tiles out, and no line said which test failed.
+                let name = g
+                    .cities
+                    .get(&cid)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_default();
+                let budget = budget_mustered.map_or_else(
+                    || "unknown".to_string(),
+                    |(turns, endurance)| format!("{turns:.1} turns / {endurance:.1} endurance"),
+                );
+                think!(self.journal(), Military, Detail,
+                    "Siege of {name}: the mustered train holds";
+                    "{mustered:.0} strength within {MUSTER_FAR} tiles against a bill of {bill:.0}; \
+                     budget within {MUSTER_BREACH_FAR}: {budget}; entry {entry_mustered}, grind {grind}, \
+                     breaker hold {no_breaker_mustered}";
+                    city.pos);
+            }
             let was = self.stage_muster_ready.insert(cid, ready);
             if ready
                 && was == Some(false)
