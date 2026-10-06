@@ -359,6 +359,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `rout-spares-the-counter` | off (unmeasured) | Opt-in gene `rout-spares-the-counter`; see `Self::rout_spares_the_counter`. | 1 \| 1 |
 | `runaway-expander-counter` | off (unmeasured) | Opt-in gene `runaway-expander-counter`; see `Self::runaway_expander_counter`. | 1 \| 1 |
 | `sanctuary-yields-a-held-queue` | off (unmeasured) | Opt-in gene `sanctuary-yields-a-held-queue`; see `Self::sanctuary_yields_a_held_queue`. | 1 \| 1 |
+| `science-denial-spy-reads-the-leader` | off (unmeasured) | Opt-in gene `science-denial-spy-reads-the-leader`, which requires and arms `science-threat-denial`; see `advanced/science_threat_denial.rs`. | 1 \| 1 |
 | `science-denounce-waits-for-the-race` | off (unmeasured) | Opt-in gene `science-denounce-waits-for-the-race`; see `Self::science_denounce_waits_for_the_race`. | 1 \| 1 |
 | `science-ladder-reads-the-clock` | off (unmeasured) | Opt-in gene `science-ladder-reads-the-clock`; see `Self::science_ladder_reads_the_clock`. | 1 \| 1 |
 | `science-leader-is-the-target` | off (unmeasured) | Opt-in gene `science-leader-is-the-target`; see `Self::science_leader_is_the_target`. | 1 \| 1 |

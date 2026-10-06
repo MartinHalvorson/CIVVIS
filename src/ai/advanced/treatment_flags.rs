@@ -6689,6 +6689,19 @@ impl AdvancedAi {
         self.base.industrial_zone_in_the_producers = false;
     }
 
+    /// Opt-in gene `science-denial-spy-reads-the-leader`, which requires and
+    /// arms `science-threat-denial`; see `advanced/science_threat_denial.rs`.
+    pub fn enable_science_denial_spy_reads_the_leader(&mut self) {
+        self.science_threat_denial = true;
+        self.science_denial_spy_reads_the_leader = true;
+    }
+
+    /// The twin of `enable_science_denial_spy_reads_the_leader`: the base
+    /// stays as it was.
+    pub fn disable_science_denial_spy_reads_the_leader(&mut self) {
+        self.science_denial_spy_reads_the_leader = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

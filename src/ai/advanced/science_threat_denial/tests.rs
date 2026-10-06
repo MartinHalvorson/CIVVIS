@@ -1099,3 +1099,170 @@ fn off_no_entry_point_reads_the_board() {
     assert!(off.peace_offers.is_empty());
     assert_eq!(GrandStrategy::Science, GrandStrategy::Science);
 }
+
+// ---- science-denial-spy-reads-the-leader ---------------------------------
+
+/// The leader tag: `science-denial-spy-reads-the-leader`, which arms the base.
+fn leader_reader() -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_science_denial_spy_reads_the_leader();
+    ai
+}
+
+/// A level-0 spy of seat 0 standing in `city`, free to act this turn.
+fn idle_spy(g: &mut Game, city: u32) -> u32 {
+    let id = g.next_id;
+    g.next_id += 1;
+    g.spies.insert(
+        id,
+        crate::game::Spy {
+            id,
+            owner: 0,
+            level: 0,
+            promotions: BTreeSet::new(),
+            city: Some(city),
+            ready_turn: g.turn,
+            mission: None,
+            sources_city: None,
+            sources_until: 0,
+            captured_by: None,
+        },
+    );
+    id
+}
+
+/// Seat 1 leads the race (a launch landed and a pad), seat 2 has a pad and
+/// nothing landed, and both cities are on seat 0's map, so a posting to
+/// either is legal.
+fn two_racers() -> (Game, u32, u32) {
+    let mut g = board();
+    let (leader, _) = give_pad(&mut g, 1);
+    let (other, _) = give_pad(&mut g, 2);
+    g.players[1]
+        .science_projects
+        .insert("launch_earth_satellite".to_string());
+    for cid in [leader, other] {
+        let centre = g.cities[&cid].pos;
+        g.players[0].explored.insert(centre);
+    }
+    (g, leader, other)
+}
+
+/// The war plan's Conquest target: the rival we are fighting.
+fn conquest_on(target: usize) -> StrategicPlan {
+    StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(target),
+        ..plan()
+    }
+}
+
+#[test]
+fn the_leader_spy_gene_is_opt_in_and_arms_the_base() {
+    opt_in_off_in_both_controllers("science-denial-spy-reads-the-leader", |ai| {
+        ai.science_denial_spy_reads_the_leader
+    });
+    let mut ai = leader_reader();
+    assert!(ai.science_threat_denial, "the tag arms the denial it reads");
+    ai.disable_science_denial_spy_reads_the_leader();
+    assert!(!ai.science_denial_spy_reads_the_leader);
+    assert!(ai.science_threat_denial, "turning it off leaves the base as it was");
+}
+
+#[test]
+fn the_leading_pad_is_the_most_pressing_threats_standing_pad() {
+    let (mut g, leader, other) = two_racers();
+    assert_eq!(leader_reader().science_denial_leading_pad_city(&g, 0), Some(leader));
+    assert_eq!(
+        denier().science_denial_leading_pad_city(&g, 0),
+        None,
+        "off, nothing is the leader"
+    );
+    // The leader's pad is pillaged: it cannot launch, so the next one is read.
+    let pad = g.cities[&leader]
+        .districts
+        .get(crate::name!("spaceport"))
+        .copied()
+        .unwrap();
+    g.map.tiles.get_mut(&pad).unwrap().pillaged = true;
+    assert_eq!(leader_reader().science_denial_leading_pad_city(&g, 0), Some(other));
+}
+
+/// Live Emperor 2026-10-06: with the eventual winner's pad on the board, the
+/// spy went to the pad of the rival we were fighting. Off, the base bonus
+/// sits on both pads and the war plan's +180 decides; on, the leader's pad.
+#[test]
+fn the_new_posting_goes_to_the_leaders_pad_not_the_war_targets() {
+    let posting = |mut ai: AdvancedAi| {
+        let (mut g, leader, other) = two_racers();
+        let home = g.player_city_ids(0)[0];
+        let spy = idle_spy(&mut g, home);
+        ai.advanced_spies(&mut g, 0, &conquest_on(2));
+        (g.spies[&spy].city, leader, other)
+    };
+    let (city, _, other) = posting(denier());
+    assert_eq!(city, Some(other), "stock: the war target's pad");
+    let (city, leader, _) = posting(leader_reader());
+    assert_eq!(city, Some(leader), "the gene: the leader's pad");
+}
+
+/// One pad still takes one spy: with ours already bound to the leader's pad,
+/// the next spy reads the stock table and the base bonus.
+#[test]
+fn a_held_leader_pad_leaves_the_next_spy_to_the_stock_table() {
+    let (mut g, leader, other) = two_racers();
+    let home = g.player_city_ids(0)[0];
+    let holder = idle_spy(&mut g, leader);
+    g.spies.get_mut(&holder).unwrap().ready_turn = g.turn + 5;
+    assert_eq!(
+        AdvancedAi::science_denial_leader_spy_assignment_bonus(&g, 0, holder, Some(leader), leader),
+        DENIAL_LEADER_SPY_ASSIGN_PRIORITY,
+        "the spy that holds the posting reads its own bonus"
+    );
+    let spy = idle_spy(&mut g, home);
+    assert_eq!(
+        AdvancedAi::science_denial_leader_spy_assignment_bonus(&g, 0, spy, Some(leader), leader),
+        0
+    );
+    assert_eq!(
+        AdvancedAi::science_denial_leader_spy_assignment_bonus(&g, 0, spy, Some(leader), other),
+        0,
+        "no other city earns the leader's bonus"
+    );
+    assert_eq!(
+        AdvancedAi::science_denial_leader_spy_assignment_bonus(&g, 0, spy, None, leader),
+        0,
+        "off, no leader and no bonus"
+    );
+    leader_reader().advanced_spies(&mut g, 0, &conquest_on(2));
+    assert_eq!(g.spies[&spy].city, Some(other));
+}
+
+/// An idle spy in a city that is no threat's (a third seat's city with no
+/// pad) leaves for the leader's free pad under the gene; off, it works where
+/// it stands. A spy in a threat's city stays, since it can disrupt there.
+#[test]
+fn an_idle_spy_outside_every_threat_moves_to_the_leaders_pad() {
+    let stays_or_moves = |mut ai: AdvancedAi, other_races: bool| {
+        let mut g = board();
+        let (leader, _) = give_pad(&mut g, 1);
+        let other = g.player_city_ids(2)[0];
+        if other_races {
+            give_pad(&mut g, 2);
+        }
+        for cid in [leader, other] {
+            let centre = g.cities[&cid].pos;
+            g.players[0].explored.insert(centre);
+        }
+        let spy = idle_spy(&mut g, other);
+        ai.advanced_spies(&mut g, 0, &conquest_on(2));
+        (g.spies[&spy].city, g.spies[&spy].mission.is_some(), leader, other)
+    };
+    let (city, working, _, other) = stays_or_moves(denier(), false);
+    assert_eq!(city, Some(other), "stock: the spy stays");
+    assert!(working, "stock: and runs an operation where it stands");
+    let (city, _, leader, _) = stays_or_moves(leader_reader(), false);
+    assert_eq!(city, Some(leader), "the gene: re-posted to the leader's pad");
+    let (city, _, _, other) = stays_or_moves(leader_reader(), true);
+    assert_eq!(city, Some(other), "a spy in a threat's city stays");
+}
