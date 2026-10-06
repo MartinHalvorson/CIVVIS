@@ -6735,6 +6735,20 @@ impl AdvancedAi {
         self.wounded_taker_finishes_the_breach = false;
     }
 
+    /// Opt-in gene `commercial-hub-in-the-strategic-queue`, which requires and
+    /// arms `commercial-hub-and-traders`; see `BasicAi::commercial_hub_step`.
+    pub fn enable_commercial_hub_in_the_strategic_queue(&mut self) {
+        self.commercial_hub_and_traders = true;
+        self.base.commercial_hub_and_traders = true;
+        self.commercial_hub_in_the_strategic_queue = true;
+    }
+
+    /// The twin of `enable_commercial_hub_in_the_strategic_queue`: the base
+    /// stays as it was.
+    pub fn disable_commercial_hub_in_the_strategic_queue(&mut self) {
+        self.commercial_hub_in_the_strategic_queue = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

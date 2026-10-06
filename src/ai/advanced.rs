@@ -6079,6 +6079,19 @@ pub struct AdvancedAi {
     /// the culture-defense Theater reservation gives it the claimed city's
     /// slot. See `BasicAi::campus_buildings_first`.
     campus_buildings_first: bool,
+    /// `commercial-hub-in-the-strategic-queue`: the Commercial Hub step of
+    /// `commercial-hub-and-traders` (a hub's Market, a Trader for an open
+    /// route slot, a hub in the most productive unthreatened cities) is also
+    /// asked by this governor's idle queues, beside the industrial-zone step,
+    /// and a queued hub or Market is kept against the scorer's review. Live
+    /// Emperor 2026-10-06 (47 runs with the hub gene armed): the step opens at
+    /// turn 60 Online with Currency in hand by a median turn 53, yet the
+    /// first hub started at a median turn 115.5 (never in 5); in the city-
+    /// turns a hub was placeable this governor's scorer made 695 of 1,601
+    /// build starts and never a hub, and the delegated governor reached its
+    /// hub step 53 times behind Campuses, Builders, Settlers and Granaries.
+    /// Requires and arms `commercial_hub_and_traders`.
+    commercial_hub_in_the_strategic_queue: bool,
     // ---- append: e-f ------------------------------------------------
     /// `founder-keeps-two-sources`: a founder's sanctuary keeps two cities
     /// that follow its faith and hold a Shrine, the second from founding. See
@@ -9858,6 +9871,7 @@ impl AdvancedAi {
             declaration_needs_production_parity: false,
             commercial_hub_and_traders: false,
             campus_buildings_first: false,
+            commercial_hub_in_the_strategic_queue: false,
             // ---- append: e-f ----------------------------------------
             founder_keeps_two_sources: false,
             founder_funds_the_inquisition: false,
@@ -30030,6 +30044,15 @@ impl AdvancedAi {
                     .industrial_zone_build_holds(g, cid, item, plan.threatened_city)
                     && Self::production_commitment_is_legal(g, pid, cid, item)
             });
+            // `commercial-hub-in-the-strategic-queue`: a queued Commercial Hub
+            // or its Market finishes before routine rescoring can claim the
+            // city.
+            let commercial_hub_commitment = self.commercial_hub_in_the_strategic_queue
+                && committed.as_ref().is_some_and(|(_, item)| {
+                    self.base
+                        .commercial_hub_build_holds(g, cid, item, plan.threatened_city)
+                        && Self::production_commitment_is_legal(g, pid, cid, item)
+                });
             if committed.as_ref().is_some_and(|(value, _)| {
                 !self.victory_planning
                     || (value.is_finite() && *value > -1_000.0)
@@ -30042,6 +30065,7 @@ impl AdvancedAi {
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
                     || industrial_zone_commitment
+                    || commercial_hub_commitment
             }) && !recovery_preemption
                 && (finish_investment
                     || science_endgame_commitment
@@ -30053,6 +30077,7 @@ impl AdvancedAi {
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
                     || industrial_zone_commitment
+                    || commercial_hub_commitment
                     || preempt_margin <= 1.0
                     || economic_recovery)
             {
@@ -30386,6 +30411,64 @@ impl AdvancedAi {
                                 Self::plain_item(&item);
                                 "one of the empire's most productive cities raises its Industrial \
                                  Zone and Workshop before the strategic scorer fills the queue");
+                        }
+                        counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
+                        continue;
+                    }
+                }
+            }
+            // `commercial-hub-in-the-strategic-queue`: the Commercial Hub step
+            // the delegated governor asks behind its industry steps, for this
+            // idle queue, behind the industrial-zone step. The reservations
+            // above keep their precedence; a due Settler keeps the city, and so
+            // does the delegated governor's emergency (a major war with fewer
+            // soldiers than cities). The plan's threatened city is lent for
+            // the call, as `delegated_cities` lends it.
+            if committed.is_none()
+                && self.commercial_hub_in_the_strategic_queue
+                && self.base.commercial_hub_window_open(g)
+                && plan.threatened_city != Some(cid)
+                && !(counts.military < n_cities
+                    && g.players.iter().any(|player| {
+                        player.id != pid
+                            && player.alive
+                            && !player.is_barbarian
+                            && !player.is_minor
+                            && g.is_at_war(pid, player.id)
+                    }))
+                && !self
+                    .base
+                    .settler_due(g, pid, cid, n_cities, counts.settlers)
+            {
+                let restore_threatened = self.base.plan_threatened_city;
+                self.base.plan_threatened_city = plan.threatened_city;
+                let step = self
+                    .base
+                    .commercial_hub_step(g, pid, cid, n_cities, counts.traders)
+                    .map(|item| {
+                        self.base
+                            .campus_building_takes_the_hub_slot(g, pid, cid, item)
+                    });
+                self.base.plan_threatened_city = restore_threatened;
+                if let Some(item) = step {
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                    {
+                        if self.journal().wants(crate::reasoning::Level::Decision) {
+                            let city_name = g.cities[&cid].name.clone();
+                            think!(self.journal(), Economy, Decision,
+                                "{} starts {} for commercial-hub-in-the-strategic-queue", city_name,
+                                Self::plain_item(&item);
+                                "the Commercial Hub step (a hub's Market, a Trader for an open \
+                                 route slot, a hub in a most productive city) before the \
+                                 strategic scorer fills the queue");
                         }
                         counts.add_item(g, &item);
                         self.clear_idle_production_streak(cid);
@@ -46620,6 +46703,8 @@ mod amphibious_staging;
 #[cfg(test)]
 mod domination_solvency_tests;
 
+#[cfg(test)]
+mod commercial_hub_queue_tests;
 #[cfg(test)]
 mod industrial_zone_tests;
 

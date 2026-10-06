@@ -235,6 +235,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `colonization-earns-its-slot` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot`; see `Self::colonization_earns_its_slot`. | — \| 2 |
 | `colonization-earns-its-slot-2` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot-2`; see `Self::colonization_earns_its_slot_2`. | — \| 2 |
 | `commercial-hub-and-traders` | off (unmeasured) | Opt-in gene `commercial-hub-and-traders`; see `BasicAi::commercial_hub_and_traders` and `Self::international_gold_route_premium`. | 1 \| 1 |
+| `commercial-hub-in-the-strategic-queue` | off (unmeasured) | Opt-in gene `commercial-hub-in-the-strategic-queue`, which requires and arms `commercial-hub-and-traders`; see `BasicAi::commercial_hub_step`. | 1 \| 1 |
 | `connect-the-luxury-2` | off (unmeasured) | Research a first-copy luxury only when it can relieve an Amenity deficit after a legal, affordable unlock. | 1 \| 2 |
 | `conquest-opening-needs-the-production` | off (unmeasured) | Opt-in gene `conquest-opening-needs-the-production`; see `Self::conquest_force_estimate`. | 1 \| 1 |
 | `conquest-opening-stays-near` | off (unmeasured) | Opt-in gene `conquest-opening-stays-near`; see `Self::conquest_opening_stays_near`. | 1 \| 1 |

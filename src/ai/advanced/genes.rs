@@ -3240,6 +3240,14 @@ pub const GENES: &[Gene] = &[
     // Amphitheater in a city that holds a Theater Square. See
     // `AdvancedAi::theater_keeps_its_amphitheater`.
     Gene { tag: "theater-keeps-its-amphitheater", field: "theater_keeps_its_amphitheater", kind: Kind::OptIn, enable: AdvancedAi::enable_theater_keeps_its_amphitheater, disable: AdvancedAi::disable_theater_keeps_its_amphitheater },
+    // Live Emperor 2026-10-06 (47 runs with commercial-hub-and-traders armed):
+    // Gold a turn 14 net / 30 gross at t100 against the best rival's 66 net,
+    // no Commercial Hub or Market at t100 or t120 (median), the first hub a
+    // median 55 turns after the step opens; the strategic governor's scorer
+    // made 43% of the build starts in hub-ready cities and never a hub. The
+    // hub step also runs in its idle queues. Requires and arms
+    // `commercial-hub-and-traders`. See `BasicAi::commercial_hub_step`.
+    Gene { tag: "commercial-hub-in-the-strategic-queue", field: "commercial_hub_in_the_strategic_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_commercial_hub_in_the_strategic_queue, disable: AdvancedAi::disable_commercial_hub_in_the_strategic_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
