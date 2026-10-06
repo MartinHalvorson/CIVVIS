@@ -498,6 +498,55 @@ fn only_shooters_with_a_firing_post_and_a_clear_reach_count_toward_the_walls() {
     assert!(drawn < counted, "{drawn} < {counted}");
 }
 
+/// `unwalled-target-declares-into-the-strike`: the declaration turn's blows
+/// on a city with no walls count only what can reach it this turn — not a
+/// Warrior three tiles out, but a Horseman — at most one melee per land tile
+/// beside it; a walled city reads none (the breach readings decide it).
+/// Live Emperor civvis-20261006T061618Z (game 201) declared on Poland with
+/// nobody near Bydgoszcz, and it stood behind 400 walls the next turn.
+#[test]
+fn the_first_strike_counts_what_can_hit_an_unwalled_city_this_turn() {
+    let (mut g, cid) = medieval_city();
+    g.at_war.remove(&(0, 1));
+    g.cities.get_mut(&cid).unwrap().buildings.clear();
+    Arc::make_mut(&mut g.observed_city_max_wall_hp).remove(&cid);
+    g.cities.get_mut(&cid).unwrap().wall_hp = 0;
+    assert_eq!(g.city_max_wall_hp(&g.cities[&cid]), 0, "fixture: no walls");
+    let ai = AdvancedAi::targeting(super::super::VictoryTarget::Domination);
+    assert_eq!(ai.first_strike_blows(&g, 0, cid), Some(0.0), "nobody in reach");
+    let three = at_distance(&g, cid, 3);
+    g.spawn_test_unit("warrior", 0, three[0]);
+    assert_eq!(
+        ai.first_strike_blows(&g, 0, cid),
+        Some(0.0),
+        "a Warrior three tiles out cannot strike this turn"
+    );
+    g.spawn_test_unit("horseman", 0, three[1]);
+    let one = ai.first_strike_blows(&g, 0, cid).unwrap();
+    assert!(one > 0.0, "a Horseman three tiles out strikes this turn");
+    for pos in three.iter().skip(2).take(8) {
+        g.spawn_test_unit("horseman", 0, *pos);
+    }
+    let many = ai.first_strike_blows(&g, 0, cid).unwrap();
+    let slots = g
+        .wring(g.cities[&cid].pos, 1)
+        .into_iter()
+        .filter(|pos| {
+            g.map
+                .get(*pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+        })
+        .count();
+    assert!(
+        (many - one * slots as f64).abs() < 1e-6,
+        "one Horseman per land tile beside the city: {many:.1} vs {slots} x {one:.1}"
+    );
+    let city = g.cities.get_mut(&cid).unwrap();
+    city.buildings = vec![crate::name!("walls")];
+    Arc::make_mut(&mut g.observed_city_max_wall_hp).remove(&cid);
+    assert_eq!(ai.first_strike_blows(&g, 0, cid), None, "walls: the breach decides");
+}
+
 /// `declaration-waits-for-the-breach`: one gun on the ring satisfies the
 /// breaker hold but not the breach. Live Emperor civvis-20261006T044739Z
 /// (game 194) declared on Vietnam with Dong Hoi behind 200 walls, seven of

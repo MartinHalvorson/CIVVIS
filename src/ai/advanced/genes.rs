@@ -3113,6 +3113,12 @@ pub const GENES: &[Gene] = &[
     // Kish (G183, civvis-20261006T021637Z) took one blow at t96 and built
     // walls by t98. See `conversion_siege_budget_within` and `swarm_blow`.
     Gene { tag: "unwalled-city-takes-the-swarm", field: "unwalled_city_takes_the_swarm", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_city_takes_the_swarm, disable: AdvancedAi::disable_unwalled_city_takes_the_swarm },
+    // Live Emperor 10-06: ten siege targets went from no walls to 100 or 400
+    // in one turn once threatened, and 12 of 14 declarations on majors struck
+    // nothing on the declaration turn; G201 declared on Poland with nobody
+    // near Bydgoszcz, walled 400 the next turn. See
+    // `siege_train::first_strike_blows`.
+    Gene { tag: "unwalled-target-declares-into-the-strike", field: "unwalled_target_declares_into_the_strike", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_target_declares_into_the_strike, disable: AdvancedAi::disable_unwalled_target_declares_into_the_strike },
     // Live Emperor 10-06: G194 declared on Vietnam at 2.7x with Dong Hoi
     // already behind 200 walls and one gun, its budget 18.0 turns against 8.7
     // endurance; walls 300 by t89 and no city fell. Walled-target wars without

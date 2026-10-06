@@ -106,6 +106,13 @@ pub(super) const DECLARATION_BREAKER_PATIENCE: u32 = 10;
 /// its turns within this share of the force's endurance before the war opens
 /// — the margin the siege's own Stage -> Invest entry asks.
 pub(super) const DECLARATION_BREACH_SHARE: f64 = 0.8;
+/// `unwalled-target-declares-into-the-strike`: the share of an unwalled
+/// objective's health the declaration turn's own blows must take.
+pub(super) const FIRST_STRIKE_SHARE: f64 = 0.5;
+/// `unwalled-target-declares-into-the-strike`: standard turns a declaration
+/// holds on one unwalled objective for its first-turn strike before it goes
+/// ahead.
+pub(super) const FIRST_STRIKE_PATIENCE: u32 = 10;
 /// A City Center strikes this far; nothing stands inside it before the
 /// train is staged.
 pub(super) const CITY_STRIKE_RANGE: i32 = 2;
@@ -527,6 +534,93 @@ impl AdvancedAi {
         let (turns, endurance) =
             self.conversion_siege_budget_within(g, pid, cid, &force, MUSTER_BREACH_FAR)?;
         Some((turns, endurance, guns))
+    }
+
+    /// `unwalled-target-declares-into-the-strike`: the blows our land units
+    /// could deal an objective with no wall pool on the declaration turn
+    /// itself, or `None` when it has walls (the breach readings decide
+    /// those). Emperor rivals buy walls the turn they read the threat: ten
+    /// 10-06 siege targets went from none to 100 or 400 in one turn, and
+    /// civvis-20261006T061618Z (game 201) declared on Poland with nobody near
+    /// Bydgoszcz, walled 400 the next turn. The bridge runs a frame's orders
+    /// in sequence (game 194's Archer struck Vietnam right after the
+    /// declaration), so the first blows can land before the rival's turn.
+    ///
+    /// Reach is read on open ground: a melee unit within its moves less one
+    /// (a tile of slack for terrain), at most one per land tile beside the
+    /// city; a ranged unit within its range plus its moves less one; a siege
+    /// unit within its range, as it cannot move and fire. A blow is the
+    /// expected damage of the unit's strike, a land ranged one at the
+    /// district penalty.
+    pub(super) fn first_strike_blows(&self, g: &Game, pid: usize, cid: u32) -> Option<f64> {
+        let city = g.cities.get(&cid)?;
+        if g.city_max_wall_hp(city) > 0 {
+            return None;
+        }
+        let defense = g.city_strength(cid);
+        let slots = g
+            .wring(city.pos, 1)
+            .into_iter()
+            .filter(|pos| {
+                g.map
+                    .get(*pos)
+                    .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .count();
+        let mut melee: Vec<f64> = Vec::new();
+        let mut ranged = 0.0;
+        for unit in g.units.values() {
+            let spec = &g.rules.units[unit.kind];
+            if unit.owner != pid
+                || spec.class != "military"
+                || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                || g.is_embarked(unit)
+            {
+                continue;
+            }
+            let distance = g.wdist(unit.pos, city.pos);
+            let moves = spec.moves as i32;
+            if spec.has_ranged_attack() {
+                let range = g.unit_attack_range(unit.id);
+                let reach = if spec.siege { range } else { range + moves - 1 };
+                if distance > reach {
+                    continue;
+                }
+                let mut attack = g.unit_ranged_attack_strength(unit);
+                if spec.ranged_strength > 0.0 {
+                    attack -= 17.0;
+                }
+                ranged += expected_damage(effective_strength(attack, unit.hp), defense);
+            } else if spec.is_melee_capable() && distance >= 1 && distance <= moves - 1 {
+                melee.push(expected_damage(
+                    effective_strength(g.unit_strength(unit, true), unit.hp),
+                    defense,
+                ));
+            }
+        }
+        melee.sort_by(|a, b| b.total_cmp(a));
+        Some(ranged + melee.into_iter().take(slots).sum::<f64>())
+    }
+
+    /// `unwalled-target-declares-into-the-strike`: whether the hold on an
+    /// unwalled `objective` still has patience; as
+    /// [`Self::declaration_hold_patience`], on its own clock.
+    pub(super) fn first_strike_hold_patience(
+        &mut self,
+        g: &Game,
+        objective: Option<Pos>,
+        short: bool,
+    ) -> bool {
+        let Some(pos) = objective.filter(|_| short) else {
+            self.first_strike_hold = None;
+            return false;
+        };
+        if self.first_strike_hold.is_none_or(|(held, _)| held != pos) {
+            self.first_strike_hold = Some((pos, g.turn));
+        }
+        self.first_strike_hold.is_some_and(|(_, since)| {
+            g.turn.saturating_sub(since) < g.standard_duration(FIRST_STRIKE_PATIENCE)
+        })
     }
 
     pub(super) fn declaration_breaker_at_hand(&self, g: &Game, pid: usize, cid: u32) -> bool {
