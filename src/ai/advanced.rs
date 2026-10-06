@@ -7821,6 +7821,13 @@ pub struct AdvancedAi {
     /// `BasicAi::settler_before_the_navy`.
     settler_before_the_navy: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `tier-gap-reads-the-fielded-line`: under `war-bill-prices-the-tier-gap`,
+    /// the tier gap reads the rival's FIELDED line (its unlocked catalogue only
+    /// when it fields no land soldier) against our stronger fielded line, the
+    /// better of our ranged and melee strength, so a stale Archer beside our
+    /// Musketmen does not price a Crossbow line as an outclassing one. See
+    /// `city_campaign::war_bill_tier_gap`.
+    tier_gap_reads_the_fielded_line: bool,
     /// `urgent-denial-needs-the-edge`: a rival's urgent victory clock waives the
     /// staged-war ratio and the version-2 edge only at
     /// `one_war::DECLARATION_EDGE_RATIO` times the rival's steady power. See
@@ -9913,6 +9920,7 @@ impl AdvancedAi {
 
             settler_before_the_navy: false,
             // ---- append: t-z ----------------------------------------
+            tier_gap_reads_the_fielded_line: false,
             urgent_denial_needs_the_edge: false,
             tower_assault: false,
             tier_gap_priced_once: false,

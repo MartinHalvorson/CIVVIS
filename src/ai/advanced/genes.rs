@@ -3097,6 +3097,11 @@ pub const GENES: &[Gene] = &[
     // another rival won); the elimination front held on a contender while a
     // shorter clock ran out. See `capital_moves_on`.
     Gene { tag: "capital-taken-moves-on", field: "capital_taken_moves_on", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_taken_moves_on, disable: AdvancedAi::disable_capital_taken_moves_on },
+    // Live King G179 (civvis-20261006T011806Z) held off war with Nubia at 3x
+    // its power: Sedeinga's ask was 566 because Nubia's Crossbows (40) over
+    // our stale Archer (25) read a 1.82 tier factor while our Musketmen (55)
+    // out-tiered every Nubian unit. See `city_campaign::war_bill_tier_gap`.
+    Gene { tag: "tier-gap-reads-the-fielded-line", field: "tier_gap_reads_the_fielded_line", kind: Kind::OptIn, enable: AdvancedAi::enable_tier_gap_reads_the_fielded_line, disable: AdvancedAi::disable_tier_gap_reads_the_fielded_line },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

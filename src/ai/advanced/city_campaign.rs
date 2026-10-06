@@ -564,6 +564,20 @@ impl AdvancedAi {
             return 0.0;
         }
         let (our_melee, our_ranged) = Self::tier_fielded_land(g, pid);
+        // `tier-gap-reads-the-fielded-line`: the rival's line is what it
+        // fields (its unlocked catalogue only when it fields no land
+        // soldier), and ours is the better of our fielded ranged and melee
+        // strength — a stale Archer beside our Musketmen is not our line.
+        if self.tier_gap_reads_the_fielded_line {
+            let (fielded_melee, fielded_ranged) = Self::tier_fielded_land(g, rival);
+            let (their_melee, their_ranged) = if fielded_melee > 0.0 || fielded_ranged > 0.0 {
+                (fielded_melee, fielded_ranged)
+            } else {
+                Self::tier_unlocked_land(g, rival)
+            };
+            let our_line = our_ranged.max(our_melee);
+            return (their_melee - our_melee).max(their_ranged - our_line).max(0.0);
+        }
         let (their_melee, their_ranged) = Self::tier_unlocked_land(g, rival);
         let our_ranged = if our_ranged > 0.0 {
             our_ranged
@@ -1537,6 +1551,62 @@ mod tests {
         ai.enable_war_bill_prices_the_tier_gap();
         assert_eq!(ai.war_bill_tier_gap(&game, 0, 1), 0.0);
         assert_eq!(ai.war_bill_tier_factor(&game, 0, 1), 1.0);
+    }
+
+    /// `tier-gap-reads-the-fielded-line`, live King G179
+    /// (civvis-20261006T011806Z) in miniature: we field Archers (25) beside
+    /// Musketmen (55); the rival fields Crossbowmen (40) and leads in techs.
+    /// The shipped gap reads its unlocked line against our Archer; under the
+    /// gene it reads its fielded Crossbows against our Musketmen, and there
+    /// is no gap. A rival that fields no land soldier still prices its
+    /// unlocked catalogue.
+    #[test]
+    fn the_tier_gap_reads_the_fielded_line_under_the_gene() {
+        let mut game = flat_board(80_341, &[(6, 10), (18, 10)]);
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        units_of(&mut game, "archer", 0, home, 2);
+        units_of(&mut game, "musketman", 0, home, 2);
+        let theirs = game.cities[&game.player_city_ids(1)[0]].pos;
+        units_of(&mut game, "crossbowman", 1, theirs, 2);
+        give_techs(&mut game, 1, 10);
+        let mut ai = AdvancedAi::new();
+        ai.enable_war_bill_prices_the_tier_gap();
+        let shipped_gap = ai.war_bill_tier_gap(&game, 0, 1);
+        let shipped_factor = ai.war_bill_tier_factor(&game, 0, 1);
+        assert!(shipped_gap >= 40.0 - 25.0, "the shipped gap reads our Archer: {shipped_gap}");
+        assert!(shipped_factor > 1.0);
+
+        ai.enable_tier_gap_reads_the_fielded_line();
+        let gap = ai.war_bill_tier_gap(&game, 0, 1);
+        assert_eq!(gap, 0.0, "Crossbows (40) meet our Musketmen (55)");
+        assert_eq!(ai.war_bill_tier_factor(&game, 0, 1), 1.0);
+        assert!(ai.war_bill_tier_factor(&game, 0, 1) <= shipped_factor);
+        ai.disable_tier_gap_reads_the_fielded_line();
+        assert_eq!(ai.war_bill_tier_gap(&game, 0, 1), shipped_gap, "off is the shipped gap");
+
+        // A rival with no land soldier on the field: its unlocked catalogue
+        // stands in for its line.
+        let mut game = flat_board(80_343, &[(6, 10), (18, 10)]);
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        units_of(&mut game, "archer", 0, home, 2);
+        give_techs(&mut game, 1, 10);
+        let mut ai = AdvancedAi::new();
+        ai.enable_war_bill_prices_the_tier_gap();
+        ai.enable_tier_gap_reads_the_fielded_line();
+        let (their_melee, their_ranged) = AdvancedAi::tier_unlocked_land(&game, 1);
+        let (our_melee, our_ranged) = AdvancedAi::tier_fielded_land(&game, 0);
+        let expected = (their_melee - our_melee)
+            .max(their_ranged - our_ranged.max(our_melee))
+            .max(0.0);
+        assert_eq!(ai.war_bill_tier_gap(&game, 0, 1), expected);
+    }
+
+    /// The gene is a native opt-in, off in both controllers.
+    #[test]
+    fn tier_gap_reads_the_fielded_line_is_a_native_opt_in_off_in_both_controllers() {
+        opt_in_off_in_both_controllers("tier-gap-reads-the-fielded-line", |ai| {
+            ai.tier_gap_reads_the_fielded_line
+        });
     }
 
     /// The gene is a native opt-in, off in both controllers.
