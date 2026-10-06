@@ -3184,6 +3184,11 @@ pub const GENES: &[Gene] = &[
     // 1.4 to 4.4 on Rome t55-109; from t118 Macedon's capital stood on the
     // front and held it. See `one_war::rival_front_production`.
     Gene { tag: "parity-reads-the-front", field: "parity_reads_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_reads_the_front, disable: AdvancedAi::disable_parity_reads_the_front },
+    // Emperor Religious defeats of October 6: we founded in five of six, and
+    // four kept one Shrine city to the end; the defence ended when it flipped
+    // (G186 9 turns after founding, G212 11, G215 47). See
+    // `advanced/second_faith_source.rs`.
+    Gene { tag: "founder-keeps-two-sources", field: "founder_keeps_two_sources", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_keeps_two_sources, disable: AdvancedAi::disable_founder_keeps_two_sources },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

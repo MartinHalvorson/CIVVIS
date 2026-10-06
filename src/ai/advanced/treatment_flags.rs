@@ -6629,6 +6629,17 @@ impl AdvancedAi {
         self.parity_reads_the_front = false;
     }
 
+    /// Opt-in gene `founder-keeps-two-sources`; see
+    /// `advanced/second_faith_source.rs`.
+    pub fn enable_founder_keeps_two_sources(&mut self) {
+        self.founder_keeps_two_sources = true;
+    }
+
+    /// The twin of `enable_founder_keeps_two_sources`.
+    pub fn disable_founder_keeps_two_sources(&mut self) {
+        self.founder_keeps_two_sources = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
