@@ -315,7 +315,13 @@ impl AdvancedAi {
         let threat = if founded.is_some() {
             // Founding alone does not preserve a religion: without a Shrine,
             // conversion can close the only source before any defender exists.
-            self.home_conversion_threat(g, pid)?
+            match self.home_conversion_threat(g, pid) {
+                Some(threat) => threat,
+                // See `founder_wants_a_second_source` (`founder-keeps-two-sources`):
+                // the second source starts at founding, threat or not.
+                None if self.founder_wants_a_second_source(g, pid) => String::new(),
+                None => return None,
+            }
         } else {
             self.adopted_faith_construction_threat(g, pid)?
         };
@@ -339,12 +345,17 @@ impl AdvancedAi {
                     })
             })
             .collect::<Vec<_>>();
-        if eligible.iter().any(|cid| {
-            g.cities[cid]
-                .buildings
-                .iter()
-                .any(|b| g.building_is_family(b, crate::name!("shrine")))
-        }) {
+        // See `founder_wants_a_second_source`: under the gene a founder stops
+        // at two sources, not at the first.
+        let second_source = founded.is_some() && self.founder_wants_a_second_source(g, pid);
+        if !second_source
+            && eligible.iter().any(|cid| {
+                g.cities[cid]
+                    .buildings
+                    .iter()
+                    .any(|b| g.building_is_family(b, crate::name!("shrine")))
+            })
+        {
             return None;
         }
         for cid in &eligible {
@@ -410,6 +421,9 @@ impl AdvancedAi {
         if g.cities[&cid].queue.first() == Some(&item) {
             return;
         }
+        // See `founder_wants_a_second_source` (`founder-keeps-two-sources`).
+        let second_source =
+            self.founder_wants_a_second_source(g, pid) && Self::own_faith_sources(g, pid) == 1;
         if g.apply(
             pid,
             &Action::Produce {
@@ -419,9 +433,15 @@ impl AdvancedAi {
         )
         .is_ok()
         {
-            think!(self.journal(), Economy, Decision,
-                "{} starts {} for religious defense", g.cities[&cid].name, Self::plain_item(&item);
-                "conversion threatens recruitment; preserve one source of counter-faith Missionaries while its faith survives");
+            if second_source {
+                think!(self.journal(), Economy, Decision,
+                    "{} starts {} as a second faith source", g.cities[&cid].name, Self::plain_item(&item);
+                    "founder-keeps-two-sources: our own Missionaries, Apostles and Inquisitors are bought only in a Shrine city that keeps our faith, and with one such city its conversion ends the defence");
+            } else {
+                think!(self.journal(), Economy, Decision,
+                    "{} starts {} for religious defense", g.cities[&cid].name, Self::plain_item(&item);
+                    "conversion threatens recruitment; preserve one source of counter-faith Missionaries while its faith survives");
+            }
         }
     }
 }

@@ -6073,6 +6073,10 @@ pub struct AdvancedAi {
     /// `advanced/commercial_routes.rs`.
     commercial_hub_and_traders: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `founder-keeps-two-sources`: a founder's sanctuary keeps two cities
+    /// that follow its faith and hold a Shrine, the second from founding. See
+    /// `advanced/second_faith_source.rs`.
+    founder_keeps_two_sources: bool,
     /// `founder-spreads-only-its-faith`: a founder buys no religious unit on a
     /// turn whose board founded its religion, buys one only in a city that
     /// followed its faith when the turn began, and holds a spreader of any
@@ -9788,6 +9792,7 @@ impl AdvancedAi {
             declaration_needs_production_parity: false,
             commercial_hub_and_traders: false,
             // ---- append: e-f ----------------------------------------
+            founder_keeps_two_sources: false,
             founder_spreads_only_its_faith: false,
             first_strike_seen: 0,
             first_strike_hold: None,
@@ -46516,6 +46521,8 @@ mod adopted_faith_balance;
 mod air_campaign;
 
 mod religious_interception;
+
+mod second_faith_source;
 
 mod founder_faith;
 
