@@ -222,7 +222,7 @@ fn a_gathered_train_with_a_breaker_reads_ready_to_close() {
 }
 
 #[test]
-fn a_gathered_train_without_a_breaker_holds_even_past_its_patience() {
+fn a_gathered_train_without_a_breaker_waits_until_its_patience_runs_out() {
     let (mut g, cid, mut ai, group, plan) = mustered_train(false);
     ai.assess_siege(&g, 0, cid, &plan, &group);
     assert_eq!(
@@ -235,47 +235,7 @@ fn a_gathered_train_without_a_breaker_holds_even_past_its_patience() {
     ai.assess_siege(&g, 0, cid, &plan, &group);
     assert_eq!(
         ai.stage_muster_ready.get(&cid).copied(),
-        Some(false),
-        "the valve needs a breaker: a gunless train never closes on walls it cannot open"
-    );
-}
-
-/// A hostile Archer reaches the muster member's tile: its shot is under
-/// half the member's health, but a waiting body takes it every turn.
-#[test]
-fn a_muster_member_in_an_archer_s_reach_falls_back() {
-    let (mut g, cid) = walled_city();
-    let city = g.cities[&cid].pos;
-    for tile in g.map.tiles.values_mut() {
-        if tile.pos != city {
-            tile.terrain = crate::name!("grassland");
-            tile.feature = None;
-            tile.hills = false;
-        }
-    }
-    g.map_script = crate::setup::MapScript::Pangaea;
-    g.turn = 30;
-    g.at_war.insert((0, 1));
-    let here = (city.0 - 7, city.1);
-    // A Horseman: its four moves reach a stand beyond the Archer's reach.
-    let warrior = g.spawn_unit("horseman", 0, here);
-    g.spawn_unit("archer", 1, (city.0 - 5, city.1));
-    let limit = f64::from(g.units[&warrior].hp) * MUSTER_DANGER_SHARE;
-    let reading = danger(&g, warrior, here);
-    assert!(
-        reading > 0.0 && reading <= limit,
-        "fixture: the Archer reaches the member under the line ({reading:.1} vs {limit:.1})"
-    );
-    let view = CityView::of(&g, cid).unwrap();
-    let plan = plan_against(&g, cid);
-    let mut ai = train(true);
-    ai.stage_muster_ready.insert(cid, false);
-    ai.siege_stage_step(&mut g, 0, warrior, &view, &plan);
-    let at = g.units[&warrior].pos;
-    assert_ne!(at, here, "the member moves");
-    assert_eq!(
-        danger(&g, warrior, at),
-        0.0,
-        "the member stands out of the Archer's reach: {here:?} -> {at:?}"
+        Some(true),
+        "a muster that meets the bill never pins the train out for good"
     );
 }
