@@ -230,10 +230,6 @@ pub(super) const MUSTER_FAR: i32 = STAGING_FAR + 3;
 /// the damage budget over members this far out, since a staging gun holds
 /// on its own danger line, often behind the muster.
 pub(super) const MUSTER_BREACH_FAR: i32 = STAGING_FAR + 5;
-/// `stage-musters-out-of-reach`: standard turns a train whose mustered
-/// strength meets the bill may hold at the muster line before it closes
-/// anyway — the readiness test must never pin a train out for good.
-pub(super) const MUSTER_PATIENCE_TURNS: u32 = 8;
 /// `bombers-open-the-siege-walls`: a bomber over a walled siege still kills a
 /// reliever this close to the besieged city when the kill is worth more than
 /// its wall strike.
@@ -2405,8 +2401,7 @@ impl AdvancedAi {
         // within `MUSTER_FAR`, the walls answered and no breaker hold read
         // over the members within `MUSTER_BREACH_FAR` (breakers and damage
         // budget alike: a staging gun holds on its own danger line) — so the
-        // body closes only when the siege will invest. A train whose muster
-        // meets the bill closes anyway after `MUSTER_PATIENCE_TURNS` in Stage.
+        // body closes only when the siege will invest.
         if self.stage_musters_out_of_reach {
             let mustered: f64 = force
                 .iter()
@@ -2436,25 +2431,22 @@ impl AdvancedAi {
                     && city.wall_hp < city.wall_max
                     && continues_mustered);
             let billed = (arena && gathered) || mustered >= bill || breach_taker.is_some();
-            let patience = self.sieges.get(&cid).is_some_and(|siege| {
-                siege.stage == SiegeStage::Stage
-                    && turn.saturating_sub(siege.entered)
-                        >= g.standard_duration(MUSTER_PATIENCE_TURNS)
-            });
             let walls_answered = billed && (entry_mustered || grind) && !no_breaker_mustered;
-            let ready = dying || walls_answered || (billed && patience);
+            // No patience valve: a Stage train cannot step into Invest before
+            // its walls are answered, and Stage guns do not fire, so a train
+            // closed on its ring early only stands under the city's reach.
+            // Live King game 178 (civvis-20261006T010219Z): the valve closed
+            // Munich's train four times with "walls answered false", and 34%
+            // of the land soldiers lost died on the staging ring in Stage.
+            // A muster whose walls are never answered waits at the line until
+            // the commitment clock retargets it.
+            let ready = dying || walls_answered;
             let was = self.stage_muster_ready.insert(cid, ready);
             if ready
                 && was == Some(false)
                 && self.journal().wants(crate::reasoning::Level::Decision)
             {
-                let reason = if dying {
-                    "dying"
-                } else if walls_answered {
-                    "ready"
-                } else {
-                    "patience"
-                };
+                let reason = if dying { "dying" } else { "ready" };
                 let name = g
                     .cities
                     .get(&cid)
@@ -3276,10 +3268,28 @@ impl AdvancedAi {
         if self.shared_danger {
             field.share(g);
         }
+        // A hostile ranged or siege unit, or a neighbouring City Center or
+        // Encampment, strikes a waiting body every turn and takes no blow
+        // back: no muster stand lies in such a reach, whatever the danger
+        // reading. Live King game 176 lost 24% of its land soldiers on the
+        // six-to-eight-tile line while trains waited there; game 179 lost 30%
+        // there, most to the strikes of the cities beside Qusqu.
+        let ranged_reach = |field: &mut super::battle_planner::DangerField, pos: Pos| {
+            field.contributions(pos, uid).iter().any(|(source, blow)| {
+                *blow > 0.0
+                    && source.is_some_and(|id| {
+                        id & super::battle_planner::STRUCTURE_SOURCE != 0
+                            || g.units.get(&id).is_some_and(|unit| {
+                                unit.owner != pid && g.rules.units[unit.kind].has_ranged_attack()
+                            })
+                    })
+            })
+        };
         let risk_here = field.rotation_danger(here, uid);
+        let shot_here = ranged_reach(&mut field, here);
         let distance = g.wdist(here, city.pos);
         let dry = |g: &Game, pos: Pos| dry_stand(g, uid, pos);
-        let mut stands: Vec<(i32, f64, Pos)> = g
+        let candidates: Vec<Pos> = g
             .reachable(uid)
             .into_iter()
             .filter(|pos| {
@@ -3288,9 +3298,14 @@ impl AdvancedAi {
                     && dry(g, *pos)
                     && g.unit_ids_at(*pos).is_empty()
             })
-            .map(|pos| (g.wdist(pos, city.pos), field.rotation_danger(pos, uid), pos))
-            .filter(|(_, risk, _)| *risk <= limit)
             .collect();
+        let mut stands: Vec<(i32, f64, Pos)> = Vec::new();
+        for pos in candidates {
+            let risk = field.rotation_danger(pos, uid);
+            if risk <= limit && !ranged_reach(&mut field, pos) {
+                stands.push((g.wdist(pos, city.pos), risk, pos));
+            }
+        }
         stands.sort_by(|a, b| {
             a.0.cmp(&b.0)
                 .then_with(|| a.1.total_cmp(&b.1))
@@ -3301,7 +3316,7 @@ impl AdvancedAi {
             .get(&city.id)
             .map(|c| c.name.clone())
             .unwrap_or_default();
-        if risk_here > limit {
+        if risk_here > limit || shot_here {
             // Over the line: the nearest safe stand, else the ordinary step.
             let (_, risk, dest) = *stands.first()?;
             let kind = g.units[&uid].kind;
