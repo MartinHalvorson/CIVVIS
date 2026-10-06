@@ -394,6 +394,7 @@ const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
 type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 
 mod advanced;
+mod campus_buildings;
 mod commercial_hub;
 mod movement_risk;
 mod scout_first;
@@ -2923,6 +2924,31 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `district-buildings-first-2`.
     pub(crate) capital_library_first: bool,
+    /// A city whose standing Campus can build its next building -- the
+    /// Library, else the University, else the Research Lab, each within
+    /// `campus_buildings::CAMPUS_BUILDING_MAX_TURNS` -- builds it before the
+    /// city opens another district or takes an ordinary building or a
+    /// repeatable project: the step stands just ahead of
+    /// `district-buildings-first`, the Harbor and the district list, behind
+    /// the military floor and every step above it (local defence, the
+    /// housing Granary, the Prophet race's Holy Site, the industrial hub),
+    /// the Settler step, the housing reserve, the Builders, the Trader, the
+    /// Monument and the Plaza. The Commercial Hub step's second and third
+    /// hubs give their slot to it (the empire's first hub, a hub's Market and
+    /// the Trader keep theirs), and so does the culture-defense Theater
+    /// reservation (`AdvancedAi::reserve_culture_defense_theater`).
+    ///
+    /// Live Emperor civvis-20261006T024058Z..T095649Z (35 games): Campuses /
+    /// Libraries / Universities 4 / 2 / 0 per game at t100 and 7 / 6.5 / 3 at
+    /// t150; Education at a median t91 (the rivals' t87), then a University
+    /// that started a median 15 turns after it was buildable (p75 32; 41 of
+    /// 218 cities never), while those cities spent 17% of the wait on a new
+    /// district, 7% on another ordinary building and 4% on a district
+    /// project. Science per citizen 1.25 against the rivals' 1.95 at t100.
+    /// See `campus_buildings.rs`.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `campus-buildings-first`.
+    pub(crate) campus_buildings_first: bool,
     /// A Theater Square ahead of the Harbor and every other district while
     /// the empire's Culture trails the strongest rival's, until half the
     /// cities hold one. Culture buys the civics a government and its policy
@@ -5714,6 +5740,7 @@ impl BasicAi {
             industrial_hub: false,
             district_buildings_first: false,
             capital_library_first: false,
+            campus_buildings_first: false,
             culture_defense_theater: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
@@ -6227,6 +6254,7 @@ impl BasicAi {
             industrial_hub: false,
             district_buildings_first: false,
             capital_library_first: false,
+            campus_buildings_first: false,
             culture_defense_theater: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
@@ -13185,7 +13213,9 @@ impl BasicAi {
             && !self.settler_due(g, pid, cid, n_cities, settlers)
         {
             if let Some(item) = self.commercial_hub_step(g, pid, cid, n_cities, traders) {
-                return Some(item);
+                // `campus-buildings-first`: a second or third hub gives its
+                // slot to this city's next Campus building.
+                return Some(self.campus_building_takes_the_hub_slot(g, pid, cid, item));
             }
         }
         // `builders-before-the-lent-floor`: a Domination war lends this
@@ -13570,6 +13600,12 @@ impl BasicAi {
                     return Some(item);
                 }
             }
+        }
+        // `campus-buildings-first`: the standing Campus's Library, University
+        // or Research Lab before the city opens another district or takes an
+        // ordinary building. See `campus_buildings.rs`.
+        if let Some(item) = self.campus_buildings_first_item(g, pid, cid) {
+            return Some(item);
         }
         // `district-buildings-first`: the building that makes a standing
         // district pay before the city opens another district.

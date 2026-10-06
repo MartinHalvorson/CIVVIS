@@ -25,6 +25,11 @@
 //! 2026-10-04/05, 11 of the 55 cities at their housing (food surplus 2+, no
 //! Granary) were building this Theater at t75; 41 of the 45 capped cities at
 //! t75 had no Granary, and the mean housing growth multiplier at t100 was 0.58.
+//!
+//! Under `campus-buildings-first` the claimed city builds its next Campus
+//! building (Library, University, Research Lab) in the Theater's slot: live
+//! Emperor 2026-10-06 (35 games) started 71 of these Theaters in a city whose
+//! Library was buildable and 48 in one whose University was.
 
 use super::{AdvancedAi, StrategicPlan};
 use crate::ai::BasicAi;
@@ -108,6 +113,30 @@ impl AdvancedAi {
             crate::game::Item::District { district, .. }
                 if g.district_family(*district) == "theater_square"
         );
+        // `campus-buildings-first`: the claimed city's next Campus building
+        // takes the Theater's slot.
+        let campus = if theater && self.campus_buildings_first {
+            BasicAi::campus_building_item(g, pid, cid)
+        } else {
+            None
+        };
+        if let Some(campus) = campus {
+            if g.apply(
+                pid,
+                &Action::Produce {
+                    city: cid,
+                    item: campus.clone(),
+                },
+            )
+            .is_ok()
+            {
+                think!(self.journal(), Economy, Decision,
+                    "{} builds its Campus's {} before a Theater Square", g.cities[&cid].name,
+                    BasicAi::item_label(&campus);
+                    "campus-buildings-first: the culture reservation's city builds its Campus building first");
+            }
+            return;
+        }
         if g.apply(
             pid,
             &Action::Produce {

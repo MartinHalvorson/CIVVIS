@@ -6072,6 +6072,13 @@ pub struct AdvancedAi {
     /// is priced higher. See `BasicAi::commercial_hub_and_traders` and
     /// `advanced/commercial_routes.rs`.
     commercial_hub_and_traders: bool,
+    /// `campus-buildings-first`: a city whose standing Campus can build its
+    /// Library, University or Research Lab builds it before the delegated
+    /// governor opens another district or takes an ordinary building, the
+    /// Commercial Hub step's second and third hubs give it their slot, and
+    /// the culture-defense Theater reservation gives it the claimed city's
+    /// slot. See `BasicAi::campus_buildings_first`.
+    campus_buildings_first: bool,
     // ---- append: e-f ------------------------------------------------
     /// `founder-keeps-two-sources`: a founder's sanctuary keeps two cities
     /// that follow its faith and hold a Shrine, the second from founding. See
@@ -9800,6 +9807,7 @@ impl AdvancedAi {
             counterfaith_leaves_two_holdouts: false,
             declaration_needs_production_parity: false,
             commercial_hub_and_traders: false,
+            campus_buildings_first: false,
             // ---- append: e-f ----------------------------------------
             founder_keeps_two_sources: false,
             founder_funds_the_inquisition: false,

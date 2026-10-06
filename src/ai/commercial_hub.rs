@@ -168,6 +168,14 @@ impl BasicAi {
             )
     }
 
+    /// Whether a city of `pid` holds a Commercial Hub, its foundation, or has
+    /// one first in its queue. Read by `campus-buildings-first`.
+    pub(super) fn empire_holds_a_commercial_hub(g: &Game, pid: usize) -> bool {
+        g.player_city_ids(pid)
+            .into_iter()
+            .any(|city| Self::commercial_hub_held_or_queued(g, city))
+    }
+
     /// See `commercial_hub_step`: this city's Commercial Hub on its best Gold
     /// site (river, Harbor and district adjacency as `district_yields` prices
     /// them), when the empire holds or has queued fewer hubs than

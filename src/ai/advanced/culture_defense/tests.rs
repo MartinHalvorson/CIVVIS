@@ -120,3 +120,64 @@ fn version_two_leaves_a_housing_bound_city_its_granary() {
     ai.disable_culture_defense_theater_2();
     assert!(!ai.base.culture_defense_theater);
 }
+
+#[test]
+fn campus_buildings_first_is_a_native_opt_in_off_in_both_controllers() {
+    crate::ai::advanced::test_support::opt_in_off_in_both_controllers(
+        "campus-buildings-first",
+        |ai| ai.campus_buildings_first,
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.base.campus_buildings_first);
+    ai.enable_campus_buildings_first();
+    assert!(
+        ai.base.campus_buildings_first,
+        "the delegated governor's step reads it"
+    );
+    ai.disable_campus_buildings_first();
+    assert!(!ai.base.campus_buildings_first);
+}
+
+/// `campus-buildings-first`: the claimed city builds its Library in the
+/// Theater's slot; with the Library standing and no University to build,
+/// the Theater as before. Without the gene, the Theater.
+#[test]
+fn the_reserved_city_builds_its_campus_building_before_the_theater() {
+    let (mut g, cid, plan) = board();
+    g.players[0].techs.insert(crate::name!("writing"));
+    let mut ai = AdvancedAi::new();
+    ai.base.w.city_target = 1.0;
+    ai.enable_culture_defense_theater_2();
+
+    let mut off = g.clone();
+    ai.reserve_culture_defense_theater(&mut off, 0, &plan);
+    assert!(
+        queued_theater(&off, cid),
+        "without the gene: {:?}",
+        off.cities[&cid].queue
+    );
+
+    ai.enable_campus_buildings_first();
+    let mut on = g.clone();
+    ai.reserve_culture_defense_theater(&mut on, 0, &plan);
+    assert_eq!(
+        on.cities[&cid].queue.first(),
+        Some(&Item::Building {
+            building: crate::name!("library")
+        }),
+        "the Library takes the Theater's slot"
+    );
+
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+    assert_eq!(crate::ai::BasicAi::campus_building_item(&g, 0, cid), None);
+    ai.reserve_culture_defense_theater(&mut g, 0, &plan);
+    assert!(
+        queued_theater(&g, cid),
+        "nothing left to build first: {:?}",
+        g.cities[&cid].queue
+    );
+}

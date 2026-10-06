@@ -6662,6 +6662,20 @@ impl AdvancedAi {
         self.founder_funds_the_inquisition = false;
     }
 
+    /// Opt-in gene `campus-buildings-first`; see
+    /// `BasicAi::campus_buildings_first` and
+    /// [`Self::reserve_culture_defense_theater`].
+    pub fn enable_campus_buildings_first(&mut self) {
+        self.campus_buildings_first = true;
+        self.base.campus_buildings_first = true;
+    }
+
+    /// The twin of `enable_campus_buildings_first`.
+    pub fn disable_campus_buildings_first(&mut self) {
+        self.campus_buildings_first = false;
+        self.base.campus_buildings_first = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

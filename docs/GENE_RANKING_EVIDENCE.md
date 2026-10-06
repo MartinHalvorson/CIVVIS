@@ -222,6 +222,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-before-the-army` | off (unmeasured) | A city's first Campus ahead of the military floor and the capital Settler in the delegated city governor. | — \| 3 |
 | `campus-before-the-army-2` | off (unmeasured) | `campus-before-the-army-2`: the same Campus and Library, behind the Monument and the capital Settler. | — \| 3 |
 | `campus-before-the-army-3` | off (unmeasured) | `campus-before-the-army-3`: version 2, on through the University and the Research Lab. | — \| 3 |
+| `campus-buildings-first` | off (unmeasured) | Opt-in gene `campus-buildings-first`; see `BasicAi::campus_buildings_first` and `Self::reserve_culture_defense_theater`. | 1 \| 1 |
 | `capital-campaign-router` | off (unmeasured) | Enable `capital-campaign-router` for measurement. | 1 \| 1 |
 | `capital-defense-holds` | off (unmeasured) | Opt-in gene `capital-defense-holds`; see `Self::capital_defense_contact`. | 1 \| 1 |
 | `capital-prey-opens-a-front` | off (unmeasured) | Opt-in gene `capital-prey-opens-a-front`; see `Self::capital_prey_opens_a_front`. | — \| 2 |
