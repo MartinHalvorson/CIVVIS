@@ -254,6 +254,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-reads-the-engine-clock` | off (unmeasured) | Opt-in gene `culture-reads-the-engine-clock`; see `Self::culture_reads_the_engine_clock`. | 1 \| 1 |
 | `culture-tourism-payback` | off (unmeasured) | Enable `culture-tourism-payback` for measurement. | 1 \| 1 |
 | `decisive-window` | off (unmeasured) | Opt-in gene `decisive-window`; see `Self::decisive_window`. | 1 \| 1 |
+| `declaration-needs-production-parity` | off (unmeasured) | Opt-in gene `declaration-needs-production-parity`; see `Self::declaration_has_production_parity`. | 1 \| 1 |
 | `declaration-needs-the-edge` | off (unmeasured) | Opt-in gene `declaration-needs-the-edge`; see `Self::declaration_needs_the_edge`. | — \| 2 |
 | `declaration-needs-the-edge-2` | off (unmeasured) | Version 2 of `declaration_needs_the_edge`; one version of a family plays, so this turns version 1 off. | — \| 2 |
 | `declaration-waits-for-the-breach` | off (unmeasured) | Opt-in gene `declaration-waits-for-the-breach`; see `Self::declaration_waits_for_the_breach`. | 1 \| 1 |

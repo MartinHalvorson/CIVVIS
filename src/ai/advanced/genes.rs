@@ -3163,6 +3163,12 @@ pub const GENES: &[Gene] = &[
     // 5%; 61% of cities short of Amenities. See
     // `BasicAi::housing_bound_granary_step`.
     Gene { tag: "housing-bound-city-builds-its-granary", field: "housing_bound_city_builds_its_granary", kind: Kind::OptIn, enable: AdvancedAi::enable_housing_bound_city_builds_its_granary, disable: AdvancedAi::disable_housing_bound_city_builds_its_granary },
+    // Live Emperor G185-G198: 20 declarations on majors took 4 cities; the 16
+    // made under 0.8 times the target's Production took 1 within 40 turns.
+    // At war 54% of production went to the army (32% at peace) and our power
+    // fell a median 43% from its peak. See
+    // `one_war::declaration_has_production_parity`.
+    Gene { tag: "declaration-needs-production-parity", field: "declaration_needs_production_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_needs_production_parity, disable: AdvancedAi::disable_declaration_needs_production_parity },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

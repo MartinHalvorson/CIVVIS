@@ -144,6 +144,18 @@ pub(crate) const DECLARATION_PEAK_EDGE_RATIO: f64 = 2.0;
 /// `declaration-needs-the-edge-2`: the turns of rival military readings the
 /// peak reading takes the largest of.
 pub(crate) const DECLARATION_PEAK_TURNS: u32 = 30;
+/// `declaration-needs-production-parity`: our Production a turn over the
+/// target's under which an offensive declaration on a major holds. Of the 20
+/// declarations on majors in live Emperor G185-G198, the 16 made under 0.8
+/// times the target's Production took one city within 40 turns; the 4 from
+/// 0.8 to 1.2 took three.
+pub(crate) const DECLARATION_PRODUCTION_PARITY: f64 = 0.8;
+/// `declaration-needs-production-parity`: the most military per city a
+/// Domination war lends the delegated governor while no city of ours is
+/// threatened -- the genome's own floor (`mil_per_city`, 1.0), in place of
+/// the two a city that sent 54% of wartime production to the army (32% at
+/// peace) in the same games.
+pub(crate) const UNTHREATENED_WAR_ARMY_PER_CITY: f64 = 1.0;
 
 /// `declaration-needs-the-edge-2`: what a staged declaration is weighed on.
 /// See `AdvancedAi::declaration_edge_2`.
@@ -2016,6 +2028,55 @@ impl AdvancedAi {
             our_production: crate::ai::BasicAi::seat_production_per_turn(g, pid),
             their_production: crate::ai::BasicAi::seat_production_per_turn(g, target),
         }
+    }
+
+    /// `declaration-needs-production-parity`: `rival`'s Production a turn,
+    /// when the board can read it. A native board holds every city, so its
+    /// cities are the whole reading. A board that carries public figures for
+    /// `rival` -- the live mirror, or a fogged native view -- holds only the
+    /// cities in view, and its total is the host's public Production, carried
+    /// as the production term of `observed_yield_adjustments`; the mirror
+    /// leaves that term at zero when the host does not report it, and the
+    /// fogged view never fills it. `None` then: there is no reading.
+    pub(crate) fn rival_production_reading(g: &Game, rival: usize) -> Option<f64> {
+        let partial = g.observed_public_empire_stats.contains_key(&rival)
+            || g.observed_yield_adjustments.contains_key(&rival);
+        let reported = g
+            .observed_yield_adjustments
+            .get(&rival)
+            .is_some_and(|adjustment| adjustment.production != 0.0);
+        (!partial || reported).then(|| crate::ai::BasicAi::seat_production_per_turn(g, rival))
+    }
+
+    /// `declaration-needs-production-parity`: whether an offensive
+    /// declaration on the major `target` may open -- our Production a turn
+    /// (`BasicAi::seat_production_per_turn`, the host's figure on the live
+    /// seat) at [`DECLARATION_PRODUCTION_PARITY`] times the target's or
+    /// more. Always with the gene off, and when the board has no reading of
+    /// the target's Production (`rival_production_reading`). Says so when it
+    /// holds.
+    pub(crate) fn declaration_has_production_parity(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+    ) -> bool {
+        if !self.declaration_needs_production_parity {
+            return true;
+        }
+        let Some(theirs) = Self::rival_production_reading(g, target) else {
+            return true;
+        };
+        let ours = crate::ai::BasicAi::seat_production_per_turn(g, pid);
+        if ours >= DECLARATION_PRODUCTION_PARITY * theirs {
+            return true;
+        }
+        think!(self.journal(), Military, Detail,
+               "Holding off war with {}", g.players[target].civ;
+               "our production {ours:.0} vs their {theirs:.0}: an offensive war needs {:.1} times \
+                their Production; live Emperor declarations under it took one city in sixteen",
+               DECLARATION_PRODUCTION_PARITY);
+        false
     }
 
     /// `declaration-needs-the-edge-2`: the largest of `rival`'s steady

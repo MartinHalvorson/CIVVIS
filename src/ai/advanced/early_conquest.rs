@@ -1978,6 +1978,10 @@ impl AdvancedAi {
                    "the treasury cannot carry the war it would open");
             return false;
         }
+        // `declaration-needs-production-parity`. Says so itself.
+        if !self.declaration_has_production_parity(g, pid, opening.target) {
+            return false;
+        }
         let Some(action) = self.raid_opening(g, pid, opening.target) else {
             return false;
         };

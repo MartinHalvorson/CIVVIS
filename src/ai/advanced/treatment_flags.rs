@@ -6592,6 +6592,17 @@ impl AdvancedAi {
         self.base.housing_bound_city_builds_its_granary = false;
     }
 
+    /// Opt-in gene `declaration-needs-production-parity`; see
+    /// [`Self::declaration_has_production_parity`].
+    pub fn enable_declaration_needs_production_parity(&mut self) {
+        self.declaration_needs_production_parity = true;
+    }
+
+    /// The twin of `enable_declaration_needs_production_parity`.
+    pub fn disable_declaration_needs_production_parity(&mut self) {
+        self.declaration_needs_production_parity = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

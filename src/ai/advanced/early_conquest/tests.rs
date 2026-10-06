@@ -2283,3 +2283,74 @@ fn an_undented_city_ends_the_opening_after_the_patience_window() {
     assert!(ai.conquest_opening.is_none(), "an undented city ends it");
     assert!(ai.peace_offers.contains(&1));
 }
+
+/// See `declaration_has_production_parity`: under
+/// `declaration-needs-production-parity` the assembled opening holds while
+/// the target's public Production is more than 1/0.8 of ours, and declares
+/// as shipped with the gene off or with no reading of the target's
+/// Production. Emperor G185 (Japan, t44, 0.61) and G198 (France, t29, 0.48)
+/// opened this way and took nothing.
+#[test]
+fn the_opening_holds_against_a_rival_that_out_produces_us_under_the_parity_gene() {
+    let assembled = |gene: bool| {
+        let mut game = board(&[at(6, 12), at(14, 12)]);
+        let mut ai = opened(&mut game);
+        let rally = ai.conquest_opening.as_ref().unwrap().rally;
+        bodies(
+            &mut game,
+            0,
+            "warrior",
+            rally,
+            1,
+            CONQUEST_RANGED + CONQUEST_MELEE,
+        );
+        ai.maintain_conquest_opening(&mut game, 0);
+        let opening = ai.conquest_opening.clone().unwrap();
+        assert!(opening.assembled.is_some());
+        assert!(ai.conquest_preview_takes_the_city(&game, 0, &opening));
+        if gene {
+            ai.enable_declaration_needs_production_parity();
+        }
+        Arc::make_mut(&mut game.observed_public_empire_stats)
+            .entry(1)
+            .or_default();
+        (game, ai)
+    };
+    let out_produced = |game: &mut Game| {
+        let ours = crate::ai::BasicAi::seat_production_per_turn(game, 0);
+        Arc::make_mut(&mut game.observed_yield_adjustments).insert(
+            1,
+            crate::rules::Yields {
+                production: 2.0 * ours + 10.0,
+                ..Default::default()
+            },
+        );
+    };
+
+    let (mut game, mut ai) = assembled(false);
+    out_produced(&mut game);
+    assert!(ai.conquest_declaration(&mut game, 0), "off: the war opens");
+    assert!(game.is_at_war(0, 1));
+
+    let (mut game, mut ai) = assembled(true);
+    out_produced(&mut game);
+    assert!(!ai.declaration_has_production_parity(&game, 0, 1));
+    assert!(!ai.conquest_declaration(&mut game, 0), "held: out-produced");
+    assert!(!game.is_at_war(0, 1));
+    assert_eq!(ai.conquest_opening.as_ref().unwrap().declared, None);
+
+    let (mut game, mut ai) = assembled(true);
+    assert_eq!(AdvancedAi::rival_production_reading(&game, 1), None);
+    assert!(
+        ai.conquest_declaration(&mut game, 0),
+        "no reading: the war opens"
+    );
+    assert!(game.is_at_war(0, 1));
+}
+
+#[test]
+fn declaration_needs_production_parity_is_a_native_opt_in_off_in_both_controllers() {
+    opt_in_off_in_both_controllers("declaration-needs-production-parity", |ai| {
+        ai.declaration_needs_production_parity
+    });
+}

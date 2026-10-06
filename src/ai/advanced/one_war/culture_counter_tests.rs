@@ -216,3 +216,105 @@ fn counter_war_needs_the_emperor_edge_is_a_native_opt_in_off_in_both_controllers
         |ai| ai.counter_war_needs_the_emperor_edge,
     );
 }
+
+/// See `declaration_has_production_parity`: under
+/// `declaration-needs-production-parity` the urgent culture counter holds
+/// against a rival whose public Production is more than 1/0.8 of ours, and
+/// opens as shipped at parity or when the board has no reading of the
+/// rival's Production (public figures without a Production term, as the
+/// mirror leaves them when the host does not report it).
+#[test]
+fn the_culture_counter_needs_production_parity_under_the_gene() {
+    let correction = |g: &Game, factor: f64| {
+        let ours = crate::ai::BasicAi::seat_production_per_turn(g, 0);
+        let derived = crate::ai::BasicAi::seat_production_per_turn(g, 1);
+        let wanted = factor * ours - derived;
+        if wanted == 0.0 {
+            0.25
+        } else {
+            wanted
+        }
+    };
+    // (their Production over ours, or None for no reading; gene; declares)
+    for (factor, gene, declares) in [
+        (Some(2.0), false, true),
+        (Some(2.0), true, false),
+        (Some(1.0), true, true),
+        (None, true, true),
+    ] {
+        let (mut g, mut ai, plan) = fixture(4);
+        ai.enable_culture_counter_declares();
+        if gene {
+            ai.enable_declaration_needs_production_parity();
+        }
+        assert!(
+            AdvancedAi::rival_production_reading(&g, 1).is_none(),
+            "fixture: public figures, no Production term"
+        );
+        if let Some(factor) = factor {
+            let production = correction(&g, factor);
+            Arc::make_mut(&mut g.observed_yield_adjustments).insert(
+                1,
+                crate::rules::Yields {
+                    production,
+                    ..Default::default()
+                },
+            );
+            let theirs = AdvancedAi::rival_production_reading(&g, 1).expect("a reading");
+            let ours = crate::ai::BasicAi::seat_production_per_turn(&g, 0);
+            assert!(
+                (theirs - factor * ours).abs() < 0.5,
+                "fixture: theirs {theirs} against ours {ours} at {factor}"
+            );
+        }
+        assert!(
+            ai.culture_counter_due(&g, 0, 1),
+            "fixture: the counter is due"
+        );
+        assert_eq!(
+            ai.declaration_has_production_parity(&g, 0, 1),
+            declares,
+            "factor {factor:?} gene {gene}"
+        );
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        assert_eq!(g.is_at_war(0, 1), declares, "factor {factor:?} gene {gene}");
+    }
+}
+
+/// See `rival_production_reading`: a native board's cities are the whole
+/// reading; public figures without a Production term are none; a Production
+/// term is the host's total.
+#[test]
+fn a_rival_production_reading_needs_the_host_figure_on_a_partial_board() {
+    let (mut g, _, _) = fixture(4);
+    Arc::make_mut(&mut g.observed_public_empire_stats).remove(&1);
+    let native = crate::ai::BasicAi::seat_production_per_turn(&g, 1);
+    assert_eq!(AdvancedAi::rival_production_reading(&g, 1), Some(native));
+    Arc::make_mut(&mut g.observed_public_empire_stats)
+        .entry(1)
+        .or_default();
+    assert_eq!(AdvancedAi::rival_production_reading(&g, 1), None);
+    Arc::make_mut(&mut g.observed_yield_adjustments).insert(
+        1,
+        crate::rules::Yields {
+            science: 3.0,
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        AdvancedAi::rival_production_reading(&g, 1),
+        None,
+        "a correction without a Production term"
+    );
+    Arc::make_mut(&mut g.observed_yield_adjustments).insert(
+        1,
+        crate::rules::Yields {
+            production: 40.0,
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        AdvancedAi::rival_production_reading(&g, 1),
+        Some(native + 40.0)
+    );
+}

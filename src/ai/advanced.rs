@@ -6058,6 +6058,12 @@ pub struct AdvancedAi {
     /// besides us and that founder do not follow it. See
     /// `adopted_faith_sanctuary::counterfaith_is_safe`.
     counterfaith_leaves_two_holdouts: bool,
+    /// `declaration-needs-production-parity`: an offensive declaration on a
+    /// major also needs our Production at 0.8 times the target's, and while
+    /// no city of ours is threatened a Domination war lends the delegated
+    /// governor no more than one unit a city. See
+    /// `one_war::declaration_has_production_parity`.
+    declaration_needs_production_parity: bool,
     // ---- append: e-f ------------------------------------------------
     /// `founder-spreads-only-its-faith`: a founder buys no religious unit on a
     /// turn whose board founded its religion, buys one only in a city that
@@ -9765,6 +9771,7 @@ impl AdvancedAi {
             colonization_earns_its_slot: false,
             colonization_earns_its_slot_2: false,
             counterfaith_leaves_two_holdouts: false,
+            declaration_needs_production_parity: false,
             // ---- append: e-f ----------------------------------------
             founder_spreads_only_its_faith: false,
             first_strike_seen: 0,
@@ -14996,7 +15003,26 @@ impl AdvancedAi {
         }
         let cities = g.player_city_ids(pid).len().max(1);
         let desired = self.enemy_weighted_army_target(g, pid, 2 * cities);
-        Some(desired as f64 / cities as f64)
+        let per_city = desired as f64 / cities as f64;
+        // `declaration-needs-production-parity`: while no city of ours is
+        // threatened, the war lends no more than the genome's own floor.
+        if self.declaration_needs_production_parity && !Self::home_city_threatened(g, pid, plan) {
+            return Some(per_city.min(one_war::UNTHREATENED_WAR_ARMY_PER_CITY));
+        }
+        Some(per_city)
+    }
+
+    /// `declaration-needs-production-parity`: whether a city of ours is
+    /// threatened -- the plan names one or is in Recovery, or the host says a
+    /// city of ours was attacked within four turns (the test the Amenity
+    /// handoffs use).
+    fn home_city_threatened(g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
+        plan.threatened_city.is_some()
+            || plan.strategy == GrandStrategy::Recovery
+            || g.player_city_ids(pid).iter().any(|cid| {
+                let city = &g.cities[cid];
+                city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4
+            })
     }
 
     /// Lower is a more attractive rival: nearby, weak empires with valuable
@@ -23122,7 +23148,7 @@ impl AdvancedAi {
         let overwhelming_ready = overwhelming_ready && !strike_held;
         let road_opening_ready = road_opening_ready && !strike_held;
         let moving_on_ready = moving_on_ready && !strike_held;
-        if close_enough
+        let opens = close_enough
             && ready
             && (staged
                 || air_ready
@@ -23130,8 +23156,15 @@ impl AdvancedAi {
                 || culture_counter_ready
                 || overwhelming_ready
                 || road_opening_ready
-                || moving_on_ready)
-        {
+                || moving_on_ready);
+        // `declaration-needs-production-parity`: every opening above -- the
+        // staged edge, the overwhelming waiver, the rush stack, and the
+        // urgent, culture and faith counters -- also needs our Production at
+        // 0.8 times the target's. Says so itself.
+        if opens && !self.declaration_has_production_parity(g, pid, target) {
+            return;
+        }
+        if opens {
             // `coalition_before_war`: invite the target's neighbours to a
             // joint war first, and hold while an answer is due. See
             // `advanced/coalition.rs`.
