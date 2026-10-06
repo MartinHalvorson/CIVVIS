@@ -6448,6 +6448,11 @@ pub struct Game {
     /// for Domination. Empty in simulated games and older host snapshots.
     #[serde(default)]
     pub observed_city_palaces: Arc<BTreeMap<u32, bool>>,
+    /// Cities whose imported pressure values encode majority and conversion
+    /// warnings rather than measured accumulated pressure. Spreading and
+    /// religious combat cannot forecast a conversion from these markers.
+    #[serde(default)]
+    pub observed_city_religion_markers: Arc<BTreeSet<u32>>,
     /// Host gross strategic income minus the reconstructed board's income.
     /// Corrections preserve policy and improvement counterfactuals on clones.
     /// Empty in simulated games; refreshed on each host snapshot.
@@ -7283,6 +7288,8 @@ struct GameSer {
     #[serde(default)]
     observed_city_palaces: BTreeMap<u32, bool>,
     #[serde(default)]
+    observed_city_religion_markers: BTreeSet<u32>,
+    #[serde(default)]
     observed_strategic_income_adjustments: BTreeMap<usize, BTreeMap<Name, f64>>,
     #[serde(default)]
     observed_trade_capacity: BTreeMap<usize, i64>,
@@ -7513,6 +7520,7 @@ impl From<GameSer> for Game {
             host_maintenance: Arc::new(s.host_maintenance),
             observed_score: Arc::new(s.observed_score),
             observed_city_palaces: Arc::new(s.observed_city_palaces),
+            observed_city_religion_markers: Arc::new(s.observed_city_religion_markers),
             observed_strategic_income_adjustments: Arc::new(
                 s.observed_strategic_income_adjustments,
             ),
@@ -7755,6 +7763,7 @@ impl From<Game> for GameSer {
             host_maintenance: Arc::unwrap_or_clone(g.host_maintenance),
             observed_score: Arc::unwrap_or_clone(g.observed_score),
             observed_city_palaces: Arc::unwrap_or_clone(g.observed_city_palaces),
+            observed_city_religion_markers: Arc::unwrap_or_clone(g.observed_city_religion_markers),
             observed_strategic_income_adjustments: Arc::unwrap_or_clone(
                 g.observed_strategic_income_adjustments,
             ),
@@ -7886,6 +7895,7 @@ impl Game {
         Arc::make_mut(&mut self.observed_city_strength).clear();
         Arc::make_mut(&mut self.observed_city_ranged_strength).clear();
         Arc::make_mut(&mut self.observed_city_palaces).clear();
+        Arc::make_mut(&mut self.observed_city_religion_markers).clear();
         Arc::make_mut(&mut self.observed_city_max_wall_hp).clear();
         Arc::make_mut(&mut self.observed_city_yield_adjustments).clear();
         Arc::make_mut(&mut self.observed_city_amenity_adjustments).clear();
@@ -7967,6 +7977,7 @@ impl Game {
         Arc::make_mut(&mut self.observed_city_strength).remove(&cid);
         Arc::make_mut(&mut self.observed_city_ranged_strength).remove(&cid);
         Arc::make_mut(&mut self.observed_city_palaces).remove(&cid);
+        Arc::make_mut(&mut self.observed_city_religion_markers).remove(&cid);
         Arc::make_mut(&mut self.observed_city_max_wall_hp).remove(&cid);
         Arc::make_mut(&mut self.observed_city_yield_adjustments).remove(&cid);
         Arc::make_mut(&mut self.observed_city_amenity_adjustments).remove(&cid);
@@ -8241,6 +8252,7 @@ impl Game {
             host_maintenance: Arc::new(BTreeMap::new()),
             observed_score: Arc::new(BTreeMap::new()),
             observed_city_palaces: Arc::new(BTreeMap::new()),
+            observed_city_religion_markers: Arc::new(BTreeSet::new()),
             observed_strategic_income_adjustments: Arc::new(BTreeMap::new()),
             observed_trade_capacity: Arc::new(BTreeMap::new()),
             observed_leader_types: Arc::new(BTreeMap::new()),
@@ -14861,7 +14873,10 @@ impl Game {
         } else {
             1.0
         };
-        if !pressure_ignored {
+        // Host majority/warning markers are not accumulated pressure. The
+        // next snapshot can report a conversion; arithmetic on 100/60/50
+        // markers cannot predict how many native charges it takes.
+        if !pressure_ignored && !self.observed_city_religion_markers.contains(&cid) {
             let city = self.cities.get_mut(&cid).unwrap();
             for (faith, pressure) in city.pressure.iter_mut() {
                 if *faith != religion {
@@ -14918,6 +14933,12 @@ impl Game {
             .map(|city| city.id)
             .collect();
         for cid in targets {
+            // Imported majority/warning values are not pressure amounts.
+            // Removing a religious unit still changes the unit board, but
+            // only a later host snapshot can report nearby conversions.
+            if self.observed_city_religion_markers.contains(&cid) {
+                continue;
+            }
             if self.city_ignores_foreign_religion(&self.cities[&cid], loser)
                 || winner.is_some_and(|(religion, _)| {
                     self.city_ignores_foreign_religion(&self.cities[&cid], religion)

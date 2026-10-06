@@ -12997,6 +12997,7 @@ pub fn rebuild_from_state(
                     built.food = city.food;
                 }
                 apply_city_religion(built, city);
+                Arc::make_mut(&mut game.observed_city_religion_markers).insert(cid);
                 apply_city_capture(built, city, &capture_seats);
                 // ★★★★ SEED THE QUEUE WITH WHAT CIVILIZATION VI IS ALREADY BUILDING.
                 //
@@ -15212,6 +15213,7 @@ impl LiveMirror {
                         live.food = city.food;
                     }
                     apply_city_religion(live, city);
+                    Arc::make_mut(&mut self.game.observed_city_religion_markers).insert(*cid);
                     apply_city_capture(live, city, &capture_seats);
                     // Firaxis exports the current item, not a speculative
                     // multi-item queue.  Clear even when the item is absent: a
