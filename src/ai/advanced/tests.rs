@@ -51205,6 +51205,88 @@ fn the_delegated_governor_builds_the_granary_but_not_in_the_threatened_city() {
     );
 }
 
+/// See `declaration-needs-production-parity`: while no city of ours is
+/// threatened a Domination war lends the delegated governor one unit a city
+/// under the gene, not two; the plan's threatened city, a Recovery plan and a
+/// city hit within four turns keep the full target.
+#[test]
+fn an_unthreatened_war_lends_one_unit_a_city_under_the_parity_gene() {
+    let (mut game, capital, _) = empire_with_a_capital(79_173);
+    clear_barbarian_fixture(&mut game);
+    for _ in 0..3 {
+        found_test_city(&mut game, 0);
+    }
+    let home = game.cities[&capital].pos;
+    for _ in 0..5 {
+        game.spawn_test_unit("warrior", 0, home);
+    }
+    assert!(game.is_at_war(0, 1), "fixture: at war");
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.base.book_pos = 4;
+    ai.base.w.mil_per_city = 1.0;
+    assert_eq!(
+        ai.domination_war_military_per_city(&game, 0, &plan),
+        Some(2.0),
+        "off: two a city"
+    );
+    ai.enable_declaration_needs_production_parity();
+    assert_eq!(
+        ai.domination_war_military_per_city(&game, 0, &plan),
+        Some(1.0),
+        "unthreatened: one a city"
+    );
+    let threatened = StrategicPlan {
+        threatened_city: Some(capital),
+        ..plan.clone()
+    };
+    assert_eq!(
+        ai.domination_war_military_per_city(&game, 0, &threatened),
+        Some(2.0),
+        "the plan's threatened city"
+    );
+    let recovery = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        ..plan.clone()
+    };
+    assert_eq!(
+        ai.domination_war_military_per_city(&game, 0, &recovery),
+        Some(2.0),
+        "Recovery"
+    );
+    game.turn = 50;
+    game.cities.get_mut(&capital).unwrap().last_attacked = 48;
+    assert_eq!(
+        ai.domination_war_military_per_city(&game, 0, &plan),
+        Some(2.0),
+        "a city hit two turns ago"
+    );
+    game.turn = 60;
+    assert_eq!(
+        ai.domination_war_military_per_city(&game, 0, &plan),
+        Some(1.0),
+        "twelve turns ago"
+    );
+    game.at_war.clear();
+    let peace = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        ..plan.clone()
+    };
+    assert_eq!(
+        ai.domination_war_military_per_city(&game, 0, &peace),
+        None,
+        "peace keeps the governor's own floor"
+    );
+}
+
 #[test]
 fn housing_bound_city_builds_its_granary_is_a_native_opt_in_off_in_both_controllers() {
     super::test_support::opt_in_off_in_both_controllers(
