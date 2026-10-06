@@ -7582,6 +7582,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 			-- activation/movement orders otherwise bypass the fallback driver.
 			local spaceTargets = CivvisSpaceBoost.forUnit(player, unit, turn);
 			activationPlots = CivvisSpaceBoost.filterPlots(player, spaceTargets, activationPlots);
+			local comandanteTargets = CivvisComandante.forUnit(player, unit);
+			activationPlots = CivvisComandante.filterPlots(comandanteTargets, activationPlots);
 			greatPerson = {
 				individual = individualRow ~= nil
 					and individualRow.GreatPersonIndividualType or nil,
@@ -7602,6 +7604,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 					and individualRow.ActionRequiresCityGreatWorkObjectType or nil,
 				charges = try(function() return gp:GetActionCharges(); end, 0),
 				can_activate = try(function()
+					if not CivvisComandante.usefulAt(comandanteTargets,
+							unit:GetX(), unit:GetY()) then return false; end
 					if not CivvisSpaceBoost.cityKey(player, spaceTargets,
 							unit:GetX(), unit:GetY()) then return false; end
 					return UnitManager.CanStartCommand(
@@ -14669,6 +14673,9 @@ local function applyOrder(player, pid, row, turn)
 		local unit = liveUnit(pid, subject);
 		if unit == nil then return false, "unit_gone:" .. tostring(subject); end
 		if verb == "ACTIVATE_GREAT_PERSON" then
+			local comandanteTargets = CivvisComandante.forUnit(player, unit);
+			if not CivvisComandante.usefulAt(comandanteTargets,
+					unit:GetX(), unit:GetY()) then return false, "reserved_comandante"; end
 			local spaceTargets = CivvisSpaceBoost.forUnit(player, unit, turn);
 			local spaceCity = CivvisSpaceBoost.cityKey(player, spaceTargets,
 				unit:GetX(), unit:GetY());
@@ -16352,6 +16359,76 @@ CivvisSpaceBoost.filterPlots = function(player, targets, plots)
 	return eligible;
 end
 
+-- Urdaneta consumes his aura to reset nearby movement/attacks, or to heal
+-- nearby Llaneros. GranColombia_Maya_GreatPeople.xml names RESET_UNIT_MOVES
+-- with AOE_LAND_REQUIREMENTS; GranColombia_Maya_Units_Text.xml:135 includes
+-- attack capability. A fully ready army is not a recipient for this charge.
+CivvisComandante = {};
+CivvisComandante.targets = function(player, individual, ownID)
+	if individual ~= "GREAT_PERSON_INDIVIDUAL_COMMANDANTE_URDANETA" then return nil; end
+	local targets = {};
+	local readable = try(function()
+		for _, other in player:GetUnits():Members() do
+			if other:GetID() ~= ownID then
+				local row = GameInfo.Units[unitTypeName(other)];
+				if row == nil or row.Domain == nil then return false; end
+				if row.Domain == "DOMAIN_LAND" then
+					local moves = tonumber(other:GetMovesRemaining());
+					local maximum = tonumber(other:GetMaxMoves());
+					if moves == nil or maximum == nil or moves < 0 or maximum < 0 then return false; end
+					local useful = moves < maximum;
+					if (tonumber(row.Combat) or 0) > 0 or (tonumber(row.RangedCombat) or 0) > 0 then
+						local attacks = tonumber(other:GetAttacksRemaining());
+						if attacks == nil or attacks < 0 then return false; end
+						useful = useful or attacks == 0;
+					end
+					if row.UnitType == "UNIT_COLOMBIAN_LLANERO" then
+						local damage = tonumber(other:GetDamage());
+						if damage == nil or damage < 0 then return false; end
+						useful = useful or damage > 0;
+					end
+					if useful then
+						local x, y = tonumber(other:GetX()), tonumber(other:GetY());
+						if x == nil or y == nil then return false; end
+						if x >= 0 and y >= 0 then
+							targets[#targets + 1] = { x = x, y = y };
+						end
+					end
+				end
+			end
+		end
+		return true;
+	end, false);
+	-- A missing native API is uncertainty, not proof that no unit benefits.
+	if not readable then return nil; end
+	return targets;
+end
+CivvisComandante.forUnit = function(player, unit)
+	local gp = greatPersonOf(unit);
+	if gp == nil then return nil; end
+	return CivvisComandante.targets(player, gpName(gp), unit:GetID());
+end
+CivvisComandante.usefulAt = function(targets, x, y)
+	if targets == nil then return true; end
+	for _, target in ipairs(targets) do
+		local distance = tonumber(try(function()
+			return Map.GetPlotDistance(x, y, target.x, target.y);
+		end, nil));
+		if distance == nil or distance <= 2 then return true; end
+	end
+	return false;
+end
+CivvisComandante.filterPlots = function(targets, plots)
+	if targets == nil then return plots; end
+	local eligible = {};
+	for _, plot in ipairs(plots) do
+		if CivvisComandante.usefulAt(targets, plot.x, plot.y) then
+			eligible[#eligible + 1] = plot;
+		end
+	end
+	return eligible;
+end
+
 -- Drive one Great Person toward being used. Returns "activated" | "moving" |
 -- "retired" | "idle", or nil when the unit is not a Great Person this code
 -- should touch.
@@ -16399,6 +16476,13 @@ local function orderGreatPerson(player, unit, id, turn)
 		end
 		return "idle";
 	end
+	local comandanteTargets = CivvisComandante.targets(player, individual, id);
+	if comandanteTargets ~= nil and #comandanteTargets == 0 then
+		gpPending[id] = nil;
+		emit("gp", { turn = turn, unit = id, individual = individual,
+			class = class, action = "reserved_comandante" });
+		return "idle";
+	end
 	local spaceTargets = CivvisSpaceBoost.targets(player, individual, turn);
 	local spaceCity = CivvisSpaceBoost.cityKey(player, spaceTargets,
 		unit:GetX(), unit:GetY());
@@ -16408,7 +16492,8 @@ local function orderGreatPerson(player, unit, id, turn)
 	-- synchronously inside commandUnit.
 	local activationKey = tostring(id);
 	CivvisLedger.expected_gp_activation[activationKey] = turn;
-	if spaceCity and commandUnit(unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]) then
+	if spaceCity and CivvisComandante.usefulAt(comandanteTargets, unit:GetX(), unit:GetY())
+			and commandUnit(unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]) then
 		if spaceTargets ~= nil then CivvisSpaceBoost.spent[spaceCity] = turn; end
 		gpPending[id] = nil;
 		emit("gp", { turn = turn, unit = id, individual = individual,
@@ -16478,6 +16563,8 @@ local function orderGreatPerson(player, unit, id, turn)
 				-- builds capacity. Fall through to the idle report instead.
 				if rank < 2 and (slotCount == nil or slotCount > 0)
 						and CivvisSpaceBoost.cityKey(player, spaceTargets,
+							plot:GetX(), plot:GetY())
+						and CivvisComandante.usefulAt(comandanteTargets,
 							plot:GetX(), plot:GetY()) then
 					local px, py = plot:GetX(), plot:GetY();
 					if activationReachable(px, py) ~= false then
