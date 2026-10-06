@@ -222,7 +222,7 @@ fn a_gathered_train_with_a_breaker_reads_ready_to_close() {
 }
 
 #[test]
-fn a_gathered_train_without_a_breaker_holds_even_past_its_patience() {
+fn a_gathered_train_without_a_breaker_holds_however_long_it_waits() {
     let (mut g, cid, mut ai, group, plan) = mustered_train(false);
     ai.assess_siege(&g, 0, cid, &plan, &group);
     assert_eq!(
@@ -230,13 +230,13 @@ fn a_gathered_train_without_a_breaker_holds_even_past_its_patience() {
         Some(false),
         "nothing opens the walls: the train holds at the muster line"
     );
-    g.turn = 29 + g.standard_duration(MUSTER_PATIENCE_TURNS) + 1;
+    g.turn = 29 + g.standard_duration(16) + 1;
     ai.sieges.get_mut(&cid).unwrap().assessed = g.turn - 1;
     ai.assess_siege(&g, 0, cid, &plan, &group);
     assert_eq!(
         ai.stage_muster_ready.get(&cid).copied(),
         Some(false),
-        "the valve needs a breaker: a gunless train never closes on walls it cannot open"
+        "a gunless train never closes on walls it cannot open"
     );
 }
 
