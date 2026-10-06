@@ -6513,6 +6513,17 @@ impl AdvancedAi {
         self.religious_match_point_defence = false;
     }
 
+    /// Opt-in gene `founder-spreads-only-its-faith`; see
+    /// `advanced/founder_faith.rs`.
+    pub fn enable_founder_spreads_only_its_faith(&mut self) {
+        self.founder_spreads_only_its_faith = true;
+    }
+
+    /// The twin of `enable_founder_spreads_only_its_faith`.
+    pub fn disable_founder_spreads_only_its_faith(&mut self) {
+        self.founder_spreads_only_its_faith = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

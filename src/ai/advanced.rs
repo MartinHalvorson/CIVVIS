@@ -6035,6 +6035,11 @@ pub struct AdvancedAi {
     /// `adopted_faith_sanctuary::counterfaith_is_safe`.
     counterfaith_leaves_two_holdouts: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `founder-spreads-only-its-faith`: a founder buys no religious unit on a
+    /// turn whose board founded its religion, buys one only in a city that
+    /// followed its faith when the turn began, and holds a spreader of any
+    /// other faith. See `advanced/founder_faith.rs`.
+    founder_spreads_only_its_faith: bool,
     /// `flipped-capital-finishes`: a Free City holding the original capital
     /// whose capture completes Domination is the war that ends the game. The
     /// Free Cities seat is barbarian-flagged, so `domination_finish_at_war`,
@@ -7843,6 +7848,9 @@ pub struct AdvancedAi {
     /// strikes it each turn rather than waiting for a blow that pays alone.
     /// See `conversion_siege_budget_within` and `siege_train::swarm_blow`.
     unwalled_city_takes_the_swarm: bool,
+    /// `founder-spreads-only-its-faith`: our faith and the cities following
+    /// it when the turn began. See `founder_faith::TurnStartFaith`.
+    turn_start_faith: Option<founder_faith::TurnStartFaith>,
     /// `tier-gap-reads-the-fielded-line`: under `war-bill-prices-the-tier-gap`,
     /// the tier gap reads the rival's FIELDED line (its unlocked catalogue only
     /// when it fields no land soldier) against our stronger fielded line, the
@@ -9696,6 +9704,7 @@ impl AdvancedAi {
             colonization_earns_its_slot_2: false,
             counterfaith_leaves_two_holdouts: false,
             // ---- append: e-f ----------------------------------------
+            founder_spreads_only_its_faith: false,
             flipped_capital_finishes: false,
             faith_counter_needs_the_edge: false,
             favor_bought_before_congress: false,
@@ -9946,6 +9955,7 @@ impl AdvancedAi {
             settler_before_the_navy: false,
             // ---- append: t-z ----------------------------------------
             unwalled_city_takes_the_swarm: false,
+            turn_start_faith: None,
             tier_gap_reads_the_fielded_line: false,
             urgent_denial_needs_the_edge: false,
             tower_assault: false,
@@ -25165,6 +25175,13 @@ impl AdvancedAi {
         let Some(religion) = g.players[pid].religion.clone() else {
             return;
         };
+        // See `founding_pending` (`founder-spreads-only-its-faith`).
+        if self.founding_pending(g, pid) {
+            think!(self.journal(), Faith, Detail,
+                "Buying no religious unit this turn";
+                "founder-spreads-only-its-faith: our religion was founded on this turn's board and the host has not shown it yet, so a unit bought now takes its city's old faith (G186 turn 48 bought a Hindu Missionary)");
+            return;
+        }
         if self.prepare_defensive_inquisition(g, pid) {
             return;
         }
@@ -25287,7 +25304,10 @@ impl AdvancedAi {
                 // Religious units inherit the purchase city's majority.  A
                 // converted Holy Site must never make the defender spend its
                 // Faith strengthening the runaway rival religion.
-                if g.city_religion(&g.cities[&cid]) != Some(religion.as_str()) {
+                if g.city_religion(&g.cities[&cid]) != Some(religion.as_str())
+                    // See `founder_purchase_withheld`.
+                    || self.founder_purchase_withheld(g, pid, cid)
+                {
                     continue;
                 }
                 // ⚠ Ask the engine what this costs; do not price it here.
@@ -39199,6 +39219,13 @@ impl AdvancedAi {
         else {
             return false;
         };
+        // See `founder_holds_a_foreign_spreader` (`founder-spreads-only-its-faith`).
+        if self.founder_holds_a_foreign_spreader(g, pid, &religion) {
+            think!(self.journal(), Faith, Decision,
+                "Holding a {} spreader", religion;
+                "founder-spreads-only-its-faith: we founded our own faith, and a charge of another one spent in our cities converts them away from it");
+            return false;
+        }
         if !self.adopted_faith_spread_allowed(g, pid, &religion) {
             think!(self.journal(), Faith, Decision,
                 "Holding an adopted {} spreader", religion;
@@ -45474,6 +45501,8 @@ impl AdvancedAi {
         // `breach-support-reads-the-wall-tier`: see `Game::observed_wall_tier_rules`.
         g.observed_wall_tier_rules = self.breach_support_reads_the_wall_tier;
         self.turn_start_policies = g.players[pid].policies.clone();
+        // See `founder_faith` (`founder-spreads-only-its-faith`).
+        self.record_turn_start_faith(g, pid);
         self.air_city_assault = None;
         self.base.gun_lethal_tiles.clear();
         self.builder_support.clear();
@@ -46235,6 +46264,8 @@ mod adopted_faith_balance;
 mod air_campaign;
 
 mod religious_interception;
+
+mod founder_faith;
 
 #[cfg(test)]
 mod observed_movement_memory_tests;

@@ -3122,6 +3122,11 @@ pub const GENES: &[Gene] = &[
     // Sweden was running; Indonesia won on Religion at 84. See
     // `religious_interception::match_point_defence_has_the_edge`.
     Gene { tag: "religious-match-point-defence", field: "religious_match_point_defence", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_match_point_defence, disable: AdvancedAi::disable_religious_match_point_defence },
+    // Live Emperor G186 bought a Missionary in Hindu Bogota on the turn the
+    // host refused our founding, so it came out Hindu, and as a founder spread
+    // Hinduism from Bogota's tile on turns 49-51, two of them into our new
+    // Buddhist Holy City. See `advanced/founder_faith.rs`.
+    Gene { tag: "founder-spreads-only-its-faith", field: "founder_spreads_only_its_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_spreads_only_its_faith, disable: AdvancedAi::disable_founder_spreads_only_its_faith },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
