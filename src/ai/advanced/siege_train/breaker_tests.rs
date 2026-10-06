@@ -498,6 +498,19 @@ fn only_shooters_with_a_firing_post_and_a_clear_reach_count_toward_the_walls() {
     assert!(drawn < counted, "{drawn} < {counted}");
 }
 
+/// Under `declaration-waits-for-the-breach` a held declaration is held on
+/// every offensive path: the overwhelming, road-opening and moving-on paths
+/// read the cleared `staged` as an unstaged army, so game 206 declared two
+/// turns into its hold at Eindhoven. Off, the hold bars only the staged war.
+#[test]
+fn a_held_declaration_bars_the_unstaged_paths_under_the_gene() {
+    let mut ai = AdvancedAi::targeting(super::super::VictoryTarget::Domination);
+    assert!(!ai.hold_bars_the_unstaged_paths(true), "off");
+    ai.enable_declaration_waits_for_the_breach();
+    assert!(ai.hold_bars_the_unstaged_paths(true), "on and held");
+    assert!(!ai.hold_bars_the_unstaged_paths(false), "on, no hold");
+}
+
 /// Under `declaration-waits-for-the-breach` the declaration hold's patience
 /// is a hard cap: one turn the reading passes keeps the clock, and only
 /// `DECLARATION_HOLD_RESET` unheld turns in a row restart it. Live Emperor

@@ -638,6 +638,20 @@ impl AdvancedAi {
         })
     }
 
+    /// `declaration-waits-for-the-breach`: whether this turn's breaker or
+    /// breach hold also bars the declaration paths that fire on an unstaged
+    /// army — overwhelming power, road opening, capital moves on. The hold
+    /// clears `staged`, and those paths read `!staged`, so every hold opened
+    /// them: live Emperor civvis-20261006T072328Z (game 206) held its
+    /// declaration on the Netherlands at turn 77 "for a wall-breaker" at
+    /// Eindhoven (100 walls, no gun on the ring), declared through the
+    /// overwhelming path at turn 79 (491 against 104), held the capture "for
+    /// a wall-breaker on its way" from turn 81, took no city, and lost to
+    /// culture at 174. Off: the hold bars nothing but the staged war.
+    pub(super) fn hold_bars_the_unstaged_paths(&self, held: bool) -> bool {
+        self.declaration_waits_for_the_breach && held
+    }
+
     pub(super) fn declaration_breaker_at_hand(&self, g: &Game, pid: usize, cid: u32) -> bool {
         let Some(city) = CityView::of(g, cid) else {
             return true;
