@@ -234,6 +234,13 @@ pub(super) const MUSTER_BREACH_FAR: i32 = STAGING_FAR + 5;
 /// strength meets the bill may hold at the muster line before it closes
 /// anyway — the readiness test must never pin a train out for good.
 pub(super) const MUSTER_PATIENCE_TURNS: u32 = 8;
+/// `bombers-open-the-siege-walls`: a bomber over a walled siege still kills a
+/// reliever this close to the besieged city when the kill is worth more than
+/// its wall strike.
+pub(super) const SIEGE_AIR_RELIEVER_RADIUS: i32 = 3;
+/// `bombers-open-the-siege-walls`: a hostile this close to any city of ours
+/// is a threat a bomber strikes before the siege walls.
+pub(super) const HOME_AIR_GUARD_RADIUS: i32 = 3;
 /// `anvil`: a defender under this rotates into the city to heal, if the
 /// unit standing there is healthier by the margin.
 pub(super) const ANVIL_ROTATE_HP: i32 = 50;
@@ -3124,6 +3131,127 @@ impl AdvancedAi {
         self.base.fortify_or_stop(g, pid, uid)
     }
 
+    /// `bombers-open-the-siege-walls`: a strike bomber's sortie while a walled
+    /// city our ground train besieges is in its reach. A hostile within
+    /// [`HOME_AIR_GUARD_RADIUS`] of a city of ours comes first; then the best
+    /// wall strike on a besieged city, unless a reliever within
+    /// [`SIEGE_AIR_RELIEVER_RADIUS`] of it is worth more. Pillage and distant
+    /// unit strikes wait. `None` with the gene off, with no walled siege, or
+    /// with none in this bomber's reach — the ordinary argmax then decides.
+    ///
+    /// `advanced_air_action` took the best-valued sortie in reach and never read
+    /// the siege train: a strike on 400 walls read about 74 (plus 45 on the
+    /// plan's target), under a Campus pillage (175) or most unit kills (190 and
+    /// up). Over the 10-04/05 control runs, of 4,763 bomber combats flown
+    /// while a 300+-wall siege stood, 30% hit that city, 47% hit units and 23%
+    /// other cities and districts, 59% of the off-siege strikes nine or more
+    /// tiles from any such siege. In 62 losses at war with the eventual
+    /// winner, 52 of 72 victory-critical sieges never left Stage and 56 of
+    /// those cities ended at 400/400 walls; both of the day's air-closed wins
+    /// (Uruk in game 151, game 172) broke 400 walls by air.
+    pub(super) fn siege_wall_sortie(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        legal: &[Action],
+        plan: &StrategicPlan,
+    ) -> Option<Action> {
+        if !self.bombers_open_the_siege_walls {
+            return None;
+        }
+        let walled: Vec<(u32, Pos)> = self
+            .sieges
+            .iter()
+            .filter(|(_, siege)| {
+                siege.stage != SiegeStage::Hold && g.turn.saturating_sub(siege.assessed) <= 1
+            })
+            .filter_map(|(cid, _)| CityView::of(g, *cid))
+            .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner) && city.wall_hp > 0)
+            // A train still far off would only let the walls heal back
+            // before it arrives: a land soldier of ours must stand within
+            // `MUSTER_FAR`. Live King game 170: aircraft brought Qaraqorum's
+            // 400 walls to 0 by turn 250 with two units near, and they stood
+            // at 364 again by 270.
+            .filter(|city| {
+                g.units.values().any(|unit| {
+                    let spec = &g.rules.units[unit.kind];
+                    unit.owner == pid
+                        && spec.class == "military"
+                        && spec.domain.as_deref().is_none_or(|domain| domain == "land")
+                        && !g.is_embarked(unit)
+                        && g.wdist(unit.pos, city.pos) <= MUSTER_FAR
+                })
+            })
+            .map(|city| (city.id, city.pos))
+            .collect();
+        if walled.is_empty() {
+            return None;
+        }
+        let mut wall: Option<(f64, Pos, Action)> = None;
+        let mut guard: Option<(f64, Pos, Action)> = None;
+        let mut reliever: Option<(f64, Pos, Action)> = None;
+        for action in legal {
+            let (target, value, city_strike) = match action {
+                Action::AirStrike { unit, target } if *unit == uid => {
+                    (*target, self.air_strike_value(g, pid, uid, *target, plan), true)
+                }
+                Action::PriorityTarget { unit, target } if *unit == uid => {
+                    (*target, self.priority_target_value(g, pid, uid, *target), false)
+                }
+                _ => continue,
+            };
+            if value <= 0.0 {
+                continue;
+            }
+            let on_city = g.city_at(target).is_some();
+            let slot = if on_city {
+                if !(city_strike && walled.iter().any(|(_, pos)| *pos == target)) {
+                    continue;
+                }
+                &mut wall
+            } else if g.cities.values().any(|city| {
+                city.owner == pid && g.wdist(city.pos, target) <= HOME_AIR_GUARD_RADIUS
+            }) {
+                &mut guard
+            } else if walled
+                .iter()
+                .any(|(_, pos)| g.wdist(*pos, target) <= SIEGE_AIR_RELIEVER_RADIUS)
+            {
+                &mut reliever
+            } else {
+                continue;
+            };
+            if slot
+                .as_ref()
+                .is_none_or(|(best, at, _)| value > *best || (value == *best && target < *at))
+            {
+                *slot = Some((value, target, action.clone()));
+            }
+        }
+        if let Some((_, _, action)) = guard {
+            return Some(action);
+        }
+        let (wall_value, wall_target, wall_action) = wall?;
+        if let Some((_, _, action)) = reliever.filter(|(value, _, _)| *value > wall_value) {
+            return Some(action);
+        }
+        if self.journal().wants(crate::reasoning::Level::Detail) {
+            let name = g
+                .city_at(wall_target)
+                .and_then(|cid| g.cities.get(&cid))
+                .map(|city| city.name.clone())
+                .unwrap_or_default();
+            let kind = g.units[&uid].kind;
+            think!(self.journal(), Military, Detail,
+                "Bombers open the walls of {name}";
+                "the {kind} strikes the besieged city for {wall_value:.0} rather than a pillage \
+                 or a strike away from the siege";
+                wall_target);
+        }
+        Some(wall_action)
+    }
+
     /// `stage-musters-out-of-reach`: a melee or shooter member of a train
     /// that cannot yet close stands at the reachable tile nearest the city
     /// whose shared danger reading is under [`MUSTER_DANGER_SHARE`] of its
@@ -5276,3 +5404,6 @@ mod near_breach_tests;
 
 #[cfg(test)]
 mod muster_tests;
+
+#[cfg(test)]
+mod air_tests;

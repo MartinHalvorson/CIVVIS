@@ -5067,6 +5067,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `bombers-open-the-siege-walls`: a strike bomber over a walled city our
+    /// ground train besieges opens its walls before pillage or distant
+    /// strikes. See `siege_train::siege_wall_sortie`.
+    bombers_open_the_siege_walls: bool,
     /// `builders-before-the-lent-floor`: see
     /// `BasicAi::builders_before_the_lent_floor`.
     builders_before_the_lent_floor: bool,
@@ -9453,6 +9457,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            bombers_open_the_siege_walls: false,
             builders_before_the_lent_floor: false,
             breaker_research_first: false,
             breach_support_reads_the_wall_tier: false,
@@ -42087,6 +42092,10 @@ impl AdvancedAi {
         });
 
         if doctrine == UnitDoctrine::AirStrike {
+            // `bombers-open-the-siege-walls`: see `siege_train::siege_wall_sortie`.
+            if let Some(action) = self.siege_wall_sortie(g, pid, uid, &legal, plan) {
+                return Some(action);
+            }
             if let (Some((mission_value, _, _)), Some((_, to, action))) =
                 (best_mission.as_ref(), best_rebase.as_ref())
             {

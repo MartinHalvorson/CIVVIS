@@ -6447,6 +6447,17 @@ impl AdvancedAi {
         self.urgent_denial_needs_the_edge = false;
     }
 
+    /// Opt-in gene `bombers-open-the-siege-walls`; see
+    /// [`Self::bombers_open_the_siege_walls`].
+    pub fn enable_bombers_open_the_siege_walls(&mut self) {
+        self.bombers_open_the_siege_walls = true;
+    }
+
+    /// The twin of `enable_bombers_open_the_siege_walls`.
+    pub fn disable_bombers_open_the_siege_walls(&mut self) {
+        self.bombers_open_the_siege_walls = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

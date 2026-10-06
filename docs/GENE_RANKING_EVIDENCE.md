@@ -192,6 +192,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `befriend-the-strongest` | off (unmeasured) | `befriend-the-strongest`: offer a friendship-only deal to the strongest neighbour at peace. | 1 \| 1 |
 | `bleeding-capital-loyalty` | off (unmeasured) | Opt-in gene `bleeding-capital-loyalty`; see `Self::bleeding_capital_loyalty`. | 1 \| 1 |
 | `blocker-becomes-the-target` | off (unmeasured) | Opt-in gene `blocker-becomes-the-target`; see `Self::road_blocker_front`. | 1 \| 1 |
+| `bombers-open-the-siege-walls` | off (unmeasured) | Opt-in gene `bombers-open-the-siege-walls`; see `Self::bombers_open_the_siege_walls`. | 1 \| 1 |
 | `boost-planner-builds` | off (unmeasured) | `boost-planner-builds`: the boost planner serves `building:` triggers. | 1 \| 1 |
 | `boosted-bargain-first-3` | off (unmeasured) | `boosted-bargain-first-3`: a one-turn boosted technology may interrupt a peaceful lane beeline that is not about to land its target; the other versions stand down. | 2 \| 3 |
 | `breach-assault` | off (unmeasured) | Opt-in gene `breach-assault`; see `Self::breach_assault`. | 1 \| 1 |

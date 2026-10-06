@@ -3088,6 +3088,10 @@ pub const GENES: &[Gene] = &[
     // and was routed within seven turns; staged wars under 1.5 times routed
     // 13 of 17 on October 4-5. See `one_war::urgent_denial_has_the_edge`.
     Gene { tag: "urgent-denial-needs-the-edge", field: "urgent_denial_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_urgent_denial_needs_the_edge, disable: AdvancedAi::disable_urgent_denial_needs_the_edge },
+    // Live King 10-04/05: of 4,763 bomber combats flown while a 300+-wall
+    // siege stood, 30% hit that city; the rest pillaged or struck units, most
+    // nine or more tiles away. See `siege_train::siege_wall_sortie`.
+    Gene { tag: "bombers-open-the-siege-walls", field: "bombers_open_the_siege_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_bombers_open_the_siege_walls, disable: AdvancedAi::disable_bombers_open_the_siege_walls },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
