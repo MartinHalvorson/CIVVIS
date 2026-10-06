@@ -652,6 +652,35 @@ impl AdvancedAi {
         self.declaration_waits_for_the_breach && held
     }
 
+    /// `invest-keeps-its-cavalry`: whether `uid` stands within
+    /// [`MUSTER_BREACH_FAR`] of a city our train is investing, reducing or
+    /// taking, or whose muster has closed — a member the assault's budget
+    /// counts on. The raid planner (`air_surge::raids`) kept only the bodies
+    /// within two tiles of the campaign's city, so the train's cavalry on its
+    /// staging ring rode out to pillage: live Emperor
+    /// civvis-20261006T101049Z (game 219) closed on the Maori capital at turn
+    /// 101 with eight of eight staged and a budget of 3.7 turns, while a
+    /// Knight rode out "to raid behind the wing" and another marched off to
+    /// capture a civilian; the train struck the city for 4 damage in two
+    /// turns and fell back to Stage by 104. Over 10-04..06, 1,206 raid
+    /// orders rode out on turns a siege of ours stood in Invest or Reduce.
+    pub(super) fn siege_needs_the_unit(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        self.sieges.iter().any(|(cid, siege)| {
+            g.turn.saturating_sub(siege.assessed) <= 1
+                && (matches!(
+                    siege.stage,
+                    SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take
+                ) || (siege.stage == SiegeStage::Stage
+                    && self.stage_muster_ready.get(cid).copied().unwrap_or(false)))
+                && g.cities.get(cid).is_some_and(|city| {
+                    city.owner != pid && g.wdist(unit.pos, city.pos) <= MUSTER_BREACH_FAR
+                })
+        })
+    }
+
     pub(super) fn declaration_breaker_at_hand(&self, g: &Game, pid: usize, cid: u32) -> bool {
         let Some(city) = CityView::of(g, cid) else {
             return true;

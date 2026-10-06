@@ -498,6 +498,36 @@ fn only_shooters_with_a_firing_post_and_a_clear_reach_count_toward_the_walls() {
     assert!(drawn < counted, "{drawn} < {counted}");
 }
 
+/// `invest-keeps-its-cavalry`: a unit within the muster's reach of a city
+/// our train is investing is the assault's; beyond it, or by a train still
+/// holding in Stage, it is free; a Stage train whose muster has closed keeps
+/// it too.
+#[test]
+fn an_investing_siege_needs_the_units_in_its_reach() {
+    let (mut g, cid) = medieval_city();
+    let near = g.spawn_test_unit("knight", 0, at_distance(&g, cid, MUSTER_BREACH_FAR)[0]);
+    let far = g.spawn_test_unit("knight", 0, at_distance(&g, cid, MUSTER_BREACH_FAR + 1)[0]);
+    let mut ai = AdvancedAi::targeting(super::super::VictoryTarget::Domination);
+    let turn = g.turn;
+    let siege = |stage| Siege {
+        stage,
+        taker: None,
+        entered: turn,
+        assessed: turn,
+        posts: BTreeMap::new(),
+        short_since: None,
+    };
+    ai.sieges.insert(cid, siege(SiegeStage::Invest));
+    assert!(ai.siege_needs_the_unit(&g, 0, near));
+    assert!(!ai.siege_needs_the_unit(&g, 0, far), "beyond the muster's reach");
+    ai.sieges.insert(cid, siege(SiegeStage::Stage));
+    assert!(!ai.siege_needs_the_unit(&g, 0, near), "a holding Stage train");
+    ai.stage_muster_ready.insert(cid, true);
+    assert!(ai.siege_needs_the_unit(&g, 0, near), "its muster closed");
+    ai.sieges.get_mut(&cid).unwrap().assessed = g.turn.saturating_sub(5);
+    assert!(!ai.siege_needs_the_unit(&g, 0, near), "a stale siege");
+}
+
 /// Under `declaration-waits-for-the-breach` a held declaration is held on
 /// every offensive path: the overwhelming, road-opening and moving-on paths
 /// read the cleared `staged` as an unstaged army, so game 206 declared two

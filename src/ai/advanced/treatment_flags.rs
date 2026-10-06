@@ -6524,6 +6524,17 @@ impl AdvancedAi {
         self.declaration_waits_for_the_breach = false;
     }
 
+    /// Opt-in gene `invest-keeps-its-cavalry`; see
+    /// [`Self::invest_keeps_its_cavalry`].
+    pub fn enable_invest_keeps_its_cavalry(&mut self) {
+        self.invest_keeps_its_cavalry = true;
+    }
+
+    /// The twin of `enable_invest_keeps_its_cavalry`.
+    pub fn disable_invest_keeps_its_cavalry(&mut self) {
+        self.invest_keeps_its_cavalry = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

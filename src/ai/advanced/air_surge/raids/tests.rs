@@ -167,6 +167,58 @@ fn a_domination_land_war_sends_spare_cavalry_raiding() {
     }
 }
 
+/// `invest-keeps-its-cavalry`: a land siege investing its city keeps the
+/// cavalry within the muster's reach of it, though the raid would take them
+/// off a train that only stands in Stage; off, the train's cavalry rides out.
+/// Live Emperor game 219 closed on the Maori capital while its Knights rode
+/// out to raid.
+#[test]
+fn an_investing_siege_keeps_its_cavalry_from_the_raid() {
+    use super::super::super::siege_train::{Siege, SiegeStage};
+    for (gene, stage, rides) in [
+        (false, SiegeStage::Invest, true),
+        (true, SiegeStage::Invest, false),
+        (true, SiegeStage::Stage, true),
+    ] {
+        let (mut g, mut ai, target) = fixture();
+        ai.air_surge_plan = None;
+        if gene {
+            ai.enable_invest_keeps_its_cavalry();
+        }
+        mine_near(&mut g, target);
+        for pos in [(20, 12), (20, 13)] {
+            g.spawn_test_unit("cavalry", 0, pos);
+        }
+        let member = g.spawn_test_unit("cavalry", 0, (16, 12));
+        ai.sieges.insert(
+            target,
+            Siege {
+                stage,
+                taker: None,
+                entered: 160,
+                assessed: g.turn,
+                posts: Default::default(),
+                short_since: None,
+            },
+        );
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(target),
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: 170,
+            rush: false,
+        };
+        let raiders = ai.plan_air_surge_raids(&mut g, 0, &plan, &BTreeSet::new());
+        assert_eq!(
+            raiders.contains(&member),
+            rides,
+            "gene {gene}, {stage:?}: the member six tiles out"
+        );
+    }
+}
+
 /// See `RAID_TOURISM_DENIAL`: against the countered culture rival, a raid
 /// takes its Theater Square over a Campus beside it.
 #[test]
