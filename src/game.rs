@@ -16556,6 +16556,29 @@ impl Game {
             None => {}
         }
         self.players[pid].gpp.insert(kind.to_string(), 0.0);
+        if let Some(offers) = self.players[pid].live_great_person_offers.as_mut() {
+            // Native recruitment creates a physical unit. Its separate
+            // activation (and any recruitment bonuses) must come from the
+            // next host observation, not the effects of our fallback roster.
+            // Consume only this observed offer so the same plan cannot buy
+            // another local individual before the native timeline refreshes.
+            offers.remove(kind);
+            *self.players[pid]
+                .gp_claimed
+                .entry(kind.to_string())
+                .or_insert(0) += 1;
+            let individual = self
+                .live_great_person_offer_individual(pid, kind)
+                .unwrap_or(kind)
+                .to_string();
+            self.note(
+                pid,
+                "People",
+                format!("recruited native {individual}"),
+                None,
+            );
+            return Ok(());
+        }
         self.retired_great_people.insert(id.clone());
         self.note(pid, "People", format!("recruited {}", spec.name), None);
         self.players[pid].great_people.push(id);
@@ -36349,3 +36372,6 @@ mod siege_support_eligibility_tests;
 
 #[cfg(test)]
 mod air_pillage_eligibility_tests;
+
+#[cfg(test)]
+mod native_great_person_recruitment_tests;
