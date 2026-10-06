@@ -23079,7 +23079,10 @@ impl AdvancedAi {
         let culture_counter_ready = !staged && self.culture_counter_due(g, pid, target);
         // See `overwhelming_power_declares`: at that ratio the war itself
         // writes the Siege row that brings the army to the ring.
+        // `declaration-waits-for-the-breach`: see `hold_bars_the_unstaged_paths`.
+        let unstaged_open = !self.hold_bars_the_unstaged_paths(breaker_held);
         let overwhelming_ready = !staged
+            && unstaged_open
             && objective
                 .is_some_and(|(_, pos)| self.overwhelming_power_declares(g, pid, target, pos));
         // See `declaration_has_the_edge`: the plain staged war needs the edge;
@@ -23103,8 +23106,8 @@ impl AdvancedAi {
             }
         }
         let staged = staged && edge;
-        let road_opening_ready = !staged && road_opening;
-        let moving_on_ready = !staged && moving_on;
+        let road_opening_ready = !staged && unstaged_open && road_opening;
+        let moving_on_ready = !staged && unstaged_open && moving_on;
         // `unwalled-target-declares-into-the-strike`: an offensive
         // declaration on an objective with no walls waits, on its own
         // patience, until units that can strike it this turn would take
