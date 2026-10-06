@@ -296,6 +296,7 @@ impl AdvancedAi {
     /// but the live bridge always carries the capture lessons.  Keeping that
     /// distinction here lets the host protect both civilian kinds without
     /// changing a screened native genome.
+    #[cfg(test)]
     pub(super) fn civilian_reach_safety_on(&self) -> bool {
         self.civilian_out_of_reach || self.live_settler_capture_lessons
     }
