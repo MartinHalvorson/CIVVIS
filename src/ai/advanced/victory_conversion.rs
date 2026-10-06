@@ -1090,7 +1090,19 @@ impl AdvancedAi {
         }
         // `breach-reads-the-air`: the air wing's sorties bring the walls down
         // too. See `siege_train::air_breach_walls`.
-        wall_dps += self.air_breach_walls(g, pid, cid);
+        let air = self.air_breach_walls(g, pid, cid);
+        wall_dps += air;
+        // `air-fire-counts-on-the-city`: once the walls are down the same
+        // sorties strike the city's health, a bombard blow with no district
+        // penalty. Counted only on the walls, a train of melee and bombers
+        // read its fire short of the city's heal (the melee blow is the last
+        // one, not one every turn) and the budget infinite: live King
+        // civvis-20261006T015347Z (game 181) read Rome "inf turns" from t203
+        // to t215 under 41-63 aircraft wall a turn, and 83% of the 10-05/06
+        // Stage siege-turns with air support read infinite.
+        if self.air_fire_counts_on_the_city {
+            city_dps += air;
+        }
         let (sealed, ring) = super::siege_train::ring_state(g, cid);
         let heal = if ring > 0 && sealed == ring {
             0.0

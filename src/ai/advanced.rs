@@ -5067,6 +5067,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `air-fire-counts-on-the-city`: the air wing's strikes count against the
+    /// city's health in the siege damage budget, not only its walls. See
+    /// `victory_conversion::conversion_siege_budget_within`.
+    air_fire_counts_on_the_city: bool,
     /// `bombers-open-the-siege-walls`: a strike bomber over a walled city our
     /// ground train besieges opens its walls before pillage or distant
     /// strikes. See `siege_train::siege_wall_sortie`.
@@ -9480,6 +9484,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            air_fire_counts_on_the_city: false,
             bombers_open_the_siege_walls: false,
             builders_before_the_lent_floor: false,
             breaker_research_first: false,

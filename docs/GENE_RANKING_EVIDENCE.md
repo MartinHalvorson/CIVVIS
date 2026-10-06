@@ -186,6 +186,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 |---|---|---|---:|
 | `age-closer-2` | off (unmeasured) | Verify a patronage purchase closes a Normal Age near its deadline. | 1 \| 2 |
 | `age-closer-spends-the-reserve` | off (unmeasured) | Opt-in gene `age-closer-spends-the-reserve`; see `Self::age_closer_spends_the_reserve`. | 1 \| 1 |
+| `air-fire-counts-on-the-city` | off (unmeasured) | Opt-in gene `air-fire-counts-on-the-city`; see `Self::air_fire_counts_on_the_city`. | 1 \| 1 |
 | `air-surge-strikes-through-urgency` | off (unmeasured) | Opt-in gene `air-surge-strikes-through-urgency`; see `Self::air_surge_strikes_through_urgency`. | 1 \| 1 |
 | `air-volley-needs-a-road` | off (unmeasured) | Opt-in gene `air-volley-needs-a-road`; see `Self::air_volley_needs_a_road`. | 1 \| 1 |
 | `beeline-orders-by-value` | off (unmeasured) | `beeline-orders-by-value`: a forced research or civic goal walks its prerequisites by value, not by printed price. | 1 \| 1 |
