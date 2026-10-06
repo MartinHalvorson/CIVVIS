@@ -3189,6 +3189,12 @@ pub const GENES: &[Gene] = &[
     // (G186 9 turns after founding, G212 11, G215 47). See
     // `advanced/second_faith_source.rs`.
     Gene { tag: "founder-keeps-two-sources", field: "founder_keeps_two_sources", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_keeps_two_sources, disable: AdvancedAi::disable_founder_keeps_two_sources },
+    // Live Emperor 2026-10-06 (35 games): a University started a median 15
+    // turns after its Campus city held the Library and Education (p75 32;
+    // 41 of 218 cities never), 0 / 1 / 3 per game at t100 / t125 / t150,
+    // while 28% of that wait went to new districts, ordinary buildings and
+    // district projects. See `BasicAi::campus_buildings_first`.
+    Gene { tag: "campus-buildings-first", field: "campus_buildings_first", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_buildings_first, disable: AdvancedAi::disable_campus_buildings_first },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
