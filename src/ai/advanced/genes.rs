@@ -3092,6 +3092,11 @@ pub const GENES: &[Gene] = &[
     // siege stood, 30% hit that city; the rest pillaged or struck units, most
     // nine or more tiles away. See `siege_train::siege_wall_sortie`.
     Gene { tag: "bombers-open-the-siege-walls", field: "bombers_open_the_siege_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_bombers_open_the_siege_walls, disable: AdvancedAi::disable_bombers_open_the_siege_walls },
+    // Live King G179 (civvis-20261006T011806Z) held off war with Nubia at 3x
+    // its power: Sedeinga's ask was 566 because Nubia's Crossbows (40) over
+    // our stale Archer (25) read a 1.82 tier factor while our Musketmen (55)
+    // out-tiered every Nubian unit. See `city_campaign::war_bill_tier_gap`.
+    Gene { tag: "tier-gap-reads-the-fielded-line", field: "tier_gap_reads_the_fielded_line", kind: Kind::OptIn, enable: AdvancedAi::enable_tier_gap_reads_the_fielded_line, disable: AdvancedAi::disable_tier_gap_reads_the_fielded_line },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

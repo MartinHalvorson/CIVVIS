@@ -6458,6 +6458,17 @@ impl AdvancedAi {
         self.bombers_open_the_siege_walls = false;
     }
 
+    /// Opt-in gene `tier-gap-reads-the-fielded-line`; see
+    /// [`Self::tier_gap_reads_the_fielded_line`].
+    pub fn enable_tier_gap_reads_the_fielded_line(&mut self) {
+        self.tier_gap_reads_the_fielded_line = true;
+    }
+
+    /// The twin of `enable_tier_gap_reads_the_fielded_line`.
+    pub fn disable_tier_gap_reads_the_fielded_line(&mut self) {
+        self.tier_gap_reads_the_fielded_line = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
