@@ -47,8 +47,20 @@ CivvisWarDeclarations = {
         DECLARE_PROTECTORATE_WAR = "DECLARE_PROTECTORATE_WAR",
         DECLARE_COLONIAL_WAR = "DECLARE_COLONIAL_WAR",
         DECLARE_TERRITORIAL_WAR = "DECLARE_TERRITORIAL_WAR",
-        -- Expansion1's replacement:132 uses a different session name.
-        DECLARE_GOLDEN_AGE_WAR = "DECLARE_GOLDEN_WAR",
+        -- ★★★ THE SESSION IS THE STATEMENT TYPE, NOT THE DIPLOMACY SCREEN'S
+        -- TYPO. DiplomacyActionView_Expansion1.lua:132 asks for a session
+        -- named "DECLARE_GOLDEN_WAR", which no DiplomacyStatementType carries
+        -- (Expansion1_DiplomacyStatements_DeclareWar.xml:7 defines
+        -- DECLARE_GOLDEN_AGE_WAR) and no GameCore_XP1/XP2 string names. The
+        -- other shipped path, DeclareWarPopup_Expansion1.lua:20, asks for
+        -- "DECLARE_GOLDEN_AGE_WAR". Copying the screen cost every October
+        -- Golden Age War: 18 of 21 came back `not_at_war` while the host's
+        -- own IsDiplomaticActionValid said yes (Golden Age, To Arms!, the
+        -- denouncement all exported true), and the 3 "verified" were
+        -- Babylon's Military Emergency war on us, not ours (run
+        -- civvis-20261005T234718Z t163). Every other war's session already
+        -- equals its statement type and verified 100%.
+        DECLARE_GOLDEN_AGE_WAR = "DECLARE_GOLDEN_AGE_WAR",
         DECLARE_WAR_OF_RETRIBUTION = "DECLARE_WAR_OF_RETRIBUTION",
         DECLARE_IDEOLOGICAL_WAR = "DECLARE_IDEOLOGICAL_WAR",
     },

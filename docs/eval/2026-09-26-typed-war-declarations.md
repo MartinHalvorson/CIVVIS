@@ -35,6 +35,14 @@ The same view names the other base-game wars. The expansion replacement,
 `DLC/Expansion2/UI/Replacements/DiplomacyActionView_Expansion1.lua:131–138`,
 adds the expansion wars; Golden Age War specifically uses the session
 `DECLARE_GOLDEN_WAR`, despite its action name `DECLARE_GOLDEN_AGE_WAR`.
+**Correction (2026-10-06):** that screen line is a Firaxis typo the bridge
+copied. No DiplomacyStatementType is named `DECLARE_GOLDEN_WAR`
+(`Expansion1_DiplomacyStatements_DeclareWar.xml:7` defines
+`DECLARE_GOLDEN_AGE_WAR`), no GameCore string names it, and the other shipped
+path, `DeclareWarPopup_Expansion1.lua:20`, requests `DECLARE_GOLDEN_AGE_WAR`.
+Live October runs sent 21 Golden Age Wars with the host's permission true;
+18 failed `not_at_war` and the 3 "verified" were a Military Emergency's war on
+us. The bridge now requests `DECLARE_GOLDEN_AGE_WAR`.
 `Base/Assets/UI/Popups/DeclareWarPopup.lua:76–80` reserves the bare player
 operation for city-states.
 
