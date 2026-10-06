@@ -150,12 +150,36 @@ pub(crate) const DECLARATION_PEAK_TURNS: u32 = 30;
 /// times the target's Production took one city within 40 turns; the 4 from
 /// 0.8 to 1.2 took three.
 pub(crate) const DECLARATION_PRODUCTION_PARITY: f64 = 0.8;
+/// `parity-reads-the-front`: the tiles from our nearest city, or from the
+/// war's objective, within which a target's city counts toward the
+/// Production the parity gate weighs. Its new units are the ones that reach
+/// the fight while it is decided: a two-move unit on its own roads covers
+/// twelve tiles in three to six turns, inside the ten turns over which a
+/// rival that routs us grows its power x1.23 (the October 4-5 rout census),
+/// while our own armies standing 11 or more tiles from an objective at the
+/// declaration took a city in 3 of 90. On the 60x38 Tiny Pangaea of live
+/// Emperor G210-G211 it is the line between the cities on our border --
+/// Rome's Ostia and Ravenna at 8 and 12 tiles from our nearest city (Setia,
+/// 13, is 11 from Ostia), Macedon's Dion, Alexandroupoli and Pella at 7, 9
+/// and 10 -- and the back country: Georgia's Tbilisi, Kutaisi and Poti at
+/// 20 to 23, Macedon's Pydna and Alexandria in Aria at 15 and 20.
+pub(crate) const PARITY_FRONT_RADIUS: i32 = 12;
 /// `declaration-needs-production-parity`: the most military per city a
 /// Domination war lends the delegated governor while no city of ours is
 /// threatened -- the genome's own floor (`mil_per_city`, 1.0), in place of
 /// the two a city that sent 54% of wartime production to the army (32% at
 /// peace) in the same games.
 pub(crate) const UNTHREATENED_WAR_ARMY_PER_CITY: f64 = 1.0;
+
+/// `parity-reads-the-front`: a target's Production at the front. See
+/// `AdvancedAi::rival_front_production`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct FrontProduction {
+    /// The target's Production a turn in its cities on the front.
+    pub production: f64,
+    /// Its cities on the front.
+    pub cities: usize,
+}
 
 /// `declaration-needs-the-edge-2`: what a staged declaration is weighed on.
 /// See `AdvancedAi::declaration_edge_2`.
@@ -2048,18 +2072,97 @@ impl AdvancedAi {
         (!partial || reported).then(|| crate::ai::BasicAi::seat_production_per_turn(g, rival))
     }
 
+    /// `parity-reads-the-front`: `target`'s Production a turn in its cities
+    /// within [`PARITY_FRONT_RADIUS`] of our nearest city or of `objective`,
+    /// out of `whole`, its empire's reading (`rival_production_reading`).
+    /// A native board holds every city's yields, so the front is their sum.
+    /// The live mirror does not: the host exports a rival city's position,
+    /// population and defences but no yields (G210-G211 state exports), so
+    /// the board's yields for it are a reconstruction the mirror's whole-
+    /// empire correction absorbs. There the host's public total is shared
+    /// out by population -- worked tiles are what a city produces from --
+    /// over the public population, which counts the cities the seat has not
+    /// seen; by city count when the population did not cross. `None` when
+    /// no city of the target stands on the front, or the board cannot share
+    /// the total out: the whole-empire reading stands then.
+    pub(crate) fn rival_front_production(
+        g: &Game,
+        pid: usize,
+        target: usize,
+        objective: Option<Pos>,
+        whole: f64,
+    ) -> Option<FrontProduction> {
+        let ours: Vec<Pos> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter_map(|city| g.cities.get(&city).map(|city| city.pos))
+            .collect();
+        let near = |pos: Pos| {
+            objective.is_some_and(|objective| g.wdist(pos, objective) <= PARITY_FRONT_RADIUS)
+                || ours
+                    .iter()
+                    .any(|&city| g.wdist(pos, city) <= PARITY_FRONT_RADIUS)
+        };
+        let front: Vec<(u32, i32)> = g
+            .player_city_ids(target)
+            .into_iter()
+            .filter_map(|city| g.cities.get(&city))
+            .filter(|city| near(city.pos))
+            .map(|city| (city.id, city.pop))
+            .collect();
+        if front.is_empty() {
+            return None;
+        }
+        let partial = g.observed_public_empire_stats.contains_key(&target)
+            || g.observed_yield_adjustments.contains_key(&target);
+        let production = if partial {
+            let stats = g.observed_public_empire_stats.get(&target);
+            let population = stats
+                .and_then(|stats| stats.population)
+                .filter(|pop| *pop > 0);
+            let city_count = stats
+                .and_then(|stats| stats.city_count)
+                .filter(|count| *count > 0);
+            let share = match (population, city_count) {
+                (Some(population), _) => {
+                    let front_pop: i32 = front.iter().map(|(_, pop)| (*pop).max(0)).sum();
+                    f64::from(front_pop) / f64::from(population)
+                }
+                (None, Some(city_count)) => front.len() as f64 / city_count as f64,
+                (None, None) => return None,
+            };
+            whole * share.min(1.0)
+        } else {
+            front
+                .iter()
+                .map(|(city, _)| g.city_yields(*city).production)
+                .sum()
+        };
+        Some(FrontProduction {
+            production,
+            cities: front.len(),
+        })
+    }
+
     /// `declaration-needs-production-parity`: whether an offensive
     /// declaration on the major `target` may open -- our Production a turn
     /// (`BasicAi::seat_production_per_turn`, the host's figure on the live
     /// seat) at [`DECLARATION_PRODUCTION_PARITY`] times the target's or
     /// more. Always with the gene off, and when the board has no reading of
     /// the target's Production (`rival_production_reading`). Says so when it
-    /// holds.
+    /// holds. Under `parity-reads-the-front` the target's side is its
+    /// Production at the front (`rival_front_production`), around our cities
+    /// and the war's `objective`; our side stays our whole empire's, which
+    /// all feeds the war. Live Emperor G210-G211 made no offensive
+    /// declaration while our Production read 0.28 to 0.79 times the target
+    /// empire's, and lost both to Culture at turns 181 and 175 as the
+    /// strongest military on the map.
     pub(crate) fn declaration_has_production_parity(
         &self,
         g: &Game,
         pid: usize,
         target: usize,
+        objective: Option<Pos>,
     ) -> bool {
         if !self.declaration_needs_production_parity {
             return true;
@@ -2068,6 +2171,25 @@ impl AdvancedAi {
             return true;
         };
         let ours = crate::ai::BasicAi::seat_production_per_turn(g, pid);
+        if self.parity_reads_the_front {
+            if let Some(front) = Self::rival_front_production(g, pid, target, objective, theirs) {
+                if ours >= DECLARATION_PRODUCTION_PARITY * front.production {
+                    if ours < DECLARATION_PRODUCTION_PARITY * theirs {
+                        think!(self.journal(), Military, Detail,
+                               "Weighing the front with {}", g.players[target].civ;
+                               "our production {ours:.0} vs their {:.0} in the {} of their cities within {} tiles of our cities or the objective ({theirs:.0} empire-wide): the war is weighed on the Production that can reinforce it",
+                               front.production, front.cities, PARITY_FRONT_RADIUS);
+                    }
+                    return true;
+                }
+                think!(self.journal(), Military, Detail,
+                       "Holding off war with {}", g.players[target].civ;
+                       "our production {ours:.0} vs their {:.0} at the front, {} of their cities within {} tiles of our cities or the objective ({theirs:.0} empire-wide): an offensive war needs {:.1} times the Production that can reinforce it",
+                       front.production, front.cities, PARITY_FRONT_RADIUS,
+                       DECLARATION_PRODUCTION_PARITY);
+                return false;
+            }
+        }
         if ours >= DECLARATION_PRODUCTION_PARITY * theirs {
             return true;
         }
@@ -2834,5 +2956,7 @@ mod capital_handoff_tests;
 
 #[cfg(test)]
 mod culture_counter_tests;
+#[cfg(test)]
+mod parity_front_tests;
 #[cfg(test)]
 mod urgent_denial_tests;
