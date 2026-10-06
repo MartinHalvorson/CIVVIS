@@ -3151,6 +3151,11 @@ pub const GENES: &[Gene] = &[
     // a breach took nothing in G188, G192 or G194. See
     // `siege_train::declaration_breach_reading`.
     Gene { tag: "declaration-waits-for-the-breach", field: "declaration_waits_for_the_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_waits_for_the_breach, disable: AdvancedAi::disable_declaration_waits_for_the_breach },
+    // Live Emperor G200: Quito's Shrine opened the Confucian counterweight at
+    // turn 103 with 565 Faith banked and Buddhism on 8 of our 10 cities; the
+    // seat paid 260 for a Great Scientist and kept two Missionaries, and
+    // Mongolia won on Religion at 108. See `advanced/counterweight_bank.rs`.
+    Gene { tag: "counterweight-spends-the-bank", field: "counterweight_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_spends_the_bank, disable: AdvancedAi::disable_counterweight_spends_the_bank },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

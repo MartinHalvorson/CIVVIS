@@ -6568,6 +6568,17 @@ impl AdvancedAi {
         self.declaration_waits_for_the_breach = false;
     }
 
+    /// Opt-in gene `counterweight-spends-the-bank`; see
+    /// `advanced/counterweight_bank.rs`.
+    pub fn enable_counterweight_spends_the_bank(&mut self) {
+        self.counterweight_spends_the_bank = true;
+    }
+
+    /// The twin of `enable_counterweight_spends_the_bank`.
+    pub fn disable_counterweight_spends_the_bank(&mut self) {
+        self.counterweight_spends_the_bank = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
