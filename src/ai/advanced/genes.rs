@@ -3084,6 +3084,10 @@ pub const GENES: &[Gene] = &[
     // sum: each staging gun read every hostile's blow as its own and held
     // behind its train. See `siege_train::stage_gun_danger`.
     Gene { tag: "staging-gun-reads-the-shared-danger", field: "staging_gun_reads_the_shared_danger", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_reads_the_shared_danger, disable: AdvancedAi::disable_staging_gun_reads_the_shared_danger },
+    // Live King 10-04/05: of 4,763 bomber combats flown while a 300+-wall
+    // siege stood, 30% hit that city; the rest pillaged or struck units, most
+    // nine or more tiles away. See `siege_train::siege_wall_sortie`.
+    Gene { tag: "bombers-open-the-siege-walls", field: "bombers_open_the_siege_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_bombers_open_the_siege_walls, disable: AdvancedAi::disable_bombers_open_the_siege_walls },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
