@@ -284,6 +284,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `flipped-capital-finishes` | off (unmeasured) | Opt-in gene `flipped-capital-finishes`; see `Self::flipped_capital_finishes`. | 1 \| 1 |
 | `formations-heed-refusals` | off (unmeasured) | Opt-in gene `formations-heed-refusals`; see `Self::formations_heed_refusals`. | 1 \| 1 |
 | `found-against-a-rival-faith` | off (unmeasured) | Opt-in gene `found-against-a-rival-faith`; see `Self::found_against_a_rival_faith`. | 1 \| 1 |
+| `founder-spreads-only-its-faith` | off (unmeasured) | Opt-in gene `founder-spreads-only-its-faith`; see `advanced/founder_faith.rs`. | 1 \| 1 |
 | `front-finishes-its-capital` | off (unmeasured) | Opt-in gene `front-finishes-its-capital`; see `Self::front_finishes_its_capital`. | 1 \| 1 |
 | `front-finishes-its-siege` | off (unmeasured) | Opt-in gene `front-finishes-its-siege`; see `Self::front_finishes_its_siege`. | 1 \| 1 |
 | `front-needs-a-declarable-rival` | off (unmeasured) | Opt-in gene `front-needs-a-declarable-rival`; see `Self::front_needs_a_declarable_rival`. | 1 \| 1 |

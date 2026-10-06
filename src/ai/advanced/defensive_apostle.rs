@@ -86,7 +86,10 @@ impl AdvancedAi {
             return !launched;
         }
         for cid in g.player_city_ids(pid) {
-            if g.city_religion(&g.cities[&cid]) != Some(faith.as_str()) {
+            if g.city_religion(&g.cities[&cid]) != Some(faith.as_str())
+                // See `founder_purchase_withheld` (`founder-spreads-only-its-faith`).
+                || self.founder_purchase_withheld(g, pid, cid)
+            {
                 continue;
             }
             let Some(price) = g.unit_purchase_cost(pid, cid, wanted, "faith") else {
@@ -119,7 +122,10 @@ impl AdvancedAi {
         // this is a locality bound, not a movement-point arrival prediction.
         for cid in g.player_city_ids(pid) {
             let city = &g.cities[&cid];
-            if g.city_religion(city) != Some(faith.as_str()) {
+            if g.city_religion(city) != Some(faith.as_str())
+                // See `founder_purchase_withheld` (`founder-spreads-only-its-faith`).
+                || self.founder_purchase_withheld(g, pid, cid)
+            {
                 continue;
             }
             let threatened = g.units.values().any(|unit| {
