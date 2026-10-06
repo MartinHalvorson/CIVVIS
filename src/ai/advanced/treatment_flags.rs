@@ -6640,6 +6640,17 @@ impl AdvancedAi {
         self.founder_keeps_two_sources = false;
     }
 
+    /// Opt-in gene `founder-funds-the-inquisition`; see
+    /// `advanced/inquisition_first.rs`.
+    pub fn enable_founder_funds_the_inquisition(&mut self) {
+        self.founder_funds_the_inquisition = true;
+    }
+
+    /// The twin of `enable_founder_funds_the_inquisition`.
+    pub fn disable_founder_funds_the_inquisition(&mut self) {
+        self.founder_funds_the_inquisition = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

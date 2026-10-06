@@ -115,6 +115,15 @@ impl AdvancedAi {
                 return true;
             }
         }
+        // See `inquisition_first_price` (`founder-funds-the-inquisition`): the
+        // Inquisition is bought before any cover Missionary.
+        if let Some(price) = self.inquisition_first_price(g, pid) {
+            think!(self.journal(), Faith, Detail,
+                "Saving for the {}", wanted;
+                "founder-funds-the-inquisition: {:.0} of {:.0} Faith; a cover Missionary now would spend the Inquisition (G215 spent over 700 Faith on cover Missionaries and Builders and reached its Apostle two turns before Bogota fell)",
+                g.players[pid].faith, price);
+            return true;
+        }
         // Saving must not leave an exposed source without local cover. A
         // charged Missionary across the empire cannot preserve this city's
         // purchase menu before the approaching foreign spreaders convert it.
