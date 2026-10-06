@@ -6064,6 +6064,14 @@ pub struct AdvancedAi {
     /// governor no more than one unit a city. See
     /// `one_war::declaration_has_production_parity`.
     declaration_needs_production_parity: bool,
+    /// `commercial-hub-and-traders`: from turn 60 Online the delegated
+    /// governor raises a Commercial Hub in two or three of its best
+    /// unthreatened cities, then each hub's Market, and a Trader for every
+    /// open route slot, ahead of the military floor; at peace with every
+    /// major, a route's Gold to a city-state or a rival we are not targeting
+    /// is priced higher. See `BasicAi::commercial_hub_and_traders` and
+    /// `advanced/commercial_routes.rs`.
+    commercial_hub_and_traders: bool,
     // ---- append: e-f ------------------------------------------------
     /// `founder-spreads-only-its-faith`: a founder buys no religious unit on a
     /// turn whose board founded its religion, buys one only in a city that
@@ -9772,6 +9780,7 @@ impl AdvancedAi {
             colonization_earns_its_slot_2: false,
             counterfaith_leaves_two_holdouts: false,
             declaration_needs_production_parity: false,
+            commercial_hub_and_traders: false,
             // ---- append: e-f ----------------------------------------
             founder_spreads_only_its_faith: false,
             first_strike_seen: 0,
@@ -14915,10 +14924,11 @@ impl AdvancedAi {
         .flatten();
         let restore_space_race = self.base.exclude_space_race;
         self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
-        // `housing-bound-city-builds-its-granary`: the plan's threatened city
-        // keeps its stock defence order. Lent for the call.
-        self.base.plan_threatened_city = self
-            .housing_bound_city_builds_its_granary
+        // `housing-bound-city-builds-its-granary` and
+        // `commercial-hub-and-traders`: the plan's threatened city keeps its
+        // stock defence order. Lent for the call.
+        self.base.plan_threatened_city = (self.housing_bound_city_builds_its_granary
+            || self.commercial_hub_and_traders)
             .then_some(plan.threatened_city)
             .flatten();
         let restore_military = self.base.w.mil_per_city;
@@ -39405,6 +39415,12 @@ impl AdvancedAi {
         value += self.research_alliance_route_premium(g, pid, city.owner);
         let objective = self.decision_objective(strategy);
         value += self.culture_route_bonus(g, pid, city.owner, objective);
+        // `commercial-hub-and-traders`: at peace with every major, a route's
+        // Gold to a city-state or a rival we are not targeting. Not even a
+        // zero is added off. See `advanced/commercial_routes.rs`.
+        if self.commercial_hub_and_traders {
+            value += self.international_gold_route_premium(g, pid, city.owner, yields);
+        }
 
         value
     }
@@ -46489,6 +46505,8 @@ mod religious_interception;
 mod founder_faith;
 
 mod counterweight_bank;
+
+mod commercial_routes;
 
 #[cfg(test)]
 mod observed_movement_memory_tests;

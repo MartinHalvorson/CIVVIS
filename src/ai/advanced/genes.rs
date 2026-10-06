@@ -3169,6 +3169,12 @@ pub const GENES: &[Gene] = &[
     // fell a median 43% from its peak. See
     // `one_war::declaration_has_production_parity`.
     Gene { tag: "declaration-needs-production-parity", field: "declaration_needs_production_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_needs_production_parity, disable: AdvancedAi::disable_declaration_needs_production_parity },
+    // Live Emperor G185-G198: Gold a turn 0.55x the best rival's at t50,
+    // 0.15x at t100 (net 14 against 63), 0.11x at t125, unit upkeep 20 -> 42
+    // eating 45-65% of the cities' gross Gold; no Commercial Hub or Market in
+    // any of the 13 games at t100, trade route capacity 1-2 until t150. See
+    // `BasicAi::commercial_hub_step` and `advanced/commercial_routes.rs`.
+    Gene { tag: "commercial-hub-and-traders", field: "commercial_hub_and_traders", kind: Kind::OptIn, enable: AdvancedAi::enable_commercial_hub_and_traders, disable: AdvancedAi::disable_commercial_hub_and_traders },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -6603,6 +6603,20 @@ impl AdvancedAi {
         self.declaration_needs_production_parity = false;
     }
 
+    /// Opt-in gene `commercial-hub-and-traders`; see
+    /// `BasicAi::commercial_hub_and_traders` and
+    /// [`Self::international_gold_route_premium`].
+    pub fn enable_commercial_hub_and_traders(&mut self) {
+        self.commercial_hub_and_traders = true;
+        self.base.commercial_hub_and_traders = true;
+    }
+
+    /// The twin of `enable_commercial_hub_and_traders`.
+    pub fn disable_commercial_hub_and_traders(&mut self) {
+        self.commercial_hub_and_traders = false;
+        self.base.commercial_hub_and_traders = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
