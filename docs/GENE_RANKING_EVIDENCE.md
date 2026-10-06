@@ -312,6 +312,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `housing-research-2` | off (unmeasured) | Research housing that the capped cities can actually build. | 1 \| 2 |
 | `improvement-upgrades-count` | off (unmeasured) | Opt-in gene `improvement-upgrades-count`; see `Self::improvement_upgrades_count`. | 1 \| 1 |
 | `industrial-hub` | off (unmeasured) | One Industrial Zone where its Factory reaches the most cities, and its chain; see `BasicAi::industrial_hub`. | 1 \| 1 |
+| `industrial-zone-in-the-producers` | off (unmeasured) | Opt-in gene `industrial-zone-in-the-producers`; see `BasicAi::industrial_zone_in_the_producers`. | 1 \| 1 |
 | `industry-before-the-army` | off (unmeasured) | The delegated city governor's Industrial Zone, Workshop and Factory ahead of the military floor. | — \| 3 |
 | `industry-before-the-army-2` | off (unmeasured) | Version 2 of `industry-before-the-army`; see `BasicAi::industry_before_the_army_2`. | — \| 3 |
 | `industry-before-the-army-3` | off (unmeasured) | Version 3 of `industry-before-the-army`; see `BasicAi::industry_before_the_army_3`. | — \| 3 |

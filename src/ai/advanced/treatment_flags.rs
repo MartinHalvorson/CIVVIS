@@ -6676,6 +6676,19 @@ impl AdvancedAi {
         self.base.campus_buildings_first = false;
     }
 
+    /// Opt-in gene `industrial-zone-in-the-producers`; see
+    /// `BasicAi::industrial_zone_in_the_producers`.
+    pub fn enable_industrial_zone_in_the_producers(&mut self) {
+        self.industrial_zone_in_the_producers = true;
+        self.base.industrial_zone_in_the_producers = true;
+    }
+
+    /// The twin of `enable_industrial_zone_in_the_producers`.
+    pub fn disable_industrial_zone_in_the_producers(&mut self) {
+        self.industrial_zone_in_the_producers = false;
+        self.base.industrial_zone_in_the_producers = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

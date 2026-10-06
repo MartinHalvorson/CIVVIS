@@ -30,6 +30,11 @@
 //! building (Library, University, Research Lab) in the Theater's slot: live
 //! Emperor 2026-10-06 (35 games) started 71 of these Theaters in a city whose
 //! Library was buildable and 48 in one whose University was.
+//!
+//! Under `industrial-zone-in-the-producers` a city that step would give its
+//! Industrial Zone or Workshop is passed over and the Theater goes to the
+//! next idle city: the reservation claims the most productive idle Campus
+//! city, which is the zone's city.
 
 use super::{AdvancedAi, StrategicPlan};
 use crate::ai::BasicAi;
@@ -89,6 +94,17 @@ impl AdvancedAi {
                     BasicAi::housing_reserve_item(g, pid, cid),
                     Some(crate::game::Item::Building { .. })
                 )
+            {
+                continue;
+            }
+            // `industrial-zone-in-the-producers`: a producer due its
+            // Industrial Zone or Workshop keeps its slot for the zone; the
+            // Theater goes to the next idle city.
+            if self.industrial_zone_in_the_producers
+                && self
+                    .base
+                    .industrial_zone_producer_item(g, pid, cid, city_ids.len(), plan.threatened_city)
+                    .is_some()
             {
                 continue;
             }

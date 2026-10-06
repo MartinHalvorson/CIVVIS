@@ -396,6 +396,7 @@ type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 mod advanced;
 mod campus_buildings;
 mod commercial_hub;
+mod industrial_zones;
 mod movement_risk;
 mod scout_first;
 mod scout_inference;
@@ -2903,6 +2904,34 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `industrial-hub`.
     pub(crate) industrial_hub: bool,
+    /// `industrial-zone-in-the-producers`: once Apprenticeship is in hand,
+    /// the empire's two most productive unthreatened cities (three from six
+    /// cities) that have a free district slot and are not due their first
+    /// Campus place an Industrial Zone on their best Production-adjacency
+    /// site, and the most productive zone cities then build its Workshop.
+    /// The step stands just behind the industrial hub, ahead of the
+    /// Commercial Hub step, the military floor, the district list and every
+    /// ordinary building; behind local defence, economic recovery, the
+    /// housing Granary, the first-Campus, Builder and housing-reserve steps
+    /// and a due Settler, never in the plan's threatened city or one attacked
+    /// within four turns, and it gives its slot to the city's standing
+    /// Campus's next building (the Library, or under `campus-buildings-first`
+    /// that step's building). The strategic governor asks the same step for
+    /// an idle queue and keeps a queued zone or Workshop against its review
+    /// (`AdvancedAi::advanced_production`), and the culture-defense Theater
+    /// reservation leaves a producer's slot to it.
+    ///
+    /// Live Emperor civvis-20261006T024058Z..T114112Z (42 games): the first
+    /// zone came a median 40 turns after Apprenticeship (t80 -> t120), a
+    /// second in 23 games at t180; 29 of 41 games held no zone at t100 and a
+    /// median 1 zone, 1 Workshop, 0 Factories at t150, at 0.46x the best
+    /// rival's Production. The three most productive cities, while a zone was
+    /// placeable, built soldiers 44% of the time, ordinary buildings 21%, a
+    /// Campus 8%, a Settler 8%. See `industrial_zones.rs`.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene
+    /// `industrial-zone-in-the-producers`.
+    pub(crate) industrial_zone_in_the_producers: bool,
     /// A standing district's first building before the city opens another
     /// district. This governor tried every district the city still lacked
     /// before any building, so a district stood without the building that
@@ -5738,6 +5767,7 @@ impl BasicAi {
             industry_in_the_district_list: false,
             plaza_in_the_district_list: false,
             industrial_hub: false,
+            industrial_zone_in_the_producers: false,
             district_buildings_first: false,
             capital_library_first: false,
             campus_buildings_first: false,
@@ -6252,6 +6282,7 @@ impl BasicAi {
             industry_in_the_district_list: false,
             plaza_in_the_district_list: false,
             industrial_hub: false,
+            industrial_zone_in_the_producers: false,
             district_buildings_first: false,
             capital_library_first: false,
             campus_buildings_first: false,
@@ -13178,6 +13209,26 @@ impl BasicAi {
                        "The industrial hub takes the build";
                        "{} in {}", crate::reasoning::plain(&format!("{item:?}")),
                        g.cities[&cid].name);
+                return Some(item);
+            }
+        }
+        // `industrial-zone-in-the-producers`: the most productive cities'
+        // Industrial Zones and Workshops, behind the industrial hub and a due
+        // Settler, ahead of the Commercial Hub step and the floor.
+        if self.industrial_zone_in_the_producers
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(item) =
+                self.industrial_zone_producer_item(g, pid, cid, n_cities, self.plan_threatened_city)
+            {
+                think!(self.journal, Cities, Detail,
+                       "{} builds {} for its industry", g.cities[&cid].name,
+                       Self::item_label(&item);
+                       "industrial-zone-in-the-producers: one of the empire's most productive \
+                        cities raises its Industrial Zone and Workshop ahead of the army");
                 return Some(item);
             }
         }

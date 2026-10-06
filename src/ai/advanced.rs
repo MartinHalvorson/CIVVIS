@@ -6789,6 +6789,12 @@ pub struct AdvancedAi {
     /// Amenity building or a Builder for a missing luxury. See
     /// `BasicAi::housing_bound_city_builds_its_granary`.
     housing_bound_city_builds_its_granary: bool,
+    /// `industrial-zone-in-the-producers`: the two or three most productive
+    /// unthreatened cities place an Industrial Zone and build its Workshop,
+    /// through the delegated governor, this governor's idle queues and the
+    /// culture-defense Theater reservation. See
+    /// `BasicAi::industrial_zone_in_the_producers`.
+    industrial_zone_in_the_producers: bool,
     // ---- append: l-o ------------------------------------------------
     /// `opening-yields-to-walls`: a declared conquest opening that has taken
     /// nothing asks for terms and stands down once its target walls up with no
@@ -9895,6 +9901,7 @@ impl AdvancedAi {
             improvement_upgrades_count: false,
             golden_dedication_serves_the_conquest: false,
             housing_bound_city_builds_its_granary: false,
+            industrial_zone_in_the_producers: false,
             // ---- append: l-o ----------------------------------------
             opening_yields_to_walls: false,
             luxury_buy_asks: false,
@@ -14955,11 +14962,13 @@ impl AdvancedAi {
         .flatten();
         let restore_space_race = self.base.exclude_space_race;
         self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
-        // `housing-bound-city-builds-its-granary` and
-        // `commercial-hub-and-traders`: the plan's threatened city keeps its
-        // stock defence order. Lent for the call.
+        // `housing-bound-city-builds-its-granary`,
+        // `commercial-hub-and-traders` and `industrial-zone-in-the-producers`:
+        // the plan's threatened city keeps its stock defence order. Lent for
+        // the call.
         self.base.plan_threatened_city = (self.housing_bound_city_builds_its_granary
-            || self.commercial_hub_and_traders)
+            || self.commercial_hub_and_traders
+            || self.industrial_zone_in_the_producers)
             .then_some(plan.threatened_city)
             .flatten();
         // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`):
@@ -29713,6 +29722,7 @@ impl AdvancedAi {
         let mut counts = self.counts(g, pid);
         let preempt_margin = self.production_review_margin(g);
         let city_ids = g.player_city_ids(pid);
+        let n_cities = city_ids.len();
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
         let sanctuary = self.adopted_faith_sanctuary_choice(g, pid, plan.threatened_city);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
@@ -29923,6 +29933,13 @@ impl AdvancedAi {
                     self.race_shrine_committed(g, pid, cid, item)
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
+            // `industrial-zone-in-the-producers`: a queued Industrial Zone or
+            // Workshop finishes before routine rescoring can claim the city.
+            let industrial_zone_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                self.base
+                    .industrial_zone_build_holds(g, cid, item, plan.threatened_city)
+                    && Self::production_commitment_is_legal(g, pid, cid, item)
+            });
             if committed.as_ref().is_some_and(|(value, _)| {
                 !self.victory_planning
                     || (value.is_finite() && *value > -1_000.0)
@@ -29934,6 +29951,7 @@ impl AdvancedAi {
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
+                    || industrial_zone_commitment
             }) && !recovery_preemption
                 && (finish_investment
                     || science_endgame_commitment
@@ -29944,6 +29962,7 @@ impl AdvancedAi {
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
+                    || industrial_zone_commitment
                     || preempt_margin <= 1.0
                     || economic_recovery)
             {
@@ -30230,6 +30249,55 @@ impl AdvancedAi {
                                 "the promoted baseline repair was unreachable in strategic production; {} Amenities short",
                                 shortfall);
                         }
+                        self.clear_idle_production_streak(cid);
+                        continue;
+                    }
+                }
+            }
+            // `industrial-zone-in-the-producers`: the step the delegated
+            // governor asks behind its industrial hub, for this idle queue.
+            // The reservations above (local defence, recovery, the first
+            // Builder, the Granary, the owed Campus building, the Trader)
+            // keep their precedence; a due Settler keeps the city, and so
+            // does the delegated governor's emergency (a major war with
+            // fewer soldiers than cities).
+            if committed.is_none()
+                && self.industrial_zone_in_the_producers
+                && !(counts.military < n_cities
+                    && g.players.iter().any(|player| {
+                        player.id != pid
+                            && player.alive
+                            && !player.is_barbarian
+                            && !player.is_minor
+                            && g.is_at_war(pid, player.id)
+                    }))
+                && !self.base.settler_due(g, pid, cid, n_cities, counts.settlers)
+            {
+                if let Some(item) = self.base.industrial_zone_producer_item(
+                    g,
+                    pid,
+                    cid,
+                    n_cities,
+                    plan.threatened_city,
+                ) {
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                    {
+                        if self.journal().wants(crate::reasoning::Level::Decision) {
+                            let city_name = g.cities[&cid].name.clone();
+                            think!(self.journal(), Economy, Decision,
+                                "{} starts {} for industrial-zone-in-the-producers", city_name,
+                                Self::plain_item(&item);
+                                "one of the empire's most productive cities raises its Industrial \
+                                 Zone and Workshop before the strategic scorer fills the queue");
+                        }
+                        counts.add_item(g, &item);
                         self.clear_idle_production_streak(cid);
                         continue;
                     }
@@ -46454,6 +46522,9 @@ mod amphibious_staging;
 
 #[cfg(test)]
 mod domination_solvency_tests;
+
+#[cfg(test)]
+mod industrial_zone_tests;
 
 #[cfg(test)]
 mod domination_finish_tests;
