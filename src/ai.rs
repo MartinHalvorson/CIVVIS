@@ -394,6 +394,7 @@ const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
 type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 
 mod advanced;
+mod commercial_hub;
 mod movement_risk;
 mod scout_first;
 mod scout_inference;
@@ -2796,9 +2797,28 @@ pub struct BasicAi {
     /// Set from `AdvancedAi` by the opt-in gene
     /// `housing-bound-city-builds-its-granary`.
     pub(crate) housing_bound_city_builds_its_granary: bool,
+    /// From turn 90 standard (t60 Online), ahead of the military floor: the
+    /// Market of a standing Commercial Hub, then a Trader while the empire's
+    /// routes and Traders leave a route slot open, then a Commercial Hub on
+    /// its best Gold site in each of the two (three from six cities) most
+    /// productive unthreatened cities that lack one and have a free slot --
+    /// never more than three hubs standing or queued. Never in the plan's
+    /// threatened city or one attacked within four turns, never during the
+    /// floor's `emergency_defense` or while a Settler is due, and never in a
+    /// city due its Granary. See `commercial_hub_step`.
+    ///
+    /// Live Emperor G185-G198 (civvis-20261006T024058Z..T053813Z): Gold a
+    /// turn against the best rival 0.55x at t50, 0.15x at t100 (net 14
+    /// against 63), 0.11x at t125, with unit upkeep 20 -> 42 eating 45-65%
+    /// of the cities' gross Gold; no Commercial Hub and no Market in any of
+    /// the 13 games at t100 (0.9 hubs at t125, 1.6 at t150), trade route
+    /// capacity 1-2 until t150.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `commercial-hub-and-traders`.
+    pub(crate) commercial_hub_and_traders: bool,
     /// The strategic plan's threatened city, lent by
     /// `AdvancedAi::delegated_cities` for the call and `None` outside it.
-    /// Read only by `housing_bound_granary_step`.
+    /// Read only by `housing_bound_granary_step` and `commercial_hub_step`.
     pub(crate) plan_threatened_city: Option<u32>,
     /// `industry-before-the-army`: the Industrial Zone, then its Workshop,
     /// then its Factory, ahead of the military floor for at most a third of
@@ -5684,6 +5704,7 @@ impl BasicAi {
             activation_keeps_its_building: false,
             granary_before_the_army_2: false,
             housing_bound_city_builds_its_granary: false,
+            commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
@@ -6196,6 +6217,7 @@ impl BasicAi {
             activation_keeps_its_building: false,
             granary_before_the_army_2: false,
             housing_bound_city_builds_its_granary: false,
+            commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,
             industry_before_the_army_2: false,
@@ -13152,6 +13174,17 @@ impl BasicAi {
                        "Industry before the army takes the build";
                        "{} in {} ahead of a floor of {military_floor:.1} with {military} held",
                        crate::reasoning::plain(&format!("{item:?}")), g.cities[&cid].name);
+                return Some(item);
+            }
+        }
+        // `commercial-hub-and-traders`: a hub's Market, a Trader for an open
+        // route slot, and a Commercial Hub in the best unthreatened cities,
+        // behind the Campus step, the industry steps and a due Settler.
+        if !emergency_defense
+            && self.commercial_hub_window_open(g)
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(item) = self.commercial_hub_step(g, pid, cid, n_cities, traders) {
                 return Some(item);
             }
         }
