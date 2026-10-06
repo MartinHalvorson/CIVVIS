@@ -7111,6 +7111,14 @@ pub struct AdvancedAi {
     /// `BasicAi::note_host_moves` and `advanced/own_column.rs`.
     own_column_is_not_a_refusal: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religious-match-point-defence`: the religious interception (a war
+    /// that condemns a match-point faith's spreader at home, its cities
+    /// located or not) may open beside a war already being fought, at
+    /// `religious_interception::MATCH_POINT_DEFENCE_EDGE` times the faith's
+    /// steady power and no less than the faith and every current enemy
+    /// together; and the match point is read on the religion lane alone. See
+    /// `religious_interception::match_point_defence_has_the_edge`.
+    religious_match_point_defence: bool,
     /// `declaration-needs-the-edge-2`: each rival's military readings of the
     /// last `one_war::DECLARATION_PEAK_TURNS` turns. See
     /// `one_war::peak_rival_power`.
@@ -9811,6 +9819,7 @@ impl AdvancedAi {
             naval_escort_patience: false,
             own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
+            religious_match_point_defence: false,
             rival_power_peak_seen: BTreeMap::new(),
             prophet_race_earns_its_points: false,
             plaza_in_the_district_list: false,
@@ -21006,7 +21015,9 @@ impl AdvancedAi {
         // planning before 90%, so waiting five turns for a Formal War here
         // would make the counter-campaign start after the game can end.
         let urgent = self.urgent_victory_threat(g, target)
-            || self.faith_counter_spreaders_at_home(g, pid, target);
+            || self.faith_counter_spreaders_at_home(g, pid, target)
+            // See `match_point_spreaders_at_home` (`religious-match-point-defence`).
+            || self.match_point_spreaders_at_home(g, pid, target);
         let denounced = g.players[pid]
             .denounced_until
             .get(&target)

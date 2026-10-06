@@ -3115,6 +3115,13 @@ pub const GENES: &[Gene] = &[
     // civvis-20261006T042958Z) sat at 155-173 behind 0/200 from t96 to t99.
     // See `conversion_siege_budget_within`, `swarm_blow` and `swarm_close`.
     Gene { tag: "unwalled-city-takes-the-swarm", field: "unwalled_city_takes_the_swarm", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_city_takes_the_swarm, disable: AdvancedAi::disable_unwalled_city_takes_the_swarm },
+    // Live Emperor G186 (civvis-20261006T025742Z): Indonesia's Hinduism held
+    // every major but the Aztecs from turn 52, its Missionaries and Apostles
+    // stood beside our cities, no Indonesian city was ever located, and the
+    // religious interception refused every turn from 53 because a war on
+    // Sweden was running; Indonesia won on Religion at 84. See
+    // `religious_interception::match_point_defence_has_the_edge`.
+    Gene { tag: "religious-match-point-defence", field: "religious_match_point_defence", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_match_point_defence, disable: AdvancedAi::disable_religious_match_point_defence },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -23,7 +23,72 @@ fn visible_home_spreaders(g: &Game, pid: usize, rival: usize, faith: &str) -> Ve
 /// ended in our own peace offer at turn 80 ("the last window was a rout").
 pub(crate) const RELIGIOUS_INTERCEPTION_POWER_FLOOR: f64 = 1.0;
 
+/// `religious-match-point-defence`: the interception beside a running war
+/// needs this many times the faith's steady power (`steady_rival_power`),
+/// besides no less power than the faith and every current enemy together.
+/// The war condemns spreaders at home and asks no siege of the army, so it
+/// sits between the interception's own 1.0 floor and the 1.5 edge
+/// (`one_war::DECLARATION_EDGE_RATIO`) that counter wars aimed at cities
+/// need. Live Emperor G186 at turn 69: 300 power against Indonesia's steady
+/// 211 (1.42 times) and 295 with Sweden's 112, a Hindu Apostle beside our
+/// archers; replayed with the turns' power memory, the 1.5 edge held it.
+pub(crate) const MATCH_POINT_DEFENCE_EDGE: f64 = 1.2;
+
 impl AdvancedAi {
+    /// `religious-match-point-defence`: whether `rival`'s founded faith is
+    /// at the religious match point read on the religion lane alone
+    /// (`one_war::faith_at_match_point`). A rival's strongest lane can mask
+    /// it: in live Emperor G186 Indonesia's score lead grew from 16% to 23%
+    /// between turns 73 and 80 while its Hinduism held every major but one.
+    /// False with the gene off.
+    pub(crate) fn match_point_faith(&self, g: &Game, rival: usize) -> bool {
+        self.religious_match_point_defence
+            && g.players[rival].religion.is_some()
+            && self.faith_at_match_point(g, rival)
+    }
+
+    /// `religious-match-point-defence`: a match-point faith
+    /// (`match_point_faith`) whose spreader stands where the interception
+    /// would condemn it. The war's opening is then urgent, as
+    /// `faith_counter_spreaders_at_home` makes it for a counter target: only
+    /// war lets our soldiers condemn it, and a Formal War waits five turns.
+    pub(crate) fn match_point_spreaders_at_home(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        if !self.match_point_faith(g, rival) {
+            return false;
+        }
+        let Some(faith) = g.players[rival].religion.as_deref() else {
+            return false;
+        };
+        !visible_home_spreaders(g, pid, rival, faith).is_empty()
+    }
+
+    /// `religious-match-point-defence`: whether the interception may open on
+    /// `rival` beside the wars already fought with `enemies`. The war to
+    /// condemn a spreader at home needs no army at the faith's cities, so it
+    /// is no second siege; it still opens only at
+    /// [`MATCH_POINT_DEFENCE_EDGE`] times the faith's steady power and with
+    /// no less power than the faith and every current enemy together. Live
+    /// Emperor G186 at turn 73: 341 power against Indonesia's steady 195, and
+    /// 337 with Sweden's 142; the shipped interception refused because the
+    /// Sweden war was running, as it did on every turn from 53 to 83.
+    pub(crate) fn match_point_defence_has_the_edge(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+        enemies: &[usize],
+    ) -> bool {
+        let ours = g.military_power(pid);
+        let edge = MATCH_POINT_DEFENCE_EDGE * self.steady_rival_power(g, rival).max(1.0);
+        let together = g.military_power(rival)
+            + enemies
+                .iter()
+                .filter(|enemy| **enemy != rival)
+                .map(|enemy| g.military_power(*enemy))
+                .sum::<f64>();
+        self.religious_match_point_defence && ours >= edge && ours >= together
+    }
+
     /// A defensive condemnation must not occupy the only major-war slot
     /// after its victory threat is gone and a different visible city can be
     /// campaigned against. The host still decides whether to accept white
@@ -95,20 +160,31 @@ impl AdvancedAi {
     /// finds the founder's cities. Promise a legal condemnation, not a distant
     /// siege: replay the declaration and the same-turn interception first.
     pub(super) fn religious_interception_opening(&mut self, g: &mut Game, pid: usize) -> bool {
+        let enemies: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|p| !p.is_minor && !p.is_barbarian && p.id != pid && g.is_at_war(pid, p.id))
+            .map(|p| p.id)
+            .collect();
         if self.active_victory_target(g) != Some(VictoryTarget::Domination)
             || !self.deny_leaders
             || !g.victory_conditions.religious
             || !self.war_is_affordable(g, pid)
             || self.threatened_city(g, pid).is_some()
-            || g.players
-                .iter()
-                .any(|p| !p.is_minor && !p.is_barbarian && p.id != pid && g.is_at_war(pid, p.id))
+            // `religious-match-point-defence`: a running war no longer
+            // refuses the interception outright; each rival must clear
+            // `match_point_defence_has_the_edge` below instead.
+            || (!enemies.is_empty() && !self.religious_match_point_defence)
         {
             return false;
         }
         for (rival, pressure) in self.ranked_rival_victory_pressures(g, pid, &BTreeMap::new()) {
-            if pressure.strategy != GrandStrategy::Religion
-                || !self.victory_pressure_is_urgent(g, rival, pressure)
+            // See `match_point_faith`: under the gene the match point is read
+            // on the religion lane alone, whatever lane the rival leads.
+            let at_match_point = (pressure.strategy == GrandStrategy::Religion
+                && self.victory_pressure_is_urgent(g, rival, pressure))
+                || self.match_point_faith(g, rival);
+            if !at_match_point
                 || !self.campaign_target_legal(g, pid, rival)
                 || g.military_power(pid)
                     < RELIGIOUS_INTERCEPTION_POWER_FLOOR * g.military_power(rival)
@@ -121,6 +197,23 @@ impl AdvancedAi {
             let spreaders = visible_home_spreaders(g, pid, rival, faith);
             if spreaders.is_empty() {
                 continue;
+            }
+            if !enemies.is_empty() {
+                if g.is_at_war(pid, rival) {
+                    continue;
+                }
+                if !self.match_point_defence_has_the_edge(g, pid, rival, &enemies) {
+                    if self.journal().wants(crate::reasoning::Level::Detail) {
+                        let together = g.military_power(rival)
+                            + enemies.iter().map(|e| g.military_power(*e)).sum::<f64>();
+                        think!(self.journal(), Military, Detail,
+                            "Holding the religious interception on {}", g.players[rival].civ;
+                            "religious-match-point-defence: their faith holds every major but one and its spreader is at home, but beside the running war we have {:.0} power against their steady {:.0} (needs {:.1}x) and {:.0} with every enemy",
+                            g.military_power(pid), self.steady_rival_power(g, rival),
+                            MATCH_POINT_DEFENCE_EDGE, together);
+                    }
+                    continue;
+                }
             }
             let Some(opening) = self.preferred_war_opening(g, pid, rival) else {
                 continue;
@@ -178,9 +271,15 @@ impl AdvancedAi {
                         }
                     }
                     let condemned = g.apply(pid, &condemn).is_ok();
-                    think!(self.journal(), Military, Strategy,
-                        "Opening a religious interception against {}", g.players[rival].civ;
-                        "a visible spreader at home supplies an immediate counter to the religious match point; condemnation executed: {condemned}");
+                    if enemies.is_empty() {
+                        think!(self.journal(), Military, Strategy,
+                            "Opening a religious interception against {}", g.players[rival].civ;
+                            "a visible spreader at home supplies an immediate counter to the religious match point; condemnation executed: {condemned}");
+                    } else {
+                        think!(self.journal(), Military, Strategy,
+                            "Opening a religious interception against {} beside the running war", g.players[rival].civ;
+                            "religious-match-point-defence: their faith holds every major but one and its spreader is at home; we hold the edge over them and every enemy together; condemnation executed: {condemned}");
+                    }
                     return true;
                 }
             }
