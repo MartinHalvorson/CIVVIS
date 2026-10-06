@@ -6491,6 +6491,17 @@ impl AdvancedAi {
         self.tier_gap_reads_the_fielded_line = false;
     }
 
+    /// Opt-in gene `unwalled-city-takes-the-swarm`; see
+    /// [`Self::unwalled_city_takes_the_swarm`].
+    pub fn enable_unwalled_city_takes_the_swarm(&mut self) {
+        self.unwalled_city_takes_the_swarm = true;
+    }
+
+    /// The twin of `enable_unwalled_city_takes_the_swarm`.
+    pub fn disable_unwalled_city_takes_the_swarm(&mut self) {
+        self.unwalled_city_takes_the_swarm = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

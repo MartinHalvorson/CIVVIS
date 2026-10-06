@@ -994,14 +994,14 @@ impl AdvancedAi {
         // here trapped the column in Stage and also disabled its siege-unit
         // production bonus. Use the last-seen health budget until a unit
         // closes to refresh it; unknown cities still have no estimate.
-        let (wall_hp, city_hp) = if g.player_visibility(pid).contains(&city.pos) {
-            (city.wall_hp, city.hp)
+        let (wall_hp, city_hp, wall_max) = if g.player_visibility(pid).contains(&city.pos) {
+            (city.wall_hp, city.hp, g.city_max_wall_hp(city))
         } else {
             let memory = g.players[pid]
                 .remembered_cities
                 .get(&cid)
                 .filter(|memory| memory.owner == city.owner && memory.pos == city.pos)?;
-            (memory.wall_hp, memory.hp)
+            (memory.wall_hp, memory.hp, memory.wall_max)
         };
         let mut wall_dps = 0.0;
         let mut city_dps = 0.0;
@@ -1011,6 +1011,12 @@ impl AdvancedAi {
         // once the city is low (see `finishing_blow` below).
         let mut finishing_blow = 0.0_f64;
         let counts_what_fires = self.siege_budget_counts_what_fires;
+        // `unwalled-city-takes-the-swarm`: a city with no wall pool at all
+        // (`walls 0/0`) has nothing to absorb a melee blow, so every fit melee
+        // member swings each turn (`siege_train::swarm_blow`) and its blow is
+        // per-turn fire, not only the last one. A breached wall is not this:
+        // it still has a pool to rebuild.
+        let swarm = self.unwalled_city_takes_the_swarm && wall_hp <= 0 && wall_max <= 0;
         // `siege-counts-posted-shooters`: a shooter with no firing post fires
         // nothing, and one with a hostile unit in reach shoots that first
         // while the walls stand. See `siege_train::posted_shooters`.
@@ -1061,7 +1067,21 @@ impl AdvancedAi {
             if shooter && posted.as_ref().is_some_and(|(posted, _)| !posted.contains(uid)) {
                 continue;
             }
-            if counts_what_fires && !ranged {
+            // `unwalled-city-takes-the-swarm`: the city's reply to this
+            // member's blow, when the member swings every turn: it stands at
+            // `ROTATE_HP` (`siege_member_fit`) and the reply leaves it at
+            // `ASSAULT_SURVIVOR_HP`. A wounded member rotates out instead and
+            // stays the shipped finishing blow.
+            let swarm_reply = (swarm && !ranged && spec.is_melee_capable())
+                .then(|| expected_damage(g.city_strength(cid), attack))
+                .filter(|reply| {
+                    self.siege_member_fit(g, *uid)
+                        && f64::from(unit.hp) - reply
+                            >= f64::from(super::siege_train::ASSAULT_SURVIVOR_HP)
+                });
+            if swarm_reply.is_some() {
+                city_dps += damage;
+            } else if counts_what_fires && !ranged {
                 // The train holds melee on the ring until a blow pays
                 // (`siege_blow`): against a healthy city that is the last
                 // one, not one every turn.
@@ -1083,8 +1103,13 @@ impl AdvancedAi {
                 0.0
             };
             wall_dps += damage * wall_multiplier;
-            let incoming =
+            let mut incoming =
                 expected_damage(g.city_ranged_strength(cid), g.unit_strength(unit, false));
+            // `unwalled-city-takes-the-swarm`: a member that swings every turn
+            // takes the city's reply on every swing.
+            if let Some(reply) = swarm_reply {
+                incoming += reply;
+            }
             endurance += (unit.hp as f64 - 20.0).max(0.0) / incoming.max(1.0);
             taker |= !ranged && spec.is_melee_capable();
         }

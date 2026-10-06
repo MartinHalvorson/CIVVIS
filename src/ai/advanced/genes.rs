@@ -3107,6 +3107,12 @@ pub const GENES: &[Gene] = &[
     // our stale Archer (25) read a 1.82 tier factor while our Musketmen (55)
     // out-tiered every Nubian unit. See `city_campaign::war_bill_tier_gap`.
     Gene { tag: "tier-gap-reads-the-fielded-line", field: "tier_gap_reads_the_fielded_line", kind: Kind::OptIn, enable: AdvancedAi::enable_tier_gap_reads_the_fielded_line, disable: AdvancedAi::disable_tier_gap_reads_the_fielded_line },
+    // Live 10-05/06: 176 sieges reached a city with no walls; 33 took it
+    // unwalled, 107 never did, and 63% of those rows read "damage ready false
+    // with inf turns" because a melee blow counted only as the finishing one.
+    // Kish (G183, civvis-20261006T021637Z) took one blow at t96 and built
+    // walls by t98. See `conversion_siege_budget_within` and `swarm_blow`.
+    Gene { tag: "unwalled-city-takes-the-swarm", field: "unwalled_city_takes_the_swarm", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_city_takes_the_swarm, disable: AdvancedAi::disable_unwalled_city_takes_the_swarm },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

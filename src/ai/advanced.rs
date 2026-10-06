@@ -7825,6 +7825,13 @@ pub struct AdvancedAi {
     /// `BasicAi::settler_before_the_navy`.
     settler_before_the_navy: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `unwalled-city-takes-the-swarm`: against a city with no walls at all
+    /// (no wall pool, what the Stage line prints as `walls 0/0`), every fit
+    /// melee member the siege budget counts is per-turn city fire, its reply
+    /// charged to its endurance, and every fit melee member beside the city
+    /// strikes it each turn rather than waiting for a blow that pays alone.
+    /// See `conversion_siege_budget_within` and `siege_train::swarm_blow`.
+    unwalled_city_takes_the_swarm: bool,
     /// `tier-gap-reads-the-fielded-line`: under `war-bill-prices-the-tier-gap`,
     /// the tier gap reads the rival's FIELDED line (its unlocked catalogue only
     /// when it fields no land soldier) against our stronger fielded line, the
@@ -9925,6 +9932,7 @@ impl AdvancedAi {
 
             settler_before_the_navy: false,
             // ---- append: t-z ----------------------------------------
+            unwalled_city_takes_the_swarm: false,
             tier_gap_reads_the_fielded_line: false,
             urgent_denial_needs_the_edge: false,
             tower_assault: false,

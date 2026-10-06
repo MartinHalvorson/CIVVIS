@@ -3394,6 +3394,10 @@ impl AdvancedAi {
             if let Some(acted) = self.siege_blow(g, pid, uid, city, plan, allow_city) {
                 return acted;
             }
+            // `unwalled-city-takes-the-swarm`: see `swarm_blow`.
+            if let Some(acted) = self.swarm_blow(g, pid, uid, city) {
+                return acted;
+            }
             return self.base.fortify_or_stop(g, pid, uid);
         }
         if let Some(acted) = self.post_step(g, pid, uid, city) {
@@ -3654,6 +3658,10 @@ impl AdvancedAi {
         }
         if self.safe_taker_pressure(g, pid, uid, city) {
             return true;
+        }
+        // `unwalled-city-takes-the-swarm`: see `swarm_blow`.
+        if let Some(acted) = self.swarm_blow(g, pid, uid, city) {
+            return acted;
         }
         self.base.fortify_or_stop(g, pid, uid)
     }
@@ -3979,6 +3987,89 @@ impl AdvancedAi {
             "{dealt} city damage for {taken} immediate damage; at least 60 hp remain after the predicted reply";
             city.pos);
         true
+    }
+
+    /// `unwalled-city-takes-the-swarm`: a fit melee member beside a city with
+    /// no wall pool at all strikes it every turn, whether or not this one
+    /// blow pays alone (`siege_blow`) or the force's blows open an assault
+    /// (`assault_pays`). Nothing absorbs the blow and the city heals at most
+    /// 20 a turn, so the ring's swings add up where one priced alone never
+    /// does. Live 10-05/06: 176 sieges reached a city with no walls and 107
+    /// never took it; Kish (G183, civvis-20261006T021637Z) took one blow, at
+    /// turn 96, and stood behind walls by 98. The member stands at
+    /// `ROTATE_HP` (`siege_member_fit`; a wounded one rotates out) and keeps
+    /// [`ASSAULT_SURVIVOR_HP`] past the reply, the reserved taker
+    /// [`STORM_TAKER_SURVIVOR_HP`] so it can still take the city; a blow that
+    /// takes the city lands only where the taker's would (`capture_holdable`).
+    /// `None` where the member does not swing.
+    fn swarm_blow(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> Option<bool> {
+        if !self.unwalled_city_takes_the_swarm
+            || city.wall_max > 0
+            || city.wall_hp > 0
+            || city.hp <= 0
+        {
+            return None;
+        }
+        let unit = g.units.get(&uid)?.clone();
+        if arm_of(g, uid) != Arm::Melee
+            || unit.attacks_left <= 0
+            || unit.moves_left <= 0.0
+            || g.is_embarked(&unit)
+            || !self.siege_member_fit(g, uid)
+            || !g.melee_order_is_legal(pid, uid, city.pos)
+        {
+            return None;
+        }
+        let action = Action::Attack {
+            unit: uid,
+            target: city.pos,
+        };
+        let mut after = g.speculative_clone();
+        after.apply(pid, &action).ok()?;
+        let captures = after.cities.get(&city.id).is_some_and(|c| c.owner == pid);
+        let taker = self
+            .sieges
+            .get(&city.id)
+            .is_some_and(|siege| siege.taker == Some(uid));
+        let floor = if taker {
+            STORM_TAKER_SURVIVOR_HP
+        } else {
+            ASSAULT_SURVIVOR_HP
+        };
+        if captures {
+            if !self.capture_holdable(g, pid, city.id, uid) {
+                return None;
+            }
+        } else if after
+            .units
+            .get(&uid)
+            .is_none_or(|survivor| survivor.hp < floor)
+        {
+            return None;
+        }
+        g.apply(pid, &action).ok()?;
+        self.force_groups_dirty = true;
+        let captured = g.cities.get(&city.id).is_some_and(|c| c.owner == pid);
+        if captured {
+            if let Some(siege) = self.sieges.get_mut(&city.id) {
+                if let Some(taker) = siege.taker.take() {
+                    self.reserved_units.remove(&taker);
+                }
+                siege.stage = SiegeStage::Hold;
+                siege.entered = g.turn;
+            }
+            self.census.siege_captures += 1;
+        }
+        let left = g
+            .cities
+            .get(&city.id)
+            .map_or(0, |c| if c.owner == pid { 0 } else { c.hp });
+        think!(self.journal(), Military, Decision,
+            "Siege of {}: the {} swings at the unwalled city", g.cities[&city.id].name, unit.kind;
+            "no wall pool to absorb the blow; the city at {} has {left} left; {} hp of ours after the reply; captured {captured}",
+            city.hp, g.units.get(&uid).map_or(0, |u| u.hp);
+            city.pos);
+        Some(true)
     }
 
     /// Toward the unit's post for the turn, when it has one it is not on.
@@ -5443,3 +5534,6 @@ mod muster_tests;
 
 #[cfg(test)]
 mod air_tests;
+
+#[cfg(test)]
+mod swarm_tests;
