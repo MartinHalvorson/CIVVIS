@@ -2613,15 +2613,20 @@ impl AdvancedAi {
         let dying = self.dying_open_city(&city);
         // `stage-musters-out-of-reach`: the train may close on its staging
         // ring when the Stage -> Invest step below would fire with the
-        // mustered members standing on the ring — the bill met by the members
-        // within `MUSTER_FAR`, the walls answered and no breaker hold read
-        // over the members within `MUSTER_BREACH_FAR` (breakers and damage
-        // budget alike: a staging gun holds on its own danger line) — so the
-        // body closes only when the siege will invest.
+        // mustered members standing on the ring — the bill met, the walls
+        // answered and no breaker hold read, all over the members within
+        // `MUSTER_BREACH_FAR` (a staging gun holds on its own danger line, and
+        // a muster stand lies out of every ranged and city strike) — so the
+        // body closes only when the siege will invest. The bill read only
+        // `MUSTER_FAR` once: live Emperor civvis-20261006T081907Z (game 210)
+        // held Pella's train from turn 170 to 179 at "0 strength within 8
+        // tiles" while its budget within 10 read entry-ready (1.3 turns
+        // against 5.2 endurance by turn 179) and the walls fell 400 -> 0, the
+        // capital at 55 health when Macedon's culture won at 182.
         if self.stage_musters_out_of_reach {
             let mustered: f64 = force
                 .iter()
-                .filter(|uid| g.wdist(g.units[uid].pos, city.pos) <= MUSTER_FAR)
+                .filter(|uid| g.wdist(g.units[uid].pos, city.pos) <= MUSTER_BREACH_FAR)
                 .map(|uid| unit_power(g, *uid))
                 .sum();
             let no_breaker_mustered = !arena
@@ -2683,7 +2688,7 @@ impl AdvancedAi {
                 );
                 think!(self.journal(), Military, Detail,
                     "Siege of {name}: the mustered train holds";
-                    "{mustered:.0} strength within {MUSTER_FAR} tiles against a bill of {bill:.0}; \
+                    "{mustered:.0} strength within {MUSTER_BREACH_FAR} tiles against a bill of {bill:.0}; \
                      budget within {MUSTER_BREACH_FAR}: {budget}; entry {entry_mustered}, grind {grind}, \
                      breaker hold {no_breaker_mustered}";
                     city.pos);
@@ -2704,7 +2709,7 @@ impl AdvancedAi {
                     .unwrap_or_default();
                 think!(self.journal(), Military, Decision,
                     "Siege of {name}: the mustered train closes: {reason}";
-                    "{mustered:.0} strength within {MUSTER_FAR} tiles against a bill of {bill:.0}; \
+                    "{mustered:.0} strength within {MUSTER_BREACH_FAR} tiles against a bill of {bill:.0}; \
                      walls answered {walls_answered}, breaker hold {no_breaker_mustered}";
                     city.pos);
             }
