@@ -3213,6 +3213,14 @@ pub const GENES: &[Gene] = &[
     // productive cities built soldiers 44% of the turns a zone was placeable.
     // See `BasicAi::industrial_zone_in_the_producers`.
     Gene { tag: "industrial-zone-in-the-producers", field: "industrial_zone_in_the_producers", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_zone_in_the_producers, disable: AdvancedAi::disable_industrial_zone_in_the_producers },
+    // Live Emperor 2026-10-06 (24 Science losses): once the winner's pad was
+    // on the board, 42 of 73 spy postings and 27 of 45 Rocketry disruptions
+    // went to another rival's pad -- 26 postings to a rival at war with us
+    // while the winner led -- and 9 of 24 games ever disrupted the winner.
+    // The leading threat's free pad outranks every other posting, and an idle
+    // spy in a non-threat foreign city is re-posted to it. Requires and arms
+    // `science-threat-denial`. See `advanced/science_threat_denial.rs`.
+    Gene { tag: "science-denial-spy-reads-the-leader", field: "science_denial_spy_reads_the_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denial_spy_reads_the_leader, disable: AdvancedAi::disable_science_denial_spy_reads_the_leader },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

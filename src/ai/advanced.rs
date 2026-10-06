@@ -7488,6 +7488,21 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `science-denial-spy-reads-the-leader`: the denial spy goes to the
+    /// LEADING science threat's launch city, not to whichever threat's pad the
+    /// stock table likes best. Under `science-threat-denial` every threat's
+    /// pad carries the same posting bonus, so the war plan's +180 and the
+    /// Conquest terms send the spy to the rival we are fighting: live Emperor
+    /// 2026-10-06 (24 Science losses), once the winner's pad was on the board
+    /// 42 of 73 postings went to another rival's pad (30 of them while the
+    /// eventual winner led on launches and technologies, 26 of those to a
+    /// rival at war with us) and 27 of 45 `disrupt_rocketry` runs hit a pad
+    /// that was not the winner's; only 9 of 24 games ever disrupted the
+    /// winner. Under the gene the leading threat's free pad outranks every
+    /// other posting, and an idle spy standing in a foreign city that is no
+    /// threat's is re-posted to it. One spy per pad, as before. Requires and
+    /// arms `science_threat_denial`; see `advanced/science_threat_denial.rs`.
+    science_denial_spy_reads_the_leader: bool,
     /// `science-leader-is-the-target`: at peace, from standard turn 165 (109
     /// at Online speed), the met rival making
     /// `science_leader::SCIENCE_LEADER_MARGIN` times every other major's
@@ -9996,6 +10011,7 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            science_denial_spy_reads_the_leader: false,
             science_leader_is_the_target: false,
             siege_target_needs_a_road: false,
             siege_road_tally: BTreeMap::new(),
@@ -27565,6 +27581,10 @@ impl AdvancedAi {
         // gene is off. See `advanced/science_threat_denial.rs`.
         let denial_pads = self.science_denial_pad_cities(g, pid);
         let denial_seats = self.science_threat_seats(g, pid);
+        // `science-denial-spy-reads-the-leader`: the leading threat's launch
+        // city, which outranks every other posting. `None` when the gene is
+        // off.
+        let denial_leader = self.science_denial_leading_pad_city(g, pid);
         let ids: Vec<u32> = g
             .spies
             .values()
@@ -27695,6 +27715,34 @@ impl AdvancedAi {
                     self.spy_orders_until.insert(
                         spy_id,
                         g.turn + g.standard_duration(SPY_MISSION_ORDER_PATIENCE),
+                    );
+                    continue;
+                }
+            }
+            // `science-denial-spy-reads-the-leader`: an idle spy standing in a
+            // foreign city that is no science threat's leaves for the leading
+            // threat's free launch city. Never taken when the gene is off,
+            // since `denial_leader` is `None` then.
+            if Self::science_denial_spy_reposts_to_the_leader(
+                g,
+                pid,
+                spy_id,
+                current_city,
+                denial_leader,
+                &denial_seats,
+            ) {
+                if let Some(action) = legal.iter().find(|action| {
+                    matches!(action, Action::AssignSpy { city, .. } if Some(*city) == denial_leader)
+                }) {
+                    if g.apply(pid, action).is_ok() {
+                        *g.players[pid]
+                            .counters
+                            .entry("denial_spy_posts".to_string())
+                            .or_insert(0) += 1;
+                    }
+                    self.spy_orders_until.insert(
+                        spy_id,
+                        g.turn + g.standard_duration(SPY_TRAVEL_ORDER_PATIENCE),
                     );
                     continue;
                 }
@@ -27864,6 +27912,16 @@ impl AdvancedAi {
                                     pid,
                                     spy_id,
                                     &denial_pads,
+                                    *city,
+                                )
+                                // `science-denial-spy-reads-the-leader`: the
+                                // leading threat's pad outranks the rest.
+                                // Zero when the gene is off.
+                                + Self::science_denial_leader_spy_assignment_bonus(
+                                    g,
+                                    pid,
+                                    spy_id,
+                                    denial_leader,
                                     *city,
                                 ),
                             std::cmp::Reverse(*city),
