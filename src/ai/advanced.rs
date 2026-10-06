@@ -6077,6 +6077,11 @@ pub struct AdvancedAi {
     /// that follow its faith and hold a Shrine, the second from founding. See
     /// `advanced/second_faith_source.rs`.
     founder_keeps_two_sources: bool,
+    /// `founder-funds-the-inquisition`: with a rival faith at home, a
+    /// founder's Faith goes to the Apostle and the Inquisitors before cover
+    /// Missionaries, Faith Builders, Great People, buildings or units. See
+    /// `advanced/inquisition_first.rs`.
+    founder_funds_the_inquisition: bool,
     /// `founder-spreads-only-its-faith`: a founder buys no religious unit on a
     /// turn whose board founded its religion, buys one only in a city that
     /// followed its faith when the turn began, and holds a spreader of any
@@ -9797,6 +9802,7 @@ impl AdvancedAi {
             commercial_hub_and_traders: false,
             // ---- append: e-f ----------------------------------------
             founder_keeps_two_sources: false,
+            founder_funds_the_inquisition: false,
             founder_spreads_only_its_faith: false,
             first_strike_seen: 0,
             first_strike_hold: None,
@@ -14948,6 +14954,10 @@ impl AdvancedAi {
             || self.commercial_hub_and_traders)
             .then_some(plan.threatened_city)
             .flatten();
+        // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`):
+        // the delegated governor's Faith Builders wait above the Inquisition.
+        let restore_faith_builder = self.base.w.faith_builder;
+        self.base.w.faith_builder = restore_faith_builder + self.inquisition_faith_reserve(g, pid);
         let restore_military = self.base.w.mil_per_city;
         if let Some(per_city) = self.domination_war_military_per_city(g, pid, plan) {
             self.base.w.mil_per_city = restore_military.max(per_city);
@@ -14957,6 +14967,7 @@ impl AdvancedAi {
             self.base.cities(g, pid);
             self.base.exclude_space_race = restore_space_race;
             self.base.w.mil_per_city = restore_military;
+            self.base.w.faith_builder = restore_faith_builder;
             self.base.lent_military_floor_base = None;
             self.base.plan_threatened_city = None;
             return;
@@ -14990,6 +15001,7 @@ impl AdvancedAi {
         self.base.w.settler_stop_turn = restore_stop;
         self.base.w.builder_per_city = restore_builders;
         self.base.w.mil_per_city = restore_military;
+        self.base.w.faith_builder = restore_faith_builder;
         self.base.lent_military_floor_base = None;
         self.base.plan_threatened_city = None;
     }
@@ -23631,7 +23643,9 @@ impl AdvancedAi {
         };
         let faith_reserve = self.conversion_faith_reserve(g, pid, faith_reserve)
             // See `counterweight_faith_reserve` (`counterweight-spends-the-bank`).
-            + self.counterweight_faith_reserve(g, pid);
+            + self.counterweight_faith_reserve(g, pid)
+            // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`).
+            + self.inquisition_faith_reserve(g, pid);
         let mut candidates = Vec::new();
         // Inside `age-closer-2`'s window: the cheapest priced Great Person,
         // so a window that closes nothing says what it would have cost.
@@ -25710,7 +25724,9 @@ impl AdvancedAi {
             }
             _ => 80.0,
         };
-        let reserve = self.conversion_faith_reserve(g, pid, reserve);
+        let reserve = self.conversion_faith_reserve(g, pid, reserve)
+            // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`).
+            + self.inquisition_faith_reserve(g, pid);
         // Every candidate below must clear `cost + reserve`, and a purchase
         // cost is never negative — so a bank under the reserve cannot buy
         // anything no matter what the menu holds. Skip building the menu at
@@ -26279,7 +26295,10 @@ impl AdvancedAi {
         }
         let bank = g.players[pid].faith;
         // See `counterweight_faith_reserve` (`counterweight-spends-the-bank`).
-        let reserve = 180.0 + self.counterweight_faith_reserve(g, pid);
+        let reserve = 180.0
+            + self.counterweight_faith_reserve(g, pid)
+            // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`).
+            + self.inquisition_faith_reserve(g, pid);
         let counts = self.counts(g, pid);
         let mut options = Vec::new();
         let memo = g.query_memo();
@@ -46533,6 +46552,8 @@ mod air_campaign;
 mod religious_interception;
 
 mod second_faith_source;
+
+mod inquisition_first;
 
 mod founder_faith;
 

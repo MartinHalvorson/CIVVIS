@@ -3194,6 +3194,12 @@ pub const GENES: &[Gene] = &[
     // (G186 9 turns after founding, G212 11, G215 47). See
     // `advanced/second_faith_source.rs`.
     Gene { tag: "founder-keeps-two-sources", field: "founder_keeps_two_sources", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_keeps_two_sources, disable: AdvancedAi::disable_founder_keeps_two_sources },
+    // Live Emperor G215 spent over 700 Faith on seven Missionaries and three
+    // Builders from founding to turn 92 and first afforded its Apostle two
+    // turns before Bogota fell; G213, the one founder that launched the
+    // Inquisition, held 49 turns as the last holdout. See
+    // `advanced/inquisition_first.rs`.
+    Gene { tag: "founder-funds-the-inquisition", field: "founder_funds_the_inquisition", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_funds_the_inquisition, disable: AdvancedAi::disable_founder_funds_the_inquisition },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
