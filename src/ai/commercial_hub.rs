@@ -246,6 +246,41 @@ impl BasicAi {
         g.host_production_turns(cid, item)
             .unwrap_or_else(|| g.item_cost_for(pid, item) / g.city_yields(cid).production.max(0.5))
     }
+
+    /// `commercial-hub-in-the-strategic-queue`: whether a queued `item` in
+    /// `cid` is a Commercial Hub, or the Market of the hub `cid` holds, that
+    /// the strategic governor's review keeps against a higher bid -- the
+    /// step's builds, never in `threatened` or a city attacked within four
+    /// turns. `false` while the step's window is closed.
+    pub(crate) fn commercial_hub_build_holds(
+        &self,
+        g: &Game,
+        cid: u32,
+        item: &Item,
+        threatened: Option<u32>,
+    ) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        if !self.commercial_hub_window_open(g)
+            || threatened == Some(cid)
+            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+        {
+            return false;
+        }
+        match item {
+            Item::District { district, .. } => g.district_family(*district) == "commercial_hub",
+            Item::Building { building } => {
+                g.city_has_district_family(city, crate::name!("commercial_hub"))
+                    && (*building == "market"
+                        || g.rules
+                            .buildings
+                            .get(building)
+                            .is_some_and(|spec| spec.replaces == Some(crate::name!("market"))))
+            }
+            _ => false,
+        }
+    }
 }
 
 #[cfg(test)]

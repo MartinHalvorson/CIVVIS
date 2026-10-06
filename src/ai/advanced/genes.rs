@@ -3221,6 +3221,14 @@ pub const GENES: &[Gene] = &[
     // spy in a non-threat foreign city is re-posted to it. Requires and arms
     // `science-threat-denial`. See `advanced/science_threat_denial.rs`.
     Gene { tag: "science-denial-spy-reads-the-leader", field: "science_denial_spy_reads_the_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denial_spy_reads_the_leader, disable: AdvancedAi::disable_science_denial_spy_reads_the_leader },
+    // Live Emperor 2026-10-06 (47 runs with commercial-hub-and-traders armed):
+    // Gold a turn 14 net / 30 gross at t100 against the best rival's 66 net,
+    // no Commercial Hub or Market at t100 or t120 (median), the first hub a
+    // median 55 turns after the step opens; the strategic governor's scorer
+    // made 43% of the build starts in hub-ready cities and never a hub. The
+    // hub step also runs in its idle queues. Requires and arms
+    // `commercial-hub-and-traders`. See `BasicAi::commercial_hub_step`.
+    Gene { tag: "commercial-hub-in-the-strategic-queue", field: "commercial_hub_in_the_strategic_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_commercial_hub_in_the_strategic_queue, disable: AdvancedAi::disable_commercial_hub_in_the_strategic_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
