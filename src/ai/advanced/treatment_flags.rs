@@ -6312,6 +6312,17 @@ impl AdvancedAi {
         self.staging_gun_reads_the_shared_danger = false;
     }
 
+    /// Opt-in gene `bombers-open-the-siege-walls`; see
+    /// [`Self::bombers_open_the_siege_walls`].
+    pub fn enable_bombers_open_the_siege_walls(&mut self) {
+        self.bombers_open_the_siege_walls = true;
+    }
+
+    /// The twin of `enable_bombers_open_the_siege_walls`.
+    pub fn disable_bombers_open_the_siege_walls(&mut self) {
+        self.bombers_open_the_siege_walls = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
