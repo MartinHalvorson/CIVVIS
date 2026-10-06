@@ -303,6 +303,11 @@ impl AdvancedAi {
                 if plan.threatened_city == Some(cid) {
                     continue;
                 }
+                // `housing-bound-city-builds-its-granary`: that gene's Granary
+                // is neither routine nor displaceable.
+                if self.housing_bound_granary_queued(g, cid) {
+                    continue;
+                }
                 let city = &g.cities[&cid];
                 // `breaker-supply-scales`: a building already under way, not
                 // a defence, may yield to the gun if the gun arrives soon.
@@ -445,6 +450,31 @@ impl AdvancedAi {
             target_name;
             objective);
         Some((city, item))
+    }
+
+    /// `housing-bound-city-builds-its-granary`: whether `cid`'s queue holds
+    /// its Granary (or the civilization's replacement) while its population
+    /// is within one of its housing -- the gene's own build, which the
+    /// breaker reservation's `fresh_routine` and `displaceable` swaps must
+    /// not take, or the two fight over the same queue. Live Emperor G204
+    /// (civvis-20261006T065830Z) t110: "Caracas gives its fresh granary queue
+    /// to the siege gun", twice, for a 16-turn Trebuchet. Never with the
+    /// gene off.
+    fn housing_bound_granary_queued(&self, g: &Game, cid: u32) -> bool {
+        if !self.housing_bound_city_builds_its_granary {
+            return false;
+        }
+        let city = &g.cities[&cid];
+        let granary = crate::name!("granary");
+        matches!(
+            city.queue.first(),
+            Some(Item::Building { building })
+                if *building == granary
+                    || g.rules
+                        .buildings
+                        .get(building)
+                        .is_some_and(|spec| spec.replaces == Some(granary))
+        ) && (city.pop as f64) + 1.0 >= g.city_housing(city)
     }
 
     /// A roster full of field units can still lack the ability to break walls.

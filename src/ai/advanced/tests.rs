@@ -51150,6 +51150,76 @@ fn a_domination_war_lends_the_delegated_governor_its_army_target() {
     );
 }
 
+/// See `BasicAi::housing_bound_city_builds_its_granary`: through the
+/// delegated governor a housing-bound capital starts its Granary under the
+/// gene, and the plan's threatened city keeps the stock queue. The plan's
+/// threatened city is lent for the call only.
+#[test]
+fn the_delegated_governor_builds_the_granary_but_not_in_the_threatened_city() {
+    let (mut game, capital, _) = empire_with_a_capital(79_171);
+    clear_barbarian_fixture(&mut game);
+    game.at_war.clear();
+    game.difficulty = "emperor".to_string();
+    game.players[0].techs.insert(crate::name!("pottery"));
+    game.players[0].gold = 500.0;
+    game.players[0].gold_per_turn = 5.0;
+    let housing = game.city_housing(&game.cities[&capital]);
+    game.cities.get_mut(&capital).unwrap().pop = housing.floor() as i32;
+    let granary = Some(Item::Building {
+        building: crate::name!("granary"),
+    });
+    let run = |gene: bool, threatened: Option<u32>| {
+        let mut game = game.clone();
+        game.cities.get_mut(&capital).unwrap().queue.clear();
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.base.book_pos = 4;
+        if gene {
+            ai.enable_housing_bound_city_builds_its_granary();
+        }
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: threatened,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        ai.delegated_cities(&mut game, 0, &plan);
+        assert_eq!(
+            ai.base.plan_threatened_city, None,
+            "the lend ends with the call"
+        );
+        game.cities[&capital].queue.first().cloned()
+    };
+    let stock = run(false, None);
+    assert_ne!(
+        stock, granary,
+        "the stock governor builds something else: {stock:?}"
+    );
+    assert_eq!(run(true, None), granary);
+    assert_eq!(
+        run(true, Some(capital)),
+        run(false, Some(capital)),
+        "threatened: stock"
+    );
+}
+
+#[test]
+fn housing_bound_city_builds_its_granary_is_a_native_opt_in_off_in_both_controllers() {
+    super::test_support::opt_in_off_in_both_controllers(
+        "housing-bound-city-builds-its-granary",
+        |ai| {
+            assert_eq!(
+                ai.housing_bound_city_builds_its_granary,
+                ai.base.housing_bound_city_builds_its_granary,
+                "the controller and its delegated governor agree"
+            );
+            ai.housing_bound_city_builds_its_granary
+        },
+    );
+}
+
 /// See `BasicAi::lent_military_floor_base`: above the genome's own floor, a
 /// lent war target is raised only by cities that finish the unit quickly.
 #[test]

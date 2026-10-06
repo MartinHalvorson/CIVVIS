@@ -3139,6 +3139,13 @@ pub const GENES: &[Gene] = &[
     // lost a city 3 times in 27, those over it 0 in 26. G191 embargoed India
     // with no city located. See `one_war::counter_war_has_the_emperor_edge`.
     Gene { tag: "counter-war-needs-the-emperor-edge", field: "counter_war_needs_the_emperor_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_war_needs_the_emperor_edge, disable: AdvancedAi::disable_counter_war_needs_the_emperor_edge },
+    // Live Emperor G185-G198 (civvis-20261006T024058Z..T053813Z): 5.0
+    // citizens a city at t100 against the best rival's 8.3, production per
+    // citizen at parity; 49% of city-turns t60-120 at or within one of the
+    // housing cap with no Granary, building Campus 13% / Settler 11% / Granary
+    // 5%; 61% of cities short of Amenities. See
+    // `BasicAi::housing_bound_granary_step`.
+    Gene { tag: "housing-bound-city-builds-its-granary", field: "housing_bound_city_builds_its_granary", kind: Kind::OptIn, enable: AdvancedAi::enable_housing_bound_city_builds_its_granary, disable: AdvancedAi::disable_housing_bound_city_builds_its_granary },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
