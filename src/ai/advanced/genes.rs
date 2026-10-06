@@ -3113,6 +3113,12 @@ pub const GENES: &[Gene] = &[
     // Kish (G183, civvis-20261006T021637Z) took one blow at t96 and built
     // walls by t98. See `conversion_siege_budget_within` and `swarm_blow`.
     Gene { tag: "unwalled-city-takes-the-swarm", field: "unwalled_city_takes_the_swarm", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_city_takes_the_swarm, disable: AdvancedAi::disable_unwalled_city_takes_the_swarm },
+    // Live Emperor 10-06: G194 declared on Vietnam at 2.7x with Dong Hoi
+    // already behind 200 walls and one gun, its budget 18.0 turns against 8.7
+    // endurance; walls 300 by t89 and no city fell. Walled-target wars without
+    // a breach took nothing in G188, G192 or G194. See
+    // `siege_train::declaration_breach_reading`.
+    Gene { tag: "declaration-waits-for-the-breach", field: "declaration_waits_for_the_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_waits_for_the_breach, disable: AdvancedAi::disable_declaration_waits_for_the_breach },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

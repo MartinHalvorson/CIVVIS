@@ -5400,6 +5400,10 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `declaration-waits-for-the-breach`: a staged declaration on a walled
+    /// objective also waits until the force by it could breach it. See
+    /// `siege_train::declaration_breach_reading`.
+    declaration_waits_for_the_breach: bool,
     /// `capital-taken-moves-on`: once a rival's original capital is ours and
     /// its "the required capital is secure" peace has been refused for three
     /// standard turns, the next capital's owner is the second front and is
@@ -9562,6 +9566,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            declaration_waits_for_the_breach: false,
             capital_taken_moves_on: false,
             declaration_needs_the_edge_2: false,
             contender_at_peace_is_the_target: false,
@@ -22854,8 +22859,25 @@ impl AdvancedAi {
             .target_city
             .and_then(|city| g.cities.get(&city))
             .map(|city| (city.id, city.pos));
-        let breaker_missing = self.declaration_waits_for_the_breaker
+        let breaker_absent = self.declaration_waits_for_the_breaker
             && objective.is_some_and(|(city, _)| !self.declaration_breaker_at_hand(g, pid, city));
+        // `declaration-waits-for-the-breach`: a walled objective also waits
+        // until the force by it could breach it — the siege's own entry test
+        // read before the war rather than after it. It joins the breaker's
+        // hold, so the same patience and the same exemptions apply: an
+        // urgent denial, a faith counter or a rush is never held, and a war
+        // declared on us never passes here. See
+        // `siege_train::declaration_breach_reading`.
+        let breach_reading = if self.declaration_waits_for_the_breach {
+            objective.and_then(|(city, _)| self.declaration_breach_reading(g, pid, city))
+        } else {
+            None
+        };
+        let breach_short = breach_reading
+            .is_some_and(|(turns, endurance, _)| {
+                turns > endurance * siege_train::DECLARATION_BREACH_SHARE
+            });
+        let breaker_missing = breaker_absent || breach_short;
         let holdable =
             breaker_missing && staged && !urgent_denial && !faith_counter_due && !rushing;
         let breaker_held = self.declaration_hold_patience(
@@ -22864,7 +22886,19 @@ impl AdvancedAi {
             breaker_missing,
             holdable,
         );
-        if breaker_held {
+        if breaker_held && breach_short && !breaker_absent {
+            if let (Some(city), Some((turns, endurance, guns))) =
+                (plan.target_city.and_then(|city| g.cities.get(&city)), breach_reading)
+            {
+                think!(self.journal(), Military, Detail,
+                       "Holding the declaration on {} for the breach", g.players[target].civ;
+                       "{} stands behind {} walls; the force within {} tiles reads {turns:.1} turns \
+                        against {endurance:.1} endurance with {guns} gun(s) fit — a war opened now \
+                        gives it the turns to raise the next tier",
+                       city.name, city.wall_hp, siege_train::MUSTER_BREACH_FAR;
+                       city.pos);
+            }
+        } else if breaker_held {
             if let Some(city) = plan.target_city.and_then(|city| g.cities.get(&city)) {
                 think!(self.journal(), Military, Detail,
                        "Holding the declaration on {} for a wall-breaker", g.players[target].civ;

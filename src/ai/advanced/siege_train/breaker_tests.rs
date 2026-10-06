@@ -498,6 +498,53 @@ fn only_shooters_with_a_firing_post_and_a_clear_reach_count_toward_the_walls() {
     assert!(drawn < counted, "{drawn} < {counted}");
 }
 
+/// `declaration-waits-for-the-breach`: one gun on the ring satisfies the
+/// breaker hold but not the breach. Live Emperor civvis-20261006T044739Z
+/// (game 194) declared on Vietnam with Dong Hoi behind 200 walls, seven of
+/// ten staged and one gun fit, reading 18.0 turns against 8.7 endurance; the
+/// walls stood at 300 by turn 89 and no city fell. More guns shorten the
+/// reading; a city a melee blow opens needs none.
+#[test]
+fn one_gun_is_at_hand_but_short_of_the_breach() {
+    let (mut g, cid) = medieval_city();
+    g.at_war.remove(&(0, 1));
+    let mut ai = AdvancedAi::targeting(super::super::VictoryTarget::Domination);
+    ai.enable_siege_train();
+    ai.enable_siege_needs_a_breaker();
+    ai.enable_siege_positive_damage_budget();
+    ai.enable_siege_budget_counts_what_fires();
+    let near = at_distance(&g, cid, 3);
+    for pos in near.iter().take(2) {
+        g.spawn_test_unit("man_at_arms", 0, *pos);
+    }
+    g.spawn_test_unit("catapult", 0, near[2]);
+    assert!(
+        ai.declaration_breaker_at_hand(&g, 0, cid),
+        "one gun satisfies the breaker hold"
+    );
+    let (turns, endurance, guns) = ai
+        .declaration_breach_reading(&g, 0, cid)
+        .expect("a walled city reads a budget");
+    assert_eq!(guns, 1);
+    assert!(
+        turns > endurance * DECLARATION_BREACH_SHARE,
+        "one catapult against 200 walls is short of the breach: {turns:.1} turns vs {endurance:.1}"
+    );
+    let far = at_distance(&g, cid, 7);
+    for pos in far.iter().take(3) {
+        g.spawn_test_unit("bombard", 0, *pos);
+    }
+    let (more, _, guns) = ai.declaration_breach_reading(&g, 0, cid).unwrap();
+    assert_eq!(guns, 4, "guns within the muster's reach count");
+    assert!(more < turns, "more guns, a shorter breach: {more:.1} vs {turns:.1}");
+    g.cities.get_mut(&cid).unwrap().wall_hp = 0;
+    assert_eq!(
+        ai.declaration_breach_reading(&g, 0, cid),
+        None,
+        "an open city waits for no gun"
+    );
+}
+
 /// `declaration-waits-for-the-breaker`: a walled objective is breachable
 /// before the war only with a siege gun, or a ram or tower that works on its
 /// walls, on its ring. Live King civvis-20261005T053701Z (game 103) declared
