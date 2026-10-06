@@ -3092,6 +3092,11 @@ pub const GENES: &[Gene] = &[
     // siege stood, 30% hit that city; the rest pillaged or struck units, most
     // nine or more tiles away. See `siege_train::siege_wall_sortie`.
     Gene { tag: "bombers-open-the-siege-walls", field: "bombers_open_the_siege_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_bombers_open_the_siege_walls, disable: AdvancedAi::disable_bombers_open_the_siege_walls },
+    // After a rival's capital fell, a refused "required capital is secure"
+    // peace kept the army on its towns (median 13 siege-turns in the losses
+    // another rival won); the elimination front held on a contender while a
+    // shorter clock ran out. See `capital_moves_on`.
+    Gene { tag: "capital-taken-moves-on", field: "capital_taken_moves_on", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_taken_moves_on, disable: AdvancedAi::disable_capital_taken_moves_on },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

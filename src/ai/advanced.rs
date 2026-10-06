@@ -5396,6 +5396,18 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `capital-taken-moves-on`: once a rival's original capital is ours and
+    /// its "the required capital is secure" peace has been refused for three
+    /// standard turns, the next capital's owner is the second front and is
+    /// declared on without a staged siege (it must pass the version-2 edge);
+    /// and the elimination front yields to a rival whose concrete Science or
+    /// Culture clock runs out clearly before the contender's Diplomatic
+    /// Victory. Over the 10-04..06 control runs the army stayed on a beaten
+    /// rival's towns a median 13 siege-turns in the losses another rival won
+    /// (7 in the wins); Canada was offered that peace 57 times while "the
+    /// Siege row for Uruk asks 489 strength and 0 is staged". See
+    /// `advanced/capital_moves_on.rs`. Off by default.
+    capital_taken_moves_on: bool,
     /// `declaration-needs-the-edge-2`: version 2 of `declaration-needs-the-edge`.
     /// A plain staged declaration passes at
     /// `one_war::DECLARATION_PEAK_EDGE_RATIO` times the target's peak power of
@@ -8510,6 +8522,10 @@ mod siege_train;
 /// down. See `advanced/siege_road.rs`.
 mod siege_road;
 
+/// `capital-taken-moves-on`: a taken capital's army moves on to the next
+/// capital. See `advanced/capital_moves_on.rs`.
+mod capital_moves_on;
+
 /// `march-uses-its-moves`: a march toward a siege ring walks as far as its
 /// movement carries it. See `advanced/march_moves.rs`.
 mod march_moves;
@@ -9524,6 +9540,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            capital_taken_moves_on: false,
             declaration_needs_the_edge_2: false,
             contender_at_peace_is_the_target: false,
             campaign_weighs_the_tourism_leader: false,
@@ -22764,10 +22781,16 @@ impl AdvancedAi {
         // passed the version-2 edge, so no staged siege or Board bill is
         // asked of it.
         let road_opening = self.road_blocker_front(g, pid) == Some(target);
+        // See `capital_moves_on_second_front` (`capital-taken-moves-on`): the
+        // army stands on the beaten rival's towns, the Board writes no Siege
+        // row for a rival at peace, and the next capital's owner has passed
+        // the version-2 edge, so no staged siege is asked of it.
+        let moving_on = self.capital_moves_on_second_front(g, pid) == Some(target);
         let ready = !below_counter_floor
             && (urgent_waiver
                 || faith_counter_due
                 || road_opening
+                || moving_on
                 || if let Some(verdict) = &policy {
                     verdict.is_ok()
                 } else if rushing {
@@ -22879,6 +22902,7 @@ impl AdvancedAi {
         }
         let staged = staged && edge;
         let road_opening_ready = !staged && road_opening;
+        let moving_on_ready = !staged && moving_on;
         if close_enough
             && ready
             && (staged
@@ -22886,7 +22910,8 @@ impl AdvancedAi {
                 || religion_counter_ready
                 || culture_counter_ready
                 || overwhelming_ready
-                || road_opening_ready)
+                || road_opening_ready
+                || moving_on_ready)
         {
             // `coalition_before_war`: invite the target's neighbours to a
             // joint war first, and hold while an answer is due. See
@@ -22927,6 +22952,8 @@ impl AdvancedAi {
                         "an overwhelming army needs no staged siege: the war writes the Siege row that brings it to the ring"
                     } else if road_opening_ready {
                         "its closed borders shut the road to a siege we stood down, and the war opens it"
+                    } else if moving_on_ready {
+                        "the beaten rival's capital is ours and it refuses peace, so the army moves on to the next capital"
                     } else {
                         "the army is staged within reach of the first objective"
                     };

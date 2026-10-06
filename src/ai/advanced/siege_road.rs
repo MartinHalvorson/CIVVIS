@@ -234,7 +234,8 @@ impl AdvancedAi {
         rival: usize,
         plan: &super::StrategicPlan,
     ) -> bool {
-        self.blocker_becomes_the_target
+        // `capital-taken-moves-on` opens the next capital's owner the same way.
+        (self.blocker_becomes_the_target || self.capital_taken_moves_on)
             && !g.is_at_war(pid, rival)
             && plan
                 .target_player
