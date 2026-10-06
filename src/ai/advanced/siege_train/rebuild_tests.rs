@@ -95,3 +95,20 @@ fn siege_rebuild_preserves_real_city_capture_for_normal_maintenance() {
     assert_eq!(ai.sieges[&city].taker, None);
     assert!(ai.sieges[&city].posts.is_empty());
 }
+
+#[test]
+fn the_muster_follows_its_city_through_the_rebuild() {
+    let previous = board(&[(0, (6, 12)), (1, (14, 12)), (1, (18, 12))]);
+    let next = board(&[(1, (14, 12)), (0, (6, 12))]);
+    let old_city = previous.city_at((14, 12)).unwrap();
+    let city = next.city_at((14, 12)).unwrap();
+    assert_ne!(old_city, city);
+    let lost = previous.city_at((18, 12)).unwrap();
+    let mut ai = AdvancedAi::new();
+    ai.stage_muster_ready.insert(old_city, true);
+    ai.stage_muster_closed.insert(old_city, 51);
+    ai.stage_muster_ready.insert(lost, false);
+    ai.remap_siege_memory(&previous, &next, &BTreeMap::new());
+    assert_eq!(ai.stage_muster_ready, [(city, true)].into());
+    assert_eq!(ai.stage_muster_closed, [(city, 51)].into());
+}

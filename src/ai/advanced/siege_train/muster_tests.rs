@@ -221,6 +221,49 @@ fn a_gathered_train_with_a_breaker_reads_ready_to_close() {
     );
 }
 
+/// A close is a commitment for `MUSTER_COMMIT_TURNS`: while the train
+/// still meets the bill with a breaker it keeps closing whatever its budget
+/// reads, so a reading that wavers at its line cannot pull the guns back
+/// before they reach the ring. A lost bill or a breaker hold ends it at
+/// once, and so does the window.
+#[test]
+fn a_close_holds_through_its_commitment_window() {
+    assert!(muster_commitment_holds(Some(30), 34, 5, true, false));
+    assert!(!muster_commitment_holds(Some(30), 35, 5, true, false), "the window ends");
+    assert!(!muster_commitment_holds(Some(30), 31, 5, false, false), "the bill is lost");
+    assert!(!muster_commitment_holds(Some(30), 31, 5, true, true), "a breaker hold");
+    assert!(!muster_commitment_holds(None, 31, 5, true, false), "never closed");
+}
+
+/// The turn a train closes is recorded once, and a train that stays closed
+/// keeps that turn; a train that holds forgets it.
+#[test]
+fn a_close_records_its_turn_and_a_hold_forgets_it() {
+    let (mut g, cid, mut ai, group, plan) = mustered_train(true);
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(ai.stage_muster_ready.get(&cid).copied(), Some(true));
+    assert_eq!(ai.stage_muster_closed.get(&cid).copied(), Some(30));
+    g.turn = 31;
+    ai.sieges.get_mut(&cid).unwrap().assessed = 30;
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(ai.stage_muster_ready.get(&cid).copied(), Some(true));
+    assert_eq!(
+        ai.stage_muster_closed.get(&cid).copied(),
+        Some(30),
+        "still closed: the commitment counts from the first close"
+    );
+
+    let (g, cid, mut ai, group, plan) = mustered_train(false);
+    ai.stage_muster_closed.insert(cid, 29);
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(
+        ai.stage_muster_ready.get(&cid).copied(),
+        Some(false),
+        "a breaker hold ends the commitment"
+    );
+    assert_eq!(ai.stage_muster_closed.get(&cid), None);
+}
+
 #[test]
 fn a_gathered_train_without_a_breaker_holds_however_long_it_waits() {
     let (mut g, cid, mut ai, group, plan) = mustered_train(false);
