@@ -6436,6 +6436,17 @@ impl AdvancedAi {
         self.staging_gun_reads_the_shared_danger = false;
     }
 
+    /// Opt-in gene `urgent-denial-needs-the-edge`; see
+    /// `AdvancedAi::urgent_denial_has_the_edge`.
+    pub fn enable_urgent_denial_needs_the_edge(&mut self) {
+        self.urgent_denial_needs_the_edge = true;
+    }
+
+    /// The twin of `enable_urgent_denial_needs_the_edge`.
+    pub fn disable_urgent_denial_needs_the_edge(&mut self) {
+        self.urgent_denial_needs_the_edge = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

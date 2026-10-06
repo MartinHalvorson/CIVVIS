@@ -3084,6 +3084,10 @@ pub const GENES: &[Gene] = &[
     // sum: each staging gun read every hostile's blow as its own and held
     // behind its train. See `siege_train::stage_gun_danger`.
     Gene { tag: "staging-gun-reads-the-shared-danger", field: "staging_gun_reads_the_shared_danger", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_reads_the_shared_danger, disable: AdvancedAi::disable_staging_gun_reads_the_shared_danger },
+    // Live King G175 declared on Nubia at 1.4 times under the urgent waiver
+    // and was routed within seven turns; staged wars under 1.5 times routed
+    // 13 of 17 on October 4-5. See `one_war::urgent_denial_has_the_edge`.
+    Gene { tag: "urgent-denial-needs-the-edge", field: "urgent_denial_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_urgent_denial_needs_the_edge, disable: AdvancedAi::disable_urgent_denial_needs_the_edge },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

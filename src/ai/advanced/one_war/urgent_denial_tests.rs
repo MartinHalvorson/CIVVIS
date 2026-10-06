@@ -1952,3 +1952,36 @@ fn a_faith_counter_needs_the_edge_under_the_gene() {
     ai.record_rival_power(&g, 0);
     assert!(ai.faith_counter_has_the_edge(&g, 0, 2), "off again");
 }
+
+/// See `urgent_denial_has_the_edge`: under the gene an urgent victory
+/// clock waives the staged war's ratio and edge only at 1.5 times the
+/// rival's steady power. Live King game 175 declared on Nubia at 1.4 times
+/// under the urgent waiver and was routed within seven turns.
+#[test]
+fn an_urgent_denial_needs_the_edge_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    g.found_city_for(0, (6, 18), None);
+    g.at_war.remove(&(0, 2));
+    ai.one_war_observe(&g, 0);
+    let ours = g.military_power(0);
+    ai.enable_prey_reads_a_steady_power();
+    set_power(&mut g, 2, ours / 1.4);
+    ai.record_rival_power(&g, 0);
+    g.turn += 1;
+    ai.record_rival_power(&g, 0);
+    assert!(ai.urgent_denial_has_the_edge(&g, 0, 2), "off: the urgent clock waives the edge");
+    ai.enable_urgent_denial_needs_the_edge();
+    assert!(
+        !ai.urgent_denial_has_the_edge(&g, 0, 2),
+        "1.4 times its steady power is held under the gene"
+    );
+    set_power(&mut g, 2, ours / 1.6);
+    g.turn += PREY_POWER_MEMORY_TURNS;
+    ai.record_rival_power(&g, 0);
+    assert!(ai.urgent_denial_has_the_edge(&g, 0, 2), "1.6 times declares");
+    ai.disable_urgent_denial_needs_the_edge();
+    set_power(&mut g, 2, ours / 1.2);
+    g.turn += PREY_POWER_MEMORY_TURNS;
+    ai.record_rival_power(&g, 0);
+    assert!(ai.urgent_denial_has_the_edge(&g, 0, 2), "off again: 1.2 times declares");
+}

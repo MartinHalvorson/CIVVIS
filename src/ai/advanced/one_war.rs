@@ -1994,6 +1994,20 @@ impl AdvancedAi {
                 >= DECLARATION_EDGE_RATIO * self.steady_rival_power(g, rival).max(1.0)
     }
 
+    /// `urgent-denial-needs-the-edge`: whether a rival's urgent victory clock
+    /// may waive the staged war's ratio and the version-2 edge: always with
+    /// the gene off, and under it at [`DECLARATION_EDGE_RATIO`] times the
+    /// rival's steady power. Live King civvis-20261006T001108Z (game 175)
+    /// declared on Nubia at turn 168 at 1034 against 738 under the urgent
+    /// waiver; our power fell to 547 within seven turns and Nubia won
+    /// diplomatically at 242. October 4-5's staged declarations under 1.5
+    /// times routed 13 of 17.
+    pub(crate) fn urgent_denial_has_the_edge(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        !self.urgent_denial_needs_the_edge
+            || g.military_power(pid)
+                >= DECLARATION_EDGE_RATIO * self.steady_rival_power(g, rival).max(1.0)
+    }
+
     /// `diplomatic-contender-eliminated`: the rival a Domination seat must
     /// eliminate: at war with us and holding cities, at
     /// [`ELIMINATION_CONTENDER_DVP`] Diplomatic Victory points or more, and

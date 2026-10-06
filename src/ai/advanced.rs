@@ -7805,6 +7805,11 @@ pub struct AdvancedAi {
     /// `BasicAi::settler_before_the_navy`.
     settler_before_the_navy: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `urgent-denial-needs-the-edge`: a rival's urgent victory clock waives the
+    /// staged-war ratio and the version-2 edge only at
+    /// `one_war::DECLARATION_EDGE_RATIO` times the rival's steady power. See
+    /// `one_war::urgent_denial_has_the_edge`.
+    urgent_denial_needs_the_edge: bool,
     /// `tower-assault`: a melee member a Siege Tower beside the city lets strike
     /// through the walls storms on the city's health alone. See
     /// `siege_train::tower_bypasses`.
@@ -9886,6 +9891,7 @@ impl AdvancedAi {
 
             settler_before_the_navy: false,
             // ---- append: t-z ----------------------------------------
+            urgent_denial_needs_the_edge: false,
             tower_assault: false,
             tier_gap_priced_once: false,
             war_bill_prices_the_tier_gap: false,
@@ -22737,13 +22743,24 @@ impl AdvancedAi {
         // waives the war ratio but not the floor under it, and a staged bill
         // does not stand in for it either.
         let below_counter_floor = urgent_denial && self.counter_war_hopeless(g, pid, target);
+        // See `urgent_denial_has_the_edge`: under the gene an urgent clock
+        // waives the war ratio and the edge only at 1.5 times the rival's
+        // steady power; short of it the declaration holds like an elective war.
+        let urgent_edge = self.urgent_denial_has_the_edge(g, pid, target);
+        if close_enough && urgent_denial && !urgent_edge {
+            think!(self.journal(), Military, Detail,
+                   "Holding the urgent denial on {}", g.players[target].civ;
+                   "our {my_power:.0} against their {:.0} steady (< {:.1}×): an urgent war short of the edge was routed in G175 and staged wars under 1.5 times routed 13 of 17 on October 4-5",
+                   self.steady_rival_power(g, target), one_war::DECLARATION_EDGE_RATIO);
+        }
+        let urgent_waiver = urgent_denial && urgent_edge;
         // See `road_blocker_front` (`blocker-becomes-the-target`): the army
         // already stands at the border the war opens, and the blocker has
         // passed the version-2 edge, so no staged siege or Board bill is
         // asked of it.
         let road_opening = self.road_blocker_front(g, pid) == Some(target);
         let ready = !below_counter_floor
-            && (urgent_denial
+            && (urgent_waiver
                 || faith_counter_due
                 || road_opening
                 || if let Some(verdict) = &policy {
@@ -22838,7 +22855,7 @@ impl AdvancedAi {
         // See `declaration_has_the_edge`: the plain staged war needs the edge;
         // an urgent clock and the counters' own waivers do not.
         let edge =
-            urgent_denial || faith_counter_due || self.declaration_has_the_edge(g, pid, target);
+            urgent_waiver || faith_counter_due || self.declaration_has_the_edge(g, pid, target);
         if close_enough && ready && staged && !edge {
             if self.declaration_needs_the_edge_2 {
                 let reading = self.declaration_edge_2(g, pid, target);
