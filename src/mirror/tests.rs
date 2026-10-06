@@ -14865,3 +14865,261 @@ fn native_marker_condemn_at_peace_refuses_without_effects() {
     assert!(mirror.game.units.contains_key(&target));
     assert_eq!(mirror.game.cities[&city].pressure, markers);
 }
+
+fn anti_air_mapping_board() -> Snapshot {
+    Snapshot::from_chunks(&[TilesChunk {
+        turn: 200,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: (0..8)
+            .flat_map(|x| (0..8).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+            .collect(),
+    }])
+}
+
+fn anti_air_mapping_unit(kind: &str) -> StateUnit {
+    StateUnit {
+        id: 14352416,
+        kind: kind.to_string(),
+        class: Some("PROMOTION_CLASS_SUPPORT".to_string()),
+        x: 3,
+        y: 3,
+        hp: 100.0,
+        moves: 2.0,
+        max_moves: Some(2.0),
+        ..StateUnit::default()
+    }
+}
+
+#[test]
+fn anti_air_mapping_observations_match_the_supported_production_row() {
+    let rules = crate::rules::Rules::embedded();
+    assert_eq!(
+        civvis_node_name(&rules.units, "UNIT_ANTIAIR_GUN", "UNIT_").as_deref(),
+        Some("anti_air_gun")
+    );
+    assert_eq!(
+        resolved_civvis_unit_name(&rules, "UNIT_ANTIAIR_GUN").as_deref(),
+        Some("anti_air_gun"),
+        "an observed Anti-Air Gun must use the same supported rules row as its production queue"
+    );
+}
+
+#[test]
+fn anti_air_mapping_fresh_construction_preserves_the_defense_profile() {
+    let snapshot = anti_air_mapping_board();
+    let state = StateSnapshot {
+        turn: 200,
+        units: vec![anti_air_mapping_unit("UNIT_ANTIAIR_GUN")],
+        ..StateSnapshot::default()
+    };
+    let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 650, 0);
+    let uid = *rebuilt
+        .unit_ids
+        .iter()
+        .find(|(_, host)| **host == 14352416)
+        .unwrap()
+        .0;
+    let kind = rebuilt.game.units[&uid].kind;
+    assert_eq!(
+        kind.as_str(),
+        "anti_air_gun",
+        "support-class fallback must not turn anti-air defense into a Battering Ram"
+    );
+    assert_eq!(rebuilt.game.rules.units[kind].anti_air_strength, 90.0);
+    assert_eq!(rebuilt.game.rules.units[kind].anti_air_range, 1);
+    assert!(!rebuilt
+        .dropped_units
+        .iter()
+        .any(|s| s.contains("UNIT_ANTIAIR_GUN")));
+}
+
+#[test]
+fn anti_air_mapping_persistent_arrival_is_present_and_survives_refresh() {
+    let snapshot = anti_air_mapping_board();
+    let empty = StateSnapshot {
+        turn: 200,
+        ..StateSnapshot::default()
+    };
+    let mut mirror = LiveMirror::new(&snapshot, &empty, 4, 1, 650, 0);
+    let mut observed = StateSnapshot {
+        turn: 201,
+        units: vec![anti_air_mapping_unit("UNIT_ANTIAIR_GUN")],
+        ..StateSnapshot::default()
+    };
+    mirror.sync(&snapshot, &observed, 0);
+    let uid = *mirror
+        .uid_of
+        .get(&14352416)
+        .expect("a newly exported Anti-Air Gun must not disappear from the persistent board");
+    assert_eq!(mirror.game.units[&uid].kind.as_str(), "anti_air_gun");
+    observed.turn += 1;
+    mirror.sync(&snapshot, &observed, 0);
+    assert_eq!(mirror.uid_of[&14352416], uid);
+    assert_eq!(mirror.game.units[&uid].kind.as_str(), "anti_air_gun");
+    assert!(!mirror.unmapped.iter().any(|s| s == "UNIT_ANTIAIR_GUN"));
+}
+
+#[test]
+fn anti_air_mapping_missing_exact_rule_stays_unresolved() {
+    let mut rules = crate::rules::Rules::embedded();
+    assert!(rules.units.remove("anti_air_gun").is_some());
+    assert!(rules.units.contains_key("battering_ram"));
+    assert_eq!(resolved_civvis_unit_name(&rules, "UNIT_ANTIAIR_GUN"), None);
+}
+
+#[test]
+fn anti_air_mapping_mobile_sam_arrival_keeps_its_existing_exact_name() {
+    let snapshot = anti_air_mapping_board();
+    let mut mirror = LiveMirror::new(
+        &snapshot,
+        &StateSnapshot {
+            turn: 200,
+            ..StateSnapshot::default()
+        },
+        4,
+        1,
+        650,
+        0,
+    );
+    let state = StateSnapshot {
+        turn: 201,
+        units: vec![anti_air_mapping_unit("UNIT_MOBILE_SAM")],
+        ..StateSnapshot::default()
+    };
+    mirror.sync(&snapshot, &state, 0);
+    let uid = mirror.uid_of[&14352416];
+    assert_eq!(mirror.game.units[&uid].kind.as_str(), "mobile_sam");
+    assert!(mirror.game.rules.units["mobile_sam"].anti_air_strength > 0.0);
+}
+
+#[test]
+fn anti_air_mapping_visible_rival_defense_survives_fresh_and_persistent_boards() {
+    let snapshot = anti_air_mapping_board();
+    let mut unit = anti_air_mapping_unit("UNIT_ANTIAIR_GUN");
+    unit.player = 1;
+    let mut state = StateSnapshot {
+        turn: 200,
+        rivals: vec![StateRival {
+            player: 1,
+            civ: "CIVILIZATION_ROME".to_string(),
+            at_war: true,
+            units: vec![unit],
+            ..StateRival::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 650, 0);
+    for turn in [200, 201, 202] {
+        if turn > 200 {
+            state.turn = turn;
+            mirror.sync(&snapshot, &state, 0);
+        }
+        let uid = *mirror
+            .foreign_uid_of
+            .get(&14352416)
+            .expect("a visible rival's Anti-Air Gun must remain on the threat board");
+        let observed = &mirror.game.units[&uid];
+        assert_eq!(observed.kind.as_str(), "anti_air_gun");
+        assert_ne!(observed.owner, 0);
+        assert_eq!(
+            mirror.game.rules.units[observed.kind].anti_air_strength,
+            90.0
+        );
+        assert!(!mirror.unmapped.iter().any(|s| s == "UNIT_ANTIAIR_GUN"));
+    }
+}
+
+#[test]
+fn anti_air_mapping_observed_upgrade_preserves_the_host_identity() {
+    let snapshot = anti_air_mapping_board();
+    let mut state = StateSnapshot {
+        turn: 200,
+        units: vec![anti_air_mapping_unit("UNIT_ANTIAIR_GUN")],
+        ..StateSnapshot::default()
+    };
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 650, 0);
+    let uid = mirror.uid_of[&14352416];
+    assert_eq!(mirror.game.units[&uid].kind.as_str(), "anti_air_gun");
+    state.turn += 1;
+    state.units[0].kind = "UNIT_MOBILE_SAM".to_string();
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.uid_of[&14352416], uid);
+    assert_eq!(mirror.game.units[&uid].kind.as_str(), "mobile_sam");
+    assert_eq!(
+        mirror.game.rules.units["mobile_sam"].anti_air_strength,
+        100.0
+    );
+}
+
+#[test]
+fn anti_air_mapping_unrelated_known_upgrade_updates_without_modeling_payment() {
+    let snapshot = anti_air_mapping_board();
+    let mut state = StateSnapshot {
+        turn: 200,
+        units: vec![anti_air_mapping_unit("UNIT_ARCHER")],
+        ..StateSnapshot::default()
+    };
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 650, 0);
+    let uid = mirror.uid_of[&14352416];
+    state.turn += 1;
+    state.units[0].kind = "UNIT_CROSSBOWMAN".to_string();
+    state.units[0].hp = 43.0;
+    state.units[0].xp = Some(21);
+    state.gold = 77;
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.uid_of[&14352416], uid);
+    assert_eq!(mirror.game.units[&uid].kind.as_str(), "crossbowman");
+    assert_eq!(mirror.game.units[&uid].hp, 43);
+    assert_eq!(mirror.game.units[&uid].xp, 21);
+    assert_eq!(mirror.game.players[0].gold, 77.0);
+}
+
+#[test]
+fn anti_air_mapping_sync_unknown_kind_keeps_the_previous_supported_row() {
+    let snapshot = anti_air_mapping_board();
+    let mut state = StateSnapshot {
+        turn: 200,
+        units: vec![anti_air_mapping_unit("UNIT_ARCHER")],
+        ..StateSnapshot::default()
+    };
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 650, 0);
+    let uid = mirror.uid_of[&14352416];
+    state.turn += 1;
+    state.units[0].kind = "UNIT_UNMODELED_ARCHER".to_string();
+    state.units[0].hp = 43.0;
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.uid_of[&14352416], uid);
+    assert_eq!(mirror.game.units[&uid].kind.as_str(), "archer");
+    assert_eq!(mirror.game.units[&uid].hp, 43);
+}
+
+#[test]
+fn anti_air_mapping_refresh_restores_the_host_type_after_a_modeled_upgrade() {
+    let snapshot = anti_air_mapping_board();
+    let mut unit = anti_air_mapping_unit("UNIT_ANTIAIR_GUN");
+    unit.upgrade_to = Some("UNIT_MOBILE_SAM".to_string());
+    unit.upgrade_cost = Some(120.0);
+    let mut state = StateSnapshot {
+        turn: 200,
+        gold: 300,
+        units: vec![unit],
+        ..StateSnapshot::default()
+    };
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 650, 0);
+    let uid = mirror.uid_of[&14352416];
+    mirror
+        .game
+        .apply(0, &crate::game::Action::UpgradeUnit { unit: uid })
+        .unwrap();
+    assert_eq!(mirror.game.units[&uid].kind.as_str(), "mobile_sam");
+    assert_eq!(mirror.game.players[0].gold, 180.0);
+    // The following host snapshot still reports the gun and its treasury.
+    // A planned action is not evidence that the native upgrade happened.
+    state.turn += 1;
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.uid_of[&14352416], uid);
+    assert_eq!(mirror.game.units[&uid].kind.as_str(), "anti_air_gun");
+    assert_eq!(mirror.game.players[0].gold, 300.0);
+}

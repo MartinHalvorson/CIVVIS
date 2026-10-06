@@ -7487,6 +7487,9 @@ fn civvis_unit_name(civ6: &str) -> String {
         "english_seadog" => "sea_dog".to_string(),
         "german_uboat" => "u_boat".to_string(),
         "american_p51" => "p51_mustang".to_string(),
+        // Firaxis joins "antiair" in UNIT_ANTIAIR_GUN; the supported
+        // rules row uses anti_air_gun, as production lookup already does.
+        "antiair_gun" => "anti_air_gun".to_string(),
         _ => base,
     }
 }
@@ -15297,6 +15300,14 @@ impl LiveMirror {
                 Some(uid) if self.game.units.contains_key(&uid) => {
                     if self.game.units[&uid].pos != pos {
                         self.game.relocate(uid, pos);
+                    }
+                    // A modeled action can change the row before its native verdict.
+                    // Re-read the supported type before movement or observations;
+                    // the host snapshot is authoritative about its capabilities.
+                    if let Some(name) = resolved_civvis_unit_name(&self.game.rules, &unit.kind) {
+                        if let Some(live) = self.game.units.get_mut(&uid) {
+                            live.kind = Name::new(&name);
+                        }
                     }
                     let progress =
                         observed_unit_progress(&self.game.rules, unit, &mut self.unmapped);
