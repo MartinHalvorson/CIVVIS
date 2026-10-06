@@ -3133,6 +3133,12 @@ pub const GENES: &[Gene] = &[
     // in all five at t80/100/120, and in 15 of 23 Science losses of 10-05/06
     // at t110 (tech-count leader 9). See `advanced/science_leader.rs`.
     Gene { tag: "science-leader-is-the-target", field: "science_leader_is_the_target", kind: Kind::OptIn, enable: AdvancedAi::enable_science_leader_is_the_target, disable: AdvancedAi::disable_science_leader_is_the_target },
+    // Emperor G188 (Mapuche, t170) and G192 (Greece, t160) declared the culture
+    // counter at 1.6x: our military 1,062 -> 732 and Greece took 4 of our 10
+    // cities. Of 53 culture/faith counter wars on 10-05/06, those under 2.5x
+    // lost a city 3 times in 27, those over it 0 in 26. G191 embargoed India
+    // with no city located. See `one_war::counter_war_has_the_emperor_edge`.
+    Gene { tag: "counter-war-needs-the-emperor-edge", field: "counter_war_needs_the_emperor_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_war_needs_the_emperor_edge, disable: AdvancedAi::disable_counter_war_needs_the_emperor_edge },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

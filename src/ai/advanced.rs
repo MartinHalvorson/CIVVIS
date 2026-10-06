@@ -5400,6 +5400,17 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `counter-war-needs-the-emperor-edge`: a counter war declared without a
+    /// staged siege -- the culture counter (`culture_counter_due`), the
+    /// faith counter (`faith_counter_due`) and the urgent religion counter --
+    /// needs `one_war::COUNTER_WAR_EMPEROR_EDGE` times the rival's steady
+    /// power, and the culture embargo, the one declaration on a rival with no
+    /// located city, never opens. Emperor G188 declared on the Mapuche at
+    /// 1.6 times and fell from 1,062 to 732 military; G192 on Greece at 1.6
+    /// times and lost four of ten cities by turn 200; G191 embargoed India
+    /// with no Indian city located. See `one_war::counter_war_has_the_emperor_edge`.
+    /// Off by default.
+    counter_war_needs_the_emperor_edge: bool,
     /// `capital-taken-moves-on`: once a rival's original capital is ours and
     /// its "the required capital is secure" peace has been refused for three
     /// standard turns, the next capital's owner is the second front and is
@@ -9593,6 +9604,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            counter_war_needs_the_emperor_edge: false,
             capital_taken_moves_on: false,
             declaration_needs_the_edge_2: false,
             contender_at_peace_is_the_target: false,
@@ -22942,12 +22954,23 @@ impl AdvancedAi {
             && my_power >= target_power;
         // See `faith_counter_has_the_edge`: under the gene the urgent counter
         // needs the edge too, as `faith_counter_due` already does.
-        let faith_edge = self.faith_counter_has_the_edge(g, pid, target);
+        // See `counter_war_has_the_emperor_edge`
+        // (`counter-war-needs-the-emperor-edge`).
+        let faith_edge = self.faith_counter_has_the_edge(g, pid, target)
+            && self.counter_war_has_the_emperor_edge(g, pid, target);
         if close_enough && urgent_religion_counter && !faith_edge {
-            think!(self.journal(), Military, Detail,
-                   "Holding the faith counter on {}", g.players[target].civ;
-                   "{my_power:.0} power against their steady {:.0}: a counter war short of {:.1} times their power took no city in October 4-5's three",
-                   self.steady_rival_power(g, target), one_war::DECLARATION_EDGE_RATIO);
+            if self.faith_counter_has_the_edge(g, pid, target) {
+                // Only `counter-war-needs-the-emperor-edge` holds it.
+                think!(self.journal(), Military, Detail,
+                       "Holding the faith counter on {}", g.players[target].civ;
+                       "{my_power:.0} power against their steady {:.0}: an unstaged counter war needs {:.1} times their power; Emperor G188 and G192 opened theirs at 1.6 and were routed",
+                       self.steady_rival_power(g, target), one_war::COUNTER_WAR_EMPEROR_EDGE);
+            } else {
+                think!(self.journal(), Military, Detail,
+                       "Holding the faith counter on {}", g.players[target].civ;
+                       "{my_power:.0} power against their steady {:.0}: a counter war short of {:.1} times their power took no city in October 4-5's three",
+                       self.steady_rival_power(g, target), one_war::DECLARATION_EDGE_RATIO);
+            }
         }
         let religion_counter_ready = (urgent_religion_counter && faith_edge) || faith_counter_due;
         // See `culture_counter_due`.

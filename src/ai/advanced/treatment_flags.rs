@@ -6535,6 +6535,17 @@ impl AdvancedAi {
         self.science_leader_is_the_target = false;
     }
 
+    /// Opt-in gene `counter-war-needs-the-emperor-edge`; see
+    /// [`Self::counter_war_has_the_emperor_edge`].
+    pub fn enable_counter_war_needs_the_emperor_edge(&mut self) {
+        self.counter_war_needs_the_emperor_edge = true;
+    }
+
+    /// The twin of `enable_counter_war_needs_the_emperor_edge`.
+    pub fn disable_counter_war_needs_the_emperor_edge(&mut self) {
+        self.counter_war_needs_the_emperor_edge = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

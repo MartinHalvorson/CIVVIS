@@ -150,3 +150,69 @@ fn a_staged_army_strikes_instead_of_denouncing_under_the_gene() {
         "under the ratio"
     );
 }
+
+/// See `counter_war_has_the_emperor_edge`: under the gene the culture counter
+/// opens without a staged siege only at 2.5 times the rival's steady power.
+/// Emperor G188 (the Mapuche) and G192 (Greece) declared at 1.6 times and
+/// were routed; at 2.6 times the counter still opens.
+#[test]
+fn the_culture_counter_needs_the_emperor_edge_under_the_gene() {
+    for (ratio, over_the_bar) in [(1.6, false), (2.6, true)] {
+        for gene in [false, true] {
+            let (mut g, mut ai, plan) = fixture(4);
+            let power = Arc::make_mut(&mut g.observed_military_power);
+            power.insert(1, 1000.0);
+            power.insert(0, 1000.0 * ratio);
+            ai.enable_culture_counter_declares();
+            if gene {
+                ai.enable_counter_war_needs_the_emperor_edge();
+            }
+            let opens = !gene || over_the_bar;
+            assert_eq!(
+                ai.counter_war_has_the_emperor_edge(&g, 0, 1),
+                opens,
+                "ratio {ratio} gene {gene}"
+            );
+            assert_eq!(
+                ai.culture_counter_due(&g, 0, 1),
+                opens,
+                "ratio {ratio} gene {gene}"
+            );
+            ai.advanced_diplomacy(&mut g, 0, &plan);
+            assert_eq!(g.is_at_war(0, 1), opens, "ratio {ratio} gene {gene}");
+        }
+    }
+}
+
+/// See `culture_embargo_target`: under `counter-war-needs-the-emperor-edge`
+/// a culture rival with no located city is never declared on, even at four
+/// times its power (Emperor G191, India at turn 160).
+#[test]
+fn an_unlocated_culture_rival_is_not_embargoed_under_the_emperor_edge() {
+    let (mut g, mut ai, plan) = fixture(4);
+    for city in g.player_city_ids(1) {
+        g.cities.remove(&city);
+    }
+    ai.enable_culture_counter_declares();
+    assert_eq!(
+        ai.culture_embargo_target(&g, 0),
+        Some(1),
+        "fixture: the embargo"
+    );
+    ai.enable_counter_war_needs_the_emperor_edge();
+    assert!(
+        ai.counter_war_has_the_emperor_edge(&g, 0, 1),
+        "over the bar"
+    );
+    assert_eq!(ai.culture_embargo_target(&g, 0), None);
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!g.is_at_war(0, 1));
+}
+
+#[test]
+fn counter_war_needs_the_emperor_edge_is_a_native_opt_in_off_in_both_controllers() {
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "counter-war-needs-the-emperor-edge",
+        |ai| ai.counter_war_needs_the_emperor_edge,
+    );
+}
