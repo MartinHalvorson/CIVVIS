@@ -14412,3 +14412,367 @@ fn strategic_trade_catalogue_preserves_public_quantities_and_unknowns() {
         assert_eq!(state.turn, 162);
     }
 }
+
+// Minimized controls from native civvis-20261006T061051Z turn107.
+// The actual 28 MB history and two component contradictions are separately
+// hashed in this research receipt; these fixtures preserve their relative
+// geometry, faith, population, charges and one-spread readback expectations.
+fn native_marker_spread_fixture(
+    pop: i32,
+    charges: i32,
+    dx: i32,
+) -> (Snapshot, StateSnapshot, LiveMirror) {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 107,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: (0..8)
+            .flat_map(|y| (0..8).map(move |x| plot(x, y, "TERRAIN_GRASS")))
+            .collect(),
+    }]);
+    let state = StateSnapshot {
+        turn: 107,
+        seat: Seat {
+            local_player: 0,
+            players: 4,
+            civ: "CIVILIZATION_GRAN_COLOMBIA".to_string(),
+            ..Seat::default()
+        },
+        cities: vec![StateCity {
+            id: 65536,
+            name: "Observed city".to_string(),
+            x: 3,
+            y: 3,
+            pop,
+            capital: true,
+            religion: Some("RELIGION_BUDDHISM".to_string()),
+            ..StateCity::default()
+        }],
+        units: vec![StateUnit {
+            id: 4259862,
+            kind: "UNIT_MISSIONARY".to_string(),
+            x: 3 + dx,
+            y: 4,
+            hp: 100.0,
+            moves: 6.0,
+            max_moves: Some(6.0),
+            religion: Some("RELIGION_CONFUCIANISM".to_string()),
+            spread_charges: Some(charges),
+            ..StateUnit::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 650, 1);
+    (snapshot, state, mirror)
+}
+
+#[test]
+fn native_marker_spread_bogota_cannot_invent_one_charge_conversion() {
+    let (_, _, mut mirror) = native_marker_spread_fixture(11, 2, 0);
+    let city = mirror.cid_of[&65536];
+    let unit = mirror.uid_of[&4259862];
+    mirror
+        .game
+        .apply(0, &crate::game::Action::Spread { unit })
+        .unwrap();
+    assert_eq!(
+        mirror.game.city_religion(&mirror.game.cities[&city]),
+        Some("Buddhism")
+    );
+}
+
+#[test]
+fn native_marker_spread_caracas_cannot_invent_one_charge_conversion() {
+    let (_, _, mut mirror) = native_marker_spread_fixture(8, 3, 1);
+    let city = mirror.cid_of[&65536];
+    let unit = mirror.uid_of[&4259862];
+    mirror
+        .game
+        .apply(0, &crate::game::Action::Spread { unit })
+        .unwrap();
+    assert_eq!(
+        mirror.game.city_religion(&mirror.game.cities[&city]),
+        Some("Buddhism")
+    );
+}
+
+#[test]
+fn native_marker_spread_consumes_charge_without_arithmetic_on_warning_markers() {
+    let (_, _, mut mirror) = native_marker_spread_fixture(11, 2, 0);
+    let city = mirror.cid_of[&65536];
+    let unit = mirror.uid_of[&4259862];
+    let markers = mirror.game.cities[&city].pressure.clone();
+    mirror
+        .game
+        .apply(0, &crate::game::Action::Spread { unit })
+        .unwrap();
+    assert_eq!(mirror.game.units[&unit].charges, 1);
+    assert_eq!(mirror.game.units[&unit].moves_left, 0.0);
+    assert_eq!(mirror.game.cities[&city].pressure, markers);
+}
+
+#[test]
+fn native_marker_spread_cannot_invent_majority_from_religionless_warning_markers() {
+    let (snapshot, mut state, _) = native_marker_spread_fixture(8, 3, 0);
+    state.cities[0].religion = None;
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 650, 1);
+    let city = mirror.cid_of[&65536];
+    let unit = mirror.uid_of[&4259862];
+    assert!(mirror
+        .game
+        .city_religion(&mirror.game.cities[&city])
+        .is_none());
+    mirror
+        .game
+        .apply(0, &crate::game::Action::Spread { unit })
+        .unwrap();
+    assert!(mirror
+        .game
+        .city_religion(&mirror.game.cities[&city])
+        .is_none());
+}
+
+#[test]
+fn native_marker_spread_ai_clone_retains_observation_authority() {
+    let (_, _, mirror) = native_marker_spread_fixture(11, 2, 0);
+    let city = mirror.cid_of[&65536];
+    let unit = mirror.uid_of[&4259862];
+    let mut forecast = mirror.game.player_decision_view(0);
+    forecast
+        .apply(0, &crate::game::Action::Spread { unit })
+        .unwrap();
+    assert_eq!(
+        forecast.city_religion(&forecast.cities[&city]),
+        Some("Buddhism")
+    );
+    assert_eq!(mirror.game.units[&unit].charges, 2);
+}
+
+#[test]
+fn native_marker_spread_saved_mirror_retains_observation_authority() {
+    let (_, _, mirror) = native_marker_spread_fixture(11, 2, 0);
+    let city = mirror.cid_of[&65536];
+    let unit = mirror.uid_of[&4259862];
+    let saved = serde_json::to_value(&mirror.game).unwrap();
+    let mut restored: crate::game::Game = serde_json::from_value(saved).unwrap();
+    restored
+        .apply(0, &crate::game::Action::Spread { unit })
+        .unwrap();
+    assert_eq!(
+        restored.city_religion(&restored.cities[&city]),
+        Some("Buddhism")
+    );
+}
+
+#[test]
+fn native_marker_spread_actual_next_snapshot_can_report_conversion() {
+    let (snapshot, mut state, mut mirror) = native_marker_spread_fixture(11, 2, 0);
+    state.frame = 1;
+    state.cities[0].religion = Some("RELIGION_CONFUCIANISM".to_string());
+    state.units[0].spread_charges = Some(1);
+    state.units[0].moves = 0.0;
+    mirror.sync(&snapshot, &state, 1);
+    let city = mirror.cid_of[&65536];
+    assert_eq!(
+        mirror.game.city_religion(&mirror.game.cities[&city]),
+        Some("Confucianism")
+    );
+}
+
+#[test]
+fn native_marker_spread_headless_pressure_still_converts() {
+    let (snapshot, _, mirror) = native_marker_spread_fixture(11, 2, 0);
+    let city = mirror.cid_of[&65536];
+    let unit = mirror.uid_of[&4259862];
+    let mut headless = rebuild_game(&snapshot, 4, 1);
+    headless.players = mirror.game.players.clone();
+    headless
+        .cities
+        .insert(city, mirror.game.cities[&city].clone());
+    headless
+        .units
+        .insert(unit, mirror.game.units[&unit].clone());
+    // The standard player view rebuilds derived city/unit occupancy indices.
+    headless = headless.player_decision_view(0);
+    headless
+        .apply(0, &crate::game::Action::Spread { unit })
+        .unwrap();
+    assert_eq!(
+        headless.city_religion(&headless.cities[&city]),
+        Some("Confucianism")
+    );
+}
+
+#[test]
+fn native_marker_spread_older_save_without_authority_retains_legacy_pressure_behavior() {
+    let (_, _, mirror) = native_marker_spread_fixture(11, 2, 0);
+    let city = mirror.cid_of[&65536];
+    let unit = mirror.uid_of[&4259862];
+    let mut saved = serde_json::to_value(&mirror.game).unwrap();
+    saved
+        .as_object_mut()
+        .unwrap()
+        .remove("observed_city_religion_markers");
+    let mut restored: crate::game::Game = serde_json::from_value(saved).unwrap();
+    restored
+        .apply(0, &crate::game::Action::Spread { unit })
+        .unwrap();
+    assert_eq!(
+        restored.city_religion(&restored.cities[&city]),
+        Some("Confucianism")
+    );
+}
+
+#[test]
+fn native_marker_spread_without_charges_refuses_without_effects() {
+    let (_, _, mut mirror) = native_marker_spread_fixture(11, 0, 0);
+    let city = mirror.cid_of[&65536];
+    let unit = mirror.uid_of[&4259862];
+    let markers = mirror.game.cities[&city].pressure.clone();
+    assert!(mirror
+        .game
+        .apply(0, &crate::game::Action::Spread { unit })
+        .is_err());
+    assert_eq!(mirror.game.cities[&city].pressure, markers);
+}
+
+// Minimized native107f1 condemnation: own Skirmisher removes the Buddhist
+// Missionary; the cities at distances1 and3 keep their observed majority.
+fn native_marker_condemn_fixture() -> (Snapshot, StateSnapshot, LiveMirror) {
+    let (snapshot, mut state, _) = native_marker_spread_fixture(11, 2, 0);
+    state.frame = 1;
+    state.cities = [(655369, 3, 2), (458758, 1, 5)]
+        .into_iter()
+        .map(|(id, x, y)| StateCity {
+            id,
+            x,
+            y,
+            pop: 5,
+            religion: Some("RELIGION_BUDDHISM".to_string()),
+            ..StateCity::default()
+        })
+        .collect();
+    state.units = vec![StateUnit {
+        id: 4587545,
+        kind: "UNIT_SKIRMISHER".to_string(),
+        x: 3,
+        y: 3,
+        hp: 100.0,
+        moves: 3.0,
+        max_moves: Some(5.0),
+        ..StateUnit::default()
+    }];
+    state.rivals = vec![StateRival {
+        player: 1,
+        civ: "CIVILIZATION_MONGOLIA".to_string(),
+        at_war: true,
+        units: vec![StateUnit {
+            id: 3211264,
+            player: 1,
+            kind: "UNIT_MISSIONARY".to_string(),
+            x: 3,
+            y: 3,
+            hp: 100.0,
+            moves: 4.0,
+            max_moves: Some(4.0),
+            religion: Some("RELIGION_BUDDHISM".to_string()),
+            spread_charges: Some(3),
+            ..StateUnit::default()
+        }],
+        ..StateRival::default()
+    }];
+    let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 650, 1);
+    (snapshot, state, mirror)
+}
+
+fn native_marker_condemn_action(mirror: &LiveMirror) -> crate::game::Action {
+    crate::game::Action::CondemnHeretic {
+        unit: mirror.uid_of[&4587545],
+        target_unit: mirror.foreign_uid_of[&3211264],
+    }
+}
+
+#[test]
+fn native_marker_condemn_valencia_keeps_observed_majority() {
+    let (_, _, mut mirror) = native_marker_condemn_fixture();
+    let city = mirror.cid_of[&655369];
+    let action = native_marker_condemn_action(&mirror);
+    mirror.game.apply(0, &action).unwrap();
+    assert_eq!(
+        mirror.game.city_religion(&mirror.game.cities[&city]),
+        Some("Buddhism")
+    );
+}
+
+#[test]
+fn native_marker_condemn_maracaibo_keeps_observed_majority() {
+    let (_, _, mut mirror) = native_marker_condemn_fixture();
+    let city = mirror.cid_of[&458758];
+    let action = native_marker_condemn_action(&mirror);
+    mirror.game.apply(0, &action).unwrap();
+    assert_eq!(
+        mirror.game.city_religion(&mirror.game.cities[&city]),
+        Some("Buddhism")
+    );
+}
+
+#[test]
+fn native_marker_condemn_removes_body_and_spends_moves_without_marker_arithmetic() {
+    let (_, _, mut mirror) = native_marker_condemn_fixture();
+    let unit = mirror.uid_of[&4587545];
+    let target = mirror.foreign_uid_of[&3211264];
+    let city = mirror.cid_of[&655369];
+    let markers = mirror.game.cities[&city].pressure.clone();
+    let action = native_marker_condemn_action(&mirror);
+    mirror.game.apply(0, &action).unwrap();
+    assert!(!mirror.game.units.contains_key(&target));
+    assert_eq!(mirror.game.units[&unit].moves_left, 0.0);
+    assert!(mirror.game.units[&unit].acted);
+    assert_eq!(mirror.game.cities[&city].pressure, markers);
+}
+
+#[test]
+fn native_marker_condemn_cannot_reduce_observed_city_majority_count() {
+    let (_, _, mut mirror) = native_marker_condemn_fixture();
+    let action = native_marker_condemn_action(&mirror);
+    let count = |game: &crate::game::Game| {
+        game.cities
+            .values()
+            .filter(|city| city.owner == 0 && game.city_religion(city) == Some("Buddhism"))
+            .count()
+    };
+    assert_eq!(count(&mirror.game), 2);
+    mirror.game.apply(0, &action).unwrap();
+    assert_eq!(count(&mirror.game), 2);
+}
+
+#[test]
+fn native_marker_condemn_unmarked_legacy_save_keeps_pressure_simulation() {
+    let (_, _, mirror) = native_marker_condemn_fixture();
+    let city = mirror.cid_of[&655369];
+    let action = native_marker_condemn_action(&mirror);
+    let mut saved = serde_json::to_value(&mirror.game).unwrap();
+    saved
+        .as_object_mut()
+        .unwrap()
+        .remove("observed_city_religion_markers");
+    let mut game: crate::game::Game = serde_json::from_value(saved).unwrap();
+    game.apply(0, &action).unwrap();
+    assert_eq!(game.cities[&city].pressure["Buddhism"], 0.0);
+    assert!(game.city_religion(&game.cities[&city]).is_none());
+}
+
+#[test]
+fn native_marker_condemn_at_peace_refuses_without_effects() {
+    let (snapshot, mut state, _) = native_marker_condemn_fixture();
+    state.rivals[0].at_war = false;
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 650, 1);
+    let action = native_marker_condemn_action(&mirror);
+    let target = mirror.foreign_uid_of[&3211264];
+    let city = mirror.cid_of[&655369];
+    let markers = mirror.game.cities[&city].pressure.clone();
+    assert!(mirror.game.apply(0, &action).is_err());
+    assert!(mirror.game.units.contains_key(&target));
+    assert_eq!(mirror.game.cities[&city].pressure, markers);
+}
