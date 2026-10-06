@@ -6447,6 +6447,17 @@ impl AdvancedAi {
         self.urgent_denial_needs_the_edge = false;
     }
 
+    /// Opt-in gene `capital-taken-moves-on`; see
+    /// `AdvancedAi::capital_moves_on_next`.
+    pub fn enable_capital_taken_moves_on(&mut self) {
+        self.capital_taken_moves_on = true;
+    }
+
+    /// The twin of `enable_capital_taken_moves_on`.
+    pub fn disable_capital_taken_moves_on(&mut self) {
+        self.capital_taken_moves_on = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

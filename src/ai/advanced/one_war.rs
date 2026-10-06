@@ -546,6 +546,14 @@ impl AdvancedAi {
         {
             return Some(contender);
         }
+        // See `capital_moves_on_next` (`capital-taken-moves-on`): once the war
+        // on the next capital's owner is open, it is the front.
+        if let Some(next) = self
+            .capital_moves_on_next(g, pid)
+            .filter(|next| enemies.contains(next) && current != Some(*next))
+        {
+            return Some(next);
+        }
         // `diplomatic-contender-kept-2`: the crushed Diplomatic Victory
         // contender with the most points among the wars already running
         // takes the front ahead of every other clock. See
@@ -2024,6 +2032,14 @@ impl AdvancedAi {
     /// points with 6 cities at 6-8 times less military than ours; Byzantium
     /// took +5 to 19 at t221 and won on Diplomacy at 241.
     pub(crate) fn diplomatic_contender_to_eliminate(&self, g: &Game, pid: usize) -> Option<usize> {
+        // See `elimination_yields_to_a_shorter_clock` (`capital-taken-moves-on`).
+        self.diplomatic_contender_base(g, pid)
+            .filter(|rival| !self.elimination_yields_to_a_shorter_clock(g, pid, *rival))
+    }
+
+    /// `diplomatic_contender_to_eliminate` before `capital-taken-moves-on`'s
+    /// yield to a shorter clock.
+    pub(crate) fn diplomatic_contender_base(&self, g: &Game, pid: usize) -> Option<usize> {
         if !self.diplomatic_contender_eliminated
             || self.forced_target_player.is_some()
             || self.active_victory_target(g) != Some(VictoryTarget::Domination)
@@ -2580,6 +2596,11 @@ impl AdvancedAi {
             .filter(|blocker| *blocker != front)
         {
             return Some(blocker);
+        }
+        // See `capital_moves_on_second_front` (`capital-taken-moves-on`): the
+        // next capital's owner once the beaten rival refuses its peace.
+        if let Some(next) = self.capital_moves_on_second_front(g, pid) {
+            return Some(next);
         }
         // See `diplomatic_contender`: the Diplomatic Victory leader we crush
         // opens the second front at once, the front's refusal or not.

@@ -3088,6 +3088,11 @@ pub const GENES: &[Gene] = &[
     // and was routed within seven turns; staged wars under 1.5 times routed
     // 13 of 17 on October 4-5. See `one_war::urgent_denial_has_the_edge`.
     Gene { tag: "urgent-denial-needs-the-edge", field: "urgent_denial_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_urgent_denial_needs_the_edge, disable: AdvancedAi::disable_urgent_denial_needs_the_edge },
+    // After a rival's capital fell, a refused "required capital is secure"
+    // peace kept the army on its towns (median 13 siege-turns in the losses
+    // another rival won); the elimination front held on a contender while a
+    // shorter clock ran out. See `capital_moves_on`.
+    Gene { tag: "capital-taken-moves-on", field: "capital_taken_moves_on", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_taken_moves_on, disable: AdvancedAi::disable_capital_taken_moves_on },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
