@@ -3145,6 +3145,11 @@ pub const GENES: &[Gene] = &[
     // near Bydgoszcz, walled 400 the next turn. See
     // `siege_train::first_strike_blows`.
     Gene { tag: "unwalled-target-declares-into-the-strike", field: "unwalled_target_declares_into_the_strike", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_target_declares_into_the_strike, disable: AdvancedAi::disable_unwalled_target_declares_into_the_strike },
+    // Live 10-04..06: 1,206 raid orders rode out on turns a siege of ours
+    // stood in Invest or Reduce (63 of 105 games); the raid kept only bodies
+    // within two tiles of the city, so the train's cavalry on its ring rode
+    // off. See `siege_train::siege_needs_the_unit`.
+    Gene { tag: "invest-keeps-its-cavalry", field: "invest_keeps_its_cavalry", kind: Kind::OptIn, enable: AdvancedAi::enable_invest_keeps_its_cavalry, disable: AdvancedAi::disable_invest_keeps_its_cavalry },
     // Live Emperor 10-06: G194 declared on Vietnam at 2.7x with Dong Hoi
     // already behind 200 walls and one gun, its budget 18.0 turns against 8.7
     // endurance; walls 300 by t89 and no city fell. Walled-target wars without

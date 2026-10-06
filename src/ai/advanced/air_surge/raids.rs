@@ -131,6 +131,8 @@ impl AdvancedAi {
                     && !unit.acted
                     && unit.linked_to.is_none()
                     && !g.is_embarked(unit)
+                    // `invest-keeps-its-cavalry`: see `siege_needs_the_unit`.
+                    && !(self.invest_keeps_its_cavalry && self.siege_needs_the_unit(g, pid, *uid))
             })
             .collect();
         for uid in candidates {

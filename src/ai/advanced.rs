@@ -6576,6 +6576,10 @@ pub struct AdvancedAi {
     /// See `BasicAi::front_weighted_floor_2`.
     front_weighted_floor_2: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `invest-keeps-its-cavalry`: the raid planner takes no cavalry from a
+    /// siege that is investing, reducing or taking its city, or whose muster
+    /// has closed. See `siege_train::siege_needs_the_unit`.
+    invest_keeps_its_cavalry: bool,
     /// `guns-grind-the-walls`: a fit siege gun at the ring opens walls the
     /// melee cannot yet touch while the melee keep the staging ring, even
     /// when the whole capture outlasts the train's endurance. See
@@ -9844,6 +9848,7 @@ impl AdvancedAi {
             front_weighted_floor: false,
             front_weighted_floor_2: false,
             // ---- append: g-k ----------------------------------------
+            invest_keeps_its_cavalry: false,
             guns_grind_the_walls: false,
             grinding_sieges: BTreeSet::new(),
             guns_enter_together: false,
@@ -43144,8 +43149,13 @@ impl AdvancedAi {
         // defense to chase a Barbarian Builder into the siege stack, then
         // lost the Warrior. Immediate adjacent captures were handled above;
         // this guard only refuses the multi-tile detour.
+        // `invest-keeps-its-cavalry`: nor does a member an investing siege
+        // counts on (see `siege_train::siege_needs_the_unit`); live Emperor
+        // game 219's Knight 49 marched off after a civilian the turn its
+        // train closed on the Maori capital.
         if self.base.barbarian_settler_capture
             && !holding_threatened_city
+            && !(self.invest_keeps_its_cavalry && self.siege_needs_the_unit(g, pid, uid))
             && self
                 .base
                 .pursue_capturable_civilian(g, pid, uid, decline_settlers)

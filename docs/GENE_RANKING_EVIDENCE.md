@@ -314,6 +314,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `industry-before-the-army-2` | off (unmeasured) | Version 2 of `industry-before-the-army`; see `BasicAi::industry_before_the_army_2`. | — \| 3 |
 | `industry-before-the-army-3` | off (unmeasured) | Version 3 of `industry-before-the-army`; see `BasicAi::industry_before_the_army_3`. | — \| 3 |
 | `industry-in-the-district-list` | off (unmeasured) | The Industrial Zone in the delegated governor's district list; see `BasicAi::industry_in_the_district_list`. | 1 \| 1 |
+| `invest-keeps-its-cavalry` | off (unmeasured) | Opt-in gene `invest-keeps-its-cavalry`; see `Self::invest_keeps_its_cavalry`. | 1 \| 1 |
 | `lane-delegates-production` | off (unmeasured) | Until the development half ends, an assigned lane's cities take the unassigned seat's production dispatch. | — \| 2 |
 | `lane-delegates-production-2` | off (unmeasured) | Version two: an assigned lane's cities take the unassigned seat's production dispatch for the whole game. | — \| 2 |
 | `last-capital-war-kept` | off (unmeasured) | Opt-in gene `last-capital-war-kept`; see `Self::last_capital_war_kept`. | 1 \| 1 |
