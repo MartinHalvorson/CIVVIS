@@ -394,6 +394,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `stalled-peace-spares-the-counter` | off (unmeasured) | Opt-in gene `stalled-peace-spares-the-counter`; see `Self::stalled_peace_spares_the_counter`. | 1 \| 1 |
 | `stranded-settler-leaves-the-corridor` | off (unmeasured) | Opt-in gene `stranded-settler-leaves-the-corridor`; see `Self::stranded_settler_leaves_the_corridor`. | 1 \| 1 |
 | `strategic-deposit-prey` | off (unmeasured) | Opt-in gene `strategic-deposit-prey`; see `Self::strategic_deposit_prey`. | 1 \| 1 |
+| `theater-keeps-its-amphitheater` | off (unmeasured) | Opt-in gene `theater-keeps-its-amphitheater`; see `AdvancedAi::theater_keeps_its_amphitheater`. | 1 \| 1 |
 | `threatened-city-reserve-2` | off (unmeasured) | V2 reserves the engine's local quote for an available defender in the threatened city. | 1 \| 2 |
 | `tier-gap-priced-once` | off (unmeasured) | Opt-in gene `tier-gap-priced-once`; see `Self::tier_gap_priced_once`. | 1 \| 1 |
 | `tier-gap-reads-the-fielded-line` | off (unmeasured) | Opt-in gene `tier-gap-reads-the-fielded-line`; see `Self::tier_gap_reads_the_fielded_line`. | 1 \| 1 |

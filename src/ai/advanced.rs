@@ -7951,6 +7951,27 @@ pub struct AdvancedAi {
     /// `BasicAi::settler_before_the_navy`.
     settler_before_the_navy: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `theater-keeps-its-amphitheater`: a Theater Square the empire has
+    /// already built owes its Amphitheater on every lane, not only Culture.
+    ///
+    /// The Great Work veto in `production_value` returns `-10_000` for any
+    /// building with a Great Work slot unless the victory target is Culture,
+    /// and the Amphitheater carries two Writing slots, so on the Domination
+    /// seat the strategic scorer can never order one -- `culture_building_debt`
+    /// and the Conquest lane's `wartime_infrastructure_debt` both price it
+    /// after the veto has already returned. Live Emperor 2026-10-06 (55
+    /// games): 249 Theater Squares were completed (median turn 122) and 141 of
+    /// them never got an Amphitheater (a median 73 turns standing without
+    /// one); the 108 that did waited a median 35 turns, every one ordered by
+    /// the delegated governor's `pick_item`, none by the scorer. Our culture
+    /// ran 0.25 / 0.23 of the best rival's at turns 100 / 150 (0.87 a
+    /// citizen against the rivals' 2.15). The Amphitheater costs 75 at this
+    /// speed for +2 Culture and a Writer point a turn.
+    ///
+    /// With this on, the veto passes over an Amphitheater in a city that holds
+    /// a Theater Square, so the debts that already price it apply. Art
+    /// Museums, Broadcast Centers and new Theater Squares are untouched.
+    theater_keeps_its_amphitheater: bool,
     /// `unwalled-target-declares-into-the-strike`: an offensive declaration
     /// on an objective with no walls waits until units that can strike it
     /// this turn bring a first-turn blow. See
@@ -10090,6 +10111,7 @@ impl AdvancedAi {
 
             settler_before_the_navy: false,
             // ---- append: t-z ----------------------------------------
+            theater_keeps_its_amphitheater: false,
             unwalled_target_declares_into_the_strike: false,
             unwalled_city_takes_the_swarm: false,
             turn_start_faith: None,
@@ -32528,9 +32550,16 @@ impl AdvancedAi {
                 // assigned lane is lost the refusal costs the empire the
                 // Amphitheatre, the Museum, the Broadcast Centre and every
                 // Great Work slot in the game -- and the score they carry.
+                // See `theater_keeps_its_amphitheater`.
+                let amphitheater_owed = self.theater_keeps_its_amphitheater
+                    && g.building_is_family(building, crate::name!("amphitheater"))
+                    && city.districts.keys().any(|district| {
+                        g.district_family(*district) == crate::name!("theater_square")
+                    });
                 if self.victory_target.is_some()
                     && self.victory_target != Some(VictoryTarget::Culture)
                     && great_work_vetoed
+                    && !amphitheater_owed
                     && !self.domination_defensive_temple(g, pid, cid, item)
                     && !self.lane_lost
                     && !self.culture_floor_lifts_veto(g, pid, spec)
@@ -46583,6 +46612,9 @@ mod domination_solvency_tests;
 
 #[cfg(test)]
 mod industrial_zone_tests;
+
+#[cfg(test)]
+mod theater_amphitheater_tests;
 
 #[cfg(test)]
 mod domination_finish_tests;
