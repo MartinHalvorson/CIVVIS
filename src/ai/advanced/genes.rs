@@ -3206,6 +3206,13 @@ pub const GENES: &[Gene] = &[
     // while 28% of that wait went to new districts, ordinary buildings and
     // district projects. See `BasicAi::campus_buildings_first`.
     Gene { tag: "campus-buildings-first", field: "campus_buildings_first", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_buildings_first, disable: AdvancedAi::disable_campus_buildings_first },
+    // Live Emperor 2026-10-06 (42 games): the first Industrial Zone a median
+    // 40 turns after Apprenticeship (t80 -> t120), a second in 23 games at
+    // t180; none in 29 of 41 games at t100, 1 zone / 1 Workshop / 0 Factories
+    // at t150 at 0.46x the best rival's Production, while the three most
+    // productive cities built soldiers 44% of the turns a zone was placeable.
+    // See `BasicAi::industrial_zone_in_the_producers`.
+    Gene { tag: "industrial-zone-in-the-producers", field: "industrial_zone_in_the_producers", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_zone_in_the_producers, disable: AdvancedAi::disable_industrial_zone_in_the_producers },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
