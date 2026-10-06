@@ -6702,6 +6702,17 @@ impl AdvancedAi {
         self.science_denial_spy_reads_the_leader = false;
     }
 
+    /// Opt-in gene `theater-keeps-its-amphitheater`; see
+    /// `AdvancedAi::theater_keeps_its_amphitheater`.
+    pub fn enable_theater_keeps_its_amphitheater(&mut self) {
+        self.theater_keeps_its_amphitheater = true;
+    }
+
+    /// The twin of `enable_theater_keeps_its_amphitheater`.
+    pub fn disable_theater_keeps_its_amphitheater(&mut self) {
+        self.theater_keeps_its_amphitheater = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

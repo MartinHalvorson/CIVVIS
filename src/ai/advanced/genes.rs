@@ -3221,6 +3221,15 @@ pub const GENES: &[Gene] = &[
     // spy in a non-threat foreign city is re-posted to it. Requires and arms
     // `science-threat-denial`. See `advanced/science_threat_denial.rs`.
     Gene { tag: "science-denial-spy-reads-the-leader", field: "science_denial_spy_reads_the_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denial_spy_reads_the_leader, disable: AdvancedAi::disable_science_denial_spy_reads_the_leader },
+    // `theater-keeps-its-amphitheater` (2026-10-06): the Great Work veto
+    // refused every Amphitheater on the Domination seat, so the strategic
+    // scorer never ordered one. Live Emperor (55 games): 141 of 249 completed
+    // Theater Squares never got an Amphitheater (a median 73 turns standing),
+    // the 108 that did were all `pick_item` orders a median 35 turns late, and
+    // our culture ran 0.23-0.25 of the best rival's. The veto passes over an
+    // Amphitheater in a city that holds a Theater Square. See
+    // `AdvancedAi::theater_keeps_its_amphitheater`.
+    Gene { tag: "theater-keeps-its-amphitheater", field: "theater_keeps_its_amphitheater", kind: Kind::OptIn, enable: AdvancedAi::enable_theater_keeps_its_amphitheater, disable: AdvancedAi::disable_theater_keeps_its_amphitheater },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
