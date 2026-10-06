@@ -2442,7 +2442,11 @@ impl AdvancedAi {
                         >= g.standard_duration(MUSTER_PATIENCE_TURNS)
             });
             let walls_answered = billed && (entry_mustered || grind) && !no_breaker_mustered;
-            let ready = dying || walls_answered || (billed && patience);
+            // The valve needs a breaker: a train with nothing that opens the
+            // walls closes on them for nothing. Live King game 176: Cherson
+            // stood at 400 walls with no gun fit, and the valve closed the
+            // train on it five times ("breaker hold true").
+            let ready = dying || walls_answered || (billed && patience && !no_breaker_mustered);
             let was = self.stage_muster_ready.insert(cid, ready);
             if ready
                 && was == Some(false)
@@ -3276,10 +3280,25 @@ impl AdvancedAi {
         if self.shared_danger {
             field.share(g);
         }
+        // A hostile ranged or siege unit strikes a waiting body every turn and
+        // takes no blow back: no muster stand lies in such a reach, whatever
+        // the danger reading. Live King game 176 lost 24% of its land soldiers
+        // on the six-to-eight-tile line while trains waited there.
+        let ranged_reach = |field: &mut super::battle_planner::DangerField, pos: Pos| {
+            field.contributions(pos, uid).iter().any(|(source, blow)| {
+                *blow > 0.0
+                    && source.is_some_and(|id| {
+                        g.units.get(&id).is_some_and(|unit| {
+                            unit.owner != pid && g.rules.units[unit.kind].has_ranged_attack()
+                        })
+                    })
+            })
+        };
         let risk_here = field.rotation_danger(here, uid);
+        let shot_here = ranged_reach(&mut field, here);
         let distance = g.wdist(here, city.pos);
         let dry = |g: &Game, pos: Pos| dry_stand(g, uid, pos);
-        let mut stands: Vec<(i32, f64, Pos)> = g
+        let candidates: Vec<Pos> = g
             .reachable(uid)
             .into_iter()
             .filter(|pos| {
@@ -3288,9 +3307,14 @@ impl AdvancedAi {
                     && dry(g, *pos)
                     && g.unit_ids_at(*pos).is_empty()
             })
-            .map(|pos| (g.wdist(pos, city.pos), field.rotation_danger(pos, uid), pos))
-            .filter(|(_, risk, _)| *risk <= limit)
             .collect();
+        let mut stands: Vec<(i32, f64, Pos)> = Vec::new();
+        for pos in candidates {
+            let risk = field.rotation_danger(pos, uid);
+            if risk <= limit && !ranged_reach(&mut field, pos) {
+                stands.push((g.wdist(pos, city.pos), risk, pos));
+            }
+        }
         stands.sort_by(|a, b| {
             a.0.cmp(&b.0)
                 .then_with(|| a.1.total_cmp(&b.1))
@@ -3301,7 +3325,7 @@ impl AdvancedAi {
             .get(&city.id)
             .map(|c| c.name.clone())
             .unwrap_or_default();
-        if risk_here > limit {
+        if risk_here > limit || shot_here {
             // Over the line: the nearest safe stand, else the ordinary step.
             let (_, risk, dest) = *stands.first()?;
             let kind = g.units[&uid].kind;
