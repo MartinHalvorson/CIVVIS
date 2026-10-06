@@ -276,6 +276,16 @@ pub(crate) const STALLED_FRONT_SWAP_RATIO: f64 = 3.0;
 /// at which the declaration does not wait for a staged siege. See
 /// `culture_counter_due`.
 pub(crate) const CULTURE_COUNTER_RATIO: f64 = 1.5;
+/// `counter-war-needs-the-emperor-edge`: our military over a rival's steady
+/// power at which a culture or faith counter war opens without a staged
+/// siege. Of the 53 such declarations of October 5-6, the 27 under 2.5
+/// times lost a city of ours within 40 turns 3 times and saw our military
+/// fall by a fifth within 30 turns 5 times; the 26 at 2.5 times or more lost
+/// none and fell twice. Both Emperor counters under 2 times backfired (G188
+/// Mapuche 1.6, G192 Greece 1.6); both at 3 times or more held (G185 France
+/// 3.3, G190 Khmer 4.1). Counter wars took a city in 3 of 27 under the bar
+/// and 3 of 26 over it, so the bar costs little conquest.
+pub(crate) const COUNTER_WAR_EMPEROR_EDGE: f64 = 2.5;
 /// Standard turns the front may refuse the peace that would free the army
 /// before the second front opens beside it.
 pub(crate) const ONE_WAR_SECOND_FRONT_PATIENCE: u32 = 3;
@@ -1216,6 +1226,8 @@ impl AdvancedAi {
             && self.faith_counter_has_the_edge(g, pid, rival)
             // See `faith_at_match_point`.
             && (!self.faith_counter_waits_for_match_point || self.faith_at_match_point(g, rival))
+            // See `counter_war_has_the_emperor_edge`.
+            && self.counter_war_has_the_emperor_edge(g, pid, rival)
     }
 
     /// `faith-counter-waits-for-match-point`: whether `rival`'s faith holds
@@ -1263,6 +1275,29 @@ impl AdvancedAi {
             && self.urgent_victory_threat(g, rival)
             && self.culture_lane_threat(g, rival)
             && g.military_power(pid) >= CULTURE_COUNTER_RATIO * g.military_power(rival).max(1.0)
+            // See `counter_war_has_the_emperor_edge`.
+            && self.counter_war_has_the_emperor_edge(g, pid, rival)
+    }
+
+    /// `counter-war-needs-the-emperor-edge`: whether a counter war that opens
+    /// without a staged siege may open on `rival`: always with the gene off,
+    /// and under it at [`COUNTER_WAR_EMPEROR_EDGE`] times the rival's steady
+    /// power (`steady_rival_power`). Emperor G188
+    /// (civvis-20261006T031849Z) declared the culture counter on the
+    /// Mapuche at turn 170 at 1,062 against 662; our military stood at 732
+    /// thirty turns on and 320 by 225, the Mapuche's at 1,659. G192
+    /// (civvis-20261006T041656Z) declared it on Greece at 160 at 1,075
+    /// against 693; ours was 454 ten turns on, Greece rebuilt to 1,732 by
+    /// 190 and held four of our ten cities by 200.
+    pub(crate) fn counter_war_has_the_emperor_edge(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> bool {
+        !self.counter_war_needs_the_emperor_edge
+            || g.military_power(pid)
+                >= COUNTER_WAR_EMPEROR_EDGE * self.steady_rival_power(g, rival).max(1.0)
     }
 
     /// `culture-counter-declares`: a culture rival at match point, at peace
@@ -1274,8 +1309,15 @@ impl AdvancedAi {
     /// between turns 140 and 174 against our 45 to 89 domestic, and it won
     /// on Culture at 175 at peace with us. In game 61 Norway's Tourism rose
     /// from 266 to 404 within six turns of a peace.
+    ///
+    /// `counter-war-needs-the-emperor-edge`: never under the gene. Emperor
+    /// G191 (civvis-20261006T040519Z) embargoed India at turn 160, "their
+    /// culture race reads 80% and no city of theirs is located", at 448
+    /// military against 331; by the Culture loss at 188 India's stood at 541
+    /// and ours at 405, and no siege could follow a war with no objective.
+    /// Over October 5-6 the five embargo wars took no city.
     pub(crate) fn culture_embargo_target(&self, g: &Game, pid: usize) -> Option<usize> {
-        if !self.culture_counter_declares {
+        if !self.culture_counter_declares || self.counter_war_needs_the_emperor_edge {
             return None;
         }
         g.players

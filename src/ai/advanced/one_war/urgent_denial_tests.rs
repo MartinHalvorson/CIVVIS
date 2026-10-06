@@ -1985,3 +1985,28 @@ fn an_urgent_denial_needs_the_edge_under_the_gene() {
     ai.record_rival_power(&g, 0);
     assert!(ai.urgent_denial_has_the_edge(&g, 0, 2), "off again: 1.2 times declares");
 }
+
+/// See `counter_war_has_the_emperor_edge`: under the gene the faith counter
+/// opens without a staged siege only at 2.5 times the rival's steady power;
+/// twice its power is not enough.
+#[test]
+fn a_faith_counter_needs_the_emperor_edge_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    g.found_city_for(0, (6, 18), None);
+    g.at_war.remove(&(0, 2));
+    convert(&mut g, &[0, 2]);
+    ai.one_war_observe(&g, 0);
+    let ours = g.military_power(0);
+    set_power(&mut g, 2, ours / 2.0);
+    assert!(ai.faith_counter_due(&g, 0, 2), "off: twice its power");
+    assert!(ai.counter_war_has_the_emperor_edge(&g, 0, 2), "off");
+    ai.enable_counter_war_needs_the_emperor_edge();
+    assert!(
+        !ai.counter_war_has_the_emperor_edge(&g, 0, 2),
+        "twice its power"
+    );
+    assert!(!ai.faith_counter_due(&g, 0, 2));
+    set_power(&mut g, 2, ours / 2.6);
+    assert!(ai.counter_war_has_the_emperor_edge(&g, 0, 2), "2.6 times");
+    assert!(ai.faith_counter_due(&g, 0, 2));
+}
