@@ -33,6 +33,7 @@ fn native_gp_unknown_merchant_does_not_pay_crassus_gold() {
         "recruiting a physical unit is not an activation"
     );
     assert_eq!(game.players[0].gpp["merchant"], 0.0);
+    assert_eq!(game.players[0].gp_claimed["merchant"], 1);
     assert!(
         game.players[0].great_people.is_empty(),
         "the unrelated modeled person was not retired"
@@ -91,6 +92,7 @@ fn native_gp_patronage_deducts_currency_without_an_activation_reward() {
             5_000.0 - if currency == "faith" { price } else { 0.0 }
         );
         assert_eq!(game.players[0].gpp["merchant"], 0.0);
+        assert_eq!(game.players[0].gp_claimed["merchant"], 1);
         assert!(game.players[0].great_people.is_empty());
         assert!(!game.great_person_class_offered_now(0, "merchant"));
         assert_eq!(
@@ -136,6 +138,7 @@ fn native_gp_rejected_recruitment_keeps_currency_points_and_offer() {
         assert!(recruit(&mut game, "merchant").is_err());
         assert_eq!(game.players[0].gold, 200.0);
         assert_eq!(game.players[0].gpp["merchant"], points);
+        assert!(!game.players[0].gp_claimed.contains_key("merchant"));
         assert!(game.great_person_class_offered_now(0, "merchant"));
         assert!(game.retired_great_people.is_empty());
     }
@@ -196,6 +199,7 @@ fn native_gp_failed_patronage_does_not_consume_the_offer() {
         assert_eq!(game.players[0].gold, 1.0);
         assert_eq!(game.players[0].faith, 1.0);
         assert_eq!(game.players[0].gpp["merchant"], cost - 10.0);
+        assert!(!game.players[0].gp_claimed.contains_key("merchant"));
         assert!(game.great_person_class_offered_now(0, "merchant"));
         assert_eq!(
             game.live_great_person_offer_individual(0, "merchant"),

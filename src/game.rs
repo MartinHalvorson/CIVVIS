@@ -16563,6 +16563,10 @@ impl Game {
             // Consume only this observed offer so the same plan cannot buy
             // another local individual before the native timeline refreshes.
             offers.remove(kind);
+            *self.players[pid]
+                .gp_claimed
+                .entry(kind.to_string())
+                .or_insert(0) += 1;
             let individual = self
                 .live_great_person_offer_individual(pid, kind)
                 .unwrap_or(kind)
