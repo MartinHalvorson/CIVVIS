@@ -102,6 +102,36 @@ impl AdvancedAi {
         }
     }
 
+    /// `siege-buys-the-passage`: the majors at peace with us whose closed
+    /// borders held a Stage march this turn or last — the passage the
+    /// bridge's open-borders purchase asks for first. In 35 of 120 live
+    /// Emperor runs of 10-06/07 a siege march held short of a third major's
+    /// closed borders, 102 city-holds with the water crossing round them a
+    /// median 19 steps (a quarter of them 27 or more), and 1 of those
+    /// cities fell. civvis-20261007T063655Z (game 321) stood 17-18 units
+    /// short of Persia's borders for 44 turns while Japan, behind them, held
+    /// three cities on two military units. The bridge's purchase closed 42
+    /// of 47 asks on 10-07, but asked only for exploration. Empty with the
+    /// gene off, or with `siege-target-needs-a-road` off (which records the
+    /// blocker).
+    pub fn siege_passage_blockers(&self, g: &Game, pid: usize) -> BTreeSet<usize> {
+        if !self.siege_buys_the_passage {
+            return BTreeSet::new();
+        }
+        self.siege_road_tally
+            .values()
+            .filter(|tally| tally.turn + 1 >= g.turn)
+            .flat_map(|tally| tally.held.values().flatten().copied())
+            .filter(|owner| {
+                *owner != pid
+                    && g.players.get(*owner).is_some_and(|player| {
+                        player.alive && !player.is_minor && !player.is_barbarian
+                    })
+                    && !g.is_at_war(pid, *owner)
+            })
+            .collect()
+    }
+
     /// `siege-target-needs-a-road`: the end-of-turn reading. Called by
     /// `reconcile_commitments` after the capture ledger is read; stands the
     /// open capture down when its train has been held for want of a road
@@ -389,6 +419,31 @@ mod tests {
             ai.reconcile_commitments(g, 0);
             g.turn += 1;
         }
+    }
+
+    /// `siege-buys-the-passage`: a march held short of a major's closed
+    /// borders names that major as the passage to buy, while we are at peace
+    /// with it and for a turn after the hold; the gene off, nobody.
+    #[test]
+    fn a_held_march_names_the_passage_to_buy_under_the_gene() {
+        let (g, target, soldier) = strip();
+        let hold = StageMarch::Hold { wet: 30 };
+        let mut off = ai(true, &g, target);
+        let _ = off.note_stage_march(&g, soldier, target, &hold);
+        assert!(off.siege_passage_blockers(&g, 0).is_empty(), "off");
+        let mut on = ai(true, &g, target);
+        on.enable_siege_buys_the_passage();
+        let _ = on.note_stage_march(&g, soldier, target, &hold);
+        assert_eq!(on.siege_passage_blockers(&g, 0), [1].into(), "the screen's owner");
+        let mut later = g.clone();
+        later.turn += 1;
+        assert_eq!(on.siege_passage_blockers(&later, 0), [1].into(), "a turn on");
+        later.turn += 1;
+        assert!(on.siege_passage_blockers(&later, 0).is_empty(), "stale");
+        let mut war = g.clone();
+        war.at_war.insert((0, 1));
+        war.at_war.insert((1, 0));
+        assert!(on.siege_passage_blockers(&war, 0).is_empty(), "no purchase at war");
     }
 
     /// A target whose only land road runs through closed borders is stood

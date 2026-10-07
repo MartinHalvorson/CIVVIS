@@ -7411,6 +7411,10 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-buys-the-passage`: the bridge's open-borders purchase also
+    /// asks the major whose closed borders hold a siege march. See
+    /// `siege_road::siege_passage_blockers`.
+    siege_buys_the_passage: bool,
     /// `siege-train-upgrades-first`: the Domination upgrade pass spends on
     /// the units of the train bound for the campaign's objective or an
     /// active siege before any other. See `siege_train::upgrade_for_the_train`.
@@ -9897,6 +9901,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_buys_the_passage: false,
             siege_train_upgrades_first: false,
             siege_target_needs_a_road: false,
             siege_road_tally: BTreeMap::new(),

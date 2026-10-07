@@ -2478,6 +2478,26 @@ const BORDER_BUY_CEILING_MAX: i32 = 180;
 const BORDER_BUY_CADENCE: u32 = 6;
 const BORDER_BUY_PHASE: u32 = 1;
 const BORDER_BUY_EXPLORER_APPROACH: i32 = 4;
+/// `siege-buys-the-passage`: the Gold a siege's passage is worth to the
+/// purchase, under `BORDER_BUY_CEILING_MAX`; a train held short of closed
+/// borders for 4-37 turns costs more than this in lost turns.
+const SIEGE_PASSAGE_GOLD: f64 = 150.0;
+/// `siege-buys-the-passage`: the explorer count a siege's blocker is ranked
+/// at, so its passage comes before any exploration gate.
+const SIEGE_PASSAGE_PRIORITY: usize = 1_000;
+
+/// `siege-buys-the-passage`: rank each major whose closed borders hold a
+/// siege march ahead of every exploration gate, whether or not an explorer
+/// stands by it.
+fn add_siege_passage_targets(
+    targets: &mut std::collections::BTreeMap<usize, BorderExplorationPriority>,
+    blockers: &std::collections::BTreeSet<usize>,
+) {
+    for seat in blockers {
+        let priority = targets.entry(*seat).or_default();
+        priority.explorers = priority.explorers.max(SIEGE_PASSAGE_PRIORITY);
+    }
+}
 const BORDER_BUY_FRONTIER_RADIUS: i32 = 5;
 
 /// The evidence that one rival's closed border is a useful exploration gate.
@@ -4609,17 +4629,26 @@ fn decide(
     // we have never seen is worth more than the tourism book (28 Gold for a
     // seat with no tourism, under the lane's 30 Gold minimum ask). See
     // `AdvancedAi::find_the_capital_passage_gold`.
+    // `siege-buys-the-passage`: the majors whose closed borders hold a
+    // siege march this turn or last. See `AdvancedAi::siege_passage_blockers`.
+    let siege_blockers = ai.siege_passage_blockers(&mirror_state.game, 0);
     let passage_value = |seat: usize| {
         let book = mirror_state.game.passage_gold_value(0);
+        let book = if siege_blockers.contains(&seat) {
+            book.max(SIEGE_PASSAGE_GOLD)
+        } else {
+            book
+        };
         ai.find_the_capital_passage_gold(&mirror_state.game, 0, seat)
             .map_or(book, |floor| book.max(floor))
     };
-    let exploration_targets = border_buy_exploration_targets(
+    let mut exploration_targets = border_buy_exploration_targets(
         snapshot,
         state,
         &mirror_state.game,
         &mirror_state.game.sealed_border_owners,
     );
+    add_siege_passage_targets(&mut exploration_targets, &siege_blockers);
     match append_border_buy_order(
         &mirror_state.game.sealed_border_owners,
         &exploration_targets,
@@ -16781,6 +16810,58 @@ mod tests {
             assert_eq!(conflict.len(), 1);
             assert_eq!(conflict[0].kind, kind);
         }
+    }
+
+    #[test]
+    fn a_siege_blocker_passage_is_bought_before_an_exploration_gate() {
+        // `siege-buys-the-passage`: seat 2 has the explorers, seat 1 none, but
+        // seat 1's closed borders hold a siege march, so its passage is asked
+        // first; without the blocker the explorers' seat wins as before.
+        let state = StateSnapshot {
+            turn: 91,
+            gold: 200,
+            civics: vec![
+                "CIVIC_CODE_OF_LAWS".to_string(),
+                "CIVIC_EARLY_EMPIRE".to_string(),
+            ],
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 4,
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let sealed_by: std::collections::BTreeMap<usize, u32> =
+            [(1, 9), (2, 21)].into_iter().collect();
+        let exploration: std::collections::BTreeMap<usize, BorderExplorationPriority> = [(
+            2,
+            BorderExplorationPriority {
+                explorers: 2,
+                frontier_tiles: 1,
+            },
+        )]
+        .into_iter()
+        .collect();
+        let mut plain = Vec::new();
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &exploration, &state, &mut plain, &|_| 40.0),
+            None
+        );
+        assert_eq!(plain[0].subject, Some(4), "no blocker: the explorers' seat");
+        let mut sieged = exploration.clone();
+        add_siege_passage_targets(&mut sieged, &[1].into_iter().collect());
+        let mut orders = Vec::new();
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &sieged, &state, &mut orders, &|_| 40.0),
+            None
+        );
+        assert_eq!(orders[0].subject, Some(2), "the siege's blocker first");
+        assert_eq!(orders[0].verb.as_deref(), Some("OPEN_BORDERS"));
     }
 
     #[test]
