@@ -187,6 +187,11 @@ impl AdvancedAi {
         if let Some(threat) = self.adopted_faith_threat(g, pid) {
             return Some(threat);
         }
+        // `counterweight-from-the-first-convert`: the source starts at the
+        // first city the threat takes.
+        if let Some(threat) = self.first_convert_threat(g, pid) {
+            return Some(threat);
+        }
         if self.active_victory_target(g) != Some(VictoryTarget::Domination)
             || !g.victory_conditions.religious
             || g.players[pid].religion.is_some()
@@ -329,13 +334,15 @@ impl AdvancedAi {
         // Waiting for a Missionary's purchase budget can let conversion or
         // another specialty district close the last recruitment site first.
         // The eventual unit purchase still checks the actual faith balance.
-        let eligible = g
+        let free = |cid: &u32| {
+            Some(*cid) != threatened
+                && !(self.sanctuary_yields_a_held_queue && self.sanctuary_queue_held(g, pid, *cid))
+        };
+        let mut eligible = g
             .player_city_ids(pid)
             .into_iter()
             .filter(|cid| {
-                Some(*cid) != threatened
-                    && !(self.sanctuary_yields_a_held_queue
-                        && self.sanctuary_queue_held(g, pid, *cid))
+                free(cid)
                     && g.city_religion(&g.cities[cid]).is_some_and(|faith| {
                         if let Some(own) = founded {
                             faith == own
@@ -345,6 +352,17 @@ impl AdvancedAi {
                     })
             })
             .collect::<Vec<_>>();
+        // `counterweight-from-the-first-convert`: with no city on a safe
+        // counterfaith, a city that follows no religion yet takes the
+        // sanctuary, so a source stands when a safe faith arrives.
+        if founded.is_none() && eligible.is_empty() && self.first_convert_sanctuary_fallback(g, pid)
+        {
+            eligible = g
+                .player_city_ids(pid)
+                .into_iter()
+                .filter(|cid| free(cid) && g.city_religion(&g.cities[cid]).is_none())
+                .collect();
+        }
         // See `founder_wants_a_second_source`: under the gene a founder stops
         // at two sources, not at the first.
         let second_source = founded.is_some() && self.founder_wants_a_second_source(g, pid);

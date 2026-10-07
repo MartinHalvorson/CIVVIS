@@ -6848,6 +6848,17 @@ impl AdvancedAi {
         self.prophet_builds_its_site = false;
     }
 
+    /// Opt-in gene `counterweight-from-the-first-convert`; see
+    /// [`Self::first_convert_threat`] and [`Self::counterweight_need_for`].
+    pub fn enable_counterweight_from_the_first_convert(&mut self) {
+        self.counterweight_from_the_first_convert = true;
+    }
+
+    /// The twin of `enable_counterweight_from_the_first_convert`.
+    pub fn disable_counterweight_from_the_first_convert(&mut self) {
+        self.counterweight_from_the_first_convert = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

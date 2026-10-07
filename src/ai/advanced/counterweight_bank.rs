@@ -47,7 +47,8 @@ impl AdvancedAi {
     }
 
     fn counterweight_bank_applies(&self, g: &Game, pid: usize) -> bool {
-        self.counterweight_spends_the_bank
+        // `counterweight-from-the-first-convert` carries the bank with it.
+        (self.counterweight_spends_the_bank || self.counterweight_from_the_first_convert)
             && self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && g.victory_conditions.religious
             && g.players[pid].religion.is_none()
@@ -67,7 +68,8 @@ impl AdvancedAi {
         if !self.counterweight_bank_applies(g, pid) {
             return shipped;
         }
-        match Self::counterweight_need(g, pid, threat) {
+        // See `counterweight_need_for` (`counterweight-from-the-first-convert`).
+        match self.counterweight_need_for(g, pid, threat) {
             0 => shipped,
             need => shipped.max(need + 1),
         }
@@ -96,10 +98,15 @@ impl AdvancedAi {
         if !self.counterweight_bank_applies(g, pid) {
             return 0.0;
         }
-        let Some(threat) = self.adopted_faith_threat(g, pid) else {
+        // `counterweight-from-the-first-convert`: the first convert's threat
+        // when no faith holds our majority yet.
+        let Some(threat) = self
+            .adopted_faith_threat(g, pid)
+            .or_else(|| self.first_convert_threat(g, pid))
+        else {
             return 0.0;
         };
-        let need = Self::counterweight_need(g, pid, &threat);
+        let need = self.counterweight_need_for(g, pid, &threat);
         if need == 0 {
             return 0.0;
         }

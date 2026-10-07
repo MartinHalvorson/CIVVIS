@@ -247,6 +247,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `counter-war-needs-the-emperor-edge` | off (unmeasured) | Opt-in gene `counter-war-needs-the-emperor-edge`; see `Self::counter_war_has_the_emperor_edge`. | 1 \| 1 |
 | `counterfaith-leaves-two-holdouts` | off (unmeasured) | Opt-in gene `counterfaith-leaves-two-holdouts`; see `Self::counterfaith_is_safe`. | 1 \| 1 |
 | `counterweight-faith-is-no-threat` | off (unmeasured) | Opt-in gene `counterweight-faith-is-no-threat`; see `Self::counterweight_faith_is_no_threat`. | 1 \| 1 |
+| `counterweight-from-the-first-convert` | off (unmeasured) | Opt-in gene `counterweight-from-the-first-convert`; see `Self::first_convert_threat` and `Self::counterweight_need_for`. | 1 \| 1 |
 | `counterweight-spends-the-bank` | off (unmeasured) | Opt-in gene `counterweight-spends-the-bank`; see `advanced/counterweight_bank.rs`. | 1 \| 1 |
 | `culture-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 2 \| 3 |
 | `culture-counter-declares` | off (unmeasured) | Opt-in gene `culture-counter-declares`; see `Self::culture_counter_declares`. | 1 \| 1 |

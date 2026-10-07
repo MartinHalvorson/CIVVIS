@@ -3318,6 +3318,14 @@ pub const GENES: &[Gene] = &[
     // race kept paying. The site comes with the Prophet; the race closes with
     // the class. See `prophet_site::prophet_site_due`.
     Gene { tag: "prophet-builds-its-site", field: "prophet_builds_its_site", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_builds_its_site, disable: AdvancedAi::disable_prophet_builds_its_site },
+    // `counterweight-from-the-first-convert`: in the 12 faithless Religious
+    // defeats of the October 6-7 Emperor runs our first city followed the
+    // winner's faith at a median turn 68 and the majority fell at 85, while
+    // the counterweight waited for the majority; a source existed in 6 of
+    // the 12 and a median ~400 Faith went unspent. The cap, the reserve and
+    // the sanctuary start at the first convert. See
+    // `counterweight_first_convert::first_convert_threat`.
+    Gene { tag: "counterweight-from-the-first-convert", field: "counterweight_from_the_first_convert", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_from_the_first_convert, disable: AdvancedAi::disable_counterweight_from_the_first_convert },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

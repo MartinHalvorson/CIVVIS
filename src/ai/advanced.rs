@@ -5405,6 +5405,19 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `counterweight-from-the-first-convert`: a faithless Domination seat's
+    /// counterweight starts at the first city of ours a threatening faith
+    /// takes (one at the religious early-warning bar, or holding all but one
+    /// other major): the counterweight need is every city it holds, so the
+    /// Missionary cap and the Faith reserve rise from that first convert, and
+    /// the Holy Site and Shrine sanctuary starts then, in a city that follows
+    /// no religion when none follows a safe counterfaith. Of the 12 faithless
+    /// Religious defeats among the 17 of the October 6-7 Emperor runs, the
+    /// first convert came at a median turn 68 and the majority fell at 85; a
+    /// counterweight source existed in only 6 of the 12, and the median
+    /// Faith left unspent was ~400. See
+    /// `advanced/counterweight_first_convert.rs`. Off by default.
+    counterweight_from_the_first_convert: bool,
     /// `counter-war-needs-the-emperor-edge`: a counter war declared without a
     /// staged siege -- the culture counter (`culture_counter_due`), the
     /// faith counter (`faith_counter_due`) and the urgent religion counter --
@@ -9826,6 +9839,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            counterweight_from_the_first_convert: false,
             counter_war_needs_the_emperor_edge: false,
             declaration_hold_seen: 0,
             declaration_waits_for_the_breach: false,
@@ -25584,7 +25598,7 @@ impl AdvancedAi {
                     think!(self.journal(), Faith, Decision,
                         "{} buys counterweight Missionary {} of {}", g.cities[&cid].name, defenders + 1, cap;
                         "counterweight-spends-the-bank: {} holds our majority, and {} of our cities must leave it before that majority breaks",
-                        threat, Self::counterweight_need(g, pid, threat));
+                        threat, self.counterweight_need_for(g, pid, threat));
                 }
                 return;
             }
@@ -46977,6 +46991,11 @@ mod inquisition_first;
 mod founder_faith;
 
 mod counterweight_bank;
+
+/// `counterweight-from-the-first-convert`: the counterweight from the first
+/// converted city, and its source. See
+/// `advanced/counterweight_first_convert.rs`.
+mod counterweight_first_convert;
 
 mod commercial_routes;
 
