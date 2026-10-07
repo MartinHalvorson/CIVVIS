@@ -3251,6 +3251,16 @@ pub const GENES: &[Gene] = &[
     // `urban-planning-fills-the-slot`: Urban Planning is wanted at the tail
     // of every portfolio, so it fills a slot no wanted card holds.
     Gene { tag: "urban-planning-fills-the-slot", field: "urban_planning_fills_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_urban_planning_fills_the_slot, disable: AdvancedAi::disable_urban_planning_fills_the_slot },
+    // `growth-prices-the-farm`: 122 Emperor runs: our cities hold 5.1 citizens
+    // against the best rival's 8.6; 52-60% sit within one of their Housing and
+    // grow 1.19 citizens in 20 turns against 1.91 with room; 19-30% have no
+    // Food surplus and grow 0.50. Builders laid 6.1 Mines to 4.3 Farms a run by
+    // turn 100 because the Farm's Housing was never priced and Food weighs 1.2
+    // to Production's 2.8 under Conquest. In a city below 12 citizens an
+    // improvement's Housing is worth 6.0 a point while the city is Housing-bound
+    // and its Food a further 1.6 while the surplus is at most one. See
+    // `advanced/growth_farm.rs`.
+    Gene { tag: "growth-prices-the-farm", field: "growth_prices_the_farm", kind: Kind::OptIn, enable: AdvancedAi::enable_growth_prices_the_farm, disable: AdvancedAi::disable_growth_prices_the_farm },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

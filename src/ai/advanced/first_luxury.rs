@@ -210,6 +210,9 @@ impl AdvancedAi {
     ) -> f64 {
         self.improvement_value(g, pos, improvement, strategy)
             + self.first_luxury_premium(g, pid, pos, improvement)
+            // `growth-prices-the-farm`: zero with the gene off. See
+            // `advanced/growth_farm.rs`.
+            + self.growth_farm_premium(g, pid, pos, improvement)
     }
 
     /// Journal an improvement the premium decided, once, after the engine has

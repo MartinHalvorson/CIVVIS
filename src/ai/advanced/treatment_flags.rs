@@ -6760,6 +6760,17 @@ impl AdvancedAi {
         self.urban_planning_fills_the_slot = false;
     }
 
+    /// Opt-in gene `growth-prices-the-farm`; see
+    /// `AdvancedAi::growth_prices_the_farm`.
+    pub fn enable_growth_prices_the_farm(&mut self) {
+        self.growth_prices_the_farm = true;
+    }
+
+    /// The twin of `enable_growth_prices_the_farm`.
+    pub fn disable_growth_prices_the_farm(&mut self) {
+        self.growth_prices_the_farm = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
