@@ -7550,6 +7550,14 @@ pub struct AdvancedAi {
     /// stands between our tech and its better siege gun from a met major's
     /// trade screen. See `gun_resource::siege_gun_resource_wants`.
     siege_buys_the_gun_resource: bool,
+    /// `surge-fields-the-bombers`: the air surge fields its wing. The
+    /// production pass cannot spend the air plan's reserved airfield slot
+    /// (every governor, not only the strategic scorer), the airfield goes to
+    /// the city that also trains the launch wing fastest, a second field may
+    /// carry the whole wing rather than only the launch pair, and an
+    /// airfield city buys a Bomber when the treasury carries it. See
+    /// `air_surge::bomber_wing`.
+    surge_fields_the_bombers: bool,
     /// `siege-train-upgrades-first`: the Domination upgrade pass spends on
     /// the units of the train bound for the campaign's objective or an
     /// active siege before any other. See `siege_train::upgrade_for_the_train`.
@@ -10123,6 +10131,7 @@ impl AdvancedAi {
             science_leader_is_the_target: false,
             siege_buys_the_passage: false,
             siege_buys_the_gun_resource: false,
+            surge_fields_the_bombers: false,
             siege_train_upgrades_first: false,
             siege_target_needs_a_road: false,
             siege_road_tally: BTreeMap::new(),
@@ -46472,6 +46481,10 @@ impl AdvancedAi {
         // `border-parity-2`: the severe-deficit preemption, beside the siege
         // reclaim it mirrors.
         self.border_parity_production(g, pid);
+        // `surge-fields-the-bombers`: hold the air plan's reserved airfield
+        // slot from every production writer below, released before the
+        // defence handoff. Nothing is held with the gene off.
+        let held_field_slot = self.surge_hold_field_slot(g, pid);
 
         // Physical Firaxis Great People with no legal activation plot are
         // mirror-owned assets the ordinary immediate-retirement model cannot
@@ -46689,6 +46702,7 @@ impl AdvancedAi {
                 self.delegated_cities(g, pid, &plan);
             }
         }
+        Self::surge_release_field_slot(g, held_field_slot);
         // Make the declaration response the final authority over queues this
         // turn. Earlier governors can continue to express their peaceful
         // plan; switching banks that progress and this bounded pass reclaims

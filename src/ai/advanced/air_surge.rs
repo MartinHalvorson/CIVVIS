@@ -2072,7 +2072,7 @@ impl AdvancedAi {
         if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination) {
             return false;
         }
-        let mut best: Option<(f64, u32, Item)> = None;
+        let mut best: Option<(f64, u32, Item, f64)> = None;
         for cid in g.player_city_ids(pid) {
             if threatened == Some(cid) {
                 continue;
@@ -2100,15 +2100,21 @@ impl AdvancedAi {
                     continue;
                 }
                 let turns = Self::air_surge_item_turns(g, pid, cid, &item);
-                if best
-                    .as_ref()
-                    .is_none_or(|(old, old_city, _)| turns < *old || (turns == *old && cid < *old_city))
-                {
-                    best = Some((turns, cid, item));
+                // `surge-fields-the-bombers`: the field goes where the launch
+                // wing trains fastest, its own turns and the wing's.
+                let rank = if wants_field {
+                    turns + self.surge_launch_wing_turns(g, pid, cid)
+                } else {
+                    turns
+                };
+                if best.as_ref().is_none_or(|(old, old_city, _, _)| {
+                    rank < *old || (rank == *old && cid < *old_city)
+                }) {
+                    best = Some((rank, cid, item, turns));
                 }
             }
         }
-        let Some((turns, city, item)) = best else {
+        let Some((_, city, item, turns)) = best else {
             return false;
         };
         // The fastest city that can actually take the item claims it, idle or
@@ -2161,8 +2167,17 @@ impl AdvancedAi {
         let Some(plan) = self.air_surge_plan.clone() else {
             return self.domination_air_readiness_production(g, pid);
         };
-        let status = self.air_surge_status;
         let threatened = self.threatened_city(g, pid);
+        // `surge-fields-the-bombers`: an airfield city buys a Bomber when the
+        // treasury carries it, beside whatever the queues train.
+        if self.surge_fields_the_bombers
+            && self.air_surge_status.aerodromes > 0
+            && self.air_surge_status.bombers_committed < Self::air_surge_bomber_goal(g, pid)
+            && self.surge_buy_a_bomber(g, pid, threatened)
+        {
+            self.air_surge_status = self.air_surge_status(g, pid, &plan);
+        }
+        let status = self.air_surge_status;
         let field = Self::air_surge_field(g, pid);
         let bomber = Self::air_surge_bomber(g, pid);
         // The airfield first: nothing else in the package can be trained
@@ -2186,17 +2201,23 @@ impl AdvancedAi {
             return true;
         }
         let launch_missing = AIR_SURGE_LAUNCH_BOMBERS.saturating_sub(status.bombers_committed);
+        // `surge-fields-the-bombers`: a second field may carry the whole wing
+        // still missing, not only the launch pair. The launch pair as shipped.
+        let wing_missing = self.surge_wing_missing(
+            launch_missing,
+            bomber_goal.saturating_sub(status.bombers_committed),
+        );
         let wing_turns = |city| {
             let item = Item::Unit { unit: bomber? };
             let rate = (g.city_yields(city).production * g.item_prod_mult(pid, city, Some(&item)))
                 .max(0.1);
-            Some(launch_missing as f64 * g.item_cost_for_city(pid, city, &item) / rate)
+            Some(wing_missing as f64 * g.item_cost_for_city(pid, city, &item) / rate)
         };
         // A single slow base can monopolize the whole wing while the rest of
         // the empire trains escorts. Permit one faster alternative, including
         // its construction cost, before the launch wing is committed.
         let existing_wing_turns =
-            (status.aerodromes_committed == 1 && status.metal_ready && launch_missing > 0)
+            (status.aerodromes_committed == 1 && status.metal_ready && wing_missing > 0)
                 .then(|| {
                     g.player_city_ids(pid)
                         .into_iter()
@@ -2235,7 +2256,7 @@ impl AdvancedAi {
             && launch_missing >= 2)
             .then(|| {
                 let eta = Self::air_surge_research_eta(g, pid);
-                let per_bomber = |city| Some(wing_turns(city)? / launch_missing as f64);
+                let per_bomber = |city| Some(wing_turns(city)? / wing_missing as f64);
                 g.player_city_ids(pid)
                     .into_iter()
                     .filter(|cid| {
@@ -2262,7 +2283,7 @@ impl AdvancedAi {
             .flatten();
         let parallel_share = launch_missing.div_ceil(2) as f64;
         let remaining = g.max_turns.saturating_sub(g.turn) as f64;
-        let mut best: Option<(u8, f64, u32, String, Item)> = None;
+        let mut best: Option<(u8, f64, u32, String, Item, f64)> = None;
         for cid in g.player_city_ids(pid) {
             if !g.cities[&cid].queue.is_empty() || threatened == Some(cid) {
                 continue;
@@ -2327,8 +2348,15 @@ impl AdvancedAi {
                 if build_turns > remaining + f64::EPSILON {
                     continue;
                 }
+                // `surge-fields-the-bombers`: a field is ordered by its own
+                // turns and the launch wing's in that city.
+                let order_turns = if rank == 0 {
+                    build_turns + self.surge_launch_wing_turns(g, pid, cid)
+                } else {
+                    build_turns
+                };
                 let key = format!("{item:?}");
-                let candidate = (rank, build_turns, cid, key, item);
+                let candidate = (rank, order_turns, cid, key, item, build_turns);
                 if best.as_ref().is_none_or(|old| {
                     (candidate.0, candidate.1, candidate.2, &candidate.3)
                         < (old.0, old.1, old.2, &old.3)
@@ -2337,7 +2365,7 @@ impl AdvancedAi {
                 }
             }
         }
-        let Some((_, build_turns, city, _, item)) = best else {
+        let Some((_, _, city, _, item, build_turns)) = best else {
             return false;
         };
         if g.apply(
@@ -2617,6 +2645,11 @@ mod urgent_denial_opening_tests;
 
 #[cfg(test)]
 mod field_slot_tests;
+
+pub(crate) mod bomber_wing;
+
+#[cfg(test)]
+mod bomber_wing_tests;
 
 mod raids;
 

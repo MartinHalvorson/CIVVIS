@@ -3299,6 +3299,18 @@ pub const GENES: &[Gene] = &[
     // after it. The window yields to the surge when its goal is off that
     // path. See `AdvancedAi::window_yields_to_the_bombers`.
     Gene { tag: "siege-tier-yields-to-the-bombers", field: "siege_tier_yields_to_the_bombers", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_tier_yields_to_the_bombers, disable: AdvancedAi::disable_siege_tier_yields_to_the_bombers },
+    // `surge-fields-the-bombers`: the air surge fields its wing. -d8's
+    // census of the 89 Emperor games of October 6-7 that reached Advanced
+    // Flight: Bombers alive at AF+15 median 1 (none in 44%), at AF+30
+    // median 3 (none in 22%), the first one a median 13 turns after AF and
+    // never in 27%; major cities taken AF..AF+40 rise 0.07 -> 0.24 -> 0.60
+    // with 0, 1-2 and 3+ Bombers alive at AF+30. Live Emperor
+    // civvis-20261007T121238Z (game 349): the strategic-queue Commercial Hub
+    // (t130) and Industrial Zone (t133) spent the last district slots of
+    // Bogota (53 Production) and Maracaibo past the air plan's reservation,
+    // the Aerodrome went to Panama (population 1, 3 Production), and its
+    // Bombers took 41 turns. See `air_surge::bomber_wing`.
+    Gene { tag: "surge-fields-the-bombers", field: "surge_fields_the_bombers", kind: Kind::OptIn, enable: AdvancedAi::enable_surge_fields_the_bombers, disable: AdvancedAi::disable_surge_fields_the_bombers },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
