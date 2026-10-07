@@ -8766,7 +8766,7 @@ mod siege_road;
 /// waits on, bought from a rival's trade screen. See
 /// `advanced/gun_resource.rs`.
 mod gun_resource;
-pub use gun_resource::GunResourceWant;
+pub use gun_resource::{BarterSpare, GunResourceWant};
 
 /// `capital-taken-moves-on`: a taken capital's army moves on to the next
 /// capital. See `advanced/capital_moves_on.rs`.

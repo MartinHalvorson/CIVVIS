@@ -1210,6 +1210,105 @@ for _, case in ipairs({
 	check(case[1], declined.sends, nil)
 	check(case[1] .. " (settled)", trade.pending[3], nil)
 end
+
+-- ─── the barter ───────────────────────────────────────────────────────────
+-- `RESOURCE_X=N;RESOURCE_A=a,...`: their strategic, and OUR spares from our
+-- side of the table the way the sell arm puts them there — a strategic as a
+-- lump, a luxury for thirty turns and never its last copy — with Gold up to
+-- the ceiling, which may be nothing.
+reset()
+local bart, bartPlayer = fixture({
+	theirPossible = { RESOURCE_NITER = 82 },
+	possible = { RESOURCE_AMBER = 2, RESOURCE_IRON = 30 },
+	own = { RESOURCE_AMBER = 2, RESOURCE_IRON = 30 },
+})
+ok, why = strategicOrder(7, 3, bartPlayer, 264, 156, "RESOURCE_NITER=20;RESOURCE_AMBER=1,RESOURCE_IRON=10")
+check("a barter ask is submitted", why, "buy_asked")
+local mineAmber, mineIron, theirNiter = nil, nil, nil
+for _, item in ipairs(bart.items) do
+	if item.owner == 7 and item.valueType == 3 then mineAmber = item end
+	if item.owner == 7 and item.valueType == 44 then mineIron = item end
+	if item.owner == 3 and item.valueType == 46 then theirNiter = item end
+end
+check("their Niter is on the table", theirNiter and theirNiter.amount, 20)
+check("our spare luxury copy goes from our side", mineAmber and mineAmber.amount, 1)
+check("the luxury copy runs thirty turns", mineAmber and mineAmber.duration, 30)
+check("our surplus strategic goes as a lump", mineIron and mineIron.duration, 0)
+check("the strategic block is the one bartered", mineIron and mineIron.amount, 10)
+check("the barter is remembered", trade.pending[3].gave and trade.pending[3].gave["RESOURCES:44"], 10)
+check("the barter offer says what it gives", eventField(lastEvent("deal_offer"), "want"),
+	"RESOURCE_NITER=20;RESOURCE_AMBER=1,RESOURCE_IRON=10")
+
+-- Nothing but the barter: a ceiling of nothing is still an ask.
+reset()
+local _, freePlayer = fixture({
+	theirPossible = { RESOURCE_NITER = 82 }, possible = { RESOURCE_IRON = 30 },
+	own = { RESOURCE_IRON = 30 },
+})
+ok, why = strategicOrder(7, 3, freePlayer, 270, 0, "RESOURCE_NITER=20;RESOURCE_IRON=25")
+check("a Gold-free barter is asked", why, "buy_asked")
+ok, why = strategicOrder(7, 4, freePlayer, 270, 0)
+check("a Gold-only ask with no ceiling is not", why, "buy_no_ceiling")
+
+-- Never our last copy of a luxury: it stays home, the rest still goes, and
+-- a barter of nothing but that copy is no ask.
+reset()
+local last, lastPlayer = fixture({
+	theirPossible = { RESOURCE_NITER = 82 },
+	possible = { RESOURCE_AMBER = 1, RESOURCE_IRON = 30 },
+	own = { RESOURCE_AMBER = 1, RESOURCE_IRON = 30 },
+})
+ok, why = strategicOrder(7, 3, lastPlayer, 276, 156, "RESOURCE_NITER=20;RESOURCE_AMBER=1,RESOURCE_IRON=10")
+check("a barter without its last luxury copy is asked", why, "buy_asked")
+local lastAmber = nil
+for _, item in ipairs(last.items) do
+	if item.owner == 7 and item.valueType == 3 then lastAmber = item end
+end
+check("the last luxury copy is not bartered", lastAmber, nil)
+check("the barter text drops it", eventField(lastEvent("deal_offer"), "want"), "RESOURCE_NITER=20;RESOURCE_IRON=10")
+reset()
+local _, onlyLastPlayer = fixture({
+	theirPossible = { RESOURCE_NITER = 82 }, possible = { RESOURCE_AMBER = 1 },
+	own = { RESOURCE_AMBER = 1 },
+})
+ok, why = strategicOrder(7, 3, onlyLastPlayer, 282, 156, "RESOURCE_NITER=20;RESOURCE_AMBER=1")
+check("a barter of nothing but the last copy is refused", why, "barter_nothing")
+check("the refused barter starts the cooldown", trade.asked[3], 282)
+check("the refused barter leaves nothing pending", trade.pending[3], nil)
+
+-- The answer: our bartered items in no larger amount, Gold at or under the
+-- ceiling, their Gold welcome; anything else of ours, or more of it, is not.
+for _, case in ipairs({
+	{ "a barter answered with no Gold is accepted", {}, "accepted" },
+	{ "a barter topped up under the ceiling is accepted",
+		{ { kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 100 } }, "accepted" },
+	{ "a barter they sweeten with their Gold is accepted",
+		{ { kind = DealItemTypes.GOLD, from = 3, duration = 0, amount = 30 } }, "accepted" },
+	{ "a barter topped up over the ceiling is declined",
+		{ { kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 200 } }, nil },
+	{ "another item of ours on a barter is declined",
+		{ { kind = DealItemTypes.RESOURCES, from = 7, duration = 30, amount = 1, valueType = 18 } }, nil },
+	{ "more of a bartered strategic is declined",
+		{ { kind = DealItemTypes.RESOURCES, from = 7, duration = 0, amount = 5, valueType = 44 } }, nil },
+}) do
+	reset()
+	local _, askPlayer = fixture({
+		theirPossible = { RESOURCE_NITER = 82 },
+		possible = { RESOURCE_AMBER = 2, RESOURCE_IRON = 30 },
+		own = { RESOURCE_AMBER = 2, RESOURCE_IRON = 30 },
+	})
+	strategicOrder(7, 3, askPlayer, 288, 156, "RESOURCE_NITER=20;RESOURCE_AMBER=1,RESOURCE_IRON=10")
+	local answer = {
+		{ kind = DealItemTypes.RESOURCES, from = 3, duration = 0, amount = 20, valueType = 46 },
+		{ kind = DealItemTypes.RESOURCES, from = 7, duration = 30, amount = 1, valueType = 3 },
+		{ kind = DealItemTypes.RESOURCES, from = 7, duration = 0, amount = 10, valueType = 44 },
+	}
+	for _, extra in ipairs(case[2]) do answer[#answer + 1] = extra end
+	local answered = fixture({ incoming = answer })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check(case[1], answered.sends and answered.sends[1][1], case[3])
+	check(case[1] .. " (settled)", trade.pending[3], nil)
+end
 end)()
 
 -- ─── wiring ─────────────────────────────────────────────────────────────────

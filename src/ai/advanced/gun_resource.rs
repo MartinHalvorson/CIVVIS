@@ -60,6 +60,25 @@ pub struct GunResourceWant {
     pub renewal: bool,
 }
 
+/// The stock of a strategic kept back from any barter beyond what our units
+/// need: power plants and the next build burn it too.
+pub(crate) const BARTER_STRATEGIC_RESERVE: f64 = 10.0;
+
+/// Something of ours the gun-resource purchase may put on our side of the
+/// deal instead of Gold: a spare copy of a luxury (never the last), or a
+/// strategic held above what our units need.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BarterSpare {
+    /// The resource as the host names it, `RESOURCE_SILK`.
+    pub resource: String,
+    /// The resource as CIVVIS names it, `silk`.
+    pub resource_id: String,
+    /// How much of it may go.
+    pub amount: u32,
+    /// Whether it is a luxury (one copy a deal).
+    pub luxury: bool,
+}
+
 /// A land siege gun, as `breakers_matched_to_walls` reads one.
 fn land_gun(spec: &crate::rules::UnitSpec) -> bool {
     spec.class == "military"
@@ -108,6 +127,89 @@ impl AdvancedAi {
             .map(|resource| format!("RESOURCE_{}", resource.as_str().to_ascii_uppercase()))
             .chain(wants.iter().map(|want| want.resource.clone()))
             .collect()
+    }
+
+    /// `siege-buys-the-gun-resource`: what we may barter for the guns'
+    /// resource, luxuries first. -d8 read the treasury on the blocked turns
+    /// of 10-06/07: a median 115 Gold with Niter blocked and 118 with Oil,
+    /// none at the 641 a gun's 20 Niter books at, so a Gold-only ask holds on
+    /// nearly every one; game 343 sat on Coal 24, Horses 25 and Iron 23 with
+    /// income at turn 150. A luxury is spare above its first connected copy
+    /// (the surplus sale's rule: a second copy gives no Amenity). A strategic
+    /// is spare above what our queued units cost, what our fielded units'
+    /// upgrades cost, [`GUN_RESOURCE_FUEL_TURNS`] of their fuel, and
+    /// [`BARTER_STRATEGIC_RESERVE`]. Nothing in `held` (the guns' own,
+    /// `siege_gun_resources_held`) is ever spare. Empty with the gene off.
+    pub fn siege_barter_spares(
+        &self,
+        g: &Game,
+        pid: usize,
+        held: &BTreeSet<String>,
+    ) -> Vec<BarterSpare> {
+        if !self.siege_buys_the_gun_resource {
+            return Vec::new();
+        }
+        let mut need: BTreeMap<Name, f64> = BTreeMap::new();
+        for unit in g.units.values().filter(|unit| unit.owner == pid) {
+            let spec = &g.rules.units[unit.kind];
+            if let Some(resource) = spec.requires_resource {
+                *need.entry(resource).or_default() +=
+                    spec.resource_maintenance.max(0.0) * GUN_RESOURCE_FUEL_TURNS;
+            }
+            let upgrade = g
+                .unit_upgrade_target(pid, unit.kind)
+                .and_then(|target| g.rules.units.get_interned(target));
+            if let Some(target) = upgrade {
+                if let Some(resource) = target.requires_resource {
+                    *need.entry(resource).or_default() += target.resource_cost.max(0.0);
+                }
+            }
+        }
+        for city in g.cities.values().filter(|city| city.owner == pid) {
+            for item in &city.queue {
+                if let Item::Unit { unit } = item {
+                    if let Some(spec) = g.rules.units.get_interned(*unit) {
+                        if let Some(resource) = spec.requires_resource {
+                            *need.entry(resource).or_default() += spec.resource_cost.max(0.0);
+                        }
+                    }
+                }
+            }
+        }
+        let mut spares: Vec<BarterSpare> = g
+            .rules
+            .resources
+            .iter()
+            .filter_map(|(id, spec)| {
+                let resource = format!("RESOURCE_{}", id.as_str().to_ascii_uppercase());
+                if held.contains(&resource) {
+                    return None;
+                }
+                let (amount, luxury) = match spec.class.as_str() {
+                    "luxury" => (g.connected_resource_count(pid, id.as_str()) - 1, true),
+                    "strategic" => {
+                        let spare = g.strategic_stockpile(pid, *id)
+                            - need.get(id).copied().unwrap_or(0.0)
+                            - BARTER_STRATEGIC_RESERVE;
+                        (spare.floor().clamp(0.0, f64::from(i32::MAX)) as i32, false)
+                    }
+                    _ => return None,
+                };
+                (amount > 0).then(|| BarterSpare {
+                    resource,
+                    resource_id: id.as_str().to_string(),
+                    amount: amount as u32,
+                    luxury,
+                })
+            })
+            .collect();
+        spares.sort_by(|left, right| {
+            right
+                .luxury
+                .cmp(&left.luxury)
+                .then_with(|| left.resource.cmp(&right.resource))
+        });
+        spares
     }
 
     /// `siege-buys-the-gun-resource`: the strategic purchases the Domination

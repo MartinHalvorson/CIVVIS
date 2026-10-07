@@ -540,6 +540,72 @@ CivvisStrategicAsk = function(deal, pid, subject, name, ask)
 	return forType, amount;
 end;
 
+-- `siege-buys-the-gun-resource`: put OUR spares named in `list`
+-- ("RESOURCE_A=a,RESOURCE_B=b") on the working `deal` for `subject`, the
+-- way the sell arm puts them there: each from our side of the table, a
+-- strategic as a lump, a luxury for thirty turns and never its last copy (the
+-- host's own count), nothing another pending deal gives. Returns the
+-- `{ ["RESOURCES:<type>"] = amount }` given and its text, or nil and
+-- `barter_nothing` when nothing could go.
+CivvisBarterGive = function(deal, pid, subject, list, player)
+	local possible = try(function()
+		return DealManager.GetPossibleDealItems(pid, subject, DealItemTypes.RESOURCES, deal);
+	end, nil) or {};
+	local gave, text = {}, {};
+	for name, want in string.gmatch(list, "([%w_]+)=(%d+)") do
+		local row = try(function() return GameInfo.Resources[name]; end, nil);
+		local forType = nil;
+		for _, entry in ipairs(possible) do
+			if row ~= nil and entry.ForType == row.Index and entry.IsValid ~= false
+					and (entry.MaxAmount or 0) > 0 then
+				forType = entry.ForType;
+			end
+		end
+		local key = "RESOURCES:" .. tostring(forType);
+		local amount = tonumber(want) or 0;
+		local luxury = row ~= nil and row.ResourceClassType == "RESOURCECLASS_LUXURY";
+		local owned = forType ~= nil and try(function()
+			return player:GetResources():GetResourceAmount(forType);
+		end, nil) or nil;
+		local busy = false;
+		for _, other in pairs(CivvisTrade.pending) do
+			if other.gave ~= nil and other.gave[key] ~= nil then busy = true; end
+		end
+		if forType ~= nil and amount > 0 and not busy
+				and not (luxury and (type(owned) ~= "number" or owned <= amount)) then
+			local consumption = try(function() return GameInfo.Resource_Consumption[name]; end, nil);
+			local lump = consumption ~= nil
+				and (consumption.Accumulate == true or consumption.Accumulate == 1);
+			local item = deal:AddItemOfType(DealItemTypes.RESOURCES, pid);
+			if item ~= nil then
+				item:SetValueType(forType);
+				item:SetDuration(lump and 0 or 30);
+				local cap = try(function() return item:GetMaxAmount(); end, nil);
+				if cap ~= nil and cap > 0 and cap < amount then amount = cap; end
+				if pcall(function() item:SetAmount(amount); end)
+						and try(function() return item:IsValid(); end, true) then
+					gave[key] = amount;
+					text[#text + 1] = name .. "=" .. tostring(amount);
+				else
+					pcall(function() deal:RemoveItemByID(item:GetID()); end);
+				end
+			end
+		end
+	end
+	if next(gave) == nil then return nil, "barter_nothing"; end
+	return gave, table.concat(text, ",");
+end;
+
+-- Whether every item on our side of a purchase's answer (`mine`, Gold
+-- excluded) is one the ask bartered (`gave`), in no larger amount; with
+-- nothing bartered, whether our side holds nothing but Gold.
+CivvisWithinGave = function(mine, gave)
+	for key, amount in pairs(mine) do
+		if gave == nil or gave[key] == nil or amount > gave[key] then return false; end
+	end
+	return true;
+end;
+
 
 -- --------------------------------------------------------------- action ids
 --
@@ -11450,7 +11516,7 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 					if kind == DealItemTypes.GOLD then
 						-- Their gold is the price of a sale and foreign to a
 						-- purchase, whatever else the answer holds.
-						if buying then
+						if buying and pending.gave == nil then
 							foreign = foreign + 1;
 						elseif duration == 0 then
 							gold = gold + amount;
@@ -11488,7 +11554,8 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		-- ceiling was priced on the block asked.
 		local want = pending.want or "OPEN_BORDERS";
 		if want == "FAVOR" or pending.strategic then
-			matches = (theirs[want] or 0) >= (pending.want_amount or 1) and next(mine) == nil;
+			matches = (theirs[want] or 0) >= (pending.want_amount or 1)
+				and CivvisWithinGave(mine, pending.gave);
 		else
 			matches = theirs[want] == 1 and next(mine) == nil;
 		end
@@ -13363,7 +13430,13 @@ local function applyOrder(player, pid, row, turn)
 	-- handler closes at or under the ceiling when their side holds that much
 	-- or more and nothing else.
 	if kind == "buy" then
-		local strategicName, strategicAsk = string.match(verb, "^(RESOURCE_[%w_]+)=(%d+)$");
+		-- `RESOURCE_X=N;RESOURCE_A=a,...` barters our spares for it
+		-- (`CivvisBarterGive`), Gold topping up to the ceiling.
+		local strategicName, strategicAsk, barter =
+			string.match(verb, "^(RESOURCE_[%w_]+)=(%d+);(.+)$");
+		if strategicName == nil then
+			strategicName, strategicAsk = string.match(verb, "^(RESOURCE_[%w_]+)=(%d+)$");
+		end
 		strategicAsk = tonumber(strategicAsk);
 		if strategicAsk ~= nil and (strategicAsk <= 0
 				or try(function() return GameInfo.Resources[strategicName]; end, nil) == nil) then
@@ -13414,7 +13487,7 @@ local function applyOrder(player, pid, row, turn)
 			return false, "buy_cooldown";
 		end
 		local ceiling = math.max(0, math.floor(x or 0));
-		if ceiling <= 0 then return false, "buy_no_ceiling"; end
+		if ceiling <= 0 and barter == nil then return false, "buy_no_ceiling"; end
 		local ran, submitted, reason, wantName = pcall(function()
 			DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
 			local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
@@ -13439,6 +13512,12 @@ local function applyOrder(player, pid, row, turn)
 				wantAmount = got;
 				ceiling = math.floor(ceiling * got / strategicAsk);
 				want, name = "RESOURCES:" .. tostring(forType), strategicName .. "=" .. tostring(got);
+				if barter ~= nil then
+					local gaveText;
+					barter, gaveText = CivvisBarterGive(deal, pid, subject, barter, player);
+					if barter == nil then return false, gaveText; end
+					name = name .. ";" .. gaveText;
+				end
 			elseif luxury then
 				-- Owner first: the RIVAL's tradeable resources, the column the
 				-- shipped screen fills for their side of the table.
@@ -13501,6 +13580,7 @@ local function applyOrder(player, pid, row, turn)
 			trade.pending[subject] = {
 				turn = turn, ceiling = ceiling, direction = "buy", verb = name, want = want,
 				want_amount = wantAmount, strategic = strategicAsk ~= nil or nil,
+				gave = strategicAsk ~= nil and barter or nil,
 			};
 			CivvisTrade.ask(pid, subject, "EQUALIZE", "buy", turn);
 			return true, "asked", name;
@@ -13520,7 +13600,7 @@ local function applyOrder(player, pid, row, turn)
 				or reason == "buy_no_luxury" or reason == "no_resource_item"
 				or reason == "resource_invalid" or reason == "buy_no_favor"
 				or reason == "no_favor_item" or reason == "buy_no_strategic"
-				or reason == "strategic_invalid") then
+				or reason == "strategic_invalid" or reason == "barter_nothing") then
 			-- The engine will not sell passage here right now — usually a
 			-- missing Early Empire on one side — or has no luxury the seat
 			-- lacks on its table; do not re-ask every turn for the same

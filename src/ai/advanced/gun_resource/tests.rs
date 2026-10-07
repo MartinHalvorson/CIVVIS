@@ -243,3 +243,56 @@ fn the_guns_resources_are_held_from_sale() {
         "the fielded Bombard's and the queued Artillery's; the Trebuchet needs none"
     );
 }
+
+/// A luxury is spare only above its first copy; a strategic only above
+/// what our queued units cost and the reserve; the guns' own resource never.
+#[test]
+fn barter_spares_keep_the_last_copy_and_the_units_needs() {
+    let (mut g, mut ai, home, _) = niter_case(50.0);
+    let none = BTreeSet::new();
+    assert!(ai.siege_barter_spares(&g, 0, &none).is_empty(), "off");
+    ai.enable_siege_buys_the_gun_resource();
+    let center = g.cities[&home].pos;
+    let tiles: Vec<Pos> = g.cities[&home]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|pos| *pos != center)
+        .take(3)
+        .collect();
+    for (index, pos) in tiles.iter().enumerate() {
+        let tile = g.map.tiles.get_mut(pos).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = Some(if index < 2 {
+            crate::name!("silk")
+        } else {
+            crate::name!("dyes")
+        });
+        tile.improvement = Some(crate::name!("plantation"));
+    }
+    assert_eq!(g.connected_resource_count(0, "silk"), 2);
+    assert_eq!(g.connected_resource_count(0, "dyes"), 1);
+    for (resource, stock) in [("coal", 30.0), ("iron", 25.0), ("niter", 40.0)] {
+        g.players[0]
+            .strategic_resources
+            .insert(crate::name::Name::new(resource), stock);
+    }
+    g.cities.get_mut(&home).unwrap().queue.push(Item::Unit {
+        unit: crate::name!("swordsman"),
+    });
+    let held: BTreeSet<String> = ["RESOURCE_NITER".to_string()].into_iter().collect();
+    let spares = ai.siege_barter_spares(&g, 0, &held);
+    let read: Vec<_> = spares
+        .iter()
+        .map(|spare| (spare.resource.as_str(), spare.amount, spare.luxury))
+        .collect();
+    // Silk's second copy; Coal above the reserve of ten; Iron all wanted by
+    // the queued Swordsman (20) and the reserve; Niter held for the guns;
+    // the one Dyes copy stays.
+    assert_eq!(
+        read,
+        vec![("RESOURCE_SILK", 1, true), ("RESOURCE_COAL", 20, false)]
+    );
+}

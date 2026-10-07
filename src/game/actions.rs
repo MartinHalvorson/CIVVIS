@@ -9983,6 +9983,23 @@ impl Game {
         self.resource_receive_value(receiver, resource, amount.min(i32::MAX as u32) as i32)
     }
 
+    /// What `amount` of a luxury or strategic `resource` (a CIVVIS id) is
+    /// worth to `receiver` in Gold by this engine's book: the live seat's
+    /// reading of what a barter item puts on a rival's side of the scale
+    /// (`siege-buys-the-gun-resource`). `0` for any other resource.
+    pub fn resource_gold_value(&self, receiver: usize, resource: &str, amount: u32) -> f64 {
+        if self
+            .rules
+            .resources
+            .get(resource)
+            .is_none_or(|spec| spec.class != "strategic" && spec.class != "luxury")
+            || receiver >= self.players.len()
+        {
+            return 0.0;
+        }
+        self.resource_receive_value(receiver, resource, amount.min(i32::MAX as u32) as i32)
+    }
+
     pub(super) fn open_borders_receive_value(&self, receiver: usize, grantor: usize) -> f64 {
         if self.has_open_borders(receiver, grantor) {
             return 0.0;

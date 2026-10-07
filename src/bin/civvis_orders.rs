@@ -2905,10 +2905,19 @@ fn append_luxury_buy_order(
 //
 // The order asks the seller's own price with EQUALIZE for `RESOURCE_X=N`, a
 // lump from their side, and the Lua arm closes only at or under the ceiling
-// carried in `x`: the engine's own book for the block
-// (`Game::strategic_gold_value`), bounded by what the treasury and the income
-// carry at the 25× book with a reserve and a floor kept clear. A block the
-// ceiling cannot carry shrinks to what it can, never under one gun's worth.
+// carried in `x`. The price is the engine's own book for the block
+// (`Game::strategic_gold_value`). Gold alone rarely meets it: -d8 read a
+// median 115 Gold in the treasury on the Niter-blocked turns of 10-06/07 and
+// 118 on the Oil-blocked, none at the 641 a gun's 20 Niter books at and 3-10%
+// at 300. So our side BARTERS first (`RESOURCE_X=N;RESOURCE_A=a,...`): spare
+// luxury copies, then strategics held above our units' needs
+// (`AdvancedAi::siege_barter_spares`), each valued at what it is worth to the
+// seller by the same book (`Game::resource_gold_value`), until the block's
+// price is met; the rest is Gold, never more than the treasury and the income
+// carry at the 25× book with a reserve and a floor kept clear, and that is the
+// ceiling. The full lot goes when our side covers it, else one gun's worth;
+// otherwise the ask waits. Nothing the guns hold, nothing another sale gives
+// this turn, and never a luxury's last copy goes on our side.
 // Cadence-gated in the free slots of the deal week (phase 2 of 3: turns 2 and
 // 5 of 6, clear of the passage at 1, the favor sale at 3 and the luxury at 4),
 // the largest offer first among the majors at peace with no deal already
@@ -2945,13 +2954,17 @@ fn drop_held_resource_sales(
 
 /// Why no strategic-purchase order was appended this turn, for the note;
 /// `None` when one was. `wants` is `AdvancedAi::siege_gun_resource_wants`,
-/// strongest gun first; `worth` prices a block of a resource (its CIVVIS id)
-/// by the engine's own book.
+/// strongest gun first; `spares` is `AdvancedAi::siege_barter_spares`,
+/// luxuries first; `worth` prices a block of a resource (its CIVVIS id) to us
+/// by the engine's own book, and `give_worth` what `amount` of one of ours is
+/// worth to the host player `seller` by the same book.
 fn append_gun_resource_buy_order(
     wants: &[civvis::ai::GunResourceWant],
+    spares: &[civvis::ai::BarterSpare],
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
     worth: &dyn Fn(&str, u32) -> f64,
+    give_worth: &dyn Fn(i64, &str, u32) -> f64,
 ) -> Option<&'static str> {
     if wants.is_empty() {
         return Some("gun_resource_buy_hold:no_need");
@@ -2968,9 +2981,14 @@ fn append_gun_resource_buy_order(
             .floor()
             .max(0.0) as i64;
     let affordable = carried.min(GUN_RESOURCE_BUY_CEILING_MAX as i64) as i32;
-    if affordable < GUN_RESOURCE_BUY_CEILING_MIN {
-        return Some("gun_resource_buy_hold:treasury");
-    }
+    // What another sale already gives this turn stays off our side.
+    let selling: std::collections::BTreeSet<&str> = orders
+        .iter()
+        .filter(|order| order.kind == "sell")
+        .filter_map(|order| order.verb.as_deref())
+        .flat_map(|verb| verb.split(','))
+        .filter_map(|part| part.split_once('=').map(|(name, _)| name))
+        .collect();
     let mut busy = false;
     let mut dear = false;
     for want in wants {
@@ -3002,32 +3020,73 @@ fn append_gun_resource_buy_order(
         else {
             continue;
         };
-        let mut amount = want.amount.min(offer.clamp(0, i64::from(u32::MAX)) as u32);
-        let mut book = worth(&want.resource_id, amount);
-        while amount > want.minimum && book.is_finite() && book > f64::from(affordable) {
-            amount -= 1;
-            book = worth(&want.resource_id, amount);
+        let full = want.amount.min(offer.clamp(0, i64::from(u32::MAX)) as u32);
+        let mut lots = vec![full];
+        if want.minimum < full {
+            lots.push(want.minimum);
         }
-        if book.is_finite() && book > f64::from(affordable) {
-            dear = true;
-            continue;
+        for amount in lots {
+            let price = worth(&want.resource_id, amount);
+            if !(price.is_finite() && price > 0.0) {
+                // No book for the block: Gold alone, at what the treasury
+                // carries.
+                if affordable < GUN_RESOURCE_BUY_CEILING_MIN {
+                    dear = true;
+                    continue;
+                }
+                orders.push(Order {
+                    kind: "buy",
+                    subject: Some(seller.player as i64),
+                    verb: Some(format!("{}={amount}", want.resource)),
+                    pos: Some((affordable, 0)),
+                });
+                return None;
+            }
+            let seller_id = seller.player as i64;
+            let mut covered = 0.0;
+            let mut given: Vec<String> = Vec::new();
+            for spare in spares {
+                if covered >= price {
+                    break;
+                }
+                if spare.resource == want.resource || selling.contains(spare.resource.as_str()) {
+                    continue;
+                }
+                let remaining = price - covered;
+                let count = if spare.luxury {
+                    1
+                } else {
+                    (1..=spare.amount)
+                        .find(|count| give_worth(seller_id, &spare.resource_id, *count) >= remaining)
+                        .unwrap_or(spare.amount)
+                };
+                let value = give_worth(seller_id, &spare.resource_id, count);
+                if count == 0 || !(value.is_finite() && value > 0.0) {
+                    continue;
+                }
+                covered += value;
+                given.push(format!("{}={count}", spare.resource));
+            }
+            let gold = (price - covered).max(0.0).ceil();
+            if gold > f64::from(affordable)
+                || (given.is_empty() && gold < f64::from(GUN_RESOURCE_BUY_CEILING_MIN))
+            {
+                continue;
+            }
+            let verb = if given.is_empty() {
+                format!("{}={amount}", want.resource)
+            } else {
+                format!("{}={amount};{}", want.resource, given.join(","))
+            };
+            orders.push(Order {
+                kind: "buy",
+                subject: Some(seller_id),
+                verb: Some(verb),
+                pos: Some((gold as i32, 0)),
+            });
+            return None;
         }
-        let ceiling = if book.is_finite() && book > 0.0 {
-            (book.ceil() as i32).min(affordable)
-        } else {
-            affordable
-        };
-        if ceiling < GUN_RESOURCE_BUY_CEILING_MIN {
-            dear = true;
-            continue;
-        }
-        orders.push(Order {
-            kind: "buy",
-            subject: Some(seller.player as i64),
-            verb: Some(format!("{}={amount}", want.resource)),
-            pos: Some((ceiling, 0)),
-        });
-        return None;
+        dear = true;
     }
     Some(if dear {
         "gun_resource_buy_hold:treasury"
@@ -4833,10 +4892,27 @@ fn decide(
         if kept > 0 {
             note_bits.push(format!("gun_resource_sale_held={kept}"));
         }
+        let spares = ai.siege_barter_spares(&mirror_state.game, 0, &held);
         let worth = |resource: &str, amount: u32| {
             mirror_state.game.strategic_gold_value(0, resource, amount)
         };
-        match append_gun_resource_buy_order(&wants, state, &mut orders, &worth) {
+        // A barter item at what it is worth to the seller's mirrored seat;
+        // nothing when the seat cannot be named.
+        let give_worth = |seller: i64, resource: &str, amount: u32| {
+            (1..mirror_state.game.players.len())
+                .find(|seat| host_player_target(mirror_state, state, *seat) == Some(seller))
+                .map_or(0.0, |seat| {
+                    mirror_state.game.resource_gold_value(seat, resource, amount)
+                })
+        };
+        match append_gun_resource_buy_order(
+            &wants,
+            &spares,
+            state,
+            &mut orders,
+            &worth,
+            &give_worth,
+        ) {
             None => note_bits.push("gun_resource_buy=1".to_string()),
             Some(why) => {
                 // The holds worth a glance: a gun waiting on its resource
@@ -17596,8 +17672,8 @@ mod tests {
     }
 
     /// `siege-buys-the-gun-resource`: the Bombard's Niter, asked of the
-    /// largest offer at peace, the block shrunk to what the treasury carries
-    /// at the engine's book and never under one gun's worth.
+    /// largest offer at peace: the full lot when our side covers it, else one
+    /// gun's worth, Gold-only when nothing of ours is spare.
     #[test]
     fn the_guns_resource_is_bought_from_the_largest_offer() {
         let want =
@@ -17620,8 +17696,9 @@ mod tests {
             )
         };
         // The engine's book for a first strategic: a primary value, then 24
-        // a unit.
+        // a unit. Nothing of ours is spare here.
         let worth = |_: &str, amount: u32| 185.0 + 24.0 * (f64::from(amount) - 1.0);
+        let no_barter = |_: i64, _: &str, _: u32| 0.0;
         let state = StateSnapshot {
             turn: 152, // 152 % 3 == 2, the lane's phase
             gold: 500,
@@ -17647,19 +17724,19 @@ mod tests {
             ..StateSnapshot::default()
         };
         let wants = vec![want("RESOURCE_NITER", "niter", 50, 20)];
+        let buy = |state: &StateSnapshot, orders: &mut Vec<Order>| {
+            append_gun_resource_buy_order(&wants, &[], state, orders, &worth, &no_barter)
+        };
         let mut orders = Vec::new();
-        assert_eq!(
-            append_gun_resource_buy_order(&wants, &state, &mut orders, &worth),
-            None
-        );
+        assert_eq!(buy(&state, &mut orders), None);
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].kind, "buy");
         // The largest offer at peace; seat 5 offers more and is at war.
         assert_eq!(orders[0].subject, Some(2));
         // 440 of treasury over the reserve and 25·(20−4) = 400 of income
-        // carry 840; 50 Niter books at 1,361, 28 at 833.
-        assert_eq!(orders[0].verb.as_deref(), Some("RESOURCE_NITER=28"));
-        assert_eq!(orders[0].pos, Some((833, 0)));
+        // carry 840; the full 50 Niter books at 1,361, one gun's 20 at 641.
+        assert_eq!(orders[0].verb.as_deref(), Some("RESOURCE_NITER=20"));
+        assert_eq!(orders[0].pos, Some((641, 0)));
 
         // A deal already heading to the largest offer: the next one.
         let mut busy = vec![Order {
@@ -17668,10 +17745,7 @@ mod tests {
             verb: Some("FAVOR=20".to_string()),
             pos: Some((20, 0)),
         }];
-        assert_eq!(
-            append_gun_resource_buy_order(&wants, &state, &mut busy, &worth),
-            None
-        );
+        assert_eq!(buy(&state, &mut busy), None);
         assert_eq!(busy[1].subject, Some(4));
         busy.pop();
         busy.push(Order {
@@ -17681,7 +17755,7 @@ mod tests {
             pos: Some((60, 0)),
         });
         assert_eq!(
-            append_gun_resource_buy_order(&wants, &state, &mut busy, &worth),
+            buy(&state, &mut busy),
             Some("gun_resource_buy_hold:deal_in_flight")
         );
 
@@ -17698,7 +17772,7 @@ mod tests {
         let oil = vec![want("RESOURCE_OIL", "oil", 10, 3)];
         let mut fuel = Vec::new();
         assert_eq!(
-            append_gun_resource_buy_order(&oil, &oil_state, &mut fuel, &worth),
+            append_gun_resource_buy_order(&oil, &[], &oil_state, &mut fuel, &worth, &no_barter),
             None
         );
         assert_eq!(fuel[0].verb.as_deref(), Some("RESOURCE_OIL=5"));
@@ -17715,7 +17789,7 @@ mod tests {
         };
         let mut none = Vec::new();
         assert_eq!(
-            append_gun_resource_buy_order(&wants, &thin, &mut none, &worth),
+            buy(&thin, &mut none),
             Some("gun_resource_buy_hold:no_seller")
         );
         assert!(none.is_empty());
@@ -17728,11 +17802,11 @@ mod tests {
             ..state.clone()
         };
         assert_eq!(
-            append_gun_resource_buy_order(&wants, &off_phase, &mut held, &worth),
+            buy(&off_phase, &mut held),
             Some("gun_resource_buy_hold:cadence")
         );
         assert_eq!(
-            append_gun_resource_buy_order(&[], &state, &mut held, &worth),
+            append_gun_resource_buy_order(&[], &[], &state, &mut held, &worth, &no_barter),
             Some("gun_resource_buy_hold:no_need")
         );
         let broke = StateSnapshot {
@@ -17741,7 +17815,7 @@ mod tests {
             ..state.clone()
         };
         assert_eq!(
-            append_gun_resource_buy_order(&wants, &broke, &mut held, &worth),
+            buy(&broke, &mut held),
             Some("gun_resource_buy_hold:treasury")
         );
         // 240 over the reserve, no income to speak of: 20 Niter book at 641.
@@ -17751,10 +17825,153 @@ mod tests {
             ..state.clone()
         };
         assert_eq!(
-            append_gun_resource_buy_order(&wants, &short, &mut held, &worth),
+            buy(&short, &mut held),
             Some("gun_resource_buy_hold:treasury")
         );
         assert!(held.is_empty());
+    }
+
+    /// `siege-buys-the-gun-resource`: with the treasury short, a spare
+    /// luxury copy and surplus Coal go on our side first, Gold tops up what
+    /// they leave, and nothing another sale gives this turn is offered.
+    #[test]
+    fn the_guns_resource_is_bartered_when_the_treasury_is_short() {
+        let want = civvis::ai::GunResourceWant {
+            resource: "RESOURCE_NITER".to_string(),
+            resource_id: "niter".to_string(),
+            amount: 50,
+            minimum: 20,
+            unit: "bombard".to_string(),
+            guns: 3,
+            hit: 24.6,
+            renewal: false,
+        };
+        let spare = |resource: &str, id: &str, amount: u32, luxury: bool| {
+            civvis::ai::BarterSpare {
+                resource: resource.to_string(),
+                resource_id: id.to_string(),
+                amount,
+                luxury,
+            }
+        };
+        let spares = vec![
+            spare("RESOURCE_SILK", "silk", 1, true),
+            spare("RESOURCE_COAL", "coal", 15, false),
+        ];
+        let worth = |_: &str, amount: u32| 185.0 + 24.0 * (f64::from(amount) - 1.0);
+        // To the seller a Silk copy is 185, a unit of Coal 20.
+        let give_worth = |seller: i64, resource: &str, amount: u32| {
+            assert_eq!(seller, 2);
+            match resource {
+                "silk" => 185.0 * f64::from(amount),
+                "coal" => 20.0 * f64::from(amount),
+                _ => 0.0,
+            }
+        };
+        let state = StateSnapshot {
+            turn: 152,
+            gold: 300,
+            gold_per_turn: Some(4.0), // 240 carried
+            rivals: vec![StateRival {
+                player: 2,
+                tradeable_strategics: Some(
+                    [("RESOURCE_NITER".to_string(), 82)].into_iter().collect(),
+                ),
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut orders = Vec::new();
+        assert_eq!(
+            append_gun_resource_buy_order(
+                &[want.clone()],
+                &spares,
+                &state,
+                &mut orders,
+                &worth,
+                &give_worth
+            ),
+            None
+        );
+        // The full 50 (1,361) is beyond Silk 185 + all 15 Coal 300 + 240
+        // Gold; one gun's 20 (641) is not: 641 − 185 − 300 = 156 Gold.
+        assert_eq!(
+            orders[0].verb.as_deref(),
+            Some("RESOURCE_NITER=20;RESOURCE_SILK=1,RESOURCE_COAL=15")
+        );
+        assert_eq!(orders[0].pos, Some((156, 0)));
+
+        // A richer seat takes the full lot: Silk 185 and all 15 Coal 300
+        // leave 1,361 − 485 = 876 Gold, under the 900 cap it carries.
+        let rich = StateSnapshot {
+            gold: 1000,
+            gold_per_turn: Some(20.0),
+            ..state.clone()
+        };
+        let mut rich_orders = Vec::new();
+        append_gun_resource_buy_order(
+            &[want.clone()],
+            &spares,
+            &rich,
+            &mut rich_orders,
+            &worth,
+            &give_worth,
+        );
+        assert_eq!(
+            rich_orders[0].verb.as_deref(),
+            Some("RESOURCE_NITER=50;RESOURCE_SILK=1,RESOURCE_COAL=15")
+        );
+        assert_eq!(rich_orders[0].pos, Some((876, 0)));
+
+        // Coal to spare covers one gun's lot with no Gold at all, and only
+        // as much Coal goes as the gap needs: 641 − 185 = 456, 23 units.
+        let coal_rich = vec![
+            spare("RESOURCE_SILK", "silk", 1, true),
+            spare("RESOURCE_COAL", "coal", 40, false),
+        ];
+        let mut barter_only = Vec::new();
+        append_gun_resource_buy_order(
+            &[want.clone()],
+            &coal_rich,
+            &state,
+            &mut barter_only,
+            &worth,
+            &give_worth,
+        );
+        assert_eq!(
+            barter_only[0].verb.as_deref(),
+            Some("RESOURCE_NITER=20;RESOURCE_SILK=1,RESOURCE_COAL=23")
+        );
+        assert_eq!(barter_only[0].pos, Some((0, 0)));
+
+        // The Silk already on sale this turn stays off our side, and the
+        // Gold-free gap the Coal leaves is then beyond the treasury.
+        let mut selling = vec![Order {
+            kind: "sell",
+            subject: Some(4),
+            verb: Some("RESOURCE_SILK=1".to_string()),
+            pos: Some((40, 0)),
+        }];
+        assert_eq!(
+            append_gun_resource_buy_order(
+                &[want.clone()],
+                &spares,
+                &state,
+                &mut selling,
+                &worth,
+                &give_worth
+            ),
+            Some("gun_resource_buy_hold:treasury")
+        );
+        assert_eq!(selling.len(), 1);
+
+        // The Niter itself is never on our side.
+        let own = vec![spare("RESOURCE_NITER", "niter", 30, false)];
+        let mut none = Vec::new();
+        assert_eq!(
+            append_gun_resource_buy_order(&[want], &own, &state, &mut none, &worth, &give_worth),
+            Some("gun_resource_buy_hold:treasury")
+        );
     }
 
     /// `siege-buys-the-gun-resource`: a wanted Niter is not offered for
