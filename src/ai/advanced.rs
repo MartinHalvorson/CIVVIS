@@ -5067,6 +5067,11 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `breakers-match-the-walls`: the campaign target's Siege row asks the
+    /// guns its walls and health need at our best gun's blow, up to
+    /// `siege_production::BREAKER_MATCH_MAX`, and the delegated wall-breaker
+    /// reservation follows that count. Off by default.
+    breakers_match_the_walls: bool,
     /// `air-fire-counts-on-the-city`: the air wing's strikes count against the
     /// city's health in the siege damage budget, not only its walls. See
     /// `victory_conversion::conversion_siege_budget_within`.
@@ -9712,6 +9717,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            breakers_match_the_walls: false,
             air_fire_counts_on_the_city: false,
             bombers_open_the_siege_walls: false,
             builders_before_the_lent_floor: false,

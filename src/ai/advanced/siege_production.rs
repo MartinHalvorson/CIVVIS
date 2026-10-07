@@ -1,4 +1,5 @@
 use super::*;
+use crate::game::expected_damage;
 
 /// The first wall breaker equips an otherwise incomplete campaign. Use the
 /// opening conquest reservation scale; ordinary production-time pricing still
@@ -50,6 +51,41 @@ const BREAKER_FASTEST_RATIO: f64 = 1.2;
 /// cheaper than it was.
 pub(super) const BREAKER_MARCH_FACTOR: f64 = 0.4;
 
+/// `breakers-match-the-walls`: the most siege guns the campaign target's
+/// Siege row asks, and the delegated reservation may order, for its walls.
+pub(super) const BREAKER_MATCH_MAX: usize = 6;
+/// `breakers-match-the-walls`: a gun whose shot does no more than this to the
+/// city is not bought for it, however many: live King game 141 ground Munich's
+/// walls with guns that could never breach it.
+pub(super) const BREAKER_MATCH_MIN_HIT: f64 = 4.0;
+/// `breakers-match-the-walls`: the turns the guns are sized to breach and take
+/// the city in, 0.8 of the train's endurance as the damage budget reads it,
+/// kept within these bounds; [`BREAKER_MATCH_DEFAULT_TURNS`] with no train
+/// within the muster's reach.
+pub(super) const BREAKER_MATCH_MIN_TURNS: f64 = 6.0;
+pub(super) const BREAKER_MATCH_MAX_TURNS: f64 = 15.0;
+pub(super) const BREAKER_MATCH_DEFAULT_TURNS: f64 = 12.0;
+/// The health a city heals a turn while its ring is open, as the damage
+/// budget prices it.
+const BREAKER_MATCH_CITY_HEAL: f64 = 20.0;
+
+/// `breakers-match-the-walls`: how many guns the walls of one city ask at our
+/// best gun's blow, and why.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct BreakerMatch {
+    /// Our best land gun's expected blow against the city, walls or health.
+    pub(super) hit: f64,
+    /// The city's defensive strength the blow is read against.
+    pub(super) defense: f64,
+    /// The turns the guns are sized to finish in.
+    pub(super) target_turns: f64,
+    /// The fewest guns that finish within `target_turns`, with the turns
+    /// they breach the walls in and take the city in; `None` when even
+    /// [`BREAKER_MATCH_MAX`] cannot, or the blow is under
+    /// [`BREAKER_MATCH_MIN_HIT`].
+    pub(super) ask: Option<(usize, f64, f64)>,
+}
+
 impl AdvancedAi {
     /// Turns a siege gun of `moves` movement takes to cover `distance` tiles
     /// to the siege: at full movement, or under `breaker-reads-the-march` at
@@ -61,6 +97,163 @@ impl AdvancedAi {
             1.0
         };
         f64::from(distance) / (moves.max(1.0) * factor)
+    }
+
+    /// `breakers-match-the-walls`: the guns `cid`'s standing walls and health
+    /// ask at our best land gun's blow, read the way the siege damage budget
+    /// reads it (`victory_conversion::conversion_siege_budget_within`): each
+    /// gun strikes the walls and then the city at full strength, the city
+    /// heals [`BREAKER_MATCH_CITY_HEAL`] a turn, and the siege must finish
+    /// within 0.8 of the endurance of our land units within
+    /// `siege_train::MUSTER_BREACH_FAR`. `None` with the gene off, a city of
+    /// ours, no wall standing, or no land gun built or buildable.
+    ///
+    /// The shipped count is a hundred wall points a gun, at most three
+    /// (`objective_board::breaker_guns_wanted`), whatever the gun: of the
+    /// 6,060 hopeless siege decisions of October 6-7 (infinite or 20 turns
+    /// and more), 69% stood in Stage with no fit gun though guns of ours were
+    /// alive in 87% of them, and -d8 read ~70% of the infinite budgets as the
+    /// gun tier and count. Live Emperor civvis-20261007T101555Z (game 338)
+    /// stood before Ray's 300 walls from turn 165 with three Trebuchets,
+    /// 633 strength against a bill of 238, its budget 75 turns then
+    /// infinite.
+    pub(super) fn breakers_matched_to_walls(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> Option<BreakerMatch> {
+        if !self.breakers_match_the_walls {
+            return None;
+        }
+        let city = g.cities.get(&cid)?;
+        if city.owner == pid || city.wall_hp <= 0 {
+            return None;
+        }
+        let land_gun = |spec: &crate::rules::UnitSpec| {
+            spec.class == "military"
+                && spec.siege
+                && spec.has_ranged_attack()
+                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+        };
+        let buildable = g
+            .player_city_ids(pid)
+            .into_iter()
+            .flat_map(|ours| g.producible_items(pid, ours))
+            .filter_map(|item| match item {
+                Item::Unit { unit } => {
+                    let spec = &g.rules.units[&unit];
+                    land_gun(spec).then(|| spec.ranged_attack_strength())
+                }
+                _ => None,
+            });
+        let fielded = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid && land_gun(&g.rules.units[unit.kind]))
+            .map(|unit| g.rules.units[unit.kind].ranged_attack_strength());
+        let attack = buildable.chain(fielded).reduce(f64::max)?;
+        let defense = g.city_strength(cid);
+        let hit = expected_damage(attack, defense);
+        let train: Vec<u32> = g
+            .units
+            .values()
+            .filter(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                unit.owner == pid
+                    && spec.class == "military"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && !g.is_embarked(unit)
+                    && g.wdist(unit.pos, city.pos) <= super::siege_train::MUSTER_BREACH_FAR
+            })
+            .map(|unit| unit.id)
+            .collect();
+        let target_turns = self
+            .conversion_siege_budget_within(
+                g,
+                pid,
+                cid,
+                &train,
+                super::siege_train::MUSTER_BREACH_FAR,
+            )
+            .map(|(_, endurance)| endurance * 0.8)
+            .filter(|turns| *turns > 0.0)
+            .map_or(BREAKER_MATCH_DEFAULT_TURNS, |turns| {
+                turns.clamp(BREAKER_MATCH_MIN_TURNS, BREAKER_MATCH_MAX_TURNS)
+            });
+        let walls = f64::from(city.wall_hp);
+        let health = f64::from(city.hp.max(0));
+        let ask = (hit > BREAKER_MATCH_MIN_HIT)
+            .then(|| {
+                (1..=BREAKER_MATCH_MAX).find_map(|guns| {
+                    let fire = guns as f64 * hit;
+                    if fire <= BREAKER_MATCH_CITY_HEAL {
+                        return None;
+                    }
+                    let breach = walls / fire;
+                    let take = breach + health / (fire - BREAKER_MATCH_CITY_HEAL) + 1.0;
+                    (take <= target_turns).then_some((guns, breach, take))
+                })
+            })
+            .flatten();
+        Some(BreakerMatch {
+            hit,
+            defense,
+            target_turns,
+            ask,
+        })
+    }
+
+    /// `breakers-match-the-walls`: the guns the campaign target's Siege row
+    /// asks, the matched count when it exceeds the shipped `stock`, and a
+    /// Detail line saying why; `stock` when the gene is off, the count asks
+    /// no more, or even [`BREAKER_MATCH_MAX`] guns cannot finish in time.
+    pub(super) fn breakers_match_the_row(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        stock: usize,
+    ) -> usize {
+        let Some(matched) = self.breakers_matched_to_walls(g, pid, cid) else {
+            return stock;
+        };
+        let city = &g.cities[&cid];
+        let BreakerMatch {
+            hit,
+            defense,
+            target_turns,
+            ask,
+        } = matched;
+        match ask {
+            Some((guns, breach, take)) if guns > stock => {
+                think!(self.journal(), Military, Detail,
+                    "Siege of {}: the walls ask {} guns", city.name, guns;
+                    "our best gun hits {:.1} a shot against {:.0}; {} guns breach {} walls in {:.1} turns \
+                     and take the city in {:.1}, within {:.1} of the train's endurance",
+                    hit, defense, guns, city.wall_hp, breach, take, target_turns;
+                    city.pos);
+                guns
+            }
+            Some(_) => stock,
+            None => {
+                think!(self.journal(), Military, Detail,
+                    "Siege of {}: the walls hold the ask at {} guns", city.name, stock;
+                    "our best gun hits {:.1} a shot against {:.0}; {} guns cannot breach {} walls \
+                     and take the city within {:.1} turns",
+                    hit, defense, BREAKER_MATCH_MAX, city.wall_hp, target_turns;
+                    city.pos);
+                stock
+            }
+        }
+    }
+
+    /// `breakers-match-the-walls`: the guns `cid`'s walls ask, or `None`
+    /// when the gene is off or holds the shipped count.
+    pub(super) fn breakers_matched_guns(&self, g: &Game, pid: usize, cid: u32) -> Option<usize> {
+        self.breakers_matched_to_walls(g, pid, cid)?
+            .ask
+            .map(|(guns, _, _)| guns)
     }
 
     /// Whether the wall-breaker reservation reads `owner` as at war: a war
@@ -226,6 +419,11 @@ impl AdvancedAi {
             } else {
                 SHORTFALL_SIEGE_CAP
             };
+        // `breakers-match-the-walls`: the campaign target's walls ask the guns
+        // that breach and take it within the train's endurance; the cap and
+        // the parallel supply follow that count.
+        let matched = self.breakers_matched_guns(g, pid, target.id);
+        let siege_cap = siege_cap.max(matched.unwrap_or(0));
         let breach_shortfall = self.siege_positive_damage_budget
             && counts.siege < siege_cap
             && nearby_taker
@@ -258,7 +456,8 @@ impl AdvancedAi {
             && target.original_owner != pid
             && g.city_max_wall_hp(target) >= SUPPLY_WALL_HP
             && counts.siege < supply_wanted;
-        let parallel = supply_short || supply_v2;
+        let walls_short = matched.is_some_and(|guns| counts.siege < guns);
+        let parallel = supply_short || supply_v2 || walls_short;
         let queued_arrival = if counts.land_siege_power > 0.0
             && !breach_shortfall
             && counts.siege == 1
@@ -543,3 +742,6 @@ mod war_strategy_tests;
 
 #[cfg(test)]
 mod modernization_tests;
+
+#[cfg(test)]
+mod breaker_match_tests;

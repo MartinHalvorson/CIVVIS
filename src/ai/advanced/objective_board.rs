@@ -1208,12 +1208,18 @@ impl AdvancedAi {
                 RowState::Open
             };
             let key = ObjectiveKey::Siege(cid);
+            let mut requirement = self.siege_requirement(g, pid, cid);
+            // `breakers-match-the-walls`: the campaign target's walls ask the
+            // guns that breach and take it at our best gun's blow.
+            if self.breakers_match_the_walls && plan.target_city == Some(cid) {
+                requirement.siege = self.breakers_match_the_row(g, pid, cid, requirement.siege);
+            }
             rows.push(Objective {
                 kind: ObjectiveKind::Siege,
                 key,
                 at: city.pos,
                 value: city_value(g, cid, lane).max(POP_VALUE),
-                requirement: self.siege_requirement(g, pid, cid),
+                requirement,
                 deadline: None,
                 state,
                 depends_on: previous_siege,
@@ -3763,3 +3769,6 @@ mod defense_priority_tests;
 
 #[cfg(test)]
 mod siege_member_tests;
+
+#[cfg(test)]
+mod breaker_match_tests;

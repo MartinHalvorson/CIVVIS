@@ -3273,6 +3273,16 @@ pub const GENES: &[Gene] = &[
     // and its Food a further 1.6 while the surplus is at most one. See
     // `advanced/growth_farm.rs`.
     Gene { tag: "growth-prices-the-farm", field: "growth_prices_the_farm", kind: Kind::OptIn, enable: AdvancedAi::enable_growth_prices_the_farm, disable: AdvancedAi::disable_growth_prices_the_farm },
+    // `breakers-match-the-walls`: 6,060 hopeless siege decisions of 10-06/07
+    // (inf or 20+ turns): 69% sat in Stage with no fit gun though guns were
+    // alive in 87% of them, and ~70% of the infinite budgets were the gun
+    // tier and count (-d8): three Trebuchets against 300 walls at a city
+    // strength of 85 strike ~6 a shot. The campaign target's Siege row asks
+    // the guns that breach its walls and take its health within 0.8 of the
+    // train's endurance at our best gun's blow, up to six, and holds the
+    // shipped count when even six cannot (game 141). See
+    // `siege_production::breakers_matched_to_walls`.
+    Gene { tag: "breakers-match-the-walls", field: "breakers_match_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_breakers_match_the_walls, disable: AdvancedAi::disable_breakers_match_the_walls },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -6793,6 +6793,17 @@ impl AdvancedAi {
         self.weak_target_skips_the_muster = false;
     }
 
+    /// Opt-in gene `breakers-match-the-walls`; see
+    /// [`Self::breakers_match_the_walls`].
+    pub fn enable_breakers_match_the_walls(&mut self) {
+        self.breakers_match_the_walls = true;
+    }
+
+    /// The twin of `enable_breakers_match_the_walls`.
+    pub fn disable_breakers_match_the_walls(&mut self) {
+        self.breakers_match_the_walls = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

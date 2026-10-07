@@ -208,6 +208,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `breaker-supply-scales` | off (unmeasured) | Opt-in gene `breaker-supply-scales`; see `Self::breaker_supply_scales`. | — \| 2 |
 | `breaker-supply-scales-2` | off (unmeasured) | Opt-in gene `breaker-supply-scales-2`; see `Self::breaker_supply_scales_2`. | — \| 2 |
 | `breaker-to-the-fastest` | off (unmeasured) | The walled-assault gun reservation takes a busy city whose arrival beats the best idle one by `BREAKER_FASTEST_MARGIN` turns and `BREAKER_FASTEST_RATIO`, not by eight turns and half again. | 1 \| 1 |
+| `breakers-match-the-walls` | off (unmeasured) | Opt-in gene `breakers-match-the-walls`; see `Self::breakers_match_the_walls`. | 1 \| 1 |
 | `breakers-stay-with-the-siege` | off (unmeasured) | Opt-in gene `breakers-stay-with-the-siege`; see `Self::breakers_stay_with_the_siege`. | 1 \| 1 |
 | `builder-before-the-army` | off (unmeasured) | The delegated city governor's own Builder quota ahead of the Monument, the Settler and the military floor. | — \| 3 |
 | `builder-before-the-army-2` | off (unmeasured) | `builder-before-the-army-2`: the same step, only while the empire has no Builder standing or queued. | — \| 3 |
