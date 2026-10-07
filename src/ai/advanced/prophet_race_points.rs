@@ -138,9 +138,13 @@ impl AdvancedAi {
     }
 
     /// `prophet-race-earns-its-points`: Revelation's +2 Prophet points a turn
-    /// while the race has a Prophet for this seat, Holy Site or not.
+    /// while the race has a Prophet for this seat, Holy Site or not. Under
+    /// `prophet-builds-its-site` only once a Holy Site is built or queued
+    /// (`revelation_has_its_site`).
     pub(super) fn race_wants_revelation(&self, g: &Game, pid: usize) -> bool {
-        self.race_points_wanted(g, pid) && g.rules.policies.contains_key("revelation")
+        self.race_points_wanted(g, pid)
+            && g.rules.policies.contains_key("revelation")
+            && self.revelation_has_its_site(g, pid)
     }
 }
 

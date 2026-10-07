@@ -3293,6 +3293,13 @@ pub const GENES: &[Gene] = &[
     // best). The bridge buys the resource the better gun waits on, sized to
     // the guns its blow needs. See `gun_resource::siege_gun_resource_wants`.
     Gene { tag: "siege-buys-the-gun-resource", field: "siege_buys_the_gun_resource", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_buys_the_gun_resource, disable: AdvancedAi::disable_siege_buys_the_gun_resource },
+    // `prophet-builds-its-site`: 2 of the 17 Religious defeats of the
+    // October 6-7 Emperor runs held a Great Prophet with no Holy Site to
+    // found on (G348 lost at turn 68 six turns after Revelation earned it),
+    // and the host exhausted the Prophet class at a median turn 45 while the
+    // race kept paying. The site comes with the Prophet; the race closes with
+    // the class. See `prophet_site::prophet_site_due`.
+    Gene { tag: "prophet-builds-its-site", field: "prophet_builds_its_site", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_builds_its_site, disable: AdvancedAi::disable_prophet_builds_its_site },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
