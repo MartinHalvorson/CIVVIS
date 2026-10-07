@@ -6782,6 +6782,17 @@ impl AdvancedAi {
         self.siege_buys_the_passage = false;
     }
 
+    /// Opt-in gene `weak-target-skips-the-muster`; see
+    /// [`Self::weak_target_skips_the_muster`].
+    pub fn enable_weak_target_skips_the_muster(&mut self) {
+        self.weak_target_skips_the_muster = true;
+    }
+
+    /// The twin of `enable_weak_target_skips_the_muster`.
+    pub fn disable_weak_target_skips_the_muster(&mut self) {
+        self.weak_target_skips_the_muster = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

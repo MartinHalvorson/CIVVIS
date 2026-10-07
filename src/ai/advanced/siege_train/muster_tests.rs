@@ -314,6 +314,28 @@ fn the_raids_read_this_turns_siege_under_the_gene() {
     }
 }
 
+/// `weak-target-skips-the-muster`: a gunless train holds at the muster
+/// line, but under the gene, against a target whose military is under
+/// `MUSTER_WEAK_TARGET_SHARE` of ours, it closes. Live Emperor game 330 held
+/// before Cartagena 12-16 tiles out with Spain at 105 power against 1,419.
+#[test]
+fn a_train_against_a_weak_target_skips_the_muster_under_the_gene() {
+    let (g, cid, mut ai, group, plan) = mustered_train(false);
+    let owner = g.cities[&cid].owner;
+    assert!(
+        g.military_power(owner) <= MUSTER_WEAK_TARGET_SHARE * g.military_power(0),
+        "fixture: the target is weak ({} vs {})",
+        g.military_power(owner),
+        g.military_power(0)
+    );
+    let mut on = ai.clone();
+    ai.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(ai.stage_muster_ready.get(&cid).copied(), Some(false), "off: holds");
+    on.enable_weak_target_skips_the_muster();
+    on.assess_siege(&g, 0, cid, &plan, &group);
+    assert_eq!(on.stage_muster_ready.get(&cid).copied(), Some(true), "on: closes");
+}
+
 #[test]
 fn a_gathered_train_without_a_breaker_holds_however_long_it_waits() {
     let (mut g, cid, mut ai, group, plan) = mustered_train(false);

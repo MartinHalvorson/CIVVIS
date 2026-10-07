@@ -8012,6 +8012,10 @@ pub struct AdvancedAi {
     /// a Theater Square, so the debts that already price it apply. Art
     /// Museums, Broadcast Centers and new Theater Squares are untouched.
     theater_keeps_its_amphitheater: bool,
+    /// `weak-target-skips-the-muster`: a train whose target's military is
+    /// at most `siege_train::MUSTER_WEAK_TARGET_SHARE` of ours closes from
+    /// the muster line at once. See `siege_train::assess_siege`.
+    weak_target_skips_the_muster: bool,
     /// `wounded-taker-finishes-the-breach`: a taker down to
     /// `BREACH_TAKER_MIN_HP` may still strike the blow that takes a city.
     /// See `air_city_assault::air_assault_capture`.
@@ -10175,6 +10179,7 @@ impl AdvancedAi {
             // ---- append: t-z ----------------------------------------
             urban_planning_fills_the_slot: false,
             theater_keeps_its_amphitheater: false,
+            weak_target_skips_the_muster: false,
             wounded_taker_finishes_the_breach: false,
             unwalled_target_declares_into_the_strike: false,
             unwalled_city_takes_the_swarm: false,

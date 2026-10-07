@@ -3161,6 +3161,12 @@ pub const GENES: &[Gene] = &[
     // purchase closed 42 of 47 asks, but only for exploration. See
     // `siege_road::siege_passage_blockers`.
     Gene { tag: "siege-buys-the-passage", field: "siege_buys_the_passage", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_buys_the_passage, disable: AdvancedAi::disable_siege_buys_the_passage },
+    // Live Emperor 10-06/07: 448 city-turns of "holds at the muster line" in
+    // 46 runs came while the target's military stood at 0.3x ours or under;
+    // the holds sat a median 10 tiles out (p75 16) because the target's
+    // other cities' strikes barred every nearer stand. See
+    // `siege_train::MUSTER_WEAK_TARGET_SHARE`.
+    Gene { tag: "weak-target-skips-the-muster", field: "weak_target_skips_the_muster", kind: Kind::OptIn, enable: AdvancedAi::enable_weak_target_skips_the_muster, disable: AdvancedAi::disable_weak_target_skips_the_muster },
     // Live Emperor 10-06: Tüngliyou (game 242) sat at walls 0 and one health
     // from turn 155 to 158 with its reserved Pike and Shot beside it at 29
     // health, one under the 30 a taker must keep. See
