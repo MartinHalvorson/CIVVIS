@@ -386,6 +386,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-rally-holds` | off (unmeasured) | Opt-in gene `siege-rally-holds`; see `Self::siege_rally_holds`. | 1 \| 1 |
 | `siege-ranged-floor` | off (unmeasured) | Opt-in gene `siege-ranged-floor`; see `Self::siege_ranged_floor`. | 1 \| 1 |
 | `siege-target-needs-a-road` | off (unmeasured) | Opt-in gene `siege-target-needs-a-road`; see `Self::reconcile_siege_roads`. | 1 \| 1 |
+| `siege-tier-yields-to-the-bombers` | off (unmeasured) | Opt-in gene `siege-tier-yields-to-the-bombers`; see `Self::siege_tier_yields_to_the_bombers`. | 1 \| 1 |
 | `siege-train-scales-with-walls` | off (unmeasured) | Opt-in gene `siege-train-scales-with-walls`; see `Self::siege_train_scales_with_walls`. | 1 \| 1 |
 | `siege-train-upgrades-first` | off (unmeasured) | Opt-in gene `siege-train-upgrades-first`; see `Self::siege_train_upgrades_first`. | 1 \| 1 |
 | `stage-march-keeps-to-land` | off (unmeasured) | Opt-in gene `stage-march-keeps-to-land`; see `Self::stage_march_keeps_to_land`. | 1 \| 1 |

@@ -7510,6 +7510,12 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-tier-yields-to-the-bombers`: while the air surge has a
+    /// research goal, the decisive window yields the slot when its own goal
+    /// lies off the Advanced Flight path, and the surge's pre-plan
+    /// Industrialization step opens at Education without waiting for
+    /// Ballistics. See `AdvancedAi::window_yields_to_the_bombers`.
+    siege_tier_yields_to_the_bombers: bool,
     /// `science-denial-spy-reads-the-leader`: the denial spy goes to the
     /// LEADING science threat's launch city, not to whichever threat's pad the
     /// stock table likes best. Under `science-threat-denial` every threat's
@@ -10112,6 +10118,7 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_tier_yields_to_the_bombers: false,
             science_denial_spy_reads_the_leader: false,
             science_leader_is_the_target: false,
             siege_buys_the_passage: false,
@@ -17360,6 +17367,17 @@ impl AdvancedAi {
                 && self.journal().wants(crate::reasoning::Level::Detail)
             {
                 match &decisive_window {
+                    Some(window)
+                        if window
+                            .tech_goal
+                            .is_some_and(|goal| self.window_yields_to_the_bombers(g, pid, goal)) =>
+                    {
+                        think!(self.journal(), Research, Detail, "decisive-window: yields to the bombers";
+                               "{} for {} lies off the Advanced Flight path, and the air surge's research owns the slot ({} techs from the Bomber)",
+                               plain(window.tech_goal.map_or("", Name::as_str)),
+                               plain(window.assault.as_str()),
+                               Self::air_surge_missing_techs(g, pid))
+                    }
                     Some(window) if window.tech_goal.is_some() => {
                         think!(self.journal(), Research, Detail, "decisive-window: yields to the faith veto";
                                "{} is owed for {}, but a rival faith is at the bar and Astrology comes first",

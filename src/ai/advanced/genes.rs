@@ -3293,6 +3293,12 @@ pub const GENES: &[Gene] = &[
     // best). The bridge buys the resource the better gun waits on, sized to
     // the guns its blow needs. See `gun_resource::siege_gun_resource_wants`.
     Gene { tag: "siege-buys-the-gun-resource", field: "siege_buys_the_gun_resource", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_buys_the_gun_resource, disable: AdvancedAi::disable_siege_buys_the_gun_resource },
+    // The decisive window spent ~1,200 science a game off the Advanced
+    // Flight path after the air surge's horizon opened (10-06/07 Emperor),
+    // and captures ran 0.20 per 100 turns before the Bomber against 1.24
+    // after it. The window yields to the surge when its goal is off that
+    // path. See `AdvancedAi::window_yields_to_the_bombers`.
+    Gene { tag: "siege-tier-yields-to-the-bombers", field: "siege_tier_yields_to_the_bombers", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_tier_yields_to_the_bombers, disable: AdvancedAi::disable_siege_tier_yields_to_the_bombers },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

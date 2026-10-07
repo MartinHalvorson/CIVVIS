@@ -132,6 +132,55 @@ fn gran_colombia_researches_toward_the_llanero_and_a_bombard() {
     );
 }
 
+/// `siege-tier-yields-to-the-bombers`: the Llanero-and-Bombard board with
+/// Education in hand, so the air surge's pre-plan step (Industrialization)
+/// has a goal. Gene off, the window keeps the slot for Metal Casting or
+/// Military Science; gene on, it yields and research steps toward the
+/// Bomber instead.
+#[test]
+fn the_window_yields_an_off_path_goal_to_the_bombers_under_the_gene() {
+    let (mut g, mut ai, plan) = board("Gran Colombia");
+    learn(&mut g, 1, &["siege_tactics", "gunpowder", "military_tactics"]);
+    learn(
+        &mut g,
+        0,
+        &["printing", "castles", "gunpowder", "animal_husbandry", "education"],
+    );
+    g.players[0]
+        .strategic_resources
+        .insert(name!("horses"), 40.0);
+    g.players[0]
+        .strategic_resources
+        .insert(name!("niter"), 40.0);
+    quote_cheap(&mut g, 0);
+    ai.enable_air_surge_2();
+    let window = ai.decisive_window(&g, 0, &plan).expect("a window");
+    let goal = window.tech_goal.expect("research is still owed");
+    assert!(
+        [name!("metal_casting"), name!("military_science")].contains(&goal),
+        "{goal:?}"
+    );
+    // Gene off: the window's goal holds; Ballistics is still the surge's gate.
+    assert!(!ai.window_yields_to_the_bombers(&g, 0, goal));
+    assert_eq!(ai.decisive_window_research_goal(&g, 0, Some(&window)), Some(goal));
+    assert_eq!(ai.air_surge_research_goal(&g, 0), None);
+
+    ai.enable_siege_tier_yields_to_the_bombers();
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some("industrialization"));
+    assert!(ai.window_yields_to_the_bombers(&g, 0, goal));
+    assert_eq!(ai.decisive_window_research_goal(&g, 0, Some(&window)), None);
+    // A goal on the Advanced Flight path never yields.
+    assert!(!ai.window_yields_to_the_bombers(&g, 0, name!("industrialization")));
+    assert!(!ai.window_yields_to_the_bombers(&g, 0, name!("advanced_flight")));
+    g.players[0].research = None;
+    ai.advanced_research(&mut g, 0, &plan);
+    let picked = g.players[0].research.clone().expect("a research pick");
+    assert!(
+        ai.tech_leads_to(&g, &picked, "industrialization"),
+        "{picked:?} is not on the way to the Bomber"
+    );
+}
+
 /// The same board with both halves unlocked: the window is open, there is
 /// nothing to research for it, and every other lane keeps the slot.
 #[test]

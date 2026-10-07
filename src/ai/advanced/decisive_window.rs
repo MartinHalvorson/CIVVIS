@@ -673,6 +673,30 @@ impl AdvancedAi {
         window
             .and_then(|window| window.tech_goal)
             .filter(|_| !self.faith_arm_wants_astrology(g, pid))
+            .filter(|goal| !self.window_yields_to_the_bombers(g, pid, *goal))
+    }
+
+    /// `siege-tier-yields-to-the-bombers`: whether the window's research
+    /// `goal` gives way to the air surge's. It does while the surge has a
+    /// research goal and `goal` is neither Advanced Flight nor one of its
+    /// ancestors. Over the 10-06/07 Emperor runs, cities of a major were
+    /// taken 0.20 times per 100 turns between turn 60 and Advanced Flight and
+    /// 1.24 times after it, yet the window spent about 1,200 science a game
+    /// off that path once the surge's horizon had opened (median turn 95):
+    /// the Llanero's Military Science, Steel's Artillery, and on the way the
+    /// Bombard tier's Gunpowder and Metal Casting. Advanced Flight landed at a
+    /// median turn 147, and the games that reached it by turn 139 took 0.79
+    /// major cities between turns 130 and 190 against 0.08 for those past 169.
+    pub(crate) fn window_yields_to_the_bombers(&self, g: &Game, pid: usize, goal: Name) -> bool {
+        use super::air_surge::AIR_SURGE_GOAL_TECH;
+        self.siege_tier_yields_to_the_bombers
+            && goal.as_str() != AIR_SURGE_GOAL_TECH
+            && !g
+                .rules
+                .tech_ancestors
+                .get(AIR_SURGE_GOAL_TECH)
+                .is_some_and(|ancestors| ancestors.contains(goal.as_str()))
+            && self.air_surge_research_goal(g, pid).is_some()
     }
 
     /// The faith arm's own predicate, restated: the veto is due, the Prophet

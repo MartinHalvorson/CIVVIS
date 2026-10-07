@@ -6815,6 +6815,17 @@ impl AdvancedAi {
         self.siege_buys_the_gun_resource = false;
     }
 
+    /// Opt-in gene `siege-tier-yields-to-the-bombers`; see
+    /// [`Self::siege_tier_yields_to_the_bombers`].
+    pub fn enable_siege_tier_yields_to_the_bombers(&mut self) {
+        self.siege_tier_yields_to_the_bombers = true;
+    }
+
+    /// The twin of `enable_siege_tier_yields_to_the_bombers`.
+    pub fn disable_siege_tier_yields_to_the_bombers(&mut self) {
+        self.siege_tier_yields_to_the_bombers = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
