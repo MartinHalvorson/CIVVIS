@@ -2941,7 +2941,9 @@ fn append_gun_resource_buy_order(
         .filter(|income| income.is_finite())
         .unwrap_or(0.0);
     let carried = (state.gold - GUN_RESOURCE_BUY_GOLD_RESERVE).max(0)
-        + (25.0 * (income - GUN_RESOURCE_BUY_INCOME_FLOOR)).floor().max(0.0) as i64;
+        + (25.0 * (income - GUN_RESOURCE_BUY_INCOME_FLOOR))
+            .floor()
+            .max(0.0) as i64;
     let affordable = carried.min(GUN_RESOURCE_BUY_CEILING_MAX as i64) as i32;
     if affordable < GUN_RESOURCE_BUY_CEILING_MIN {
         return Some("gun_resource_buy_hold:treasury");
@@ -4812,8 +4814,7 @@ fn decide(
                 // The holds worth a glance: a gun waiting on its resource
                 // while the treasury, the sellers or their working deals
                 // stand in the way.
-                if why != "gun_resource_buy_hold:no_need"
-                    && why != "gun_resource_buy_hold:cadence"
+                if why != "gun_resource_buy_hold:no_need" && why != "gun_resource_buy_hold:cadence"
                 {
                     note_bits.push(why.to_string());
                 }
@@ -17571,8 +17572,8 @@ mod tests {
     /// at the engine's book and never under one gun's worth.
     #[test]
     fn the_guns_resource_is_bought_from_the_largest_offer() {
-        let want = |resource: &str, id: &str, amount: u32, minimum: u32| {
-            civvis::ai::GunResourceWant {
+        let want =
+            |resource: &str, id: &str, amount: u32, minimum: u32| civvis::ai::GunResourceWant {
                 resource: resource.to_string(),
                 resource_id: id.to_string(),
                 amount,
@@ -17581,8 +17582,7 @@ mod tests {
                 guns: 3,
                 hit: 24.6,
                 renewal: false,
-            }
-        };
+            };
         let offers = |pairs: &[(&str, i64)]| {
             Some(
                 pairs

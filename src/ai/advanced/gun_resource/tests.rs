@@ -93,7 +93,10 @@ fn the_bombard_asks_its_niter() {
     assert!(!g.can_produce(0, home, &bombard), "no Niter");
     let wants = ai.siege_gun_resource_wants(&g, 0);
     assert_eq!(wants.len(), 1, "{wants:?}");
-    assert_eq!(niter(&wants[0]), ("RESOURCE_NITER", "bombard", 50, 20, 3, false));
+    assert_eq!(
+        niter(&wants[0]),
+        ("RESOURCE_NITER", "bombard", 50, 20, 3, false)
+    );
     assert_eq!(wants[0].resource_id, "niter");
     assert!((wants[0].hit - 30.0 * (5.0_f64 / 25.0).exp()).abs() < 1e-9);
 }
@@ -107,7 +110,10 @@ fn the_matched_count_sizes_the_niter() {
     ai.enable_siege_buys_the_gun_resource();
     ai.enable_breakers_match_the_walls();
     let wants = ai.siege_gun_resource_wants(&g, 0);
-    assert_eq!(niter(&wants[0]), ("RESOURCE_NITER", "bombard", 40, 20, 2, false));
+    assert_eq!(
+        niter(&wants[0]),
+        ("RESOURCE_NITER", "bombard", 40, 20, 2, false)
+    );
 }
 
 /// A Bombard that cannot take the city however many (3.3 a shot against
@@ -130,20 +136,29 @@ fn stock_income_or_the_gun_in_hand_asks_nothing() {
     g.players[0]
         .strategic_resources
         .insert(crate::name!("niter"), 20.0);
-    assert!(ai.siege_gun_resource_wants(&g, 0).is_empty(), "stock covers a gun");
+    assert!(
+        ai.siege_gun_resource_wants(&g, 0).is_empty(),
+        "stock covers a gun"
+    );
 
     let (mut g, mut ai, _, _) = niter_case(50.0);
     ai.enable_siege_buys_the_gun_resource();
     let mut income = BTreeMap::new();
     income.insert(crate::name!("niter"), 4.0);
     std::sync::Arc::make_mut(&mut g.observed_strategic_income_adjustments).insert(0, income);
-    assert!(ai.siege_gun_resource_wants(&g, 0).is_empty(), "income covers a gun");
+    assert!(
+        ai.siege_gun_resource_wants(&g, 0).is_empty(),
+        "income covers a gun"
+    );
 
     let (mut g, mut ai, home, _) = niter_case(50.0);
     ai.enable_siege_buys_the_gun_resource();
     let pos = g.cities[&home].pos;
     g.spawn_unit("bombard", 0, pos);
-    assert!(ai.siege_gun_resource_wants(&g, 0).is_empty(), "the gun is in hand");
+    assert!(
+        ai.siege_gun_resource_wants(&g, 0).is_empty(),
+        "the gun is in hand"
+    );
 }
 
 /// No standing walls, no Domination target, or a target we neither fight
@@ -158,7 +173,10 @@ fn only_the_walled_campaign_target_asks() {
     ai.enable_siege_buys_the_gun_resource();
     g.at_war.clear();
     ai.plan.as_mut().unwrap().target_player = None;
-    assert!(ai.siege_gun_resource_wants(&g, 0).is_empty(), "neither war nor plan");
+    assert!(
+        ai.siege_gun_resource_wants(&g, 0).is_empty(),
+        "neither war nor plan"
+    );
     let (g, mut ai, _, _) = niter_case(50.0);
     ai.enable_siege_buys_the_gun_resource();
     ai.plan.as_mut().unwrap().target_city = None;

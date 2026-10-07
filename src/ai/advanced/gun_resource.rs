@@ -134,7 +134,9 @@ impl AdvancedAi {
             if !land_gun(spec)
                 || !spec.buildable
                 || spec.tech.is_some_and(|tech| !player.techs.contains(&tech))
-                || spec.civic.is_some_and(|civic| !player.civics.contains(&civic))
+                || spec
+                    .civic
+                    .is_some_and(|civic| !player.civics.contains(&civic))
                 || spec
                     .unique_to
                     .as_deref()
@@ -169,27 +171,30 @@ impl AdvancedAi {
                     .filter(|item| matches!(item, Item::Unit { unit } if unit == kind))
                     .count();
             let upkeep = have as f64 * fuel;
-            let (amount, minimum, renewal, sized) =
-                if fuel > 0.0 && have > 0 && income < upkeep && stock < upkeep * GUN_RESOURCE_FUEL_LOW_TURNS {
-                    (
-                        upkeep * GUN_RESOURCE_FUEL_TURNS - stock,
-                        upkeep * GUN_RESOURCE_FUEL_LOW_TURNS - stock,
-                        true,
-                        have,
-                    )
-                } else if spec.ranged_attack_strength() > best_now
-                    && stock + income * GUN_RESOURCE_WAIT_TURNS < cost.max(fuel)
-                {
-                    let gun = cost + fuel * GUN_RESOURCE_FUEL_TURNS;
-                    (
-                        guns as f64 * gun - stock,
-                        cost + fuel * GUN_RESOURCE_FUEL_LOW_TURNS - stock,
-                        false,
-                        guns,
-                    )
-                } else {
-                    continue;
-                };
+            let (amount, minimum, renewal, sized) = if fuel > 0.0
+                && have > 0
+                && income < upkeep
+                && stock < upkeep * GUN_RESOURCE_FUEL_LOW_TURNS
+            {
+                (
+                    upkeep * GUN_RESOURCE_FUEL_TURNS - stock,
+                    upkeep * GUN_RESOURCE_FUEL_LOW_TURNS - stock,
+                    true,
+                    have,
+                )
+            } else if spec.ranged_attack_strength() > best_now
+                && stock + income * GUN_RESOURCE_WAIT_TURNS < cost.max(fuel)
+            {
+                let gun = cost + fuel * GUN_RESOURCE_FUEL_TURNS;
+                (
+                    guns as f64 * gun - stock,
+                    cost + fuel * GUN_RESOURCE_FUEL_LOW_TURNS - stock,
+                    false,
+                    guns,
+                )
+            } else {
+                continue;
+            };
             let limit = (room - stock).max(0.0);
             let amount = amount.min(limit).ceil();
             let minimum = minimum.max(1.0).ceil();
