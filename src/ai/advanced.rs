@@ -6601,6 +6601,10 @@ pub struct AdvancedAi {
     /// See `BasicAi::front_weighted_floor_2`.
     front_weighted_floor_2: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `growth-prices-the-farm`: an improvement's Housing and Food are priced
+    /// in a small city that is Housing-bound or not growing. See
+    /// `advanced/growth_farm.rs`.
+    growth_prices_the_farm: bool,
     /// `invest-keeps-its-cavalry`: the raid planner takes no cavalry from a
     /// siege that is investing, reducing or taking its city, or whose muster
     /// has closed. See `siege_train::siege_needs_the_unit`.
@@ -8938,6 +8942,10 @@ mod siege_response;
 mod first_luxury;
 mod luxury_research;
 
+/// `growth-prices-the-farm`: the Builder prices the Housing and Food a small
+/// city cannot grow without. One opt-in gene; see `advanced/growth_farm.rs`.
+mod growth_farm;
+
 /// Commitments: every multi-turn decision — a settle site, a Builder's tile,
 /// the appointed war's objective — observed at the turn boundary and tracked
 /// to its ending, with what became of it counted. Infrastructure, not a
@@ -9951,6 +9959,7 @@ impl AdvancedAi {
             front_weighted_floor: false,
             front_weighted_floor_2: false,
             // ---- append: g-k ----------------------------------------
+            growth_prices_the_farm: false,
             invest_keeps_its_cavalry: false,
             guns_grind_the_walls: false,
             grinding_sieges: BTreeSet::new(),
@@ -38907,6 +38916,7 @@ impl AdvancedAi {
             .map(|improvement| {
                 self.improvement_value_with_appeal(g, pos, improvement, strategy, appeal)
                     + self.first_luxury_premium(g, pid, pos, improvement)
+                    + self.growth_farm_premium(g, pid, pos, improvement)
             })
             .unwrap_or(0.0);
         // Score each candidate once and sort the scores. The comparator used
@@ -38920,7 +38930,8 @@ impl AdvancedAi {
             .map(|improvement| {
                 let value =
                     self.improvement_value_with_appeal(g, pos, &improvement, strategy, appeal)
-                        + self.first_luxury_premium(g, pid, pos, &improvement);
+                        + self.first_luxury_premium(g, pid, pos, &improvement)
+                        + self.growth_farm_premium(g, pid, pos, &improvement);
                 (value, improvement)
             })
             .filter(|(value, _)| *value > current_value + 0.5)
@@ -46754,6 +46765,8 @@ mod commercial_hub_queue_tests;
 mod industrial_zone_tests;
 #[cfg(test)]
 mod urban_planning_slot_tests;
+#[cfg(test)]
+mod growth_farm_tests;
 
 #[cfg(test)]
 mod theater_amphitheater_tests;
