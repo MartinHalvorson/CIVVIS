@@ -7216,6 +7216,18 @@ pub struct AdvancedAi {
     /// `BasicAi::note_host_moves` and `advanced/own_column.rs`.
     own_column_is_not_a_refusal: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `prophet-builds-its-site`: a held Great Prophet, the race's wanted
+    /// Revelation points, or points within `PROPHET_SITE_LEAD_TURNS` of the
+    /// cost put the Holy Site at the head of the city that builds it soonest;
+    /// Revelation is slotted only with a Holy Site built or queued; and once
+    /// the host lists the Prophet class exhausted the race closes for this
+    /// seat. Of the 17 Religious defeats of the October 6-7 Emperor runs, 2
+    /// held a Prophet with no Holy Site to found on (G348 turns 62-68, lost at
+    /// 68; 011049Z turns 57-103); the class was exhausted at a median turn 45
+    /// over 121 games, and 032934Z and 021157Z kept banking Prophet points to
+    /// 103 and 139 after it closed at 40. See `advanced/prophet_site.rs`.
+    /// Off by default.
+    prophet_builds_its_site: bool,
     /// `religious-match-point-defence`: the religious interception (a war
     /// that condemns a match-point faith's spreader at home, its cities
     /// located or not) may open beside a war already being fought, at
@@ -8915,6 +8927,10 @@ mod decisive_window;
 mod culture_defense;
 mod government_plaza;
 mod prophet_race_points;
+/// `prophet-builds-its-site`: a Great Prophet never waits for its Holy Site,
+/// and the race stops paying once the host has no Prophet left. See
+/// `advanced/prophet_site.rs`.
+mod prophet_site;
 mod standing_army_supply;
 /// Victory lanes are target contracts: their beelines and campaign objectives
 /// stay attached to the condition that can actually end (or deny) the game.
@@ -10076,6 +10092,7 @@ impl AdvancedAi {
             naval_escort_patience: false,
             own_column_is_not_a_refusal: false,
             // ---- append: p-r ----------------------------------------
+            prophet_builds_its_site: false,
             religious_match_point_defence: false,
             rival_power_peak_seen: BTreeMap::new(),
             prophet_race_earns_its_points: false,
@@ -18508,6 +18525,10 @@ impl AdvancedAi {
         }
         if player.prophet_pending {
             return true;
+        }
+        // `prophet-builds-its-site`: the host says no Prophet is left.
+        if self.prophet_race_exhausted(g, pid) {
+            return false;
         }
         let claimed = g.religions_founded()
             + g.players
@@ -30147,9 +30168,12 @@ impl AdvancedAi {
                 });
             // `prophet-race-earns-its-points`: the race's Shrine finishes
             // before routine rescoring can claim its Holy Site city.
+            // `prophet-builds-its-site`: likewise the Holy Site a Prophet
+            // waits on.
             let race_shrine_commitment = plan.threatened_city != Some(cid)
                 && committed.as_ref().is_some_and(|(_, item)| {
-                    self.race_shrine_committed(g, pid, cid, item)
+                    (self.race_shrine_committed(g, pid, cid, item)
+                        || self.prophet_site_committed(g, pid, cid, item))
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
             // `industrial-zone-in-the-producers`: a queued Industrial Zone or
@@ -46611,6 +46635,9 @@ impl AdvancedAi {
             {
                 self.culture_spending(g, pid);
             }
+            // `prophet-builds-its-site`: the Holy Site a Prophet founds on
+            // goes first. Exact no-op while the gene is off.
+            self.reserve_prophet_site(g, pid, &plan);
             // `prophet-race-earns-its-points`: the race's Holy Site city
             // starts its Shrine. Exact no-op while the gene is off.
             self.reserve_race_shrine(g, pid, &plan);

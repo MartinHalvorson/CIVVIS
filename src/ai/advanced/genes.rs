@@ -3311,6 +3311,13 @@ pub const GENES: &[Gene] = &[
     // the Aerodrome went to Panama (population 1, 3 Production), and its
     // Bombers took 41 turns. See `air_surge::bomber_wing`.
     Gene { tag: "surge-fields-the-bombers", field: "surge_fields_the_bombers", kind: Kind::OptIn, enable: AdvancedAi::enable_surge_fields_the_bombers, disable: AdvancedAi::disable_surge_fields_the_bombers },
+    // `prophet-builds-its-site`: 2 of the 17 Religious defeats of the
+    // October 6-7 Emperor runs held a Great Prophet with no Holy Site to
+    // found on (G348 lost at turn 68 six turns after Revelation earned it),
+    // and the host exhausted the Prophet class at a median turn 45 while the
+    // race kept paying. The site comes with the Prophet; the race closes with
+    // the class. See `prophet_site::prophet_site_due`.
+    Gene { tag: "prophet-builds-its-site", field: "prophet_builds_its_site", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_builds_its_site, disable: AdvancedAi::disable_prophet_builds_its_site },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

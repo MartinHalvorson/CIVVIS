@@ -6837,6 +6837,17 @@ impl AdvancedAi {
         self.surge_fields_the_bombers = false;
     }
 
+    /// Opt-in gene `prophet-builds-its-site`; see
+    /// [`Self::reserve_prophet_site`] and [`Self::prophet_race_exhausted`].
+    pub fn enable_prophet_builds_its_site(&mut self) {
+        self.prophet_builds_its_site = true;
+    }
+
+    /// The twin of `enable_prophet_builds_its_site`.
+    pub fn disable_prophet_builds_its_site(&mut self) {
+        self.prophet_builds_its_site = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
