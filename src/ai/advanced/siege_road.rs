@@ -34,6 +34,14 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 /// `COMMITMENT_PATIENCE`, the controller's own "not getting there".
 pub(super) const ROAD_HOLD_TURNS: u32 = 3;
 
+/// `long-road-names-the-blocker`: a dry road at least this many times the
+/// road through closed borders is the long way round them.
+const LONG_ROAD_FACTOR: usize = 2;
+
+/// `long-road-names-the-blocker`: and at least this many steps longer, so a
+/// short road with a small detour still marches.
+const LONG_ROAD_EXTRA: usize = 10;
+
 /// One siege's march outcomes for the turn, and its run of road-bound turns.
 #[derive(Clone, Debug, Default)]
 pub(super) struct RoadTally {
@@ -99,6 +107,48 @@ impl AdvancedAi {
                 tally.marched.insert(uid);
                 None
             }
+        }
+    }
+
+    /// `long-road-names-the-blocker`: `march` as the Stage march reads it,
+    /// except that a dry road at least [`LONG_ROAD_FACTOR`] times, and
+    /// [`LONG_ROAD_EXTRA`] steps over, the road through a peaceful major's
+    /// closed borders becomes a hold short of them, so `note_stage_march`
+    /// names that major: the passage purchase asks it, and the road
+    /// stand-down retargets when the hold persists.
+    ///
+    /// Live Emperor civvis-20261007T123621Z (game 351): with Japan's borders
+    /// closed between our east shore and Mataram, the dry road ran 40-43
+    /// steps north round the lake against 7-9 through Japan. From turn 78
+    /// to 90 the train's Trebuchets, Men-at-Arms and Knights stood nine to
+    /// thirteen tiles out, swapping between two shore tiles each frame or
+    /// stepping onto the long road and back, while the siege read "1 of 7-9
+    /// staged" and the target moved on at turn 90. No march ever held, so
+    /// nothing named Japan, and the first passage ask came at turn 113.
+    pub(super) fn long_road_holds(
+        &mut self,
+        g: &Game,
+        uid: u32,
+        target: Pos,
+        march: StageMarch,
+    ) -> StageMarch {
+        let StageMarch::Dry { dry, wet, .. } = march else {
+            return march;
+        };
+        if !self.long_road_names_the_blocker {
+            return march;
+        }
+        match border_free_road(g, uid, target) {
+            Some((free, Some(owner)))
+                if dry >= LONG_ROAD_FACTOR * free && dry >= free + LONG_ROAD_EXTRA =>
+            {
+                think!(self.journal(), Military, Detail,
+                    "Siege march holds for {}'s closed borders", g.players[owner].civ;
+                    "the dry road round them runs {dry} steps against {free} through them; the march would cross water in {wet}";
+                    target);
+                StageMarch::Hold { wet }
+            }
+            _ => march,
         }
     }
 
@@ -326,6 +376,14 @@ impl AdvancedAi {
 /// road exists within [`STAGE_DRY_LIMIT`] (water or impassable ground), or
 /// when the road needs no closed border.
 fn border_blocker(g: &Game, uid: u32, target: Pos) -> Option<usize> {
+    border_free_road(g, uid, target).and_then(|(_, blocker)| blocker)
+}
+
+/// The length of the shortest dry road from `uid` to the staging ring of
+/// `target` with every border open, and the first major at peace whose
+/// closed borders it crosses (`None` when it crosses none). `None` when no
+/// dry road reaches the ring within [`STAGE_DRY_LIMIT`] steps.
+fn border_free_road(g: &Game, uid: u32, target: Pos) -> Option<(usize, Option<usize>)> {
     let unit = g.units.get(&uid)?;
     let seat = unit.owner;
     let open = |owner: usize| {
@@ -355,7 +413,7 @@ fn border_blocker(g: &Game, uid: u32, target: Pos) -> Option<usize> {
                 .filter(|owner| !open(*owner));
             let blocker = blocker.or(closed);
             if g.wdist(next, target) <= STAGING_FAR {
-                return blocker;
+                return Some((steps + 1, blocker));
             }
             queue.push_back((next, blocker, steps + 1));
         }
@@ -403,6 +461,20 @@ mod tests {
         (g, target, soldier)
     }
 
+    /// `strip` with a land detour north of it: up column 2 from the west
+    /// end to row 0, along row 0, and down column 36 into the east end, so a
+    /// dry road round the screen exists, more than twice the one through it.
+    fn strip_with_a_detour() -> (Game, u32, u32) {
+        let (mut g, target, soldier) = strip();
+        for tile in g.map.tiles.values_mut() {
+            let (x, y) = tile.pos;
+            if (y <= 3 && (x == 2 || x == 36)) || (y == 0 && (2..=36).contains(&x)) {
+                tile.terrain = crate::name!("grassland");
+            }
+        }
+        (g, target, soldier)
+    }
+
     fn ai(gene: bool, g: &Game, target: u32) -> AdvancedAi {
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
         ai.enable_capture_go_or_stand_down_2();
@@ -429,6 +501,41 @@ mod tests {
             ai.reconcile_commitments(g, 0);
             g.turn += 1;
         }
+    }
+
+    /// `long-road-names-the-blocker`: the dry road round a peaceful major's
+    /// closed borders, over twice the road through them, holds short of
+    /// them and names the major as the passage to buy; the gene off, or at
+    /// war with the screen's owner, the march keeps its dry road.
+    #[test]
+    fn a_long_road_round_closed_borders_holds_and_names_the_blocker_under_the_gene() {
+        use super::super::siege_train::{STAGE_DRY_LIMIT, STAGING_FAR};
+        let (g, target, soldier) = strip_with_a_detour();
+        let pos = g.cities[&target].pos;
+        let (step, dry) = g
+            .route_step_dry(soldier, pos, STAGING_FAR, STAGE_DRY_LIMIT)
+            .expect("the way round");
+        let free = super::border_free_road(&g, soldier, pos).expect("a road through");
+        assert_eq!(free.1, Some(1), "through the screen");
+        assert!(dry >= 2 * free.0 && dry >= free.0 + 10, "fixture: {dry} against {free:?}");
+        let march = StageMarch::Dry { step, dry, wet: 12 };
+        let mut off = ai(true, &g, target);
+        off.enable_siege_buys_the_passage();
+        assert!(matches!(off.long_road_holds(&g, soldier, pos, march), StageMarch::Dry { .. }), "off");
+        let mut on = ai(true, &g, target);
+        on.enable_siege_buys_the_passage();
+        on.enable_long_road_names_the_blocker();
+        let held = on.long_road_holds(&g, soldier, pos, march);
+        assert!(matches!(held, StageMarch::Hold { wet: 12 }), "{held:?}");
+        let _ = on.note_stage_march(&g, soldier, target, &held);
+        assert_eq!(on.siege_passage_blockers(&g, 0), [1].into(), "the screen's owner");
+        let mut war = g.clone();
+        war.at_war.insert((0, 1));
+        war.at_war.insert((1, 0));
+        assert!(
+            matches!(on.long_road_holds(&war, soldier, pos, march), StageMarch::Dry { .. }),
+            "at war the road through is open"
+        );
     }
 
     /// `siege-buys-the-passage`: a march held short of a major's closed

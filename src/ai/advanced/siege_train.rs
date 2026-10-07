@@ -3339,6 +3339,8 @@ impl AdvancedAi {
             } else {
                 StageMarch::Ordinary
             };
+            // `long-road-names-the-blocker`: see `long_road_holds`.
+            let dry_march = self.long_road_holds(g, uid, city.pos, dry_march);
             // `siege-target-needs-a-road`: see `advanced/siege_road.rs`.
             let shut_by = self.note_stage_march(g, uid, city.id, &dry_march);
             if let StageMarch::Hold { wet } = dry_march {
@@ -3885,6 +3887,7 @@ impl AdvancedAi {
         } else {
             StageMarch::Ordinary
         };
+        let dry_march = self.long_road_holds(g, uid, city.pos, dry_march);
         let dry = match dry_march {
             StageMarch::Ordinary => dry_march_step(g, uid, city.pos, STAGING_FAR),
             StageMarch::Dry { step, .. } => Some(step),

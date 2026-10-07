@@ -6831,6 +6831,10 @@ pub struct AdvancedAi {
     /// `BasicAi::industrial_zone_in_the_producers`.
     industrial_zone_in_the_producers: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `long-road-names-the-blocker`: a Stage march whose only dry road runs
+    /// the long way round a peaceful major's closed borders holds short of
+    /// them instead, naming that major. See `AdvancedAi::long_road_holds`.
+    long_road_names_the_blocker: bool,
     /// `opening-yields-to-walls`: a declared conquest opening that has taken
     /// nothing asks for terms and stands down once its target walls up with no
     /// breaker held, or once it has spent the patience window without denting
@@ -10063,6 +10067,7 @@ impl AdvancedAi {
             housing_bound_city_builds_its_granary: false,
             industrial_zone_in_the_producers: false,
             // ---- append: l-o ----------------------------------------
+            long_road_names_the_blocker: false,
             opening_yields_to_walls: false,
             luxury_buy_asks: false,
             overwhelming_power_declares: false,

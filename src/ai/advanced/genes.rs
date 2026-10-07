@@ -3326,6 +3326,13 @@ pub const GENES: &[Gene] = &[
     // the sanctuary start at the first convert. See
     // `counterweight_first_convert::first_convert_threat`.
     Gene { tag: "counterweight-from-the-first-convert", field: "counterweight_from_the_first_convert", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_from_the_first_convert, disable: AdvancedAi::disable_counterweight_from_the_first_convert },
+    // G351 (civvis-20261007T123621Z): the dry road round Japan's closed
+    // borders ran 40-43 steps against 7-9 through them, and the train
+    // shuffled on the shore for twelve turns with nothing naming Japan. A
+    // march that long holds and names the blocker instead, which the passage
+    // purchase and the road stand-down act on. See
+    // `AdvancedAi::long_road_holds`.
+    Gene { tag: "long-road-names-the-blocker", field: "long_road_names_the_blocker", kind: Kind::OptIn, enable: AdvancedAi::enable_long_road_names_the_blocker, disable: AdvancedAi::disable_long_road_names_the_blocker },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

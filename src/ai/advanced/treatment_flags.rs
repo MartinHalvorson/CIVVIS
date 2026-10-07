@@ -6859,6 +6859,17 @@ impl AdvancedAi {
         self.counterweight_from_the_first_convert = false;
     }
 
+    /// Opt-in gene `long-road-names-the-blocker`; see
+    /// [`Self::long_road_names_the_blocker`].
+    pub fn enable_long_road_names_the_blocker(&mut self) {
+        self.long_road_names_the_blocker = true;
+    }
+
+    /// The twin of `enable_long_road_names_the_blocker`.
+    pub fn disable_long_road_names_the_blocker(&mut self) {
+        self.long_road_names_the_blocker = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
