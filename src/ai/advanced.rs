@@ -7968,6 +7968,21 @@ pub struct AdvancedAi {
     /// `BasicAi::settler_before_the_navy`.
     settler_before_the_navy: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `urban-planning-fills-the-slot`: Urban Planning (+1 Production in
+    /// every city) is wanted at the tail of every lane's policy portfolio, so
+    /// it takes any slot no wanted card holds and is protected from a card
+    /// the plan does not want.
+    ///
+    /// Emperor 2026-10-06/07 (106 runs, the policy deck at turn ~100): Urban
+    /// Planning was slotted in 41; in all 65 others Natural Philosophy held
+    /// the economic slot and Serfdom held the second in 42. No static deck
+    /// names Urban Planning; it enters only through the expansion and Builder
+    /// timing arm, so once the Settler waves end it is never wanted again.
+    /// The Builder window's Serfdom (580 "Slotted serfdom over urban
+    /// planning" lines) then keeps the slot after its Builder finishes,
+    /// because nothing the plan wants asks for it back. Natural Philosophy
+    /// keeps its existing claim: wanted cards still outrank this tail entry.
+    urban_planning_fills_the_slot: bool,
     /// `theater-keeps-its-amphitheater`: a Theater Square the empire has
     /// already built owes its Amphitheater on every lane, not only Culture.
     ///
@@ -8496,6 +8511,16 @@ const CULTURE_BUILDINGS_BEFORE_PROJECTS: [&str; 4] = [
 /// must keep its opening, and the deck is longer than the slot count, so this
 /// only wins a slot that would otherwise have gone to the tail of the list.
 const RESEARCH_DECK_INSERT: usize = 4;
+/// `urban-planning-fills-the-slot`: the timed Settler and Builder cards the
+/// expansion arm slots for a window. Once the plan no longer wants one, its
+/// window has closed and its slot is Urban Planning's.
+const URBAN_PLANNING_ORPHANED_TIMED_CARDS: [&str; 5] = [
+    "serfdom",
+    "public_works",
+    "ilkum",
+    "colonization",
+    "expropriation",
+];
 
 /// The headroom below which a city is worth spending a policy slot on.
 /// The engine pays full growth at 2 and halves it below that break-even.
@@ -10134,6 +10159,7 @@ impl AdvancedAi {
 
             settler_before_the_navy: false,
             // ---- append: t-z ----------------------------------------
+            urban_planning_fills_the_slot: false,
             theater_keeps_its_amphitheater: false,
             wounded_taker_finishes_the_breach: false,
             unwalled_target_declares_into_the_strike: false,
@@ -19609,6 +19635,19 @@ impl AdvancedAi {
                     and a policy swap must not bankrupt the campaign",
                    g.players[pid].gold, g.players[pid].gold_per_turn);
         }
+        // `urban-planning-fills-the-slot`: Urban Planning at the tail of the
+        // portfolio, so it fills a free slot and evicts only an orphaned timed
+        // economy card: a Builder or Settler card whose window has closed
+        // (Serfdom after its Builder finished, Colonization with no Settler),
+        // which the plan no longer wants. A held Urban Planning stays wanted.
+        let urban_planning_tail =
+            self.urban_planning_fills_the_slot && !desired.contains(&"urban_planning") && {
+                let card = crate::name!("urban_planning");
+                g.players[pid].policies.contains(&card) || g.available_policies(pid).contains(&card)
+            };
+        if urban_planning_tail {
+            desired.push("urban_planning");
+        }
         let desired_set: HashSet<&str> = desired.iter().copied().collect();
         // If circumstances changed, remove a downside-bearing Dark Age card
         // immediately. Isolationism must not coexist with a live Settler.
@@ -19679,6 +19718,12 @@ impl AdvancedAi {
                 .filter(|current| {
                     if protect_wartime_income.is_some() && current.as_str() == "economic_union" {
                         return false;
+                    }
+                    // `urban-planning-fills-the-slot`: the tail entry takes only
+                    // an orphaned timed economy card's slot.
+                    if urban_planning_tail && card == "urban_planning" {
+                        return URBAN_PLANNING_ORPHANED_TIMED_CARDS.contains(&current.as_str())
+                            && !desired_set.contains(current.as_str());
                     }
                     if builder_window_card == Some(card) {
                         // Protection applies even when the current card is
@@ -46707,6 +46752,8 @@ mod domination_solvency_tests;
 mod commercial_hub_queue_tests;
 #[cfg(test)]
 mod industrial_zone_tests;
+#[cfg(test)]
+mod urban_planning_slot_tests;
 
 #[cfg(test)]
 mod theater_amphitheater_tests;

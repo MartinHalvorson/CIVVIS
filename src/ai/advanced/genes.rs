@@ -3248,6 +3248,9 @@ pub const GENES: &[Gene] = &[
     // hub step also runs in its idle queues. Requires and arms
     // `commercial-hub-and-traders`. See `BasicAi::commercial_hub_step`.
     Gene { tag: "commercial-hub-in-the-strategic-queue", field: "commercial_hub_in_the_strategic_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_commercial_hub_in_the_strategic_queue, disable: AdvancedAi::disable_commercial_hub_in_the_strategic_queue },
+    // `urban-planning-fills-the-slot`: Urban Planning is wanted at the tail
+    // of every portfolio, so it fills a slot no wanted card holds.
+    Gene { tag: "urban-planning-fills-the-slot", field: "urban_planning_fills_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_urban_planning_fills_the_slot, disable: AdvancedAi::disable_urban_planning_fills_the_slot },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
