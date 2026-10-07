@@ -3031,7 +3031,6 @@ fn append_gun_resource_buy_order(
                 // No book for the block: Gold alone, at what the treasury
                 // carries.
                 if affordable < GUN_RESOURCE_BUY_CEILING_MIN {
-                    dear = true;
                     continue;
                 }
                 orders.push(Order {
@@ -3057,7 +3056,9 @@ fn append_gun_resource_buy_order(
                     1
                 } else {
                     (1..=spare.amount)
-                        .find(|count| give_worth(seller_id, &spare.resource_id, *count) >= remaining)
+                        .find(|count| {
+                            give_worth(seller_id, &spare.resource_id, *count) >= remaining
+                        })
                         .unwrap_or(spare.amount)
                 };
                 let value = give_worth(seller_id, &spare.resource_id, count);
@@ -4902,7 +4903,9 @@ fn decide(
             (1..mirror_state.game.players.len())
                 .find(|seat| host_player_target(mirror_state, state, *seat) == Some(seller))
                 .map_or(0.0, |seat| {
-                    mirror_state.game.resource_gold_value(seat, resource, amount)
+                    mirror_state
+                        .game
+                        .resource_gold_value(seat, resource, amount)
                 })
         };
         match append_gun_resource_buy_order(
@@ -17846,13 +17849,11 @@ mod tests {
             hit: 24.6,
             renewal: false,
         };
-        let spare = |resource: &str, id: &str, amount: u32, luxury: bool| {
-            civvis::ai::BarterSpare {
-                resource: resource.to_string(),
-                resource_id: id.to_string(),
-                amount,
-                luxury,
-            }
+        let spare = |resource: &str, id: &str, amount: u32, luxury: bool| civvis::ai::BarterSpare {
+            resource: resource.to_string(),
+            resource_id: id.to_string(),
+            amount,
+            luxury,
         };
         let spares = vec![
             spare("RESOURCE_SILK", "silk", 1, true),
@@ -17884,7 +17885,7 @@ mod tests {
         let mut orders = Vec::new();
         assert_eq!(
             append_gun_resource_buy_order(
-                &[want.clone()],
+                std::slice::from_ref(&want),
                 &spares,
                 &state,
                 &mut orders,
@@ -17910,7 +17911,7 @@ mod tests {
         };
         let mut rich_orders = Vec::new();
         append_gun_resource_buy_order(
-            &[want.clone()],
+            std::slice::from_ref(&want),
             &spares,
             &rich,
             &mut rich_orders,
@@ -17931,7 +17932,7 @@ mod tests {
         ];
         let mut barter_only = Vec::new();
         append_gun_resource_buy_order(
-            &[want.clone()],
+            std::slice::from_ref(&want),
             &coal_rich,
             &state,
             &mut barter_only,
@@ -17954,7 +17955,7 @@ mod tests {
         }];
         assert_eq!(
             append_gun_resource_buy_order(
-                &[want.clone()],
+                std::slice::from_ref(&want),
                 &spares,
                 &state,
                 &mut selling,
