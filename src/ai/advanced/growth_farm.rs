@@ -23,8 +23,11 @@
 //! improvement's Housing is worth `GROWTH_HOUSING_VALUE` a point while the city
 //! is within one citizen of its Housing, and its Food is worth a further
 //! `GROWTH_FOOD_VALUE` a point while the city's Food surplus is at most one.
-//! A Farm in a Housing-bound city then outbids a Mine; a city with room and
-//! Food keeps its Mines. Off, every value is unchanged.
+//! In a city below its production foundation the premium is scaled by the
+//! same multiplier the foundation pays a Mine's production, since the citizen
+//! it buys works a tile there too. A Farm in a Housing-bound city then outbids
+//! a Mine; a city with room and Food keeps its Mines. Off, every value is
+//! unchanged.
 
 use super::*;
 
@@ -71,6 +74,16 @@ impl AdvancedAi {
         if surplus <= 1.0 && spec.yields.food > 0.0 {
             premium += spec.yields.food * GROWTH_FOOD_VALUE;
         }
+        // The citizen this buys works a tile in a city below its production
+        // foundation, so it earns the same multiplier the foundation pays a
+        // Mine's printed production (`production_foundation_improvement_bonus`).
+        // Live G317-G319 (civvis-20261007T060649Z..T063028Z) showed why: the
+        // gene fired, but a weak city's Mine read 15-49 to a Farm's 1.8-5, and
+        // 7 of the triggered cities' 19 production improvements were laid
+        // while a farmable flat stood unimproved beside them.
         premium
+            * (1.0
+                + self.city_production_foundation_shortfall(g, pid, cid)
+                    * PRODUCTION_FOUNDATION_IMPROVEMENT_MULTIPLIER)
     }
 }

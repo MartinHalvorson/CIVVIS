@@ -124,9 +124,11 @@ fn the_premium_prices_housing_and_food_by_the_constants() {
     if surplus <= 1.0 {
         expected += farm.yields.food * growth_farm::GROWTH_FOOD_VALUE;
     }
+    let shortfall = gene.city_production_foundation_shortfall(&game, 0, capital);
+    expected *= 1.0 + shortfall * PRODUCTION_FOUNDATION_IMPROVEMENT_MULTIPLIER;
     assert!(
         (gene.growth_farm_premium(&game, 0, work, "farm") - expected).abs() < 1e-9,
-        "premium = Housing × {} (+ Food × {} when stalled)",
+        "premium = (Housing × {} + Food × {} when stalled) × the foundation multiplier",
         growth_farm::GROWTH_HOUSING_VALUE,
         growth_farm::GROWTH_FOOD_VALUE
     );
@@ -155,4 +157,36 @@ fn growth_prices_the_farm_is_off_by_default_and_reversible() {
     assert!(ai.growth_farm_premium(&game, 0, work, "farm") > 0.0);
     ai.disable_growth_prices_the_farm();
     assert_eq!(ai.growth_farm_premium(&game, 0, work, "farm"), 0.0);
+}
+
+#[test]
+fn a_weak_housing_bound_city_farms_even_against_the_foundation_bonus() {
+    let (mut game, capital, hill, flat) = capital_with_a_hill_and_a_flat();
+    set_headroom(&mut game, capital, 0.0);
+    let builder_value = |ai: &AdvancedAi, pos: Pos, improvement: &str| {
+        let shortfall = ai.city_production_foundation_shortfall(&game, 0, capital);
+        ai.production_foundation_improvement_value(
+            &game,
+            0,
+            pos,
+            improvement,
+            GrandStrategy::Conquest,
+            shortfall,
+        )
+    };
+    let stock = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert!(
+        stock.city_production_foundation_shortfall(&game, 0, capital) > 0.0,
+        "fixture: the young capital is below its production foundation"
+    );
+    assert!(
+        builder_value(&stock, flat, "farm") < builder_value(&stock, hill, "mine"),
+        "stock: the foundation bonus sends the Builder to the Mine"
+    );
+    let mut gene = AdvancedAi::targeting(VictoryTarget::Domination);
+    gene.enable_growth_prices_the_farm();
+    assert!(
+        builder_value(&gene, flat, "farm") > builder_value(&gene, hill, "mine"),
+        "gene: the Housing-bound city's Farm outbids the Mine's foundation bonus"
+    );
 }
