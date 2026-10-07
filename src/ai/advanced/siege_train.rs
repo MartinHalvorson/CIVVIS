@@ -106,6 +106,17 @@ pub(super) const DECLARATION_BREAKER_PATIENCE: u32 = 10;
 /// its turns within this share of the force's endurance before the war opens
 /// — the margin the siege's own Stage -> Invest entry asks.
 pub(super) const DECLARATION_BREACH_SHARE: f64 = 0.8;
+/// `weak-target-skips-the-muster`: the share of our military the target's
+/// may not exceed for the train to skip the muster. The muster keeps a
+/// waiting body out of the reach of the target's field army and cities; it
+/// costs most where the target's other cities cluster round the objective,
+/// barring every nearer stand. Live Emperor civvis-20261007T084638Z (game
+/// 330): Cartagena stood among Valencia (4 tiles), Toledo (6), Madrid and
+/// Barcelona (7), all behind 400 walls, so the train held 12-16 tiles out
+/// ("425 strength within 10 tiles against a bill of 445") while Spain's
+/// military stood at 105 against our 1,419. Over 10-06/07, 448 city-turns
+/// of muster holds in 46 runs came at a target under this share.
+pub(super) const MUSTER_WEAK_TARGET_SHARE: f64 = 0.3;
 /// `unwalled-target-declares-into-the-strike`: the share of an unwalled
 /// objective's health the declaration turn's own blows must take.
 pub(super) const FIRST_STRIKE_SHARE: f64 = 0.5;
@@ -2760,7 +2771,13 @@ impl AdvancedAi {
                 strength >= bill || breach_taker.is_some(),
                 no_breaker_mustered,
             );
-            let ready = dying || walls_answered || committed;
+            // `weak-target-skips-the-muster`: see `MUSTER_WEAK_TARGET_SHARE`.
+            // The train walks to its staging ring as it did before the
+            // muster; Stage -> Invest still waits for the walls answered.
+            let weak_target = self.weak_target_skips_the_muster
+                && g.military_power(city.owner)
+                    <= MUSTER_WEAK_TARGET_SHARE * g.military_power(pid).max(1.0);
+            let ready = dying || walls_answered || committed || weak_target;
             if !ready {
                 self.stage_muster_closed.remove(&cid);
             }
@@ -2793,7 +2810,13 @@ impl AdvancedAi {
                 && was == Some(false)
                 && self.journal().wants(crate::reasoning::Level::Decision)
             {
-                let reason = if dying { "dying" } else { "ready" };
+                let reason = if dying {
+                    "dying"
+                } else if walls_answered || committed {
+                    "ready"
+                } else {
+                    "weak target"
+                };
                 let name = g
                     .cities
                     .get(&cid)

@@ -7856,6 +7856,10 @@ pub struct AdvancedAi {
     /// `BasicAi::settler_before_the_navy`.
     settler_before_the_navy: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `weak-target-skips-the-muster`: a train whose target's military is
+    /// at most `siege_train::MUSTER_WEAK_TARGET_SHARE` of ours closes from
+    /// the muster line at once. See `siege_train::assess_siege`.
+    weak_target_skips_the_muster: bool,
     /// `wounded-taker-finishes-the-breach`: a taker down to
     /// `BREACH_TAKER_MIN_HP` may still strike the blow that takes a city.
     /// See `air_city_assault::air_assault_capture`.
@@ -9980,6 +9984,7 @@ impl AdvancedAi {
 
             settler_before_the_navy: false,
             // ---- append: t-z ----------------------------------------
+            weak_target_skips_the_muster: false,
             wounded_taker_finishes_the_breach: false,
             unwalled_target_declares_into_the_strike: false,
             unwalled_city_takes_the_swarm: false,
