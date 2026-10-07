@@ -4558,6 +4558,8 @@ impl AdvancedAi {
         city_pos: Pos,
     ) -> Option<bool> {
         let mut moved = false;
+        // Why the approach stops short of `goal`, journaled for a gun below.
+        let mut short: Option<String> = None;
         // `guns-enter-together`: see `entry_group`. Read once, before the
         // first step, so a gun's own step cannot change the group it is in.
         let entering = self.entering_with(g, pid, uid, city_pos);
@@ -4566,7 +4568,11 @@ impl AdvancedAi {
         let entering = entering.max(near);
         for _ in 0..4 {
             let unit = g.units.get(&uid)?;
-            if unit.pos == goal || unit.moves_left <= 0.0 {
+            if unit.pos == goal {
+                break;
+            }
+            if unit.moves_left <= 0.0 {
+                short = Some("out of moves".to_string());
                 break;
             }
             let Some(next) =
@@ -4579,19 +4585,37 @@ impl AdvancedAi {
                 // of three Bombards before Natal held posts for turns 160-170
                 // and stood five to seven tiles out, never firing, while the
                 // walls went 400 -> 68 under one Bombard's fire.
-                if let Some(dest) = (!moved)
+                let through = (!moved)
                     .then(|| g.pass_through_destination(uid, goal, 0))
-                    .flatten()
-                    .filter(|dest| {
-                        dry_stand(g, uid, *dest)
-                            && (g.wdist(*dest, city_pos) > CITY_STRIKE_RANGE
-                                || !self.entry_refused(g, pid, uid, *dest, entering, near > 0).0)
-                    })
-                {
+                    .flatten();
+                short = Some(match through {
+                    None if moved => "no further route step this turn".to_string(),
+                    None => "no route step and no pass-through destination".to_string(),
+                    Some(dest) if !dry_stand(g, uid, dest) => {
+                        format!("the pass-through stand {dest:?} is not dry ground")
+                    }
+                    Some(dest) => {
+                        let (refused, danger) =
+                            self.entry_refused(g, pid, uid, dest, entering, near > 0);
+                        if g.wdist(dest, city_pos) <= CITY_STRIKE_RANGE && refused {
+                            format!("the pass-through stand {dest:?} is refused at {danger:.0} danger")
+                        } else {
+                            String::new()
+                        }
+                    }
+                });
+                if let Some(dest) = through.filter(|dest| {
+                    dry_stand(g, uid, *dest)
+                        && (g.wdist(*dest, city_pos) > CITY_STRIKE_RANGE
+                            || !self.entry_refused(g, pid, uid, *dest, entering, near > 0).0)
+                }) {
                     if g.wdist(dest, city_pos) <= CITY_STRIKE_RANGE {
                         self.note_near_breach_entry(g, pid, uid, dest, city_pos, entering, near);
                     }
                     moved = self.base.path_walk_to(g, pid, uid, dest);
+                    if !moved {
+                        short = Some(format!("the walk through the column to {dest:?} failed"));
+                    }
                 }
                 break;
             };
@@ -4599,16 +4623,44 @@ impl AdvancedAi {
             // than one city or Encampment. Do not march a body into a stand
             // where the forward model expects the next volley to finish it.
             let inside = g.wdist(next, city_pos) <= CITY_STRIKE_RANGE;
-            if inside && self.entry_refused(g, pid, uid, next, entering, near > 0).0 {
-                break;
+            if inside {
+                let (refused, danger) = self.entry_refused(g, pid, uid, next, entering, near > 0);
+                if refused {
+                    short = Some(format!(
+                        "the step to {next:?} inside the city's reach is refused at {danger:.0} danger"
+                    ));
+                    break;
+                }
             }
             if inside && g.wdist(g.units[&uid].pos, city_pos) > CITY_STRIKE_RANGE {
                 self.note_near_breach_entry(g, pid, uid, next, city_pos, entering, near);
             }
             if !self.base.tactical_apply_move(g, pid, uid, next) {
+                short = Some(format!("the move to {next:?} was refused"));
                 break;
             }
             moved = true;
+        }
+        // A gun short of its post says why: the 10-07 Emperor census read 30%
+        // of walled sieges whose budget read "inf turns" with guns and shooters
+        // within ten tiles that alone would out-fire the heal, and 56% of the
+        // unwalled ones, while no line said why they were not firing.
+        if let Some(reason) = short.filter(|reason| !reason.is_empty()) {
+            if g.units.get(&uid).is_some_and(|unit| unit.pos != goal)
+                && arm_of(g, uid) == Arm::Siege
+                && self.journal().wants(crate::reasoning::Level::Detail)
+            {
+                let name = g
+                    .city_at(city_pos)
+                    .and_then(|cid| g.cities.get(&cid))
+                    .map(|c| c.name.clone())
+                    .unwrap_or_default();
+                think!(self.journal(), Military, Detail,
+                    "Siege of {name}: the {} stops short of its post", g.units[&uid].kind;
+                    "{} tiles from the city, the post {goal:?} {} away: {reason}",
+                    g.wdist(g.units[&uid].pos, city_pos), g.wdist(g.units[&uid].pos, goal);
+                    city_pos);
+            }
         }
         moved.then_some(true)
     }
