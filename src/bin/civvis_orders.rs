@@ -2920,6 +2920,29 @@ const GUN_RESOURCE_BUY_INCOME_FLOOR: f64 = 4.0;
 const GUN_RESOURCE_BUY_CEILING_MIN: i32 = 30;
 const GUN_RESOURCE_BUY_CEILING_MAX: i32 = 900;
 
+/// `siege-buys-the-gun-resource`: drop every sale that would give away a
+/// strategic in `held` (`AdvancedAi::siege_gun_resources_held`, host names)
+/// — the planner's surplus sale (`sale_verb`, `RESOURCE_X=N`, alone or in a
+/// bundle) reads a bought block as surplus. Returns how many were dropped.
+fn drop_held_resource_sales(
+    held: &std::collections::BTreeSet<String>,
+    orders: &mut Vec<Order>,
+) -> usize {
+    if held.is_empty() {
+        return 0;
+    }
+    let before = orders.len();
+    orders.retain(|order| {
+        order.kind != "sell"
+            || !order.verb.as_deref().is_some_and(|verb| {
+                verb.split(',')
+                    .filter_map(|part| part.split_once('='))
+                    .any(|(name, _)| held.contains(name))
+            })
+    });
+    before - orders.len()
+}
+
 /// Why no strategic-purchase order was appended this turn, for the note;
 /// `None` when one was. `wants` is `AdvancedAi::siege_gun_resource_wants`,
 /// strongest gun first; `worth` prices a block of a resource (its CIVVIS id)
@@ -4805,6 +4828,11 @@ fn decide(
     // `append_gun_resource_buy_order`.
     if ai.siege_buys_the_gun_resource_enabled() {
         let wants = ai.siege_gun_resource_wants(&mirror_state.game, 0);
+        let held = ai.siege_gun_resources_held(&mirror_state.game, 0, &wants);
+        let kept = drop_held_resource_sales(&held, &mut orders);
+        if kept > 0 {
+            note_bits.push(format!("gun_resource_sale_held={kept}"));
+        }
         let worth = |resource: &str, amount: u32| {
             mirror_state.game.strategic_gold_value(0, resource, amount)
         };
@@ -17727,6 +17755,45 @@ mod tests {
             Some("gun_resource_buy_hold:treasury")
         );
         assert!(held.is_empty());
+    }
+
+    /// `siege-buys-the-gun-resource`: a wanted Niter is not offered for
+    /// sale, alone or in a bundle; other sales and the purchases stand.
+    #[test]
+    fn a_wanted_niter_is_not_offered_for_sale() {
+        let order = |kind: &'static str, subject: i64, verb: &str| Order {
+            kind,
+            subject: Some(subject),
+            verb: Some(verb.to_string()),
+            pos: Some((40, 0)),
+        };
+        let mut orders = vec![
+            order("sell", 2, "RESOURCE_NITER=10"),
+            order("sell", 3, "RESOURCE_IRON=10"),
+            order("sell", 4, "RESOURCE_DYES=1,RESOURCE_NITER=5"),
+            order("sell", 5, "FAVOR=20"),
+            order("buy", 6, "RESOURCE_NITER=20"),
+        ];
+        assert_eq!(
+            drop_held_resource_sales(&std::collections::BTreeSet::new(), &mut orders),
+            0
+        );
+        assert_eq!(orders.len(), 5, "nothing held, nothing dropped");
+        let held: std::collections::BTreeSet<String> =
+            ["RESOURCE_NITER".to_string()].into_iter().collect();
+        assert_eq!(drop_held_resource_sales(&held, &mut orders), 2);
+        let left: Vec<_> = orders
+            .iter()
+            .map(|order| (order.kind, order.verb.as_deref().unwrap_or("")))
+            .collect();
+        assert_eq!(
+            left,
+            vec![
+                ("sell", "RESOURCE_IRON=10"),
+                ("sell", "FAVOR=20"),
+                ("buy", "RESOURCE_NITER=20"),
+            ]
+        );
     }
 
     #[test]

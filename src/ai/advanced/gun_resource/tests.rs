@@ -210,3 +210,36 @@ fn fielded_artillery_renews_its_oil() {
         .insert(crate::name!("oil"), GUN_RESOURCE_FUEL_LOW_TURNS);
     assert!(ai.siege_gun_resource_wants(&g, 0).is_empty());
 }
+
+/// No sale gives away what the guns want: a live want's Niter, a fielded
+/// Bombard's Niter, a queued Artillery's Oil. Off, nothing is held.
+#[test]
+fn the_guns_resources_are_held_from_sale() {
+    let (mut g, mut ai, home, _) = niter_case(50.0);
+    assert!(ai.siege_gun_resources_held(&g, 0, &[]).is_empty(), "off");
+    ai.enable_siege_buys_the_gun_resource();
+    let wants = ai.siege_gun_resource_wants(&g, 0);
+    let held = ai.siege_gun_resources_held(&g, 0, &wants);
+    assert_eq!(
+        held.into_iter().collect::<Vec<_>>(),
+        vec!["RESOURCE_NITER".to_string()],
+        "the live want's"
+    );
+    assert!(
+        ai.siege_gun_resources_held(&g, 0, &[]).is_empty(),
+        "no gun, no want"
+    );
+    let pos = g.cities[&home].pos;
+    g.spawn_unit("bombard", 0, pos);
+    g.cities.get_mut(&home).unwrap().queue.push(Item::Unit {
+        unit: crate::name!("artillery"),
+    });
+    g.spawn_unit("trebuchet", 0, pos);
+    assert_eq!(
+        ai.siege_gun_resources_held(&g, 0, &[])
+            .into_iter()
+            .collect::<Vec<_>>(),
+        vec!["RESOURCE_NITER".to_string(), "RESOURCE_OIL".to_string()],
+        "the fielded Bombard's and the queued Artillery's; the Trebuchet needs none"
+    );
+}

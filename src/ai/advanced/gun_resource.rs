@@ -60,7 +60,56 @@ pub struct GunResourceWant {
     pub renewal: bool,
 }
 
+/// A land siege gun, as `breakers_matched_to_walls` reads one.
+fn land_gun(spec: &crate::rules::UnitSpec) -> bool {
+    spec.class == "military"
+        && spec.siege
+        && spec.has_ranged_attack()
+        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+}
+
 impl AdvancedAi {
+    /// `siege-buys-the-gun-resource`: the strategic resources, as the host
+    /// names them (`RESOURCE_NITER`), that no sale may give away: each live
+    /// want's in `wants` (`siege_gun_resource_wants`), and the resource of
+    /// every land siege gun we field or queue (the Bombard's Niter, the
+    /// Artillery's Oil). The planner's surplus sale reads a stockpile as
+    /// surplus once it holds more than a block, so a purchase would otherwise
+    /// go back out as the next sale. Empty with the gene off.
+    pub fn siege_gun_resources_held(
+        &self,
+        g: &Game,
+        pid: usize,
+        wants: &[GunResourceWant],
+    ) -> BTreeSet<String> {
+        if !self.siege_buys_the_gun_resource {
+            return BTreeSet::new();
+        }
+        let fielded = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid)
+            .map(|unit| unit.kind);
+        let queued = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .flat_map(|city| city.queue.iter())
+            .filter_map(|item| match item {
+                Item::Unit { unit } => Some(*unit),
+                _ => None,
+            });
+        fielded
+            .chain(queued)
+            .filter_map(|kind| {
+                let spec = g.rules.units.get_interned(kind)?;
+                land_gun(spec).then_some(spec.requires_resource).flatten()
+            })
+            .map(|resource| format!("RESOURCE_{}", resource.as_str().to_ascii_uppercase()))
+            .chain(wants.iter().map(|want| want.resource.clone()))
+            .collect()
+    }
+
     /// `siege-buys-the-gun-resource`: the strategic purchases the Domination
     /// campaign's walled target asks for, strongest gun first. Empty with the
     /// gene off, off a Domination seat, or without a walled campaign target
@@ -93,12 +142,6 @@ impl AdvancedAi {
         {
             return Vec::new();
         }
-        let land_gun = |spec: &crate::rules::UnitSpec| {
-            spec.class == "military"
-                && spec.siege
-                && spec.has_ranged_attack()
-                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
-        };
         // Our best gun now, read as `breakers_matched_to_walls` reads it.
         let buildable = g
             .player_city_ids(pid)
