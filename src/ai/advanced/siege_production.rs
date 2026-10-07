@@ -69,6 +69,33 @@ pub(super) const BREAKER_MATCH_DEFAULT_TURNS: f64 = 12.0;
 /// budget prices it.
 const BREAKER_MATCH_CITY_HEAL: f64 = 20.0;
 
+/// `breakers-match-the-walls`: the fewest guns, at most [`BREAKER_MATCH_MAX`],
+/// whose `hit` a shot breaches `walls` and takes `health` within
+/// `target_turns` while the city heals [`BREAKER_MATCH_CITY_HEAL`] a turn,
+/// with the turns they breach and take it in; `None` when even that many
+/// cannot, or the blow is under [`BREAKER_MATCH_MIN_HIT`].
+/// `siege-buys-the-gun-resource` sizes the gun it buys the resource for by
+/// the same count, at that gun's blow.
+pub(super) fn matched_guns(
+    hit: f64,
+    walls: f64,
+    health: f64,
+    target_turns: f64,
+) -> Option<(usize, f64, f64)> {
+    if hit <= BREAKER_MATCH_MIN_HIT {
+        return None;
+    }
+    (1..=BREAKER_MATCH_MAX).find_map(|guns| {
+        let fire = guns as f64 * hit;
+        if fire <= BREAKER_MATCH_CITY_HEAL {
+            return None;
+        }
+        let breach = walls / fire;
+        let take = breach + health / (fire - BREAKER_MATCH_CITY_HEAL) + 1.0;
+        (take <= target_turns).then_some((guns, breach, take))
+    })
+}
+
 /// `breakers-match-the-walls`: how many guns the walls of one city ask at our
 /// best gun's blow, and why.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -183,19 +210,7 @@ impl AdvancedAi {
             });
         let walls = f64::from(city.wall_hp);
         let health = f64::from(city.hp.max(0));
-        let ask = (hit > BREAKER_MATCH_MIN_HIT)
-            .then(|| {
-                (1..=BREAKER_MATCH_MAX).find_map(|guns| {
-                    let fire = guns as f64 * hit;
-                    if fire <= BREAKER_MATCH_CITY_HEAL {
-                        return None;
-                    }
-                    let breach = walls / fire;
-                    let take = breach + health / (fire - BREAKER_MATCH_CITY_HEAL) + 1.0;
-                    (take <= target_turns).then_some((guns, breach, take))
-                })
-            })
-            .flatten();
+        let ask = matched_guns(hit, walls, health, target_turns);
         Some(BreakerMatch {
             hit,
             defense,

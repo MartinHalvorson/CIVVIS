@@ -99,6 +99,8 @@ local resourceRows = {
 		ResourceClassType = "RESOURCECLASS_LUXURY" },
 	RESOURCE_JADE = { ResourceType = "RESOURCE_JADE", Index = 18,
 		ResourceClassType = "RESOURCECLASS_LUXURY" },
+	RESOURCE_NITER = { ResourceType = "RESOURCE_NITER", Index = 46,
+		ResourceClassType = "RESOURCECLASS_STRATEGIC" },
 }
 GameInfo = {
 	Resources = setmetatable({}, { __index = function(_, key)
@@ -110,7 +112,7 @@ GameInfo = {
 		end
 		return resourceRows[key]
 	end }),
-	Resource_Consumption = { RESOURCE_IRON = { Accumulate = true } },
+	Resource_Consumption = { RESOURCE_IRON = { Accumulate = true }, RESOURCE_NITER = { Accumulate = true } },
 	-- Indexable by NAME (the sell arm's `want.name` lookup) and by the
 	-- description id a possible-items entry carries (`ForTypeDescriptionID`),
 	-- the way the shipped deal screen reads the same table both ways.
@@ -1101,6 +1103,114 @@ for _, case in ipairs({
 	check(case[1], declined.sends, nil)
 	check(case[1] .. " (settled)", trade.pending[3], nil)
 end
+
+-- ─── the strategic purchase ─────────────────────────────────────────────────
+-- `RESOURCE_X=N` on the buy arm (`siege-buys-the-gun-resource`): THEIR
+-- strategic X, a lump clipped to what their table offers, EQUALIZE; the
+-- handler closes when their side holds that much or more against our gold at
+-- or under the ceiling.
+-- In a function of its own: the test chunk sits at Lua 5.1's 200-local
+-- ceiling, which a `do` block does not lift.
+;(function()
+local function strategicOrder(pid, subject, player, turn, ceiling, verb)
+	return applyOrder(player, pid, {
+		kind = "buy", subject = tostring(subject), verb = verb or "RESOURCE_NITER=40", x = ceiling, y = 0,
+	}, turn)
+end
+
+reset()
+local sasks, sasksPlayer = fixture({ theirPossible = { RESOURCE_NITER = 82 } })
+ok, why = strategicOrder(7, 3, sasksPlayer, 234, 600)
+check("strategic ask is submitted", ok, true)
+check("strategic ask says asked", why, "buy_asked")
+check("the rival's strategic table is read, owner first",
+	sasks.possibleArgs[1] .. ":" .. sasks.possibleArgs[2], "3:7")
+local lump = itemOfKind(sasks, DealItemTypes.RESOURCES)
+check("the strategic is THEIRS to give", lump and lump.owner, 3)
+check("the strategic carries the engine's type", lump and lump.valueType, 46)
+check("the strategic is the block asked", lump and lump.amount, 40)
+check("the strategic is a lump", lump and lump.duration, 0)
+check("nothing of ours goes on the strategic table", #sasks.items, 1)
+check("the strategic ask is EQUALIZE", sasks.sends[1][1], "equalize")
+check("no PROPOSED goes out on the strategic ask", callAt(sasks, "send_proposed"), nil)
+check("the pending strategic ask knows what it wants", trade.pending[3].want, "RESOURCES:46")
+check("the pending strategic ask knows how much", trade.pending[3].want_amount, 40)
+check("the pending strategic ask is marked", trade.pending[3].strategic, true)
+check("the pending strategic ask keeps the ceiling", trade.pending[3].ceiling, 600)
+check("the strategic offer names the block", eventField(lastEvent("deal_offer"), "want"), "RESOURCE_NITER=40")
+
+-- Their table offers less than the ask: the block is the offer and the
+-- ceiling shrinks with it.
+reset()
+local sclip, sclipPlayer = fixture({ theirPossible = { RESOURCE_NITER = 25 } })
+ok, why = strategicOrder(7, 3, sclipPlayer, 240, 600)
+check("a clipped strategic ask is submitted", why, "buy_asked")
+check("the clipped strategic block is their offer", itemOfKind(sclip, DealItemTypes.RESOURCES).amount, 25)
+check("the clipped strategic ceiling shrinks with it", trade.pending[3].ceiling, 375)
+
+-- Not on their table, a luxury named like a strategic, or a name the
+-- ruleset lacks: refused, and the first two start the cooldown.
+reset()
+local snone, snonePlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 } })
+ok, why = strategicOrder(7, 3, snonePlayer, 246, 600)
+check("a strategic their table lacks is refused", why, "buy_no_strategic")
+check("the refusal starts the cooldown", trade.asked[3], 246)
+check("the refusal sends nothing", snone.sends, nil)
+check("the refusal leaves no pending ask", trade.pending[3], nil)
+reset()
+ok, why = strategicOrder(7, 3, snonePlayer, 246, 600, "RESOURCE_AMBER=2")
+check("a luxury is not a strategic purchase", why, "buy_no_strategic")
+reset()
+ok, why = strategicOrder(7, 3, snonePlayer, 246, 600, "RESOURCE_BOGUS=5")
+check("an unknown strategic is refused", why, "buy_unknown_item")
+ok, why = strategicOrder(7, 3, snonePlayer, 246, 600, "RESOURCE_NITER=0")
+check("an empty strategic block is refused", why, "buy_unknown_item")
+reset()
+local swar, swarPlayer = fixture({ theirPossible = { RESOURCE_NITER = 82 }, atWar = true })
+ok, why = strategicOrder(7, 3, swarPlayer, 246, 600)
+check("a rival at war sells no strategic", why, "buy_at_war")
+
+-- The rival prices 40 Niter at 400 lump: under the ceiling, closed; a
+-- larger block at that price closes too.
+for _, case in ipairs({
+	{ "a fair strategic price is accepted", 40 },
+	{ "a larger strategic block is accepted", 45 },
+}) do
+	reset()
+	local _, askPlayer = fixture({ theirPossible = { RESOURCE_NITER = 82 } })
+	strategicOrder(7, 3, askPlayer, 252, 600)
+	local got = fixture({ incoming = {
+		{ kind = DealItemTypes.RESOURCES, from = 3, duration = 0, amount = case[2], valueType = 46 },
+		{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 400 },
+	} })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check(case[1], got.sends and got.sends[1][1], "accepted")
+	check(case[1] .. " (ledger)", eventField(lastEvent("deal_closed"), "want"), "RESOURCES:46")
+	check(case[1] .. " (settled)", trade.pending[3], nil)
+end
+
+-- A smaller block, a price over the ceiling, or anything of ours besides
+-- gold: declined.
+for _, case in ipairs({
+	{ "a smaller strategic block is declined", 30, 300, nil },
+	{ "a strategic price over the ceiling is declined", 40, 700, nil },
+	{ "our resource slipped onto the strategic table is declined", 40, 300,
+		{ kind = DealItemTypes.RESOURCES, from = 7, duration = 30, amount = 1, valueType = 3 } },
+}) do
+	reset()
+	local _, askPlayer = fixture({ theirPossible = { RESOURCE_NITER = 82 } })
+	strategicOrder(7, 3, askPlayer, 258, 600)
+	local answer = {
+		{ kind = DealItemTypes.RESOURCES, from = 3, duration = 0, amount = case[2], valueType = 46 },
+		{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = case[3] },
+	}
+	if case[4] ~= nil then answer[#answer + 1] = case[4] end
+	local declined = fixture({ incoming = answer })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check(case[1], declined.sends, nil)
+	check(case[1] .. " (settled)", trade.pending[3], nil)
+end
+end)()
 
 -- ─── wiring ─────────────────────────────────────────────────────────────────
 local src = assert(io.open(here .. "/CivvisControlAgent.lua")):read("*a")

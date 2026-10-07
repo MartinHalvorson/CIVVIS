@@ -552,7 +552,7 @@ impl UnitFacts {
 /// city strikes every turn it stands at range: live King
 /// civvis-20261003T135713Z's one assigned Bombard spent ten of Kwadukuza's
 /// turns healing while the two built after it waited in the Reserve.
-fn breaker_guns_wanted(city: &crate::game::City) -> usize {
+pub(super) fn breaker_guns_wanted(city: &crate::game::City) -> usize {
     if city.wall_hp <= 0 {
         return 0;
     }

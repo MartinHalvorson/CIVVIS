@@ -2889,6 +2889,130 @@ fn append_luxury_buy_order(
     None
 }
 
+// ★★★★★ THE GUN'S RESOURCE, BOUGHT WHERE A RIVAL OFFERS IT
+// (`siege-buys-the-gun-resource`). Live Emperor civvis-20261007T111017Z (game
+// 343) held Angkor Thom's 400 walls at turns 176-177 at a Trebuchet's 2.3 a
+// shot, Steel and Military Science researched and no Niter or Oil tile owned,
+// while the Zulu offered 82 Niter on their trade screen and Arabia 70. At turn
+// 150 of 101 Emperor runs of October 6-7, 92 lacked Niter or Oil and 53 had a
+// met rival offering one; -d8 read 22% of 1,000 walled infinite siege-turns
+// as resource-blocked (Oil 13%, Niter 9%), the tech-best gun hitting a median
+// 9.4 a shot against 4.1 for the buildable best. The rival's offer is the
+// export's `tradeable_strategics`; what the campaign's guns want, and how
+// much, is `AdvancedAi::siege_gun_resource_wants` (the Bombard's Niter sized
+// to the guns its blow needs, 20 a gun; the Artillery's Oil with ten turns of
+// upkeep, renewed when the fielded guns' fuel runs low).
+//
+// The order asks the seller's own price with EQUALIZE for `RESOURCE_X=N`, a
+// lump from their side, and the Lua arm closes only at or under the ceiling
+// carried in `x`: the engine's own book for the block
+// (`Game::strategic_gold_value`), bounded by what the treasury and the income
+// carry at the 25× book with a reserve and a floor kept clear. A block the
+// ceiling cannot carry shrinks to what it can, never under one gun's worth.
+// Cadence-gated in the free slots of the deal week (phase 2 of 3: turns 2 and
+// 5 of 6, clear of the passage at 1, the favor sale at 3 and the luxury at 4),
+// the largest offer first among the majors at peace with no deal already
+// heading their way.
+const GUN_RESOURCE_BUY_CADENCE: u32 = 3;
+const GUN_RESOURCE_BUY_PHASE: u32 = 2;
+const GUN_RESOURCE_BUY_GOLD_RESERVE: i64 = 60;
+const GUN_RESOURCE_BUY_INCOME_FLOOR: f64 = 4.0;
+const GUN_RESOURCE_BUY_CEILING_MIN: i32 = 30;
+const GUN_RESOURCE_BUY_CEILING_MAX: i32 = 900;
+
+/// Why no strategic-purchase order was appended this turn, for the note;
+/// `None` when one was. `wants` is `AdvancedAi::siege_gun_resource_wants`,
+/// strongest gun first; `worth` prices a block of a resource (its CIVVIS id)
+/// by the engine's own book.
+fn append_gun_resource_buy_order(
+    wants: &[civvis::ai::GunResourceWant],
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    worth: &dyn Fn(&str, u32) -> f64,
+) -> Option<&'static str> {
+    if wants.is_empty() {
+        return Some("gun_resource_buy_hold:no_need");
+    }
+    if state.turn % GUN_RESOURCE_BUY_CADENCE != GUN_RESOURCE_BUY_PHASE {
+        return Some("gun_resource_buy_hold:cadence");
+    }
+    let income = state
+        .gold_per_turn
+        .filter(|income| income.is_finite())
+        .unwrap_or(0.0);
+    let carried = (state.gold - GUN_RESOURCE_BUY_GOLD_RESERVE).max(0)
+        + (25.0 * (income - GUN_RESOURCE_BUY_INCOME_FLOOR)).floor().max(0.0) as i64;
+    let affordable = carried.min(GUN_RESOURCE_BUY_CEILING_MAX as i64) as i32;
+    if affordable < GUN_RESOURCE_BUY_CEILING_MIN {
+        return Some("gun_resource_buy_hold:treasury");
+    }
+    let mut busy = false;
+    let mut dear = false;
+    for want in wants {
+        let offered = |rival: &civvis::mirror::StateRival| {
+            rival
+                .tradeable_strategics
+                .as_ref()
+                .and_then(|offers| offers.get(&want.resource))
+                .copied()
+                .filter(|offer| *offer >= i64::from(want.minimum.max(1)))
+        };
+        let in_flight = |rival: &civvis::mirror::StateRival| {
+            orders.iter().any(|order| {
+                (order.kind == "sell" || order.kind == "buy")
+                    && order.subject == Some(rival.player as i64)
+            })
+        };
+        let sellers: Vec<_> = state
+            .rivals
+            .iter()
+            .filter(|rival| !rival.at_war)
+            .filter_map(|rival| offered(rival).map(|offer| (rival, offer)))
+            .collect();
+        busy |= sellers.iter().any(|(rival, _)| in_flight(rival));
+        let Some((seller, offer)) = sellers
+            .into_iter()
+            .filter(|(rival, _)| !in_flight(rival))
+            .max_by_key(|(rival, offer)| (*offer, std::cmp::Reverse(rival.player)))
+        else {
+            continue;
+        };
+        let mut amount = want.amount.min(offer.clamp(0, i64::from(u32::MAX)) as u32);
+        let mut book = worth(&want.resource_id, amount);
+        while amount > want.minimum && book.is_finite() && book > f64::from(affordable) {
+            amount -= 1;
+            book = worth(&want.resource_id, amount);
+        }
+        if book.is_finite() && book > f64::from(affordable) {
+            dear = true;
+            continue;
+        }
+        let ceiling = if book.is_finite() && book > 0.0 {
+            (book.ceil() as i32).min(affordable)
+        } else {
+            affordable
+        };
+        if ceiling < GUN_RESOURCE_BUY_CEILING_MIN {
+            dear = true;
+            continue;
+        }
+        orders.push(Order {
+            kind: "buy",
+            subject: Some(seller.player as i64),
+            verb: Some(format!("{}={amount}", want.resource)),
+            pos: Some((ceiling, 0)),
+        });
+        return None;
+    }
+    Some(if dear {
+        "gun_resource_buy_hold:treasury"
+    } else if busy {
+        "gun_resource_buy_hold:deal_in_flight"
+    } else {
+        "gun_resource_buy_hold:no_seller"
+    })
+}
+
 // ★★★★★ THE FAVOR BANK, SPENT ON THE PLAN THAT IS ACTUALLY RUNNING. Diplomatic
 // favor is votes at the World Congress and nothing else; on the live seat the
 // bank has read 200–420 at the end of every game measured, and the 2026-08-18
@@ -4671,6 +4795,28 @@ fn decide(
             // or while another deal holds the same rival's working deal.
             if why == "border_buy_hold:treasury" || why == "border_buy_hold:deal_in_flight" {
                 note_bits.push(why.to_string());
+            }
+        }
+    }
+    // `siege-buys-the-gun-resource`: the Niter or Oil the campaign's better
+    // siege gun waits on, bought from a met major's trade screen. See
+    // `append_gun_resource_buy_order`.
+    if ai.siege_buys_the_gun_resource_enabled() {
+        let wants = ai.siege_gun_resource_wants(&mirror_state.game, 0);
+        let worth = |resource: &str, amount: u32| {
+            mirror_state.game.strategic_gold_value(0, resource, amount)
+        };
+        match append_gun_resource_buy_order(&wants, state, &mut orders, &worth) {
+            None => note_bits.push("gun_resource_buy=1".to_string()),
+            Some(why) => {
+                // The holds worth a glance: a gun waiting on its resource
+                // while the treasury, the sellers or their working deals
+                // stand in the way.
+                if why != "gun_resource_buy_hold:no_need"
+                    && why != "gun_resource_buy_hold:cadence"
+                {
+                    note_bits.push(why.to_string());
+                }
             }
         }
     }
@@ -17418,6 +17564,169 @@ mod tests {
             append_luxury_buy_order(&alone, &mut held),
             Some("luxury_buy_hold:no_seller")
         );
+    }
+
+    /// `siege-buys-the-gun-resource`: the Bombard's Niter, asked of the
+    /// largest offer at peace, the block shrunk to what the treasury carries
+    /// at the engine's book and never under one gun's worth.
+    #[test]
+    fn the_guns_resource_is_bought_from_the_largest_offer() {
+        let want = |resource: &str, id: &str, amount: u32, minimum: u32| {
+            civvis::ai::GunResourceWant {
+                resource: resource.to_string(),
+                resource_id: id.to_string(),
+                amount,
+                minimum,
+                unit: "bombard".to_string(),
+                guns: 3,
+                hit: 24.6,
+                renewal: false,
+            }
+        };
+        let offers = |pairs: &[(&str, i64)]| {
+            Some(
+                pairs
+                    .iter()
+                    .map(|(resource, amount)| (resource.to_string(), *amount))
+                    .collect::<std::collections::BTreeMap<_, _>>(),
+            )
+        };
+        // The engine's book for a first strategic: a primary value, then 24
+        // a unit.
+        let worth = |_: &str, amount: u32| 185.0 + 24.0 * (f64::from(amount) - 1.0);
+        let state = StateSnapshot {
+            turn: 152, // 152 % 3 == 2, the lane's phase
+            gold: 500,
+            gold_per_turn: Some(20.0),
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    tradeable_strategics: offers(&[("RESOURCE_NITER", 82)]),
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 4,
+                    tradeable_strategics: offers(&[("RESOURCE_NITER", 70)]),
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 5,
+                    at_war: true,
+                    tradeable_strategics: offers(&[("RESOURCE_NITER", 200)]),
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let wants = vec![want("RESOURCE_NITER", "niter", 50, 20)];
+        let mut orders = Vec::new();
+        assert_eq!(
+            append_gun_resource_buy_order(&wants, &state, &mut orders, &worth),
+            None
+        );
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].kind, "buy");
+        // The largest offer at peace; seat 5 offers more and is at war.
+        assert_eq!(orders[0].subject, Some(2));
+        // 440 of treasury over the reserve and 25·(20−4) = 400 of income
+        // carry 840; 50 Niter books at 1,361, 28 at 833.
+        assert_eq!(orders[0].verb.as_deref(), Some("RESOURCE_NITER=28"));
+        assert_eq!(orders[0].pos, Some((833, 0)));
+
+        // A deal already heading to the largest offer: the next one.
+        let mut busy = vec![Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("FAVOR=20".to_string()),
+            pos: Some((20, 0)),
+        }];
+        assert_eq!(
+            append_gun_resource_buy_order(&wants, &state, &mut busy, &worth),
+            None
+        );
+        assert_eq!(busy[1].subject, Some(4));
+        busy.pop();
+        busy.push(Order {
+            kind: "buy",
+            subject: Some(4),
+            verb: Some("OPEN_BORDERS".to_string()),
+            pos: Some((60, 0)),
+        });
+        assert_eq!(
+            append_gun_resource_buy_order(&wants, &state, &mut busy, &worth),
+            Some("gun_resource_buy_hold:deal_in_flight")
+        );
+
+        // Fuel for fielded guns: the block is the offer when it is smaller,
+        // still at least the minimum.
+        let oil_state = StateSnapshot {
+            rivals: vec![StateRival {
+                player: 3,
+                tradeable_strategics: offers(&[("RESOURCE_OIL", 5)]),
+                ..StateRival::default()
+            }],
+            ..state.clone()
+        };
+        let oil = vec![want("RESOURCE_OIL", "oil", 10, 3)];
+        let mut fuel = Vec::new();
+        assert_eq!(
+            append_gun_resource_buy_order(&oil, &oil_state, &mut fuel, &worth),
+            None
+        );
+        assert_eq!(fuel[0].verb.as_deref(), Some("RESOURCE_OIL=5"));
+        assert_eq!(fuel[0].subject, Some(3));
+
+        // An offer under one gun's worth is no seller.
+        let thin = StateSnapshot {
+            rivals: vec![StateRival {
+                player: 2,
+                tradeable_strategics: offers(&[("RESOURCE_NITER", 10)]),
+                ..StateRival::default()
+            }],
+            ..state.clone()
+        };
+        let mut none = Vec::new();
+        assert_eq!(
+            append_gun_resource_buy_order(&wants, &thin, &mut none, &worth),
+            Some("gun_resource_buy_hold:no_seller")
+        );
+        assert!(none.is_empty());
+
+        // Off the lane's turn, nothing wanted, a treasury that cannot carry
+        // the smallest ask, or one that cannot carry one gun's worth.
+        let mut held = Vec::new();
+        let off_phase = StateSnapshot {
+            turn: 151,
+            ..state.clone()
+        };
+        assert_eq!(
+            append_gun_resource_buy_order(&wants, &off_phase, &mut held, &worth),
+            Some("gun_resource_buy_hold:cadence")
+        );
+        assert_eq!(
+            append_gun_resource_buy_order(&[], &state, &mut held, &worth),
+            Some("gun_resource_buy_hold:no_need")
+        );
+        let broke = StateSnapshot {
+            gold: 60,
+            gold_per_turn: Some(4.0),
+            ..state.clone()
+        };
+        assert_eq!(
+            append_gun_resource_buy_order(&wants, &broke, &mut held, &worth),
+            Some("gun_resource_buy_hold:treasury")
+        );
+        // 240 over the reserve, no income to speak of: 20 Niter book at 641.
+        let short = StateSnapshot {
+            gold: 300,
+            gold_per_turn: Some(4.0),
+            ..state.clone()
+        };
+        assert_eq!(
+            append_gun_resource_buy_order(&wants, &short, &mut held, &worth),
+            Some("gun_resource_buy_hold:treasury")
+        );
+        assert!(held.is_empty());
     }
 
     #[test]

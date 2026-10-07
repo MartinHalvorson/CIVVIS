@@ -9967,6 +9967,22 @@ impl Game {
         28.0 + tourism * 0.35
     }
 
+    /// What `amount` of the strategic `resource` (a CIVVIS id, `niter`) is
+    /// worth to `receiver` in Gold by this engine's book: the live seat's
+    /// ceiling for a strategic purchase (`siege-buys-the-gun-resource`).
+    /// `0` for an unknown or non-strategic resource.
+    pub fn strategic_gold_value(&self, receiver: usize, resource: &str, amount: u32) -> f64 {
+        if self
+            .rules
+            .resources
+            .get(resource)
+            .is_none_or(|spec| spec.class != "strategic")
+        {
+            return 0.0;
+        }
+        self.resource_receive_value(receiver, resource, amount.min(i32::MAX as u32) as i32)
+    }
+
     pub(super) fn open_borders_receive_value(&self, receiver: usize, grantor: usize) -> f64 {
         if self.has_open_borders(receiver, grantor) {
             return 0.0;

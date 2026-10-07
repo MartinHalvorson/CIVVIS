@@ -6804,6 +6804,17 @@ impl AdvancedAi {
         self.breakers_match_the_walls = false;
     }
 
+    /// Opt-in gene `siege-buys-the-gun-resource`; see
+    /// [`Self::siege_buys_the_gun_resource`].
+    pub fn enable_siege_buys_the_gun_resource(&mut self) {
+        self.siege_buys_the_gun_resource = true;
+    }
+
+    /// The twin of `enable_siege_buys_the_gun_resource`.
+    pub fn disable_siege_buys_the_gun_resource(&mut self) {
+        self.siege_buys_the_gun_resource = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

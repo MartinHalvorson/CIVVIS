@@ -3283,6 +3283,16 @@ pub const GENES: &[Gene] = &[
     // shipped count when even six cannot (game 141). See
     // `siege_production::breakers_matched_to_walls`.
     Gene { tag: "breakers-match-the-walls", field: "breakers_match_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_breakers_match_the_walls, disable: AdvancedAi::disable_breakers_match_the_walls },
+    // `siege-buys-the-gun-resource`: live Emperor game 343 held Angkor
+    // Thom's 400 walls at a Trebuchet's 2.3 a shot with Steel and Military
+    // Science researched and no Niter or Oil tile owned, while the Zulu
+    // offered 82 Niter and Arabia 70; at turn 150 of 101 Emperor runs 92
+    // lacked Niter or Oil and 53 had a met rival offering one, and 22% of
+    // 1,000 walled infinite siege-turns were resource-blocked (-d8: the
+    // tech-best gun hits a median 9.4 a shot against 4.1 for the buildable
+    // best). The bridge buys the resource the better gun waits on, sized to
+    // the guns its blow needs. See `gun_resource::siege_gun_resource_wants`.
+    Gene { tag: "siege-buys-the-gun-resource", field: "siege_buys_the_gun_resource", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_buys_the_gun_resource, disable: AdvancedAi::disable_siege_buys_the_gun_resource },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

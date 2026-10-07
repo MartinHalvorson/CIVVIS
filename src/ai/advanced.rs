@@ -7540,6 +7540,10 @@ pub struct AdvancedAi {
     /// asks the major whose closed borders hold a siege march. See
     /// `siege_road::siege_passage_blockers`.
     siege_buys_the_passage: bool,
+    /// `siege-buys-the-gun-resource`: the bridge buys the Niter or Oil that
+    /// stands between our tech and its better siege gun from a met major's
+    /// trade screen. See `gun_resource::siege_gun_resource_wants`.
+    siege_buys_the_gun_resource: bool,
     /// `siege-train-upgrades-first`: the Domination upgrade pass spends on
     /// the units of the train bound for the campaign's objective or an
     /// active siege before any other. See `siege_train::upgrade_for_the_train`.
@@ -8757,6 +8761,12 @@ mod siege_train;
 /// `siege-target-needs-a-road`: a siege the army cannot walk to is stood
 /// down. See `advanced/siege_road.rs`.
 mod siege_road;
+
+/// `siege-buys-the-gun-resource`: the Niter or Oil our better siege gun
+/// waits on, bought from a rival's trade screen. See
+/// `advanced/gun_resource.rs`.
+mod gun_resource;
+pub use gun_resource::GunResourceWant;
 
 /// `capital-taken-moves-on`: a taken capital's army moves on to the next
 /// capital. See `advanced/capital_moves_on.rs`.
@@ -10105,6 +10115,7 @@ impl AdvancedAi {
             science_denial_spy_reads_the_leader: false,
             science_leader_is_the_target: false,
             siege_buys_the_passage: false,
+            siege_buys_the_gun_resource: false,
             siege_train_upgrades_first: false,
             siege_target_needs_a_road: false,
             siege_road_tally: BTreeMap::new(),
@@ -10394,6 +10405,13 @@ impl AdvancedAi {
     /// a luxury purchase (`append_luxury_buy_order` in `civvis_orders`).
     pub fn luxury_buy_asks_enabled(&self) -> bool {
         self.luxury_buy_asks
+    }
+
+    /// Whether `siege-buys-the-gun-resource` is on; the live bridge asks
+    /// before it plans a strategic purchase (`append_gun_resource_buy_order`
+    /// in `civvis_orders`).
+    pub fn siege_buys_the_gun_resource_enabled(&self) -> bool {
+        self.siege_buys_the_gun_resource
     }
 
     /// Whether the barbarian seat hunts religious units. See

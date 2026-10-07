@@ -502,6 +502,44 @@ CivvisTradeableStrategics = function(player, pid, otherId)
 	return out;
 end;
 
+-- `siege-buys-the-gun-resource`: put `ask` of the strategic `name` from
+-- `subject`'s side of the working `deal`, clipped to what their table offers
+-- and the item's own maximum, as a lump when the ruleset accumulates it (the
+-- sell arm's `Resource_Consumption` rule). Returns the engine's type and the
+-- amount set, or nil and the refusal. A bare global like
+-- CivvisTradeableStrategics: the agent's main chunk is at its local ceiling.
+CivvisStrategicAsk = function(deal, pid, subject, name, ask)
+	local possible = try(function()
+		return DealManager.GetPossibleDealItems(subject, pid, DealItemTypes.RESOURCES, deal);
+	end, nil) or {};
+	local forType, offer = nil, 0;
+	for _, entry in ipairs(possible) do
+		local row = try(function() return GameInfo.Resources[entry.ForType]; end, nil);
+		if row ~= nil and row.ResourceType == name
+				and row.ResourceClassType == "RESOURCECLASS_STRATEGIC"
+				and entry.IsValid ~= false and (entry.MaxAmount or 0) > 0 then
+			forType, offer = entry.ForType, entry.MaxAmount;
+		end
+	end
+	if forType == nil then return nil, "buy_no_strategic"; end
+	local item = deal:AddItemOfType(DealItemTypes.RESOURCES, subject);
+	if item == nil then return nil, "no_resource_item"; end
+	item:SetValueType(forType);
+	local consumption = try(function() return GameInfo.Resource_Consumption[name]; end, nil);
+	local lump = consumption ~= nil
+		and (consumption.Accumulate == true or consumption.Accumulate == 1);
+	item:SetDuration(lump and 0 or 30);
+	local amount = math.min(ask, math.floor(offer));
+	local cap = try(function() return item:GetMaxAmount(); end, nil);
+	if cap ~= nil and cap > 0 and cap < amount then amount = cap; end
+	if amount < 1 or not pcall(function() item:SetAmount(amount); end)
+			or not try(function() return item:IsValid(); end, true) then
+		pcall(function() deal:RemoveItemByID(item:GetID()); end);
+		return nil, "strategic_invalid";
+	end
+	return forType, amount;
+end;
+
 
 -- --------------------------------------------------------------- action ids
 --
@@ -11446,10 +11484,10 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		-- else in either direction: a counter that slips another item onto
 		-- our side, swaps the copy for another, doubles it, or keeps it off
 		-- theirs is walked away from.
-		-- A Favor block may come back larger, never smaller: the ceiling was
-		-- priced on the block asked.
+		-- A Favor or strategic block may come back larger, never smaller: the
+		-- ceiling was priced on the block asked.
 		local want = pending.want or "OPEN_BORDERS";
-		if want == "FAVOR" then
+		if want == "FAVOR" or pending.strategic then
 			matches = (theirs[want] or 0) >= (pending.want_amount or 1) and next(mine) == nil;
 		else
 			matches = theirs[want] == 1 and next(mine) == nil;
@@ -13316,11 +13354,28 @@ local function applyOrder(player, pid, row, turn)
 	-- clipped block shrinks the ceiling with it, and a block under 10 is not
 	-- worth the deal window. The handler closes at or under the ceiling when
 	-- their side holds that much Favor or more and nothing else.
+	--
+	-- ★★★ AND THE STRATEGIC A SIEGE GUN WAITS ON. `RESOURCE_X=N` (CIVVIS's
+	-- `append_gun_resource_buy_order`, gene `siege-buys-the-gun-resource`)
+	-- asks for N of THEIR strategic X — the Bombard's Niter, the Artillery's
+	-- Oil — a lump clipped to what their table offers, through
+	-- `CivvisStrategicAsk`; a clipped block shrinks the ceiling with it. The
+	-- handler closes at or under the ceiling when their side holds that much
+	-- or more and nothing else.
 	if kind == "buy" then
-		local luxury = verb == "LUXURY_ANY" or string.find(verb, "^RESOURCE_") ~= nil;
+		local strategicName, strategicAsk = string.match(verb, "^(RESOURCE_[%w_]+)=(%d+)$");
+		strategicAsk = tonumber(strategicAsk);
+		if strategicAsk ~= nil and (strategicAsk <= 0
+				or try(function() return GameInfo.Resources[strategicName]; end, nil) == nil) then
+			return false, "buy_unknown_item";
+		end
+		local luxury = verb == "LUXURY_ANY"
+			or (strategicAsk == nil and string.find(verb, "^RESOURCE_") ~= nil);
 		local favorAsk = tonumber(string.match(verb, "^FAVOR=(%d+)$"));
 		if favorAsk ~= nil and (favorAsk <= 0 or DealItemTypes.FAVOR == nil) then favorAsk = nil; end
-		if verb ~= "OPEN_BORDERS" and not luxury and favorAsk == nil then return false, "buy_unknown_item"; end
+		if verb ~= "OPEN_BORDERS" and not luxury and favorAsk == nil and strategicAsk == nil then
+			return false, "buy_unknown_item";
+		end
 		if luxury and verb ~= "LUXURY_ANY"
 				and try(function() return GameInfo.Resources[verb]; end, nil) == nil then
 			return false, "buy_unknown_item";
@@ -13378,6 +13433,12 @@ local function applyOrder(player, pid, row, turn)
 				end
 				ceiling = math.floor(ceiling * wantAmount / favorAsk);
 				want, name = "FAVOR", "FAVOR=" .. tostring(wantAmount);
+			elseif strategicAsk ~= nil then
+				local forType, got = CivvisStrategicAsk(deal, pid, subject, strategicName, strategicAsk);
+				if forType == nil then return false, got; end
+				wantAmount = got;
+				ceiling = math.floor(ceiling * got / strategicAsk);
+				want, name = "RESOURCES:" .. tostring(forType), strategicName .. "=" .. tostring(got);
 			elseif luxury then
 				-- Owner first: the RIVAL's tradeable resources, the column the
 				-- shipped screen fills for their side of the table.
@@ -13439,7 +13500,7 @@ local function applyOrder(player, pid, row, turn)
 			-- `want` is the key the handler matches their side against.
 			trade.pending[subject] = {
 				turn = turn, ceiling = ceiling, direction = "buy", verb = name, want = want,
-				want_amount = wantAmount,
+				want_amount = wantAmount, strategic = strategicAsk ~= nil or nil,
 			};
 			CivvisTrade.ask(pid, subject, "EQUALIZE", "buy", turn);
 			return true, "asked", name;
@@ -13458,7 +13519,8 @@ local function applyOrder(player, pid, row, turn)
 				or reason == "agreement_invalid" or reason == "invalid_deal"
 				or reason == "buy_no_luxury" or reason == "no_resource_item"
 				or reason == "resource_invalid" or reason == "buy_no_favor"
-				or reason == "no_favor_item") then
+				or reason == "no_favor_item" or reason == "buy_no_strategic"
+				or reason == "strategic_invalid") then
 			-- The engine will not sell passage here right now — usually a
 			-- missing Early Empire on one side — or has no luxury the seat
 			-- lacks on its table; do not re-ask every turn for the same
