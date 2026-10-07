@@ -695,6 +695,38 @@ impl AdvancedAi {
         }
     }
 
+    /// `siege-train-upgrades-first`: whether `uid` belongs to a land force
+    /// group bound for the campaign's objective or a city our train besieges
+    /// this turn or last — a body the assault will throw at the walls. The
+    /// host upgrades a unit only on friendly ground, so the train is
+    /// upgraded at home before it marches, not by the walls. Live Emperor
+    /// capitals defend at a median 90 against the 45 of our melee by them,
+    /// where our own techs unlock 64 (by the expected-damage curve about 5
+    /// against 11 a blow); civvis-20261006T080950Z stood five units before
+    /// unwalled Xanadu (defense 85) with Horsemen and Warriors, and its
+    /// budget read infinite. At a treasury median of 116-131 Gold during
+    /// Emperor sieges the few upgrades must land on that train.
+    pub(super) fn upgrade_for_the_train(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+    ) -> bool {
+        self.force_groups.iter().any(|group| {
+            group.domain == ForceDomain::Land
+                && group.units.contains(&uid)
+                && g.city_at(group.objective).is_some_and(|cid| {
+                    g.cities[&cid].owner != pid
+                        && (plan.target_city == Some(cid)
+                            || self.sieges.get(&cid).is_some_and(|siege| {
+                                siege.stage != SiegeStage::Hold
+                                    && g.turn.saturating_sub(siege.assessed) <= 1
+                            }))
+                })
+        })
+    }
+
     pub(super) fn siege_needs_the_unit(&self, g: &Game, pid: usize, uid: u32) -> bool {
         let Some(unit) = g.units.get(&uid) else {
             return false;

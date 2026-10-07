@@ -7514,6 +7514,10 @@ pub struct AdvancedAi {
     /// tech-count leader 9). See `advanced/science_leader.rs`. Off by
     /// default.
     science_leader_is_the_target: bool,
+    /// `siege-train-upgrades-first`: the Domination upgrade pass spends on
+    /// the units of the train bound for the campaign's objective or an
+    /// active siege before any other. See `siege_train::upgrade_for_the_train`.
+    siege_train_upgrades_first: bool,
     /// `siege-target-needs-a-road`: a siege whose train is held on land for
     /// want of a road (`stage-march-keeps-to-land`'s hold) by half or more of
     /// its units three turns running is stood down at once, whatever the
@@ -7972,6 +7976,10 @@ pub struct AdvancedAi {
     /// a Theater Square, so the debts that already price it apply. Art
     /// Museums, Broadcast Centers and new Theater Squares are untouched.
     theater_keeps_its_amphitheater: bool,
+    /// `wounded-taker-finishes-the-breach`: a taker down to
+    /// `BREACH_TAKER_MIN_HP` may still strike the blow that takes a city.
+    /// See `air_city_assault::air_assault_capture`.
+    wounded_taker_finishes_the_breach: bool,
     /// `unwalled-target-declares-into-the-strike`: an offensive declaration
     /// on an objective with no walls waits until units that can strike it
     /// this turn bring a first-turn blow. See
@@ -10034,6 +10042,7 @@ impl AdvancedAi {
             // ---- append: s-s ----------------------------------------
             science_denial_spy_reads_the_leader: false,
             science_leader_is_the_target: false,
+            siege_train_upgrades_first: false,
             siege_target_needs_a_road: false,
             siege_road_tally: BTreeMap::new(),
             siege_road_closed: BTreeMap::new(),
@@ -10112,6 +10121,7 @@ impl AdvancedAi {
             settler_before_the_navy: false,
             // ---- append: t-z ----------------------------------------
             theater_keeps_its_amphitheater: false,
+            wounded_taker_finishes_the_breach: false,
             unwalled_target_declares_into_the_strike: false,
             unwalled_city_takes_the_swarm: false,
             turn_start_faith: None,

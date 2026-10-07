@@ -382,6 +382,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-ranged-floor` | off (unmeasured) | Opt-in gene `siege-ranged-floor`; see `Self::siege_ranged_floor`. | 1 \| 1 |
 | `siege-target-needs-a-road` | off (unmeasured) | Opt-in gene `siege-target-needs-a-road`; see `Self::reconcile_siege_roads`. | 1 \| 1 |
 | `siege-train-scales-with-walls` | off (unmeasured) | Opt-in gene `siege-train-scales-with-walls`; see `Self::siege_train_scales_with_walls`. | 1 \| 1 |
+| `siege-train-upgrades-first` | off (unmeasured) | Opt-in gene `siege-train-upgrades-first`; see `Self::siege_train_upgrades_first`. | 1 \| 1 |
 | `stage-march-keeps-to-land` | off (unmeasured) | Opt-in gene `stage-march-keeps-to-land`; see `Self::stage_march_keeps_to_land`. | 1 \| 1 |
 | `stage-musters-out-of-reach` | off (unmeasured) | Opt-in gene `stage-musters-out-of-reach`; see `Self::stage_musters_out_of_reach`. | 1 \| 1 |
 | `staging-column-passes-through` | off (unmeasured) | Opt-in gene `staging-column-passes-through`; see `Self::staging_column_passes_through`. | 1 \| 1 |
@@ -412,6 +413,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `victory-deadline-budget` | off (unmeasured) | Enable `victory-deadline-budget` for measurement. | 1 \| 1 |
 | `victory-portfolio` | off (unmeasured) | Preserve victory objectives across temporary expansion and war postures. | 1 \| 1 |
 | `war-bill-prices-the-tier-gap` | off (unmeasured) | Opt-in gene `war-bill-prices-the-tier-gap`; see `Self::war_bill_prices_the_tier_gap`. | 1 \| 1 |
+| `wounded-taker-finishes-the-breach` | off (unmeasured) | Opt-in gene `wounded-taker-finishes-the-breach`; see `Self::wounded_taker_finishes_the_breach`. | 1 \| 1 |
 
 ## Removed from the code
 

@@ -18,6 +18,9 @@ const AIR_ASSAULT_BREACH_HP: i32 = 1;
 /// A breach may be finished by any healthy land melee body, not only the
 /// cavalry the volley maneuver keeps for its spotting move.
 const AIR_ASSAULT_BREACH_TAKER_HP: i32 = 30;
+/// `wounded-taker-finishes-the-breach`: the health a taker must keep after
+/// the blow that takes a city, under the gene (30 without it).
+const BREACH_TAKER_MIN_HP: i32 = 15;
 /// How far a capture body will look for a breach it can finish this turn.
 const AIR_ASSAULT_TAKER_REACH: i32 = 6;
 /// How near a healthy land melee body must stand for a volley with no
@@ -801,11 +804,26 @@ impl AdvancedAi {
         let mut ring = g.wdisk(target, 1);
         ring.retain(|pos| *pos != target);
         ring.sort_by_key(|pos| (g.wdist(g.units[&uid].pos, *pos), *pos));
+        // `wounded-taker-finishes-the-breach`: a taker down to
+        // BREACH_TAKER_MIN_HP may strike the blow that takes the city. Live
+        // Emperor civvis-20261006T151813Z (game 242) held Tüngliyou at walls
+        // 0 and one health from turn 155 to 158, "city captured false" each
+        // turn, its reserved Pike and Shot beside it at 29 health, one under
+        // the 30 a taker had to keep. The danger at the city is no bar: a
+        // garrison is not a combat target (`DangerField`).
+        let min_hp = if self.wounded_taker_finishes_the_breach {
+            BREACH_TAKER_MIN_HP
+        } else {
+            30
+        };
+        let mut refused = [0usize; 5];
+        let mut worst_danger = 0.0_f64;
         for stand in ring {
             let mut after = g.speculative_clone();
             let mut actions = Vec::new();
             if stand != after.units[&uid].pos {
                 let Some(action) = walk(&mut after, pid, uid, stand) else {
+                    refused[0] += 1;
                     continue;
                 };
                 actions.push(action);
@@ -814,16 +832,38 @@ impl AdvancedAi {
             // cannot enter it in the model, and the host needs an attack move
             // to transfer ownership.
             let finish = Action::Attack { unit: uid, target };
-            if after.apply(pid, &finish).is_err()
-                || after.cities.get(&cid).is_none_or(|city| city.owner != pid)
-                || after.units.get(&uid).is_none_or(|unit| unit.hp < 30)
-                || battle_planner::strike_danger(&after, pid, target, uid)
-                    >= after.units[&uid].hp as f64 * 0.5
-            {
+            if after.apply(pid, &finish).is_err() {
+                refused[1] += 1;
+                continue;
+            }
+            if after.cities.get(&cid).is_none_or(|city| city.owner != pid) {
+                refused[2] += 1;
+                continue;
+            }
+            let Some(hp) = after.units.get(&uid).map(|unit| unit.hp) else {
+                refused[3] += 1;
+                continue;
+            };
+            if hp < min_hp {
+                refused[3] += 1;
+                continue;
+            }
+            let danger = battle_planner::strike_danger(&after, pid, target, uid);
+            if danger >= f64::from(hp) * 0.5 {
+                refused[4] += 1;
+                worst_danger = worst_danger.max(danger);
                 continue;
             }
             actions.push(finish);
             return Some(actions);
+        }
+        if self.journal().wants(crate::reasoning::Level::Detail) {
+            crate::think!(self.journal(), Military, Detail,
+                "The {} cannot take {} this turn", crate::reasoning::plain(g.units[&uid].kind.as_str()), g.cities[&cid].name;
+                "ring stands refused: {} no walk, {} no attack, {} blow short of the city, {} taker under {} health, \
+                 {} danger at the city (up to {:.0})",
+                refused[0], refused[1], refused[2], refused[3], min_hp, refused[4], worst_danger;
+                target);
         }
         None
     }

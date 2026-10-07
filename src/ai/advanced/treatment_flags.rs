@@ -6713,6 +6713,28 @@ impl AdvancedAi {
         self.theater_keeps_its_amphitheater = false;
     }
 
+    /// Opt-in gene `siege-train-upgrades-first`; see
+    /// [`Self::siege_train_upgrades_first`].
+    pub fn enable_siege_train_upgrades_first(&mut self) {
+        self.siege_train_upgrades_first = true;
+    }
+
+    /// The twin of `enable_siege_train_upgrades_first`.
+    pub fn disable_siege_train_upgrades_first(&mut self) {
+        self.siege_train_upgrades_first = false;
+    }
+
+    /// Opt-in gene `wounded-taker-finishes-the-breach`; see
+    /// [`Self::wounded_taker_finishes_the_breach`].
+    pub fn enable_wounded_taker_finishes_the_breach(&mut self) {
+        self.wounded_taker_finishes_the_breach = true;
+    }
+
+    /// The twin of `enable_wounded_taker_finishes_the_breach`.
+    pub fn disable_wounded_taker_finishes_the_breach(&mut self) {
+        self.wounded_taker_finishes_the_breach = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

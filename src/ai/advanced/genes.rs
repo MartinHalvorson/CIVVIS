@@ -3150,6 +3150,16 @@ pub const GENES: &[Gene] = &[
     // within two tiles of the city, so the train's cavalry on its ring rode
     // off. See `siege_train::siege_needs_the_unit`.
     Gene { tag: "invest-keeps-its-cavalry", field: "invest_keeps_its_cavalry", kind: Kind::OptIn, enable: AdvancedAi::enable_invest_keeps_its_cavalry, disable: AdvancedAi::disable_invest_keeps_its_cavalry },
+    // Live Emperor 10-06: capitals defend at a median 90 against our melee's
+    // 45 where our techs unlock 64; the few upgrades our Gold affords (9-34 a
+    // game) went to whichever unit gained most per Gold, home garrison or not.
+    // See `siege_train::upgrade_for_the_train`.
+    Gene { tag: "siege-train-upgrades-first", field: "siege_train_upgrades_first", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_train_upgrades_first, disable: AdvancedAi::disable_siege_train_upgrades_first },
+    // Live Emperor 10-06: Tüngliyou (game 242) sat at walls 0 and one health
+    // from turn 155 to 158 with its reserved Pike and Shot beside it at 29
+    // health, one under the 30 a taker must keep. See
+    // `air_city_assault::air_assault_capture`.
+    Gene { tag: "wounded-taker-finishes-the-breach", field: "wounded_taker_finishes_the_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_taker_finishes_the_breach, disable: AdvancedAi::disable_wounded_taker_finishes_the_breach },
     // Live Emperor 10-06: G194 declared on Vietnam at 2.7x with Dong Hoi
     // already behind 200 walls and one gun, its budget 18.0 turns against 8.7
     // endurance; walls 300 by t89 and no city fell. Walled-target wars without

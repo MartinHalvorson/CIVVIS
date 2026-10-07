@@ -563,3 +563,41 @@ fn a_breached_city_waits_for_a_body_with_a_road_in() {
         "the gene off, eight tiles suffice"
     );
 }
+
+/// `wounded-taker-finishes-the-breach`: a taker under 30 health but over
+/// `BREACH_TAKER_MIN_HP` after its blow takes a one-health city under the
+/// gene; off, the 30-health bar refuses it. Live Emperor game 242 held
+/// Tüngliyou at walls 0 and one health for four turns with its reserved Pike
+/// and Shot beside it at 29 health.
+#[test]
+fn a_wounded_taker_finishes_a_falling_city_under_the_gene() {
+    let (mut g, _, plan, cavalry, bombers) = fixture();
+    for uid in bombers {
+        g.remove_unit(uid);
+    }
+    let cid = plan.target_city.unwrap();
+    {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.hp = 1;
+        city.wall_hp = 0;
+    }
+    g.units.get_mut(&cavalry).unwrap().pos = (19, 10);
+    g.units.get_mut(&cavalry).unwrap().hp = 29;
+    let target = (20, 10);
+    let mut after = g.speculative_clone();
+    after
+        .apply(0, &Action::Attack { unit: cavalry, target })
+        .expect("fixture: the blow is legal");
+    assert_eq!(after.cities[&cid].owner, 0, "fixture: the blow takes the city");
+    let hp = after.units[&cavalry].hp;
+    assert!(
+        (BREACH_TAKER_MIN_HP..30).contains(&hp),
+        "fixture: the taker keeps {hp} health, under 30 but over the gene's bar"
+    );
+    let mut off = AdvancedAi::targeting(VictoryTarget::Domination);
+    off.enable_air_surge_2();
+    assert!(off.air_assault_capture(&g, 0, cavalry, cid).is_none(), "off: refused");
+    let mut on = off.clone();
+    on.enable_wounded_taker_finishes_the_breach();
+    assert!(on.air_assault_capture(&g, 0, cavalry, cid).is_some(), "on: taken");
+}
