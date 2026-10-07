@@ -2674,14 +2674,22 @@ fn append_border_buy_order(
                 std::cmp::Reverse(rival.player),
             )
         });
-    let Some((seat, rival, _, _)) = worst else {
+    let Some((seat, rival, _, priority)) = worst else {
         return Some(if has_sealable_border {
             "border_buy_hold:no_exploration_need"
         } else {
             "border_buy_hold:no_seal"
         });
     };
-    if state.turn % BORDER_BUY_CADENCE != BORDER_BUY_PHASE {
+    // `siege-buys-the-passage`: a siege's passage is asked on any turn; the
+    // mod's own retry cooldown still meters re-asks. A train holds short of
+    // closed borders a median 4.5 turns, under the six-turn cadence: live
+    // Emperor civvis-20261007T074538Z held short of Macedon's borders turns
+    // 177-180, and the one phase turn in that run came when the treasury
+    // read 60.
+    if priority.explorers < SIEGE_PASSAGE_PRIORITY
+        && state.turn % BORDER_BUY_CADENCE != BORDER_BUY_PHASE
+    {
         return Some("border_buy_hold:cadence");
     }
     // The host refuses the agreement item itself without Early Empire on both
@@ -16862,6 +16870,20 @@ mod tests {
         );
         assert_eq!(orders[0].subject, Some(2), "the siege's blocker first");
         assert_eq!(orders[0].verb.as_deref(), Some("OPEN_BORDERS"));
+        // Off the lane's phase the exploration ask waits; the siege's does not.
+        let mut off_phase = state.clone();
+        off_phase.turn = 92;
+        let mut waits = Vec::new();
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &exploration, &off_phase, &mut waits, &|_| 40.0),
+            Some("border_buy_hold:cadence")
+        );
+        let mut asks = Vec::new();
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &sieged, &off_phase, &mut asks, &|_| 40.0),
+            None
+        );
+        assert_eq!(asks[0].subject, Some(2), "the siege asks off the phase");
     }
 
     #[test]

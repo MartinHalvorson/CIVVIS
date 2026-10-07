@@ -118,10 +118,20 @@ impl AdvancedAi {
         if !self.siege_buys_the_passage {
             return BTreeSet::new();
         }
+        // The siege stood down for want of the road keeps asking: the grant
+        // lifts the stand-down (`siege_road_reopened` reads open borders).
+        // Live Emperor civvis-20261007T074538Z stood its siege down at turn
+        // 179, two turns into the hold, before any ask could fire.
+        let closed = self.siege_road_closed.iter().filter_map(|(city, closed)| {
+            (closed.seat == pid && self.capture_stood_down_holds(g, *city))
+                .then_some(closed.blocker)
+                .flatten()
+        });
         self.siege_road_tally
             .values()
             .filter(|tally| tally.turn + 1 >= g.turn)
             .flat_map(|tally| tally.held.values().flatten().copied())
+            .chain(closed)
             .filter(|owner| {
                 *owner != pid
                     && g.players.get(*owner).is_some_and(|player| {
@@ -444,6 +454,25 @@ mod tests {
         war.at_war.insert((0, 1));
         war.at_war.insert((1, 0));
         assert!(on.siege_passage_blockers(&war, 0).is_empty(), "no purchase at war");
+    }
+
+    /// `siege-buys-the-passage`: a siege stood down for want of the road keeps
+    /// naming the passage to buy, since the grant would lift the stand-down.
+    #[test]
+    fn a_stood_down_siege_still_names_the_passage_under_the_gene() {
+        let (game, target, soldier) = strip();
+        let hold = StageMarch::Hold { wet: 30 };
+        let mut on = ai(true, &game, target);
+        on.enable_siege_buys_the_passage();
+        let mut g = game.clone();
+        run(&mut on, &mut g, target, soldier, hold, ROAD_HOLD_TURNS);
+        assert!(on.capture_stood_down_holds(&g, target), "fixture: stood down");
+        g.turn += 5;
+        assert_eq!(
+            on.siege_passage_blockers(&g, 0),
+            [1].into(),
+            "five turns after the last hold, the stood-down siege still asks"
+        );
     }
 
     /// A target whose only land road runs through closed borders is stood
