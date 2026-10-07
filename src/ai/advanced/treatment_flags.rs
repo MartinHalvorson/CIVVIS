@@ -6815,6 +6815,17 @@ impl AdvancedAi {
         self.siege_buys_the_gun_resource = false;
     }
 
+    /// Opt-in gene `surge-fields-the-bombers`; see
+    /// [`Self::surge_fields_the_bombers`].
+    pub fn enable_surge_fields_the_bombers(&mut self) {
+        self.surge_fields_the_bombers = true;
+    }
+
+    /// The twin of `enable_surge_fields_the_bombers`.
+    pub fn disable_surge_fields_the_bombers(&mut self) {
+        self.surge_fields_the_bombers = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
