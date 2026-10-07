@@ -7531,6 +7531,10 @@ pub struct AdvancedAi {
     /// tech-count leader 9). See `advanced/science_leader.rs`. Off by
     /// default.
     science_leader_is_the_target: bool,
+    /// `siege-buys-the-passage`: the bridge's open-borders purchase also
+    /// asks the major whose closed borders hold a siege march. See
+    /// `siege_road::siege_passage_blockers`.
+    siege_buys_the_passage: bool,
     /// `siege-train-upgrades-first`: the Domination upgrade pass spends on
     /// the units of the train bound for the campaign's objective or an
     /// active siege before any other. See `siege_train::upgrade_for_the_train`.
@@ -10090,6 +10094,7 @@ impl AdvancedAi {
             // ---- append: s-s ----------------------------------------
             science_denial_spy_reads_the_leader: false,
             science_leader_is_the_target: false,
+            siege_buys_the_passage: false,
             siege_train_upgrades_first: false,
             siege_target_needs_a_road: false,
             siege_road_tally: BTreeMap::new(),

@@ -3155,6 +3155,12 @@ pub const GENES: &[Gene] = &[
     // game) went to whichever unit gained most per Gold, home garrison or not.
     // See `siege_train::upgrade_for_the_train`.
     Gene { tag: "siege-train-upgrades-first", field: "siege_train_upgrades_first", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_train_upgrades_first, disable: AdvancedAi::disable_siege_train_upgrades_first },
+    // Live Emperor 10-06/07: in 35 of 120 runs a siege march held short of a
+    // third major's closed borders (102 city-holds, the water crossing round
+    // them a median 19 steps); 1 of those cities fell. The bridge's passage
+    // purchase closed 42 of 47 asks, but only for exploration. See
+    // `siege_road::siege_passage_blockers`.
+    Gene { tag: "siege-buys-the-passage", field: "siege_buys_the_passage", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_buys_the_passage, disable: AdvancedAi::disable_siege_buys_the_passage },
     // Live Emperor 10-06: Tüngliyou (game 242) sat at walls 0 and one health
     // from turn 155 to 158 with its reserved Pike and Shot beside it at 29
     // health, one under the 30 a taker must keep. See

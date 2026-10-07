@@ -6771,6 +6771,17 @@ impl AdvancedAi {
         self.growth_prices_the_farm = false;
     }
 
+    /// Opt-in gene `siege-buys-the-passage`; see
+    /// [`Self::siege_buys_the_passage`].
+    pub fn enable_siege_buys_the_passage(&mut self) {
+        self.siege_buys_the_passage = true;
+    }
+
+    /// The twin of `enable_siege_buys_the_passage`.
+    pub fn disable_siege_buys_the_passage(&mut self) {
+        self.siege_buys_the_passage = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
