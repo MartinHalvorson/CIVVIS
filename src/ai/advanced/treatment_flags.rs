@@ -6749,6 +6749,17 @@ impl AdvancedAi {
         self.commercial_hub_in_the_strategic_queue = false;
     }
 
+    /// Opt-in gene `urban-planning-fills-the-slot`; see
+    /// `AdvancedAi::urban_planning_fills_the_slot`.
+    pub fn enable_urban_planning_fills_the_slot(&mut self) {
+        self.urban_planning_fills_the_slot = true;
+    }
+
+    /// The twin of `enable_urban_planning_fills_the_slot`.
+    pub fn disable_urban_planning_fills_the_slot(&mut self) {
+        self.urban_planning_fills_the_slot = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

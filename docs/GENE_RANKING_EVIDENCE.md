@@ -410,6 +410,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `unwalled-target-declares-into-the-strike` | off (unmeasured) | Opt-in gene `unwalled-target-declares-into-the-strike`; see `Self::unwalled_target_declares_into_the_strike`. | 1 \| 1 |
 | `upgrade-window-campaign` | off (unmeasured) | Enable `upgrade-window-campaign` for measurement. | 1 \| 1 |
 | `upkeep-reserve` | off (unmeasured) | Upgrade passes keep one and a half turns of the army's bill in the treasury instead of a flat 30 Gold at war. | 1 \| 1 |
+| `urban-planning-fills-the-slot` | off (unmeasured) | Opt-in gene `urban-planning-fills-the-slot`; see `AdvancedAi::urban_planning_fills_the_slot`. | 1 \| 1 |
 | `urgent-denial-needs-the-edge` | off (unmeasured) | Opt-in gene `urgent-denial-needs-the-edge`; see `AdvancedAi::urgent_denial_has_the_edge`. | 1 \| 1 |
 | `victory-deadline-budget` | off (unmeasured) | Enable `victory-deadline-budget` for measurement. | 1 \| 1 |
 | `victory-portfolio` | off (unmeasured) | Preserve victory objectives across temporary expansion and war postures. | 1 \| 1 |
