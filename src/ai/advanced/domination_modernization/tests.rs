@@ -380,3 +380,35 @@ fn funding_relief_requires_a_major_offensive_and_an_upgrade_cohort() {
         );
     }
 }
+
+/// `siege-train-upgrades-first`: with Gold for one upgrade, an Archer of
+/// the land force bound for the campaign's objective gets it ahead of an
+/// identical one outside it; off, the Archer spawned first wins the tie as
+/// before. Both stand at home: the host upgrades only on friendly ground.
+#[test]
+fn the_train_bound_for_the_objective_gets_the_one_upgrade_under_the_gene() {
+    for gene in [false, true] {
+        let (mut g, mut ai, plan, units) = fixture();
+        let front = g.spawn_test_unit("archer", 0, (5, 4));
+        ai.force_groups.push(ForceGroup {
+            id: front,
+            domain: ForceDomain::Land,
+            units: vec![front],
+            anchor: (5, 4),
+            objective: g.cities[&plan.target_city.unwrap()].pos,
+            focus_target: None,
+            posture: ForcePosture::Advance,
+            readiness: 1.0,
+            local_strength_ratio: 2.0,
+        });
+        if gene {
+            ai.enable_siege_train_upgrades_first();
+        }
+        let price = g.unit_gold_upgrade_offer(0, front).unwrap().1;
+        g.players[0].gold = price + 31.0;
+        ai.fund_domination_upgrades(&mut g, 0, &plan);
+        let upgraded = |uid: u32| g.units[&uid].kind == "crossbowman";
+        assert_eq!(upgraded(front), gene, "gene {gene}: the train's Archer");
+        assert_eq!(upgraded(units[0]), !gene, "gene {gene}: the other Archer");
+    }
+}

@@ -155,10 +155,21 @@ impl AdvancedAi {
                 .into_iter()
                 .filter_map(|(uid, gain)| {
                     let (_, gold, _) = g.unit_gold_upgrade_offer(pid, uid)?;
-                    (g.players[pid].gold - gold >= floor).then_some((gain / gold.max(1.0), uid))
+                    // `siege-train-upgrades-first`: the units of the train
+                    // bound for the objective or an active siege come first,
+                    // ranked as ever among themselves. See
+                    // `siege_train::upgrade_for_the_train`.
+                    let front = self.siege_train_upgrades_first
+                        && self.upgrade_for_the_train(g, pid, uid, plan);
+                    (g.players[pid].gold - gold >= floor)
+                        .then_some((front, gain / gold.max(1.0), uid))
                 })
-                .max_by(|a, b| a.0.total_cmp(&b.0).then_with(|| b.1.cmp(&a.1)));
-            let Some((_, uid)) = best else { break };
+                .max_by(|a, b| {
+                    a.0.cmp(&b.0)
+                        .then_with(|| a.1.total_cmp(&b.1))
+                        .then_with(|| b.2.cmp(&a.2))
+                });
+            let Some((_, _, uid)) = best else { break };
             if g.apply(pid, &Action::UpgradeUnit { unit: uid }).is_err() {
                 break;
             }
