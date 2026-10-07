@@ -546,12 +546,16 @@ end;
 -- strategic as a lump, a luxury for thirty turns and never its last copy (the
 -- host's own count), nothing another pending deal gives. Returns the
 -- `{ ["RESOURCES:<type>"] = amount }` given and its text, or nil and
--- `barter_nothing` when nothing could go.
+-- `barter_short` when any item the bridge priced cannot go: the rest is
+-- under the price, and live Emperor civvis-20261007T123621Z (game 351) sent
+-- 10 Oil for one Truffles copy at turns 215, 218 and 221 after its second
+-- Gypsum (priced by the bridge, which counts the tiles, not the copy traded
+-- away at 212) stayed home as the last copy; Kongo rejected all three.
 CivvisBarterGive = function(deal, pid, subject, list, player)
 	local possible = try(function()
 		return DealManager.GetPossibleDealItems(pid, subject, DealItemTypes.RESOURCES, deal);
 	end, nil) or {};
-	local gave, text = {}, {};
+	local gave, text, short = {}, {}, false;
 	for name, want in string.gmatch(list, "([%w_]+)=(%d+)") do
 		local row = try(function() return GameInfo.Resources[name]; end, nil);
 		local forType = nil;
@@ -591,7 +595,9 @@ CivvisBarterGive = function(deal, pid, subject, list, player)
 				end
 			end
 		end
+		if gave[key] == nil then short = true; end
 	end
+	if short then return nil, "barter_short"; end
 	if next(gave) == nil then return nil, "barter_nothing"; end
 	return gave, table.concat(text, ",");
 end;
@@ -13600,7 +13606,8 @@ local function applyOrder(player, pid, row, turn)
 				or reason == "buy_no_luxury" or reason == "no_resource_item"
 				or reason == "resource_invalid" or reason == "buy_no_favor"
 				or reason == "no_favor_item" or reason == "buy_no_strategic"
-				or reason == "strategic_invalid" or reason == "barter_nothing") then
+				or reason == "strategic_invalid" or reason == "barter_nothing"
+				or reason == "barter_short") then
 			-- The engine will not sell passage here right now — usually a
 			-- missing Early Empire on one side — or has no luxury the seat
 			-- lacks on its table; do not re-ask every turn for the same

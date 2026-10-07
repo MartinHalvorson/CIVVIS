@@ -1250,8 +1250,9 @@ check("a Gold-free barter is asked", why, "buy_asked")
 ok, why = strategicOrder(7, 4, freePlayer, 270, 0)
 check("a Gold-only ask with no ceiling is not", why, "buy_no_ceiling")
 
--- Never our last copy of a luxury: it stays home, the rest still goes, and
--- a barter of nothing but that copy is no ask.
+-- Never our last copy of a luxury: it stays home, and the ask it was priced
+-- into does not go out short of it (game 351 sent 10 Oil for one Truffles
+-- copy three times after its Gypsum stayed home; Kongo rejected each).
 reset()
 local last, lastPlayer = fixture({
 	theirPossible = { RESOURCE_NITER = 82 },
@@ -1259,22 +1260,28 @@ local last, lastPlayer = fixture({
 	own = { RESOURCE_AMBER = 1, RESOURCE_IRON = 30 },
 })
 ok, why = strategicOrder(7, 3, lastPlayer, 276, 156, "RESOURCE_NITER=20;RESOURCE_AMBER=1,RESOURCE_IRON=10")
-check("a barter without its last luxury copy is asked", why, "buy_asked")
-local lastAmber = nil
-for _, item in ipairs(last.items) do
-	if item.owner == 7 and item.valueType == 3 then lastAmber = item end
-end
-check("the last luxury copy is not bartered", lastAmber, nil)
-check("the barter text drops it", eventField(lastEvent("deal_offer"), "want"), "RESOURCE_NITER=20;RESOURCE_IRON=10")
+check("a barter short of its last luxury copy is refused", why, "barter_short")
+check("the short barter sends nothing", last.sends, nil)
+check("the short barter leaves nothing pending", trade.pending[3], nil)
+check("the short barter starts the cooldown", trade.asked[3], 276)
+check("the short barter clears the working deal", last.clearArgs and last.clearArgs[1], "outgoing")
 reset()
 local _, onlyLastPlayer = fixture({
 	theirPossible = { RESOURCE_NITER = 82 }, possible = { RESOURCE_AMBER = 1 },
 	own = { RESOURCE_AMBER = 1 },
 })
 ok, why = strategicOrder(7, 3, onlyLastPlayer, 282, 156, "RESOURCE_NITER=20;RESOURCE_AMBER=1")
-check("a barter of nothing but the last copy is refused", why, "barter_nothing")
+check("a barter of nothing but the last copy is refused", why, "barter_short")
 check("the refused barter starts the cooldown", trade.asked[3], 282)
 check("the refused barter leaves nothing pending", trade.pending[3], nil)
+-- An item off our table altogether is as short.
+reset()
+local _, offTablePlayer = fixture({
+	theirPossible = { RESOURCE_NITER = 82 }, possible = { RESOURCE_IRON = 30 },
+	own = { RESOURCE_IRON = 30 },
+})
+ok, why = strategicOrder(7, 3, offTablePlayer, 284, 156, "RESOURCE_NITER=20;RESOURCE_JADE=1,RESOURCE_IRON=10")
+check("a barter item off our table refuses the ask", why, "barter_short")
 
 -- The answer: our bartered items in no larger amount, Gold at or under the
 -- ceiling, their Gold welcome; anything else of ours, or more of it, is not.
