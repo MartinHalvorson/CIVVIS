@@ -38464,38 +38464,62 @@ impl AdvancedAi {
             // is private to `game`, so a settler held by a zone of control
             // still reports "no route". Read that bucket as "no route OR ZoC
             // lock" until the predicate is exposed.
-            let why = if current == target {
-                "it is already standing on its target".to_string()
+            // A step the settler cannot PAY for is the end of its move, not a
+            // hold: Civilization VI charges the whole terrain cost before
+            // entering, so a settler that has already walked with 1 point left
+            // stops in front of a 2-point hill and walks on next turn. Replays
+            // of 19 live "the next tile refuses it and nothing is standing
+            // there" holds from October 7-8 were all this shortfall (1-2 points
+            // left against a 2-5 point step), and the 47 runs' settlers stood
+            // still on only 13% of their turns to t60 against a median 6 HELD
+            // lines a game. Named apart so the idle census and the HELD counts
+            // stop reading an ordinary turn's end as a stall.
+            let end_of_move = (current != target)
+                .then(|| g.route_step(uid, target, 0))
+                .flatten()
+                .filter(|step| {
+                    !g.can_move(uid, *step) && g.unit_ids_at(*step).iter().all(|o| *o == uid)
+                })
+                .and_then(|step| g.step_movement_shortfall(uid, step))
+                .filter(|(left, _)| *left > 0.0);
+            if let Some((left, cost)) = end_of_move {
+                think!(self.journal(), Expansion, Detail, "Settler ends its move short of {target:?}";
+                       "{} tiles away with {left:.0} movement left; the next tile costs {cost:.0}, \
+                        so it walks on next turn",
+                       g.wdist(current, target); target);
             } else {
-                match g.route_step(uid, target, 0) {
-                    None => "no route to it on our own board".to_string(),
-                    Some(step) if !g.can_move(uid, step) => {
-                        let occupant = g
-                            .unit_ids_at(step)
-                            .iter()
-                            .filter(|other| **other != uid)
-                            .find_map(|other| {
-                                g.units.get(other).map(|unit| (unit.owner, unit.kind))
-                            });
-                        match occupant {
-                            Some((owner, kind)) if owner == pid => {
-                                format!("our own {kind} is standing on the next tile")
-                            }
-                            Some((_, kind)) => format!("a foreign {kind} holds the next tile"),
-                            None if g.units[&uid].moves_left <= 0.0 => {
-                                "it had no movement left".to_string()
-                            }
-                            None => {
-                                "the next tile refuses it and nothing is standing there".to_string()
+                let why = if current == target {
+                    "it is already standing on its target".to_string()
+                } else {
+                    match g.route_step(uid, target, 0) {
+                        None => "no route to it on our own board".to_string(),
+                        Some(step) if !g.can_move(uid, step) => {
+                            let occupant = g
+                                .unit_ids_at(step)
+                                .iter()
+                                .filter(|other| **other != uid)
+                                .find_map(|other| {
+                                    g.units.get(other).map(|unit| (unit.owner, unit.kind))
+                                });
+                            match occupant {
+                                Some((owner, kind)) if owner == pid => {
+                                    format!("our own {kind} is standing on the next tile")
+                                }
+                                Some((_, kind)) => format!("a foreign {kind} holds the next tile"),
+                                None if g.units[&uid].moves_left <= 0.0 => {
+                                    "it had no movement left".to_string()
+                                }
+                                None => "the next tile refuses it and nothing is standing there"
+                                    .to_string(),
                             }
                         }
+                        Some(_) => "the safe-step guard rejected every neighbour".to_string(),
                     }
-                    Some(_) => "the safe-step guard rejected every neighbour".to_string(),
-                }
-            };
-            think!(self.journal(), Expansion, Detail, "Settler HELD short of {target:?}";
-                   "{} tiles away and it did not move — {why}",
-                   g.wdist(current, target); target);
+                };
+                think!(self.journal(), Expansion, Detail, "Settler HELD short of {target:?}";
+                       "{} tiles away and it did not move — {why}",
+                       g.wdist(current, target); target);
+            }
         }
         if !self.settler_commit {
             if moved {

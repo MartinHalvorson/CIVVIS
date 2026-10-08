@@ -26881,6 +26881,18 @@ impl Game {
         true
     }
 
+    /// The movement `uid` has left and the cost of one step onto `to`, when
+    /// it cannot pay that step (see [`Self::can_pay_step`]). `None` when the
+    /// step is affordable or the unit is unknown. Civilization VI charges the
+    /// whole terrain cost before entering, so a unit with 1 point left stops
+    /// in front of a 2-point hill and walks on next turn: the end of a move,
+    /// not a hold.
+    pub(crate) fn step_movement_shortfall(&self, uid: u32, to: Pos) -> Option<(f64, f64)> {
+        let unit = self.units.get(&uid)?;
+        (!self.can_pay_step(uid, unit.pos, to))
+            .then(|| (unit.moves_left, self.unit_step_cost(uid, unit.pos, to)))
+    }
+
     /// MP is paid before entering (Civ VI): a unit needs the full step cost,
     /// except that one untouched unit may always take one step.
     fn can_pay_step(&self, uid: u32, from: Pos, to: Pos) -> bool {

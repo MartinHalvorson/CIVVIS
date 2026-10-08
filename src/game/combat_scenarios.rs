@@ -5000,3 +5000,29 @@ fn a_city_strike_refuses_a_plot_where_a_unit_we_are_at_peace_with_stands() {
     assert!(offered(&g));
     g.apply(0, &strike).unwrap();
 }
+
+#[test]
+fn step_movement_shortfall_names_a_step_the_unit_cannot_pay() {
+    // The settler journal's "ends its move short of" reads this: Civilization
+    // VI charges the whole terrain cost before entering, so 1 point left
+    // cannot pay a forest, while a unit with all its Movement may always take
+    // one step.
+    let (mut g, target, ring) = controlled_game(3061);
+    let settler = g.spawn_unit("settler", 0, ring[0]);
+    g.map.tiles.get_mut(&target).unwrap().feature = Some(crate::name!("forest"));
+    assert_eq!(
+        g.step_movement_shortfall(settler, target),
+        None,
+        "full movement always pays one step"
+    );
+    g.units.get_mut(&settler).unwrap().moves_left = 1.0;
+    let (left, cost) = g
+        .step_movement_shortfall(settler, target)
+        .expect("1 point left cannot pay a forest");
+    assert_eq!(left, 1.0);
+    assert!(
+        cost > left,
+        "the forest costs {cost}, more than the {left} left"
+    );
+    assert!(!g.can_move(settler, target));
+}
