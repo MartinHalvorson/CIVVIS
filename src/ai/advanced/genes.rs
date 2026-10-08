@@ -3437,6 +3437,15 @@ pub const GENES: &[Gene] = &[
     // is at its early warning. Wants `defeated-majors-leave-the-board`. See
     // `AdvancedAi::elimination_crowns_a_faith`.
     Gene { tag: "elimination-waits-on-the-clock", field: "elimination_waits_on_the_clock", kind: Kind::OptIn, enable: AdvancedAi::enable_elimination_waits_on_the_clock, disable: AdvancedAi::disable_elimination_waits_on_the_clock },
+    // At war with a decisive space racer, a bomber pillages a standing pad in
+    // range and a nearby land unit walks onto one and pillages it, inside the
+    // band hunt's safety envelope. G422 made peace with Sumeria the turn its
+    // Mars base landed. See `advanced/launcher_war.rs`.
+    Gene { tag: "war-raids-the-pads", field: "war_raids_the_pads", kind: Kind::OptIn, enable: AdvancedAi::enable_war_raids_the_pads, disable: AdvancedAi::disable_war_raids_the_pads },
+    // No peace offered to or accepted from a rival past its Mars base and
+    // short of the Exoplanet launch while a pad of its stands, unless our
+    // cities are falling. See `advanced/launcher_war.rs`.
+    Gene { tag: "no-peace-with-a-launcher", field: "no_peace_with_a_launcher", kind: Kind::OptIn, enable: AdvancedAi::enable_no_peace_with_a_launcher, disable: AdvancedAi::disable_no_peace_with_a_launcher },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
