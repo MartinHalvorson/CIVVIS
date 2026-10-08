@@ -3350,6 +3350,11 @@ pub const GENES: &[Gene] = &[
     // Aqueduct (Rome's Bath) ahead of the economy steps and the military
     // floor, within 25 turns. See `BasicAi::housing_cap_builds_the_aqueduct`.
     Gene { tag: "housing-cap-builds-the-aqueduct", field: "housing_cap_builds_the_aqueduct", kind: Kind::OptIn, enable: AdvancedAi::enable_housing_cap_builds_the_aqueduct, disable: AdvancedAi::disable_housing_cap_builds_the_aqueduct },
+    // Builders while the charges in hand and queued cover under 60% of the
+    // unimproved worked tiles, one per city, from a city that finishes one
+    // within eight standard turns, ahead of the Monument, the Settler step and
+    // the military floor. See `BasicAi::builders_cover_the_worked_backlog`.
+    Gene { tag: "builders-cover-the-worked-backlog", field: "builders_cover_the_worked_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_cover_the_worked_backlog, disable: AdvancedAi::disable_builders_cover_the_worked_backlog },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
