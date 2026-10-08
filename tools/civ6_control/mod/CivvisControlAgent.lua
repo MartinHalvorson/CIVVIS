@@ -9749,6 +9749,32 @@ local function exportState(player, pid, turn, frame, eventKind)
 			if not any then return nil; end
 			return out;
 		end, nil),
+		-- Our luxury copies by the host's own count, net of the copies a deal
+		-- has traded away (`siege-buys-the-gun-resource`'s barter offers
+		-- only a copy above the last). The board counts improved tiles and
+		-- does not know a copy is out: live Emperor civvis-20261007T131449Z
+		-- (game 354) sold Turtles and Marble to Kongo at turns 126 and 132,
+		-- then priced both into seven Oil asks from 155 that the last-copy
+		-- guard refused unproposed. nil when none is held, as above.
+		luxury_counts = try(function()
+			local resources = player:GetResources();
+			if resources == nil then return nil; end
+			local out = {};
+			local any = false;
+			for row in GameInfo.Resources() do
+				if row.ResourceClassType == "RESOURCECLASS_LUXURY" then
+					local amount = try(function()
+						return resources:GetResourceAmount(row.ResourceType);
+					end, nil);
+					if amount ~= nil and amount > 0 then
+						out[row.ResourceType] = amount;
+						any = true;
+					end
+				end
+			end
+			if not any then return nil; end
+			return out;
+		end, nil),
 		great_person_points = try(function()
 			local points = player:GetGreatPeoplePoints();
 			if points == nil then return nil; end

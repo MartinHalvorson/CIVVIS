@@ -3051,6 +3051,19 @@ fn append_gun_resource_buy_order(
                 if spare.resource == want.resource || selling.contains(spare.resource.as_str()) {
                     continue;
                 }
+                // A luxury goes only above the host's own count of it, which
+                // nets out copies a deal has traded away: the board counts
+                // the tiles, and live game 354 priced the Turtles and Marble
+                // it had sold to Kongo into seven Oil asks the agent's
+                // last-copy guard refused unproposed. An older export with
+                // no count keeps the board's reading.
+                if spare.luxury
+                    && state.luxury_counts.as_ref().is_some_and(|counts| {
+                        counts.get(&spare.resource).copied().unwrap_or(0.0) < 2.0
+                    })
+                {
+                    continue;
+                }
                 let remaining = price - covered;
                 let count = if spare.luxury {
                     1
@@ -17965,6 +17978,48 @@ mod tests {
             Some("gun_resource_buy_hold:treasury")
         );
         assert_eq!(selling.len(), 1);
+
+        // A luxury the host counts one copy of (the other sold away) stays
+        // home, whatever the board counts; one it counts two of still goes.
+        let sold_away = StateSnapshot {
+            luxury_counts: Some(
+                [("RESOURCE_SILK".to_string(), 1.0)].into_iter().collect(),
+            ),
+            ..state.clone()
+        };
+        let mut netted = Vec::new();
+        append_gun_resource_buy_order(
+            std::slice::from_ref(&want),
+            &coal_rich,
+            &sold_away,
+            &mut netted,
+            &worth,
+            &give_worth,
+        );
+        // 641 from Coal alone: 33 units (660), no Gold.
+        assert_eq!(
+            netted[0].verb.as_deref(),
+            Some("RESOURCE_NITER=20;RESOURCE_COAL=33")
+        );
+        let two_held = StateSnapshot {
+            luxury_counts: Some(
+                [("RESOURCE_SILK".to_string(), 2.0)].into_iter().collect(),
+            ),
+            ..state.clone()
+        };
+        let mut kept = Vec::new();
+        append_gun_resource_buy_order(
+            std::slice::from_ref(&want),
+            &coal_rich,
+            &two_held,
+            &mut kept,
+            &worth,
+            &give_worth,
+        );
+        assert_eq!(
+            kept[0].verb.as_deref(),
+            Some("RESOURCE_NITER=20;RESOURCE_SILK=1,RESOURCE_COAL=23")
+        );
 
         // The Niter itself is never on our side.
         let own = vec![spare("RESOURCE_NITER", "niter", 30, false)];
