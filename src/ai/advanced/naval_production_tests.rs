@@ -38,6 +38,14 @@ fn board() -> (Game, AdvancedAi, u32, StrategicPlan) {
 #[test]
 fn lake_only_cities_refuse_single_hulls_and_formations_even_when_the_host_offers_them() {
     let (mut g, ai, city, plan) = board();
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("coal"), 100.0);
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .insert(crate::name!("seaport"));
     for item in [
         Item::Unit {
             unit: crate::name!("ironclad"),
@@ -63,7 +71,7 @@ fn lake_only_cities_refuse_single_hulls_and_formations_even_when_the_host_offers
             );
         assert!(
             g.can_produce(0, city, &item),
-            "the native menu permits stranded hulls"
+            "the native menu permits stranded hulls: {item:?}"
         );
         for threatened in [None, Some(city)] {
             let mut current = plan.clone();
