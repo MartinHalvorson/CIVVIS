@@ -7042,6 +7042,17 @@ impl AdvancedAi {
         self.defeated_majors_leave_the_board = false;
     }
 
+    /// Opt-in gene `elimination-waits-on-the-clock`; see
+    /// [`Self::elimination_waits_on_the_clock`].
+    pub fn enable_elimination_waits_on_the_clock(&mut self) {
+        self.elimination_waits_on_the_clock = true;
+    }
+
+    /// The twin of `enable_elimination_waits_on_the_clock`.
+    pub fn disable_elimination_waits_on_the_clock(&mut self) {
+        self.elimination_waits_on_the_clock = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

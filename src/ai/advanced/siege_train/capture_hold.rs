@@ -14,6 +14,13 @@
 
 use super::*;
 
+/// `elimination-waits-on-the-clock`: the religion lane's early warning, as
+/// progress on the victory screen (half the majors).
+pub(crate) const ELIMINATION_FAITH_BAR: i32 = 50;
+/// `elimination-waits-on-the-clock`: at most this many holdouts, the victim
+/// among them, before an elimination is held.
+pub(crate) const ELIMINATION_FAITH_HOLDOUTS: usize = 3;
+
 /// The ring holds on the capture turn and this many turns after it.
 pub(super) const CAPTURE_HOLD_TURNS: u32 = 1;
 /// The ring holds only while the captured city's loyalty lasts this many
@@ -29,11 +36,95 @@ pub(super) const DYING_CITY_HP: i32 = 50;
 pub(super) const CAPTURE_ESCORTS: usize = 2;
 
 impl AdvancedAi {
+    /// `elimination-waits-on-the-clock`: whether taking city `cid` is held
+    /// because it is its owner's last city and the owner's elimination would
+    /// crown a rival faith (`elimination_crowns_a_faith`). Every capture path
+    /// of the train reads it: `capture_holdable` (the taker, the swarm, the
+    /// air-led capture) and the breach assault.
+    pub(crate) fn elimination_holds_city(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(owner) = g.cities.get(&cid).map(|city| city.owner) else {
+            return false;
+        };
+        if g.player_city_ids(owner).len() != 1 {
+            return false;
+        }
+        let Some(rival) = self.elimination_crowns_a_faith(g, pid, owner) else {
+            return false;
+        };
+        think!(self.journal(), Military, Decision,
+            "Holding the capture of {}, {}'s last city", g.cities[&cid].name, g.players[owner].civ;
+            "{} still holds out against {}'s faith, among its last {} holdouts; taking it would leave that faith one conversion short of a Religious Victory",
+            g.players[owner].civ, g.players[rival].civ, ELIMINATION_FAITH_HOLDOUTS;
+            g.cities[&cid].pos);
+        true
+    }
+
+    /// `elimination-waits-on-the-clock`: the rival whose founded faith would
+    /// stand one conversion from a Religious Victory if `victim`, a major
+    /// holding out against it, were eliminated. `Some` when a living rival's
+    /// faith is at the religion lane's early warning
+    /// ([`ELIMINATION_FAITH_BAR`]) or at match point, `victim` does not follow
+    /// it and did not found it, and it has at most
+    /// [`ELIMINATION_FAITH_HOLDOUTS`] holdouts (living majors other than its
+    /// founder that do not follow it, ourselves included) with `victim` among
+    /// them. The Religious Victory asks the faith of every OTHER living
+    /// major, so the elimination removes a holdout outright.
+    ///
+    /// Live Emperor civvis-20261008T160451Z (game 415): Poland, Catholic,
+    /// was one of Ethiopian Orthodoxy's last three holdouts with Sumeria and
+    /// ourselves; we eliminated Poland at turn 104 and lost to Orthodoxy at
+    /// 132. Holdouts count only living majors, so this reads true only with
+    /// `defeated-majors-leave-the-board` retiring the dead seats.
+    pub(crate) fn elimination_crowns_a_faith(
+        &self,
+        g: &Game,
+        pid: usize,
+        victim: usize,
+    ) -> Option<usize> {
+        if !self.elimination_waits_on_the_clock {
+            return None;
+        }
+        let living: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        living.iter().copied().find(|rival| {
+            if *rival == pid || *rival == victim {
+                return false;
+            }
+            let Some(faith) = g.players[*rival].religion.as_deref() else {
+                return false;
+            };
+            if g.players[victim].religion.as_deref() == Some(faith)
+                || g.civ_follows_religion(victim, faith)
+            {
+                return false;
+            }
+            let warned = self.lane_progress_table(g, *rival)[2] >= ELIMINATION_FAITH_BAR
+                || self.faith_at_match_point(g, *rival);
+            if !warned {
+                return false;
+            }
+            let holdouts: Vec<usize> = living
+                .iter()
+                .copied()
+                .filter(|other| *other != *rival && !g.civ_follows_religion(*other, faith))
+                .collect();
+            holdouts.len() <= ELIMINATION_FAITH_HOLDOUTS && holdouts.contains(&victim)
+        })
+    }
+
     /// `capture-holds-the-ring` (a): whether `taker` may take city `cid` this
     /// turn. Yes when no hostile unit that can take a city stands within two
     /// tiles of it, or when [`CAPTURE_ESCORTS`] of our other land units can end
     /// the turn beside it. Always yes with the gene off.
     pub(crate) fn capture_holdable(&self, g: &Game, pid: usize, cid: u32, taker: u32) -> bool {
+        // `elimination-waits-on-the-clock`: see `elimination_holds_city`.
+        if self.elimination_holds_city(g, pid, cid) {
+            return false;
+        }
         if !self.capture_holds_the_ring {
             return true;
         }

@@ -234,3 +234,50 @@ fn a_dying_open_city_is_never_staged_for() {
         }
     }
 }
+
+/// `elimination-waits-on-the-clock`: four majors; player 1 founded a faith
+/// player 3 follows (two of four, the early warning); the victim, player
+/// 2, holds out on its last city, and so do we. Taking that city would leave
+/// one holdout between the faith and its victory, so the capture waits under
+/// the gene; not when the victim has another city, nor once it follows the
+/// faith.
+#[test]
+fn the_last_city_of_a_faith_holdout_waits_only_under_the_gene() {
+    let mut g = Game::new_full(4, 40, 30, 415_160_451, 300, 0, false);
+    for pid in 0..4 {
+        let settler = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|id| g.units[id].kind == "settler")
+            .unwrap();
+        g.found_city_for(pid, g.units[&settler].pos, None);
+    }
+    let faith = "RELIGION_ORTHODOXY".to_string();
+    g.players[1].religion = Some(faith.clone());
+    let majority = std::sync::Arc::make_mut(&mut g.observed_majority_religion);
+    majority.insert(1, faith.clone());
+    majority.insert(3, faith.clone());
+    majority.insert(2, "RELIGION_CATHOLICISM".to_string());
+    let victim_city = g.player_city_ids(2)[0];
+    let taker = g.spawn_test_unit("warrior", 0, g.cities[&victim_city].pos);
+    let mut ai = AdvancedAi::new();
+    assert!(ai.capture_holdable(&g, 0, victim_city, taker), "off");
+    ai.enable_elimination_waits_on_the_clock();
+    assert_eq!(ai.elimination_crowns_a_faith(&g, 0, 2), Some(1));
+    assert!(!ai.capture_holdable(&g, 0, victim_city, taker), "the last holdout city waits");
+    let mut follows = g.clone();
+    std::sync::Arc::make_mut(&mut follows.observed_majority_religion).insert(2, faith.clone());
+    assert_eq!(ai.elimination_crowns_a_faith(&follows, 0, 2), None, "the victim already follows it");
+    let mut second = g.clone();
+    let spot = second
+        .wdisk(second.cities[&victim_city].pos, 8)
+        .into_iter()
+        .find(|pos| {
+            second.wdist(*pos, second.cities[&victim_city].pos) >= 5
+                && second.map.get(*pos).is_some_and(|tile| !second.rules.is_water(tile))
+                && second.cities.values().all(|city| second.wdist(city.pos, *pos) >= 4)
+        })
+        .expect("room for a second city");
+    second.found_city_for(2, spot, None);
+    assert!(ai.capture_holdable(&second, 0, victim_city, taker), "not its last city");
+}

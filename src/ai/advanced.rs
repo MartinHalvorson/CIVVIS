@@ -6150,6 +6150,10 @@ pub struct AdvancedAi {
     /// the declaration edge. See `advanced/dvp_leader_front.rs`.
     dvp_leader_is_the_front: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `elimination-waits-on-the-clock`: no capture of a major's last city
+    /// while its survival keeps a rival faith from its victory. See
+    /// `AdvancedAi::elimination_crowns_a_faith`.
+    elimination_waits_on_the_clock: bool,
     /// `founder-defends-its-cities`: once a living rival's faith holds a city
     /// of ours, a founder's religious corps counts only units of its own
     /// faith, its defensive Missionary cap rises to one per rival-held city
@@ -10121,6 +10125,7 @@ impl AdvancedAi {
             congress_guards_the_leader: false,
             dvp_leader_is_the_front: false,
             // ---- append: e-f ----------------------------------------
+            elimination_waits_on_the_clock: false,
             founder_defends_its_cities: false,
             founder_keeps_two_sources: false,
             founder_funds_the_inquisition: false,

@@ -3431,6 +3431,12 @@ pub const GENES: &[Gene] = &[
     // Ethiopia won on Religion at 132. Empty seats beyond the host's living
     // count retire. See `defeated_majors::retire_defeated_majors`.
     Gene { tag: "defeated-majors-leave-the-board", field: "defeated_majors_leave_the_board", kind: Kind::OptIn, enable: AdvancedAi::enable_defeated_majors_leave_the_board, disable: AdvancedAi::disable_defeated_majors_leave_the_board },
+    // G415 (civvis-20261008T160451Z): eliminating Poland, one of Ethiopian
+    // Orthodoxy's last three holdouts, put Orthodoxy at match point; we lost
+    // to it 28 turns later. The last city of a holdout waits while the faith
+    // is at its early warning. Wants `defeated-majors-leave-the-board`. See
+    // `AdvancedAi::elimination_crowns_a_faith`.
+    Gene { tag: "elimination-waits-on-the-clock", field: "elimination_waits_on_the_clock", kind: Kind::OptIn, enable: AdvancedAi::enable_elimination_waits_on_the_clock, disable: AdvancedAi::disable_elimination_waits_on_the_clock },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

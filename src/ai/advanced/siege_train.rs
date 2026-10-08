@@ -4127,6 +4127,12 @@ impl AdvancedAi {
         } else {
             ASSAULT_SURVIVOR_HP
         };
+        // `elimination-waits-on-the-clock`: see `elimination_holds_city`.
+        if after.cities.get(&city.id).is_some_and(|c| c.owner == pid)
+            && self.elimination_holds_city(g, pid, city.id)
+        {
+            return None;
+        }
         let captures = self.melee_storms_an_open_city
             && after.cities.get(&city.id).is_some_and(|c| c.owner == pid);
         if !captures
