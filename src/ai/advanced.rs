@@ -6619,6 +6619,10 @@ pub struct AdvancedAi {
     /// See `BasicAi::front_weighted_floor_2`.
     front_weighted_floor_2: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `housing-cap-builds-the-aqueduct`: a city within one of its housing
+    /// whose Granary stands builds its Aqueduct ahead of the economy steps.
+    /// See `BasicAi::housing_cap_builds_the_aqueduct`.
+    housing_cap_builds_the_aqueduct: bool,
     /// `growth-prices-the-farm`: an improvement's Housing and Food are priced
     /// in a small city that is Housing-bound or not growing. See
     /// `advanced/growth_farm.rs`.
@@ -10051,6 +10055,7 @@ impl AdvancedAi {
             front_weighted_floor: false,
             front_weighted_floor_2: false,
             // ---- append: g-k ----------------------------------------
+            housing_cap_builds_the_aqueduct: false,
             growth_prices_the_farm: false,
             invest_keeps_its_cavalry: false,
             guns_grind_the_walls: false,

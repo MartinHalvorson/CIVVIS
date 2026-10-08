@@ -3340,6 +3340,10 @@ pub const GENES: &[Gene] = &[
     // allowance it takes the best legal site within four tiles whose ground
     // and first step are safe. See `advanced/stalled_settler_site.rs`.
     Gene { tag: "stalled-settler-takes-a-safe-site", field: "stalled_settler_takes_a_safe_site", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_settler_takes_a_safe_site, disable: AdvancedAi::disable_stalled_settler_takes_a_safe_site },
+    // A city within one of its housing whose Granary stands builds its
+    // Aqueduct (Rome's Bath) ahead of the economy steps and the military
+    // floor, within 25 turns. See `BasicAi::housing_cap_builds_the_aqueduct`.
+    Gene { tag: "housing-cap-builds-the-aqueduct", field: "housing_cap_builds_the_aqueduct", kind: Kind::OptIn, enable: AdvancedAi::enable_housing_cap_builds_the_aqueduct, disable: AdvancedAi::disable_housing_cap_builds_the_aqueduct },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
