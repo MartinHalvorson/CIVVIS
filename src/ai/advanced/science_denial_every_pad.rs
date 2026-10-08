@@ -63,7 +63,18 @@ const PAD_CITY_REACH: i32 = 3;
 impl AdvancedAi {
     /// The rivals whose every pad is a target. Empty with the gene off.
     pub(crate) fn every_pad_threats(&self, g: &Game, pid: usize) -> BTreeSet<usize> {
-        if !self.science_denial_every_pad || !g.victory_conditions.science {
+        if !self.science_denial_every_pad {
+            return BTreeSet::new();
+        }
+        self.decisive_space_racers(g, pid)
+    }
+
+    /// The decisive space racers, whichever gene asks: met, living,
+    /// non-team majors with [`EVERY_PAD_MIN_STAGES`] space projects landed or
+    /// a science race reading [`EVERY_PAD_MIN_PRESSURE`]. Empty when the
+    /// Science Victory is off.
+    pub(crate) fn decisive_space_racers(&self, g: &Game, pid: usize) -> BTreeSet<usize> {
+        if !g.victory_conditions.science {
             return BTreeSet::new();
         }
         g.players

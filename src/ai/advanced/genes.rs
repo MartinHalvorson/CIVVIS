@@ -3391,6 +3391,11 @@ pub const GENES: &[Gene] = &[
     // Japan's four pads while both disruptions hit the same one. See
     // `advanced/science_denial_every_pad.rs`.
     Gene { tag: "science-denial-every-pad", field: "science_denial_every_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denial_every_pad, disable: AdvancedAi::disable_science_denial_every_pad },
+    // Against a decisive space racer the top-Production cities train Spies
+    // up to its pads plus one, ahead of routine builds. G406 held 0-1 Spies
+    // of 5 capacity from t175 to its t215 Science loss. See
+    // `advanced/science_denial_trains_spies.rs`.
+    Gene { tag: "science-denial-trains-spies", field: "science_denial_trains_spies", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denial_trains_spies, disable: AdvancedAi::disable_science_denial_trains_spies },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -6968,6 +6968,14 @@ impl AdvancedAi {
     pub fn disable_science_denial_every_pad(&mut self) {
         self.science_denial_every_pad = false;
     }
+    /// Enable `science-denial-trains-spies`.
+    pub fn enable_science_denial_trains_spies(&mut self) {
+        self.science_denial_trains_spies = true;
+    }
+    /// Withhold `science-denial-trains-spies`.
+    pub fn disable_science_denial_trains_spies(&mut self) {
+        self.science_denial_trains_spies = false;
+    }
 
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
