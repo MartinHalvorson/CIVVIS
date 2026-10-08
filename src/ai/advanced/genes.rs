@@ -3353,7 +3353,10 @@ pub const GENES: &[Gene] = &[
     // Builders while the charges in hand and queued cover under 60% of the
     // unimproved worked tiles, one per city, from a city that finishes one
     // within eight standard turns, ahead of the Monument, the Settler step and
-    // the military floor. See `BasicAi::builders_cover_the_worked_backlog`.
+    // the military floor; under the controller it also claims one idle queue
+    // a turn ahead of the routine idle-queue claims, buys one above the
+    // reserve, and allows 15 standard turns while the backlog is twice the
+    // charges. See `BasicAi::builders_cover_the_worked_backlog`.
     Gene { tag: "builders-cover-the-worked-backlog", field: "builders_cover_the_worked_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_cover_the_worked_backlog, disable: AdvancedAi::disable_builders_cover_the_worked_backlog },
     // An improvement's Production on a tile one of our cities works is priced
     // again at 2.11 / 1.43 times the lane's Production weight (the top third's
