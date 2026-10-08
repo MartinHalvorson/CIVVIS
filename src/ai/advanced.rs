@@ -5417,6 +5417,10 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `counter-out-of-reach-takes-the-weak`: a denial counter on a rival
+    /// stronger than us yields the campaign target to a weak neighbour. See
+    /// `AdvancedAi::counter_out_of_reach`.
+    counter_out_of_reach_takes_the_weak: bool,
     /// `counterweight-from-the-first-convert`: a faithless Domination seat's
     /// counterweight starts at the first city of ours a threatening faith
     /// takes (one at the religious early-warning bar, or holding all but one
@@ -9941,6 +9945,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            counter_out_of_reach_takes_the_weak: false,
             counterweight_from_the_first_convert: false,
             counter_war_needs_the_emperor_edge: false,
             declaration_hold_seen: 0,
@@ -14529,6 +14534,9 @@ impl AdvancedAi {
                         .or_else(|| {
                             actionable_denial
                                 .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
+                                // `counter-out-of-reach-takes-the-weak`: see
+                                // `counter_out_of_reach`.
+                                .filter(|(rival, _)| !self.counter_out_of_reach(g, pid, *rival))
                                 .map(|(rival, _)| rival)
                         })
                         // See `road_blocker_front` (`blocker-becomes-the-target`).

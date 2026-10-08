@@ -282,6 +282,11 @@ pub(crate) const ONE_WAR_SECOND_FRONT_HOLD_RATIO: f64 = 1.3;
 /// only other urgent declaration in forty live games opened at 0.99.
 pub(crate) const COUNTER_WAR_POWER_FLOOR: f64 = 0.7;
 
+/// `counter-out-of-reach-takes-the-weak`: the most a neighbour's steady
+/// power may be, as a share of ours, to take the target from an
+/// out-of-reach counter.
+pub(crate) const WEAK_PREY_SHARE: f64 = 1.0 / 3.0;
+
 /// `counter-war-needs-parity`: the least power, against the rival's, at
 /// which a counter-war on any other clock is opened or takes the front.
 /// Seven urgent counter declarations below parity on 2026-10-04/05 (0.24 to
@@ -1264,6 +1269,42 @@ impl AdvancedAi {
             && (!self.faith_counter_waits_for_match_point || self.faith_at_match_point(g, rival))
             // See `counter_war_has_the_emperor_edge`.
             && self.counter_war_has_the_emperor_edge(g, pid, rival)
+    }
+
+    /// `counter-out-of-reach-takes-the-weak`: whether the denial counter on
+    /// `rival` should not name the campaign target. It does not when we hold
+    /// less power than its steady power and another legal major stands at
+    /// most [`WEAK_PREY_SHARE`] of ours: the counter war against a stronger
+    /// army takes nothing (staged wars short of 1.5 times a rival's power
+    /// took a city in 2 of 25), while the weak neighbour's cities are what a
+    /// city-starved seat needs for the production gate and the next war. The
+    /// target pick then falls through to the elective choices below it.
+    ///
+    /// Live Emperor civvis-20261008T134147Z (game 403): three cities and 727
+    /// power at turn 125, the campaign aimed at Ethiopia (560) and then Kongo
+    /// (880: "asks 767, 220 staged; 711 power against their 880") while the
+    /// Netherlands stood at 130 with five cities. Over the 10-06/07/08 runs
+    /// with events, 27 of 52 games ran a counter campaign on a rival stronger
+    /// than us, and a rival at a third of our power or less stood by in 14 of
+    /// 66 such sampled turns.
+    pub(crate) fn counter_out_of_reach(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        if !self.counter_out_of_reach_takes_the_weak {
+            return false;
+        }
+        let ours = g.military_power(pid);
+        if ours >= self.steady_rival_power(g, rival) {
+            return false;
+        }
+        g.players.iter().any(|other| {
+            other.id != pid
+                && other.id != rival
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && !g.player_city_ids(other.id).is_empty()
+                && self.campaign_target_legal(g, pid, other.id)
+                && self.steady_rival_power(g, other.id) <= WEAK_PREY_SHARE * ours
+        })
     }
 
     /// `faith-counter-waits-for-match-point`: whether `rival`'s faith holds

@@ -3403,6 +3403,12 @@ pub const GENES: &[Gene] = &[
     // of a B nobody joins. G402 t202 cast 10 B votes; Nubia's A block grew
     // from 3 to 7 and took +4 to 19. See `CivvisCongressRedirect`.
     Gene { tag: "congress-guards-the-leader", field: "congress_guards_the_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_guards_the_leader, disable: AdvancedAi::disable_congress_guards_the_leader },
+    // G403 (civvis-20261008T134147Z): three cities at 727 power, the
+    // counter aimed at Kongo (880) while the Netherlands stood at 130 with
+    // five cities. A counter on a stronger rival yields the target to a
+    // neighbour at a third of our power. See
+    // `AdvancedAi::counter_out_of_reach`.
+    Gene { tag: "counter-out-of-reach-takes-the-weak", field: "counter_out_of_reach_takes_the_weak", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_out_of_reach_takes_the_weak, disable: AdvancedAi::disable_counter_out_of_reach_takes_the_weak },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

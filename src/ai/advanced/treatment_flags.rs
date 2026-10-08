@@ -6987,6 +6987,17 @@ impl AdvancedAi {
         self.congress_guards_the_leader = false;
     }
 
+    /// Opt-in gene `counter-out-of-reach-takes-the-weak`; see
+    /// [`Self::counter_out_of_reach_takes_the_weak`].
+    pub fn enable_counter_out_of_reach_takes_the_weak(&mut self) {
+        self.counter_out_of_reach_takes_the_weak = true;
+    }
+
+    /// The twin of `enable_counter_out_of_reach_takes_the_weak`.
+    pub fn disable_counter_out_of_reach_takes_the_weak(&mut self) {
+        self.counter_out_of_reach_takes_the_weak = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

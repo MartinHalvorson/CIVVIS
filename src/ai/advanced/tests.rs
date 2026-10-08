@@ -52037,3 +52037,33 @@ fn the_staging_band_reaches_past_a_deep_closed_border_only_under_the_gene() {
     assert!(!ai.campaign_staging_position(&g, 0, 1, soldier, objective, seven), "on: no further than it needs");
     assert!(!ai.campaign_staging_position(&g, 0, 1, soldier, objective, inside), "never inside the closed territory");
 }
+
+/// `counter-out-of-reach-takes-the-weak`: a denial counter on a rival
+/// stronger than us yields the campaign target when another major stands at
+/// a third of our power or less; not when we out-power the counter rival,
+/// and not without such a neighbour.
+#[test]
+fn an_out_of_reach_counter_yields_to_a_weak_neighbour_only_under_the_gene() {
+    let mut g = Game::new_full(3, 40, 30, 403_134_147, 300, 0, false);
+    for pid in 0..3 {
+        let settler = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|id| g.units[id].kind == "settler")
+            .unwrap();
+        g.found_city_for(pid, g.units[&settler].pos, None);
+    }
+    std::sync::Arc::make_mut(&mut g.observed_military_power).insert(0, 700.0);
+    std::sync::Arc::make_mut(&mut g.observed_military_power).insert(1, 880.0);
+    std::sync::Arc::make_mut(&mut g.observed_military_power).insert(2, 130.0);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.battlefront_observation = false;
+    assert!(!ai.counter_out_of_reach(&g, 0, 1), "off");
+    ai.enable_counter_out_of_reach_takes_the_weak();
+    assert!(ai.counter_out_of_reach(&g, 0, 1), "weaker than the counter rival, a weak neighbour by");
+    std::sync::Arc::make_mut(&mut g.observed_military_power).insert(0, 900.0);
+    assert!(!ai.counter_out_of_reach(&g, 0, 1), "we out-power the counter rival");
+    std::sync::Arc::make_mut(&mut g.observed_military_power).insert(0, 700.0);
+    std::sync::Arc::make_mut(&mut g.observed_military_power).insert(2, 400.0);
+    assert!(!ai.counter_out_of_reach(&g, 0, 1), "no neighbour at a third of our power");
+}
