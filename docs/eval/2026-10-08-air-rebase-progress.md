@@ -7,7 +7,7 @@ the objective. With no profitable mission, an equally distant base scores 35
 and a base one tile farther away scores 17. Either can spend the aircraft's
 turn without adding reach. The same score can displace a Fighter's patrol.
 
-The intended correction awards the bonus only when a current controller
+The correction awards the bonus only when a current controller
 crosses from outside attack range to inside it. Positive distance improvement
 still permits forward staging within range or while still outside range.
 The frozen `AdvancedAi::legacy()` controller must retain its original score.
@@ -28,7 +28,18 @@ A Fighter control checks actual patrol execution when a sideways rebase
 would previously win its score comparison. Executed rebase controls verify
 the destination and the engine's consumed movement and attack allowance.
 
-Baseline and candidate results will be recorded after the focused runs finish.
+The unchanged scoring at `dc09134d93778665561fcce80a18e669a69a1e5e`
+reproduced the backward Bomber rebase and sideways Fighter rebase in CI run
+`37860043925`. All five forward-staging, kill and capacity controls passed.
+Fail-fast stopped that run before the equal-distance Bomber case; it is not
+credited as executed. The local baseline compilation was intentionally
+stopped after that independent reproduction, before editing its source.
+
+Candidate validation adds frozen Bomber and Fighter anchor checks and a
+three-turn comparison using remembered objectives on `player_decision_view`:
+the legacy Bomber cycles through the two bases using actual rebase and
+EndTurn actions, while the current selector keeps its original base.
+Candidate results will be recorded after the focused run finishes.
 The existing siege-forecast and loyalty-evacuation suites are additional
 controls, alongside the full repository regression and required CI cost gate.
 
