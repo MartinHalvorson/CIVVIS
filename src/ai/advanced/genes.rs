@@ -3385,6 +3385,12 @@ pub const GENES: &[Gene] = &[
     // band widens until it holds six peacetime stands (at most eight). See
     // `AdvancedAi::campaign_staging_reach`.
     Gene { tag: "staging-reaches-the-border", field: "staging_reaches_the_border", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_reaches_the_border, disable: AdvancedAi::disable_staging_reaches_the_border },
+    // A rival with two space projects landed (or a science race at 80%)
+    // gets a spy on each of its standing Spaceport cities, and every spy
+    // there runs Disrupt Rocketry whenever the host offers it. G398 lost to
+    // Japan's four pads while both disruptions hit the same one. See
+    // `advanced/science_denial_every_pad.rs`.
+    Gene { tag: "science-denial-every-pad", field: "science_denial_every_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denial_every_pad, disable: AdvancedAi::disable_science_denial_every_pad },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

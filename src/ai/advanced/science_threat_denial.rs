@@ -255,7 +255,7 @@ impl AdvancedAi {
     }
 
     /// Space projects `pid` has completed.
-    fn science_denial_stages(g: &Game, pid: usize) -> usize {
+    pub(super) fn science_denial_stages(g: &Game, pid: usize) -> usize {
         let completed = &g.players[pid].science_projects;
         SPACE_PROJECTS
             .iter()

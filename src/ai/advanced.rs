@@ -8082,6 +8082,11 @@ pub struct AdvancedAi {
     /// Opt-in gene `settler-before-the-navy`; see
     /// `BasicAi::settler_before_the_navy`.
     settler_before_the_navy: bool,
+    /// `science-denial-every-pad`: once a rival has landed two space
+    /// projects (or its science race reads 80%), our spies spread one to each
+    /// of its standing Spaceport cities and run Disrupt Rocketry wherever the
+    /// host offers it. See `advanced/science_denial_every_pad.rs`.
+    science_denial_every_pad: bool,
     // ---- append: t-z ------------------------------------------------
     /// `urban-planning-fills-the-slot`: Urban Planning (+1 Production in
     /// every city) is wanted at the tail of every lane's policy portfolio, so
@@ -8993,6 +8998,7 @@ mod wonder_clearance;
 /// opt-in genes; see `advanced/wonder_sites.rs`.
 mod wonder_sites;
 
+mod science_denial_every_pad;
 mod science_endgame;
 mod science_threat_denial;
 mod science_trade;
@@ -10335,6 +10341,7 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             settler_before_the_navy: false,
+            science_denial_every_pad: false,
             // ---- append: t-z ----------------------------------------
             urban_planning_fills_the_slot: false,
             theater_keeps_its_amphitheater: false,
@@ -27973,6 +27980,11 @@ impl AdvancedAi {
         // city, which outranks every other posting. `None` when the gene is
         // off.
         let denial_leader = self.science_denial_leading_pad_city(g, pid);
+        // `science-denial-every-pad`: the rivals whose every pad is a target,
+        // and the cities a spy disrupts those pads from. Both empty with the
+        // gene off. See `advanced/science_denial_every_pad.rs`.
+        let every_pad_threats = self.every_pad_threats(g, pid);
+        let every_pads = Self::every_pad_cities(g, pid, &every_pad_threats);
         let ids: Vec<u32> = g
             .spies
             .values()
@@ -28135,6 +28147,28 @@ impl AdvancedAi {
                     continue;
                 }
             }
+            // `science-denial-every-pad`: an idle spy in a foreign city that
+            // is no free pad city of a decisive science threat leaves for the
+            // nearest one. Never taken with the gene off (`every_pads` empty).
+            if let Some(pad_city) =
+                Self::every_pad_repost(g, pid, spy_id, current_city, &every_pads)
+            {
+                if let Some(action) = legal.iter().find(
+                    |action| matches!(action, Action::AssignSpy { city, .. } if *city == pad_city),
+                ) {
+                    if g.apply(pid, action).is_ok() {
+                        *g.players[pid]
+                            .counters
+                            .entry("every_pad_posts".to_string())
+                            .or_insert(0) += 1;
+                    }
+                    self.spy_orders_until.insert(
+                        spy_id,
+                        g.turn + g.standard_duration(SPY_TRAVEL_ORDER_PATIENCE),
+                    );
+                    continue;
+                }
+            }
             let offensive = current_city
                 .and_then(|city| g.cities.get(&city))
                 .is_some_and(|city| city.owner != pid);
@@ -28150,6 +28184,23 @@ impl AdvancedAi {
                         );
                         continue;
                     }
+                }
+                // `science-denial-every-pad`: in a decisive science threat's
+                // city, Disrupt Rocketry whenever it is offered. `None` with
+                // the gene off (`every_pad_threats` empty).
+                if let Some(action) = Self::every_pad_disrupt(g, pid, spy_id, &every_pad_threats) {
+                    if g.apply(pid, &action).is_ok() {
+                        *g.players[pid]
+                            .counters
+                            .entry("every_pad_disrupts".to_string())
+                            .or_insert(0) += 1;
+                        self.every_pad_note(g, spy_id);
+                    }
+                    self.spy_orders_until.insert(
+                        spy_id,
+                        g.turn + g.standard_duration(SPY_MISSION_ORDER_PATIENCE),
+                    );
+                    continue;
                 }
                 let science_denial_pressure = current_city
                     .and_then(|city| g.cities.get(&city))
@@ -28310,6 +28361,16 @@ impl AdvancedAi {
                                     pid,
                                     spy_id,
                                     denial_leader,
+                                    *city,
+                                )
+                                // `science-denial-every-pad`: every free pad
+                                // city of a decisive threat. Zero with the
+                                // gene off.
+                                + Self::every_pad_assignment_bonus(
+                                    g,
+                                    pid,
+                                    spy_id,
+                                    &every_pads,
                                     *city,
                                 ),
                             std::cmp::Reverse(*city),
