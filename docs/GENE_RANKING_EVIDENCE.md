@@ -404,6 +404,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `staging-gun-reads-the-shared-danger` | off (unmeasured) | Opt-in gene `staging-gun-reads-the-shared-danger`; see `Self::staging_gun_reads_the_shared_danger`. | 1 \| 1 |
 | `staging-gun-remembers-hostiles` | off (unmeasured) | Opt-in gene `staging-gun-remembers-hostiles`; see `Self::staging_gun_remembers_hostiles`. | 1 \| 1 |
 | `staging-gun-trusts-its-escort` | off (unmeasured) | Opt-in gene `staging-gun-trusts-its-escort`; see `Self::staging_gun_trusts_its_escort`. | 1 \| 1 |
+| `staging-reaches-the-border` | off (unmeasured) | Opt-in gene `staging-reaches-the-border`; see `Self::staging_reaches_the_border`. | 1 \| 1 |
 | `stale-swap-reads-the-march` | off (unmeasured) | Opt-in gene `stale-swap-reads-the-march`; see `Self::stale_swap_reads_the_march`. | 1 \| 1 |
 | `stall-rebases-on-new-walls` | off (unmeasured) | Opt-in gene `stall-rebases-on-new-walls`; see `Self::stall_rebases_on_new_walls`. | 1 \| 1 |
 | `stall-waits-for-the-breach` | off (unmeasured) | Opt-in gene `stall-waits-for-the-breach`; see `Self::stall_waits_for_the_breach`. | 1 \| 1 |

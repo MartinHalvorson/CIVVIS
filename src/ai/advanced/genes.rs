@@ -3378,6 +3378,13 @@ pub const GENES: &[Gene] = &[
     // and its peaceful rivals offered types it lacked; Gold alone never bought
     // one. The bridge now offers a spare copy for a luxury we lack.
     Gene { tag: "luxury-swap-asks", field: "luxury_swap_asks", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_swap_asks, disable: AdvancedAi::disable_luxury_swap_asks },
+    // G388 (civvis-20261008T111334Z): the nearest tile outside Russia's
+    // closed borders was five from St. Petersburg, so the 3-5 staging band
+    // held two bodies against an 819 bill all game at 2-3 times every rival;
+    // 39 of 97 held campaign targets had no stand nearer than four. The
+    // band widens until it holds six peacetime stands (at most eight). See
+    // `AdvancedAi::campaign_staging_reach`.
+    Gene { tag: "staging-reaches-the-border", field: "staging_reaches_the_border", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_reaches_the_border, disable: AdvancedAi::disable_staging_reaches_the_border },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -51980,3 +51980,60 @@ fn a_stalled_settler_never_takes_a_site_under_the_deadlines_value_floor() {
         "a fixture whose richest land is worth more than twice the only safe site"
     );
 }
+
+/// `staging-reaches-the-border`: a target whose closed territory runs five
+/// tiles out from its city leaves the 3-5 staging band no stand at peace.
+/// With the gene the band widens until it holds six stands our army can
+/// reach (the sixth ring, all outside the border and open from our city); a
+/// tile inside the territory still never stages.
+#[test]
+fn the_staging_band_reaches_past_a_deep_closed_border_only_under_the_gene() {
+    let mut g = Game::new_full(2, 40, 30, 388_111_334, 300, 0, false);
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    let settler = g
+        .player_unit_ids(1)
+        .into_iter()
+        .find(|id| g.units[id].kind == "settler")
+        .unwrap();
+    let city = g.found_city_for(1, g.units[&settler].pos, None);
+    let objective = g.cities[&city].pos;
+    for tile in g.map.tiles.values_mut() {
+        let (dq, dr) = (tile.pos.0 - objective.0, tile.pos.1 - objective.1);
+        if (dq.abs() + dr.abs() + (dq + dr).abs()) / 2 <= 5 {
+            tile.owner_city = Some(city);
+        }
+    }
+    g.players[1].borders_enforced = Some(true);
+    let ours = g
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|id| g.units[id].kind == "settler")
+        .unwrap();
+    let home = g.units[&ours].pos;
+    assert!(g.wdist(home, objective) > 9, "fixture: our city stands clear of the band");
+    g.found_city_for(0, home, None);
+    let soldier = g
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|id| g.units[id].kind != "settler")
+        .unwrap_or_else(|| g.spawn_test_unit("warrior", 0, (0, 0)));
+    let at = |d: i32| {
+        g.wring(objective, d)
+            .into_iter()
+            .find(|pos| g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile)))
+            .expect("a land tile at that distance")
+    };
+    let (inside, six, seven) = (at(4), at(6), at(7));
+    let mut ai = AdvancedAi::new();
+    assert_eq!(ai.campaign_staging_reach(&g, 0, 1, objective), 5);
+    assert!(!ai.campaign_staging_position(&g, 0, 1, soldier, objective, six), "off: six out is no stand");
+    ai.enable_staging_reaches_the_border();
+    assert_eq!(ai.campaign_staging_reach(&g, 0, 1, objective), 6, "the sixth ring holds the stands");
+    assert!(ai.campaign_staging_position(&g, 0, 1, soldier, objective, six), "on: six out stages");
+    assert!(!ai.campaign_staging_position(&g, 0, 1, soldier, objective, seven), "on: no further than it needs");
+    assert!(!ai.campaign_staging_position(&g, 0, 1, soldier, objective, inside), "never inside the closed territory");
+}

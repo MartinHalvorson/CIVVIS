@@ -19,7 +19,7 @@ use crate::think;
 use crate::world::TileBits;
 use crate::Pos;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::sync::Arc;
 mod adopted_faith_sanctuary;
 mod counterfaith_condemnation;
@@ -7576,6 +7576,13 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `staging-reaches-the-border`: a peacetime staging band that reaches
+    /// just past the target's closed border when the 3-5 band lies inside it.
+    /// See `AdvancedAi::campaign_staging_reach`.
+    staging_reaches_the_border: bool,
+    /// `staging-reaches-the-border`'s per-turn reach, by (turn, target,
+    /// objective); every staging tile test of a turn reads one scan.
+    staging_reach_memo: RefCell<BTreeMap<(u32, usize, Pos), i32>>,
     /// `stalled-settler-takes-a-safe-site`: a Settler past its walk
     /// allowance takes the best legal site within a few tiles whose ground
     /// and first step are out of every visible hostile's reach. See
@@ -8563,6 +8570,12 @@ const SCIENCE_SPACEPORT_CAP: usize = 3;
 /// The buildings a district project waits behind. See
 /// `buildings_before_projects`.
 const BUILDINGS_BEFORE_PROJECTS: [&str; 4] = ["library", "university", "research_lab", "workshop"];
+/// `staging-reaches-the-border`: the peacetime stands the staging band must
+/// hold before it stops widening: room for a siege train's bodies.
+pub(crate) const BORDER_STAGING_STANDS: usize = 6;
+/// `staging-reaches-the-border`: the band's outer limit (the muster line).
+pub(crate) const BORDER_STAGING_MAX: i32 = 8;
+
 /// See `industrial_chain_debt`: the Industrial Zone's own chain, appended to
 /// `BUILDINGS_BEFORE_PROJECTS` under the opt-in or an explicit victory
 /// target's production-foundation contract. It stays out of the base list so
@@ -10235,6 +10248,8 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            staging_reaches_the_border: false,
+            staging_reach_memo: RefCell::new(BTreeMap::new()),
             stalled_settler_takes_a_safe_site: false,
             stalled_settler_floor: BTreeMap::new(),
             siege_tier_yields_to_the_bombers: false,
@@ -11077,7 +11092,7 @@ impl AdvancedAi {
         objective: Pos,
     ) -> Option<usize> {
         let mut goals: Vec<Pos> = g
-            .wdisk(objective, 5)
+            .wdisk(objective, self.campaign_staging_reach(g, pid, target, objective))
             .into_iter()
             .filter(|position| {
                 self.campaign_staging_position(g, pid, target, uid, objective, *position)
@@ -21557,6 +21572,91 @@ impl AdvancedAi {
             .find(|action| matches!(action, Action::DeclareWar { player } if *player == target))
     }
 
+    /// `staging-reaches-the-border`: the farthest a peacetime staging tile
+    /// stands from `objective`. Five, as ever, unless the gene is on and the
+    /// 3-5 band holds fewer than [`BORDER_STAGING_STANDS`] tiles our army can
+    /// stand on and walk to in peace (dry, passable, no city, reached from
+    /// our cities without crossing `target`'s territory or a closed border):
+    /// then the band widens a ring at a time until it does, at most to
+    /// [`BORDER_STAGING_MAX`]. The 3-5 band otherwise lies almost
+    /// wholly inside the target's closed borders and the staged check cannot
+    /// pass.
+    ///
+    /// Live Emperor civvis-20261008T111334Z (game 388): at 2-3 times every
+    /// rival and at peace all game, the campaign on Russia held every turn on
+    /// "the Siege row for St. Petersburg asks 819 strength and 86 is staged
+    /// on its ring in 2 bodies"; the army stood five to nine tiles out, and
+    /// the nearest tile outside Russia's closed borders was five from the
+    /// city. Of 97 campaign targets held on that line over 10-06/07/08, the
+    /// nearest such tile was four or more out for 39.
+    pub(crate) fn campaign_staging_reach(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+        objective: Pos,
+    ) -> i32 {
+        if !self.staging_reaches_the_border {
+            return 5;
+        }
+        let key = (g.turn, target, objective);
+        if let Some(reach) = self.staging_reach_memo.borrow().get(&key) {
+            return *reach;
+        }
+        // Dry, passable ground we may cross or stand on in peace: outside the
+        // target's territory, and any other owner's only when it is ours or
+        // open to us (or at war with us).
+        let open_ground = |pos: Pos| {
+            g.map.get(pos).is_some_and(|tile| {
+                !g.rules.is_water(tile)
+                    && g.rules.is_passable(tile)
+                    && tile
+                        .owner_city
+                        .and_then(|city| g.cities.get(&city))
+                        .map(|city| city.owner)
+                        .is_none_or(|owner| {
+                            owner != target
+                                && (owner == pid
+                                    || g.is_at_war(pid, owner)
+                                    || g.has_open_borders(pid, owner))
+                        })
+            })
+        };
+        // A stand counts only where our army can walk to it without crossing
+        // the target: flood that ground from our own cities. Live G388 turn
+        // 120: the 3-5 band round St. Petersburg held 20 free stands outside
+        // Russia, every one behind Russia's closed borders, and the staging
+        // step found a route to none of them for any of 37 units.
+        let mut reached: HashSet<Pos> = HashSet::new();
+        let mut queue: VecDeque<Pos> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter_map(|city| g.cities.get(&city).map(|city| city.pos))
+            .collect();
+        reached.extend(queue.iter().copied());
+        while let Some(at) = queue.pop_front() {
+            for next in g.nbrs(at) {
+                if !reached.contains(&next) && g.city_at(next).is_none() && open_ground(next) {
+                    reached.insert(next);
+                    queue.push_back(next);
+                }
+            }
+        }
+        let standable = |pos: Pos| reached.contains(&pos) && g.city_at(pos).is_none();
+        let mut stands = (3..=5)
+            .map(|distance| g.wring(objective, distance).into_iter().filter(|pos| standable(*pos)).count())
+            .sum::<usize>();
+        let mut reach = 5;
+        while stands < BORDER_STAGING_STANDS && reach < BORDER_STAGING_MAX {
+            reach += 1;
+            stands += g.wring(objective, reach).into_iter().filter(|pos| standable(*pos)).count();
+        }
+        let mut memo = self.staging_reach_memo.borrow_mut();
+        memo.retain(|(turn, _, _), _| *turn == g.turn);
+        memo.insert(key, reach);
+        reach
+    }
+
     /// A peacetime tile from which a ground force can begin the selected
     /// campaign without trespassing through the target's borders. Keeping the
     /// ring several tiles outside the city leaves room for different combat
@@ -21575,7 +21675,9 @@ impl AdvancedAi {
             return false;
         };
         let distance = g.wdist(position, objective);
-        if !(3..=5).contains(&distance)
+        // `staging-reaches-the-border`: see `campaign_staging_reach`.
+        let reach = self.campaign_staging_reach(g, pid, target, objective);
+        if !(3..=reach).contains(&distance)
             || g.city_at(position).is_some()
             || !g.unit_can_traverse(uid, position)
         {
@@ -22090,7 +22192,7 @@ impl AdvancedAi {
         let current = unit.pos;
         let goals: HashSet<Pos> = {
             let _memo = g.query_memo();
-            g.wdisk(objective, 5)
+            g.wdisk(objective, self.campaign_staging_reach(g, pid, target, objective))
                 .into_iter()
                 .filter(|position| {
                     on_opening_ring(*position)

@@ -6950,6 +6950,17 @@ impl AdvancedAi {
         self.luxury_swap_asks = false;
     }
 
+    /// Opt-in gene `staging-reaches-the-border`; see
+    /// [`Self::staging_reaches_the_border`].
+    pub fn enable_staging_reaches_the_border(&mut self) {
+        self.staging_reaches_the_border = true;
+    }
+
+    /// The twin of `enable_staging_reaches_the_border`.
+    pub fn disable_staging_reaches_the_border(&mut self) {
+        self.staging_reaches_the_border = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
