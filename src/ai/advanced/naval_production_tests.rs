@@ -45,7 +45,7 @@ fn lake_only_cities_refuse_single_hulls_and_formations_even_when_the_host_offers
         .get_mut(&city)
         .unwrap()
         .buildings
-        .insert(crate::name!("seaport"));
+        .push(crate::name!("seaport"));
     for item in [
         Item::Unit {
             unit: crate::name!("ironclad"),
