@@ -42928,6 +42928,9 @@ mod treasury_local_builder_tests;
 mod tests;
 
 #[cfg(test)]
+mod air_rebase_progress_tests;
+
+#[cfg(test)]
 mod hostile_memory_tests;
 
 mod amphibious_staging;
