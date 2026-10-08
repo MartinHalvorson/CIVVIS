@@ -109,6 +109,8 @@ fn lakes_do_not_raise_open_water_fleet_demand_or_create_a_coastal_war() {
     g.map.tiles.get_mut(&(13, 6)).unwrap().terrain = crate::name!("lake");
     let rival = g.found_city_for(1, (17, 6), None);
     g.map.tiles.get_mut(&(18, 6)).unwrap().terrain = crate::name!("lake");
+    g.players[0].met.insert(1);
+    g.players[1].met.insert(0);
     g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
     assert_eq!(ai.base.desired_navy(&g, 0), 1);
     assert!(!ai.base.naval_city_can_launch(&g, lake_city));
