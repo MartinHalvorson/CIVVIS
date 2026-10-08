@@ -2839,6 +2839,18 @@ pub struct BasicAi {
     /// of worked tiles stood improved against 49%. The operator retires a game
     /// at turn 150 that is not top 2 by Production.
     ///
+    /// Live G383 and G384 (pins cbc51e678, 353e09be9) fired it 3 and 0 times
+    /// by t100 while the backlog ran from ~11 to 21-25 tiles: the idle queues
+    /// went to `pick_item`'s earlier Granary, Aqueduct and Settler steps and,
+    /// before the delegated governor is ever asked, to the controller's own
+    /// idle-queue claims (Plaza, Theater, Entertainment Complex, recon,
+    /// development Campus). So under the gene `AdvancedAi` also offers the
+    /// Builder one idle queue a turn ahead of those routine claims
+    /// (`advanced/worked_backlog_claim.rs`), buys one with Gold above
+    /// `spend_gold`'s reserve when no idle city can take it, and lets a slow
+    /// city take up to `WORKED_BACKLOG_RUNAWAY_MAX_TURNS` while the backlog is
+    /// twice the charges.
+    ///
     /// Set from `AdvancedAi` by the opt-in gene `builders-cover-the-worked-backlog`.
     pub(crate) builders_cover_the_worked_backlog: bool,
     /// From turn 90 standard (t60 Online), ahead of the military floor: the
@@ -16554,19 +16566,31 @@ impl BasicAi {
         in_hand + queued * g.builder_charges(pid).max(1)
     }
 
-    /// See `builders_cover_the_worked_backlog`: a Builder while the charges in
-    /// hand and queued cover less than `WORKED_BACKLOG_COVER` of the empire's
-    /// unimproved worked tiles (`unimproved_worked_tiles`), at most one
-    /// Builder per city, from a city that finishes one within
-    /// `WORKED_BACKLOG_BUILDER_MAX_TURNS`.
-    fn worked_backlog_builder_step(
+    /// See `builders_cover_the_worked_backlog`: a backlog at least this many
+    /// times the charges in hand and queued is running away from them, and
+    /// the Builder may take up to `WORKED_BACKLOG_RUNAWAY_MAX_TURNS`.
+    const WORKED_BACKLOG_RUNAWAY_RATIO: f64 = 2.0;
+    /// See `WORKED_BACKLOG_RUNAWAY_RATIO`, in standard turns. Live G383
+    /// (civvis-20261008T102717Z) left Builders to cities of 3-4 Production
+    /// whose Builder took 7-10 Online turns against the six of
+    /// `WORKED_BACKLOG_BUILDER_MAX_TURNS`, while the backlog grew from 11
+    /// worked tiles at t63 to 25 at t97 against 0-8 charges.
+    const WORKED_BACKLOG_RUNAWAY_MAX_TURNS: u32 = 15;
+
+    /// See `builders_cover_the_worked_backlog`: the backlog, the cover and the
+    /// turns when `cid` should train a Builder for the unimproved worked
+    /// tiles: the charges in hand and queued cover less than
+    /// `WORKED_BACKLOG_COVER` of them, at most one Builder per city, from a
+    /// city that finishes one within `WORKED_BACKLOG_BUILDER_MAX_TURNS`
+    /// (`WORKED_BACKLOG_RUNAWAY_MAX_TURNS` while the backlog runs away).
+    fn worked_backlog_builder(
         &self,
         g: &Game,
         pid: usize,
         cid: u32,
         n_cities: usize,
         builders: usize,
-    ) -> Option<Item> {
+    ) -> Option<(usize, i32, f64)> {
         if n_cities < 2 || builders >= n_cities {
             return None;
         }
@@ -16590,16 +16614,148 @@ impl BasicAi {
         if !g.can_produce(pid, cid, &builder) {
             return None;
         }
+        let max_turns = if backlog as f64 >= f64::from(cover) * Self::WORKED_BACKLOG_RUNAWAY_RATIO {
+            Self::WORKED_BACKLOG_RUNAWAY_MAX_TURNS
+        } else {
+            Self::WORKED_BACKLOG_BUILDER_MAX_TURNS
+        };
         let turns = Self::unit_build_turns(g, pid, cid, "builder");
-        if turns > g.standard_duration(Self::WORKED_BACKLOG_BUILDER_MAX_TURNS) as f64 {
-            return None;
-        }
+        (turns <= g.standard_duration(max_turns) as f64).then_some((backlog, cover, turns))
+    }
+
+    /// See `worked_backlog_builder`: the Builder, journalled.
+    fn worked_backlog_builder_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        builders: usize,
+    ) -> Option<Item> {
+        let (backlog, cover, turns) =
+            self.worked_backlog_builder(g, pid, cid, n_cities, builders)?;
         think!(self.journal, Cities, Detail,
-               "{} trains a Builder for the worked backlog", city.name;
+               "{} trains a Builder for the worked backlog", g.cities[&cid].name;
                "{backlog} worked tiles stand unimproved against {cover} Builder charges in hand \
                 and queued, under {:.0}% cover; about {turns:.0} turns",
                Self::WORKED_BACKLOG_COVER * 100.0);
-        Some(builder)
+        Some(Item::Unit {
+            unit: crate::name!("builder"),
+        })
+    }
+
+    /// See `builders_cover_the_worked_backlog`: the turns `cid` takes to train
+    /// the backlog's Builder when an idle queue is offered to it ahead of the
+    /// controller's other idle-queue claims, under the same gates `pick_item`
+    /// puts ahead of the step: a siege or barbarian answer, an emergency
+    /// defence and a due Settler all keep the queue.
+    pub(crate) fn worked_backlog_claim_turns(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        settlers: usize,
+        builders: usize,
+        military: usize,
+    ) -> Option<f64> {
+        if !self.builders_cover_the_worked_backlog || self.minor || self.barb {
+            return None;
+        }
+        let at_major_war = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_barbarian
+                && !player.is_minor
+                && g.is_at_war(pid, player.id)
+        });
+        let alarm = self.barbarian_tactics && self.barbarian_local_alarm_for_controller(g, pid, cid);
+        if ((at_major_war || alarm) && military < n_cities.max(1))
+            || self.besieged_city_item(g, pid, cid).is_some()
+            || self.barbarian_defense_item(g, pid, cid).is_some()
+            || self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            return None;
+        }
+        self.worked_backlog_builder(g, pid, cid, n_cities, builders)
+            .map(|(_, _, turns)| turns)
+    }
+
+    /// See `builders_cover_the_worked_backlog`: buy a Builder with Gold in the
+    /// city that sells one cheapest while the backlog runs away from the
+    /// charges (`WORKED_BACKLOG_RUNAWAY_RATIO`) and the treasury keeps the
+    /// reserve `spend_gold` holds. One Builder at most per city.
+    pub(crate) fn buy_worked_backlog_builder(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        city_ids: &[u32],
+        builders: usize,
+    ) -> bool {
+        let n_cities = city_ids.len();
+        if !self.builders_cover_the_worked_backlog
+            || self.minor
+            || self.barb
+            || n_cities < 2
+            || builders >= n_cities
+        {
+            return false;
+        }
+        let backlog = Self::unimproved_worked_tiles(g, pid);
+        let cover = Self::builder_charge_cover(g, pid);
+        if backlog < Self::WORKED_BACKLOG_MIN_TILES
+            || (backlog as f64) < f64::from(cover) * Self::WORKED_BACKLOG_RUNAWAY_RATIO
+        {
+            return false;
+        }
+        let at_major_war = g
+            .players
+            .iter()
+            .any(|p| p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id));
+        // `spend_gold`'s reserve, unchanged.
+        let reserve = if at_major_war {
+            40.0 + 10.0 * n_cities as f64
+        } else {
+            100.0 + 25.0 * n_cities as f64
+        }
+        .max(self.reserve_floor);
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        let Some((price, city)) = city_ids
+            .iter()
+            .copied()
+            .filter(|cid| g.can_produce(pid, *cid, &builder) && !g.purchase_is_blocked(*cid, &builder))
+            .filter_map(|cid| {
+                g.unit_purchase_cost(pid, cid, "builder", "gold")
+                    .map(|price| (price, cid))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+        else {
+            return false;
+        };
+        if g.players[pid].gold + 1e-9 < price + reserve {
+            return false;
+        }
+        let bought = g
+            .apply(
+                pid,
+                &Action::Buy {
+                    city,
+                    unit: crate::name!("builder"),
+                    formation: 0,
+                    currency: "gold".to_string(),
+                },
+            )
+            .is_ok();
+        if bought {
+            think!(self.journal, Economy, Decision,
+                   "Buying a Builder in {} for the worked backlog", g.cities[&city].name;
+                   "{backlog} worked tiles stand unimproved against {cover} Builder charges; \
+                    {price:.0} Gold, {:.0} left above a reserve of {reserve:.0}",
+                   g.players[pid].gold - reserve);
+        }
+        bought
     }
 
     /// Whether `cid` holds production for a Settler past half its price.

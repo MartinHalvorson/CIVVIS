@@ -9055,6 +9055,10 @@ mod growth_farm;
 /// `advanced/worked_production.rs`.
 mod worked_production;
 
+/// `builders-cover-the-worked-backlog`: the backlog's Builder claims an idle
+/// queue ahead of the routine claims. See `advanced/worked_backlog_claim.rs`.
+mod worked_backlog_claim;
+
 /// Commitments: every multi-turn decision — a settle site, a Builder's tile,
 /// the appointed war's objective — observed at the turn boundary and tracked
 /// to its ending, with what became of it counted. Infrastructure, not a
@@ -46770,6 +46774,11 @@ impl AdvancedAi {
             // consumes the idle queues of an active foreign-city assault.
             let city_assault_support_reserved =
                 self.reserve_foreign_city_assault_support(g, pid, &plan);
+            // `builders-cover-the-worked-backlog`: the backlog's Builder takes
+            // one idle queue ahead of the routine claims below, or is bought.
+            // Exact no-op while the gene is off. See
+            // `advanced/worked_backlog_claim.rs`.
+            self.claim_idle_queue_for_worked_backlog(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
