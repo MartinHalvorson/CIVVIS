@@ -3443,6 +3443,8 @@ pub const GENES: &[Gene] = &[
     // builds. 10-08: four or fewer cities at t75 passed the production gate
     // in 0 of 19 live Emperor runs. See `advanced/early_settler_floor.rs`.
     Gene { tag: "early-settler-floor", field: "early_settler_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_early_settler_floor, disable: AdvancedAi::disable_early_settler_floor },
+    // `advanced/band_hunt.rs`.
+    Gene { tag: "war-kills-the-bands-2", field: "war_kills_the_bands_2", kind: Kind::OptIn, enable: AdvancedAi::enable_war_kills_the_bands_2, disable: AdvancedAi::disable_war_kills_the_bands_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

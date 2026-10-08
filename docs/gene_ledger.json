@@ -2770,6 +2770,15 @@
           "treasury-at-work-2-2": null
         }
       },
+      "war-kills-the-bands": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "war-kills-the-bands": null,
+          "war-kills-the-bands-2": null
+        }
+      },
       "wonder-ring-recon": {
         "rule_on": [],
         "head": null,

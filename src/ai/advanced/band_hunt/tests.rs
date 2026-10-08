@@ -97,3 +97,66 @@ fn no_kill_off_the_gene_at_peace_out_of_reach_reserved_escorted_or_on_the_ring()
         }
     }
 }
+
+#[test]
+fn war_kills_the_bands_2_is_opt_in() {
+    opt_in_off_in_both_controllers("war-kills-the-bands-2", |ai| ai.war_kills_the_bands_2);
+}
+
+/// G424: the host let two Trebuchet `CAPTURE`s stand with the band alive.
+/// Version one sends the nearest military body; version two only a
+/// melee-capable one.
+#[test]
+fn version_two_hunts_with_melee_bodies_only() {
+    let run = |v2: bool, with_cavalry: bool| {
+        let (mut g, mut ai, _) = fixture();
+        if v2 {
+            ai.disable_war_kills_the_bands();
+            ai.enable_war_kills_the_bands_2();
+        }
+        let band = g.spawn_test_unit("rock_band", 1, (15, 12));
+        let trebuchet = g.spawn_test_unit("trebuchet", 0, (13, 12));
+        let cavalry = with_cavalry.then(|| g.spawn_test_unit("cavalry", 0, (11, 12)));
+        let hunters = ai.plan_band_hunt(&mut g, 0, &plan_on(None), &BTreeSet::new());
+        (hunters, trebuchet, cavalry, g.units.contains_key(&band))
+    };
+    let (hunters, trebuchet, _, standing) = run(false, false);
+    assert_eq!(
+        hunters,
+        BTreeSet::from([trebuchet]),
+        "v1 sends the siege gun"
+    );
+    assert!(!standing);
+    let (hunters, _, _, standing) = run(true, false);
+    assert!(hunters.is_empty(), "v2: no melee body, no hunt");
+    assert!(standing);
+    let (hunters, _, cavalry, standing) = run(true, true);
+    assert_eq!(
+        hunters,
+        BTreeSet::from([cavalry.unwrap()]),
+        "v2 sends the cavalry"
+    );
+    assert!(!standing);
+}
+
+/// The live military pass runs the version-two hunt before the battle is
+/// planned, so the body is still free when the hunt reads it.
+#[test]
+fn version_two_hunts_in_the_military_pass() {
+    let run = |v2: bool| {
+        let (mut g, mut ai, _) = fixture();
+        ai.disable_war_kills_the_bands();
+        if v2 {
+            ai.enable_war_kills_the_bands_2();
+        }
+        let band = g.spawn_test_unit("rock_band", 1, (16, 12));
+        g.spawn_test_unit("cavalry", 0, (13, 12));
+        ai.advanced_units(&mut g, 0, &plan_on(None));
+        (
+            g.units.contains_key(&band),
+            g.players[0].counters.get("band_hunt:killed").copied(),
+        )
+    };
+    assert_eq!(run(false), (true, None), "off: the band stands");
+    assert_eq!(run(true), (false, Some(1)), "v2: run down in the pass");
+}
