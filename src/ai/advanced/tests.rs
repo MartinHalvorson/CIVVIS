@@ -51918,7 +51918,8 @@ fn a_stalled_settler_never_takes_a_site_under_the_deadlines_value_floor() {
             }
         }
         assert_eq!(
-            ai.stalled_settler_site(&game, 0, settler).map(|(pos, _)| pos),
+            ai.stalled_settler_site(&game, 0, settler)
+                .map(|(pos, _)| pos),
             Some(only),
             "with no plan there is no floor, and the one safe site is taken"
         );
@@ -51935,9 +51936,9 @@ fn a_stalled_settler_never_takes_a_site_under_the_deadlines_value_floor() {
             .keys()
             .copied()
             .filter(|pos| {
-                game.map.get(*pos).is_some_and(|tile| {
-                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                })
+                game.map
+                    .get(*pos)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
             })
             .max_by(|a, b| {
                 ai.settle_value(&game, 0, *a)
