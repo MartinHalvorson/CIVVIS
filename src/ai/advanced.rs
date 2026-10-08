@@ -6921,6 +6921,14 @@ pub struct AdvancedAi {
     /// `BasicAi::industrial_zone_in_the_producers`.
     industrial_zone_in_the_producers: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `near-rival-deterrence`: from live turn 30 to 80, while a met major at
+    /// peace with a city within ten tiles out-guns us, one idle or routine
+    /// queue a turn trains a land unit (two in training at most) until our
+    /// power stands level. 10-08: the AI declared 23 of 35 wars in t30-80, all
+    /// at 1.32 or less of our power (median 0.59), and near rivals declared
+    /// 1.27 times per 100 turns below half our power, none at 1.5 or more.
+    /// See `advanced/near_rival_deterrence.rs`. Off by default.
+    near_rival_deterrence: bool,
     /// `match-point-interception-ignores-power`: when a rival's founded faith
     /// holds every other living major and our majority is still out, the
     /// religious interception opens at `LAST_HOLDOUT_INTERCEPTION_FLOOR`
@@ -9024,6 +9032,10 @@ mod victory_conversion;
 mod victory_lane;
 pub mod victory_portfolio;
 
+/// `near-rival-deterrence`: a land unit a turn while a neighbour at peace
+/// out-guns us in the opening. One opt-in gene; see
+/// `advanced/near_rival_deterrence.rs`.
+mod near_rival_deterrence;
 /// `early-settler-floor`: the actuation half of the opening's pace -- a
 /// Settler in the queue while the empire is short of the band floor. One
 /// opt-in gene; see `advanced/early_settler_floor.rs`.
@@ -10277,6 +10289,7 @@ impl AdvancedAi {
             housing_bound_city_builds_its_granary: false,
             industrial_zone_in_the_producers: false,
             // ---- append: l-o ----------------------------------------
+            near_rival_deterrence: false,
             match_point_interception_ignores_power: false,
             long_road_names_the_blocker: false,
             opening_yields_to_walls: false,
@@ -30655,6 +30668,11 @@ impl AdvancedAi {
             // routine rescoring can claim the city.
             let early_settler_commitment = plan.threatened_city != Some(cid)
                 && self.early_settler_floor_holds(g, pid, cid, plan);
+            // `near-rival-deterrence`: the deterrent finishes while a
+            // neighbour still out-guns us.
+            let deterrence_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.deterrence_unit_holds(g, pid, item));
             // `industrial-zone-in-the-producers`: a queued Industrial Zone or
             // Workshop finishes before routine rescoring can claim the city.
             let industrial_zone_commitment = committed.as_ref().is_some_and(|(_, item)| {
@@ -30680,6 +30698,7 @@ impl AdvancedAi {
                     || defensive_temple_commitment
                     || race_shrine_commitment
                     || early_settler_commitment
+                    || deterrence_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -30693,6 +30712,7 @@ impl AdvancedAi {
                     || defensive_temple_commitment
                     || race_shrine_commitment
                     || early_settler_commitment
+                    || deterrence_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -47182,6 +47202,11 @@ impl AdvancedAi {
             // below. Exact no-op while the gene is off. See
             // `advanced/early_settler_floor.rs`.
             self.claim_early_settler_floor(g, pid, &plan);
+            // `near-rival-deterrence`: a land unit while a neighbour at peace
+            // out-guns us, after the floor's Settler and ahead of the Prophet
+            // race and the routine claims. Exact no-op while the gene is off.
+            // See `advanced/near_rival_deterrence.rs`.
+            self.claim_deterrence_unit(g, pid, &plan);
             // `prophet-builds-its-site`: the Holy Site a Prophet founds on
             // goes first. Exact no-op while the gene is off.
             self.reserve_prophet_site(g, pid, &plan);

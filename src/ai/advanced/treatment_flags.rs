@@ -7120,6 +7120,15 @@ impl AdvancedAi {
         self.falling_city_outranks_the_heal = false;
     }
 
+    /// Enable `near-rival-deterrence`.
+    pub fn enable_near_rival_deterrence(&mut self) {
+        self.near_rival_deterrence = true;
+    }
+    /// Withhold `near-rival-deterrence`.
+    pub fn disable_near_rival_deterrence(&mut self) {
+        self.near_rival_deterrence = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
