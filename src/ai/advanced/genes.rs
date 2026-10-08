@@ -3468,6 +3468,12 @@ pub const GENES: &[Gene] = &[
     // won on Religion at 98. One sanctuary finishes (bought when covered) and
     // the bank waits for it. See `counterweight_shrine::counterweight_shrine_city`.
     Gene { tag: "counterweight-finishes-one-shrine", field: "counterweight_finishes_one_shrine", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_finishes_one_shrine, disable: AdvancedAi::disable_counterweight_finishes_one_shrine },
+    // G428 (civvis-20261008T182825Z): Yokohama stood wall-less at 1-40
+    // health for eleven turns while the takers in reach held to heal at 63
+    // and 78 hp; 11 of 26 falling cities over 10-06/07/08 took more than two
+    // turns or never fell. A recovering melee unit near a falling city stays
+    // in the fight. See `AdvancedAi::falling_city_calls`.
+    Gene { tag: "falling-city-outranks-the-heal", field: "falling_city_outranks_the_heal", kind: Kind::OptIn, enable: AdvancedAi::enable_falling_city_outranks_the_heal, disable: AdvancedAi::disable_falling_city_outranks_the_heal },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -6163,6 +6163,10 @@ pub struct AdvancedAi {
     /// the declaration edge. See `advanced/dvp_leader_front.rs`.
     dvp_leader_is_the_front: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `falling-city-outranks-the-heal`: a recovering melee unit near a
+    /// falling city stays in the fight. See
+    /// `AdvancedAi::falling_city_calls`.
+    falling_city_outranks_the_heal: bool,
     /// `elimination-waits-on-the-clock`: no capture of a major's last city
     /// while its survival keeps a rival faith from its victory. See
     /// `AdvancedAi::elimination_crowns_a_faith`.
@@ -10178,6 +10182,7 @@ impl AdvancedAi {
             congress_guards_the_leader: false,
             dvp_leader_is_the_front: false,
             // ---- append: e-f ----------------------------------------
+            falling_city_outranks_the_heal: false,
             elimination_waits_on_the_clock: false,
             early_settler_floor: false,
             founder_defends_its_cities: false,

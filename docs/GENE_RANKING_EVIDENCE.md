@@ -295,6 +295,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |
 | `faith-counter-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-counter-needs-the-edge`; see `AdvancedAi::faith_counter_has_the_edge`. | 1 \| 1 |
 | `faith-counter-waits-for-match-point` | off (unmeasured) | Opt-in gene `faith-counter-waits-for-match-point`; see `Self::faith_counter_waits_for_match_point`. | 1 \| 1 |
+| `falling-city-outranks-the-heal` | off (unmeasured) | Opt-in gene `falling-city-outranks-the-heal`; see `Self::falling_city_outranks_the_heal`. | 1 \| 1 |
 | `favor-bought-before-congress` | off (unmeasured) | Opt-in gene `favor-bought-before-congress`; see `Self::favor_bought_before_congress`. | 1 \| 1 |
 | `favor-spares-the-surprise-war` | off (unmeasured) | Opt-in gene `favor-spares-the-surprise-war`; see `Self::favor_spares_the_surprise_war`. | 1 \| 1 |
 | `find-the-capital` | off (unmeasured) | Opt-in gene `find-the-capital`; see `Self::find_the_capital`. | 1 \| 1 |

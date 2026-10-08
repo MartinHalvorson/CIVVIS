@@ -52067,3 +52067,55 @@ fn an_out_of_reach_counter_yields_to_a_weak_neighbour_only_under_the_gene() {
     std::sync::Arc::make_mut(&mut g.observed_military_power).insert(2, 400.0);
     assert!(!ai.counter_out_of_reach(&g, 0, 1), "no neighbour at a third of our power");
 }
+
+/// `falling-city-outranks-the-heal`: a recovering melee unit fit to fight
+/// (50 hp or more) near a hostile city with no walls at 50 health or less
+/// stays in the fight under the gene; not when the city still stands, nor
+/// when the unit is under the rotation line, nor from far away.
+#[test]
+fn a_falling_city_calls_a_recovering_taker_only_under_the_gene() {
+    let mut g = Game::new_full(2, 40, 30, 428_182_825, 300, 0, false);
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    let settler = g
+        .player_unit_ids(1)
+        .into_iter()
+        .find(|id| g.units[id].kind == "settler")
+        .unwrap();
+    let city = g.found_city_for(1, g.units[&settler].pos, None);
+    let at = g.cities[&city].pos;
+    g.at_war.insert((0, 1));
+    g.at_war.insert((1, 0));
+    let near = g
+        .wring(at, 3)
+        .into_iter()
+        .find(|pos| g.units_at(*pos).is_empty())
+        .unwrap();
+    let far = g
+        .wring(at, 10)
+        .into_iter()
+        .find(|pos| g.units_at(*pos).is_empty())
+        .unwrap();
+    let taker = g.spawn_test_unit("warrior", 0, near);
+    let distant = g.spawn_test_unit("warrior", 0, far);
+    g.units.get_mut(&taker).unwrap().hp = 63;
+    g.units.get_mut(&distant).unwrap().hp = 63;
+    {
+        let c = g.cities.get_mut(&city).unwrap();
+        c.wall_hp = 0;
+        c.hp = 1;
+    }
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.falling_city_calls(&g, 0, taker), "off");
+    ai.enable_falling_city_outranks_the_heal();
+    assert!(ai.falling_city_calls(&g, 0, taker), "a falling city three tiles out");
+    assert!(!ai.falling_city_calls(&g, 0, distant), "ten tiles out");
+    g.units.get_mut(&taker).unwrap().hp = 40;
+    assert!(!ai.falling_city_calls(&g, 0, taker), "under the rotation line");
+    g.units.get_mut(&taker).unwrap().hp = 63;
+    g.cities.get_mut(&city).unwrap().hp = 150;
+    assert!(!ai.falling_city_calls(&g, 0, taker), "the city still stands");
+}

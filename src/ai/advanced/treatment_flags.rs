@@ -7109,6 +7109,17 @@ impl AdvancedAi {
         self.counterweight_finishes_one_shrine = false;
     }
 
+    /// Opt-in gene `falling-city-outranks-the-heal`; see
+    /// [`Self::falling_city_outranks_the_heal`].
+    pub fn enable_falling_city_outranks_the_heal(&mut self) {
+        self.falling_city_outranks_the_heal = true;
+    }
+
+    /// The twin of `enable_falling_city_outranks_the_heal`.
+    pub fn disable_falling_city_outranks_the_heal(&mut self) {
+        self.falling_city_outranks_the_heal = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

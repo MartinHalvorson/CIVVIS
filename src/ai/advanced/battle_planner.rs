@@ -237,6 +237,13 @@ const FROM_TILES_PER_PAIR: usize = 3;
 const DANGER_WEIGHT: f64 = 0.5;
 /// A unit under this strikes only to finish a kill, and only from safety.
 pub(super) const WOUNDED_STRIKER_HP: i32 = 50;
+/// `falling-city-outranks-the-heal`: a hostile city with no walls standing
+/// at or under this health is falling.
+pub(super) const FALLING_CITY_HP: i32 = 50;
+/// `falling-city-outranks-the-heal`: how near a falling city calls a
+/// recovering melee unit back: the muster line, two marching turns. The
+/// G428 takers held to heal seven tiles from Yokohama.
+pub(super) const FALLING_CITY_REACH: i32 = 8;
 /// A unit under this is rotated out to heal where the board heals.
 pub(super) const ROTATE_HP: i32 = 50;
 /// A rotated unit rejoins the kill plan at this.
@@ -1221,6 +1228,44 @@ fn melee_health_floor(g: &Game, pid: usize, action: &Action) -> Option<(u32, i32
 }
 
 impl AdvancedAi {
+    /// `falling-city-outranks-the-heal`: whether a melee land unit fit to
+    /// fight ([`ROTATE_HP`] or more) but still recovering toward
+    /// [`RETURN_HP`] stays in the fight because a hostile city with no
+    /// walls standing and at most [`FALLING_CITY_HP`] health lies within
+    /// [`FALLING_CITY_REACH`] tiles. Such a city cannot strike, and a blow
+    /// takes it; the heal slot and the recovery rotation otherwise held the
+    /// bodies that would.
+    ///
+    /// Live Emperor civvis-20261008T182825Z (game 428): Yokohama stood with
+    /// no walls at 1 to 40 health from turn 142 to 153 while the takers in
+    /// reach logged "holds position to heal" at 63 and 78 hp seven tiles out
+    /// and the capture read "6 no walk"; Japan won on Culture at 161. Over the 10-06/07/08
+    /// runs, 11 of 26 such falling cities took more than two turns or never
+    /// fell.
+    pub(super) fn falling_city_calls(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        if !self.falling_city_outranks_the_heal {
+            return false;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        let spec = &g.rules.units[unit.kind];
+        if unit.hp < ROTATE_HP
+            || !spec.is_melee_capable()
+            || spec.domain.as_deref().is_some_and(|domain| domain != "land")
+            || g.is_embarked(unit)
+        {
+            return false;
+        }
+        g.cities.values().any(|city| {
+            city.owner != pid
+                && g.is_at_war(pid, city.owner)
+                && city.wall_hp <= 0
+                && city.hp <= FALLING_CITY_HP
+                && g.wdist(city.pos, unit.pos) <= FALLING_CITY_REACH
+        })
+    }
+
     /// The live controller must also honor this policy when its fresh combat
     /// preview disagrees with the native damage model.
     pub fn live_strike_survival_enabled(&self) -> bool {
@@ -2269,8 +2314,11 @@ impl AdvancedAi {
                 continue;
             }
             let here = field.rotation_danger(unit.pos, uid);
-            let wounded =
-                heals && (unit.hp < ROTATE_HP || self.battle_planner_recovering.contains(&uid));
+            // `falling-city-outranks-the-heal`: see `falling_city_calls`.
+            let wounded = heals
+                && (unit.hp < ROTATE_HP
+                    || (self.battle_planner_recovering.contains(&uid)
+                        && !self.falling_city_calls(g, pid, uid)));
             // A healthy member of an active Domination siege stays on its
             // post: the field charges every enemy blow to every unit at once,
             // and on King `civvis-20260930T221624Z` it rotated 89-hp archers
@@ -2747,7 +2795,7 @@ impl AdvancedAi {
         let mut by_role: BTreeMap<SlotRole, Vec<u32>> = BTreeMap::new();
         for uid in &members {
             let unit = &g.units[uid];
-            if heals && unit.hp < HEAL_SLOT_HP {
+            if heals && unit.hp < HEAL_SLOT_HP && !self.falling_city_calls(g, pid, *uid) {
                 wounded.push(*uid);
                 continue;
             }
