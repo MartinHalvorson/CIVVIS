@@ -3452,6 +3452,8 @@ pub const GENES: &[Gene] = &[
     // short of the Exoplanet launch while a pad of its stands, unless our
     // cities are falling. See `advanced/launcher_war.rs`.
     Gene { tag: "no-peace-with-a-launcher", field: "no_peace_with_a_launcher", kind: Kind::OptIn, enable: AdvancedAi::enable_no_peace_with_a_launcher, disable: AdvancedAi::disable_no_peace_with_a_launcher },
+    // `advanced/band_hunt.rs`.
+    Gene { tag: "war-kills-the-bands-2", field: "war_kills_the_bands_2", kind: Kind::OptIn, enable: AdvancedAi::enable_war_kills_the_bands_2, disable: AdvancedAi::disable_war_kills_the_bands_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

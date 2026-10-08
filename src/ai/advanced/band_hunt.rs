@@ -26,6 +26,22 @@
 //! never one the walk would leave exposed to half its health in blows. A band
 //! escorted by a military unit cannot be entered and is left alone.
 
+//! **`war-kills-the-bands-2`.** Live Emperor G424 (civvis-20261008T174036Z)
+//! ran version one at war with the Netherlands, the eventual culture winner,
+//! from turn ~100. Seven Dutch bands stood on 37 sightings; on 17 of them a
+//! melee-capable unit of ours stood within its moves, yet the hunt fired five
+//! times, and two of those five were Trebuchets whose `CAPTURE` the host let
+//! stand: both bands were seen again the next turn, while the bands the Giant
+//! Death Robot went for were gone. On turn 176 that robot had six moves on the
+//! turn's first frame and none on the next, and a replay of turns 174-179 found
+//! it spent before the hunt ran — the battle planner's strikes and rotations go
+//! first — while the one Cuirassier in reach was a linked escort. Version two
+//! therefore
+//! hunts before the battle is planned, and only with melee-capable land units
+//! (no siege, no ranged): the host captures with those alone. The Netherlands'
+//! Tourism read a flat 130-135 a turn over turns 172-184 while its visiting
+//! tourists went 23 → 105 — the concerts, again.
+
 use std::collections::BTreeSet;
 
 use super::{AdvancedAi, StrategicPlan};
@@ -51,9 +67,11 @@ impl AdvancedAi {
         reserved: &BTreeSet<u32>,
     ) -> BTreeSet<u32> {
         let mut hunters = BTreeSet::new();
-        if !self.war_kills_the_bands {
+        if !self.war_kills_the_bands && !self.war_kills_the_bands_2 {
             return hunters;
         }
+        // Version two: only bodies the host lets capture.
+        let melee_only = self.war_kills_the_bands_2;
         let objective = plan
             .target_city
             .and_then(|cid| g.cities.get(&cid))
@@ -82,6 +100,7 @@ impl AdvancedAi {
                     let spec = &g.rules.units[unit.kind];
                     spec.class == "military"
                         && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                        && (!melee_only || (spec.is_melee_capable() && !spec.siege))
                         && !reserved.contains(uid)
                         && !hunters.contains(uid)
                         && unit.hp >= BAND_HUNTER_MIN_HP

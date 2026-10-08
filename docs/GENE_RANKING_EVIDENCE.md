@@ -443,7 +443,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `victory-deadline-budget` | off (unmeasured) | Enable `victory-deadline-budget` for measurement. | 1 \| 1 |
 | `victory-portfolio` | off (unmeasured) | Preserve victory objectives across temporary expansion and war postures. | 1 \| 1 |
 | `war-bill-prices-the-tier-gap` | off (unmeasured) | Opt-in gene `war-bill-prices-the-tier-gap`; see `Self::war_bill_prices_the_tier_gap`. | 1 \| 1 |
-| `war-kills-the-bands` | off (unmeasured) | Enable `war-kills-the-bands`. | 1 \| 1 |
+| `war-kills-the-bands` | off (unmeasured) | Enable `war-kills-the-bands`. | — \| 2 |
+| `war-kills-the-bands-2` | off (unmeasured) | Enable `war-kills-the-bands-2`. | — \| 2 |
 | `war-raids-the-pads` | off (unmeasured) | Enable `war-raids-the-pads`. | 1 \| 1 |
 | `weak-target-skips-the-muster` | off (unmeasured) | Opt-in gene `weak-target-skips-the-muster`; see `Self::weak_target_skips_the_muster`. | 1 \| 1 |
 | `wounded-taker-finishes-the-breach` | off (unmeasured) | Opt-in gene `wounded-taker-finishes-the-breach`; see `Self::wounded_taker_finishes_the_breach`. | 1 \| 1 |

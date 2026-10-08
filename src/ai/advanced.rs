@@ -8148,6 +8148,10 @@ pub struct AdvancedAi {
     /// `advanced/science_suppression_pads.rs`.
     science_suppression_hits_the_pads: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `war-kills-the-bands-2`: the band hunt runs before the battle is
+    /// planned and only with melee-capable land units. See
+    /// `advanced/band_hunt.rs`. Off by default.
+    war_kills_the_bands_2: bool,
     /// `war-kills-the-bands`: a land military unit runs down an enemy Rock
     /// Band in reach while we are at war with its owner. See
     /// `advanced/band_hunt.rs`. Off by default.
@@ -10433,6 +10437,7 @@ impl AdvancedAi {
             science_denial_refused_pads: BTreeMap::new(),
             science_suppression_hits_the_pads: false,
             // ---- append: t-z ----------------------------------------
+            war_kills_the_bands_2: false,
             war_kills_the_bands: false,
             war_raids_the_pads: false,
             urban_planning_fills_the_slot: false,
@@ -45781,6 +45786,14 @@ impl AdvancedAi {
         // family; version two adds the positions plan inside. See
         // `advanced/battle_planner.rs`.
         let mut withdrawn = BTreeSet::new();
+        // `war-kills-the-bands-2`: the band hunt claims its bodies before the
+        // battle is planned. Nothing with the version off. See
+        // `advanced/band_hunt.rs`.
+        let early_band_hunters = if self.war_kills_the_bands_2 {
+            self.plan_band_hunt(g, pid, plan, &BTreeSet::new())
+        } else {
+            BTreeSet::new()
+        };
         if self.battle_planner_on() {
             if self.plan_battle(g, pid, plan) {
                 self.rebuild_force_groups(g, pid, plan);
@@ -45820,7 +45833,12 @@ impl AdvancedAi {
         air_assault_units.extend(hunters);
         // `war-kills-the-bands`: an enemy Rock Band in reach is run down.
         // Nothing with the gene off. See `advanced/band_hunt.rs`.
-        let band_hunters = self.plan_band_hunt(g, pid, plan, &air_assault_units);
+        // Version two hunted before the battle (`early_band_hunters`).
+        let band_hunters = if self.war_kills_the_bands_2 {
+            early_band_hunters
+        } else {
+            self.plan_band_hunt(g, pid, plan, &air_assault_units)
+        };
         air_assault_units.extend(band_hunters);
         // `war-raids-the-pads`: a decisive space racer's standing pads are
         // pillaged from the air or on foot. Nothing with the gene off. See

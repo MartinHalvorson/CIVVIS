@@ -7078,6 +7078,15 @@ impl AdvancedAi {
         self.early_settler_floor = false;
     }
 
+    /// Enable `war-kills-the-bands-2`.
+    pub fn enable_war_kills_the_bands_2(&mut self) {
+        self.war_kills_the_bands_2 = true;
+    }
+    /// Withhold `war-kills-the-bands-2`.
+    pub fn disable_war_kills_the_bands_2(&mut self) {
+        self.war_kills_the_bands_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
