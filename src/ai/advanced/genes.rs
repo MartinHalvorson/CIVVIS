@@ -3468,6 +3468,11 @@ pub const GENES: &[Gene] = &[
     // won on Religion at 98. One sanctuary finishes (bought when covered) and
     // the bank waits for it. See `counterweight_shrine::counterweight_shrine_city`.
     Gene { tag: "counterweight-finishes-one-shrine", field: "counterweight_finishes_one_shrine", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_finishes_one_shrine, disable: AdvancedAi::disable_counterweight_finishes_one_shrine },
+    // From live turn 30 to 80, while a met major at peace with a city within
+    // ten tiles out-guns us, one queue a turn trains a land unit until we
+    // stand level. 10-08: the AI declared 23 early wars, all at 1.32 or less
+    // of our power, 12 costing a city. See `advanced/near_rival_deterrence.rs`.
+    Gene { tag: "near-rival-deterrence", field: "near_rival_deterrence", kind: Kind::OptIn, enable: AdvancedAi::enable_near_rival_deterrence, disable: AdvancedAi::disable_near_rival_deterrence },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
