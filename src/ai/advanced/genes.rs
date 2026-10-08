@@ -3418,6 +3418,12 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "culture-denial-heist", field: "culture_denial_heist", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_denial_heist, disable: AdvancedAi::disable_culture_denial_heist },
     // `advanced/band_hunt.rs`.
     Gene { tag: "war-kills-the-bands", field: "war_kills_the_bands", kind: Kind::OptIn, enable: AdvancedAi::enable_war_kills_the_bands, disable: AdvancedAi::disable_war_kills_the_bands },
+    // Against a decisive space racer the suppression city — the campaign's
+    // first objective and the air surge's target — is its nearest standing
+    // Spaceport city, whatever lane the counter labels it with. G408's
+    // campaign aimed at Faras, whose pad our spy had pillaged at t190, while
+    // Nubia launched from the others. See `advanced/science_suppression_pads.rs`.
+    Gene { tag: "science-suppression-hits-the-pads", field: "science_suppression_hits_the_pads", kind: Kind::OptIn, enable: AdvancedAi::enable_science_suppression_hits_the_pads, disable: AdvancedAi::disable_science_suppression_hits_the_pads },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

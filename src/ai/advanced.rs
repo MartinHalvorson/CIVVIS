@@ -8112,6 +8112,12 @@ pub struct AdvancedAi {
     /// a spy of ours Disrupt Rocketry with the pad standing, by the turn it
     /// did. See `AdvancedAi::every_pad_drop_refused`.
     science_denial_refused_pads: BTreeMap<u32, u32>,
+    /// `science-suppression-hits-the-pads`: against a decisive space racer,
+    /// the suppression city (and so the campaign's first objective and the
+    /// air surge's target) is its nearest standing Spaceport city, whatever
+    /// lane the counter labels it with. See
+    /// `advanced/science_suppression_pads.rs`.
+    science_suppression_hits_the_pads: bool,
     // ---- append: t-z ------------------------------------------------
     /// `war-kills-the-bands`: a land military unit runs down an enemy Rock
     /// Band in reach while we are at war with its owner. See
@@ -9029,10 +9035,11 @@ mod wonder_sites;
 
 mod band_hunt;
 mod culture_denial_heist;
-mod science_denial_every_pad;
 mod dvp_leader_front;
+mod science_denial_every_pad;
 mod science_denial_trains_spies;
 mod science_endgame;
+mod science_suppression_pads;
 mod science_threat_denial;
 mod science_trade;
 mod science_victory_drive;
@@ -10381,6 +10388,7 @@ impl AdvancedAi {
             science_denial_every_pad: false,
             science_denial_trains_spies: false,
             science_denial_refused_pads: BTreeMap::new(),
+            science_suppression_hits_the_pads: false,
             // ---- append: t-z ----------------------------------------
             war_kills_the_bands: false,
             urban_planning_fills_the_slot: false,

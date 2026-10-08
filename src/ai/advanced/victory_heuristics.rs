@@ -444,6 +444,13 @@ impl AdvancedAi {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
             return None;
         }
+        // `science-suppression-hits-the-pads`: a rival past its Mars base and
+        // short of the Exoplanet launch is the counter before any other
+        // clock. `None` with the gene off. See
+        // `advanced/science_suppression_pads.rs`.
+        if let Some(counter) = self.mars_racer_counter(g, pid) {
+            return Some(counter);
+        }
         let mut clocks: Vec<(usize, VictoryFocus)> = Vec::new();
         for (rival, pressure) in ranked.iter().copied() {
             if self.domination_counter_pressure(g, pressure)
@@ -630,6 +637,12 @@ impl AdvancedAi {
         rival: usize,
         pressure: VictoryFocus,
     ) -> Option<u32> {
+        // `science-suppression-hits-the-pads`: a decisive space racer is
+        // suppressed at a standing pad, whatever lane it reads. `None` with
+        // the gene off. See `advanced/science_suppression_pads.rs`.
+        if let Some(city) = self.suppression_pad_city(g, pid, rival) {
+            return Some(city);
+        }
         if pressure.progress < 78
             && !self.domination_counter_pressure(g, pressure)
             && !self.domination_faithless_conversion_counter(g, pid, rival, pressure)

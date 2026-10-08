@@ -7005,6 +7005,14 @@ impl AdvancedAi {
     pub fn disable_science_denial_trains_spies(&mut self) {
         self.science_denial_trains_spies = false;
     }
+    /// Enable `science-suppression-hits-the-pads`.
+    pub fn enable_science_suppression_hits_the_pads(&mut self) {
+        self.science_suppression_hits_the_pads = true;
+    }
+    /// Withhold `science-suppression-hits-the-pads`.
+    pub fn disable_science_suppression_hits_the_pads(&mut self) {
+        self.science_suppression_hits_the_pads = false;
+    }
 
     /// Enable `culture-denial-heist`.
     pub fn enable_culture_denial_heist(&mut self) {
