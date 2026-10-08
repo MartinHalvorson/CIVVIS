@@ -8187,6 +8187,10 @@ pub struct AdvancedAi {
     /// `advanced/science_suppression_pads.rs`.
     science_suppression_hits_the_pads: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `wall-sortie-skips-the-encampment`: the wall sortie's guard and
+    /// reliever slots take only tiles a hostile soldier stands on. See
+    /// `hostile_soldier_at` in `siege_train`.
+    wall_sortie_skips_the_encampment: bool,
     /// `war-kills-the-bands-2`: the band hunt runs before the battle is
     /// planned and only with melee-capable land units. See
     /// `advanced/band_hunt.rs`. Off by default.
@@ -10485,6 +10489,7 @@ impl AdvancedAi {
             science_denial_refused_pads: BTreeMap::new(),
             science_suppression_hits_the_pads: false,
             // ---- append: t-z ----------------------------------------
+            wall_sortie_skips_the_encampment: false,
             war_kills_the_bands_2: false,
             war_kills_the_bands: false,
             war_raids_the_pads: false,

@@ -3485,6 +3485,12 @@ pub const GENES: &[Gene] = &[
     // the urgent denial on Persia under 1.5x for seven turns after its Mars
     // base. See `advanced/launcher_war.rs`.
     Gene { tag: "launcher-war-ignores-the-edge", field: "launcher_war_ignores_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_ignores_the_edge, disable: AdvancedAi::disable_launcher_war_ignores_the_edge },
+    // G433 (civvis-20261008T192219Z): four Bombers flew 90 of 100 sorties
+    // at one neutralised Nubian Encampment inside the wall sortie's guard
+    // radius while every siege target stood at 400 walls. The guard and
+    // reliever slots take only tiles a hostile soldier stands on. See
+    // `hostile_soldier_at` in `siege_train`.
+    Gene { tag: "wall-sortie-skips-the-encampment", field: "wall_sortie_skips_the_encampment", kind: Kind::OptIn, enable: AdvancedAi::enable_wall_sortie_skips_the_encampment, disable: AdvancedAi::disable_wall_sortie_skips_the_encampment },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

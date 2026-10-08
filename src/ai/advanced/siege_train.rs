@@ -283,6 +283,24 @@ pub(super) fn muster_commitment_holds(
 ) -> bool {
     billed && !breaker_hold && closed.is_some_and(|at| turn.saturating_sub(at) < window)
 }
+/// `wall-sortie-skips-the-encampment`: whether a hostile military land or sea
+/// unit stands on `pos`, the only target the wall sortie's guard and reliever
+/// slots exist for. Live Emperor civvis-20261008T192219Z (game 433): four
+/// Bombers flew 90 of their 100 sorties of turns 165-189 at one Nubian
+/// Encampment two tiles from besieged Buhen, at 0 walls and 20 health and
+/// within the guard radius of a city of ours, while Buhen and every other
+/// siege target of the campaign stood at 400 walls.
+fn hostile_soldier_at(g: &Game, pid: usize, pos: Pos) -> bool {
+    g.unit_ids_at(pos).iter().any(|oid| {
+        let unit = &g.units[oid];
+        let spec = &g.rules.units[unit.kind];
+        unit.owner != pid
+            && g.is_at_war(pid, unit.owner)
+            && spec.class == "military"
+            && spec.domain.as_deref() != Some("air")
+    })
+}
+
 /// `bombers-open-the-siege-walls`: a bomber over a walled siege still kills a
 /// reliever this close to the besieged city when the kill is worth more than
 /// its wall strike.
@@ -3584,18 +3602,25 @@ impl AdvancedAi {
                 continue;
             }
             let on_city = g.city_at(target).is_some();
+            // `wall-sortie-skips-the-encampment`: the guard and the reliever
+            // are hostile soldiers; a bare Encampment or district on the tile
+            // is neither. See `hostile_soldier_at`.
+            let soldier = !self.wall_sortie_skips_the_encampment || hostile_soldier_at(g, pid, target);
             let slot = if on_city {
                 if !(city_strike && walled.iter().any(|(_, pos)| *pos == target)) {
                     continue;
                 }
                 &mut wall
-            } else if g.cities.values().any(|city| {
-                city.owner == pid && g.wdist(city.pos, target) <= HOME_AIR_GUARD_RADIUS
-            }) {
+            } else if soldier
+                && g.cities.values().any(|city| {
+                    city.owner == pid && g.wdist(city.pos, target) <= HOME_AIR_GUARD_RADIUS
+                })
+            {
                 &mut guard
-            } else if walled
-                .iter()
-                .any(|(_, pos)| g.wdist(*pos, target) <= SIEGE_AIR_RELIEVER_RADIUS)
+            } else if soldier
+                && walled
+                    .iter()
+                    .any(|(_, pos)| g.wdist(*pos, target) <= SIEGE_AIR_RELIEVER_RADIUS)
             {
                 &mut reliever
             } else {

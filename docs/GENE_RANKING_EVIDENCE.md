@@ -447,6 +447,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `urgent-denial-needs-the-edge` | off (unmeasured) | Opt-in gene `urgent-denial-needs-the-edge`; see `AdvancedAi::urgent_denial_has_the_edge`. | 1 \| 1 |
 | `victory-deadline-budget` | off (unmeasured) | Enable `victory-deadline-budget` for measurement. | 1 \| 1 |
 | `victory-portfolio` | off (unmeasured) | Preserve victory objectives across temporary expansion and war postures. | 1 \| 1 |
+| `wall-sortie-skips-the-encampment` | off (unmeasured) | Opt-in gene `wall-sortie-skips-the-encampment`; see `Self::wall_sortie_skips_the_encampment`. | 1 \| 1 |
 | `war-bill-prices-the-tier-gap` | off (unmeasured) | Opt-in gene `war-bill-prices-the-tier-gap`; see `Self::war_bill_prices_the_tier_gap`. | 1 \| 1 |
 | `war-kills-the-bands` | off (unmeasured) | Enable `war-kills-the-bands`. | — \| 2 |
 | `war-kills-the-bands-2` | off (unmeasured) | Enable `war-kills-the-bands-2`. | — \| 2 |
