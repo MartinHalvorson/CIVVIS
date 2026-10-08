@@ -5067,6 +5067,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `builders-cover-the-worked-backlog`: Builders while the charges in hand
+    /// and queued cover under 60% of the unimproved worked tiles. See
+    /// `BasicAi::builders_cover_the_worked_backlog`.
+    builders_cover_the_worked_backlog: bool,
     /// `breakers-match-the-walls`: the campaign target's Siege row asks the
     /// guns its walls and health need at our best gun's blow, up to
     /// `siege_production::BREAKER_MATCH_MAX`, and the delegated wall-breaker
@@ -9802,6 +9806,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            builders_cover_the_worked_backlog: false,
             breakers_match_the_walls: false,
             air_fire_counts_on_the_city: false,
             bombers_open_the_siege_walls: false,

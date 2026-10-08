@@ -6905,6 +6905,19 @@ impl AdvancedAi {
         self.base.housing_cap_builds_the_aqueduct = false;
     }
 
+    /// Opt-in gene `builders-cover-the-worked-backlog`; see
+    /// `BasicAi::builders_cover_the_worked_backlog`.
+    pub fn enable_builders_cover_the_worked_backlog(&mut self) {
+        self.builders_cover_the_worked_backlog = true;
+        self.base.builders_cover_the_worked_backlog = true;
+    }
+
+    /// The twin of `enable_builders_cover_the_worked_backlog`.
+    pub fn disable_builders_cover_the_worked_backlog(&mut self) {
+        self.builders_cover_the_worked_backlog = false;
+        self.base.builders_cover_the_worked_backlog = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

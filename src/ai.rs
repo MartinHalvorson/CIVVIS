@@ -2819,6 +2819,28 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `housing-cap-builds-the-aqueduct`.
     pub(crate) housing_cap_builds_the_aqueduct: bool,
+    /// Builders while the Builder charges in hand and queued cover less than
+    /// 60% of the empire's unimproved worked tiles, one per city at most,
+    /// from a city that finishes one within eight standard turns, ahead of
+    /// the Monument, the Settler step and the military floor (a due Settler
+    /// and local defence still win).
+    ///
+    /// Measured over the 10-06/07/08 Emperor runs (40-42 games): the worked
+    /// but unimproved land grew from a median 6 tiles at t40 to 14 at t100
+    /// and 15.5 at t120, while the empire held a median ONE Builder with 1-3
+    /// charges from t40 to t90 (5 charges at t100) and no city was producing
+    /// one. Builders were 5.7 of ~67 production starts t30-t100. The armed
+    /// `builder-before-the-army-3` sizes Builders to the same backlog but
+    /// counts bodies, not charges, caps them at one per two cities, and sits
+    /// behind the Monument, the Settler, the housing reserve and the Campus,
+    /// so an idle queue rarely reaches it. Worked-tile Production is the
+    /// per-citizen gap: 1.24 a worked tile in the bottom third of games by
+    /// Production per citizen against 1.74 in the top third at t100, where 56%
+    /// of worked tiles stood improved against 49%. The operator retires a game
+    /// at turn 150 that is not top 2 by Production.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `builders-cover-the-worked-backlog`.
+    pub(crate) builders_cover_the_worked_backlog: bool,
     /// From turn 90 standard (t60 Online), ahead of the military floor: the
     /// Market of a standing Commercial Hub, then a Trader while the empire's
     /// routes and Traders leave a route slot open, then a Commercial Hub on
@@ -5780,6 +5802,7 @@ impl BasicAi {
             granary_before_the_army_2: false,
             housing_bound_city_builds_its_granary: false,
             housing_cap_builds_the_aqueduct: false,
+            builders_cover_the_worked_backlog: false,
             commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,
@@ -6296,6 +6319,7 @@ impl BasicAi {
             granary_before_the_army_2: false,
             housing_bound_city_builds_its_granary: false,
             housing_cap_builds_the_aqueduct: false,
+            builders_cover_the_worked_backlog: false,
             commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,
@@ -13046,6 +13070,20 @@ impl BasicAi {
                 return Some(item);
             }
         }
+        // `builders-cover-the-worked-backlog`: Builders while the charges in
+        // hand cover too little of the ground the cities already work
+        // unimproved, ahead of the Monument, the Settler step and the military
+        // floor below. A due Settler and local defence above still win.
+        if self.builders_cover_the_worked_backlog
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(builder) = self.worked_backlog_builder_step(g, pid, cid, n_cities, builders) {
+                return Some(builder);
+            }
+        }
         // `monument-first`: the cheapest culture in the game before the
         // military floor and the Settler step, which otherwise kept a city
         // from ever reaching it. The capital sends the land grab's first two
@@ -16479,6 +16517,89 @@ impl BasicAi {
                 takes no district slot and lifts the water housing, about {turns:.0} turns",
                city.pop);
         Some(item)
+    }
+
+    /// See `builders_cover_the_worked_backlog`: the share of the unimproved
+    /// worked tiles the charges in hand (and the Builders queued) must cover
+    /// before no further Builder is wanted.
+    const WORKED_BACKLOG_COVER: f64 = 0.6;
+    /// See `builders_cover_the_worked_backlog`: no Builder for a backlog
+    /// smaller than this many unimproved worked tiles.
+    const WORKED_BACKLOG_MIN_TILES: usize = 4;
+    /// See `builders_cover_the_worked_backlog`: the slowest Builder this step
+    /// orders, in standard turns, so only a city that delivers one promptly
+    /// spends its queue on it.
+    const WORKED_BACKLOG_BUILDER_MAX_TURNS: u32 = 8;
+
+    /// Builder charges `pid` holds on Builders in the field, plus the charges
+    /// each Builder its cities have queued will carry.
+    pub(crate) fn builder_charge_cover(g: &Game, pid: usize) -> i32 {
+        let in_hand: i32 = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|uid| g.units.get(&uid))
+            .filter(|unit| unit.kind.as_str() == "builder")
+            .map(|unit| unit.charges.max(0))
+            .sum();
+        let queued = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| {
+                matches!(
+                    g.cities[cid].queue.first(),
+                    Some(Item::Unit { unit }) if unit == "builder"
+                )
+            })
+            .count() as i32;
+        in_hand + queued * g.builder_charges(pid).max(1)
+    }
+
+    /// See `builders_cover_the_worked_backlog`: a Builder while the charges in
+    /// hand and queued cover less than `WORKED_BACKLOG_COVER` of the empire's
+    /// unimproved worked tiles (`unimproved_worked_tiles`), at most one
+    /// Builder per city, from a city that finishes one within
+    /// `WORKED_BACKLOG_BUILDER_MAX_TURNS`.
+    fn worked_backlog_builder_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        builders: usize,
+    ) -> Option<Item> {
+        if n_cities < 2 || builders >= n_cities {
+            return None;
+        }
+        let city = &g.cities[&cid];
+        let threatened = self.plan_threatened_city == Some(cid)
+            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
+        if threatened {
+            return None;
+        }
+        let backlog = Self::unimproved_worked_tiles(g, pid);
+        if backlog < Self::WORKED_BACKLOG_MIN_TILES {
+            return None;
+        }
+        let cover = Self::builder_charge_cover(g, pid);
+        if f64::from(cover) >= backlog as f64 * Self::WORKED_BACKLOG_COVER {
+            return None;
+        }
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        if !g.can_produce(pid, cid, &builder) {
+            return None;
+        }
+        let turns = Self::unit_build_turns(g, pid, cid, "builder");
+        if turns > g.standard_duration(Self::WORKED_BACKLOG_BUILDER_MAX_TURNS) as f64 {
+            return None;
+        }
+        think!(self.journal, Cities, Detail,
+               "{} trains a Builder for the worked backlog", city.name;
+               "{backlog} worked tiles stand unimproved against {cover} Builder charges in hand \
+                and queued, under {:.0}% cover; about {turns:.0} turns",
+               Self::WORKED_BACKLOG_COVER * 100.0);
+        Some(builder)
     }
 
     /// Whether `cid` holds production for a Settler past half its price.
@@ -25665,6 +25786,93 @@ mod tests {
             "the fixture is due a Settler"
         );
         assert!(!is_builder(&pick(3, 0, 1)), "a due Settler comes first");
+    }
+
+    /// See `builders_cover_the_worked_backlog`: past `builder-before-the-army-3`'s
+    /// one-per-two-cities cap, an empire whose Builder charges cover too little
+    /// of its unimproved worked hills trains another; charges in hand that
+    /// cover the backlog, one Builder per city, a due Settler and a city just
+    /// attacked keep the stock pick.
+    #[test]
+    fn builders_cover_the_worked_backlog_under_the_gene() {
+        let (mut game, cid) = founded_capital_fixture("BUILDERCOVER", 91_841);
+        game.cities.get_mut(&cid).unwrap().pop = 6;
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("mining"));
+        let center = game.cities[&cid].pos;
+        let owned: Vec<Pos> = game.cities[&cid].owned_tiles.to_vec();
+        for position in owned {
+            if position != center && game.map.tiles[&position].district.is_none() {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("grassland");
+                tile.hills = true;
+                tile.feature = None;
+                tile.resource = None;
+                tile.improvement = None;
+            }
+        }
+        let backlog = BasicAi::unimproved_worked_tiles(&game, 0);
+        assert!(backlog >= BasicAi::WORKED_BACKLOG_MIN_TILES, "fixture backlog {backlog}");
+        assert_eq!(BasicAi::builder_charge_cover(&game, 0), 0, "fixture: no Builder charges");
+        let pick = |game: &Game, gene: bool, settlers: usize, builders: usize| {
+            let mut ai = BasicAi::new();
+            ai.builder_before_the_army_3 = true;
+            ai.builders_cover_the_worked_backlog = gene;
+            ai.pick_item(game, 0, cid, 3, settlers, builders, 1, 0, 0, 0, 0)
+        };
+        let is_builder =
+            |item: &Option<Item>| matches!(item, Some(Item::Unit { unit }) if *unit == "builder");
+        assert!(
+            !is_builder(&pick(&game, false, 1, 2)),
+            "version 3's one-per-two-cities cap is met: {:?}",
+            pick(&game, false, 1, 2)
+        );
+        assert!(is_builder(&pick(&game, true, 1, 2)), "{:?}", pick(&game, true, 1, 2));
+        assert_eq!(
+            pick(&game, true, 1, 3),
+            pick(&game, false, 1, 3),
+            "one Builder per city"
+        );
+        assert!(
+            BasicAi::new().settler_due(&game, 0, cid, 3, 0),
+            "the fixture is due a Settler"
+        );
+        assert_eq!(
+            pick(&game, true, 0, 2),
+            pick(&game, false, 0, 2),
+            "a due Settler keeps the stock pick"
+        );
+        let mut attacked = game.clone();
+        attacked.cities.get_mut(&cid).unwrap().last_attacked = attacked.turn.max(1);
+        assert_eq!(
+            pick(&attacked, true, 1, 2),
+            pick(&attacked, false, 1, 2),
+            "a city just attacked keeps the stock pick"
+        );
+        // Charges in hand that cover the backlog: no further Builder.
+        let mut covered = game.clone();
+        let uid = covered.spawn_unit("builder", 0, center);
+        covered.units.get_mut(&uid).unwrap().charges = backlog as i32;
+        assert!(BasicAi::builder_charge_cover(&covered, 0) >= backlog as i32);
+        assert_eq!(
+            pick(&covered, true, 1, 2),
+            pick(&covered, false, 1, 2),
+            "charges in hand cover the backlog"
+        );
+        // A Builder already queued counts its charges.
+        let mut queued = game.clone();
+        queued.cities.get_mut(&cid).unwrap().queue.insert(
+            0,
+            Item::Unit {
+                unit: crate::name!("builder"),
+            },
+        );
+        assert_eq!(
+            BasicAi::builder_charge_cover(&queued, 0),
+            queued.builder_charges(0),
+            "a queued Builder counts the charges it will carry"
+        );
     }
 
     /// See `monument_first`: a city without a Monument builds it where the
