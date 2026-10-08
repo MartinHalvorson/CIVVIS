@@ -342,6 +342,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `luxury-buy-asks` | off (unmeasured) | Opt-in gene `luxury-buy-asks`; see `Self::luxury_buy_asks`. | 1 \| 1 |
 | `luxury-swap-asks` | off (unmeasured) | Opt-in gene `luxury-swap-asks`; see `Self::luxury_swap_asks`. | 1 \| 1 |
 | `march-uses-its-moves` | off (unmeasured) | Opt-in gene `march-uses-its-moves`; see `Self::march_uses_its_moves`. | 1 \| 1 |
+| `match-point-interception-ignores-power` | off (unmeasured) | Opt-in gene `match-point-interception-ignores-power`; see `Self::last_holdout_interception`. | 1 \| 1 |
 | `melee-storms-an-open-city` | off (unmeasured) | Opt-in gene `melee-storms-an-open-city`; see `Self::melee_storms_an_open_city`. | 1 \| 1 |
 | `monument-first` | off (unmeasured) | A city's Monument ahead of the military floor and the Settler step in the delegated city governor. | 1 \| 1 |
 | `no-peace-with-a-launcher` | off (unmeasured) | Enable `no-peace-with-a-launcher`. | 1 \| 1 |

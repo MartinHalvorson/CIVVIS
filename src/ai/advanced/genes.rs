@@ -3454,6 +3454,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "no-peace-with-a-launcher", field: "no_peace_with_a_launcher", kind: Kind::OptIn, enable: AdvancedAi::enable_no_peace_with_a_launcher, disable: AdvancedAi::disable_no_peace_with_a_launcher },
     // `advanced/band_hunt.rs`.
     Gene { tag: "war-kills-the-bands-2", field: "war_kills_the_bands_2", kind: Kind::OptIn, enable: AdvancedAi::enable_war_kills_the_bands_2, disable: AdvancedAi::disable_war_kills_the_bands_2 },
+    // `match-point-interception-ignores-power`: live Emperor G425 held the
+    // religious interception on Georgia at 282 against a steady 273 beside
+    // France's war (1.2 edge) and lost on Religion at 98. When the faith
+    // holds every other major and we are its last holdout, the war that
+    // condemns its spreader at home opens at 0.7 times its steady power.
+    // See `match_point_last_holdout::last_holdout_interception`.
+    Gene { tag: "match-point-interception-ignores-power", field: "match_point_interception_ignores_power", kind: Kind::OptIn, enable: AdvancedAi::enable_match_point_interception_ignores_power, disable: AdvancedAi::disable_match_point_interception_ignores_power },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

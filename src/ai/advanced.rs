@@ -6904,6 +6904,16 @@ pub struct AdvancedAi {
     /// `BasicAi::industrial_zone_in_the_producers`.
     industrial_zone_in_the_producers: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `match-point-interception-ignores-power`: when a rival's founded faith
+    /// holds every other living major and our majority is still out, the
+    /// religious interception opens at `LAST_HOLDOUT_INTERCEPTION_FLOOR`
+    /// (0.7) times the faith's steady power, beside a running war too,
+    /// instead of 1.0 times its power and the 1.2 edge with every enemy
+    /// together. Live Emperor G425 held the interception at 282 against
+    /// Georgia's steady 273 beside France's war (turns 93-94) and lost on
+    /// Religion at 98. See `advanced/match_point_last_holdout.rs`. Off by
+    /// default.
+    match_point_interception_ignores_power: bool,
     /// `long-road-names-the-blocker`: a Stage march whose only dry road runs
     /// the long way round a peaceful major's closed borders holds short of
     /// them instead, naming that major. See `AdvancedAi::long_road_holds`.
@@ -10248,6 +10258,7 @@ impl AdvancedAi {
             housing_bound_city_builds_its_granary: false,
             industrial_zone_in_the_producers: false,
             // ---- append: l-o ----------------------------------------
+            match_point_interception_ignores_power: false,
             long_road_names_the_blocker: false,
             opening_yields_to_walls: false,
             luxury_buy_asks: false,
@@ -47493,6 +47504,11 @@ mod adopted_faith_balance;
 mod air_campaign;
 
 mod religious_interception;
+
+/// `match-point-interception-ignores-power`: the faith's last holdout
+/// intercepts its spreader at a lower power floor. See
+/// `advanced/match_point_last_holdout.rs`.
+mod match_point_last_holdout;
 
 mod second_faith_source;
 
