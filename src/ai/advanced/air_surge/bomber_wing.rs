@@ -55,6 +55,17 @@ pub(crate) type HeldRefusals = (
 );
 
 impl AdvancedAi {
+    /// `surge-fields-the-bombers` acts only while the wing can be fuelled:
+    /// the surge's Bomber goal (`air_surge_bomber_goal`, the Aluminum income
+    /// and bank) is above zero. -d8, live pin 6dd56c11d: the slot hold fired
+    /// 47-160 lines a game with a goal of 0, which is every game without
+    /// Aluminum (26% of the games reaching Advanced Flight), holding district
+    /// slots for a wing that could never fly. A bought Aluminum stock raises
+    /// the goal, so a gun-resource want for it reopens the gene.
+    pub(crate) fn surge_wing_fuelled(&self, g: &Game, pid: usize) -> bool {
+        self.surge_fields_the_bombers && Self::air_surge_bomber_goal(g, pid) > 0
+    }
+
     /// `surge-fields-the-bombers`: the districts that would take the air
     /// plan's reserved airfield slot, per city: every district the city could
     /// start that `air_surge_reserves_field_slot` vetoes, less any it already
@@ -66,7 +77,7 @@ impl AdvancedAi {
         pid: usize,
     ) -> BTreeMap<u32, Vec<Item>> {
         let mut refusals = BTreeMap::new();
-        if !self.surge_fields_the_bombers {
+        if !self.surge_wing_fuelled(g, pid) {
             return refusals;
         }
         for cid in g.player_city_ids(pid) {
@@ -150,7 +161,7 @@ impl AdvancedAi {
     /// launch Bombers at the city's own rate for them. `0.0` with the gene
     /// off or no Bomber in the catalogue.
     pub(super) fn surge_launch_wing_turns(&self, g: &Game, pid: usize, cid: u32) -> f64 {
-        if !self.surge_fields_the_bombers {
+        if !self.surge_wing_fuelled(g, pid) {
             return 0.0;
         }
         let Some(bomber) = Self::air_surge_bomber(g, pid) else {
@@ -163,7 +174,9 @@ impl AdvancedAi {
     }
 
     /// The Bombers a second field may be raised for: the launch pair as
-    /// shipped, or the whole wing still missing with the gene on.
+    /// shipped, or the whole wing still missing with the gene on. A goal of
+    /// zero leaves `goal_missing` zero, so an unfuelled wing raises nothing
+    /// beyond the shipped launch pair.
     pub(super) fn surge_wing_missing(&self, launch_missing: usize, goal_missing: usize) -> usize {
         if self.surge_fields_the_bombers {
             launch_missing.max(goal_missing)
@@ -182,7 +195,7 @@ impl AdvancedAi {
         pid: usize,
         threatened: Option<u32>,
     ) -> bool {
-        if !self.surge_fields_the_bombers {
+        if !self.surge_wing_fuelled(g, pid) {
             return false;
         }
         let (Some(bomber), Some(field)) = (
