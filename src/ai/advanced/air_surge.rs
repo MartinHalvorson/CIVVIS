@@ -574,30 +574,7 @@ impl AdvancedAi {
             return AIR_SURGE_BOMBERS;
         }
 
-        let other_demand = g
-            .units
-            .values()
-            .filter(|unit| unit.owner == pid && !unit.free_upkeep)
-            .filter_map(|unit| {
-                let unit_spec = &g.rules.units[unit.kind];
-                (unit_spec.requires_resource == Some(resource)
-                    && unit_spec.promotion_class != "air_bomber")
-                    .then_some(unit_spec.resource_maintenance)
-            })
-            .chain(g.player_city_ids(pid).into_iter().flat_map(|cid| {
-                g.cities[&cid].queue.iter().filter_map(|item| {
-                    let (Item::Unit { unit } | Item::Formation { unit, .. }) = item else {
-                        return None;
-                    };
-                    let queued = &g.rules.units[unit];
-                    (queued.requires_resource == Some(resource)
-                        && queued.promotion_class != "air_bomber")
-                        .then_some(queued.resource_maintenance)
-                })
-            }))
-            .sum::<f64>()
-            + extra_demand;
-        let income = g.strategic_resource_rate(pid, resource.as_str()) - other_demand;
+        let income = Self::air_surge_metal_income(g, pid, resource, extra_demand);
         let sustainable = (income.max(0.0) / spec.resource_maintenance).floor() as usize;
         let sustainable = sustainable.min(AIR_SURGE_BOMBERS);
         if sustainable >= AIR_SURGE_LAUNCH_BOMBERS {
@@ -633,6 +610,66 @@ impl AdvancedAi {
         } else {
             sustainable
         }
+    }
+
+    /// The Bomber's metal a turn after every consumer but the Bombers:
+    /// our other units of that metal, fielded and queued, and `extra_demand`.
+    fn air_surge_metal_income(g: &Game, pid: usize, resource: Name, extra_demand: f64) -> f64 {
+        let other_demand = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid && !unit.free_upkeep)
+            .filter_map(|unit| {
+                let unit_spec = &g.rules.units[unit.kind];
+                (unit_spec.requires_resource == Some(resource)
+                    && unit_spec.promotion_class != "air_bomber")
+                    .then_some(unit_spec.resource_maintenance)
+            })
+            .chain(g.player_city_ids(pid).into_iter().flat_map(|cid| {
+                g.cities[&cid].queue.iter().filter_map(|item| {
+                    let (Item::Unit { unit } | Item::Formation { unit, .. }) = item else {
+                        return None;
+                    };
+                    let queued = &g.rules.units[unit];
+                    (queued.requires_resource == Some(resource)
+                        && queued.promotion_class != "air_bomber")
+                        .then_some(queued.resource_maintenance)
+                })
+            }))
+            .sum::<f64>()
+            + extra_demand;
+        g.strategic_resource_rate(pid, resource.as_str()) - other_demand
+    }
+
+    /// `siege-buys-the-gun-resource`: the stock of the Bomber's metal that
+    /// lets [`Self::air_surge_bomber_goal`] field the launch wing on the
+    /// income we have: the wing's training cost past the Bombers already
+    /// fielded or queued, and the launch wing's upkeep the income leaves
+    /// unpaid for the Aluminum grace window, read exactly as the goal reads
+    /// it. `None` without a Bomber that burns a metal.
+    pub(super) fn air_surge_launch_stock(g: &Game, pid: usize) -> Option<(Name, f64)> {
+        let bomber = Self::air_surge_bomber(g, pid)?;
+        let spec = &g.rules.units[bomber];
+        let resource = spec.requires_resource?;
+        if spec.resource_maintenance <= f64::EPSILON {
+            return None;
+        }
+        let income = Self::air_surge_metal_income(g, pid, resource, 0.0);
+        let launch_maintenance = AIR_SURGE_LAUNCH_BOMBERS as f64 * spec.resource_maintenance;
+        let grace = g.standard_duration(AIR_SURGE_ALUMINUM_GRACE) as f64;
+        let (_, committed) = Self::domination_air_readiness_counts(g, pid);
+        Some((
+            resource,
+            AIR_SURGE_LAUNCH_BOMBERS.saturating_sub(committed) as f64 * spec.resource_cost
+                + (launch_maintenance - income).max(0.0) * grace,
+        ))
+    }
+
+    /// `siege-buys-the-gun-resource`: whether the air wing wants Bombers:
+    /// a live surge appointment, or Domination air readiness short of its
+    /// wing.
+    pub(super) fn air_wing_wants_bombers(&self, g: &Game, pid: usize) -> bool {
+        self.air_surge_active() || self.domination_air_readiness_active(g, pid)
     }
 
     /// Aluminum enough to train and keep the launch wing alive.

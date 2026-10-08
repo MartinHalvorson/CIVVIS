@@ -17982,9 +17982,7 @@ mod tests {
         // A luxury the host counts one copy of (the other sold away) stays
         // home, whatever the board counts; one it counts two of still goes.
         let sold_away = StateSnapshot {
-            luxury_counts: Some(
-                [("RESOURCE_SILK".to_string(), 1.0)].into_iter().collect(),
-            ),
+            luxury_counts: Some([("RESOURCE_SILK".to_string(), 1.0)].into_iter().collect()),
             ..state.clone()
         };
         let mut netted = Vec::new();
@@ -18002,9 +18000,7 @@ mod tests {
             Some("RESOURCE_NITER=20;RESOURCE_COAL=33")
         );
         let two_held = StateSnapshot {
-            luxury_counts: Some(
-                [("RESOURCE_SILK".to_string(), 2.0)].into_iter().collect(),
-            ),
+            luxury_counts: Some([("RESOURCE_SILK".to_string(), 2.0)].into_iter().collect()),
             ..state.clone()
         };
         let mut kept = Vec::new();
@@ -18066,6 +18062,74 @@ mod tests {
                 ("sell", "FAVOR=20"),
                 ("buy", "RESOURCE_NITER=20"),
             ]
+        );
+    }
+
+    /// `siege-buys-the-gun-resource`: the air wing's Aluminum crosses like
+    /// the guns' Niter: the whole wing's block from the seller that offers
+    /// it, Gold-only when nothing of ours is spare.
+    #[test]
+    fn the_air_wings_aluminum_is_bought_from_a_seller() {
+        let want = civvis::ai::GunResourceWant {
+            resource: "RESOURCE_ALUMINUM".to_string(),
+            resource_id: "aluminum".to_string(),
+            amount: 42,
+            minimum: 42,
+            unit: "bomber".to_string(),
+            guns: 2,
+            hit: 0.0,
+            renewal: false,
+        };
+        let worth = |_: &str, amount: u32| 10.0 * f64::from(amount);
+        let no_barter = |_: i64, _: &str, _: u32| 0.0;
+        let state = StateSnapshot {
+            turn: 152,
+            gold: 1000,
+            gold_per_turn: Some(30.0),
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    tradeable_strategics: Some(
+                        [("RESOURCE_NITER".to_string(), 80)].into_iter().collect(),
+                    ),
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 3,
+                    tradeable_strategics: Some(
+                        [("RESOURCE_ALUMINUM".to_string(), 50)].into_iter().collect(),
+                    ),
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let mut orders = Vec::new();
+        assert_eq!(
+            append_gun_resource_buy_order(
+                std::slice::from_ref(&want),
+                &[],
+                &state,
+                &mut orders,
+                &worth,
+                &no_barter
+            ),
+            None
+        );
+        assert_eq!(orders[0].subject, Some(3));
+        assert_eq!(orders[0].verb.as_deref(), Some("RESOURCE_ALUMINUM=42"));
+        assert_eq!(orders[0].pos, Some((420, 0)));
+        // 40 Gold over the reserve cannot carry the 420 the wing books at, and
+        // nothing smaller fields it.
+        let mut held = Vec::new();
+        let short = StateSnapshot {
+            gold: 100,
+            gold_per_turn: Some(4.0),
+            ..state.clone()
+        };
+        assert_eq!(
+            append_gun_resource_buy_order(&[want], &[], &short, &mut held, &worth, &no_barter),
+            Some("gun_resource_buy_hold:treasury")
         );
     }
 
