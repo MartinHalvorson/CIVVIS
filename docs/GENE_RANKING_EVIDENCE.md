@@ -339,6 +339,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `lane-delegates-production` | off (unmeasured) | Until the development half ends, an assigned lane's cities take the unassigned seat's production dispatch. | — \| 2 |
 | `lane-delegates-production-2` | off (unmeasured) | Version two: an assigned lane's cities take the unassigned seat's production dispatch for the whole game. | — \| 2 |
 | `last-capital-war-kept` | off (unmeasured) | Opt-in gene `last-capital-war-kept`; see `Self::last_capital_war_kept`. | 1 \| 1 |
+| `launcher-war-ignores-the-edge` | off (unmeasured) | Enable `launcher-war-ignores-the-edge`. | 1 \| 1 |
 | `liberation-funds-the-congress` | off (unmeasured) | Opt-in gene `liberation-funds-the-congress`; see `Self::liberation_funds_the_congress`. | 1 \| 1 |
 | `long-road-names-the-blocker` | off (unmeasured) | Opt-in gene `long-road-names-the-blocker`; see `Self::long_road_names_the_blocker`. | 1 \| 1 |
 | `luxury-buy-asks` | off (unmeasured) | Opt-in gene `luxury-buy-asks`; see `Self::luxury_buy_asks`. | 1 \| 1 |

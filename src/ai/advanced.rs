@@ -7350,6 +7350,10 @@ pub struct AdvancedAi {
     /// of its stands, unless our cities are falling. See
     /// `advanced/launcher_war.rs`.
     no_peace_with_a_launcher: bool,
+    /// `launcher-war-ignores-the-edge`: the war on a racer past its Moon
+    /// and short of the launch opens from 0.8 times its steady power, staged
+    /// or not. See `advanced/launcher_war.rs`.
+    launcher_war_ignores_the_edge: bool,
     // ---- append: p-r ------------------------------------------------
     /// `prophet-builds-its-site`: a held Great Prophet, the race's wanted
     /// Revelation points, or points within `PROPHET_SITE_LEAD_TURNS` of the
@@ -10336,6 +10340,7 @@ impl AdvancedAi {
             own_column_is_not_a_refusal: false,
             luxury_swap_asks: false,
             no_peace_with_a_launcher: false,
+            launcher_war_ignores_the_edge: false,
             // ---- append: p-r ----------------------------------------
             prophet_builds_its_site: false,
             religious_match_point_defence: false,
@@ -23554,6 +23559,11 @@ impl AdvancedAi {
                    self.steady_rival_power(g, target), one_war::DECLARATION_EDGE_RATIO);
         }
         let urgent_waiver = urgent_denial && urgent_edge;
+        // `launcher-war-ignores-the-edge`: a racer past its Moon and short of
+        // the launch is fought from 0.8 times its steady power, staged or
+        // not; its pads are raided, not besieged. `false` with the gene off.
+        // See `advanced/launcher_war.rs`.
+        let launcher_ready = !below_counter_floor && self.launcher_war_opens(g, pid, target);
         // See `road_blocker_front` (`blocker-becomes-the-target`): the army
         // already stands at the border the war opens, and the blocker has
         // passed the version-2 edge, so no staged siege or Board bill is
@@ -23768,20 +23778,22 @@ impl AdvancedAi {
         let road_opening_ready = road_opening_ready && !strike_held;
         let moving_on_ready = moving_on_ready && !strike_held;
         let opens = close_enough
-            && ready
-            && (staged
-                || air_ready
-                || religion_counter_ready
-                || culture_counter_ready
-                || overwhelming_ready
-                || road_opening_ready
-                || moving_on_ready);
+            && ((ready
+                && (staged
+                    || air_ready
+                    || religion_counter_ready
+                    || culture_counter_ready
+                    || overwhelming_ready
+                    || road_opening_ready
+                    || moving_on_ready))
+                || launcher_ready);
         // `declaration-needs-production-parity`: every opening above -- the
         // staged edge, the overwhelming waiver, the rush stack, and the
         // urgent, culture and faith counters -- also needs our Production at
         // 0.8 times the target's (`parity-reads-the-front`: its Production
         // around our cities and the objective). Says so itself.
         if opens
+            && !launcher_ready
             && !self.declaration_has_production_parity(
                 g,
                 pid,
@@ -23794,11 +23806,19 @@ impl AdvancedAi {
         if opens {
             // `coalition_before_war`: invite the target's neighbours to a
             // joint war first, and hold while an answer is due. See
-            // `advanced/coalition.rs`.
-            if self.coalition_invites_before_declaring(g, pid, target) {
+            // `advanced/coalition.rs`. A launcher war does not wait on it.
+            if !launcher_ready && self.coalition_invites_before_declaring(g, pid, target) {
                 return;
             }
-            if let Some(mut action) = self.preferred_war_opening(g, pid, target) {
+            // `launcher-war-ignores-the-edge`: a denouncement's five turns
+            // are five turns of launches; the launcher war opens by surprise.
+            let opening = match self.preferred_war_opening(g, pid, target) {
+                Some(Action::Denounce { .. }) | None if launcher_ready => {
+                    self.launcher_war_opening(g, pid, target, my_power)
+                }
+                opening => opening,
+            };
+            if let Some(mut action) = opening {
                 // See `STRIKE_WHEN_STAGED_RATIO`.
                 if let Some(surprise) = self.strike_when_staged(g, pid, target, &action, staged) {
                     action = surprise;
@@ -23833,6 +23853,9 @@ impl AdvancedAi {
                         "its closed borders shut the road to a siege we stood down, and the war opens it"
                     } else if moving_on_ready {
                         "the beaten rival's capital is ours and it refuses peace, so the army moves on to the next capital"
+                    } else if launcher_ready && !staged {
+                        // See `launcher_war_opens`.
+                        "launcher-war-ignores-the-edge: past its Moon with a pad standing, the war raids its pads rather than besieging a city"
                     } else {
                         "the army is staged within reach of the first objective"
                     };

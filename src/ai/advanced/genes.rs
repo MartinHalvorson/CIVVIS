@@ -3479,6 +3479,12 @@ pub const GENES: &[Gene] = &[
     // stand level. 10-08: the AI declared 23 early wars, all at 1.32 or less
     // of our power, 12 costing a city. See `advanced/near_rival_deterrence.rs`.
     Gene { tag: "near-rival-deterrence", field: "near_rival_deterrence", kind: Kind::OptIn, enable: AdvancedAi::enable_near_rival_deterrence, disable: AdvancedAi::disable_near_rival_deterrence },
+    // Against a racer past its Moon and short of the Exoplanet launch, the
+    // war opens from 0.8 times its steady power, staged or not, by surprise;
+    // its pads are raided by bombers and lone units, not besieged. G432 held
+    // the urgent denial on Persia under 1.5x for seven turns after its Mars
+    // base. See `advanced/launcher_war.rs`.
+    Gene { tag: "launcher-war-ignores-the-edge", field: "launcher_war_ignores_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_ignores_the_edge, disable: AdvancedAi::disable_launcher_war_ignores_the_edge },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
