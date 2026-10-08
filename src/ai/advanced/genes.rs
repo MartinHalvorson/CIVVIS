@@ -3355,6 +3355,13 @@ pub const GENES: &[Gene] = &[
     // within eight standard turns, ahead of the Monument, the Settler step and
     // the military floor. See `BasicAi::builders_cover_the_worked_backlog`.
     Gene { tag: "builders-cover-the-worked-backlog", field: "builders_cover_the_worked_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_cover_the_worked_backlog, disable: AdvancedAi::disable_builders_cover_the_worked_backlog },
+    // An improvement's Production on a tile one of our cities works is priced
+    // again at 2.11 / 1.43 times the lane's Production weight (the top third's
+    // Production per improved tile over the bottom third's at t100), so a Mine
+    // under a citizen outbids a Farm on an idle flat; a starving city with
+    // Housing to grow into keeps the stock pricing. See
+    // `advanced/worked_production.rs`.
+    Gene { tag: "builders-improve-the-worked-for-production", field: "builders_improve_the_worked_for_production", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_improve_the_worked_for_production, disable: AdvancedAi::disable_builders_improve_the_worked_for_production },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

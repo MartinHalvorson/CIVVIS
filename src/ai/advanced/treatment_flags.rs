@@ -6918,6 +6918,17 @@ impl AdvancedAi {
         self.base.builders_cover_the_worked_backlog = false;
     }
 
+    /// Opt-in gene `builders-improve-the-worked-for-production`; see
+    /// `advanced/worked_production.rs`.
+    pub fn enable_builders_improve_the_worked_for_production(&mut self) {
+        self.builders_improve_the_worked_for_production = true;
+    }
+
+    /// The twin of `enable_builders_improve_the_worked_for_production`.
+    pub fn disable_builders_improve_the_worked_for_production(&mut self) {
+        self.builders_improve_the_worked_for_production = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
