@@ -7062,6 +7062,17 @@ impl AdvancedAi {
         self.early_settler_floor = false;
     }
 
+    /// Opt-in gene `match-point-interception-ignores-power`; see
+    /// [`Self::last_holdout_interception`].
+    pub fn enable_match_point_interception_ignores_power(&mut self) {
+        self.match_point_interception_ignores_power = true;
+    }
+
+    /// The twin of `enable_match_point_interception_ignores_power`.
+    pub fn disable_match_point_interception_ignores_power(&mut self) {
+        self.match_point_interception_ignores_power = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

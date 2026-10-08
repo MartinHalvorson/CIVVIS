@@ -3443,6 +3443,13 @@ pub const GENES: &[Gene] = &[
     // builds. 10-08: four or fewer cities at t75 passed the production gate
     // in 0 of 19 live Emperor runs. See `advanced/early_settler_floor.rs`.
     Gene { tag: "early-settler-floor", field: "early_settler_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_early_settler_floor, disable: AdvancedAi::disable_early_settler_floor },
+    // `match-point-interception-ignores-power`: live Emperor G425 held the
+    // religious interception on Georgia at 282 against a steady 273 beside
+    // France's war (1.2 edge) and lost on Religion at 98. When the faith
+    // holds every other major and we are its last holdout, the war that
+    // condemns its spreader at home opens at 0.7 times its steady power.
+    // See `match_point_last_holdout::last_holdout_interception`.
+    Gene { tag: "match-point-interception-ignores-power", field: "match_point_interception_ignores_power", kind: Kind::OptIn, enable: AdvancedAi::enable_match_point_interception_ignores_power, disable: AdvancedAi::disable_match_point_interception_ignores_power },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

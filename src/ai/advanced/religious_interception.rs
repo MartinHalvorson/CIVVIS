@@ -174,21 +174,33 @@ impl AdvancedAi {
             // `religious-match-point-defence`: a running war no longer
             // refuses the interception outright; each rival must clear
             // `match_point_defence_has_the_edge` below instead.
-            || (!enemies.is_empty() && !self.religious_match_point_defence)
+            // `match-point-interception-ignores-power` opens it too, for the
+            // last holdout below.
+            || (!enemies.is_empty()
+                && !self.religious_match_point_defence
+                && !self.match_point_interception_ignores_power)
         {
             return false;
         }
         for (rival, pressure) in self.ranked_rival_victory_pressures(g, pid, &BTreeMap::new()) {
             // See `match_point_faith`: under the gene the match point is read
             // on the religion lane alone, whatever lane the rival leads.
+            // See `last_holdout_interception`
+            // (`match-point-interception-ignores-power`): the faith holds every
+            // other major, so we are its match point by definition, and the
+            // power the war needs is the last-holdout floor, not the army's.
+            let last_holdout = self.last_holdout_interception(g, pid, rival);
             let at_match_point = (pressure.strategy == GrandStrategy::Religion
                 && self.victory_pressure_is_urgent(g, rival, pressure))
-                || self.match_point_faith(g, rival);
-            if !at_match_point
-                || !self.campaign_target_legal(g, pid, rival)
-                || g.military_power(pid)
-                    < RELIGIOUS_INTERCEPTION_POWER_FLOOR * g.military_power(rival)
-            {
+                || self.match_point_faith(g, rival)
+                || last_holdout;
+            let enough_power = if last_holdout {
+                self.last_holdout_power_suffices(g, pid, rival)
+            } else {
+                g.military_power(pid)
+                    >= RELIGIOUS_INTERCEPTION_POWER_FLOOR * g.military_power(rival)
+            };
+            if !at_match_point || !self.campaign_target_legal(g, pid, rival) || !enough_power {
                 continue;
             }
             let Some(faith) = g.players[rival].religion.as_deref() else {
@@ -202,7 +214,8 @@ impl AdvancedAi {
                 if g.is_at_war(pid, rival) {
                     continue;
                 }
-                if !self.match_point_defence_has_the_edge(g, pid, rival, &enemies) {
+                if !last_holdout && !self.match_point_defence_has_the_edge(g, pid, rival, &enemies)
+                {
                     if self.journal().wants(crate::reasoning::Level::Detail) {
                         let together = g.military_power(rival)
                             + enemies.iter().map(|e| g.military_power(*e)).sum::<f64>();
@@ -271,7 +284,13 @@ impl AdvancedAi {
                         }
                     }
                     let condemned = g.apply(pid, &condemn).is_ok();
-                    if enemies.is_empty() {
+                    if last_holdout {
+                        think!(self.journal(), Military, Strategy,
+                            "Opening a religious interception against {} as its last holdout", g.players[rival].civ;
+                            "match-point-interception-ignores-power: their faith holds every other major and its spreader is in our borders; {:.0} power against their steady {:.0} clears the {:.1}x floor; condemnation executed: {condemned}",
+                            g.military_power(pid), self.steady_rival_power(g, rival),
+                            super::match_point_last_holdout::LAST_HOLDOUT_INTERCEPTION_FLOOR);
+                    } else if enemies.is_empty() {
                         think!(self.journal(), Military, Strategy,
                             "Opening a religious interception against {}", g.players[rival].civ;
                             "a visible spreader at home supplies an immediate counter to the religious match point; condemnation executed: {condemned}");
