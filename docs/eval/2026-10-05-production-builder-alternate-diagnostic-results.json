@@ -1,0 +1,4857 @@
+{
+  "at": "2026-10-05T03:10:04.601686+00:00",
+  "phase": "diagnostic",
+  "native_only": true,
+  "actual_Firaxis_verification": false,
+  "difficulties": {
+    "emperor": {
+      "pairs": 4,
+      "control_mean_t25_production": 15.325,
+      "control_mean_t25_science": 5.1,
+      "control_mean_t25_cities": 2.5,
+      "control_mean_t25_population": 5.25,
+      "control_mean_t25_productive_improvements": 0.25,
+      "control_mean_t25_cumulative_production": 195.775,
+      "control_mean_t50_production": 31.974999999999998,
+      "control_mean_t50_science": 11.3625,
+      "control_mean_t50_cities": 4.5,
+      "control_mean_t50_population": 13.25,
+      "control_mean_t50_productive_improvements": 1.75,
+      "control_mean_t50_cumulative_production": 758.75,
+      "control_mean_t75_production": 53.675,
+      "control_mean_t75_science": 27.5625,
+      "control_mean_t75_cities": 7.25,
+      "control_mean_t75_population": 23.25,
+      "control_mean_t75_productive_improvements": 6.5,
+      "control_mean_t75_cumulative_production": 1816.5875,
+      "control_t75_survival": 4,
+      "control_final_survival": 4,
+      "control_mean_t75_rival_ratio": 0.5064732113821252,
+      "candidate_mean_t25_production": 15.325,
+      "candidate_mean_t25_science": 5.1,
+      "candidate_mean_t25_cities": 2.5,
+      "candidate_mean_t25_population": 5.25,
+      "candidate_mean_t25_productive_improvements": 0.25,
+      "candidate_mean_t25_cumulative_production": 195.775,
+      "candidate_mean_t50_production": 31.974999999999998,
+      "candidate_mean_t50_science": 11.3625,
+      "candidate_mean_t50_cities": 4.5,
+      "candidate_mean_t50_population": 13.25,
+      "candidate_mean_t50_productive_improvements": 1.75,
+      "candidate_mean_t50_cumulative_production": 758.75,
+      "candidate_mean_t75_production": 53.675,
+      "candidate_mean_t75_science": 27.5625,
+      "candidate_mean_t75_cities": 7.25,
+      "candidate_mean_t75_population": 23.25,
+      "candidate_mean_t75_productive_improvements": 6.5,
+      "candidate_mean_t75_cumulative_production": 1816.5875,
+      "candidate_t75_survival": 4,
+      "candidate_final_survival": 4,
+      "candidate_mean_t75_rival_ratio": 0.5064732113821252,
+      "t75_change_percent": 0.0,
+      "accepted_alternate_before_t75": 0,
+      "strength_gate": false,
+      "games": [
+        {
+          "seed": 61008600,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 19.0,
+                "rival_production": 29.5,
+                "science": 6.5,
+                "cities": 3.0,
+                "population": 5.0,
+                "cumulative_production": 229.7,
+                "productive_improvements": 0.0,
+                "builders": 1.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 19.0,
+                "rival_production": 29.5,
+                "science": 6.5,
+                "cities": 3.0,
+                "population": 5.0,
+                "cumulative_production": 229.7,
+                "productive_improvements": 0.0,
+                "builders": 1.0
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 31.7,
+                "rival_production": 47.6,
+                "science": 14.8,
+                "cities": 5.0,
+                "population": 13.0,
+                "cumulative_production": 855.0,
+                "productive_improvements": 2.0,
+                "builders": 4.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 31.7,
+                "rival_production": 47.6,
+                "science": 14.8,
+                "cities": 5.0,
+                "population": 13.0,
+                "cumulative_production": 855.0,
+                "productive_improvements": 2.0,
+                "builders": 4.0
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 50.9,
+                "rival_production": 82.7,
+                "science": 26.9,
+                "cities": 8.0,
+                "population": 24.0,
+                "cumulative_production": 1894.8,
+                "productive_improvements": 4.0,
+                "builders": 7.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 50.9,
+                "rival_production": 82.7,
+                "science": 26.9,
+                "cities": 8.0,
+                "population": 24.0,
+                "cumulative_production": 1894.8,
+                "productive_improvements": 4.0,
+                "builders": 7.0
+              }
+            },
+            "100": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 113.1,
+                "rival_production": 165.6,
+                "science": 54.0,
+                "cities": 10.0,
+                "population": 39.0,
+                "cumulative_production": 3857.7,
+                "productive_improvements": 18.0,
+                "builders": 7.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 113.1,
+                "rival_production": 165.6,
+                "science": 54.0,
+                "cities": 10.0,
+                "population": 39.0,
+                "cumulative_production": 3857.7,
+                "productive_improvements": 18.0,
+                "builders": 7.0
+              }
+            },
+            "125": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 155.7,
+                "rival_production": 224.5,
+                "science": 94.8015,
+                "cities": 10.0,
+                "population": 51.0,
+                "cumulative_production": 7222.2,
+                "productive_improvements": 32.0,
+                "builders": 11.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 154.8,
+                "rival_production": 216.5,
+                "science": 91.35,
+                "cities": 10.0,
+                "population": 51.0,
+                "cumulative_production": 7266.9,
+                "productive_improvements": 33.0,
+                "builders": 9.0
+              }
+            },
+            "150": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 210.3,
+                "rival_production": 411.4,
+                "science": 143.95,
+                "cities": 10.0,
+                "population": 66.0,
+                "cumulative_production": 11805.2,
+                "productive_improvements": 39.0,
+                "builders": 11.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 197.9,
+                "rival_production": 372.8,
+                "science": 143.35,
+                "cities": 10.0,
+                "population": 64.0,
+                "cumulative_production": 11760.2,
+                "productive_improvements": 42.0,
+                "builders": 10.0
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "first_builder_turn": 21,
+              "improvements": [
+                {
+                  "turn": 24,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 142
+                },
+                {
+                  "turn": 38,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 183
+                },
+                {
+                  "turn": 40,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 183
+                },
+                {
+                  "turn": 42,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 142
+                },
+                {
+                  "turn": 45,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 202
+                },
+                {
+                  "turn": 61,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 142
+                },
+                {
+                  "turn": 63,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 295
+                },
+                {
+                  "turn": 70,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 183
+                },
+                {
+                  "turn": 75,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 340
+                },
+                {
+                  "turn": 81,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 372
+                },
+                {
+                  "turn": 81,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 382
+                },
+                {
+                  "turn": 86,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 372
+                },
+                {
+                  "turn": 87,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 314
+                },
+                {
+                  "turn": 87,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 430
+                },
+                {
+                  "turn": 89,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 314
+                },
+                {
+                  "turn": 89,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 430
+                },
+                {
+                  "turn": 91,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 207
+                },
+                {
+                  "turn": 91,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 402
+                },
+                {
+                  "turn": 92,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 202
+                },
+                {
+                  "turn": 92,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 402
+                },
+                {
+                  "turn": 95,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 207
+                },
+                {
+                  "turn": 95,
+                  "improvement": "quarry",
+                  "type": "improve",
+                  "unit": 295
+                },
+                {
+                  "turn": 95,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 382
+                },
+                {
+                  "turn": 96,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 207
+                },
+                {
+                  "turn": 96,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 382
+                },
+                {
+                  "turn": 97,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 372
+                },
+                {
+                  "turn": 101,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 314
+                },
+                {
+                  "turn": 102,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 194
+                },
+                {
+                  "turn": 105,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 550
+                },
+                {
+                  "turn": 106,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 202
+                },
+                {
+                  "turn": 107,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 402
+                },
+                {
+                  "turn": 108,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 194
+                },
+                {
+                  "turn": 108,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 295
+                },
+                {
+                  "turn": 108,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 430
+                },
+                {
+                  "turn": 110,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 430
+                },
+                {
+                  "turn": 110,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 550
+                },
+                {
+                  "turn": 110,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 588
+                },
+                {
+                  "turn": 111,
+                  "improvement": "moai",
+                  "type": "improve",
+                  "unit": 588
+                },
+                {
+                  "turn": 112,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 550
+                },
+                {
+                  "turn": 112,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 595
+                },
+                {
+                  "turn": 113,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 588
+                },
+                {
+                  "turn": 113,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 595
+                },
+                {
+                  "turn": 114,
+                  "improvement": "moai",
+                  "type": "improve",
+                  "unit": 588
+                },
+                {
+                  "turn": 114,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 595
+                },
+                {
+                  "turn": 122,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 665
+                },
+                {
+                  "turn": 123,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 651
+                },
+                {
+                  "turn": 124,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 651
+                },
+                {
+                  "turn": 124,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 666
+                },
+                {
+                  "turn": 126,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 595
+                },
+                {
+                  "turn": 127,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 651
+                },
+                {
+                  "turn": 128,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 628
+                },
+                {
+                  "turn": 133,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 588
+                },
+                {
+                  "turn": 133,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 665
+                },
+                {
+                  "turn": 134,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 340
+                },
+                {
+                  "turn": 134,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 698
+                },
+                {
+                  "turn": 135,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 628
+                },
+                {
+                  "turn": 135,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 698
+                },
+                {
+                  "turn": 136,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 595
+                },
+                {
+                  "turn": 136,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 652
+                },
+                {
+                  "turn": 137,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 628
+                },
+                {
+                  "turn": 139,
+                  "improvement": "camp",
+                  "type": "improve",
+                  "unit": 665
+                },
+                {
+                  "turn": 139,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 698
+                },
+                {
+                  "turn": 141,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 550
+                },
+                {
+                  "turn": 141,
+                  "improvement": "quarry",
+                  "type": "improve",
+                  "unit": 628
+                },
+                {
+                  "turn": 141,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 652
+                },
+                {
+                  "turn": 146,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 698
+                },
+                {
+                  "turn": 150,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 651
+                }
+              ],
+              "first_production_improvement_turn": 40,
+              "final_turn": 151,
+              "final_alive": true,
+              "winner": 3,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [],
+              "observed_guard_frames": 3793,
+              "accepted_productive_alternate_jobs": []
+            },
+            "candidate": {
+              "first_builder_turn": 21,
+              "improvements": [
+                {
+                  "turn": 24,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 142
+                },
+                {
+                  "turn": 38,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 183
+                },
+                {
+                  "turn": 40,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 183
+                },
+                {
+                  "turn": 42,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 142
+                },
+                {
+                  "turn": 45,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 202
+                },
+                {
+                  "turn": 61,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 142
+                },
+                {
+                  "turn": 63,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 295
+                },
+                {
+                  "turn": 70,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 183
+                },
+                {
+                  "turn": 75,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 340
+                },
+                {
+                  "turn": 81,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 372
+                },
+                {
+                  "turn": 81,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 382
+                },
+                {
+                  "turn": 86,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 372
+                },
+                {
+                  "turn": 87,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 314
+                },
+                {
+                  "turn": 87,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 430
+                },
+                {
+                  "turn": 89,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 314
+                },
+                {
+                  "turn": 89,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 430
+                },
+                {
+                  "turn": 91,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 207
+                },
+                {
+                  "turn": 91,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 402
+                },
+                {
+                  "turn": 92,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 202
+                },
+                {
+                  "turn": 92,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 402
+                },
+                {
+                  "turn": 95,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 207
+                },
+                {
+                  "turn": 95,
+                  "improvement": "quarry",
+                  "type": "improve",
+                  "unit": 295
+                },
+                {
+                  "turn": 95,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 382
+                },
+                {
+                  "turn": 96,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 207
+                },
+                {
+                  "turn": 96,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 382
+                },
+                {
+                  "turn": 97,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 372
+                },
+                {
+                  "turn": 101,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 314
+                },
+                {
+                  "turn": 102,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 194
+                },
+                {
+                  "turn": 105,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 550
+                },
+                {
+                  "turn": 106,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 202
+                },
+                {
+                  "turn": 107,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 402
+                },
+                {
+                  "turn": 108,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 194
+                },
+                {
+                  "turn": 108,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 295
+                },
+                {
+                  "turn": 108,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 430
+                },
+                {
+                  "turn": 110,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 430
+                },
+                {
+                  "turn": 110,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 550
+                },
+                {
+                  "turn": 110,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 588
+                },
+                {
+                  "turn": 111,
+                  "improvement": "quarry",
+                  "type": "improve",
+                  "unit": 340
+                },
+                {
+                  "turn": 112,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 550
+                },
+                {
+                  "turn": 112,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 595
+                },
+                {
+                  "turn": 113,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 550
+                },
+                {
+                  "turn": 113,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 595
+                },
+                {
+                  "turn": 116,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 588
+                },
+                {
+                  "turn": 117,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 550
+                },
+                {
+                  "turn": 119,
+                  "improvement": "moai",
+                  "type": "improve",
+                  "unit": 588
+                },
+                {
+                  "turn": 120,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 340
+                },
+                {
+                  "turn": 121,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 661
+                },
+                {
+                  "turn": 127,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 652
+                },
+                {
+                  "turn": 133,
+                  "improvement": "camp",
+                  "type": "improve",
+                  "unit": 595
+                },
+                {
+                  "turn": 140,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 430
+                },
+                {
+                  "turn": 145,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 595
+                },
+                {
+                  "turn": 145,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 670
+                },
+                {
+                  "turn": 146,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 595
+                },
+                {
+                  "turn": 146,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 695
+                },
+                {
+                  "turn": 147,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 628
+                },
+                {
+                  "turn": 147,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 651
+                },
+                {
+                  "turn": 147,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 652
+                },
+                {
+                  "turn": 147,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 695
+                },
+                {
+                  "turn": 147,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 848
+                },
+                {
+                  "turn": 149,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 670
+                },
+                {
+                  "turn": 149,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 848
+                },
+                {
+                  "turn": 150,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 661
+                },
+                {
+                  "turn": 150,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 710
+                }
+              ],
+              "first_production_improvement_turn": 40,
+              "final_turn": 151,
+              "final_alive": true,
+              "winner": 3,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [
+                {
+                  "detail": "Builder 340 improves quarry at (4, 23); after-walk city Production +1.00, Food and Science retained",
+                  "focus": [
+                    4,
+                    23
+                  ],
+                  "headline": "Builder completes productive alternate work",
+                  "id": 5354,
+                  "player": 0,
+                  "turn": 110,
+                  "type": "planning_thought"
+                }
+              ],
+              "observed_guard_frames": 3692,
+              "accepted_productive_alternate_jobs": [
+                {
+                  "turn": 110,
+                  "builder": 340,
+                  "improvement": "quarry",
+                  "planned_destination": [
+                    4,
+                    23
+                  ],
+                  "accepted_action": {
+                    "improvement": "quarry",
+                    "type": "improve",
+                    "unit": 340
+                  }
+                }
+              ]
+            }
+          },
+          "arm_configuration_equal_except_flag": true,
+          "actions.json_byte_identical": false,
+          "final.json_byte_identical": false,
+          "controls_match_previous_consumed": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "accepted_alternate_before_t75": 0
+        },
+        {
+          "seed": 61008601,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 17.0,
+                "rival_production": 39.1,
+                "science": 5.5,
+                "cities": 3.0,
+                "population": 7.0,
+                "cumulative_production": 189.6,
+                "productive_improvements": 1.0,
+                "builders": 1.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 17.0,
+                "rival_production": 39.1,
+                "science": 5.5,
+                "cities": 3.0,
+                "population": 7.0,
+                "cumulative_production": 189.6,
+                "productive_improvements": 1.0,
+                "builders": 1.0
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 37.3,
+                "rival_production": 68.9,
+                "science": 10.05,
+                "cities": 4.0,
+                "population": 15.0,
+                "cumulative_production": 841.7,
+                "productive_improvements": 3.0,
+                "builders": 1.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 37.3,
+                "rival_production": 68.9,
+                "science": 10.05,
+                "cities": 4.0,
+                "population": 15.0,
+                "cumulative_production": 841.7,
+                "productive_improvements": 3.0,
+                "builders": 1.0
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 71.8,
+                "rival_production": 118.0,
+                "science": 31.85,
+                "cities": 8.0,
+                "population": 26.0,
+                "cumulative_production": 2153.2,
+                "productive_improvements": 13.0,
+                "builders": 1.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 71.8,
+                "rival_production": 118.0,
+                "science": 31.85,
+                "cities": 8.0,
+                "population": 26.0,
+                "cumulative_production": 2153.2,
+                "productive_improvements": 13.0,
+                "builders": 1.0
+              }
+            },
+            "100": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            },
+            "125": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            },
+            "150": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "first_builder_turn": 3,
+              "improvements": [
+                {
+                  "turn": 4,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 55
+                },
+                {
+                  "turn": 5,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 55
+                },
+                {
+                  "turn": 7,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 55
+                },
+                {
+                  "turn": 20,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 116
+                },
+                {
+                  "turn": 25,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 116
+                },
+                {
+                  "turn": 28,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 167
+                },
+                {
+                  "turn": 37,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 116
+                },
+                {
+                  "turn": 37,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 167
+                },
+                {
+                  "turn": 60,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 300
+                },
+                {
+                  "turn": 61,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 244
+                },
+                {
+                  "turn": 62,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 300
+                },
+                {
+                  "turn": 63,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 296
+                },
+                {
+                  "turn": 64,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 244
+                },
+                {
+                  "turn": 64,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 283
+                },
+                {
+                  "turn": 64,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 296
+                },
+                {
+                  "turn": 65,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 244
+                },
+                {
+                  "turn": 65,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 283
+                },
+                {
+                  "turn": 66,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 283
+                },
+                {
+                  "turn": 66,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 296
+                },
+                {
+                  "turn": 66,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 351
+                },
+                {
+                  "turn": 67,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 300
+                },
+                {
+                  "turn": 67,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 351
+                },
+                {
+                  "turn": 70,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 351
+                },
+                {
+                  "turn": 88,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 341
+                },
+                {
+                  "turn": 89,
+                  "improvement": "mound",
+                  "type": "improve",
+                  "unit": 451
+                }
+              ],
+              "first_production_improvement_turn": 20,
+              "final_turn": 96,
+              "final_alive": true,
+              "winner": 2,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [],
+              "observed_guard_frames": 936,
+              "accepted_productive_alternate_jobs": []
+            },
+            "candidate": {
+              "first_builder_turn": 3,
+              "improvements": [
+                {
+                  "turn": 4,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 55
+                },
+                {
+                  "turn": 5,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 55
+                },
+                {
+                  "turn": 7,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 55
+                },
+                {
+                  "turn": 20,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 116
+                },
+                {
+                  "turn": 25,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 116
+                },
+                {
+                  "turn": 28,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 167
+                },
+                {
+                  "turn": 37,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 116
+                },
+                {
+                  "turn": 37,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 167
+                },
+                {
+                  "turn": 60,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 300
+                },
+                {
+                  "turn": 61,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 244
+                },
+                {
+                  "turn": 62,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 300
+                },
+                {
+                  "turn": 63,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 296
+                },
+                {
+                  "turn": 64,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 244
+                },
+                {
+                  "turn": 64,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 283
+                },
+                {
+                  "turn": 64,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 296
+                },
+                {
+                  "turn": 65,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 244
+                },
+                {
+                  "turn": 65,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 283
+                },
+                {
+                  "turn": 66,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 283
+                },
+                {
+                  "turn": 66,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 296
+                },
+                {
+                  "turn": 66,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 351
+                },
+                {
+                  "turn": 67,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 300
+                },
+                {
+                  "turn": 67,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 351
+                },
+                {
+                  "turn": 70,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 351
+                },
+                {
+                  "turn": 88,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 341
+                },
+                {
+                  "turn": 89,
+                  "improvement": "mound",
+                  "type": "improve",
+                  "unit": 451
+                },
+                {
+                  "turn": 90,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 341
+                }
+              ],
+              "first_production_improvement_turn": 20,
+              "final_turn": 96,
+              "final_alive": true,
+              "winner": 2,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [
+                {
+                  "detail": "Builder 341 improves mine at (24, 6); after-walk city Production +2.10, Food and Science retained",
+                  "focus": [
+                    24,
+                    6
+                  ],
+                  "headline": "Builder completes productive alternate work",
+                  "id": 2191,
+                  "player": 0,
+                  "turn": 87,
+                  "type": "planning_thought"
+                }
+              ],
+              "observed_guard_frames": 936,
+              "accepted_productive_alternate_jobs": [
+                {
+                  "turn": 87,
+                  "builder": 341,
+                  "improvement": "mine",
+                  "planned_destination": [
+                    24,
+                    6
+                  ],
+                  "accepted_action": {
+                    "improvement": "mine",
+                    "type": "improve",
+                    "unit": 341
+                  }
+                }
+              ]
+            }
+          },
+          "arm_configuration_equal_except_flag": true,
+          "actions.json_byte_identical": false,
+          "final.json_byte_identical": false,
+          "controls_match_previous_consumed": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "accepted_alternate_before_t75": 0
+        },
+        {
+          "seed": 61008602,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 12.6,
+                "rival_production": 33.1,
+                "science": 3.95,
+                "cities": 2.0,
+                "population": 4.0,
+                "cumulative_production": 173.9,
+                "productive_improvements": 0.0,
+                "builders": 1.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 12.6,
+                "rival_production": 33.1,
+                "science": 3.95,
+                "cities": 2.0,
+                "population": 4.0,
+                "cumulative_production": 173.9,
+                "productive_improvements": 0.0,
+                "builders": 1.0
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 31.4,
+                "rival_production": 72.0,
+                "science": 10.2,
+                "cities": 4.0,
+                "population": 11.0,
+                "cumulative_production": 647.1,
+                "productive_improvements": 2.0,
+                "builders": 2.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 31.4,
+                "rival_production": 72.0,
+                "science": 10.2,
+                "cities": 4.0,
+                "population": 11.0,
+                "cumulative_production": 647.1,
+                "productive_improvements": 2.0,
+                "builders": 2.0
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 45.0,
+                "rival_production": 116.8,
+                "science": 33.0,
+                "cities": 6.0,
+                "population": 22.0,
+                "cumulative_production": 1523.65,
+                "productive_improvements": 3.0,
+                "builders": 2.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 45.0,
+                "rival_production": 116.8,
+                "science": 33.0,
+                "cities": 6.0,
+                "population": 22.0,
+                "cumulative_production": 1523.65,
+                "productive_improvements": 3.0,
+                "builders": 2.0
+              }
+            },
+            "100": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            },
+            "125": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            },
+            "150": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "first_builder_turn": 23,
+              "improvements": [
+                {
+                  "turn": 28,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 142
+                },
+                {
+                  "turn": 32,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 142
+                },
+                {
+                  "turn": 35,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 142
+                },
+                {
+                  "turn": 40,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 199
+                },
+                {
+                  "turn": 47,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 199
+                },
+                {
+                  "turn": 55,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 238
+                },
+                {
+                  "turn": 56,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 238
+                },
+                {
+                  "turn": 60,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 304
+                },
+                {
+                  "turn": 61,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 304
+                },
+                {
+                  "turn": 61,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 199
+                },
+                {
+                  "turn": 64,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 304
+                },
+                {
+                  "turn": 67,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 238
+                },
+                {
+                  "turn": 72,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 267
+                },
+                {
+                  "turn": 80,
+                  "improvement": "quarry",
+                  "type": "improve",
+                  "unit": 291
+                },
+                {
+                  "turn": 81,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 267
+                },
+                {
+                  "turn": 82,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 267
+                },
+                {
+                  "turn": 90,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 291
+                },
+                {
+                  "turn": 92,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 291
+                }
+              ],
+              "first_production_improvement_turn": 35,
+              "final_turn": 94,
+              "final_alive": true,
+              "winner": 3,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [],
+              "observed_guard_frames": 1245,
+              "accepted_productive_alternate_jobs": []
+            },
+            "candidate": {
+              "first_builder_turn": 23,
+              "improvements": [
+                {
+                  "turn": 28,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 142
+                },
+                {
+                  "turn": 32,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 142
+                },
+                {
+                  "turn": 35,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 142
+                },
+                {
+                  "turn": 40,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 199
+                },
+                {
+                  "turn": 47,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 199
+                },
+                {
+                  "turn": 55,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 238
+                },
+                {
+                  "turn": 56,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 238
+                },
+                {
+                  "turn": 60,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 304
+                },
+                {
+                  "turn": 61,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 304
+                },
+                {
+                  "turn": 61,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 199
+                },
+                {
+                  "turn": 64,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 304
+                },
+                {
+                  "turn": 67,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 238
+                },
+                {
+                  "turn": 72,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 267
+                },
+                {
+                  "turn": 80,
+                  "improvement": "quarry",
+                  "type": "improve",
+                  "unit": 291
+                },
+                {
+                  "turn": 81,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 267
+                },
+                {
+                  "turn": 82,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 267
+                },
+                {
+                  "turn": 90,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 291
+                },
+                {
+                  "turn": 92,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 291
+                }
+              ],
+              "first_production_improvement_turn": 35,
+              "final_turn": 94,
+              "final_alive": true,
+              "winner": 3,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [],
+              "observed_guard_frames": 1245,
+              "accepted_productive_alternate_jobs": []
+            }
+          },
+          "arm_configuration_equal_except_flag": true,
+          "actions.json_byte_identical": true,
+          "final.json_byte_identical": true,
+          "controls_match_previous_consumed": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "accepted_alternate_before_t75": 0
+        },
+        {
+          "seed": 61008603,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 12.7,
+                "rival_production": 30.8,
+                "science": 4.45,
+                "cities": 2.0,
+                "population": 5.0,
+                "cumulative_production": 189.9,
+                "productive_improvements": 0.0,
+                "builders": 1.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 12.7,
+                "rival_production": 30.8,
+                "science": 4.45,
+                "cities": 2.0,
+                "population": 5.0,
+                "cumulative_production": 189.9,
+                "productive_improvements": 0.0,
+                "builders": 1.0
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 27.5,
+                "rival_production": 71.9,
+                "science": 10.4,
+                "cities": 5.0,
+                "population": 14.0,
+                "cumulative_production": 691.2,
+                "productive_improvements": 0.0,
+                "builders": 2.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 27.5,
+                "rival_production": 71.9,
+                "science": 10.4,
+                "cities": 5.0,
+                "population": 14.0,
+                "cumulative_production": 691.2,
+                "productive_improvements": 0.0,
+                "builders": 2.0
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 47.0,
+                "rival_production": 112.8,
+                "science": 18.5,
+                "cities": 7.0,
+                "population": 21.0,
+                "cumulative_production": 1694.7,
+                "productive_improvements": 6.0,
+                "builders": 6.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 47.0,
+                "rival_production": 112.8,
+                "science": 18.5,
+                "cities": 7.0,
+                "population": 21.0,
+                "cumulative_production": 1694.7,
+                "productive_improvements": 6.0,
+                "builders": 6.0
+              }
+            },
+            "100": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 101.0,
+                "rival_production": 146.6,
+                "science": 32.0,
+                "cities": 10.0,
+                "population": 40.0,
+                "cumulative_production": 3559.7,
+                "productive_improvements": 12.0,
+                "builders": 5.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 101.0,
+                "rival_production": 146.6,
+                "science": 32.0,
+                "cities": 10.0,
+                "population": 40.0,
+                "cumulative_production": 3559.7,
+                "productive_improvements": 12.0,
+                "builders": 5.0
+              }
+            },
+            "125": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 155.0,
+                "rival_production": 189.4,
+                "science": 81.5,
+                "cities": 10.0,
+                "population": 57.0,
+                "cumulative_production": 6982.7,
+                "productive_improvements": 31.0,
+                "builders": 6.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 155.0,
+                "rival_production": 189.4,
+                "science": 81.5,
+                "cities": 10.0,
+                "population": 57.0,
+                "cumulative_production": 6982.7,
+                "productive_improvements": 31.0,
+                "builders": 6.0
+              }
+            },
+            "150": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 239.2,
+                "rival_production": 354.2,
+                "science": 112.5,
+                "cities": 10.0,
+                "population": 77.0,
+                "cumulative_production": 12037.6,
+                "productive_improvements": 69.0,
+                "builders": 12.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 239.2,
+                "rival_production": 354.2,
+                "science": 112.5,
+                "cities": 10.0,
+                "population": 77.0,
+                "cumulative_production": 12037.6,
+                "productive_improvements": 69.0,
+                "builders": 12.0
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "first_builder_turn": 18,
+              "improvements": [
+                {
+                  "turn": 55,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 256
+                },
+                {
+                  "turn": 59,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 153
+                },
+                {
+                  "turn": 62,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 153
+                },
+                {
+                  "turn": 62,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 256
+                },
+                {
+                  "turn": 65,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 256
+                },
+                {
+                  "turn": 70,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 318
+                },
+                {
+                  "turn": 71,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 153
+                },
+                {
+                  "turn": 72,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 318
+                },
+                {
+                  "turn": 72,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 336
+                },
+                {
+                  "turn": 73,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 321
+                },
+                {
+                  "turn": 79,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 336
+                },
+                {
+                  "turn": 81,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 321
+                },
+                {
+                  "turn": 88,
+                  "improvement": "quarry",
+                  "type": "improve",
+                  "unit": 118
+                },
+                {
+                  "turn": 88,
+                  "improvement": "camp",
+                  "type": "improve",
+                  "unit": 318
+                },
+                {
+                  "turn": 89,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 336
+                },
+                {
+                  "turn": 93,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 337
+                },
+                {
+                  "turn": 94,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 321
+                },
+                {
+                  "turn": 95,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 359
+                },
+                {
+                  "turn": 100,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 359
+                },
+                {
+                  "turn": 101,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 118
+                },
+                {
+                  "turn": 105,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 337
+                },
+                {
+                  "turn": 105,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 508
+                },
+                {
+                  "turn": 107,
+                  "improvement": "camp",
+                  "type": "improve",
+                  "unit": 359
+                },
+                {
+                  "turn": 107,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 539
+                },
+                {
+                  "turn": 107,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 542
+                },
+                {
+                  "turn": 108,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 118
+                },
+                {
+                  "turn": 109,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 337
+                },
+                {
+                  "turn": 109,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 542
+                },
+                {
+                  "turn": 109,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 547
+                },
+                {
+                  "turn": 110,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 539
+                },
+                {
+                  "turn": 111,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 542
+                },
+                {
+                  "turn": 112,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 547
+                },
+                {
+                  "turn": 113,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 515
+                },
+                {
+                  "turn": 114,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 524
+                },
+                {
+                  "turn": 114,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 557
+                },
+                {
+                  "turn": 114,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 579
+                },
+                {
+                  "turn": 116,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 524
+                },
+                {
+                  "turn": 116,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 594
+                },
+                {
+                  "turn": 117,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 579
+                },
+                {
+                  "turn": 117,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 583
+                },
+                {
+                  "turn": 117,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 594
+                },
+                {
+                  "turn": 117,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 596
+                },
+                {
+                  "turn": 118,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 515
+                },
+                {
+                  "turn": 118,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 583
+                },
+                {
+                  "turn": 119,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 524
+                },
+                {
+                  "turn": 119,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 557
+                },
+                {
+                  "turn": 120,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 579
+                },
+                {
+                  "turn": 121,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 579
+                },
+                {
+                  "turn": 122,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 596
+                },
+                {
+                  "turn": 125,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 557
+                },
+                {
+                  "turn": 128,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 671
+                },
+                {
+                  "turn": 129,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 579
+                },
+                {
+                  "turn": 129,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 596
+                },
+                {
+                  "turn": 129,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 671
+                },
+                {
+                  "turn": 130,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 594
+                },
+                {
+                  "turn": 132,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 594
+                },
+                {
+                  "turn": 132,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 647
+                },
+                {
+                  "turn": 132,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 665
+                },
+                {
+                  "turn": 132,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 671
+                },
+                {
+                  "turn": 133,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 594
+                },
+                {
+                  "turn": 133,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 671
+                },
+                {
+                  "turn": 135,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 671
+                },
+                {
+                  "turn": 136,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 706
+                },
+                {
+                  "turn": 137,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 706
+                },
+                {
+                  "turn": 139,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 638
+                },
+                {
+                  "turn": 139,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 706
+                },
+                {
+                  "turn": 140,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 665
+                },
+                {
+                  "turn": 140,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 728
+                },
+                {
+                  "turn": 140,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 729
+                },
+                {
+                  "turn": 141,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 665
+                },
+                {
+                  "turn": 141,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 706
+                },
+                {
+                  "turn": 142,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 596
+                },
+                {
+                  "turn": 142,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 706
+                },
+                {
+                  "turn": 142,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 728
+                },
+                {
+                  "turn": 142,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 729
+                },
+                {
+                  "turn": 143,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 728
+                },
+                {
+                  "turn": 144,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 596
+                },
+                {
+                  "turn": 144,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 665
+                },
+                {
+                  "turn": 144,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 729
+                },
+                {
+                  "turn": 144,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 736
+                },
+                {
+                  "turn": 144,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 743
+                },
+                {
+                  "turn": 145,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 728
+                },
+                {
+                  "turn": 145,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 743
+                },
+                {
+                  "turn": 146,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 665
+                },
+                {
+                  "turn": 148,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 638
+                },
+                {
+                  "turn": 149,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 728
+                },
+                {
+                  "turn": 149,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 736
+                },
+                {
+                  "turn": 150,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 780
+                }
+              ],
+              "first_production_improvement_turn": 62,
+              "final_turn": 151,
+              "final_alive": true,
+              "winner": 1,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [],
+              "observed_guard_frames": 2909,
+              "accepted_productive_alternate_jobs": []
+            },
+            "candidate": {
+              "first_builder_turn": 18,
+              "improvements": [
+                {
+                  "turn": 55,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 256
+                },
+                {
+                  "turn": 59,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 153
+                },
+                {
+                  "turn": 62,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 153
+                },
+                {
+                  "turn": 62,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 256
+                },
+                {
+                  "turn": 65,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 256
+                },
+                {
+                  "turn": 70,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 318
+                },
+                {
+                  "turn": 71,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 153
+                },
+                {
+                  "turn": 72,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 318
+                },
+                {
+                  "turn": 72,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 336
+                },
+                {
+                  "turn": 73,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 321
+                },
+                {
+                  "turn": 79,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 336
+                },
+                {
+                  "turn": 81,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 321
+                },
+                {
+                  "turn": 88,
+                  "improvement": "quarry",
+                  "type": "improve",
+                  "unit": 118
+                },
+                {
+                  "turn": 88,
+                  "improvement": "camp",
+                  "type": "improve",
+                  "unit": 318
+                },
+                {
+                  "turn": 89,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 336
+                },
+                {
+                  "turn": 93,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 337
+                },
+                {
+                  "turn": 94,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 321
+                },
+                {
+                  "turn": 95,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 359
+                },
+                {
+                  "turn": 100,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 359
+                },
+                {
+                  "turn": 101,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 118
+                },
+                {
+                  "turn": 105,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 337
+                },
+                {
+                  "turn": 105,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 508
+                },
+                {
+                  "turn": 107,
+                  "improvement": "camp",
+                  "type": "improve",
+                  "unit": 359
+                },
+                {
+                  "turn": 107,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 539
+                },
+                {
+                  "turn": 107,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 542
+                },
+                {
+                  "turn": 108,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 118
+                },
+                {
+                  "turn": 109,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 337
+                },
+                {
+                  "turn": 109,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 542
+                },
+                {
+                  "turn": 109,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 547
+                },
+                {
+                  "turn": 110,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 539
+                },
+                {
+                  "turn": 111,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 542
+                },
+                {
+                  "turn": 112,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 547
+                },
+                {
+                  "turn": 113,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 515
+                },
+                {
+                  "turn": 114,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 524
+                },
+                {
+                  "turn": 114,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 557
+                },
+                {
+                  "turn": 114,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 579
+                },
+                {
+                  "turn": 116,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 524
+                },
+                {
+                  "turn": 116,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 594
+                },
+                {
+                  "turn": 117,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 579
+                },
+                {
+                  "turn": 117,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 583
+                },
+                {
+                  "turn": 117,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 594
+                },
+                {
+                  "turn": 117,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 596
+                },
+                {
+                  "turn": 118,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 515
+                },
+                {
+                  "turn": 118,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 583
+                },
+                {
+                  "turn": 119,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 524
+                },
+                {
+                  "turn": 119,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 557
+                },
+                {
+                  "turn": 120,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 579
+                },
+                {
+                  "turn": 121,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 579
+                },
+                {
+                  "turn": 122,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 596
+                },
+                {
+                  "turn": 125,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 557
+                },
+                {
+                  "turn": 128,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 671
+                },
+                {
+                  "turn": 129,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 579
+                },
+                {
+                  "turn": 129,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 596
+                },
+                {
+                  "turn": 129,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 671
+                },
+                {
+                  "turn": 130,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 594
+                },
+                {
+                  "turn": 132,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 594
+                },
+                {
+                  "turn": 132,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 647
+                },
+                {
+                  "turn": 132,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 665
+                },
+                {
+                  "turn": 132,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 671
+                },
+                {
+                  "turn": 133,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 594
+                },
+                {
+                  "turn": 133,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 671
+                },
+                {
+                  "turn": 135,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 671
+                },
+                {
+                  "turn": 136,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 706
+                },
+                {
+                  "turn": 137,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 706
+                },
+                {
+                  "turn": 139,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 638
+                },
+                {
+                  "turn": 139,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 706
+                },
+                {
+                  "turn": 140,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 665
+                },
+                {
+                  "turn": 140,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 728
+                },
+                {
+                  "turn": 140,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 729
+                },
+                {
+                  "turn": 141,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 665
+                },
+                {
+                  "turn": 141,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 706
+                },
+                {
+                  "turn": 142,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 596
+                },
+                {
+                  "turn": 142,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 706
+                },
+                {
+                  "turn": 142,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 728
+                },
+                {
+                  "turn": 142,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 729
+                },
+                {
+                  "turn": 143,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 728
+                },
+                {
+                  "turn": 144,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 596
+                },
+                {
+                  "turn": 144,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 665
+                },
+                {
+                  "turn": 144,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 729
+                },
+                {
+                  "turn": 144,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 736
+                },
+                {
+                  "turn": 144,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 743
+                },
+                {
+                  "turn": 145,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 728
+                },
+                {
+                  "turn": 145,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 743
+                },
+                {
+                  "turn": 146,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 665
+                },
+                {
+                  "turn": 148,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 638
+                },
+                {
+                  "turn": 149,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 728
+                },
+                {
+                  "turn": 149,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 736
+                },
+                {
+                  "turn": 150,
+                  "improvement": "hacienda",
+                  "type": "improve",
+                  "unit": 780
+                }
+              ],
+              "first_production_improvement_turn": 62,
+              "final_turn": 151,
+              "final_alive": true,
+              "winner": 1,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [],
+              "observed_guard_frames": 2909,
+              "accepted_productive_alternate_jobs": []
+            }
+          },
+          "arm_configuration_equal_except_flag": true,
+          "actions.json_byte_identical": true,
+          "final.json_byte_identical": true,
+          "controls_match_previous_consumed": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "accepted_alternate_before_t75": 0
+        }
+      ]
+    },
+    "deity": {
+      "pairs": 4,
+      "control_mean_t25_production": 13.825,
+      "control_mean_t25_science": 4.5125,
+      "control_mean_t25_cities": 2.0,
+      "control_mean_t25_population": 4.5,
+      "control_mean_t25_productive_improvements": 1.25,
+      "control_mean_t25_cumulative_production": 205.4375,
+      "control_mean_t50_production": 26.425,
+      "control_mean_t50_science": 9.23125,
+      "control_mean_t50_cities": 3.5,
+      "control_mean_t50_population": 11.25,
+      "control_mean_t50_productive_improvements": 2.25,
+      "control_mean_t50_cumulative_production": 711.25,
+      "control_mean_t75_production": 37.2375,
+      "control_mean_t75_science": 22.30625,
+      "control_mean_t75_cities": 5.25,
+      "control_mean_t75_population": 20.5,
+      "control_mean_t75_productive_improvements": 2.5,
+      "control_mean_t75_cumulative_production": 1509.5125,
+      "control_t75_survival": 4,
+      "control_final_survival": 2,
+      "control_mean_t75_rival_ratio": 0.16462350659408892,
+      "candidate_mean_t25_production": 13.825,
+      "candidate_mean_t25_science": 4.5125,
+      "candidate_mean_t25_cities": 2.0,
+      "candidate_mean_t25_population": 4.5,
+      "candidate_mean_t25_productive_improvements": 1.25,
+      "candidate_mean_t25_cumulative_production": 205.4375,
+      "candidate_mean_t50_production": 26.425,
+      "candidate_mean_t50_science": 9.23125,
+      "candidate_mean_t50_cities": 3.5,
+      "candidate_mean_t50_population": 11.25,
+      "candidate_mean_t50_productive_improvements": 2.25,
+      "candidate_mean_t50_cumulative_production": 711.25,
+      "candidate_mean_t75_production": 37.2375,
+      "candidate_mean_t75_science": 22.30625,
+      "candidate_mean_t75_cities": 5.25,
+      "candidate_mean_t75_population": 20.5,
+      "candidate_mean_t75_productive_improvements": 2.5,
+      "candidate_mean_t75_cumulative_production": 1509.5125,
+      "candidate_t75_survival": 4,
+      "candidate_final_survival": 2,
+      "candidate_mean_t75_rival_ratio": 0.16462350659408892,
+      "t75_change_percent": 0.0,
+      "accepted_alternate_before_t75": 0,
+      "strength_gate": false,
+      "games": [
+        {
+          "seed": 61008700,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 12.6,
+                "rival_production": 61.2,
+                "science": 3.8,
+                "cities": 2.0,
+                "population": 3.0,
+                "cumulative_production": 245.45,
+                "productive_improvements": 3.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 12.6,
+                "rival_production": 61.2,
+                "science": 3.8,
+                "cities": 2.0,
+                "population": 3.0,
+                "cumulative_production": 245.45,
+                "productive_improvements": 3.0,
+                "builders": 0.0
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 20.3,
+                "rival_production": 139.4,
+                "science": 9.75,
+                "cities": 2.0,
+                "population": 6.0,
+                "cumulative_production": 707.6,
+                "productive_improvements": 4.0,
+                "builders": 1.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 20.3,
+                "rival_production": 139.4,
+                "science": 9.75,
+                "cities": 2.0,
+                "population": 6.0,
+                "cumulative_production": 707.6,
+                "productive_improvements": 4.0,
+                "builders": 1.0
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 28.3,
+                "rival_production": 247.8,
+                "science": 25.3,
+                "cities": 4.0,
+                "population": 12.0,
+                "cumulative_production": 1317.4,
+                "productive_improvements": 4.0,
+                "builders": 2.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 28.3,
+                "rival_production": 247.8,
+                "science": 25.3,
+                "cities": 4.0,
+                "population": 12.0,
+                "cumulative_production": 1317.4,
+                "productive_improvements": 4.0,
+                "builders": 2.0
+              }
+            },
+            "100": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 44.0,
+                "rival_production": 430.6,
+                "science": 36.0,
+                "cities": 5.0,
+                "population": 16.0,
+                "cumulative_production": 2199.1,
+                "productive_improvements": 6.0,
+                "builders": 3.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 44.0,
+                "rival_production": 430.6,
+                "science": 36.0,
+                "cities": 5.0,
+                "population": 16.0,
+                "cumulative_production": 2199.1,
+                "productive_improvements": 6.0,
+                "builders": 3.0
+              }
+            },
+            "125": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 9.1,
+                "rival_production": 918.1,
+                "science": 7.8,
+                "cities": 2.0,
+                "population": 8.0,
+                "cumulative_production": 2716.0,
+                "productive_improvements": 6.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 9.1,
+                "rival_production": 918.1,
+                "science": 7.8,
+                "cities": 2.0,
+                "population": 8.0,
+                "cumulative_production": 2716.0,
+                "productive_improvements": 6.0,
+                "builders": 0.0
+              }
+            },
+            "150": {
+              "control": {
+                "reached": true,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "first_builder_turn": 6,
+              "improvements": [
+                {
+                  "turn": 8,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 89
+                },
+                {
+                  "turn": 18,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 89
+                },
+                {
+                  "turn": 20,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 89
+                },
+                {
+                  "turn": 31,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 203
+                },
+                {
+                  "turn": 32,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 203
+                },
+                {
+                  "turn": 34,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 224
+                },
+                {
+                  "turn": 41,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 224
+                },
+                {
+                  "turn": 59,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 224
+                },
+                {
+                  "turn": 94,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 398
+                },
+                {
+                  "turn": 97,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 398
+                },
+                {
+                  "turn": 97,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 548
+                },
+                {
+                  "turn": 99,
+                  "improvement": "camp",
+                  "type": "improve",
+                  "unit": 548
+                },
+                {
+                  "turn": 109,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 548
+                }
+              ],
+              "first_production_improvement_turn": 8,
+              "final_turn": 151,
+              "final_alive": false,
+              "winner": 2,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [],
+              "observed_guard_frames": 896,
+              "accepted_productive_alternate_jobs": []
+            },
+            "candidate": {
+              "first_builder_turn": 6,
+              "improvements": [
+                {
+                  "turn": 8,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 89
+                },
+                {
+                  "turn": 18,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 89
+                },
+                {
+                  "turn": 20,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 89
+                },
+                {
+                  "turn": 31,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 203
+                },
+                {
+                  "turn": 32,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 203
+                },
+                {
+                  "turn": 34,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 224
+                },
+                {
+                  "turn": 41,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 224
+                },
+                {
+                  "turn": 59,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 224
+                },
+                {
+                  "turn": 94,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 398
+                },
+                {
+                  "turn": 97,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 398
+                },
+                {
+                  "turn": 97,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 548
+                },
+                {
+                  "turn": 99,
+                  "improvement": "camp",
+                  "type": "improve",
+                  "unit": 548
+                },
+                {
+                  "turn": 109,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 548
+                }
+              ],
+              "first_production_improvement_turn": 8,
+              "final_turn": 151,
+              "final_alive": false,
+              "winner": 2,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [],
+              "observed_guard_frames": 896,
+              "accepted_productive_alternate_jobs": []
+            }
+          },
+          "arm_configuration_equal_except_flag": true,
+          "actions.json_byte_identical": true,
+          "final.json_byte_identical": true,
+          "controls_match_previous_consumed": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "accepted_alternate_before_t75": 0
+        },
+        {
+          "seed": 61008701,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 16.3,
+                "rival_production": 63.0,
+                "science": 4.4,
+                "cities": 2.0,
+                "population": 5.0,
+                "cumulative_production": 230.2,
+                "productive_improvements": 2.0,
+                "builders": 1.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 16.3,
+                "rival_production": 63.0,
+                "science": 4.4,
+                "cities": 2.0,
+                "population": 5.0,
+                "cumulative_production": 230.2,
+                "productive_improvements": 2.0,
+                "builders": 1.0
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 28.7,
+                "rival_production": 98.9,
+                "science": 10.8,
+                "cities": 5.0,
+                "population": 14.0,
+                "cumulative_production": 843.7,
+                "productive_improvements": 3.0,
+                "builders": 2.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 28.7,
+                "rival_production": 98.9,
+                "science": 10.8,
+                "cities": 5.0,
+                "population": 14.0,
+                "cumulative_production": 843.7,
+                "productive_improvements": 3.0,
+                "builders": 2.0
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 51.4,
+                "rival_production": 180.6,
+                "science": 37.4,
+                "cities": 7.0,
+                "population": 27.0,
+                "cumulative_production": 1904.8,
+                "productive_improvements": 4.0,
+                "builders": 7.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 51.4,
+                "rival_production": 180.6,
+                "science": 37.4,
+                "cities": 7.0,
+                "population": 27.0,
+                "cumulative_production": 1904.8,
+                "productive_improvements": 4.0,
+                "builders": 7.0
+              }
+            },
+            "100": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 71.0,
+                "rival_production": 292.6,
+                "science": 48.1,
+                "cities": 7.0,
+                "population": 34.0,
+                "cumulative_production": 3407.4,
+                "productive_improvements": 7.0,
+                "builders": 7.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 71.0,
+                "rival_production": 292.6,
+                "science": 48.1,
+                "cities": 7.0,
+                "population": 34.0,
+                "cumulative_production": 3407.4,
+                "productive_improvements": 7.0,
+                "builders": 7.0
+              }
+            },
+            "125": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            },
+            "150": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "first_builder_turn": 15,
+              "improvements": [
+                {
+                  "turn": 20,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 148
+                },
+                {
+                  "turn": 25,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 148
+                },
+                {
+                  "turn": 27,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 148
+                },
+                {
+                  "turn": 37,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 242
+                },
+                {
+                  "turn": 38,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 242
+                },
+                {
+                  "turn": 40,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 242
+                },
+                {
+                  "turn": 44,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 256
+                },
+                {
+                  "turn": 45,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 241
+                },
+                {
+                  "turn": 46,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 241
+                },
+                {
+                  "turn": 51,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 256
+                },
+                {
+                  "turn": 52,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 321
+                },
+                {
+                  "turn": 55,
+                  "improvement": "camp",
+                  "type": "improve",
+                  "unit": 338
+                },
+                {
+                  "turn": 56,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 256
+                },
+                {
+                  "turn": 59,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 241
+                },
+                {
+                  "turn": 59,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 338
+                },
+                {
+                  "turn": 65,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 357
+                },
+                {
+                  "turn": 75,
+                  "improvement": "camp",
+                  "type": "improve",
+                  "unit": 378
+                },
+                {
+                  "turn": 76,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 357
+                },
+                {
+                  "turn": 76,
+                  "improvement": "mound",
+                  "type": "improve",
+                  "unit": 378
+                },
+                {
+                  "turn": 77,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 492
+                },
+                {
+                  "turn": 80,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 338
+                },
+                {
+                  "turn": 80,
+                  "improvement": "mound",
+                  "type": "improve",
+                  "unit": 501
+                },
+                {
+                  "turn": 84,
+                  "improvement": "mound",
+                  "type": "improve",
+                  "unit": 501
+                },
+                {
+                  "turn": 104,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 357
+                },
+                {
+                  "turn": 106,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 321
+                },
+                {
+                  "turn": 108,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 501
+                },
+                {
+                  "turn": 109,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 378
+                },
+                {
+                  "turn": 109,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 610
+                }
+              ],
+              "first_production_improvement_turn": 20,
+              "final_turn": 110,
+              "final_alive": true,
+              "winner": 2,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [],
+              "observed_guard_frames": 1552,
+              "accepted_productive_alternate_jobs": []
+            },
+            "candidate": {
+              "first_builder_turn": 15,
+              "improvements": [
+                {
+                  "turn": 20,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 148
+                },
+                {
+                  "turn": 25,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 148
+                },
+                {
+                  "turn": 27,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 148
+                },
+                {
+                  "turn": 37,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 242
+                },
+                {
+                  "turn": 38,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 242
+                },
+                {
+                  "turn": 40,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 242
+                },
+                {
+                  "turn": 44,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 256
+                },
+                {
+                  "turn": 45,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 241
+                },
+                {
+                  "turn": 46,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 241
+                },
+                {
+                  "turn": 51,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 256
+                },
+                {
+                  "turn": 52,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 321
+                },
+                {
+                  "turn": 55,
+                  "improvement": "camp",
+                  "type": "improve",
+                  "unit": 338
+                },
+                {
+                  "turn": 56,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 256
+                },
+                {
+                  "turn": 59,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 241
+                },
+                {
+                  "turn": 59,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 338
+                },
+                {
+                  "turn": 65,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 357
+                },
+                {
+                  "turn": 75,
+                  "improvement": "camp",
+                  "type": "improve",
+                  "unit": 378
+                },
+                {
+                  "turn": 76,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 357
+                },
+                {
+                  "turn": 76,
+                  "improvement": "mound",
+                  "type": "improve",
+                  "unit": 378
+                },
+                {
+                  "turn": 77,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 492
+                },
+                {
+                  "turn": 80,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 338
+                },
+                {
+                  "turn": 80,
+                  "improvement": "mound",
+                  "type": "improve",
+                  "unit": 501
+                },
+                {
+                  "turn": 84,
+                  "improvement": "mound",
+                  "type": "improve",
+                  "unit": 501
+                },
+                {
+                  "turn": 104,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 357
+                },
+                {
+                  "turn": 106,
+                  "improvement": "plantation",
+                  "type": "improve",
+                  "unit": 321
+                },
+                {
+                  "turn": 108,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 501
+                },
+                {
+                  "turn": 109,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 378
+                },
+                {
+                  "turn": 109,
+                  "improvement": "fishing_boats",
+                  "type": "improve",
+                  "unit": 610
+                }
+              ],
+              "first_production_improvement_turn": 20,
+              "final_turn": 110,
+              "final_alive": true,
+              "winner": 2,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [],
+              "observed_guard_frames": 1552,
+              "accepted_productive_alternate_jobs": []
+            }
+          },
+          "arm_configuration_equal_except_flag": true,
+          "actions.json_byte_identical": true,
+          "final.json_byte_identical": true,
+          "controls_match_previous_consumed": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "accepted_alternate_before_t75": 0
+        },
+        {
+          "seed": 61008702,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 13.7,
+                "rival_production": 62.5,
+                "science": 5.4,
+                "cities": 2.0,
+                "population": 5.0,
+                "cumulative_production": 197.4,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 13.7,
+                "rival_production": 62.5,
+                "science": 5.4,
+                "cities": 2.0,
+                "population": 5.0,
+                "cumulative_production": 197.4,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 25.9,
+                "rival_production": 116.4,
+                "science": 7.025,
+                "cities": 4.0,
+                "population": 11.0,
+                "cumulative_production": 628.0,
+                "productive_improvements": 0.0,
+                "builders": 1.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 25.9,
+                "rival_production": 116.4,
+                "science": 7.025,
+                "cities": 4.0,
+                "population": 11.0,
+                "cumulative_production": 628.0,
+                "productive_improvements": 0.0,
+                "builders": 1.0
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 31.15,
+                "rival_production": 212.3,
+                "science": 13.325,
+                "cities": 5.0,
+                "population": 21.0,
+                "cumulative_production": 1312.85,
+                "productive_improvements": 0.0,
+                "builders": 3.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 31.15,
+                "rival_production": 212.3,
+                "science": 13.325,
+                "cities": 5.0,
+                "population": 21.0,
+                "cumulative_production": 1312.85,
+                "productive_improvements": 0.0,
+                "builders": 3.0
+              }
+            },
+            "100": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            },
+            "125": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            },
+            "150": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "first_builder_turn": 26,
+              "improvements": [],
+              "first_production_improvement_turn": null,
+              "final_turn": 97,
+              "final_alive": true,
+              "winner": 3,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [],
+              "observed_guard_frames": 782,
+              "accepted_productive_alternate_jobs": []
+            },
+            "candidate": {
+              "first_builder_turn": 26,
+              "improvements": [],
+              "first_production_improvement_turn": null,
+              "final_turn": 97,
+              "final_alive": true,
+              "winner": 3,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [],
+              "observed_guard_frames": 782,
+              "accepted_productive_alternate_jobs": []
+            }
+          },
+          "arm_configuration_equal_except_flag": true,
+          "actions.json_byte_identical": true,
+          "final.json_byte_identical": true,
+          "controls_match_previous_consumed": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "accepted_alternate_before_t75": 0
+        },
+        {
+          "seed": 61008703,
+          "checkpoints": {
+            "25": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 12.7,
+                "rival_production": 81.8,
+                "science": 4.45,
+                "cities": 2.0,
+                "population": 5.0,
+                "cumulative_production": 148.7,
+                "productive_improvements": 0.0,
+                "builders": 1.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 12.7,
+                "rival_production": 81.8,
+                "science": 4.45,
+                "cities": 2.0,
+                "population": 5.0,
+                "cumulative_production": 148.7,
+                "productive_improvements": 0.0,
+                "builders": 1.0
+              }
+            },
+            "50": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 30.8,
+                "rival_production": 163.4,
+                "science": 9.35,
+                "cities": 3.0,
+                "population": 14.0,
+                "cumulative_production": 665.7,
+                "productive_improvements": 2.0,
+                "builders": 1.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 30.8,
+                "rival_production": 163.4,
+                "science": 9.35,
+                "cities": 3.0,
+                "population": 14.0,
+                "cumulative_production": 665.7,
+                "productive_improvements": 2.0,
+                "builders": 1.0
+              }
+            },
+            "75": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 38.1,
+                "rival_production": 337.3,
+                "science": 13.2,
+                "cities": 5.0,
+                "population": 22.0,
+                "cumulative_production": 1503.0,
+                "productive_improvements": 2.0,
+                "builders": 1.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 38.1,
+                "rival_production": 337.3,
+                "science": 13.2,
+                "cities": 5.0,
+                "population": 22.0,
+                "cumulative_production": 1503.0,
+                "productive_improvements": 2.0,
+                "builders": 1.0
+              }
+            },
+            "100": {
+              "control": {
+                "reached": true,
+                "alive": true,
+                "production": 51.3,
+                "rival_production": 465.5,
+                "science": 14.4,
+                "cities": 5.0,
+                "population": 24.0,
+                "cumulative_production": 2636.3,
+                "productive_improvements": 3.0,
+                "builders": 5.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": true,
+                "production": 51.3,
+                "rival_production": 465.5,
+                "science": 14.4,
+                "cities": 5.0,
+                "population": 24.0,
+                "cumulative_production": 2636.3,
+                "productive_improvements": 3.0,
+                "builders": 5.0
+              }
+            },
+            "125": {
+              "control": {
+                "reached": true,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": true,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            },
+            "150": {
+              "control": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              },
+              "candidate": {
+                "reached": false,
+                "alive": false,
+                "production": 0.0,
+                "rival_production": 0.0,
+                "science": 0.0,
+                "cities": 0.0,
+                "population": 0.0,
+                "cumulative_production": 0.0,
+                "productive_improvements": 0.0,
+                "builders": 0.0
+              }
+            }
+          },
+          "arms": {
+            "control": {
+              "first_builder_turn": 24,
+              "improvements": [
+                {
+                  "turn": 27,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 194
+                },
+                {
+                  "turn": 31,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 194
+                },
+                {
+                  "turn": 33,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 232
+                },
+                {
+                  "turn": 34,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 232
+                },
+                {
+                  "turn": 41,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 194
+                },
+                {
+                  "turn": 55,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 232
+                },
+                {
+                  "turn": 59,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 393
+                },
+                {
+                  "turn": 95,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 703
+                },
+                {
+                  "turn": 109,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 701
+                }
+              ],
+              "first_production_improvement_turn": 27,
+              "final_turn": 146,
+              "final_alive": false,
+              "winner": 2,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [],
+              "observed_guard_frames": 974,
+              "accepted_productive_alternate_jobs": []
+            },
+            "candidate": {
+              "first_builder_turn": 24,
+              "improvements": [
+                {
+                  "turn": 27,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 194
+                },
+                {
+                  "turn": 31,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 194
+                },
+                {
+                  "turn": 33,
+                  "improvement": "mine",
+                  "type": "improve",
+                  "unit": 232
+                },
+                {
+                  "turn": 34,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 232
+                },
+                {
+                  "turn": 41,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 194
+                },
+                {
+                  "turn": 55,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 232
+                },
+                {
+                  "turn": 59,
+                  "improvement": "farm",
+                  "type": "improve",
+                  "unit": 393
+                },
+                {
+                  "turn": 95,
+                  "improvement": "pasture",
+                  "type": "improve",
+                  "unit": 703
+                },
+                {
+                  "turn": 109,
+                  "improvement": "lumber_mill",
+                  "type": "improve",
+                  "unit": 701
+                }
+              ],
+              "first_production_improvement_turn": 27,
+              "final_turn": 146,
+              "final_alive": false,
+              "winner": 2,
+              "journal_contiguous": true,
+              "productive_alternate_plans": [],
+              "observed_guard_frames": 974,
+              "accepted_productive_alternate_jobs": []
+            }
+          },
+          "arm_configuration_equal_except_flag": true,
+          "actions.json_byte_identical": true,
+          "final.json_byte_identical": true,
+          "controls_match_previous_consumed": {
+            "actions.json": true,
+            "final.json": true
+          },
+          "accepted_alternate_before_t75": 0
+        }
+      ]
+    }
+  },
+  "completed_productive_alternate_jobs": 2,
+  "strength_gate": false,
+  "raw_sha256": {
+    "all-completions.json": "aa1a79b40d51102917803585fbfd25ddab5e4a485aac729cd0d5126f2d7bab5e",
+    "civvis-production-builder-alternate-diagnostic-deity-candidate-completion.json": "6f1feef14ac157ef6b2489da346d2bf88de01f56c01aa3c734fb9f5bfd31f93a",
+    "civvis-production-builder-alternate-diagnostic-deity-candidate.csv": "661ea94a1d26535a55a78635227807bedca47777997f929e8da0d9f2d386d454",
+    "civvis-production-builder-alternate-diagnostic-deity-candidate.log": "ccd30af10d1ebe7472c5b782e78f997676353501deca5d60572f78cd28e2db69",
+    "civvis-production-builder-alternate-diagnostic-deity-control-completion.json": "5da7d99114d622e492599a3c0e6c0b24d85b5d427268f33c44601d91ae922fb2",
+    "civvis-production-builder-alternate-diagnostic-deity-control.csv": "661ea94a1d26535a55a78635227807bedca47777997f929e8da0d9f2d386d454",
+    "civvis-production-builder-alternate-diagnostic-deity-control.log": "ccd30af10d1ebe7472c5b782e78f997676353501deca5d60572f78cd28e2db69",
+    "civvis-production-builder-alternate-diagnostic-emperor-candidate-completion.json": "f721a304ea2472f8db41b7a842d9b1558dd6fcfcbf3ee0c56150c832b0a415b3",
+    "civvis-production-builder-alternate-diagnostic-emperor-candidate.csv": "1193f5e6e2846d0b9acccd66d275c46054a9849d98f0906f80ac676d1ee3113b",
+    "civvis-production-builder-alternate-diagnostic-emperor-candidate.log": "55fe21b3d31f44496537208f3af03bac66ac4c6dd3a3ef1eafd8f166d7eb6e58",
+    "civvis-production-builder-alternate-diagnostic-emperor-control-completion.json": "7128683533f8d9a3ea95beb079669733e9ec6b8375d6d9c538e3fc357757ad8a",
+    "civvis-production-builder-alternate-diagnostic-emperor-control.csv": "61b676cff6a40ce33da5deec530b654bbc2660ff85d98a74b8026dfb86b9aac8",
+    "civvis-production-builder-alternate-diagnostic-emperor-control.log": "55fe21b3d31f44496537208f3af03bac66ac4c6dd3a3ef1eafd8f166d7eb6e58",
+    "civvis-production-builder-alternate-paired-deity-61008700-candidate-actions.json": "3edc4a61b80444b8182c3480ac08dfcbe0486f7f7f77d3aa7c222170ccef3c36",
+    "civvis-production-builder-alternate-paired-deity-61008700-candidate-cities.jsonl": "a92dfc432dff2ee453ae2b3f524066c817a5ac3df397885d3c36fba4d5a3912f",
+    "civvis-production-builder-alternate-paired-deity-61008700-candidate-final.json": "17f68b9272eda525c616ed2a12c0b3d34b59e927cf615a6a40b8aeec00ad64d4",
+    "civvis-production-builder-alternate-paired-deity-61008700-candidate-frames.jsonl": "723fad088e713c5e13850c90d0512350975adfda81087a796d2ffa740f66b968",
+    "civvis-production-builder-alternate-paired-deity-61008700-candidate-setup.json": "71b233332786f7fb2240f8ce93b461ec9f0b3fa1885484de0db90dcb572b1173",
+    "civvis-production-builder-alternate-paired-deity-61008700-candidate-thoughts.jsonl": "12194ec890db41021dfca0e3475939f0d0b3333986f25c73ed70b925a1937e65",
+    "civvis-production-builder-alternate-paired-deity-61008700-candidate-view-t25.json": "b1266cdec89739c05a51e8c9d13aa3e58848512973b36603584b25919e812083",
+    "civvis-production-builder-alternate-paired-deity-61008700-candidate-view-t50.json": "a0e5ca32c45b2bec56bfafd6059a9402351da8725b7bd1ab8eb7ab1504b1e4d9",
+    "civvis-production-builder-alternate-paired-deity-61008700-candidate-view-t75.json": "3900ad819e1eb2f731590d4de55e7c8da0ba1bd753fc03f15c007d4484558ca9",
+    "civvis-production-builder-alternate-paired-deity-61008700-control-actions.json": "3edc4a61b80444b8182c3480ac08dfcbe0486f7f7f77d3aa7c222170ccef3c36",
+    "civvis-production-builder-alternate-paired-deity-61008700-control-cities.jsonl": "a92dfc432dff2ee453ae2b3f524066c817a5ac3df397885d3c36fba4d5a3912f",
+    "civvis-production-builder-alternate-paired-deity-61008700-control-final.json": "17f68b9272eda525c616ed2a12c0b3d34b59e927cf615a6a40b8aeec00ad64d4",
+    "civvis-production-builder-alternate-paired-deity-61008700-control-frames.jsonl": "723fad088e713c5e13850c90d0512350975adfda81087a796d2ffa740f66b968",
+    "civvis-production-builder-alternate-paired-deity-61008700-control-setup.json": "5564a7d19d5675094cf56e8fa8ab3b260aef9f0dc95ab5d274659c5b1a6d8366",
+    "civvis-production-builder-alternate-paired-deity-61008700-control-thoughts.jsonl": "12194ec890db41021dfca0e3475939f0d0b3333986f25c73ed70b925a1937e65",
+    "civvis-production-builder-alternate-paired-deity-61008700-control-view-t25.json": "b1266cdec89739c05a51e8c9d13aa3e58848512973b36603584b25919e812083",
+    "civvis-production-builder-alternate-paired-deity-61008700-control-view-t50.json": "a0e5ca32c45b2bec56bfafd6059a9402351da8725b7bd1ab8eb7ab1504b1e4d9",
+    "civvis-production-builder-alternate-paired-deity-61008700-control-view-t75.json": "3900ad819e1eb2f731590d4de55e7c8da0ba1bd753fc03f15c007d4484558ca9",
+    "civvis-production-builder-alternate-paired-deity-61008701-candidate-actions.json": "500245cbbd3b1b6f0653d7685616b49d8a3d4be1a17a4f5bf5e419b11a3da6bf",
+    "civvis-production-builder-alternate-paired-deity-61008701-candidate-cities.jsonl": "de8675e99f8a0c6754ef635550cc42a04598c10bce6d8ad8959965d85e350570",
+    "civvis-production-builder-alternate-paired-deity-61008701-candidate-final.json": "304f67696bc248694ef71949015e136109f0215ca8a1f039bf596d1596f1aa64",
+    "civvis-production-builder-alternate-paired-deity-61008701-candidate-frames.jsonl": "c3e3d10a20c3783af728dc0d008a649c5049c825ce1799d09680f41bb86b29fa",
+    "civvis-production-builder-alternate-paired-deity-61008701-candidate-setup.json": "cf5bb6087168be83b4b3009a295b669155b876317c0168d00cc2cc4d2b5f7687",
+    "civvis-production-builder-alternate-paired-deity-61008701-candidate-thoughts.jsonl": "2f4294d34c086451c8cb92c1bf774bfb177583be057b4c1d8ac105ce51a5fe1e",
+    "civvis-production-builder-alternate-paired-deity-61008701-candidate-view-t25.json": "0bc35872c0965191f47809ff9c73a67ab284826d0fc1f763638fa20b21922c70",
+    "civvis-production-builder-alternate-paired-deity-61008701-candidate-view-t50.json": "f042eb4a844a6fbef1ff4bd6c398acb05e291fcd6e796730c72af86a983144e2",
+    "civvis-production-builder-alternate-paired-deity-61008701-candidate-view-t75.json": "4914b9a45ba7651332e3ecba7b38647677718a926a83214cd902a6e979979c80",
+    "civvis-production-builder-alternate-paired-deity-61008701-control-actions.json": "500245cbbd3b1b6f0653d7685616b49d8a3d4be1a17a4f5bf5e419b11a3da6bf",
+    "civvis-production-builder-alternate-paired-deity-61008701-control-cities.jsonl": "de8675e99f8a0c6754ef635550cc42a04598c10bce6d8ad8959965d85e350570",
+    "civvis-production-builder-alternate-paired-deity-61008701-control-final.json": "304f67696bc248694ef71949015e136109f0215ca8a1f039bf596d1596f1aa64",
+    "civvis-production-builder-alternate-paired-deity-61008701-control-frames.jsonl": "c3e3d10a20c3783af728dc0d008a649c5049c825ce1799d09680f41bb86b29fa",
+    "civvis-production-builder-alternate-paired-deity-61008701-control-setup.json": "9751d9da511c042ebffeaf1267bceee1dc06a2cbe34d4325613df86572d09f6b",
+    "civvis-production-builder-alternate-paired-deity-61008701-control-thoughts.jsonl": "2f4294d34c086451c8cb92c1bf774bfb177583be057b4c1d8ac105ce51a5fe1e",
+    "civvis-production-builder-alternate-paired-deity-61008701-control-view-t25.json": "0bc35872c0965191f47809ff9c73a67ab284826d0fc1f763638fa20b21922c70",
+    "civvis-production-builder-alternate-paired-deity-61008701-control-view-t50.json": "f042eb4a844a6fbef1ff4bd6c398acb05e291fcd6e796730c72af86a983144e2",
+    "civvis-production-builder-alternate-paired-deity-61008701-control-view-t75.json": "4914b9a45ba7651332e3ecba7b38647677718a926a83214cd902a6e979979c80",
+    "civvis-production-builder-alternate-paired-deity-61008702-candidate-actions.json": "beab4f701149a5eeb3d1a3e240e533cd438d57fab78ef0bccbadc15d73cb512c",
+    "civvis-production-builder-alternate-paired-deity-61008702-candidate-cities.jsonl": "b16bfd80b4e47779c4c455058c585d3ad3f495d71d0e32904d9f345985e6e41e",
+    "civvis-production-builder-alternate-paired-deity-61008702-candidate-final.json": "88427db2938c181af86b3e1ba6d484bd0eca73be70d256c8829ab5c2a594f970",
+    "civvis-production-builder-alternate-paired-deity-61008702-candidate-frames.jsonl": "091e02a236ce785c429a66cfb812ac2c6b6ef8ba4b6b258a4583bab4b39f9630",
+    "civvis-production-builder-alternate-paired-deity-61008702-candidate-setup.json": "b556e1610bed64f8630765e6c396a5c2795bbb49ced05ed3beecbba1e37352ca",
+    "civvis-production-builder-alternate-paired-deity-61008702-candidate-thoughts.jsonl": "d1a6e05a1bc41a118349fc7a39a76443dff00d5d1b0ad4d413ca19bb1542da17",
+    "civvis-production-builder-alternate-paired-deity-61008702-candidate-view-t25.json": "4da5d77ee6b199af40fea20d85d067c3336575e12d8b09cbfa19584f6b14737d",
+    "civvis-production-builder-alternate-paired-deity-61008702-candidate-view-t50.json": "100cfe630068feb1c88fb873ef5ab2943cd9f2321c91d9a9e2b65f5735577110",
+    "civvis-production-builder-alternate-paired-deity-61008702-candidate-view-t75.json": "c758b69df99d364075529022e847ea4645b779618882a47e3e06cb3e10470022",
+    "civvis-production-builder-alternate-paired-deity-61008702-control-actions.json": "beab4f701149a5eeb3d1a3e240e533cd438d57fab78ef0bccbadc15d73cb512c",
+    "civvis-production-builder-alternate-paired-deity-61008702-control-cities.jsonl": "b16bfd80b4e47779c4c455058c585d3ad3f495d71d0e32904d9f345985e6e41e",
+    "civvis-production-builder-alternate-paired-deity-61008702-control-final.json": "88427db2938c181af86b3e1ba6d484bd0eca73be70d256c8829ab5c2a594f970",
+    "civvis-production-builder-alternate-paired-deity-61008702-control-frames.jsonl": "091e02a236ce785c429a66cfb812ac2c6b6ef8ba4b6b258a4583bab4b39f9630",
+    "civvis-production-builder-alternate-paired-deity-61008702-control-setup.json": "ce11da9aeaeec72c91cd985c5928825247ae68cd69d549ee19c99952b84594c8",
+    "civvis-production-builder-alternate-paired-deity-61008702-control-thoughts.jsonl": "d1a6e05a1bc41a118349fc7a39a76443dff00d5d1b0ad4d413ca19bb1542da17",
+    "civvis-production-builder-alternate-paired-deity-61008702-control-view-t25.json": "4da5d77ee6b199af40fea20d85d067c3336575e12d8b09cbfa19584f6b14737d",
+    "civvis-production-builder-alternate-paired-deity-61008702-control-view-t50.json": "100cfe630068feb1c88fb873ef5ab2943cd9f2321c91d9a9e2b65f5735577110",
+    "civvis-production-builder-alternate-paired-deity-61008702-control-view-t75.json": "c758b69df99d364075529022e847ea4645b779618882a47e3e06cb3e10470022",
+    "civvis-production-builder-alternate-paired-deity-61008703-candidate-actions.json": "ef645029791e3dcfb56996f494fb570e9984714c17c9e9335052ca2540d9d8e2",
+    "civvis-production-builder-alternate-paired-deity-61008703-candidate-cities.jsonl": "867505080983318666f8c0272c9db6b9330e9ac781f989a99cb2e5966738fd2c",
+    "civvis-production-builder-alternate-paired-deity-61008703-candidate-final.json": "60c84ee40699952f5983995118b201b605db4c9cca916125d45edb34bc03de83",
+    "civvis-production-builder-alternate-paired-deity-61008703-candidate-frames.jsonl": "756e9c15f7e7920dab79f2c78ab29548338313b0538b6e0e24eae4f0554a7a34",
+    "civvis-production-builder-alternate-paired-deity-61008703-candidate-setup.json": "45f3c3a9746366bdb75c7e7bb757445f13bee0042e49274a333ba27b3a41a5c5",
+    "civvis-production-builder-alternate-paired-deity-61008703-candidate-thoughts.jsonl": "c2acb51de5caa7c862d57855198704e41ab1d7e5a30176cfbf6bfb7964ed6f9a",
+    "civvis-production-builder-alternate-paired-deity-61008703-candidate-view-t25.json": "a74850c22df44e6d0011284bebd26d2e64b4f1904be055c701ad5fe4d318f2de",
+    "civvis-production-builder-alternate-paired-deity-61008703-candidate-view-t50.json": "bbb6c5636ae1eab2006424f84fe903e14ed1cf8a1343d6d4e55e73d25ef9cb7d",
+    "civvis-production-builder-alternate-paired-deity-61008703-candidate-view-t75.json": "bdd2573369b7ca69bd60676f7dff2ac82d00a591eadf7b19e4a8cdbbe92f01c4",
+    "civvis-production-builder-alternate-paired-deity-61008703-control-actions.json": "ef645029791e3dcfb56996f494fb570e9984714c17c9e9335052ca2540d9d8e2",
+    "civvis-production-builder-alternate-paired-deity-61008703-control-cities.jsonl": "867505080983318666f8c0272c9db6b9330e9ac781f989a99cb2e5966738fd2c",
+    "civvis-production-builder-alternate-paired-deity-61008703-control-final.json": "60c84ee40699952f5983995118b201b605db4c9cca916125d45edb34bc03de83",
+    "civvis-production-builder-alternate-paired-deity-61008703-control-frames.jsonl": "756e9c15f7e7920dab79f2c78ab29548338313b0538b6e0e24eae4f0554a7a34",
+    "civvis-production-builder-alternate-paired-deity-61008703-control-setup.json": "d520a76352942b95b3a29ce7328c7bc18145dab1bcd08bb3f7fdf44c8ff1064b",
+    "civvis-production-builder-alternate-paired-deity-61008703-control-thoughts.jsonl": "c2acb51de5caa7c862d57855198704e41ab1d7e5a30176cfbf6bfb7964ed6f9a",
+    "civvis-production-builder-alternate-paired-deity-61008703-control-view-t25.json": "a74850c22df44e6d0011284bebd26d2e64b4f1904be055c701ad5fe4d318f2de",
+    "civvis-production-builder-alternate-paired-deity-61008703-control-view-t50.json": "bbb6c5636ae1eab2006424f84fe903e14ed1cf8a1343d6d4e55e73d25ef9cb7d",
+    "civvis-production-builder-alternate-paired-deity-61008703-control-view-t75.json": "bdd2573369b7ca69bd60676f7dff2ac82d00a591eadf7b19e4a8cdbbe92f01c4",
+    "civvis-production-builder-alternate-paired-emperor-61008600-candidate-actions.json": "7ce7e2bc4b4b68f6757c822b95e92913a8cac3f10842b6f1b736dc634a3dd436",
+    "civvis-production-builder-alternate-paired-emperor-61008600-candidate-cities.jsonl": "5c6e9569168ad1b054238a74b31cf54483f8fde722bfd637733c5df949375784",
+    "civvis-production-builder-alternate-paired-emperor-61008600-candidate-final.json": "2683ef82cf11b8164ee412ddb528ee71c2b25e22ce691f0ebf85f1647e199d1f",
+    "civvis-production-builder-alternate-paired-emperor-61008600-candidate-frames.jsonl": "231654194ca79e8ba9a5b08912ade1a5cf96fcf8548c406b9d10cbfecacf63db",
+    "civvis-production-builder-alternate-paired-emperor-61008600-candidate-setup.json": "ec2f04d19b3399094432da8cbf60f6110e4fd6c75925e616b8f58bb035b8b3c3",
+    "civvis-production-builder-alternate-paired-emperor-61008600-candidate-thoughts.jsonl": "7974d4a322317622100a6ccac332eaae49b648c71f378721b91110fa51a2c75d",
+    "civvis-production-builder-alternate-paired-emperor-61008600-candidate-view-t25.json": "41c1b53685bae4d6abb162d8a0fe5fc625e0fd407d18ffd8da7aac4d9b8348b6",
+    "civvis-production-builder-alternate-paired-emperor-61008600-candidate-view-t50.json": "bed3207f94bd131467f795f00555b56d221410f4a3388f0f59e9b973dbdbcc63",
+    "civvis-production-builder-alternate-paired-emperor-61008600-candidate-view-t75.json": "270c166897ed6c076ca6b190a7819a50689796c57706e5d4cd39de94f311626a",
+    "civvis-production-builder-alternate-paired-emperor-61008600-control-actions.json": "96a9c973f0c9e7e11d8aeea3ce7172d2618c95defd34e7a286635eec57d83e2c",
+    "civvis-production-builder-alternate-paired-emperor-61008600-control-cities.jsonl": "cc22f80ac58bd3357c3971f9ef707fa008663b2c865f6815e5e994d78712cd3d",
+    "civvis-production-builder-alternate-paired-emperor-61008600-control-final.json": "ef480d63184affad41c4460fecd98087232ee4692c354c3f5d3cc1019ec4fea0",
+    "civvis-production-builder-alternate-paired-emperor-61008600-control-frames.jsonl": "e840dd3e4d08176586f4bbd7357c288c8a35d041b66eeda0bcd41699ef5b8145",
+    "civvis-production-builder-alternate-paired-emperor-61008600-control-setup.json": "c9743420395a966e6413db37e58dc943a1d1492fdc591183fb80f5d958f7d5cd",
+    "civvis-production-builder-alternate-paired-emperor-61008600-control-thoughts.jsonl": "290b21ee99950f7f71c1c198dcf5834cebb88d2980308dcaac14d439f51eca6e",
+    "civvis-production-builder-alternate-paired-emperor-61008600-control-view-t25.json": "41c1b53685bae4d6abb162d8a0fe5fc625e0fd407d18ffd8da7aac4d9b8348b6",
+    "civvis-production-builder-alternate-paired-emperor-61008600-control-view-t50.json": "bed3207f94bd131467f795f00555b56d221410f4a3388f0f59e9b973dbdbcc63",
+    "civvis-production-builder-alternate-paired-emperor-61008600-control-view-t75.json": "270c166897ed6c076ca6b190a7819a50689796c57706e5d4cd39de94f311626a",
+    "civvis-production-builder-alternate-paired-emperor-61008601-candidate-actions.json": "34c7c23df8d8dba9fc7c9c7847d0c25c23cfa19d394b3530940ffce0298fe93e",
+    "civvis-production-builder-alternate-paired-emperor-61008601-candidate-cities.jsonl": "96c24d60061268c2b0fcf324a828bbd34665b340e79c3b792b4108630158b6f6",
+    "civvis-production-builder-alternate-paired-emperor-61008601-candidate-final.json": "4894a15f1f1310301160624e03e90fa3ab04ed8c83953baf65c56c71e60cff06",
+    "civvis-production-builder-alternate-paired-emperor-61008601-candidate-frames.jsonl": "a12a3dba010704103dec5ce49dd533e078a5a46c29abe6d2ba70fb98e0aae0a5",
+    "civvis-production-builder-alternate-paired-emperor-61008601-candidate-setup.json": "9c5466a678b71467eb3d9552f0d84c6d54a460bad7447501200c13e69958d11e",
+    "civvis-production-builder-alternate-paired-emperor-61008601-candidate-thoughts.jsonl": "65ea914136dcab2d79cf5a38d2ec4aa191ceaa79b9fc9ec311eb9d6f9311d729",
+    "civvis-production-builder-alternate-paired-emperor-61008601-candidate-view-t25.json": "a4a2c4bbbc17d5eb7b2c615078d9d53cdfd050f43bcef10acda38ffdcb12c4fe",
+    "civvis-production-builder-alternate-paired-emperor-61008601-candidate-view-t50.json": "acb0fa91649d43376a2beaf8cabe5dac58056322b8d547ae245cc13ddb391210",
+    "civvis-production-builder-alternate-paired-emperor-61008601-candidate-view-t75.json": "7043aab2ee8a7632c18d38ac3f5f1a7f8df4a8799e3eda70eed6617fcbb5e2a1",
+    "civvis-production-builder-alternate-paired-emperor-61008601-control-actions.json": "53c9bf6017a9f2663f049248efacb74050727662084d13a4b14a0ce074c98bf1",
+    "civvis-production-builder-alternate-paired-emperor-61008601-control-cities.jsonl": "96c24d60061268c2b0fcf324a828bbd34665b340e79c3b792b4108630158b6f6",
+    "civvis-production-builder-alternate-paired-emperor-61008601-control-final.json": "478d28fd9d91b2fd9f09ee17753b8be6ea382d4fa5f8f1567bc49867f314dcbb",
+    "civvis-production-builder-alternate-paired-emperor-61008601-control-frames.jsonl": "c6eb21eb537c810ef729872d6c70addc31d435bed0e3b34ce47231db368dce2b",
+    "civvis-production-builder-alternate-paired-emperor-61008601-control-setup.json": "0958db8cd6b33ad96a1a3497aa61a85740ed5076f94f50cec1dae4c585498f6a",
+    "civvis-production-builder-alternate-paired-emperor-61008601-control-thoughts.jsonl": "6ef4b9b27236d3e2c4275c0102d7c7a6658d7e40cde5af10a0197985e337b84e",
+    "civvis-production-builder-alternate-paired-emperor-61008601-control-view-t25.json": "a4a2c4bbbc17d5eb7b2c615078d9d53cdfd050f43bcef10acda38ffdcb12c4fe",
+    "civvis-production-builder-alternate-paired-emperor-61008601-control-view-t50.json": "acb0fa91649d43376a2beaf8cabe5dac58056322b8d547ae245cc13ddb391210",
+    "civvis-production-builder-alternate-paired-emperor-61008601-control-view-t75.json": "7043aab2ee8a7632c18d38ac3f5f1a7f8df4a8799e3eda70eed6617fcbb5e2a1",
+    "civvis-production-builder-alternate-paired-emperor-61008602-candidate-actions.json": "ee677d69f46bb09769f7475240dfd41919597bbe64cd3496ba323d3cb3efb42b",
+    "civvis-production-builder-alternate-paired-emperor-61008602-candidate-cities.jsonl": "d17e003ea1311d304a173773f03097d6baac7ed15d8614e82c06c0f12df6fbc0",
+    "civvis-production-builder-alternate-paired-emperor-61008602-candidate-final.json": "0c77863d8ae06923124d81de0bc3231458f9644ff7bb88c270cba312784cdbcc",
+    "civvis-production-builder-alternate-paired-emperor-61008602-candidate-frames.jsonl": "40a92634748f05ed83e2cf047ec046618d13e15bb79f155090b73ccf6164c31b",
+    "civvis-production-builder-alternate-paired-emperor-61008602-candidate-setup.json": "4abad58102c689b97261fc64f31c439efc2434f42fa4c47ee5e26b8aeae23187",
+    "civvis-production-builder-alternate-paired-emperor-61008602-candidate-thoughts.jsonl": "b9f2fadeae906e1c9526d55f9135a5410a21c63891776961038e792df709d3b5",
+    "civvis-production-builder-alternate-paired-emperor-61008602-candidate-view-t25.json": "bf85209cdb52ae1c2128641b130b5c94eaee34ef921caf3ac68dce7bbbb1b0fa",
+    "civvis-production-builder-alternate-paired-emperor-61008602-candidate-view-t50.json": "07148dc6db48e7329e537930bcf777e17f76bcb80caff9576289c4f5275856b0",
+    "civvis-production-builder-alternate-paired-emperor-61008602-candidate-view-t75.json": "a413cd8874ad26ee16b0ecf85318d490e9c22c447873691578fe61f8121160fe",
+    "civvis-production-builder-alternate-paired-emperor-61008602-control-actions.json": "ee677d69f46bb09769f7475240dfd41919597bbe64cd3496ba323d3cb3efb42b",
+    "civvis-production-builder-alternate-paired-emperor-61008602-control-cities.jsonl": "d17e003ea1311d304a173773f03097d6baac7ed15d8614e82c06c0f12df6fbc0",
+    "civvis-production-builder-alternate-paired-emperor-61008602-control-final.json": "0c77863d8ae06923124d81de0bc3231458f9644ff7bb88c270cba312784cdbcc",
+    "civvis-production-builder-alternate-paired-emperor-61008602-control-frames.jsonl": "40a92634748f05ed83e2cf047ec046618d13e15bb79f155090b73ccf6164c31b",
+    "civvis-production-builder-alternate-paired-emperor-61008602-control-setup.json": "27a878939bfeaa4ddad4fdce1c8edcad014432cbfecd61c5975c3487797962d0",
+    "civvis-production-builder-alternate-paired-emperor-61008602-control-thoughts.jsonl": "b9f2fadeae906e1c9526d55f9135a5410a21c63891776961038e792df709d3b5",
+    "civvis-production-builder-alternate-paired-emperor-61008602-control-view-t25.json": "bf85209cdb52ae1c2128641b130b5c94eaee34ef921caf3ac68dce7bbbb1b0fa",
+    "civvis-production-builder-alternate-paired-emperor-61008602-control-view-t50.json": "07148dc6db48e7329e537930bcf777e17f76bcb80caff9576289c4f5275856b0",
+    "civvis-production-builder-alternate-paired-emperor-61008602-control-view-t75.json": "a413cd8874ad26ee16b0ecf85318d490e9c22c447873691578fe61f8121160fe",
+    "civvis-production-builder-alternate-paired-emperor-61008603-candidate-actions.json": "decaa637a26a51d18ed83d1adb02ad9e60d456ac679aff041254e89071459921",
+    "civvis-production-builder-alternate-paired-emperor-61008603-candidate-cities.jsonl": "bd59373627d9f6afd881713dbfc19230b857cf3b29bd05d00b58a63e08124c94",
+    "civvis-production-builder-alternate-paired-emperor-61008603-candidate-final.json": "9eff62fb2d51ca01b8c6c6e3b469749bfa8ddb29b0a7f3ee35741c028d2f0334",
+    "civvis-production-builder-alternate-paired-emperor-61008603-candidate-frames.jsonl": "52e393bf53f058f630b052930650e7528d9244fa78643723a90b92ef82a3b20b",
+    "civvis-production-builder-alternate-paired-emperor-61008603-candidate-setup.json": "c034611b762acb871d1bdd30e723aed6063575b2437fc891bbba3117b75f5fa7",
+    "civvis-production-builder-alternate-paired-emperor-61008603-candidate-thoughts.jsonl": "650ac26d814c51c7da6dcce5172f3b6fc2a1bb93c29566917a6dde406dae90ab",
+    "civvis-production-builder-alternate-paired-emperor-61008603-candidate-view-t25.json": "4493115b12f6f15233da39d80f0643068e7179a4f52a1c9310432b26c7d87b9c",
+    "civvis-production-builder-alternate-paired-emperor-61008603-candidate-view-t50.json": "e6d8a48521e55bbdb42f928eebc192f5cb3ca4c4c910044783b57824e643de38",
+    "civvis-production-builder-alternate-paired-emperor-61008603-candidate-view-t75.json": "8658aea03ebfc89be131dbc74c431e6dead413f6122a4dd67b97276c5d4751a0",
+    "civvis-production-builder-alternate-paired-emperor-61008603-control-actions.json": "decaa637a26a51d18ed83d1adb02ad9e60d456ac679aff041254e89071459921",
+    "civvis-production-builder-alternate-paired-emperor-61008603-control-cities.jsonl": "bd59373627d9f6afd881713dbfc19230b857cf3b29bd05d00b58a63e08124c94",
+    "civvis-production-builder-alternate-paired-emperor-61008603-control-final.json": "9eff62fb2d51ca01b8c6c6e3b469749bfa8ddb29b0a7f3ee35741c028d2f0334",
+    "civvis-production-builder-alternate-paired-emperor-61008603-control-frames.jsonl": "52e393bf53f058f630b052930650e7528d9244fa78643723a90b92ef82a3b20b",
+    "civvis-production-builder-alternate-paired-emperor-61008603-control-setup.json": "6af632ff9732f3fe6ae8f26bfce1597c464d10bec4973443846354314da14d57",
+    "civvis-production-builder-alternate-paired-emperor-61008603-control-thoughts.jsonl": "650ac26d814c51c7da6dcce5172f3b6fc2a1bb93c29566917a6dde406dae90ab",
+    "civvis-production-builder-alternate-paired-emperor-61008603-control-view-t25.json": "4493115b12f6f15233da39d80f0643068e7179a4f52a1c9310432b26c7d87b9c",
+    "civvis-production-builder-alternate-paired-emperor-61008603-control-view-t50.json": "e6d8a48521e55bbdb42f928eebc192f5cb3ca4c4c910044783b57824e643de38",
+    "civvis-production-builder-alternate-paired-emperor-61008603-control-view-t75.json": "8658aea03ebfc89be131dbc74c431e6dead413f6122a4dd67b97276c5d4751a0"
+  }
+}

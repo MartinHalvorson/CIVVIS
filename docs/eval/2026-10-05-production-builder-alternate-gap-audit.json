@@ -1,0 +1,1240 @@
+{
+  "scope": "Read-only decomposition of archived native consumed controls; no treatment evidence or Firaxis claim",
+  "at": "2026-10-05T04:15:56.121634+00:00",
+  "difficulties": {
+    "emperor": {
+      "records": [
+        {
+          "seed": 61008600,
+          "turn": 25,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 3,
+              "population": 5,
+              "production": 19.0,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 1.6666666666666667,
+              "production_per_city": 6.333333333333333,
+              "production_per_population": 3.8,
+              "food_per_city": 4.666666666666667,
+              "net_food_per_city": 1.3333333333333333,
+              "housing_bound_cities": 1,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 0,
+              "empty_queues": 2,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 3,
+              "cities": 2,
+              "population": 10,
+              "production": 29.5,
+              "production_handicap_pct": 40.0,
+              "population_per_city": 5.0,
+              "production_per_city": 14.75,
+              "production_per_population": 2.95,
+              "food_per_city": 16.0,
+              "net_food_per_city": 6.0,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 2,
+              "granaries": 1,
+              "empty_queues": 0,
+              "civilization": "Rome"
+            }
+          }
+        },
+        {
+          "seed": 61008600,
+          "turn": 50,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 5,
+              "population": 13,
+              "production": 31.7,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 2.6,
+              "production_per_city": 6.34,
+              "production_per_population": 2.4384615384615382,
+              "food_per_city": 7.0,
+              "net_food_per_city": 1.8,
+              "housing_bound_cities": 4,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 2,
+              "granaries": 0,
+              "empty_queues": 0,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 3,
+              "cities": 3,
+              "population": 19,
+              "production": 47.6,
+              "production_handicap_pct": 40.0,
+              "population_per_city": 6.333333333333333,
+              "production_per_city": 15.866666666666667,
+              "production_per_population": 2.505263157894737,
+              "food_per_city": 16.666666666666668,
+              "net_food_per_city": 4.0,
+              "housing_bound_cities": 1,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 2,
+              "empty_queues": 0,
+              "civilization": "Rome"
+            }
+          }
+        },
+        {
+          "seed": 61008600,
+          "turn": 75,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 8,
+              "population": 24,
+              "production": 50.9,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 3.0,
+              "production_per_city": 6.3625,
+              "production_per_population": 2.120833333333333,
+              "food_per_city": 7.625,
+              "net_food_per_city": 1.625,
+              "housing_bound_cities": 6,
+              "nonpositive_net_food_cities": 1,
+              "amenity_short_cities": 4,
+              "granaries": 2,
+              "empty_queues": 1,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 3,
+              "cities": 4,
+              "population": 31,
+              "production": 82.69999999999999,
+              "production_handicap_pct": 40.0,
+              "population_per_city": 7.75,
+              "production_per_city": 20.674999999999997,
+              "production_per_population": 2.6677419354838707,
+              "food_per_city": 19.75,
+              "net_food_per_city": 4.25,
+              "housing_bound_cities": 3,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 4,
+              "empty_queues": 0,
+              "civilization": "Arabia"
+            }
+          }
+        },
+        {
+          "seed": 61008601,
+          "turn": 25,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 3,
+              "population": 7,
+              "production": 17.0,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 2.3333333333333335,
+              "production_per_city": 5.666666666666667,
+              "production_per_population": 2.4285714285714284,
+              "food_per_city": 6.333333333333333,
+              "net_food_per_city": 1.6666666666666667,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 1,
+              "amenity_short_cities": 0,
+              "granaries": 0,
+              "empty_queues": 2,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 2,
+              "cities": 3,
+              "population": 9,
+              "production": 39.099999999999994,
+              "production_handicap_pct": 40.0,
+              "population_per_city": 3.0,
+              "production_per_city": 13.033333333333331,
+              "production_per_population": 4.344444444444444,
+              "food_per_city": 8.0,
+              "net_food_per_city": 2.0,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 2,
+              "granaries": 1,
+              "empty_queues": 0,
+              "civilization": "Egypt"
+            }
+          }
+        },
+        {
+          "seed": 61008601,
+          "turn": 50,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 4,
+              "population": 15,
+              "production": 37.3,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 3.75,
+              "production_per_city": 9.325,
+              "production_per_population": 2.4866666666666664,
+              "food_per_city": 10.0,
+              "net_food_per_city": 2.5,
+              "housing_bound_cities": 2,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 2,
+              "granaries": 0,
+              "empty_queues": 0,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 1,
+              "cities": 4,
+              "population": 24,
+              "production": 68.9,
+              "production_handicap_pct": 40.0,
+              "population_per_city": 6.0,
+              "production_per_city": 17.225,
+              "production_per_population": 2.8708333333333336,
+              "food_per_city": 15.75,
+              "net_food_per_city": 3.75,
+              "housing_bound_cities": 1,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 3,
+              "empty_queues": 0,
+              "civilization": "Rome"
+            }
+          }
+        },
+        {
+          "seed": 61008601,
+          "turn": 75,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 8,
+              "population": 26,
+              "production": 71.80000000000001,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 3.25,
+              "production_per_city": 8.975000000000001,
+              "production_per_population": 2.761538461538462,
+              "food_per_city": 9.125,
+              "net_food_per_city": 2.625,
+              "housing_bound_cities": 4,
+              "nonpositive_net_food_cities": 1,
+              "amenity_short_cities": 2,
+              "granaries": 1,
+              "empty_queues": 3,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 3,
+              "cities": 4,
+              "population": 32,
+              "production": 118.0,
+              "production_handicap_pct": 40.0,
+              "population_per_city": 8.0,
+              "production_per_city": 29.5,
+              "production_per_population": 3.6875,
+              "food_per_city": 22.75,
+              "net_food_per_city": 6.75,
+              "housing_bound_cities": 3,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 4,
+              "empty_queues": 0,
+              "civilization": "Khmer"
+            }
+          }
+        },
+        {
+          "seed": 61008602,
+          "turn": 25,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 2,
+              "population": 4,
+              "production": 12.6,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 2.0,
+              "production_per_city": 6.3,
+              "production_per_population": 3.15,
+              "food_per_city": 5.5,
+              "net_food_per_city": 1.5,
+              "housing_bound_cities": 1,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 1,
+              "granaries": 0,
+              "empty_queues": 0,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 3,
+              "cities": 2,
+              "population": 10,
+              "production": 33.099999999999994,
+              "production_handicap_pct": 40.0,
+              "population_per_city": 5.0,
+              "production_per_city": 16.549999999999997,
+              "production_per_population": 3.3099999999999996,
+              "food_per_city": 15.5,
+              "net_food_per_city": 5.5,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 1,
+              "granaries": 2,
+              "empty_queues": 0,
+              "civilization": "Indonesia"
+            }
+          }
+        },
+        {
+          "seed": 61008602,
+          "turn": 50,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 4,
+              "population": 11,
+              "production": 31.4,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 2.75,
+              "production_per_city": 7.85,
+              "production_per_population": 2.8545454545454545,
+              "food_per_city": 6.25,
+              "net_food_per_city": 0.75,
+              "housing_bound_cities": 2,
+              "nonpositive_net_food_cities": 2,
+              "amenity_short_cities": 2,
+              "granaries": 2,
+              "empty_queues": 0,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 3,
+              "cities": 3,
+              "population": 18,
+              "production": 72.0,
+              "production_handicap_pct": 40.0,
+              "population_per_city": 6.0,
+              "production_per_city": 24.0,
+              "production_per_population": 4.0,
+              "food_per_city": 18.0,
+              "net_food_per_city": 6.0,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 3,
+              "empty_queues": 0,
+              "civilization": "Indonesia"
+            }
+          }
+        },
+        {
+          "seed": 61008602,
+          "turn": 75,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 6,
+              "population": 22,
+              "production": 45.0,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 3.6666666666666665,
+              "production_per_city": 7.5,
+              "production_per_population": 2.0454545454545454,
+              "food_per_city": 8.5,
+              "net_food_per_city": 1.1666666666666667,
+              "housing_bound_cities": 2,
+              "nonpositive_net_food_cities": 1,
+              "amenity_short_cities": 0,
+              "granaries": 5,
+              "empty_queues": 1,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 3,
+              "cities": 4,
+              "population": 28,
+              "production": 116.8,
+              "production_handicap_pct": 40.0,
+              "population_per_city": 7.0,
+              "production_per_city": 29.2,
+              "production_per_population": 4.171428571428572,
+              "food_per_city": 18.75,
+              "net_food_per_city": 4.75,
+              "housing_bound_cities": 3,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 4,
+              "empty_queues": 0,
+              "civilization": "Indonesia"
+            }
+          }
+        },
+        {
+          "seed": 61008603,
+          "turn": 25,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 2,
+              "population": 5,
+              "production": 12.7,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 2.5,
+              "production_per_city": 6.35,
+              "production_per_population": 2.54,
+              "food_per_city": 7.5,
+              "net_food_per_city": 2.5,
+              "housing_bound_cities": 1,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 1,
+              "granaries": 0,
+              "empty_queues": 0,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 1,
+              "cities": 2,
+              "population": 8,
+              "production": 30.799999999999997,
+              "production_handicap_pct": 40.0,
+              "population_per_city": 4.0,
+              "production_per_city": 15.399999999999999,
+              "production_per_population": 3.8499999999999996,
+              "food_per_city": 12.0,
+              "net_food_per_city": 4.0,
+              "housing_bound_cities": 1,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 1,
+              "granaries": 1,
+              "empty_queues": 0,
+              "civilization": "Rome"
+            }
+          }
+        },
+        {
+          "seed": 61008603,
+          "turn": 50,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 5,
+              "population": 14,
+              "production": 27.5,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 2.8,
+              "production_per_city": 5.5,
+              "production_per_population": 1.9642857142857142,
+              "food_per_city": 8.2,
+              "net_food_per_city": 2.6,
+              "housing_bound_cities": 4,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 3,
+              "granaries": 0,
+              "empty_queues": 1,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 2,
+              "cities": 4,
+              "population": 19,
+              "production": 71.9,
+              "production_handicap_pct": 40.0,
+              "population_per_city": 4.75,
+              "production_per_city": 17.975,
+              "production_per_population": 3.78421052631579,
+              "food_per_city": 12.0,
+              "net_food_per_city": 2.5,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 2,
+              "empty_queues": 0,
+              "civilization": "Mapuche"
+            }
+          }
+        },
+        {
+          "seed": 61008603,
+          "turn": 75,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 7,
+              "population": 21,
+              "production": 47.0,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 3.0,
+              "production_per_city": 6.714285714285714,
+              "production_per_population": 2.238095238095238,
+              "food_per_city": 8.857142857142858,
+              "net_food_per_city": 2.857142857142857,
+              "housing_bound_cities": 3,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 2,
+              "empty_queues": 4,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 2,
+              "cities": 4,
+              "population": 28,
+              "production": 112.8,
+              "production_handicap_pct": 40.0,
+              "population_per_city": 7.0,
+              "production_per_city": 28.2,
+              "production_per_population": 4.0285714285714285,
+              "food_per_city": 19.0,
+              "net_food_per_city": 5.0,
+              "housing_bound_cities": 2,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 1,
+              "granaries": 4,
+              "empty_queues": 0,
+              "civilization": "Mapuche"
+            }
+          }
+        }
+      ],
+      "mean_of_per_game_metrics": {
+        "25": {
+          "focal": {
+            "cities": 2.5,
+            "population": 5.25,
+            "production": 15.325,
+            "production_handicap_pct": 0.0,
+            "population_per_city": 2.125,
+            "production_per_city": 6.1625,
+            "production_per_population": 2.9796428571428573,
+            "food_per_city": 6.0,
+            "net_food_per_city": 1.75,
+            "housing_bound_cities": 0.75,
+            "nonpositive_net_food_cities": 0.25,
+            "amenity_short_cities": 0.5,
+            "granaries": 0,
+            "empty_queues": 1
+          },
+          "strongest_native_rival": {
+            "cities": 2.25,
+            "population": 9.25,
+            "production": 33.125,
+            "production_handicap_pct": 40.0,
+            "population_per_city": 4.25,
+            "production_per_city": 14.933333333333332,
+            "production_per_population": 3.613611111111111,
+            "food_per_city": 12.875,
+            "net_food_per_city": 4.375,
+            "housing_bound_cities": 0.25,
+            "nonpositive_net_food_cities": 0,
+            "amenity_short_cities": 1.5,
+            "granaries": 1.25,
+            "empty_queues": 0
+          }
+        },
+        "50": {
+          "focal": {
+            "cities": 4.5,
+            "population": 13.25,
+            "production": 31.974999999999998,
+            "production_handicap_pct": 0.0,
+            "population_per_city": 2.975,
+            "production_per_city": 7.25375,
+            "production_per_population": 2.4359898434898435,
+            "food_per_city": 7.8625,
+            "net_food_per_city": 1.9125,
+            "housing_bound_cities": 3,
+            "nonpositive_net_food_cities": 0.5,
+            "amenity_short_cities": 2.25,
+            "granaries": 0.5,
+            "empty_queues": 0.25
+          },
+          "strongest_native_rival": {
+            "cities": 3.5,
+            "population": 20,
+            "production": 65.10000000000001,
+            "production_handicap_pct": 40.0,
+            "population_per_city": 5.770833333333333,
+            "production_per_city": 18.766666666666666,
+            "production_per_population": 3.2900767543859653,
+            "food_per_city": 15.604166666666668,
+            "net_food_per_city": 4.0625,
+            "housing_bound_cities": 0.5,
+            "nonpositive_net_food_cities": 0,
+            "amenity_short_cities": 0,
+            "granaries": 2.5,
+            "empty_queues": 0
+          }
+        },
+        "75": {
+          "focal": {
+            "cities": 7.25,
+            "population": 23.25,
+            "production": 53.675000000000004,
+            "production_handicap_pct": 0.0,
+            "population_per_city": 3.2291666666666665,
+            "production_per_city": 7.3879464285714285,
+            "production_per_population": 2.2914803946053945,
+            "food_per_city": 8.526785714285715,
+            "net_food_per_city": 2.068452380952381,
+            "housing_bound_cities": 3.75,
+            "nonpositive_net_food_cities": 0.75,
+            "amenity_short_cities": 1.5,
+            "granaries": 2.5,
+            "empty_queues": 2.25
+          },
+          "strongest_native_rival": {
+            "cities": 4,
+            "population": 29.75,
+            "production": 107.57499999999999,
+            "production_handicap_pct": 40.0,
+            "population_per_city": 7.4375,
+            "production_per_city": 26.893749999999997,
+            "production_per_population": 3.6388104838709676,
+            "food_per_city": 20.0625,
+            "net_food_per_city": 5.1875,
+            "housing_bound_cities": 2.75,
+            "nonpositive_net_food_cities": 0,
+            "amenity_short_cities": 0.25,
+            "granaries": 4,
+            "empty_queues": 0
+          }
+        }
+      }
+    },
+    "deity": {
+      "records": [
+        {
+          "seed": 61008700,
+          "turn": 25,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 2,
+              "population": 3,
+              "production": 12.6,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 1.5,
+              "production_per_city": 6.3,
+              "production_per_population": 4.2,
+              "food_per_city": 5.0,
+              "net_food_per_city": 2.0,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 1,
+              "granaries": 1,
+              "empty_queues": 1,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 3,
+              "cities": 4,
+              "population": 12,
+              "production": 61.2,
+              "production_handicap_pct": 80.0,
+              "population_per_city": 3.0,
+              "production_per_city": 15.3,
+              "production_per_population": 5.1000000000000005,
+              "food_per_city": 8.75,
+              "net_food_per_city": 2.75,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 1,
+              "empty_queues": 1,
+              "civilization": "Rome"
+            }
+          }
+        },
+        {
+          "seed": 61008700,
+          "turn": 50,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 2,
+              "population": 6,
+              "production": 20.3,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 3.0,
+              "production_per_city": 10.15,
+              "production_per_population": 3.3833333333333333,
+              "food_per_city": 7.5,
+              "net_food_per_city": 1.5,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 1,
+              "granaries": 2,
+              "empty_queues": 1,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 3,
+              "cities": 5,
+              "population": 27,
+              "production": 139.4,
+              "production_handicap_pct": 80.0,
+              "population_per_city": 5.4,
+              "production_per_city": 27.880000000000003,
+              "production_per_population": 5.162962962962963,
+              "food_per_city": 14.4,
+              "net_food_per_city": 3.6,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 5,
+              "empty_queues": 0,
+              "civilization": "Poland"
+            }
+          }
+        },
+        {
+          "seed": 61008700,
+          "turn": 75,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 4,
+              "population": 12,
+              "production": 28.3,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 3.0,
+              "production_per_city": 7.075,
+              "production_per_population": 2.3583333333333334,
+              "food_per_city": 6.75,
+              "net_food_per_city": 0.75,
+              "housing_bound_cities": 2,
+              "nonpositive_net_food_cities": 1,
+              "amenity_short_cities": 1,
+              "granaries": 2,
+              "empty_queues": 0,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 2,
+              "cities": 7,
+              "population": 59,
+              "production": 247.79999999999998,
+              "production_handicap_pct": 80.0,
+              "population_per_city": 8.428571428571429,
+              "production_per_city": 35.4,
+              "production_per_population": 4.199999999999999,
+              "food_per_city": 24.714285714285715,
+              "net_food_per_city": 7.857142857142857,
+              "housing_bound_cities": 3,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 4,
+              "granaries": 5,
+              "empty_queues": 0,
+              "civilization": "Macedon"
+            }
+          }
+        },
+        {
+          "seed": 61008701,
+          "turn": 25,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 2,
+              "population": 5,
+              "production": 16.3,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 2.5,
+              "production_per_city": 8.15,
+              "production_per_population": 3.2600000000000002,
+              "food_per_city": 8.5,
+              "net_food_per_city": 3.5,
+              "housing_bound_cities": 1,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 1,
+              "granaries": 0,
+              "empty_queues": 1,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 3,
+              "cities": 3,
+              "population": 9,
+              "production": 63.00000000000001,
+              "production_handicap_pct": 80.0,
+              "population_per_city": 3.0,
+              "production_per_city": 21.000000000000004,
+              "production_per_population": 7.000000000000001,
+              "food_per_city": 8.333333333333334,
+              "net_food_per_city": 2.3333333333333335,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 2,
+              "empty_queues": 0,
+              "civilization": "Rome"
+            }
+          }
+        },
+        {
+          "seed": 61008701,
+          "turn": 50,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 5,
+              "population": 14,
+              "production": 28.700000000000003,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 2.8,
+              "production_per_city": 5.74,
+              "production_per_population": 2.0500000000000003,
+              "food_per_city": 8.2,
+              "net_food_per_city": 2.6,
+              "housing_bound_cities": 2,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 4,
+              "granaries": 0,
+              "empty_queues": 1,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 2,
+              "cities": 4,
+              "population": 23,
+              "production": 98.9,
+              "production_handicap_pct": 80.0,
+              "population_per_city": 5.75,
+              "production_per_city": 24.725,
+              "production_per_population": 4.3,
+              "food_per_city": 14.75,
+              "net_food_per_city": 3.25,
+              "housing_bound_cities": 1,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 3,
+              "empty_queues": 0,
+              "civilization": "Rome"
+            }
+          }
+        },
+        {
+          "seed": 61008701,
+          "turn": 75,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 7,
+              "population": 27,
+              "production": 51.4,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 3.857142857142857,
+              "production_per_city": 7.3428571428571425,
+              "production_per_population": 1.9037037037037037,
+              "food_per_city": 10.0,
+              "net_food_per_city": 2.2857142857142856,
+              "housing_bound_cities": 5,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 1,
+              "granaries": 0,
+              "empty_queues": 2,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 3,
+              "cities": 4,
+              "population": 33,
+              "production": 180.6,
+              "production_handicap_pct": 80.0,
+              "population_per_city": 8.25,
+              "production_per_city": 45.15,
+              "production_per_population": 5.472727272727273,
+              "food_per_city": 22.75,
+              "net_food_per_city": 6.25,
+              "housing_bound_cities": 1,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 4,
+              "empty_queues": 0,
+              "civilization": "Scotland"
+            }
+          }
+        },
+        {
+          "seed": 61008702,
+          "turn": 25,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 2,
+              "population": 5,
+              "production": 13.7,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 2.5,
+              "production_per_city": 6.85,
+              "production_per_population": 2.7399999999999998,
+              "food_per_city": 6.0,
+              "net_food_per_city": 1.0,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 1,
+              "amenity_short_cities": 1,
+              "granaries": 0,
+              "empty_queues": 0,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 1,
+              "cities": 4,
+              "population": 17,
+              "production": 62.50000000000001,
+              "production_handicap_pct": 80.0,
+              "population_per_city": 4.25,
+              "production_per_city": 15.625000000000002,
+              "production_per_population": 3.6764705882352944,
+              "food_per_city": 12.75,
+              "net_food_per_city": 4.25,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 3,
+              "empty_queues": 0,
+              "civilization": "Rome"
+            }
+          }
+        },
+        {
+          "seed": 61008702,
+          "turn": 50,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 4,
+              "population": 11,
+              "production": 25.900000000000002,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 2.75,
+              "production_per_city": 6.4750000000000005,
+              "production_per_population": 2.354545454545455,
+              "food_per_city": 7.25,
+              "net_food_per_city": 1.75,
+              "housing_bound_cities": 1,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 3,
+              "granaries": 2,
+              "empty_queues": 0,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 1,
+              "cities": 4,
+              "population": 35,
+              "production": 116.4,
+              "production_handicap_pct": 80.0,
+              "population_per_city": 8.75,
+              "production_per_city": 29.1,
+              "production_per_population": 3.325714285714286,
+              "food_per_city": 25.25,
+              "net_food_per_city": 7.75,
+              "housing_bound_cities": 2,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 4,
+              "empty_queues": 0,
+              "civilization": "Rome"
+            }
+          }
+        },
+        {
+          "seed": 61008702,
+          "turn": 75,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 5,
+              "population": 21,
+              "production": 31.150000000000002,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 4.2,
+              "production_per_city": 6.23,
+              "production_per_population": 1.4833333333333334,
+              "food_per_city": 9.8,
+              "net_food_per_city": 1.4,
+              "housing_bound_cities": 2,
+              "nonpositive_net_food_cities": 2,
+              "amenity_short_cities": 5,
+              "granaries": 2,
+              "empty_queues": 1,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 1,
+              "cities": 4,
+              "population": 42,
+              "production": 212.3,
+              "production_handicap_pct": 80.0,
+              "population_per_city": 10.5,
+              "production_per_city": 53.075,
+              "production_per_population": 5.0547619047619055,
+              "food_per_city": 30.0,
+              "net_food_per_city": 9.0,
+              "housing_bound_cities": 2,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 4,
+              "empty_queues": 0,
+              "civilization": "Zulu"
+            }
+          }
+        },
+        {
+          "seed": 61008703,
+          "turn": 25,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 2,
+              "population": 5,
+              "production": 12.7,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 2.5,
+              "production_per_city": 6.35,
+              "production_per_population": 2.54,
+              "food_per_city": 7.5,
+              "net_food_per_city": 2.5,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 1,
+              "granaries": 0,
+              "empty_queues": 0,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 2,
+              "cities": 4,
+              "population": 16,
+              "production": 81.80000000000001,
+              "production_handicap_pct": 80.0,
+              "population_per_city": 4.0,
+              "production_per_city": 20.450000000000003,
+              "production_per_population": 5.112500000000001,
+              "food_per_city": 13.75,
+              "net_food_per_city": 5.75,
+              "housing_bound_cities": 1,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 1,
+              "granaries": 2,
+              "empty_queues": 0,
+              "civilization": "Gaul"
+            }
+          }
+        },
+        {
+          "seed": 61008703,
+          "turn": 50,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 3,
+              "population": 14,
+              "production": 30.8,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 4.666666666666667,
+              "production_per_city": 10.266666666666667,
+              "production_per_population": 2.2,
+              "food_per_city": 12.333333333333334,
+              "net_food_per_city": 3.0,
+              "housing_bound_cities": 1,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 2,
+              "granaries": 3,
+              "empty_queues": 1,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 2,
+              "cities": 4,
+              "population": 41,
+              "production": 163.40000000000003,
+              "production_handicap_pct": 80.0,
+              "population_per_city": 10.25,
+              "production_per_city": 40.85000000000001,
+              "production_per_population": 3.9853658536585375,
+              "food_per_city": 33.0,
+              "net_food_per_city": 12.5,
+              "housing_bound_cities": 1,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 4,
+              "empty_queues": 0,
+              "civilization": "Gaul"
+            }
+          }
+        },
+        {
+          "seed": 61008703,
+          "turn": 75,
+          "arms": {
+            "focal": {
+              "owner": 0,
+              "cities": 5,
+              "population": 22,
+              "production": 38.1,
+              "production_handicap_pct": 0.0,
+              "population_per_city": 4.4,
+              "production_per_city": 7.62,
+              "production_per_population": 1.731818181818182,
+              "food_per_city": 12.0,
+              "net_food_per_city": 3.2,
+              "housing_bound_cities": 3,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 4,
+              "granaries": 3,
+              "empty_queues": 2,
+              "civilization": "Gran Colombia"
+            },
+            "strongest_native_rival": {
+              "owner": 2,
+              "cities": 4,
+              "population": 60,
+              "production": 337.3,
+              "production_handicap_pct": 80.0,
+              "population_per_city": 15.0,
+              "production_per_city": 84.325,
+              "production_per_population": 5.621666666666667,
+              "food_per_city": 48.5,
+              "net_food_per_city": 18.5,
+              "housing_bound_cities": 0,
+              "nonpositive_net_food_cities": 0,
+              "amenity_short_cities": 0,
+              "granaries": 4,
+              "empty_queues": 0,
+              "civilization": "Gaul"
+            }
+          }
+        }
+      ],
+      "mean_of_per_game_metrics": {
+        "25": {
+          "focal": {
+            "cities": 2,
+            "population": 4.5,
+            "production": 13.825,
+            "production_handicap_pct": 0.0,
+            "population_per_city": 2.25,
+            "production_per_city": 6.9125,
+            "production_per_population": 3.185,
+            "food_per_city": 6.75,
+            "net_food_per_city": 2.25,
+            "housing_bound_cities": 0.25,
+            "nonpositive_net_food_cities": 0.25,
+            "amenity_short_cities": 1,
+            "granaries": 0.25,
+            "empty_queues": 0.5
+          },
+          "strongest_native_rival": {
+            "cities": 3.75,
+            "population": 13.5,
+            "production": 67.125,
+            "production_handicap_pct": 80.0,
+            "population_per_city": 3.5625,
+            "production_per_city": 18.093750000000004,
+            "production_per_population": 5.222242647058824,
+            "food_per_city": 10.895833333333334,
+            "net_food_per_city": 3.7708333333333335,
+            "housing_bound_cities": 0.25,
+            "nonpositive_net_food_cities": 0,
+            "amenity_short_cities": 0.25,
+            "granaries": 2,
+            "empty_queues": 0.25
+          }
+        },
+        "50": {
+          "focal": {
+            "cities": 3.5,
+            "population": 11.25,
+            "production": 26.425,
+            "production_handicap_pct": 0.0,
+            "population_per_city": 3.3041666666666667,
+            "production_per_city": 8.157916666666667,
+            "production_per_population": 2.496969696969697,
+            "food_per_city": 8.820833333333333,
+            "net_food_per_city": 2.2125,
+            "housing_bound_cities": 1,
+            "nonpositive_net_food_cities": 0,
+            "amenity_short_cities": 2.5,
+            "granaries": 1.75,
+            "empty_queues": 0.75
+          },
+          "strongest_native_rival": {
+            "cities": 4.25,
+            "population": 31.5,
+            "production": 129.525,
+            "production_handicap_pct": 80.0,
+            "population_per_city": 7.5375,
+            "production_per_city": 30.63875,
+            "production_per_population": 4.193510775583946,
+            "food_per_city": 21.85,
+            "net_food_per_city": 6.775,
+            "housing_bound_cities": 1,
+            "nonpositive_net_food_cities": 0,
+            "amenity_short_cities": 0,
+            "granaries": 4,
+            "empty_queues": 0
+          }
+        },
+        "75": {
+          "focal": {
+            "cities": 5.25,
+            "population": 20.5,
+            "production": 37.2375,
+            "production_handicap_pct": 0.0,
+            "population_per_city": 3.8642857142857143,
+            "production_per_city": 7.066964285714286,
+            "production_per_population": 1.8692971380471382,
+            "food_per_city": 9.6375,
+            "net_food_per_city": 1.9089285714285715,
+            "housing_bound_cities": 3,
+            "nonpositive_net_food_cities": 0.75,
+            "amenity_short_cities": 2.75,
+            "granaries": 1.75,
+            "empty_queues": 1.25
+          },
+          "strongest_native_rival": {
+            "cities": 4.75,
+            "population": 48.5,
+            "production": 244.5,
+            "production_handicap_pct": 80.0,
+            "population_per_city": 10.544642857142858,
+            "production_per_city": 54.4875,
+            "production_per_population": 5.087288961038961,
+            "food_per_city": 31.49107142857143,
+            "net_food_per_city": 10.401785714285714,
+            "housing_bound_cities": 1.5,
+            "nonpositive_net_food_cities": 0,
+            "amenity_short_cities": 1,
+            "granaries": 4.25,
+            "empty_queues": 0
+          }
+        }
+      }
+    }
+  },
+  "input_sha256": {
+    "civvis-production-builder-alternate-paired-emperor-61008600-control-cities.jsonl": "cc22f80ac58bd3357c3971f9ef707fa008663b2c865f6815e5e994d78712cd3d",
+    "civvis-production-builder-alternate-paired-emperor-61008601-control-cities.jsonl": "96c24d60061268c2b0fcf324a828bbd34665b340e79c3b792b4108630158b6f6",
+    "civvis-production-builder-alternate-paired-emperor-61008602-control-cities.jsonl": "d17e003ea1311d304a173773f03097d6baac7ed15d8614e82c06c0f12df6fbc0",
+    "civvis-production-builder-alternate-paired-emperor-61008603-control-cities.jsonl": "bd59373627d9f6afd881713dbfc19230b857cf3b29bd05d00b58a63e08124c94",
+    "civvis-production-builder-alternate-paired-deity-61008700-control-cities.jsonl": "a92dfc432dff2ee453ae2b3f524066c817a5ac3df397885d3c36fba4d5a3912f",
+    "civvis-production-builder-alternate-paired-deity-61008701-control-cities.jsonl": "de8675e99f8a0c6754ef635550cc42a04598c10bce6d8ad8959965d85e350570",
+    "civvis-production-builder-alternate-paired-deity-61008702-control-cities.jsonl": "b16bfd80b4e47779c4c455058c585d3ad3f495d71d0e32904d9f345985e6e41e",
+    "civvis-production-builder-alternate-paired-deity-61008703-control-cities.jsonl": "867505080983318666f8c0272c9db6b9330e9ac781f989a99cb2e5966738fd2c"
+  }
+}

@@ -4962,6 +4962,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Productive alternate work after a refused normal Builder route.
+    builder_productive_alternate: bool,
+    /// One quoted setup operation, due on the following native turn.
+    builder_alternate_pending: BTreeMap<u32, (Pos, Name, u32, i32)>,
     /// `befriend-the-strongest`: offer a friendship to the strongest
     /// neighbour at peace. See `advanced/protective_friendship.rs`.
     befriend_the_strongest: bool,
@@ -7554,6 +7558,7 @@ mod threatened_reserve;
 /// `advanced/yield_floors.rs`.
 mod yield_floors;
 
+mod builder_alternate;
 mod marginal_usefulness;
 mod production_commitment;
 mod production_compounding;
@@ -8399,6 +8404,8 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            builder_productive_alternate: false,
+            builder_alternate_pending: BTreeMap::new(),
             befriend_the_strongest: false,
             beeline_orders_by_value: false,
             builders_work_through_raiders: false,
@@ -35542,6 +35549,11 @@ impl AdvancedAi {
         uid: u32,
         strategy: GrandStrategy,
     ) -> bool {
+        if self.builder_productive_alternate && g.turn < 75 {
+            think!(self.journal(), Expansion, Detail, "Builder enters ordinary work before alternate";
+                "Builder {uid}: position {:?}, moves {:.1}, charges {}",
+                g.units[&uid].pos, g.units[&uid].moves_left, g.units[&uid].charges; g.units[&uid].pos);
+        }
         if let Some(acted) = self.builder_support_step(g, pid, uid) {
             return acted;
         }
@@ -35608,6 +35620,9 @@ impl AdvancedAi {
             return g
                 .apply(pid, &Action::RepairImprovement { unit: uid })
                 .is_ok();
+        }
+        if let Some(acted) = self.builder_prepared_alternate_step(g, pid, uid) {
+            return acted;
         }
         let mut here = self.worthwhile_improvements(g, pid, current, strategy);
         let here_shortfall = g
@@ -35694,7 +35709,10 @@ impl AdvancedAi {
         // sweep rather than once per tile. The borrow checker rejects the
         // guard the moment anything in here starts mutating the game.
         if self.base.builder_tries_the_next_tile {
-            return self.builder_step_to_the_first_reachable_job(g, pid, uid, strategy, &reserved);
+            let stepped =
+                self.builder_step_to_the_first_reachable_job(g, pid, uid, strategy, &reserved);
+            return stepped
+                || self.builder_productive_alternate_step(g, pid, uid, strategy, &reserved);
         }
 
         // ⚠ The `builder_tries_the_next_tile` branch above performs the same
@@ -35756,13 +35774,14 @@ impl AdvancedAi {
                 self.builder_targets.insert(uid, *pos);
             }),
         };
-        target.is_some_and(|pos| {
+        let stepped = target.is_some_and(|pos| {
             if self.builder_reach_safety_on() {
                 self.builder_step_out_of_reach(g, pid, uid, pos)
             } else {
                 self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
             }
-        })
+        });
+        stepped || self.builder_productive_alternate_step(g, pid, uid, strategy, &reserved)
     }
 
     /// Every job this Builder could take, best first, under the same score the
@@ -42264,6 +42283,7 @@ impl AdvancedAi {
             self.base.record_path_step(g, uid, from);
             self.base.record_move_refusal_watch(g, uid, from, to);
         }
+        self.reconcile_builder_alternate_setup(g);
     }
 
     /// Engine adapters call this only on a disposable, observation-limited

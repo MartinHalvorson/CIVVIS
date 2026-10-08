@@ -1,0 +1,1080 @@
+{
+  "at": "2026-10-05T03:48:28.898317+00:00",
+  "passive": true,
+  "actual_Firaxis_verification": false,
+  "fresh_samples_played": 0,
+  "counter_scope": "Repeated calls, not distinct jobs. Rejection dimensions may overlap.",
+  "games": [
+    {
+      "difficulty": "emperor",
+      "seed": 61008603,
+      "byte_equivalence": {
+        "actions.json": true,
+        "final.json": true
+      },
+      "configuration_matches": true,
+      "journal_contiguous": true,
+      "headlines": {
+        "Builder enters ordinary work before alternate": 273,
+        "Builder alternate coverage deferred": 172
+      },
+      "aggregate_counters": {
+        "candidates": 12,
+        "reserved": 22,
+        "no_city": 816,
+        "no_path": 4,
+        "unsafe_path": 906,
+        "model_walk_refused": 0,
+        "no_moves_after_walk": 10,
+        "improve_refused": 0,
+        "no_production_gain": 2,
+        "food_loss": 0,
+        "science_loss": 0,
+        "walk_refused": 0
+      },
+      "by_builder": {
+        "118": {
+          "headlines": {
+            "Builder enters ordinary work before alternate": 119,
+            "Builder alternate coverage deferred": 95
+          },
+          "counters": {
+            "candidates": 0,
+            "reserved": 3,
+            "no_city": 528,
+            "no_path": 0,
+            "unsafe_path": 641,
+            "model_walk_refused": 0,
+            "no_moves_after_walk": 0,
+            "improve_refused": 0,
+            "no_production_gain": 0,
+            "food_loss": 0,
+            "science_loss": 0,
+            "walk_refused": 0
+          },
+          "first_turn": 18,
+          "last_turn": 74
+        },
+        "153": {
+          "headlines": {
+            "Builder enters ordinary work before alternate": 91,
+            "Builder alternate coverage deferred": 63
+          },
+          "counters": {
+            "candidates": 6,
+            "reserved": 17,
+            "no_city": 248,
+            "no_path": 0,
+            "unsafe_path": 232,
+            "model_walk_refused": 0,
+            "no_moves_after_walk": 6,
+            "improve_refused": 0,
+            "no_production_gain": 0,
+            "food_loss": 0,
+            "science_loss": 0,
+            "walk_refused": 0
+          },
+          "first_turn": 26,
+          "last_turn": 70
+        },
+        "256": {
+          "headlines": {
+            "Builder enters ordinary work before alternate": 21,
+            "Builder alternate coverage deferred": 5
+          },
+          "counters": {
+            "candidates": 2,
+            "reserved": 0,
+            "no_city": 20,
+            "no_path": 0,
+            "unsafe_path": 27,
+            "model_walk_refused": 0,
+            "no_moves_after_walk": 0,
+            "improve_refused": 0,
+            "no_production_gain": 2,
+            "food_loss": 0,
+            "science_loss": 0,
+            "walk_refused": 0
+          },
+          "first_turn": 53,
+          "last_turn": 64
+        },
+        "318": {
+          "headlines": {
+            "Builder enters ordinary work before alternate": 14,
+            "Builder alternate coverage deferred": 5
+          },
+          "counters": {
+            "candidates": 0,
+            "reserved": 2,
+            "no_city": 14,
+            "no_path": 4,
+            "unsafe_path": 2,
+            "model_walk_refused": 0,
+            "no_moves_after_walk": 0,
+            "improve_refused": 0,
+            "no_production_gain": 0,
+            "food_loss": 0,
+            "science_loss": 0,
+            "walk_refused": 0
+          },
+          "first_turn": 67,
+          "last_turn": 74
+        },
+        "321": {
+          "headlines": {
+            "Builder enters ordinary work before alternate": 14,
+            "Builder alternate coverage deferred": 4
+          },
+          "counters": {
+            "candidates": 4,
+            "reserved": 0,
+            "no_city": 6,
+            "no_path": 0,
+            "unsafe_path": 4,
+            "model_walk_refused": 0,
+            "no_moves_after_walk": 4,
+            "improve_refused": 0,
+            "no_production_gain": 0,
+            "food_loss": 0,
+            "science_loss": 0,
+            "walk_refused": 0
+          },
+          "first_turn": 68,
+          "last_turn": 74
+        },
+        "336": {
+          "headlines": {
+            "Builder enters ordinary work before alternate": 9
+          },
+          "counters": {},
+          "first_turn": 71,
+          "last_turn": 74
+        },
+        "337": {
+          "headlines": {
+            "Builder enters ordinary work before alternate": 5
+          },
+          "counters": {},
+          "first_turn": 71,
+          "last_turn": 74
+        }
+      },
+      "case_windows": [
+        {
+          "detail": "Builder 118: position (24, 10), moves 2.0, charges 3",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 328,
+          "player": 0,
+          "turn": 24,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=8; no_path=0; unsafe_path=6; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 330,
+          "player": 0,
+          "turn": 24,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (24, 10), moves 2.0, charges 3",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 340,
+          "player": 0,
+          "turn": 24,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=8; no_path=0; unsafe_path=6; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 341,
+          "player": 0,
+          "turn": 24,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (24, 10), moves 2.0, charges 3",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 351,
+          "player": 0,
+          "turn": 24,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=8; no_path=0; unsafe_path=6; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 353,
+          "player": 0,
+          "turn": 24,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (24, 10), moves 2.0, charges 3",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 362,
+          "player": 0,
+          "turn": 25,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=7; no_path=0; unsafe_path=6; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 364,
+          "player": 0,
+          "turn": 25,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (24, 10), moves 2.0, charges 3",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 374,
+          "player": 0,
+          "turn": 25,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=7; no_path=0; unsafe_path=6; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 376,
+          "player": 0,
+          "turn": 25,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (24, 10), moves 2.0, charges 3",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 386,
+          "player": 0,
+          "turn": 26,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=6; no_path=0; unsafe_path=5; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 388,
+          "player": 0,
+          "turn": 26,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: position (25, 10), moves 2.0, charges 3",
+          "focus": [
+            25,
+            10
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 389,
+          "player": 0,
+          "turn": 26,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (24, 10), moves 2.0, charges 3",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1179,
+          "player": 0,
+          "turn": 49,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=6; no_path=0; unsafe_path=8; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1181,
+          "player": 0,
+          "turn": 49,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: position (22, 8), moves 2.0, charges 3",
+          "focus": [
+            22,
+            8
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1182,
+          "player": 0,
+          "turn": 49,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: candidates=0; reserved=0; no_city=5; no_path=0; unsafe_path=5; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            22,
+            8
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1183,
+          "player": 0,
+          "turn": 49,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (24, 10), moves 2.0, charges 3",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1195,
+          "player": 0,
+          "turn": 49,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=6; no_path=0; unsafe_path=8; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1196,
+          "player": 0,
+          "turn": 49,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: position (22, 8), moves 2.0, charges 3",
+          "focus": [
+            22,
+            8
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1197,
+          "player": 0,
+          "turn": 49,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: candidates=0; reserved=0; no_city=5; no_path=0; unsafe_path=5; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            22,
+            8
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1198,
+          "player": 0,
+          "turn": 49,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (24, 10), moves 2.0, charges 3",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1206,
+          "player": 0,
+          "turn": 49,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=6; no_path=0; unsafe_path=8; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1207,
+          "player": 0,
+          "turn": 49,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: position (22, 8), moves 2.0, charges 3",
+          "focus": [
+            22,
+            8
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1208,
+          "player": 0,
+          "turn": 49,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: candidates=0; reserved=0; no_city=5; no_path=0; unsafe_path=5; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            22,
+            8
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1209,
+          "player": 0,
+          "turn": 49,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (24, 10), moves 2.0, charges 3",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1225,
+          "player": 0,
+          "turn": 50,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=5; no_path=0; unsafe_path=9; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1226,
+          "player": 0,
+          "turn": 50,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: position (22, 8), moves 2.0, charges 3",
+          "focus": [
+            22,
+            8
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1227,
+          "player": 0,
+          "turn": 50,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: candidates=0; reserved=0; no_city=5; no_path=0; unsafe_path=5; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            22,
+            8
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1228,
+          "player": 0,
+          "turn": 50,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (24, 10), moves 2.0, charges 3",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1237,
+          "player": 0,
+          "turn": 50,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=5; no_path=0; unsafe_path=9; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1238,
+          "player": 0,
+          "turn": 50,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: position (22, 8), moves 2.0, charges 3",
+          "focus": [
+            22,
+            8
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1239,
+          "player": 0,
+          "turn": 50,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: candidates=0; reserved=0; no_city=5; no_path=0; unsafe_path=5; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            22,
+            8
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1240,
+          "player": 0,
+          "turn": 50,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (24, 10), moves 2.0, charges 3",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1269,
+          "player": 0,
+          "turn": 51,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=5; no_path=0; unsafe_path=9; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1270,
+          "player": 0,
+          "turn": 51,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: position (22, 8), moves 2.0, charges 3",
+          "focus": [
+            22,
+            8
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1271,
+          "player": 0,
+          "turn": 51,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: candidates=0; reserved=0; no_city=3; no_path=0; unsafe_path=4; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            22,
+            8
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1272,
+          "player": 0,
+          "turn": 51,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (24, 10), moves 2.0, charges 3",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1286,
+          "player": 0,
+          "turn": 51,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=5; no_path=0; unsafe_path=9; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            10
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1287,
+          "player": 0,
+          "turn": 51,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: position (22, 8), moves 2.0, charges 3",
+          "focus": [
+            22,
+            8
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1288,
+          "player": 0,
+          "turn": 51,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 153: candidates=0; reserved=0; no_city=3; no_path=0; unsafe_path=4; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            22,
+            8
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1289,
+          "player": 0,
+          "turn": 51,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (20, 12), moves 2.0, charges 3",
+          "focus": [
+            20,
+            12
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 2232,
+          "player": 0,
+          "turn": 73,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=1; no_city=2; no_path=0; unsafe_path=5; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            20,
+            12
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 2234,
+          "player": 0,
+          "turn": 73,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (20, 12), moves 2.0, charges 3",
+          "focus": [
+            20,
+            12
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 2266,
+          "player": 0,
+          "turn": 73,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=1; no_city=1; no_path=0; unsafe_path=6; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            20,
+            12
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 2268,
+          "player": 0,
+          "turn": 73,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (20, 12), moves 2.0, charges 3",
+          "focus": [
+            20,
+            12
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 2314,
+          "player": 0,
+          "turn": 74,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=1; no_city=1; no_path=0; unsafe_path=7; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            20,
+            12
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 2316,
+          "player": 0,
+          "turn": 74,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (20, 12), moves 2.0, charges 3",
+          "focus": [
+            20,
+            12
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 2378,
+          "player": 0,
+          "turn": 74,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=1; no_path=0; unsafe_path=8; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            20,
+            12
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 2380,
+          "player": 0,
+          "turn": 74,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: position (20, 12), moves 2.0, charges 3",
+          "focus": [
+            20,
+            12
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 2412,
+          "player": 0,
+          "turn": 74,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 118: candidates=0; reserved=0; no_city=2; no_path=0; unsafe_path=8; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            20,
+            12
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 2414,
+          "player": 0,
+          "turn": 74,
+          "type": "planning_thought"
+        }
+      ]
+    },
+    {
+      "difficulty": "deity",
+      "seed": 61008703,
+      "byte_equivalence": {
+        "actions.json": true,
+        "final.json": true
+      },
+      "configuration_matches": true,
+      "journal_contiguous": true,
+      "headlines": {
+        "Builder enters ordinary work before alternate": 93,
+        "Builder alternate coverage deferred": 51
+      },
+      "aggregate_counters": {
+        "candidates": 19,
+        "reserved": 7,
+        "no_city": 165,
+        "no_path": 0,
+        "unsafe_path": 209,
+        "model_walk_refused": 0,
+        "no_moves_after_walk": 8,
+        "improve_refused": 0,
+        "no_production_gain": 11,
+        "food_loss": 0,
+        "science_loss": 0,
+        "walk_refused": 0
+      },
+      "by_builder": {
+        "194": {
+          "headlines": {
+            "Builder enters ordinary work before alternate": 26,
+            "Builder alternate coverage deferred": 10
+          },
+          "counters": {
+            "candidates": 11,
+            "reserved": 5,
+            "no_city": 30,
+            "no_path": 0,
+            "unsafe_path": 34,
+            "model_walk_refused": 0,
+            "no_moves_after_walk": 4,
+            "improve_refused": 0,
+            "no_production_gain": 7,
+            "food_loss": 0,
+            "science_loss": 0,
+            "walk_refused": 0
+          },
+          "first_turn": 24,
+          "last_turn": 40
+        },
+        "232": {
+          "headlines": {
+            "Builder enters ordinary work before alternate": 39,
+            "Builder alternate coverage deferred": 19
+          },
+          "counters": {
+            "candidates": 8,
+            "reserved": 2,
+            "no_city": 56,
+            "no_path": 0,
+            "unsafe_path": 48,
+            "model_walk_refused": 0,
+            "no_moves_after_walk": 4,
+            "improve_refused": 0,
+            "no_production_gain": 4,
+            "food_loss": 0,
+            "science_loss": 0,
+            "walk_refused": 0
+          },
+          "first_turn": 32,
+          "last_turn": 54
+        },
+        "393": {
+          "headlines": {
+            "Builder enters ordinary work before alternate": 6
+          },
+          "counters": {},
+          "first_turn": 58,
+          "last_turn": 61
+        },
+        "442": {
+          "headlines": {
+            "Builder enters ordinary work before alternate": 22,
+            "Builder alternate coverage deferred": 22
+          },
+          "counters": {
+            "candidates": 0,
+            "reserved": 0,
+            "no_city": 79,
+            "no_path": 0,
+            "unsafe_path": 127,
+            "model_walk_refused": 0,
+            "no_moves_after_walk": 0,
+            "improve_refused": 0,
+            "no_production_gain": 0,
+            "food_loss": 0,
+            "science_loss": 0,
+            "walk_refused": 0
+          },
+          "first_turn": 65,
+          "last_turn": 74
+        }
+      },
+      "case_windows": [
+        {
+          "detail": "Builder 194: position (24, 24), moves 2.0, charges 3",
+          "focus": [
+            24,
+            24
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 265,
+          "player": 0,
+          "turn": 24,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 194: position (23, 24), moves 2.0, charges 3",
+          "focus": [
+            23,
+            24
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 285,
+          "player": 0,
+          "turn": 25,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 194: position (22, 25), moves 1.0, charges 3",
+          "focus": [
+            22,
+            25
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 287,
+          "player": 0,
+          "turn": 25,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 194: position (21, 25), moves 2.0, charges 3",
+          "focus": [
+            21,
+            25
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 295,
+          "player": 0,
+          "turn": 26,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 442: position (24, 24), moves 2.0, charges 3",
+          "focus": [
+            24,
+            24
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1316,
+          "player": 0,
+          "turn": 73,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 442: candidates=0; reserved=0; no_city=4; no_path=0; unsafe_path=9; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            24
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1318,
+          "player": 0,
+          "turn": 73,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 442: position (24, 24), moves 2.0, charges 3",
+          "focus": [
+            24,
+            24
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1326,
+          "player": 0,
+          "turn": 73,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 442: candidates=0; reserved=0; no_city=4; no_path=0; unsafe_path=9; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            24
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1328,
+          "player": 0,
+          "turn": 73,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 442: position (24, 24), moves 2.0, charges 3",
+          "focus": [
+            24,
+            24
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1335,
+          "player": 0,
+          "turn": 73,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 442: candidates=0; reserved=0; no_city=4; no_path=0; unsafe_path=9; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            24
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1337,
+          "player": 0,
+          "turn": 73,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 442: position (24, 24), moves 2.0, charges 3",
+          "focus": [
+            24,
+            24
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1354,
+          "player": 0,
+          "turn": 74,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 442: candidates=0; reserved=0; no_city=4; no_path=0; unsafe_path=9; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            24
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1356,
+          "player": 0,
+          "turn": 74,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 442: position (24, 24), moves 2.0, charges 3",
+          "focus": [
+            24,
+            24
+          ],
+          "headline": "Builder enters ordinary work before alternate",
+          "id": 1366,
+          "player": 0,
+          "turn": 74,
+          "type": "planning_thought"
+        },
+        {
+          "detail": "Builder 442: candidates=0; reserved=0; no_city=4; no_path=0; unsafe_path=9; model_walk_refused=0; no_moves_after_walk=0; improve_refused=0; no_production_gain=0; food_loss=0; science_loss=0; walk_refused=0",
+          "focus": [
+            24,
+            24
+          ],
+          "headline": "Builder alternate coverage deferred",
+          "id": 1367,
+          "player": 0,
+          "turn": 74,
+          "type": "planning_thought"
+        }
+      ]
+    }
+  ],
+  "raw_sha256": {
+    "all-completions.json": "52f6efea05fe6a4087facb0d60ff2889c331d2023217cf70fbc6afd4a3c1151d",
+    "civvis-production-builder-alternate-trace-deity-61008703-candidate-actions.json": "ef645029791e3dcfb56996f494fb570e9984714c17c9e9335052ca2540d9d8e2",
+    "civvis-production-builder-alternate-trace-deity-61008703-candidate-cities.jsonl": "867505080983318666f8c0272c9db6b9330e9ac781f989a99cb2e5966738fd2c",
+    "civvis-production-builder-alternate-trace-deity-61008703-candidate-final.json": "60c84ee40699952f5983995118b201b605db4c9cca916125d45edb34bc03de83",
+    "civvis-production-builder-alternate-trace-deity-61008703-candidate-frames.jsonl": "756e9c15f7e7920dab79f2c78ab29548338313b0538b6e0e24eae4f0554a7a34",
+    "civvis-production-builder-alternate-trace-deity-61008703-candidate-setup.json": "45f3c3a9746366bdb75c7e7bb757445f13bee0042e49274a333ba27b3a41a5c5",
+    "civvis-production-builder-alternate-trace-deity-61008703-candidate-thoughts.jsonl": "d1d9ad89b4c269375ba1dbf2c917781366adc17d3bab46b57a7e08f83adf34b5",
+    "civvis-production-builder-alternate-trace-deity-61008703-candidate-view-t25.json": "a74850c22df44e6d0011284bebd26d2e64b4f1904be055c701ad5fe4d318f2de",
+    "civvis-production-builder-alternate-trace-deity-61008703-candidate-view-t50.json": "bbb6c5636ae1eab2006424f84fe903e14ed1cf8a1343d6d4e55e73d25ef9cb7d",
+    "civvis-production-builder-alternate-trace-deity-61008703-candidate-view-t75.json": "bdd2573369b7ca69bd60676f7dff2ac82d00a591eadf7b19e4a8cdbbe92f01c4",
+    "civvis-production-builder-alternate-trace-emperor-61008603-candidate-actions.json": "decaa637a26a51d18ed83d1adb02ad9e60d456ac679aff041254e89071459921",
+    "civvis-production-builder-alternate-trace-emperor-61008603-candidate-cities.jsonl": "bd59373627d9f6afd881713dbfc19230b857cf3b29bd05d00b58a63e08124c94",
+    "civvis-production-builder-alternate-trace-emperor-61008603-candidate-final.json": "9eff62fb2d51ca01b8c6c6e3b469749bfa8ddb29b0a7f3ee35741c028d2f0334",
+    "civvis-production-builder-alternate-trace-emperor-61008603-candidate-frames.jsonl": "52e393bf53f058f630b052930650e7528d9244fa78643723a90b92ef82a3b20b",
+    "civvis-production-builder-alternate-trace-emperor-61008603-candidate-setup.json": "c034611b762acb871d1bdd30e723aed6063575b2437fc891bbba3117b75f5fa7",
+    "civvis-production-builder-alternate-trace-emperor-61008603-candidate-thoughts.jsonl": "f8720302222eba9397666efc25aed078b321843dcd6d80d513f62f691dae3be6",
+    "civvis-production-builder-alternate-trace-emperor-61008603-candidate-view-t25.json": "4493115b12f6f15233da39d80f0643068e7179a4f52a1c9310432b26c7d87b9c",
+    "civvis-production-builder-alternate-trace-emperor-61008603-candidate-view-t50.json": "e6d8a48521e55bbdb42f928eebc192f5cb3ca4c4c910044783b57824e643de38",
+    "civvis-production-builder-alternate-trace-emperor-61008603-candidate-view-t75.json": "8658aea03ebfc89be131dbc74c431e6dead413f6122a4dd67b97276c5d4751a0",
+    "trace-deity.completion.json": "54bbb379068f7cfcba238975faf312e5b77044ee266e471b88ae9c024c1bc107",
+    "trace-deity.csv": "75af6e7f288777978692b1d44b73f3250fb9a399c08a683d935b4602d1eb717f",
+    "trace-deity.log": "5d59b153d53902488e23c9eec0c71c947aabcf853d79c473e62ec4b9eed6757c",
+    "trace-emperor.completion.json": "27ecd27cc10bfaed676d79a8f3d1f6b80be8342b0627bbbd2ba4360dbec53668",
+    "trace-emperor.csv": "190e99204d7bd7a11af09fe6b20ef7c14b371b1a47a1ea7ae1990edf0ec282c6",
+    "trace-emperor.log": "e16ed038e9975336380d9d63b5428936a0114824a75bef39f7cc32d29efaacce"
+  }
+}
