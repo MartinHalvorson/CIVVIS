@@ -1529,6 +1529,53 @@ end
 -- cannot leak unmet-civ knowledge into gameplay. It exists so the gap between
 -- "the best we have met" and "the leader" can be measured before anyone changes
 -- a rule on top of it.
+-- Every alive major's total city Production a turn, keyed by player id as a
+-- STRING (an all-integer table can encode as a JSON array). It feeds only the
+-- harness's operator restart rule (`production_rank_reading` in
+-- tools/civ6_play.py, operator 2026-10-08: "if not top 2 by prod by turn 150
+-- can restart game"); CIVVIS never reads the `turn` record, so an unmet
+-- major's number cannot leak into play. Each city reads the build queue's
+-- Production, the accessor our own state export uses, falling back to the
+-- city yield; a major none of whose cities can be read is omitted, never 0.
+-- A bare global like CivvisTradeableStrategics: the main chunk is at its
+-- local ceiling.
+CivvisMajorProduction = function()
+	local out = {};
+	for _, id in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+		local total, read = 0, 0;
+		-- Collected under `try` and capped: a city list that cannot be walked,
+		-- or one that never ends, must not take the turn record down with it.
+		-- No real empire on these maps comes near the cap.
+		local cities = try(function()
+			local found, steps = {}, 0;
+			for _, city in Players[id]:GetCities():Members() do
+				steps = steps + 1;
+				if city ~= nil then found[#found + 1] = city; end
+				if steps >= 200 then break; end
+			end
+			return found;
+		end, nil) or {};
+		for _, city in ipairs(cities) do
+			local yield = try(function()
+				return city:GetBuildQueue():GetProductionYield();
+			end, nil);
+			if type(yield) ~= "number" or yield < 0 then
+				yield = try(function()
+					return city:GetYield(YieldTypes.PRODUCTION);
+				end, nil);
+			end
+			if type(yield) == "number" and yield >= 0 then
+				total = total + yield;
+				read = read + 1;
+			end
+		end
+		if read > 0 then
+			out[tostring(id)] = math.floor(total * 10 + 0.5) / 10;
+		end
+	end
+	return out;
+end;
+
 local function rivalBest(player, pid)
 	local diplomacy = try(function() return player:GetDiplomacy(); end);
 	if diplomacy == nil then return nil, 0, nil, 0; end
@@ -19889,6 +19936,9 @@ local function applyOrders(player, pid, turn, rows)
 		-- `rival_best`, so this changes no decision.
 		rival_best_all = rivalTopAll,
 		majors = majorCount,
+		-- Operator restart rule only; see CivvisMajorProduction.
+		major_production = CivvisMajorProduction(),
+		local_player = pid,
 		lead = (rivalTop ~= nil and ourScore >= 0) and (ourScore - rivalTop) or nil,
 		cities = cityCount,
 		units = counts.total or counts.military,
@@ -20659,6 +20709,9 @@ local function playTurn(player, pid, turn)
 		-- `rival_best`, so this changes no decision.
 		rival_best_all = rivalTopAll,
 		majors = majorCount,
+		-- Operator restart rule only; see CivvisMajorProduction.
+		major_production = CivvisMajorProduction(),
+		local_player = pid,
 		-- Positive means we would win a score victory at the turn limit against
 		-- everyone we have met. This is the number that decides the reachable
 		-- victory, and until now the log showed only our own half of it.
