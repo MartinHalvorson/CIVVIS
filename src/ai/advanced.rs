@@ -5067,6 +5067,14 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `builders-improve-the-worked-for-production`: an improvement's Production
+    /// on a tile one of our cities works is priced again, unless the city is
+    /// starving with Housing to grow into. See `advanced/worked_production.rs`.
+    builders_improve_the_worked_for_production: bool,
+    /// The seat-turn memo of the simulator's worked tiles
+    /// `builders-improve-the-worked-for-production` reads. Empty with the gene
+    /// off. See `advanced/worked_production.rs`.
+    builder_worked_frame: RefCell<worked_production::WorkedTilesFrame>,
     /// `builders-cover-the-worked-backlog`: Builders while the charges in hand
     /// and queued cover under 60% of the unimproved worked tiles. See
     /// `BasicAi::builders_cover_the_worked_backlog`.
@@ -9042,6 +9050,11 @@ mod luxury_research;
 /// city cannot grow without. One opt-in gene; see `advanced/growth_farm.rs`.
 mod growth_farm;
 
+/// `builders-improve-the-worked-for-production`: the Builder prices the
+/// Production an improvement adds under a citizen. One opt-in gene; see
+/// `advanced/worked_production.rs`.
+mod worked_production;
+
 /// Commitments: every multi-turn decision — a settle site, a Builder's tile,
 /// the appointed war's objective — observed at the turn boundary and tracked
 /// to its ending, with what became of it counted. Infrastructure, not a
@@ -9806,6 +9819,8 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            builders_improve_the_worked_for_production: false,
+            builder_worked_frame: RefCell::new(worked_production::WorkedTilesFrame::default()),
             builders_cover_the_worked_backlog: false,
             breakers_match_the_walls: false,
             air_fire_counts_on_the_city: false,
@@ -39088,6 +39103,9 @@ impl AdvancedAi {
                 self.improvement_value_with_appeal(g, pos, improvement, strategy, appeal)
                     + self.first_luxury_premium(g, pid, pos, improvement)
                     + self.growth_farm_premium(g, pid, pos, improvement)
+                    // `builders-improve-the-worked-for-production`: zero with
+                    // the gene off. See `advanced/worked_production.rs`.
+                    + self.worked_production_premium(g, pid, pos, improvement, strategy)
             })
             .unwrap_or(0.0);
         // Score each candidate once and sort the scores. The comparator used
@@ -39102,7 +39120,8 @@ impl AdvancedAi {
                 let value =
                     self.improvement_value_with_appeal(g, pos, &improvement, strategy, appeal)
                         + self.first_luxury_premium(g, pid, pos, &improvement)
-                        + self.growth_farm_premium(g, pid, pos, &improvement);
+                        + self.growth_farm_premium(g, pid, pos, &improvement)
+                        + self.worked_production_premium(g, pid, pos, &improvement, strategy);
                 (value, improvement)
             })
             .filter(|(value, _)| *value > current_value + 0.5)
@@ -46948,6 +46967,8 @@ mod industrial_zone_tests;
 mod urban_planning_slot_tests;
 #[cfg(test)]
 mod growth_farm_tests;
+#[cfg(test)]
+mod worked_production_tests;
 
 #[cfg(test)]
 mod theater_amphitheater_tests;
