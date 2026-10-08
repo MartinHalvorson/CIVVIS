@@ -11872,6 +11872,12 @@ fn apply_congress_dvp(game: &mut crate::game::Game, state: &StateSnapshot) {
     let Some(congress) = &state.congress_dvp else {
         return;
     };
+    // One entry per alive major, the seat included: the host's count of the
+    // living, which the board's planted seats cannot give once a major is
+    // eliminated. Read by `retire_defeated_majors`.
+    if !congress.points.is_empty() {
+        game.players[0].live_living_majors = Some(congress.points.len());
+    }
     // Host player id -> mirror seat, exactly as the rival loops assign them.
     let seat_of = host_major_seat_map(state, modeled_major_player_count(game));
     let ours = state.seat.local_player.max(0) as usize;

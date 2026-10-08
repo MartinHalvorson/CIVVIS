@@ -3418,6 +3418,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "culture-denial-heist", field: "culture_denial_heist", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_denial_heist, disable: AdvancedAi::disable_culture_denial_heist },
     // `advanced/band_hunt.rs`.
     Gene { tag: "war-kills-the-bands", field: "war_kills_the_bands", kind: Kind::OptIn, enable: AdvancedAi::enable_war_kills_the_bands, disable: AdvancedAi::disable_war_kills_the_bands },
+    // `defeated-majors-leave-the-board`: live Emperor G415 eliminated
+    // Poland at turn 104, and the board kept it alive: Ethiopia's Orthodoxy,
+    // at match point (every major but Sumeria), read 50% of a 75 bar for 20
+    // turns, and the counterweight bought Orthodox Missionaries to 107;
+    // Ethiopia won on Religion at 132. Empty seats beyond the host's living
+    // count retire. See `defeated_majors::retire_defeated_majors`.
+    Gene { tag: "defeated-majors-leave-the-board", field: "defeated_majors_leave_the_board", kind: Kind::OptIn, enable: AdvancedAi::enable_defeated_majors_leave_the_board, disable: AdvancedAi::disable_defeated_majors_leave_the_board },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
