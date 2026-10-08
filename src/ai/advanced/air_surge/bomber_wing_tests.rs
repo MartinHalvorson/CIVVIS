@@ -252,18 +252,35 @@ fn the_surge_buys_while_its_wing_is_short() {
 }
 
 #[test]
-fn a_zero_goal_surge_holds_no_slot() {
-    // No Aluminum, income or bank: the wing can never fly.
+fn a_zero_goal_surge_before_radio_still_holds_the_slot() {
+    // Aluminum is not revealed yet, so no goal can be read: the hold stays.
     let (mut g, mut ai, first, _) = slot_fixture();
     ai.enable_surge_fields_the_bombers();
     let first_hub = hub(&g, first);
+    assert!(!g.players[0].techs.contains(&name!("radio")));
+    assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 0);
+    assert!(ai.surge_wing_fuelled(&g, 0));
+    let held = ai.surge_hold_field_slot(&mut g, 0);
+    assert!(held.is_some());
+    assert!(!g.can_produce(0, first, &first_hub));
+    AdvancedAi::surge_release_field_slot(&mut g, held);
+    assert!(g.can_produce(0, first, &first_hub));
+}
+
+#[test]
+fn a_zero_goal_surge_after_radio_releases_the_slot() {
+    // Radio known and no Aluminum, income or bank: the wing can never fly.
+    let (mut g, mut ai, first, _) = slot_fixture();
+    ai.enable_surge_fields_the_bombers();
+    let first_hub = hub(&g, first);
+    g.players[0].techs.insert(name!("radio"));
     assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 0);
     assert!(ai.air_surge_reserves_field_slot(&g, 0, first, &first_hub));
     assert!(!ai.surge_wing_fuelled(&g, 0));
     assert!(ai.surge_field_slot_refusals(&g, 0).is_empty());
     assert!(ai.surge_hold_field_slot(&mut g, 0).is_none());
     assert!(g.can_produce(0, first, &first_hub));
-    // The bank fuels the wing and the hold returns.
+    // A bank fuels the wing and the hold returns.
     g.players[0]
         .strategic_resources
         .insert(name!("aluminum"), 400.0);

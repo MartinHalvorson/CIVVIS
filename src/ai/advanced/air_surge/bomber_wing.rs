@@ -57,13 +57,24 @@ pub(crate) type HeldRefusals = (
 impl AdvancedAi {
     /// `surge-fields-the-bombers` acts only while the wing can be fuelled:
     /// the surge's Bomber goal (`air_surge_bomber_goal`, the Aluminum income
-    /// and bank) is above zero. -d8, live pin 6dd56c11d: the slot hold fired
+    /// and bank) is above zero, or the Bomber's resource is not yet revealed
+    /// (Aluminum comes with Radio, one technology before the Bomber), when
+    /// no goal can be read yet. -d8, live pin 6dd56c11d: the slot hold fired
     /// 47-160 lines a game with a goal of 0, which is every game without
     /// Aluminum (26% of the games reaching Advanced Flight), holding district
-    /// slots for a wing that could never fly. A bought Aluminum stock raises
-    /// the goal, so a gun-resource want for it reopens the gene.
+    /// slots for a wing that could never fly. Before Radio the hold stays:
+    /// live Emperor game 349 lost Bogota's slot at turn 130, before Flight. A
+    /// bought Aluminum stock raises the goal, so a gun-resource want for it
+    /// reopens the gene.
     pub(crate) fn surge_wing_fuelled(&self, g: &Game, pid: usize) -> bool {
-        self.surge_fields_the_bombers && Self::air_surge_bomber_goal(g, pid) > 0
+        if !self.surge_fields_the_bombers {
+            return false;
+        }
+        let revealed = Self::air_surge_bomber(g, pid)
+            .and_then(|bomber| g.rules.units[bomber].requires_resource)
+            .and_then(|resource| g.rules.resources.get(&resource).and_then(|spec| spec.tech))
+            .is_none_or(|tech| g.players[pid].techs.contains(&tech));
+        !revealed || Self::air_surge_bomber_goal(g, pid) > 0
     }
 
     /// `surge-fields-the-bombers`: the districts that would take the air
