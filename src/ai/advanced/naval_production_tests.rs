@@ -128,3 +128,30 @@ fn lakes_do_not_raise_open_water_fleet_demand_or_create_a_coastal_war() {
         "the withhold retains the old lake-inclusive budget"
     );
 }
+
+#[test]
+fn inland_cities_can_launch_through_a_completed_open_water_harbor() {
+    let (mut g, ai, city, plan) = board();
+    let port = (8, 6);
+    g.map.tiles.get_mut(&port).unwrap().terrain = crate::name!("coast");
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("harbor"), port);
+    assert!(ai.base.naval_city_can_launch(&g, city));
+    assert!(ai.base.desired_navy(&g, 0) > 0);
+    for item in [
+        Item::Unit {
+            unit: crate::name!("ironclad"),
+        },
+        Item::Formation {
+            unit: crate::name!("ironclad"),
+            formation: 1,
+        },
+    ] {
+        assert!(ai.production_value(&g, 0, city, &item, &plan, &ai.counts(&g, 0)) > -10_000.0);
+    }
+    g.map.tiles.get_mut(&port).unwrap().terrain = crate::name!("lake");
+    assert!(!ai.base.naval_city_can_launch(&g, city));
+}

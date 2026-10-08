@@ -28930,7 +28930,7 @@ impl AdvancedAi {
             Item::Formation { unit, formation } => {
                 let spec = &g.rules.units[unit];
                 let naval = spec.domain.as_deref() == Some("sea");
-                if naval && !self.base.naval_city_can_launch(g, cid) {
+                if naval && self.base.open_water_navy && !self.base.naval_city_can_launch(g, cid) {
                     return -10_000.0;
                 }
                 let desired = if naval {

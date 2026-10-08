@@ -3495,11 +3495,16 @@ impl BasicAi {
     /// cannot afford a flood fill per candidate per city per turn.
     pub(crate) fn city_has_open_water(g: &Game, cid: u32) -> bool {
         g.cities.get(&cid).is_some_and(|city| {
-            g.nbrs(city.pos).into_iter().any(|pos| {
+            let open_water = |pos| {
                 g.map
                     .get(pos)
                     .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"))
-            })
+            };
+            g.nbrs(city.pos).into_iter().any(open_water)
+                // An inland city can launch through its completed Harbor.
+                || city.districts.iter().any(|(district, pos)| {
+                    g.district_family(*district) == "harbor" && open_water(*pos)
+                })
         })
     }
 
