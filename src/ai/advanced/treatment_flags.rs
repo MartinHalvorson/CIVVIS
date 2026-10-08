@@ -7046,6 +7046,14 @@ impl AdvancedAi {
     pub fn disable_no_peace_with_a_launcher(&mut self) {
         self.no_peace_with_a_launcher = false;
     }
+    /// Enable `launcher-war-ignores-the-edge`.
+    pub fn enable_launcher_war_ignores_the_edge(&mut self) {
+        self.launcher_war_ignores_the_edge = true;
+    }
+    /// Withhold `launcher-war-ignores-the-edge`.
+    pub fn disable_launcher_war_ignores_the_edge(&mut self) {
+        self.launcher_war_ignores_the_edge = false;
+    }
 
     /// Opt-in gene `defeated-majors-leave-the-board`; see
     /// [`Self::retire_defeated_majors`].

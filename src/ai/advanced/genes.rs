@@ -3474,6 +3474,12 @@ pub const GENES: &[Gene] = &[
     // turns or never fell. A recovering melee unit near a falling city stays
     // in the fight. See `AdvancedAi::falling_city_calls`.
     Gene { tag: "falling-city-outranks-the-heal", field: "falling_city_outranks_the_heal", kind: Kind::OptIn, enable: AdvancedAi::enable_falling_city_outranks_the_heal, disable: AdvancedAi::disable_falling_city_outranks_the_heal },
+    // Against a racer past its Moon and short of the Exoplanet launch, the
+    // war opens from 0.8 times its steady power, staged or not, by surprise;
+    // its pads are raided by bombers and lone units, not besieged. G432 held
+    // the urgent denial on Persia under 1.5x for seven turns after its Mars
+    // base. See `advanced/launcher_war.rs`.
+    Gene { tag: "launcher-war-ignores-the-edge", field: "launcher_war_ignores_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_ignores_the_edge, disable: AdvancedAi::disable_launcher_war_ignores_the_edge },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

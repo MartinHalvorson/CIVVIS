@@ -159,3 +159,88 @@ fn a_bomber_in_range_pillages_the_pad() {
     assert!(raiders.contains(&bomber), "the Bomber flew: {raiders:?}");
     assert!(g.map.tiles[&pad].pillaged, "the pad is pillaged");
 }
+
+#[test]
+fn launcher_war_ignores_the_edge_is_opt_in() {
+    opt_in_off_in_both_controllers("launcher-war-ignores-the-edge", |ai| {
+        ai.launcher_war_ignores_the_edge
+    });
+}
+
+/// G432's shape: the racer past its Moon, our army short of 1.5 times its
+/// steady power but past 0.8. Nothing reads the siege bill.
+#[test]
+fn the_launcher_war_opens_from_point_eight_of_the_racers_power() {
+    let (mut g, mut ai, _, pad) = fixture();
+    g.at_war.clear();
+    for at in [(14, 10), (14, 12), (14, 14), (15, 11)] {
+        g.spawn_test_unit("cavalry", 0, at);
+    }
+    for at in [(30, 10), (30, 12), (30, 14), (31, 11), (31, 13)] {
+        g.spawn_test_unit("cavalry", 1, at);
+    }
+    let ours = g.military_power(0);
+    let theirs = g.military_power(1);
+    assert!(
+        ours >= 0.8 * theirs && ours < 1.5 * theirs,
+        "{ours} against {theirs}"
+    );
+    assert!(!ai.launcher_war_opens(&g, 0, 1), "off: the edge stands");
+    ai.enable_launcher_war_ignores_the_edge();
+    assert!(ai.launcher_war_opens(&g, 0, 1));
+    // The Moon alone is enough; one project is not.
+    g.players[1].science_projects.remove("launch_mars_colony");
+    assert!(ai.launcher_war_opens(&g, 0, 1), "past the Moon");
+    g.players[1].science_projects.remove("launch_moon_landing");
+    assert!(!ai.launcher_war_opens(&g, 0, 1), "short of the Moon");
+    g.players[1]
+        .science_projects
+        .insert("launch_moon_landing".to_string());
+    // Past the launch, with no standing pad, or with a city of ours falling:
+    // no.
+    g.players[1]
+        .science_projects
+        .insert("exoplanet_expedition".to_string());
+    assert!(!ai.launcher_war_opens(&g, 0, 1), "past the launch");
+    g.players[1].science_projects.remove("exoplanet_expedition");
+    g.map.tiles.get_mut(&pad).unwrap().pillaged = true;
+    assert!(!ai.launcher_war_opens(&g, 0, 1), "no standing pad");
+    g.map.tiles.get_mut(&pad).unwrap().pillaged = false;
+    let home = g.player_city_ids(0)[0];
+    g.cities.get_mut(&home).unwrap().last_attacked = g.turn;
+    g.cities.get_mut(&home).unwrap().hp = 60;
+    assert!(
+        !ai.launcher_war_opens(&g, 0, 1),
+        "a city of ours is falling"
+    );
+    g.cities.get_mut(&home).unwrap().last_attacked = 0;
+    g.cities.get_mut(&home).unwrap().hp = 200;
+    // Under 0.8 times their power: no.
+    for at in [(32, 10), (32, 12), (32, 14), (33, 11), (33, 13), (34, 12)] {
+        g.spawn_test_unit("cavalry", 1, at);
+    }
+    assert!(!ai.launcher_war_opens(&g, 0, 1), "under 0.8 times");
+}
+
+/// G432's (41, 11) pad stood out of every Bomber's range and 7 tiles from a
+/// city of ours: the idle Bomber rebases there for next turn's pillage.
+#[test]
+fn a_bomber_out_of_range_rebases_toward_the_pad() {
+    let (mut g, mut ai, _, pad) = fixture();
+    ai.enable_war_raids_the_pads();
+    let bomber = g.spawn_test_unit("bomber", 0, (10, 12));
+    let range = g.unit_attack_range(bomber);
+    assert!(
+        g.wdist((10, 12), pad) > range,
+        "the Bomber starts out of range"
+    );
+    let forward = g.found_city_for(0, (18, 12), None);
+    let forward_pos = g.cities[&forward].pos;
+    assert!(g.wdist(forward_pos, pad) <= range);
+    let raiders = ai.plan_pad_raids(&mut g, 0, &plan(), &BTreeSet::new());
+    assert!(raiders.contains(&bomber), "{raiders:?}");
+    assert_eq!(
+        g.units[&bomber].pos, forward_pos,
+        "rebased in range of the pad"
+    );
+}

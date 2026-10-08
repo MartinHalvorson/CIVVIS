@@ -31,7 +31,7 @@
 use std::collections::BTreeSet;
 
 use super::{AdvancedAi, StrategicPlan};
-use crate::game::{Action, Game};
+use crate::game::{Action, ActionFamilies, Game};
 use crate::think;
 use crate::Pos;
 
@@ -45,6 +45,12 @@ const PAD_RAID_RING: i32 = 2;
 pub(crate) const PAD_RAID_REACH: i32 = 8;
 /// The health a Bomber needs to pillage (the host's own floor).
 const PAD_BOMBER_MIN_HP: i32 = 50;
+/// `launcher-war-ignores-the-edge`: space projects a rival must have landed
+/// (the Moon) before its war opens short of the edge.
+const LAUNCHER_WAR_STAGES: usize = 2;
+/// `launcher-war-ignores-the-edge`: our military, as a share of the racer's
+/// steady power, at which its war opens.
+pub(crate) const LAUNCHER_WAR_EDGE: f64 = 0.8;
 /// Our city counts as falling when hit within this many turns...
 const FALLING_CITY_TURNS: u32 = 2;
 /// ...and at this much health or less (of 200).
@@ -145,6 +151,29 @@ impl AdvancedAi {
                         self.pad_raid_landed(g, pid, rival, pad, "a Bomber");
                         continue;
                     }
+                } else if let Some((bomber, base)) =
+                    Self::pad_bomber_rebase(g, pid, pad, reserved, &raiders)
+                {
+                    // No Bomber reaches it: one rebases to a base of ours in
+                    // range, for next turn's pillage. G432's (41, 11) pad,
+                    // the one Persia launched from, stood 14-19 tiles from
+                    // our three Bombers and 7 from Quito.
+                    if g.apply(
+                        pid,
+                        &Action::AirRebase {
+                            unit: bomber,
+                            to: base,
+                        },
+                    )
+                    .is_ok()
+                    {
+                        raiders.insert(bomber);
+                        think!(self.journal(), Military, Decision,
+                               "A Bomber rebases toward a Spaceport of {}", g.players[rival].civ;
+                               "war-raids-the-pads: the pad stands {} tiles from its new base, in range for the pillage",
+                               g.wdist(base, pad);
+                               pad);
+                    }
                 }
                 let mut candidates: Vec<(i32, u32)> = g
                     .player_unit_ids(pid)
@@ -238,6 +267,109 @@ impl AdvancedAi {
             })
             .max_by_key(|(hp, uid)| (*hp, std::cmp::Reverse(*uid)))
             .map(|(_, uid)| uid)
+    }
+
+    /// A Bomber out of range of `pad` and a base of ours (a city or an
+    /// Aerodrome) in range of it the Bomber can rebase to this turn: the
+    /// farthest such base from the pad, the Bomber nearest it.
+    fn pad_bomber_rebase(
+        g: &Game,
+        pid: usize,
+        pad: Pos,
+        reserved: &BTreeSet<u32>,
+        raiders: &BTreeSet<u32>,
+    ) -> Option<(u32, Pos)> {
+        let bases: Vec<Pos> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .flat_map(|cid| {
+                let city = &g.cities[&cid];
+                std::iter::once(city.pos).chain(
+                    city.districts
+                        .iter()
+                        .filter(|(district, _)| g.district_family(**district) == "aerodrome")
+                        .map(|(_, pos)| *pos)
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect();
+        let mut bombers: Vec<(i32, u32)> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| {
+                let unit = &g.units[uid];
+                let spec = &g.rules.units[unit.kind];
+                spec.domain.as_deref() == Some("air")
+                    && spec.promotion_class == "air_bomber"
+                    && !reserved.contains(uid)
+                    && !raiders.contains(uid)
+                    && unit.hp >= PAD_BOMBER_MIN_HP
+                    && unit.moves_left > 0.0
+                    && g.wdist(unit.pos, pad) > g.unit_attack_range(*uid)
+            })
+            .map(|uid| (g.wdist(g.units[&uid].pos, pad), uid))
+            .collect();
+        bombers.sort();
+        bombers.into_iter().find_map(|(_, uid)| {
+            let range = g.unit_attack_range(uid);
+            let mut usable: Vec<Pos> = bases
+                .iter()
+                .copied()
+                .filter(|base| g.wdist(*base, pad) <= range)
+                .filter(|base| {
+                    let mut board = g.speculative_clone();
+                    board
+                        .apply(
+                            pid,
+                            &Action::AirRebase {
+                                unit: uid,
+                                to: *base,
+                            },
+                        )
+                        .is_ok()
+                })
+                .collect();
+            usable.sort_by_key(|base| (std::cmp::Reverse(g.wdist(*base, pad)), *base));
+            usable.first().map(|base| (uid, *base))
+        })
+    }
+
+    /// `launcher-war-ignores-the-edge`: whether the war on `rival` opens now
+    /// — it has landed two space projects and not launched the Exoplanet, a
+    /// pad of its stands, no city of ours is falling, and our military is
+    /// [`LAUNCHER_WAR_EDGE`] times its steady power. `false` with the gene
+    /// off.
+    pub(crate) fn launcher_war_opens(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        self.launcher_war_ignores_the_edge
+            && g.victory_conditions.science
+            && Self::science_denial_stages(g, rival) >= LAUNCHER_WAR_STAGES
+            && !g.players[rival]
+                .science_projects
+                .contains("exoplanet_expedition")
+            && !Self::standing_pads(g, pid, rival).is_empty()
+            && !Self::our_cities_falling(g, pid)
+            && g.military_power(pid)
+                >= LAUNCHER_WAR_EDGE * self.steady_rival_power(g, rival).max(1.0)
+    }
+
+    /// `launcher-war-ignores-the-edge`: the surprise war on `target`, with
+    /// its journal line.
+    pub(crate) fn launcher_war_opening(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+        my_power: f64,
+    ) -> Option<Action> {
+        let surprise = g
+            .legal_actions_within(pid, ActionFamilies::DIPLOMACY)
+            .into_iter()
+            .find(|action| matches!(action, Action::DeclareWar { player } if *player == target))?;
+        think!(self.journal(), Military, Strategy,
+               "Opening the war on {}'s space race", g.players[target].civ;
+               "launcher-war-ignores-the-edge: {} space projects landed and a pad standing; {my_power:.0} power against their steady {:.0}, and its pads are raided, not besieged",
+               Self::science_denial_stages(g, target), self.steady_rival_power(g, target));
+        Some(surprise)
     }
 
     /// The walk toward `pad`, simulated: onto the pad when the route takes
