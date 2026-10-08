@@ -8100,6 +8100,10 @@ pub struct AdvancedAi {
     /// of its standing Spaceport cities and run Disrupt Rocketry wherever the
     /// host offers it. See `advanced/science_denial_every_pad.rs`.
     science_denial_every_pad: bool,
+    /// `science-denial-trains-spies`: against a decisive space racer, the
+    /// top-Production cities train Spies up to the racer's pads plus one.
+    /// See `advanced/science_denial_trains_spies.rs`.
+    science_denial_trains_spies: bool,
     // ---- append: t-z ------------------------------------------------
     /// `urban-planning-fills-the-slot`: Urban Planning (+1 Production in
     /// every city) is wanted at the tail of every lane's policy portfolio, so
@@ -9013,6 +9017,7 @@ mod wonder_sites;
 
 mod science_denial_every_pad;
 mod dvp_leader_front;
+mod science_denial_trains_spies;
 mod science_endgame;
 mod science_threat_denial;
 mod science_trade;
@@ -10359,6 +10364,7 @@ impl AdvancedAi {
 
             settler_before_the_navy: false,
             science_denial_every_pad: false,
+            science_denial_trains_spies: false,
             // ---- append: t-z ----------------------------------------
             urban_planning_fills_the_slot: false,
             theater_keeps_its_amphitheater: false,
@@ -46991,6 +46997,12 @@ impl AdvancedAi {
             // Exact no-op while the gene is off. See
             // `advanced/worked_backlog_claim.rs`.
             self.claim_idle_queue_for_worked_backlog(g, pid, &plan);
+            // `science-denial-trains-spies`: against a decisive space racer,
+            // the top-Production cities train the Spies its pads need, ahead
+            // of the routine claims below (the defence redirects at the end of
+            // the turn still win). Exact no-op while the gene is off. See
+            // `advanced/science_denial_trains_spies.rs`.
+            self.claim_queues_for_denial_spies(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and

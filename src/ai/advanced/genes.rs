@@ -3409,6 +3409,11 @@ pub const GENES: &[Gene] = &[
     // neighbour at a third of our power. See
     // `AdvancedAi::counter_out_of_reach`.
     Gene { tag: "counter-out-of-reach-takes-the-weak", field: "counter_out_of_reach_takes_the_weak", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_out_of_reach_takes_the_weak, disable: AdvancedAi::disable_counter_out_of_reach_takes_the_weak },
+    // Against a decisive space racer the top-Production cities train Spies
+    // up to its pads plus one, ahead of routine builds. G406 held 0-1 Spies
+    // of 5 capacity from t175 to its t215 Science loss. See
+    // `advanced/science_denial_trains_spies.rs`.
+    Gene { tag: "science-denial-trains-spies", field: "science_denial_trains_spies", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denial_trains_spies, disable: AdvancedAi::disable_science_denial_trains_spies },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

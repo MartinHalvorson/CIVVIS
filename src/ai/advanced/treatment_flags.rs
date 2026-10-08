@@ -6997,6 +6997,14 @@ impl AdvancedAi {
     pub fn disable_counter_out_of_reach_takes_the_weak(&mut self) {
         self.counter_out_of_reach_takes_the_weak = false;
     }
+    /// Enable `science-denial-trains-spies`.
+    pub fn enable_science_denial_trains_spies(&mut self) {
+        self.science_denial_trains_spies = true;
+    }
+    /// Withhold `science-denial-trains-spies`.
+    pub fn disable_science_denial_trains_spies(&mut self) {
+        self.science_denial_trains_spies = false;
+    }
 
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
