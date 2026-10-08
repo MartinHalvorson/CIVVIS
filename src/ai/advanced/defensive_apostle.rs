@@ -75,6 +75,24 @@ impl AdvancedAi {
             > 0;
         let wanted = if launched { "inquisitor" } else { "apostle" };
         let faith = g.players[pid].religion.clone().unwrap();
+        // `founder-defends-its-cities`: with a rival faith in our cities, an
+        // Inquisition more than a few turns of Faith away does not hold the
+        // ordinary defensive purchases (live Emperor 20261008T101304Z saved
+        // 2 to 121 of the Apostle's 200 Faith from turn 49 to 83 and lost).
+        let saving_for = if !launched
+            && g.units.values().any(|unit| {
+                unit.owner == pid
+                    && unit.kind == "apostle"
+                    && unit.religion.as_deref() == Some(faith.as_str())
+                    && unit.charges > 0
+            }) {
+            "inquisitor"
+        } else {
+            wanted
+        };
+        if self.founder_inquisition_unit_out_of_reach(g, pid, saving_for) {
+            return false;
+        }
         if g.units.values().any(|unit| {
             unit.owner == pid
                 && unit.kind == wanted

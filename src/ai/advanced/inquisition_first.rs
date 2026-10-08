@@ -109,6 +109,9 @@ impl AdvancedAi {
             .filter(|cid| g.city_religion(&g.cities[cid]) == Some(own.as_str()))
             .filter_map(|cid| Self::inquisition_unit_price(g, pid, cid, wanted))
             .min_by(f64::total_cmp)
+            // `founder-defends-its-cities`: a unit more than a few turns of
+            // Faith away holds nothing back.
+            .filter(|price| !self.founder_inquisition_out_of_reach(g, pid, *price))
     }
 
     /// The Faith price of `unit` in `cid`. The host's purchase menu lists only
@@ -119,7 +122,12 @@ impl AdvancedAi {
     /// twice the unit's cost at the game's speed (the Apostle's 200 on Online,
     /// the host's quote at G215 turn 92), where the city could sell it: a Holy
     /// Site and the unit's required building.
-    fn inquisition_unit_price(g: &Game, pid: usize, cid: u32, unit: &str) -> Option<f64> {
+    pub(super) fn inquisition_unit_price(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+    ) -> Option<f64> {
         g.unit_purchase_cost(pid, cid, unit, "faith").or_else(|| {
             let spec = g.rules.units.get(unit)?;
             let city = &g.cities[&cid];

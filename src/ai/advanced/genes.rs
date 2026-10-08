@@ -3365,6 +3365,14 @@ pub const GENES: &[Gene] = &[
     // Housing to grow into keeps the stock pricing. See
     // `advanced/worked_production.rs`.
     Gene { tag: "builders-improve-the-worked-for-production", field: "builders_improve_the_worked_for_production", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_improve_the_worked_for_production, disable: AdvancedAi::disable_builders_improve_the_worked_for_production },
+    // `founder-defends-its-cities`: live Emperor 20261008T100610Z founded
+    // Buddhism at 45 and lost to Catholicism at 111 with a held Catholic
+    // Missionary counted in its defensive cap and 706 Faith banked once no
+    // city of ours followed our faith; 20261008T101304Z saved for an Apostle
+    // it never reached from 49 to 83 and lost at 104. Once a rival faith
+    // holds a city of ours the founder buys its own faith's defenders now.
+    // See `founder_defence::founder_defence_live`.
+    Gene { tag: "founder-defends-its-cities", field: "founder_defends_its_cities", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_defends_its_cities, disable: AdvancedAi::disable_founder_defends_its_cities },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
