@@ -10370,6 +10370,12 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 		end, nil);
 	end
 
+	-- PlotToolTip.lua:655 reads the separate lake marker: native lakes have
+	-- TERRAIN_COAST too. A failed API read remains unknown.
+	CivvisTiles.lakeState = function(plot)
+		return try(function() return plot:IsLake(); end, nil);
+	end
+
 	local known = CivvisTiles.known;
 	for y = 0, height - 1 do
 		for x = 0, width - 1 do
@@ -10403,6 +10409,7 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 					-- record carries joins the signature; no new locals, the
 					-- chunk is at its ceiling.
 					mark = (owner * 1024 + feature) .. ":"
+						.. tostring(CivvisTiles.lakeState(plot)) .. ":"
 						.. tostring(CivvisTiles.owningCity(plot, pid)) .. ":"
 						.. tostring(CivvisTiles.floodState(plot, "IsFlooded")) .. ":"
 						.. tostring(CivvisTiles.floodState(plot, "IsSubmerged")) .. ":"
@@ -10455,6 +10462,7 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 						o = try(function() return plot:GetOwner(); end, -1),
 						oc = CivvisTiles.owningCity(plot, pid),
 						w = water,
+						lk = water and CivvisTiles.lakeState(plot) or nil,
 						i = try(function() return plot:IsImpassable(); end, false),
 						fw = try(function() return plot:IsFreshWater(); end, false),
 						-- ★★★★ WHAT IS ALREADY BUILT HERE. Without it the mirror shows a

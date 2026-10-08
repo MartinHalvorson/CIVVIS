@@ -4241,6 +4241,15 @@ impl BasicAi {
         })
     }
 
+    /// Use the same launch rule for the fleet budget and both production scorers.
+    pub(crate) fn naval_city_can_launch(&self, g: &Game, cid: u32) -> bool {
+        if self.open_water_navy {
+            Self::city_has_open_water(g, cid)
+        } else {
+            Self::city_is_coastal(g, cid)
+        }
+    }
+
     /// Whether there is still water this empire has not seen — the sea's
     /// "somewhere left to go", read by the production arm and by the
     /// explorer roster alike.
@@ -5363,11 +5372,11 @@ impl BasicAi {
         (!g.players[pid].techs.contains(&Name::new(goal))).then_some(goal)
     }
 
-    pub(crate) fn desired_navy(g: &Game, pid: usize) -> usize {
+    pub(crate) fn desired_navy(&self, g: &Game, pid: usize) -> usize {
         let coastal_cities = g
             .player_city_ids(pid)
             .into_iter()
-            .filter(|cid| Self::city_is_coastal(g, *cid))
+            .filter(|cid| self.naval_city_can_launch(g, *cid))
             .count();
         if coastal_cities == 0 || !g.players[pid].techs.contains(&crate::name!("sailing")) {
             return 0;
@@ -5400,7 +5409,7 @@ impl BasicAi {
                 }) || g
                     .player_city_ids(enemy.id)
                     .into_iter()
-                    .any(|cid| Self::city_is_coastal(g, cid)))
+                    .any(|cid| self.naval_city_can_launch(g, cid)))
         });
         if naval_war {
             desired = desired.max(coastal_cities.saturating_add(1).max(2));
@@ -13586,7 +13595,7 @@ impl BasicAi {
         }
         let naval = Self::naval_counts(g, pid).0;
         if can_add_military
-            && naval < Self::desired_navy(g, pid)
+            && naval < self.desired_navy(g, pid)
             && !(self.settler_before_the_navy
                 && !self.minor
                 && !self.barb
@@ -25460,7 +25469,7 @@ mod tests {
         tile.terrain = crate::name!("coast");
         tile.feature = None;
         assert!(BasicAi::city_is_coastal(&game, cid));
-        assert!(BasicAi::desired_navy(&game, 0) > 0, "the fixture wants a ship");
+        assert!(ai.desired_navy(&game, 0) > 0, "the fixture wants a ship");
         let pick = |on: bool, settlers: usize| {
             let mut ai = BasicAi::new();
             ai.settler_before_the_navy = on;

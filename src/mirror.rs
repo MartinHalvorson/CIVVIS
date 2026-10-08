@@ -167,6 +167,10 @@ pub struct Plot {
     pub oc: Option<i64>,
     #[serde(default)]
     pub w: bool,
+    /// Native lake identity (`Plot:IsLake`); terrain alone names lakes as coast.
+    /// Absent on legacy exports or failed reads.
+    #[serde(default)]
+    pub lk: Option<bool>,
     #[serde(default)]
     pub i: bool,
     #[serde(default)]
@@ -1453,7 +1457,13 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
                     Resolved::Excluded(_) | Resolved::Unknown(_) => None,
                 });
             let (terrain, hills) = resolved.unwrap_or((unknown, false));
-            tile.terrain = terrain;
+            tile.terrain =
+                if plot.w && plot.lk == Some(true) && matches!(terrain.as_str(), "coast" | "ocean")
+                {
+                    crate::name!("lake")
+                } else {
+                    terrain
+                };
             tile.hills = hills;
             tile.feature = plot.f.as_ref().and_then(|name| match vocab.feature(name) {
                 Resolved::Known(value) => Some(value),
@@ -16018,3 +16028,6 @@ mod research_quote_tests;
 
 #[cfg(test)]
 mod air_refusal_tests;
+
+#[cfg(test)]
+mod lake_identity_tests;
