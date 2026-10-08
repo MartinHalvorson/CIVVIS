@@ -7053,6 +7053,15 @@ impl AdvancedAi {
         self.elimination_waits_on_the_clock = false;
     }
 
+    /// Enable `early-settler-floor`.
+    pub fn enable_early_settler_floor(&mut self) {
+        self.early_settler_floor = true;
+    }
+    /// Withhold `early-settler-floor`.
+    pub fn disable_early_settler_floor(&mut self) {
+        self.early_settler_floor = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

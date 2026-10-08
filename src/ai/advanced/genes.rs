@@ -3437,6 +3437,12 @@ pub const GENES: &[Gene] = &[
     // is at its early warning. Wants `defeated-majors-leave-the-board`. See
     // `AdvancedAi::elimination_crowns_a_faith`.
     Gene { tag: "elimination-waits-on-the-clock", field: "elimination_waits_on_the_clock", kind: Kind::OptIn, enable: AdvancedAi::enable_elimination_waits_on_the_clock, disable: AdvancedAi::disable_elimination_waits_on_the_clock },
+    // Before the band turn, while cities plus walkers are short of six and
+    // no Settler is in production, the unthreatened city that trains one
+    // soonest queues a Settler ahead of the Prophet race and the routine
+    // builds. 10-08: four or fewer cities at t75 passed the production gate
+    // in 0 of 19 live Emperor runs. See `advanced/early_settler_floor.rs`.
+    Gene { tag: "early-settler-floor", field: "early_settler_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_early_settler_floor, disable: AdvancedAi::disable_early_settler_floor },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
