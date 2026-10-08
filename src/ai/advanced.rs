@@ -8104,6 +8104,10 @@ pub struct AdvancedAi {
     /// top-Production cities train Spies up to the racer's pads plus one.
     /// See `advanced/science_denial_trains_spies.rs`.
     science_denial_trains_spies: bool,
+    /// `science-denial-every-pad`: pad cities where the host's menu refused
+    /// a spy of ours Disrupt Rocketry with the pad standing, by the turn it
+    /// did. See `AdvancedAi::every_pad_drop_refused`.
+    science_denial_refused_pads: BTreeMap<u32, u32>,
     // ---- append: t-z ------------------------------------------------
     /// `urban-planning-fills-the-slot`: Urban Planning (+1 Production in
     /// every city) is wanted at the tail of every lane's policy portfolio, so
@@ -10365,6 +10369,7 @@ impl AdvancedAi {
             settler_before_the_navy: false,
             science_denial_every_pad: false,
             science_denial_trains_spies: false,
+            science_denial_refused_pads: BTreeMap::new(),
             // ---- append: t-z ----------------------------------------
             urban_planning_fills_the_slot: false,
             theater_keeps_its_amphitheater: false,
@@ -28010,7 +28015,10 @@ impl AdvancedAi {
         // and the cities a spy disrupts those pads from. Both empty with the
         // gene off. See `advanced/science_denial_every_pad.rs`.
         let every_pad_threats = self.every_pad_threats(g, pid);
-        let every_pads = Self::every_pad_cities(g, pid, &every_pad_threats);
+        let mut every_pads = Self::every_pad_cities(g, pid, &every_pad_threats);
+        // …less the pad cities where the host refused us the disruption with
+        // the pad standing (the board's tie filing naming the wrong city).
+        self.every_pad_drop_refused(g, pid, &mut every_pads);
         let ids: Vec<u32> = g
             .spies
             .values()

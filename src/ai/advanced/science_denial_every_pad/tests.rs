@@ -260,3 +260,48 @@ fn spies_at_home_post_one_to_each_pad() {
     let posted: BTreeSet<Option<u32>> = [a, b].iter().map(|spy| g.spies[spy].city).collect();
     assert_eq!(posted, BTreeSet::from([Some(first), Some(second)]));
 }
+
+#[test]
+fn a_pad_city_the_host_refuses_is_left_for_the_free_one() {
+    // G408's shape: the spy holds a pad city whose host menu lists no
+    // Disrupt Rocketry with the pad standing — the board filed a tied pad
+    // under the wrong city — while the rival's other pad city is free.
+    let run = |mut ai: AdvancedAi| {
+        let (mut g, first, second) = board();
+        give_pad(&mut g, first, first);
+        give_pad(&mut g, second, second);
+        let spy = idle_spy(&mut g, first);
+        host_menu(&mut g, spy, &["foment_unrest", "listening_post"]);
+        ai.advanced_spies(&mut g, 0, &conquest_on(1));
+        let refused = ai.science_denial_refused_pads.contains_key(&first);
+        (g.spies[&spy].city, refused, first, second)
+    };
+    let (city, refused, first, _) = run(stock());
+    assert_eq!(city, Some(first), "stock: the spy stays");
+    assert!(!refused, "stock: nothing is remembered");
+    let (city, refused, _, second) = run(every_pad());
+    assert_eq!(city, Some(second), "the gene: it leaves for the free pad");
+    assert!(refused, "and the refusing city is remembered");
+}
+
+#[test]
+fn a_running_operation_is_no_refusal() {
+    let (mut g, first, second) = board();
+    give_pad(&mut g, first, first);
+    give_pad(&mut g, second, second);
+    let worker = idle_spy(&mut g, first);
+    let spare = idle_spy(&mut g, first);
+    host_menu(&mut g, spare, &["foment_unrest", "listening_post"]);
+    Arc::make_mut(&mut g.host_unit_facts)
+        .entry(worker)
+        .or_default()
+        .spy_operation = Some("disrupt_rocketry".to_string());
+    let mut ai = every_pad();
+    let mut pads = BTreeSet::from([first, second]);
+    ai.every_pad_drop_refused(&g, 0, &mut pads);
+    assert_eq!(
+        pads,
+        BTreeSet::from([first, second]),
+        "the disruption already running there is why"
+    );
+}

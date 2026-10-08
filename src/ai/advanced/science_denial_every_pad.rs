@@ -60,6 +60,10 @@ pub(crate) const EVERY_PAD_ASSIGN_PRIORITY: i32 = 1_500;
 /// Civ VI places a district within three tiles of its city.
 const PAD_CITY_REACH: i32 = 3;
 
+/// Turns a pad city stays out of the posting after the host refused a spy of
+/// ours Disrupt Rocketry there with its pad standing.
+pub(crate) const EVERY_PAD_REFUSAL_MEMORY: u32 = 30;
+
 impl AdvancedAi {
     /// The rivals whose every pad is a target. Empty with the gene off.
     pub(crate) fn every_pad_threats(&self, g: &Game, pid: usize) -> BTreeSet<usize> {
@@ -133,6 +137,58 @@ impl AdvancedAi {
             }
         }
         cities
+    }
+
+    /// `pads`, less the cities where the host has refused us the operation
+    /// with the pad standing: an idle spy of ours stands there, the host's
+    /// menu for it is on the wire and lists no Disrupt Rocketry, and no
+    /// operation of ours runs there. That is the tie expansion above naming
+    /// the wrong city of two. Live G408 (civvis-20261008T143512Z): Nubia's
+    /// (33, 7) pad stood two tiles from both (32, 5) and (35, 7); our one spy
+    /// in (35, 7) held it as a pad city and ran Foment Unrest from turn 199
+    /// to 209 with the host never offering the disruption, while the pad
+    /// launched. Remembered for [`EVERY_PAD_REFUSAL_MEMORY`] turns, so the
+    /// spy leaves for the sibling and no other spy is posted back.
+    pub(crate) fn every_pad_drop_refused(
+        &mut self,
+        g: &Game,
+        pid: usize,
+        pads: &mut BTreeSet<u32>,
+    ) {
+        self.science_denial_refused_pads
+            .retain(|_, turn| g.turn.saturating_sub(*turn) < EVERY_PAD_REFUSAL_MEMORY);
+        if pads.is_empty() {
+            return;
+        }
+        let running = |cid: u32| {
+            g.spies.values().any(|other| {
+                other.owner == pid
+                    && other.city == Some(cid)
+                    && (other.mission.is_some()
+                        || g.host_unit_facts
+                            .get(&other.id)
+                            .is_some_and(|facts| facts.spy_operation.is_some()))
+            })
+        };
+        for spy in g.spies.values() {
+            if spy.owner != pid || spy.captured_by.is_some() || spy.mission.is_some() {
+                continue;
+            }
+            let Some(here) = spy.city.filter(|cid| pads.contains(cid)) else {
+                continue;
+            };
+            let Some(menu) = g
+                .host_unit_facts
+                .get(&spy.id)
+                .and_then(|facts| facts.spy_missions.as_ref())
+            else {
+                continue;
+            };
+            if !menu.contains("disrupt_rocketry") && !running(here) {
+                self.science_denial_refused_pads.insert(here, g.turn);
+            }
+        }
+        pads.retain(|cid| !self.science_denial_refused_pads.contains_key(cid));
     }
 
     /// The spy of ours that holds `cid`: the lowest id posted or travelling
