@@ -239,6 +239,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `colonization-earns-its-slot-2` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot-2`; see `Self::colonization_earns_its_slot_2`. | — \| 2 |
 | `commercial-hub-and-traders` | off (unmeasured) | Opt-in gene `commercial-hub-and-traders`; see `BasicAi::commercial_hub_and_traders` and `Self::international_gold_route_premium`. | 1 \| 1 |
 | `commercial-hub-in-the-strategic-queue` | off (unmeasured) | Opt-in gene `commercial-hub-in-the-strategic-queue`, which requires and arms `commercial-hub-and-traders`; see `BasicAi::commercial_hub_step`. | 1 \| 1 |
+| `congress-guards-the-leader` | off (unmeasured) | Opt-in gene `congress-guards-the-leader`; see `Self::congress_guards_the_leader`. | 1 \| 1 |
 | `connect-the-luxury-2` | off (unmeasured) | Research a first-copy luxury only when it can relieve an Amenity deficit after a legal, affordable unlock. | 1 \| 2 |
 | `conquest-opening-needs-the-production` | off (unmeasured) | Opt-in gene `conquest-opening-needs-the-production`; see `Self::conquest_force_estimate`. | 1 \| 1 |
 | `conquest-opening-stays-near` | off (unmeasured) | Opt-in gene `conquest-opening-stays-near`; see `Self::conquest_opening_stays_near`. | 1 \| 1 |
@@ -284,6 +285,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `domination-siege-research-2` | off (unmeasured) | Version one, and the next stronger buildable land siege design once the target's walls reach the Medieval tier. | — \| 2 |
 | `domination-specializes-earlier` | off (unmeasured) | `domination-specializes-earlier`: an assigned Domination lane leaves its development half at 40% of the clock. | 1 \| 1 |
 | `domination-strikes-when-staged` | off (unmeasured) | Opt-in gene `domination-strikes-when-staged`; see `Self::domination_strikes_when_staged`. | 1 \| 1 |
+| `dvp-leader-is-the-front` | off (unmeasured) | Opt-in gene `dvp-leader-is-the-front`; see `Self::dvp_leader_is_the_front`. | 1 \| 1 |
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |
 | `faith-counter-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-counter-needs-the-edge`; see `AdvancedAi::faith_counter_has_the_edge`. | 1 \| 1 |
 | `faith-counter-waits-for-match-point` | off (unmeasured) | Opt-in gene `faith-counter-waits-for-match-point`; see `Self::faith_counter_waits_for_match_point`. | 1 \| 1 |

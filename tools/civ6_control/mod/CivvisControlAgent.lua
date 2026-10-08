@@ -16396,11 +16396,11 @@ CivvisCongressRedirect = function(blocks, candidates, pid, budget, maxVotes, con
 		return nil;
 	end
 	budget = math.min(tonumber(budget) or 0, tonumber(maxVotes) or 1);
-	local points, lead = {}, 0;
+	local points, lead, leader = {}, 0, nil;
 	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
 		local p = tonumber(c.points) or 0;
 		points[tonumber(c.id) or -1] = p;
-		if p > lead then lead = p; end
+		if p > lead then lead, leader = p, tonumber(c.id); end
 	end
 	if lastWon == 2 and lead >= (tonumber(config.DiploVictoryGangFloor) or 15) then
 		return nil;
@@ -16417,6 +16417,25 @@ CivvisCongressRedirect = function(blocks, candidates, pid, budget, maxVotes, con
 			and (pi > pt or (pi == pt and id < top)))) then
 			top, topVotes = id, v;
 		end
+	end
+	-- ★ `congress-guards-the-leader` (opt-in; the bridge sets
+	-- `DiploVictoryGuardLeader`). A rival's A block can grow between sessions,
+	-- and the leader's is the one that ends the game. Live Emperor
+	-- civvis-20261008T132311Z (game 402) t201: last session's blocks read the
+	-- Netherlands (9 points) 7, Nubia (the leader, 15) 3 and Scythia 2, so no
+	-- contender's block stood to beat and the bank's 10 votes went to a B
+	-- nobody joined. Nubia cast 7 A for itself, won 13-10, took +4 to 19 and
+	-- won at 207. Ten A votes for us were the session's largest block. So from
+	-- `DiploVictoryGuardFloor` (14) the leader is the block to beat, read at
+	-- the largest block any rival cast last session.
+	if config.DiploVictoryGuardLeader == true and leader ~= nil and leader ~= pid
+		and lead >= (tonumber(config.DiploVictoryGuardFloor) or 14) then
+		local biggest = 0;
+		for who, votes in pairs(blocks) do
+			local v = tonumber(votes) or 0;
+			if tonumber(who) ~= pid and v > biggest then biggest = v; end
+		end
+		top, topVotes = leader, biggest;
 	end
 	local topPoints = top ~= nil and points[top] or nil;
 	if topPoints == nil or topPoints < (tonumber(config.DiploVictoryRedirectFloor) or 6)
@@ -19426,6 +19445,12 @@ local function applyOrders(player, pid, turn, rows)
 			table.remove(rows, i);
 		elseif row.kind == "combat_policy" and row.verb == "DIALOGUE_NEVER_DECLARES_WAR" then
 			dialogueNoWar = true;
+			table.remove(rows, i);
+		elseif row.kind == "combat_policy" and row.verb == "CONGRESS_GUARDS_THE_LEADER" then
+			-- `congress-guards-the-leader` (opt-in): the ballot reads it at the
+			-- next session; the gene holds for the whole game, so the lease
+			-- simply stays set. See `CivvisCongressRedirect`.
+			cfg.DiploVictoryGuardLeader = true;
 			table.remove(rows, i);
 		elseif row.kind == "observe" and row.verb == "AIR_ASSAULT" then
 			-- A failed spotting move or refused sortie changes no sight/damage,

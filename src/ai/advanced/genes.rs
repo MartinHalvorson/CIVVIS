@@ -3391,6 +3391,18 @@ pub const GENES: &[Gene] = &[
     // Japan's four pads while both disruptions hit the same one. See
     // `advanced/science_denial_every_pad.rs`.
     Gene { tag: "science-denial-every-pad", field: "science_denial_every_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denial_every_pad, disable: AdvancedAi::disable_science_denial_every_pad },
+    // A Diplomatic Victory leader one session from the win (15 points) is a
+    // Domination counter clock and opens a second front at the declaration
+    // edge. G402 lost to Nubia's Diplomatic Victory at 207, Nubia at peace on
+    // 15 points from turn 181 while the army fought two other rivals. See
+    // `advanced/dvp_leader_front.rs`.
+    Gene { tag: "dvp-leader-is-the-front", field: "dvp_leader_is_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_dvp_leader_is_the_front, disable: AdvancedAi::disable_dvp_leader_is_the_front },
+    // The bridge leases the Congress ballot a guard on the Diplomatic
+    // Victory leader (14-15 points): its A block is read at the largest any
+    // rival cast last session, so the bank outvotes or redirects it instead
+    // of a B nobody joins. G402 t202 cast 10 B votes; Nubia's A block grew
+    // from 3 to 7 and took +4 to 19. See `CivvisCongressRedirect`.
+    Gene { tag: "congress-guards-the-leader", field: "congress_guards_the_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_guards_the_leader, disable: AdvancedAi::disable_congress_guards_the_leader },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

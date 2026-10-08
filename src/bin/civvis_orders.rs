@@ -5622,6 +5622,17 @@ fn decide(
             pos: None,
         });
     }
+    // `congress-guards-the-leader`: the agent's ballot reads the lease when
+    // a World Congress session opens, often before this frame's orders land,
+    // so every batch renews it.
+    if ai.congress_guards_the_leader_enabled() {
+        orders.push(Order {
+            kind: "combat_policy",
+            subject: None,
+            verb: Some("CONGRESS_GUARDS_THE_LEADER".to_string()),
+            pos: None,
+        });
+    }
     if own_column_before.is_some() {
         let (sent, unsent) = split_planned_movers(
             &orders,

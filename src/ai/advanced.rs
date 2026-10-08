@@ -6122,6 +6122,15 @@ pub struct AdvancedAi {
     /// hub step 53 times behind Campuses, Builders, Settlers and Granaries.
     /// Requires and arms `commercial_hub_and_traders`.
     commercial_hub_in_the_strategic_queue: bool,
+    /// `congress-guards-the-leader`: the bridge leases the World Congress
+    /// ballot a guard on the Diplomatic Victory leader, whose own A block is
+    /// read at the largest block any rival cast last session. See
+    /// `CivvisCongressRedirect` in the agent.
+    congress_guards_the_leader: bool,
+    /// `dvp-leader-is-the-front`: a Diplomatic Victory leader one session
+    /// from the win is a Domination counter clock and opens a second front at
+    /// the declaration edge. See `advanced/dvp_leader_front.rs`.
+    dvp_leader_is_the_front: bool,
     // ---- append: e-f ------------------------------------------------
     /// `founder-defends-its-cities`: once a living rival's faith holds a city
     /// of ours, a founder's religious corps counts only units of its own
@@ -8999,6 +9008,7 @@ mod wonder_clearance;
 mod wonder_sites;
 
 mod science_denial_every_pad;
+mod dvp_leader_front;
 mod science_endgame;
 mod science_threat_denial;
 mod science_trade;
@@ -10065,6 +10075,8 @@ impl AdvancedAi {
             commercial_hub_and_traders: false,
             campus_buildings_first: false,
             commercial_hub_in_the_strategic_queue: false,
+            congress_guards_the_leader: false,
+            dvp_leader_is_the_front: false,
             // ---- append: e-f ----------------------------------------
             founder_defends_its_cities: false,
             founder_keeps_two_sources: false,

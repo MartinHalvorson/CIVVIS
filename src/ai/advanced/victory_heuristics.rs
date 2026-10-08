@@ -50,6 +50,9 @@ impl AdvancedAi {
                     .count() as i32;
                 living > 1 && pressure.progress >= 100 * (living - 1) / living
             }
+            // `dvp-leader-is-the-front`: a Diplomatic Victory leader one
+            // session from the win. See `advanced/dvp_leader_front.rs`.
+            GrandStrategy::Diplomacy => self.dvp_pressure_is_a_clock(pressure),
             _ => false,
         }
     }

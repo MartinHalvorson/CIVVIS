@@ -322,5 +322,28 @@ reset(); scout()
 applyOrders(player, PID, 7, { row(10, "ATTACK", 31, 42) })
 check("no directive, no lease", #leases, 1)
 
+-- Gene `congress-guards-the-leader`: the directive sets the ballot's guard on
+-- the agent config (read by `CivvisCongressRedirect`); it is metadata, never
+-- an order. This harness's config is a write-swallowing stub, so a real
+-- table stands in for the batch.
+local cfgIndex, stubCfg = nil, nil
+for i = 1, 255 do
+	local name, value = debug.getupvalue(applyOrders, i)
+	if name == nil then break end
+	if name == "cfg" then cfgIndex, stubCfg = i, value end
+end
+assert(cfgIndex ~= nil, "applyOrders reads no cfg upvalue")
+local agentCfg = {}
+debug.setupvalue(applyOrders, cfgIndex, agentCfg)
+reset(); scout(); host.preview = 100
+applyOrders(player, PID, 7, { row(10, "ATTACK", 31, 42) })
+check("no directive, no guard", agentCfg.DiploVictoryGuardLeader, nil)
+reset(); scout(); host.preview = 100
+applyOrders(player, PID, 7, { row(10, "ATTACK", 31, 42),
+	{ kind = "combat_policy", verb = "CONGRESS_GUARDS_THE_LEADER" } })
+check("congress guard set by the directive", agentCfg.DiploVictoryGuardLeader, true)
+check("congress guard metadata not counted as an action", field(lastEvent("orders"), "seen"), 1)
+debug.setupvalue(applyOrders, cfgIndex, stubCfg)
+
 if failures > 0 then error(tostring(failures) .. " failures") end
 print("strike survival controls passed")

@@ -6968,6 +6968,24 @@ impl AdvancedAi {
     pub fn disable_science_denial_every_pad(&mut self) {
         self.science_denial_every_pad = false;
     }
+    /// Opt-in gene `dvp-leader-is-the-front`; see
+    /// [`Self::dvp_leader_is_the_front`].
+    pub fn enable_dvp_leader_is_the_front(&mut self) {
+        self.dvp_leader_is_the_front = true;
+    }
+    /// The twin of `enable_dvp_leader_is_the_front`.
+    pub fn disable_dvp_leader_is_the_front(&mut self) {
+        self.dvp_leader_is_the_front = false;
+    }
+    /// Opt-in gene `congress-guards-the-leader`; see
+    /// [`Self::congress_guards_the_leader`].
+    pub fn enable_congress_guards_the_leader(&mut self) {
+        self.congress_guards_the_leader = true;
+    }
+    /// The twin of `enable_congress_guards_the_leader`.
+    pub fn disable_congress_guards_the_leader(&mut self) {
+        self.congress_guards_the_leader = false;
+    }
 
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------

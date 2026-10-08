@@ -2836,6 +2836,16 @@ impl AdvancedAi {
         }) {
             return Some(leader);
         }
+        // See `dvp_leader_front` (`dvp-leader-is-the-front`): the leader one
+        // session from a Diplomatic Victory opens the second front at the
+        // declaration edge, not only once we crush it.
+        if let Some(leader) = self.dvp_leader_front(g, pid).filter(|leader| {
+            *leader != front
+                && !g.is_at_war(pid, *leader)
+                && self.campaign_target_legal(g, pid, *leader)
+        }) {
+            return Some(leader);
+        }
         // An offered peace is not a refused one: the front gets a few turns
         // to accept before a second war opens beside it.
         let refused = front_state.closure_wanted_since.is_some_and(|since| {

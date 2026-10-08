@@ -263,6 +263,24 @@ tally.wc_dvp_won = 1
 -- The largest block held by a rival far behind the leader is no contender's.
 tally.wc_rival_blocks = { [1] = 9, [3] = 4 }
 redirect("a non-contender's block is not bought", 371, 15, 2, 3, "deny", 10)
+-- `congress-guards-the-leader` (the bridge sets `DiploVictoryGuardLeader`).
+-- Game 402 (T132311Z) t201: last session's largest A block was the
+-- Netherlands' (here player 1, 9 points) 7, the leader's (player 3, 15) 3
+-- and Scythia's 2; the leader then cast 7 and won 13-10 against our B. With
+-- the guard the leader is the block to beat, read at the largest last block
+-- (7): 7 plus 2 is 9, which half of 371 outbuys, so the bank claims it for us
+-- -- all in from the floor (the 311 above the reserve buys 12).
+config.DiploVictoryGuardLeader = true
+tally.wc_rival_blocks = { [1] = 7, [3] = 3, [2] = 2 }
+redirect("game 402 t201 guards the leader", 371, 15, 1, 0, "outvote", 12)
+-- The non-contender's 9 above, read as the leader's: 9 plus 3 is 12, more
+-- than half of 371 buys, so player 1's block (counted at six of its nine)
+-- is lifted past it with 7.
+tally.wc_rival_blocks = { [1] = 9, [3] = 4 }
+redirect("a guarded leader redirects past the big block", 371, 15, 1, 1, "redirect", 7)
+-- Under the guard floor (14) the old reading stands.
+redirect("the guard waits for fourteen", 371, 13, 2, 3, "deny", 10)
+config.DiploVictoryGuardLeader = nil
 -- Tied blocks: the contender's (player 3, on 12) is the one to beat, 5 plus
 -- 2. Half of 227 buys the eight a claim needs; half of 150 buys six, and
 -- player 1's block (8 points, counted at three of five) takes the +2 with
