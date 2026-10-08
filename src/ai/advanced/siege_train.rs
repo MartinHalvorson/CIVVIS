@@ -1393,6 +1393,10 @@ fn anvil_orders_for(
     posts
 }
 
+/// `gun-queues-behind-the-column`: the share of a gun's health the reply
+/// at a queue step may reach.
+const QUEUE_DANGER_SHARE: f64 = 0.5;
+
 /// The same exclusions must govern post assignment and the march to it.
 /// Otherwise spread-first assignment can reserve a pocket whose only entry
 /// crosses another ring tile, and the mover can never fulfill that order.
@@ -4578,9 +4582,32 @@ impl AdvancedAi {
                 short = Some("out of moves".to_string());
                 break;
             }
-            let Some(next) =
-                siege_route_step(g, pid, uid, goal, city_pos).filter(|next| g.can_move(uid, *next))
-            else {
+            let routed =
+                siege_route_step(g, pid, uid, goal, city_pos).filter(|next| g.can_move(uid, *next));
+            // `gun-queues-behind-the-column`: a routed step that leads away
+            // from the post goes round our own column, and the next call
+            // finds the way round shut and may not step back (the same-turn
+            // reversal guard). Live Emperor G360 turn 129: both Trebuchets
+            // before Napata stepped a tile back on the way round, then stood.
+            // Where the column's own road leads nearer, queue on it instead.
+            if let Some(next) = routed {
+                let here = g.units[&uid].pos;
+                if g.wdist(next, goal) > g.wdist(here, goal) {
+                    if let Some(step) = self.column_queue_step(g, pid, uid, goal, city_pos) {
+                        if self.base.tactical_apply_progress_move(g, pid, uid, step) {
+                            moved = true;
+                            short = None;
+                            think!(self.journal(), Military, Detail,
+                                "Siege: the {} queues toward its post behind the column", g.units[&uid].kind;
+                                "the free route to the post {goal:?} leads away round our column, its own road nearer; it steps {here:?} -> {step:?}, {} tiles from the post",
+                                g.wdist(step, goal);
+                                city_pos);
+                            continue;
+                        }
+                    }
+                }
+            }
+            let Some(next) = routed else {
                 // The step-by-step route treats our own soldiers as walls, so
                 // a crowded staging band boxes a gun in behind its own army.
                 // Walk through them to the free post in one move, which may
@@ -4607,6 +4634,22 @@ impl AdvancedAi {
                         }
                     }
                 });
+                // `gun-queues-behind-the-column`: see `column_queue_step`.
+                if through.is_none() {
+                    if let Some(step) = self.column_queue_step(g, pid, uid, goal, city_pos) {
+                        let from = g.units[&uid].pos;
+                        if self.base.tactical_apply_progress_move(g, pid, uid, step) {
+                            moved = true;
+                            short = None;
+                            think!(self.journal(), Military, Detail,
+                                "Siege: the {} queues toward its post behind the column", g.units[&uid].kind;
+                                "no free route reaches the post {goal:?} and none of ours is beside it to cross; it steps {from:?} -> {step:?}, {} tiles from the post",
+                                g.wdist(step, goal);
+                                city_pos);
+                            continue;
+                        }
+                    }
+                }
                 if let Some(dest) = through.filter(|dest| {
                     dry_stand(g, uid, *dest)
                         && (g.wdist(*dest, city_pos) > CITY_STRIKE_RANGE
@@ -4666,6 +4709,48 @@ impl AdvancedAi {
             }
         }
         moved.then_some(true)
+    }
+
+    /// `gun-queues-behind-the-column`: a siege gun's step toward its post
+    /// when the train's own router finds no free route (it treats our
+    /// soldiers as walls) and `pass_through_destination` has nothing either
+    /// (it looks only when one of ours stands beside the gun). The ordinary
+    /// router's first step, whose later edges may cross our units: a dry
+    /// stand outside the city's strike range, off its first ring, that
+    /// strictly nears the post, so the gun closes up behind the column and
+    /// the crossing opens once a friend is beside it. `None` with the gene
+    /// off or for a unit that is not a gun.
+    ///
+    /// Live Emperor civvis-20261008T071102Z (game 360): two Trebuchets before
+    /// unwalled Napata stood five to seven tiles out on turns 125-129, their
+    /// posts three to six away up a hill defile with one of ours in its one
+    /// open tile, logging "no route step and no pass-through destination";
+    /// the city stood at 200 health until Nubia's Urban Defenses raised 400
+    /// walls at turn 130. Over the 10-07/08 runs that reason was 283 of 634
+    /// gun approaches that ended short of the post, most four to six tiles
+    /// from the city.
+    fn column_queue_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        goal: Pos,
+        city_pos: Pos,
+    ) -> Option<Pos> {
+        if !self.gun_queues_behind_the_column || arm_of(g, uid) != Arm::Siege {
+            return None;
+        }
+        let here = g.units.get(&uid)?.pos;
+        let ring: BTreeSet<Pos> = g.wdisk(city_pos, 1).into_iter().collect();
+        g.route_step(uid, goal, 0).filter(|step| {
+            g.wdist(*step, goal) < g.wdist(here, goal)
+                && g.wdist(*step, city_pos) > CITY_STRIKE_RANGE
+                && !ring.contains(step)
+                && dry_stand(g, uid, *step)
+                && g.can_move(uid, *step)
+                && super::battle_planner::strike_danger(g, pid, *step, uid)
+                    < f64::from(g.units[&uid].hp) * QUEUE_DANGER_SHARE
+        })
     }
 
     /// The reply a unit expects on a post inside the city's firing ring.

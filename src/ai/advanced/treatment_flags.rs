@@ -6881,6 +6881,17 @@ impl AdvancedAi {
         self.stalled_settler_takes_a_safe_site = false;
     }
 
+    /// Opt-in gene `gun-queues-behind-the-column`; see
+    /// [`Self::gun_queues_behind_the_column`].
+    pub fn enable_gun_queues_behind_the_column(&mut self) {
+        self.gun_queues_behind_the_column = true;
+    }
+
+    /// The twin of `enable_gun_queues_behind_the_column`.
+    pub fn disable_gun_queues_behind_the_column(&mut self) {
+        self.gun_queues_behind_the_column = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -395,3 +395,56 @@ fn a_gun_kept_off_its_post_still_counts_against_falling_back_to_stage() {
     let empty = ai.breach_reading(&g, 0, &city, &[]);
     assert!(empty.leaves_walls_shut(&city));
 }
+
+/// `gun-queues-behind-the-column`: a one-tile defile through mountains
+/// from six tiles out to a firing post two out, one of ours standing in it
+/// two tiles ahead of a Catapult. The train's router treats the friend as a
+/// wall and the crossing looks only beside the gun, so with the gene off
+/// the gun stands; on, it steps up behind the column.
+#[test]
+fn a_gun_boxed_behind_the_column_steps_up_only_under_the_gene() {
+    for gene in [false, true] {
+        let (mut g, cid) = open_walled_city();
+        let city = g.cities[&cid].pos;
+        let post = at_distance(&g, cid, 2)[0];
+        let mut lane = vec![post];
+        while lane.len() < 5 {
+            let last = *lane.last().unwrap();
+            let next = g
+                .nbrs(last)
+                .into_iter()
+                .filter(|pos| g.wdist(*pos, city) == g.wdist(last, city) + 1)
+                .min()
+                .expect("a tile one further out");
+            lane.push(next);
+        }
+        for tile in g.map.tiles.values_mut() {
+            if tile.pos != city && !lane.contains(&tile.pos) && g_wdist_gt(tile.pos, city) {
+                tile.terrain = crate::name!("mountain");
+            }
+        }
+        let friend = g.spawn_unit("warrior", 0, lane[2]);
+        let gun = g.spawn_unit("catapult", 0, lane[4]);
+        let mut ai = train(false);
+        if gene {
+            ai.enable_gun_queues_behind_the_column();
+        }
+        investing(&mut ai, cid, &[(gun, post)]);
+        let view = CityView::of(&g, cid).unwrap();
+        let moved = ai.post_step(&mut g, 0, gun, &view);
+        assert_eq!(g.units[&friend].pos, lane[2], "the friend holds the defile");
+        if gene {
+            assert_eq!(moved, Some(true), "the gun steps up");
+            assert_eq!(g.units[&gun].pos, lane[3], "behind the friend");
+        } else {
+            assert_eq!(moved, None, "boxed in, the gun stands");
+            assert_eq!(g.units[&gun].pos, lane[4]);
+        }
+    }
+
+    /// Keep the city's own ring passable, so the post's ring stays legal.
+    fn g_wdist_gt(pos: Pos, city: Pos) -> bool {
+        let (dq, dr) = (pos.0 - city.0, pos.1 - city.1);
+        (dq.abs() + dr.abs() + (dq + dr).abs()) / 2 > 1
+    }
+}

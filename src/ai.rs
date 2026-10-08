@@ -14634,6 +14634,27 @@ impl BasicAi {
         self.path_move(g, pid, uid, to)
     }
 
+    /// A tactical step its caller has proven strictly nearer its goal than
+    /// the tile it leaves (`gun-queues-behind-the-column`), so no sequence of
+    /// such steps can loop: the window's retread memory (`retreads_a_loop`)
+    /// does not apply, while the same-turn reversal, the lethal-tile and the
+    /// host-refusal bars still do. Other movers walk a siege gun back and
+    /// forth through the staging band, and the memory then refused its
+    /// every step forward to its post. Off `recorded_tactical_step`, the raw
+    /// apply as in `tactical_apply_move`.
+    pub(crate) fn tactical_apply_progress_move(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        to: Pos,
+    ) -> bool {
+        if !self.recorded_tactical_step {
+            return g.apply(pid, &Action::Move { unit: uid, to }).is_ok();
+        }
+        self.path_move_inner(g, pid, uid, to, true)
+    }
+
     /// Follow one A* step out of a *proven* live-bridge livelock.
     ///
     /// `path_move` normally forbids every historical retread. That is right

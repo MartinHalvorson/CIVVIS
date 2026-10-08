@@ -3340,6 +3340,12 @@ pub const GENES: &[Gene] = &[
     // allowance it takes the best legal site within four tiles whose ground
     // and first step are safe. See `advanced/stalled_settler_site.rs`.
     Gene { tag: "stalled-settler-takes-a-safe-site", field: "stalled_settler_takes_a_safe_site", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_settler_takes_a_safe_site, disable: AdvancedAi::disable_stalled_settler_takes_a_safe_site },
+    // 283 of 634 gun approaches that ended short of the post on 10-07/08
+    // read "no route step and no pass-through destination": the train's
+    // router treats our units as walls and the crossing looks only beside
+    // the gun. The gun steps up behind the column instead. See
+    // `AdvancedAi::column_queue_step`.
+    Gene { tag: "gun-queues-behind-the-column", field: "gun_queues_behind_the_column", kind: Kind::OptIn, enable: AdvancedAi::enable_gun_queues_behind_the_column, disable: AdvancedAi::disable_gun_queues_behind_the_column },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

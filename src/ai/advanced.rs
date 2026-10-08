@@ -6619,6 +6619,10 @@ pub struct AdvancedAi {
     /// See `BasicAi::front_weighted_floor_2`.
     front_weighted_floor_2: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `gun-queues-behind-the-column`: a siege gun with no free route to its
+    /// post and nothing of ours beside it to cross steps up behind the
+    /// column instead of standing. See `AdvancedAi::column_queue_step`.
+    gun_queues_behind_the_column: bool,
     /// `growth-prices-the-farm`: an improvement's Housing and Food are priced
     /// in a small city that is Housing-bound or not growing. See
     /// `advanced/growth_farm.rs`.
@@ -10051,6 +10055,7 @@ impl AdvancedAi {
             front_weighted_floor: false,
             front_weighted_floor_2: false,
             // ---- append: g-k ----------------------------------------
+            gun_queues_behind_the_column: false,
             growth_prices_the_farm: false,
             invest_keeps_its_cavalry: false,
             guns_grind_the_walls: false,
