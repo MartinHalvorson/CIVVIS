@@ -6123,6 +6123,18 @@ pub struct AdvancedAi {
     /// Requires and arms `commercial_hub_and_traders`.
     commercial_hub_in_the_strategic_queue: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `founder-defends-its-cities`: once a living rival's faith holds a city
+    /// of ours, a founder's religious corps counts only units of its own
+    /// faith, its defensive Missionary cap rises to one per rival-held city
+    /// plus one (up to `FOUNDER_DEFENCE_MAX_MISSIONARIES`), the Inquisition's
+    /// next unit is saved for only within `FOUNDER_SAVE_TURNS` of Faith
+    /// income, and the Holy City is the first purchase city. Live Emperor
+    /// 20261008T100610Z counted a held Catholic Missionary in its two-unit
+    /// cap from turn 46 and banked 706 Faith by 90 after every city turned
+    /// Catholic; 20261008T101304Z saved for the Apostle from 49 to 83 and
+    /// bought three Missionaries all game. Both founders lost to Catholicism
+    /// (111, 104). See `advanced/founder_defence.rs`. Off by default.
+    founder_defends_its_cities: bool,
     /// `founder-keeps-two-sources`: a founder's sanctuary keeps two cities
     /// that follow its faith and hold a Shrine, the second from founding. See
     /// `advanced/second_faith_source.rs`.
@@ -10030,6 +10042,7 @@ impl AdvancedAi {
             campus_buildings_first: false,
             commercial_hub_in_the_strategic_queue: false,
             // ---- append: e-f ----------------------------------------
+            founder_defends_its_cities: false,
             founder_keeps_two_sources: false,
             founder_funds_the_inquisition: false,
             founder_spreads_only_its_faith: false,
@@ -25750,12 +25763,9 @@ impl AdvancedAi {
         // `religious_veto_defence`: how much of a rival's religious victory
         // is already done. Every defensive lever below scales with it.
         let veto = self.religious_veto_engaged(g, pid);
-        let count_units = |kind: &str| {
-            g.units
-                .values()
-                .filter(|unit| unit.owner == pid && unit.kind == kind)
-                .count()
-        };
+        // See `founder_corps_count` (`founder-defends-its-cities`): a held
+        // spreader of another faith is not one of the corps.
+        let count_units = |kind: &str| self.founder_corps_count(g, pid, kind, &religion);
         let missionaries = count_units("missionary");
         let apostles = count_units("apostle");
         let gurus = count_units("guru");
@@ -25794,9 +25804,14 @@ impl AdvancedAi {
         } else {
             // `religious_defence_scales` reads the shipped constant and, when
             // it is on, answers one spreader per threatened city instead.
-            self.defensive_missionary_cap(
-                defensive_targets,
-                (1 + defensive_targets.div_ceil(2)).min(2),
+            // `founder-defends-its-cities` asks one per rival-held city.
+            self.founder_defence_missionary_cap(
+                g,
+                pid,
+                self.defensive_missionary_cap(
+                    defensive_targets,
+                    (1 + defensive_targets.div_ceil(2)).min(2),
+                ),
             ) + veto_spreaders
         };
         let apostle_cap = if offensive { 2 } else { 0 };
@@ -25858,7 +25873,9 @@ impl AdvancedAi {
             } else {
                 ordinary_reserve
             };
-            let cities = g.player_city_ids(pid);
+            // See `founder_purchase_order`: the Holy City first under
+            // `founder-defends-its-cities`.
+            let cities = self.founder_purchase_order(g, pid);
             for cid in cities {
                 // Religious units inherit the purchase city's majority.  A
                 // converted Holy Site must never make the defender spend its
@@ -47093,6 +47110,11 @@ mod second_faith_source;
 mod inquisition_first;
 
 mod founder_faith;
+
+/// `founder-defends-its-cities`: a founder spends its Faith on its own
+/// faith's defenders once a rival faith holds a city of ours. See
+/// `advanced/founder_defence.rs`.
+mod founder_defence;
 
 mod counterweight_bank;
 

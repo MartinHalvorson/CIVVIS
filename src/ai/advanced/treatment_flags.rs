@@ -6929,6 +6929,17 @@ impl AdvancedAi {
         self.builders_improve_the_worked_for_production = false;
     }
 
+    /// Opt-in gene `founder-defends-its-cities`; see
+    /// [`Self::founder_defence_live`].
+    pub fn enable_founder_defends_its_cities(&mut self) {
+        self.founder_defends_its_cities = true;
+    }
+
+    /// The twin of `enable_founder_defends_its_cities`.
+    pub fn disable_founder_defends_its_cities(&mut self) {
+        self.founder_defends_its_cities = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
