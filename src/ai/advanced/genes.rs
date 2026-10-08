@@ -3424,6 +3424,13 @@ pub const GENES: &[Gene] = &[
     // campaign aimed at Faras, whose pad our spy had pillaged at t190, while
     // Nubia launched from the others. See `advanced/science_suppression_pads.rs`.
     Gene { tag: "science-suppression-hits-the-pads", field: "science_suppression_hits_the_pads", kind: Kind::OptIn, enable: AdvancedAi::enable_science_suppression_hits_the_pads, disable: AdvancedAi::disable_science_suppression_hits_the_pads },
+    // `defeated-majors-leave-the-board`: live Emperor G415 eliminated
+    // Poland at turn 104, and the board kept it alive: Ethiopia's Orthodoxy,
+    // at match point (every major but Sumeria), read 50% of a 75 bar for 20
+    // turns, and the counterweight bought Orthodox Missionaries to 107;
+    // Ethiopia won on Religion at 132. Empty seats beyond the host's living
+    // count retire. See `defeated_majors::retire_defeated_majors`.
+    Gene { tag: "defeated-majors-leave-the-board", field: "defeated_majors_leave_the_board", kind: Kind::OptIn, enable: AdvancedAi::enable_defeated_majors_leave_the_board, disable: AdvancedAi::disable_defeated_majors_leave_the_board },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

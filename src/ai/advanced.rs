@@ -5417,6 +5417,16 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `defeated-majors-leave-the-board`: at the start of our turn, the
+    /// board's empty major seats beyond the host's living count (the World
+    /// Congress standing) are retired, so an eliminated major stops counting
+    /// toward the religious match point, a faith's conversion share and the
+    /// counterfaith safety test. Live Emperor G415 eliminated Poland at turn
+    /// 104 and read Ethiopia's Orthodoxy at 50% of a 75 bar for 20 turns
+    /// while it held every major but Sumeria, and kept buying Orthodox
+    /// counterweight Missionaries to 107; Ethiopia won at 132. See
+    /// `advanced/defeated_majors.rs`. Off by default.
+    defeated_majors_leave_the_board: bool,
     /// `culture-denial-heist`: against a rival the culture counter reads, spies
     /// post to its Theater Square cities and run the Great Work heist the host
     /// offers. See `advanced/culture_denial_heist.rs`. Off by default.
@@ -9971,6 +9981,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            defeated_majors_leave_the_board: false,
             culture_denial_heist: false,
             counter_out_of_reach_takes_the_weak: false,
             counterweight_from_the_first_convert: false,
@@ -46605,6 +46616,9 @@ impl AdvancedAi {
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         // `breach-support-reads-the-wall-tier`: see `Game::observed_wall_tier_rules`.
         g.observed_wall_tier_rules = self.breach_support_reads_the_wall_tier;
+        // See `defeated_majors` (`defeated-majors-leave-the-board`): before
+        // any living-majors reading of this turn.
+        self.retire_defeated_majors(g, pid);
         self.turn_start_policies = g.players[pid].policies.clone();
         // See `founder_faith` (`founder-spreads-only-its-faith`).
         self.record_turn_start_faith(g, pid);
@@ -47415,6 +47429,10 @@ mod founder_faith;
 mod founder_defence;
 
 mod counterweight_bank;
+
+/// `defeated-majors-leave-the-board`: an eliminated major stops counting as
+/// living. See `advanced/defeated_majors.rs`.
+mod defeated_majors;
 
 /// `counterweight-from-the-first-convert`: the counterweight from the first
 /// converted city, and its source. See

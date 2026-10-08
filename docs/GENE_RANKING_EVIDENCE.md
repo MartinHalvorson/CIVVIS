@@ -269,6 +269,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `declaration-needs-the-edge-2` | off (unmeasured) | Version 2 of `declaration_needs_the_edge`; one version of a family plays, so this turns version 1 off. | — \| 2 |
 | `declaration-waits-for-the-breach` | off (unmeasured) | Opt-in gene `declaration-waits-for-the-breach`; see `Self::declaration_waits_for_the_breach`. | 1 \| 1 |
 | `declaration-waits-for-the-breaker` | off (unmeasured) | Opt-in gene `declaration-waits-for-the-breaker`; see `Self::declaration_waits_for_the_breaker`. | 1 \| 1 |
+| `defeated-majors-leave-the-board` | off (unmeasured) | Opt-in gene `defeated-majors-leave-the-board`; see `Self::retire_defeated_majors`. | 1 \| 1 |
 | `denial-keeps-its-rival` | off (unmeasured) | Opt-in gene `denial-keeps-its-rival`; see `Self::denial_keeps_its_rival`. | 1 \| 1 |
 | `denial-nearest-finish` | off (unmeasured) | Opt-in gene `denial-nearest-finish`; see `Self::denial_nearest_finish`. | 1 \| 1 |
 | `denial-needs-a-road` | off (unmeasured) | Opt-in gene `denial-needs-a-road`; see `Self::denial_needs_a_road`. | 1 \| 1 |

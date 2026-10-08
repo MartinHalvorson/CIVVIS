@@ -7031,6 +7031,17 @@ impl AdvancedAi {
         self.war_kills_the_bands = false;
     }
 
+    /// Opt-in gene `defeated-majors-leave-the-board`; see
+    /// [`Self::retire_defeated_majors`].
+    pub fn enable_defeated_majors_leave_the_board(&mut self) {
+        self.defeated_majors_leave_the_board = true;
+    }
+
+    /// The twin of `enable_defeated_majors_leave_the_board`.
+    pub fn disable_defeated_majors_leave_the_board(&mut self) {
+        self.defeated_majors_leave_the_board = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

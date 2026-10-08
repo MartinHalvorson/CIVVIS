@@ -4802,6 +4802,14 @@ pub struct Player {
     /// (`great_person_class_earnable`, `unused_great_person_faith`).
     #[serde(default)]
     pub live_great_person_exhausted: Option<BTreeSet<String>>,
+    /// How many majors the host says are alive, the seat included: the
+    /// World Congress standing (`congress_dvp`, one entry per alive major,
+    /// met or not). `None` headless and before the first standing. The
+    /// mirror plants a seat for every major at setup and never retires one,
+    /// so an eliminated major stays `alive` on the board; see
+    /// `AdvancedAi::retire_defeated_majors`.
+    #[serde(default)]
+    pub live_living_majors: Option<usize>,
     #[serde(default)]
     pub gp_claimed: BTreeMap<String, i64>,
     /// IDs of named Great People recruited from the global market.
@@ -5067,6 +5075,7 @@ impl Player {
             live_great_person_offer_blockers: BTreeMap::new(),
             live_great_person_activation_needs: Vec::new(),
             live_great_person_exhausted: None,
+            live_living_majors: None,
             gp_claimed: BTreeMap::new(),
             great_people: Vec::new(),
             pantheon: None,
