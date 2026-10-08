@@ -16,9 +16,10 @@
 //!
 //! Against a decisive space racer (`decisive_space_racers`, the every-pad
 //! trigger: two space projects landed or a science race at 80%), this claims
-//! queues for Spies until held plus queued reaches the smaller of our Spy
-//! capacity and the racers' pads plus one — the top-Production cities first,
-//! each taking a Spy only if its queue is idle or holds routine work: never a
+//! a queue for one Spy at a time — the host trains them one by one — until
+//! held reaches the smaller of our Spy capacity and the racers' pads plus
+//! one, in the top-Production city whose queue is idle or holds routine
+//! work: never a
 //! threatened city, never a defensive building, a military unit or Settler,
 //! a Wonder, a project or a repair. The switch banks the displaced item's
 //! progress. It runs after the defence, religion, settlement, siege and
@@ -97,10 +98,17 @@ impl AdvancedAi {
             .count();
         let held = g.spy_agents(pid);
         let needed = Self::denial_spies_needed(g, pid, &racers);
-        let deficit = needed.saturating_sub(held + queued);
-        if deficit == 0 {
+        // One Spy in training at a time, in the best city: the host trains
+        // them one by one. Live G411 (civvis-20261008T151915Z) sent a second
+        // (and third) Spy order on the same turn five times — turns 161, 171,
+        // 175, 194 and 210, with capacity 3-5 and 0-3 held — and every one
+        // after the first came back refused, leaving its city producing
+        // nothing or its old build, while the first trained. Spies already
+        // in training count, so the claim waits for the one in the queue.
+        if queued > 0 || held >= needed {
             return;
         }
+        let deficit = 1;
         let mut candidates: Vec<(f64, u32)> = city_ids
             .iter()
             .copied()

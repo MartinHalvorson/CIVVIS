@@ -123,7 +123,7 @@ fn trains_spies_is_opt_in() {
 }
 
 #[test]
-fn the_top_cities_train_the_pads_plus_one() {
+fn the_best_city_trains_one_spy_at_a_time_up_to_the_pads_plus_one() {
     let (g, ours) = board();
     assert_eq!(g.spy_capacity(0), 2, "fixture capacity");
     let mut off = g.clone();
@@ -135,11 +135,41 @@ fn the_top_cities_train_the_pads_plus_one() {
     assert!(training(&off).is_empty(), "off: no claim");
     let mut on = g.clone();
     armed().claim_queues_for_denial_spies(&mut on, 0, &plan());
-    // One pad plus one is two, and capacity is two.
-    assert_eq!(training(&on), top(&g, &ours, 2));
-    // Next turn nothing more: two queued meet the need.
+    // One pad plus one is two, but the host trains one Spy at a time.
+    assert_eq!(training(&on), top(&g, &ours, 1));
     armed().claim_queues_for_denial_spies(&mut on, 0, &plan());
-    assert_eq!(training(&on).len(), 2);
+    assert_eq!(training(&on).len(), 1, "a Spy in training holds the claim");
+    // It trains: the queue empties and an agent is held; the second follows.
+    let best = *training(&on).iter().next().unwrap();
+    on.cities.get_mut(&best).unwrap().queue.clear();
+    let id = on.next_id;
+    on.next_id += 1;
+    on.spies.insert(
+        id,
+        crate::game::Spy {
+            id,
+            owner: 0,
+            level: 0,
+            promotions: BTreeSet::new(),
+            city: Some(best),
+            ready_turn: on.turn,
+            mission: None,
+            sources_city: None,
+            sources_until: 0,
+            captured_by: None,
+        },
+    );
+    armed().claim_queues_for_denial_spies(&mut on, 0, &plan());
+    assert_eq!(training(&on), top(&g, &ours, 1), "the best city again");
+    // Two held: the need is met.
+    on.cities.get_mut(&best).unwrap().queue.clear();
+    let id = on.next_id;
+    on.next_id += 1;
+    let mut second = on.spies[&(id - 1)].clone();
+    second.id = id;
+    on.spies.insert(id, second);
+    armed().claim_queues_for_denial_spies(&mut on, 0, &plan());
+    assert!(training(&on).is_empty(), "two held meet the need");
 }
 
 #[test]
