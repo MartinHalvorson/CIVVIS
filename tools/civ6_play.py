@@ -428,6 +428,112 @@ def below_leader_score_reading(
         "min_turn": LEADER_SCORE_MIN_TURN,
     }
 
+# ★ OPERATOR 2026-10-08: "if not top 2 by prod by turn 150 can restart game".
+#
+# Unlike the retired score rule above, this one may end a live game, and only
+# when the host's policy file asks for it: CIVVIS_RESTART_BELOW_PRODUCTION_RANK
+# in ~/.civvis-verification-policy (0 or absent = off), read once at game
+# start so the long-lived supervisor's environment does not matter. The input
+# is the mod's `major_production` map on the agent's `turn` record -- every
+# alive major's summed city Production a turn, met or not, keyed by player id
+# -- and `local_player`. The reading is taken ONCE, at the first readable turn
+# record at or after turn 150: rank = 1 + the majors producing strictly more
+# than we do (a tie does not push us down), and a rank past the limit retires
+# the game so the supervisor starts the next one. A record without the map is
+# not evidence: it is noted once and the next turn is read instead.
+PRODUCTION_RANK_TURN = 150
+PRODUCTION_RANK_POLICY_KEY = "CIVVIS_RESTART_BELOW_PRODUCTION_RANK"
+
+
+def verification_policy_path() -> Path:
+    """The host's verification policy, as the supervisor and launcher read it."""
+    override = os.environ.get("CIVVIS_VERIFICATION_POLICY")
+    return Path(override) if override else Path.home() / ".civvis-verification-policy"
+
+
+def read_policy_value(key: str, path: Path | None = None) -> str | None:
+    """`key`'s value in the plain KEY=VALUE policy file, or None.
+
+    Parsed as data, exactly like `read_difficulty_policy` in
+    tools/ops/civvis-game-supervisor.sh: everything after `#` is a comment,
+    whitespace is dropped, the last assignment wins, and the file is never
+    sourced. A missing or unreadable file reads as unset.
+    """
+    path = verification_policy_path() if path is None else path
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    value = None
+    for raw in text.splitlines():
+        line = "".join(raw.split("#", 1)[0].split())
+        if "=" not in line:
+            continue
+        name, _, found = line.partition("=")
+        if name == key:
+            value = found
+    return value
+
+
+def production_rank_policy(path: Path | None = None) -> int:
+    """The policy's production-rank limit; 0 (off) when unset or invalid."""
+    value = read_policy_value(PRODUCTION_RANK_POLICY_KEY, path)
+    if value is None or value == "":
+        return 0
+    try:
+        limit = int(value)
+    except ValueError:
+        print(f"[policy] ignoring {PRODUCTION_RANK_POLICY_KEY}={value!r}: "
+              "not a whole number", flush=True)
+        return 0
+    return limit if limit > 0 else 0
+
+
+def production_rank_reading(event: dict, max_rank: int) -> dict | None:
+    """The turn-150 production standing, or None when this record is no reading.
+
+    Returns a dict with `rule: "production_rank"` for every READABLE turn
+    record at or after :data:`PRODUCTION_RANK_TURN` (`fires` says whether the
+    rank is past `max_rank`); `{"unreadable": True, ...}` for a qualifying
+    record without the data; None for anything else, including a limit of 0.
+    """
+    if (not isinstance(max_rank, int) or isinstance(max_rank, bool)
+            or max_rank <= 0):
+        return None
+    if event.get("kind") != "turn" or event.get("ctx") != "agent":
+        return None
+    turn = event.get("turn")
+    if (not isinstance(turn, int) or isinstance(turn, bool)
+            or turn < PRODUCTION_RANK_TURN):
+        return None
+    production = event.get("major_production")
+    us = event.get("local_player")
+    readings: dict[str, float | int] = {}
+    if isinstance(production, dict):
+        for player, value in production.items():
+            metric = _nonnegative_metric(value)
+            if metric is not None:
+                readings[str(player)] = metric
+    ours = None
+    if isinstance(us, int) and not isinstance(us, bool):
+        ours = readings.get(str(us))
+    if ours is None:
+        return {"rule": "production_rank", "turn": turn, "unreadable": True}
+    others = {player: value for player, value in readings.items()
+              if player != str(us)}
+    rank = 1 + sum(1 for value in others.values() if value > ours)
+    return {
+        "rule": "production_rank",
+        "turn": turn,
+        "rank": rank,
+        "max_rank": max_rank,
+        "ours": ours,
+        "others": dict(sorted(others.items())),
+        "majors": len(others) + 1,
+        "fires": rank > max_rank,
+    }
+
+
 DEFAULT_CIVVIS_STRATEGY = ""
 
 # Every objective `civvis_orders --victory` accepts, in the spelling its enum
@@ -4004,6 +4110,15 @@ def play(args: argparse.Namespace) -> int:
         print("[policy] ignoring --restart-below-leader-ratio="
               f"{legacy_score_ratio}: verification games always play to an "
               "in-game outcome", flush=True)
+    # Operator 2026-10-08: see `production_rank_reading`. The flag wins over
+    # the host policy file; neither set is off.
+    production_rank_limit = getattr(args, "restart_below_production_rank", None)
+    if production_rank_limit is None:
+        production_rank_limit = production_rank_policy()
+    if production_rank_limit > 0:
+        print(f"[policy] a game not top {production_rank_limit} by Production at "
+              f"turn {PRODUCTION_RANK_TURN} is retired (operator 2026-10-08)",
+              flush=True)
     # A saved game can be alive and waiting for its SQLite decision worker even
     # when the interactive capture path is temporarily unavailable (for example
     # while the operator is recording).  Attaching that worker must never run
@@ -5144,6 +5259,68 @@ def _play(args: argparse.Namespace) -> int:
             if is_terminal_result(event):
                 state["outcome"] = event
 
+    def abandon_with_retire(verdict: dict) -> bool:
+        """Retire the game the verdict has called, and say whether the mod did.
+
+        Shared by every rule that may end a live game (today only the
+        operator's turn-150 production rank; the legacy score branch below is
+        gated off in every lane).
+        """
+        state["abandoned"] = verdict
+        # ⚠⚠ RETIRE RATHER THAN JUST STOP, so the loss is a RESULT.
+        #
+        # Stopping alone leaves the game unfinished: Civilization VI files
+        # no defeat, `tools/civ6_ladder.py` records nothing, and an attempt
+        # we abandoned on the operator's own rule is indistinguishable from
+        # one that crashed. The mod answers this row with the shipped
+        # `UI.RequestAction(ActionTypes.ACTION_RETIRE)`.
+        #
+        # Best effort by design: a database we cannot write is not a reason
+        # to keep playing a game the rule has already called, so the return
+        # below is unconditional and the game stops either way.
+        asked = request_retire(orders_db_path(run_dir, args.orders_db),
+                               args.tag, verdict["turn"], verdict["rule"])
+        state["retire_requested"] = bool(asked)
+        print(f"[abandon] retire {'requested' if asked else 'could not be written'}"
+              " — the game is filed as a loss rather than left unfinished",
+              flush=True)
+        if asked:
+            # ⚠⚠ THE ROW IS NOT THE RETIRE. Writing it and returning ends
+            # the watch loop, which tears the game down — so the mod never
+            # reaches its next tick, never sees the row, and the game dies
+            # exactly as unfinished as before. Measured in run
+            # civvis-20260829T194002Z: the row was on disk
+            # (`154|99000|retire|below_leader_score|990`) and no `retired`
+            # event ever followed it.
+            #
+            # The mod polls on `GameCoreEventPublishComplete`, which fires
+            # many times per frame while the game is live, so this is a
+            # short wait in practice; the bound is only here so a game that
+            # has ALREADY parked cannot hold the loop open. A parked core
+            # cannot answer a retire at all — nothing is listening — and
+            # the outside watchdog is the only remedy for that case.
+            time.sleep(ABANDON_RETIRE_WAIT_S)
+            # ⚠⚠ AND READ THE ANSWER, or a success is indistinguishable
+            # from a failure.
+            #
+            # The teardown below stops the watcher, so anything the mod
+            # emits during the wait never reaches `events.jsonl`. That made
+            # a WORKING retire look broken for four abandons: run
+            # civvis-20260830T083406Z has no `retired` event in its
+            # events.jsonl, while the raw Automation.log for the same run
+            # holds `"kind":"retired","why":"requested"`, our own
+            # `"kind":"defeat","ours":true`, and the `EndGameMenu` opening.
+            #
+            # So ask the log directly, once, and put the answer in the run
+            # record where the next person will look.
+            state["retire_confirmed"] = _retire_was_answered(args.tag)
+            print("[abandon] retire "
+                  + ("acknowledged by the mod"
+                     if state["retire_confirmed"]
+                     else "NOT acknowledged; the game was still stopped"),
+                  flush=True)
+        return True
+
     def finished(event: dict) -> bool:
         """A game victory or OUR defeat ends the run.
 
@@ -5169,6 +5346,28 @@ def _play(args: argparse.Namespace) -> int:
         # but never end a live verification game.  The guarded legacy branch
         # remains so the exact former predicate can be audited against old
         # runs; `leader_score_stop_allowed` is false for every live lane.
+        # ★ OPERATOR 2026-10-08: "if not top 2 by prod by turn 150 can
+        # restart game" -- read once, at the first readable turn record at or
+        # after turn 150. See `production_rank_reading`.
+        if production_rank_limit > 0 and "production_rank" not in state:
+            reading = production_rank_reading(event, production_rank_limit)
+            if reading is not None and reading.get("unreadable"):
+                if not state.get("production_rank_unreadable"):
+                    state["production_rank_unreadable"] = reading["turn"]
+                    print(f"[policy] turn {reading['turn']}: the turn record has no "
+                          "production standing; reading the next one", flush=True)
+            elif reading is not None:
+                state["production_rank"] = reading
+                print(f"[policy] turn {reading['turn']}: our Production "
+                      f"{reading['ours']} ranks {reading['rank']} of "
+                      f"{reading['majors']} majors (others {reading['others']}); "
+                      f"the restart line is top {production_rank_limit}", flush=True)
+                if reading["fires"]:
+                    print(f"[abandon] turn {reading['turn']}: not top "
+                          f"{production_rank_limit} by Production (rank "
+                          f"{reading['rank']} of {reading['majors']}) — retiring so "
+                          "the next game starts (operator 2026-10-08)", flush=True)
+                    return abandon_with_retire(reading)
         verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio
         ) if leader_score_stop_allowed(
@@ -5176,65 +5375,12 @@ def _play(args: argparse.Namespace) -> int:
             victory_target=args.civvis_victory,
         ) else None
         if verdict is not None:
-            state["abandoned"] = verdict
             print(f"[abandon] turn {verdict['turn']}: score {verdict['score']} "
                   f"is {verdict['score_ratio']:.1%} of the leader's "
                   f"{verdict['rival_best']}, under the "
                   f"{verdict['score_ratio_ceiling']:.0%} line "
                   "— stopping the game rather than playing it out", flush=True)
-            # ⚠⚠ RETIRE RATHER THAN JUST STOP, so the loss is a RESULT.
-            #
-            # Stopping alone leaves the game unfinished: Civilization VI files
-            # no defeat, `tools/civ6_ladder.py` records nothing, and an attempt
-            # we abandoned on the operator's own rule is indistinguishable from
-            # one that crashed. The mod answers this row with the shipped
-            # `UI.RequestAction(ActionTypes.ACTION_RETIRE)`.
-            #
-            # Best effort by design: a database we cannot write is not a reason
-            # to keep playing a game the rule has already called, so the return
-            # below is unconditional and the game stops either way.
-            asked = request_retire(orders_db_path(run_dir, args.orders_db),
-                                   args.tag, verdict["turn"], "below_leader_score")
-            state["retire_requested"] = bool(asked)
-            print(f"[abandon] retire {'requested' if asked else 'could not be written'}"
-                  " — the game is filed as a loss rather than left unfinished",
-                  flush=True)
-            if asked:
-                # ⚠⚠ THE ROW IS NOT THE RETIRE. Writing it and returning ends
-                # the watch loop, which tears the game down — so the mod never
-                # reaches its next tick, never sees the row, and the game dies
-                # exactly as unfinished as before. Measured in run
-                # civvis-20260829T194002Z: the row was on disk
-                # (`154|99000|retire|below_leader_score|990`) and no `retired`
-                # event ever followed it.
-                #
-                # The mod polls on `GameCoreEventPublishComplete`, which fires
-                # many times per frame while the game is live, so this is a
-                # short wait in practice; the bound is only here so a game that
-                # has ALREADY parked cannot hold the loop open. A parked core
-                # cannot answer a retire at all — nothing is listening — and
-                # the outside watchdog is the only remedy for that case.
-                time.sleep(ABANDON_RETIRE_WAIT_S)
-                # ⚠⚠ AND READ THE ANSWER, or a success is indistinguishable
-                # from a failure.
-                #
-                # The teardown below stops the watcher, so anything the mod
-                # emits during the wait never reaches `events.jsonl`. That made
-                # a WORKING retire look broken for four abandons: run
-                # civvis-20260830T083406Z has no `retired` event in its
-                # events.jsonl, while the raw Automation.log for the same run
-                # holds `"kind":"retired","why":"requested"`, our own
-                # `"kind":"defeat","ours":true`, and the `EndGameMenu` opening.
-                #
-                # So ask the log directly, once, and put the answer in the run
-                # record where the next person will look.
-                state["retire_confirmed"] = _retire_was_answered(args.tag)
-                print("[abandon] retire "
-                      + ("acknowledged by the mod"
-                         if state["retire_confirmed"]
-                         else "NOT acknowledged; the game was still stopped"),
-                      flush=True)
-            return True
+            return abandon_with_retire(verdict)
         # A game with an optional mode on is not the game CIVVIS is compared
         # against, and 250 turns of it is 250 turns of nothing. Stop at the
         # seat event rather than at the end.
@@ -5928,6 +6074,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="deprecated compatibility option; automatic score-based "
                         "retirement is disabled and every verification game plays "
                         "to an in-game outcome (the supplied value is ignored)")
+    ap.add_argument("--restart-below-production-rank", type=int, default=None,
+                    help="retire a game that is not in the top N majors by "
+                         "Production at turn 150 (0 = off); unset reads "
+                         "CIVVIS_RESTART_BELOW_PRODUCTION_RANK from the host's "
+                         "verification policy file (operator 2026-10-08)")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", default=ROMAN_LEADER,
                     help="Civ VI leader identifier (default: Trajan)")
