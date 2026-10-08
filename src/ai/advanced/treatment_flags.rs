@@ -7098,6 +7098,17 @@ impl AdvancedAi {
         self.match_point_interception_ignores_power = false;
     }
 
+    /// Opt-in gene `counterweight-finishes-one-shrine`; see
+    /// [`Self::counterweight_shrine_city`] and [`Self::counterweight_bank_held`].
+    pub fn enable_counterweight_finishes_one_shrine(&mut self) {
+        self.counterweight_finishes_one_shrine = true;
+    }
+
+    /// The twin of `enable_counterweight_finishes_one_shrine`.
+    pub fn disable_counterweight_finishes_one_shrine(&mut self) {
+        self.counterweight_finishes_one_shrine = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

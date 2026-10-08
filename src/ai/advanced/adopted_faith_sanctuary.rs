@@ -316,6 +316,19 @@ impl AdvancedAi {
         {
             return None;
         }
+        // `counterweight-finishes-one-shrine`: the one sanctuary keeps its
+        // Shrine until it stands, whatever else holds the queue.
+        if let Some(cid) = self
+            .counterweight_shrine_city(g, pid)
+            .filter(|cid| Some(*cid) != threatened)
+        {
+            return Some((
+                cid,
+                Item::Building {
+                    building: crate::name!("shrine"),
+                },
+            ));
+        }
         let founded = g.players[pid].religion.as_deref();
         let threat = if founded.is_some() {
             // Founding alone does not preserve a religion: without a Shrine,
@@ -436,6 +449,13 @@ impl AdvancedAi {
         else {
             return;
         };
+        // `counterweight-finishes-one-shrine`: the one sanctuary's Shrine is
+        // bought when the bank or the treasury covers it.
+        if self.counterweight_shrine_city(g, pid) == Some(cid)
+            && self.buy_counterweight_shrine(g, pid, cid)
+        {
+            return;
+        }
         if g.cities[&cid].queue.first() == Some(&item) {
             return;
         }

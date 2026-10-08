@@ -3461,6 +3461,13 @@ pub const GENES: &[Gene] = &[
     // condemns its spreader at home opens at 0.7 times its steady power.
     // See `match_point_last_holdout::last_holdout_interception`.
     Gene { tag: "match-point-interception-ignores-power", field: "match_point_interception_ignores_power", kind: Kind::OptIn, enable: AdvancedAi::enable_match_point_interception_ignores_power, disable: AdvancedAi::disable_match_point_interception_ignores_power },
+    // `counterweight-finishes-one-shrine`: live Emperor G425 queued its one
+    // Hindu city's Shrine 19 times (turns 86-92) while the siege reservation
+    // replaced it with a Trebuchet each turn, started Holy Sites in five
+    // cities, and spent 450 Faith on a Great Merchant at match point; Georgia
+    // won on Religion at 98. One sanctuary finishes (bought when covered) and
+    // the bank waits for it. See `counterweight_shrine::counterweight_shrine_city`.
+    Gene { tag: "counterweight-finishes-one-shrine", field: "counterweight_finishes_one_shrine", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_finishes_one_shrine, disable: AdvancedAi::disable_counterweight_finishes_one_shrine },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

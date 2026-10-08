@@ -5417,6 +5417,19 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `counterweight-finishes-one-shrine`: while a rival faith holds a city
+    /// of ours at the religious early-warning bar or match point, a city on a
+    /// safe counterfaith with a finished Holy Site and no Shrine is the one
+    /// sanctuary: its Shrine is named every turn, bought with Faith or Gold
+    /// when either covers it, kept from the siege reservation, and no other
+    /// city is named meanwhile; and Great Person patronage, Faith buildings
+    /// and Faith-bought units leave the whole bank. Live Emperor G425 queued
+    /// Caracas's Shrine 19 times from turn 86 to 92 while the siege
+    /// reservation sent a Trebuchet every turn, started Holy Sites in five
+    /// cities, and spent 450 Faith on a Great Merchant at 93 with Georgia at
+    /// match point; Georgia won at 98. See `advanced/counterweight_shrine.rs`.
+    /// Off by default.
+    counterweight_finishes_one_shrine: bool,
     /// `defeated-majors-leave-the-board`: at the start of our turn, the
     /// board's empty major seats beyond the host's living count (the World
     /// Congress standing) are retired, so an eliminated major stops counting
@@ -10024,6 +10037,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            counterweight_finishes_one_shrine: false,
             defeated_majors_leave_the_board: false,
             culture_denial_heist: false,
             counter_out_of_reach_takes_the_weak: false,
@@ -24190,7 +24204,9 @@ impl AdvancedAi {
             // See `counterweight_faith_reserve` (`counterweight-spends-the-bank`).
             + self.counterweight_faith_reserve(g, pid)
             // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`).
-            + self.inquisition_faith_reserve(g, pid);
+            + self.inquisition_faith_reserve(g, pid)
+            // See `counterweight_bank_held` (`counterweight-finishes-one-shrine`).
+            + self.counterweight_bank_held(g, pid);
         let mut candidates = Vec::new();
         // Inside `age-closer-2`'s window: the cheapest priced Great Person,
         // so a window that closes nothing says what it would have cost.
@@ -26275,7 +26291,9 @@ impl AdvancedAi {
         };
         let reserve = self.conversion_faith_reserve(g, pid, reserve)
             // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`).
-            + self.inquisition_faith_reserve(g, pid);
+            + self.inquisition_faith_reserve(g, pid)
+            // See `counterweight_bank_held` (`counterweight-finishes-one-shrine`).
+            + self.counterweight_bank_held(g, pid);
         // Every candidate below must clear `cost + reserve`, and a purchase
         // cost is never negative — so a bank under the reserve cannot buy
         // anything no matter what the menu holds. Skip building the menu at
@@ -26847,7 +26865,9 @@ impl AdvancedAi {
         let reserve = 180.0
             + self.counterweight_faith_reserve(g, pid)
             // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`).
-            + self.inquisition_faith_reserve(g, pid);
+            + self.inquisition_faith_reserve(g, pid)
+            // See `counterweight_bank_held` (`counterweight-finishes-one-shrine`).
+            + self.counterweight_bank_held(g, pid);
         let counts = self.counts(g, pid);
         let mut options = Vec::new();
         let memo = g.query_memo();
@@ -47509,6 +47529,11 @@ mod religious_interception;
 /// intercepts its spreader at a lower power floor. See
 /// `advanced/match_point_last_holdout.rs`.
 mod match_point_last_holdout;
+
+/// `counterweight-finishes-one-shrine`: the counterweight's one Shrine is
+/// finished and the Faith bank waits for it. See
+/// `advanced/counterweight_shrine.rs`.
+mod counterweight_shrine;
 
 mod second_faith_source;
 
