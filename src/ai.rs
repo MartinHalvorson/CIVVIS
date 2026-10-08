@@ -25469,7 +25469,7 @@ mod tests {
         tile.terrain = crate::name!("coast");
         tile.feature = None;
         assert!(BasicAi::city_is_coastal(&game, cid));
-        assert!(ai.desired_navy(&game, 0) > 0, "the fixture wants a ship");
+        assert!(BasicAi::new().desired_navy(&game, 0) > 0, "the fixture wants a ship");
         let pick = |on: bool, settlers: usize| {
             let mut ai = BasicAi::new();
             ai.settler_before_the_navy = on;
