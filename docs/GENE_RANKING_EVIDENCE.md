@@ -402,6 +402,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `stall-rebases-on-new-walls` | off (unmeasured) | Opt-in gene `stall-rebases-on-new-walls`; see `Self::stall_rebases_on_new_walls`. | 1 \| 1 |
 | `stall-waits-for-the-breach` | off (unmeasured) | Opt-in gene `stall-waits-for-the-breach`; see `Self::stall_waits_for_the_breach`. | 1 \| 1 |
 | `stalled-peace-spares-the-counter` | off (unmeasured) | Opt-in gene `stalled-peace-spares-the-counter`; see `Self::stalled_peace_spares_the_counter`. | 1 \| 1 |
+| `stalled-settler-takes-a-safe-site` | off (unmeasured) | Opt-in gene `stalled-settler-takes-a-safe-site`; see `advanced/stalled_settler_site.rs`. | 1 \| 1 |
 | `stranded-settler-leaves-the-corridor` | off (unmeasured) | Opt-in gene `stranded-settler-leaves-the-corridor`; see `Self::stranded_settler_leaves_the_corridor`. | 1 \| 1 |
 | `strategic-deposit-prey` | off (unmeasured) | Opt-in gene `strategic-deposit-prey`; see `Self::strategic_deposit_prey`. | 1 \| 1 |
 | `surge-fields-the-bombers` | off (unmeasured) | Opt-in gene `surge-fields-the-bombers`; see `Self::surge_fields_the_bombers`. | 1 \| 1 |

@@ -51684,3 +51684,199 @@ fn dialogue_never_declares_war_is_a_native_opt_in_off_in_both_controllers() {
         ai.dialogue_never_declares_war_enabled()
     });
 }
+
+// ── stalled-settler-takes-a-safe-site ────────────────────────────────────
+//
+// See `advanced/stalled_settler_site.rs`: a Settler past its walk allowance
+// takes the best legal site within four tiles whose ground and first step
+// are out of every visible hostile's reach.
+
+use super::stalled_settler_site::{
+    STALLED_SETTLER_RADIUS, STALLED_SETTLER_TILE_PRICE, STALLED_SETTLER_WALK_STANDARD,
+};
+
+fn stalled_allowance(game: &Game) -> u32 {
+    game.standard_duration(STALLED_SETTLER_WALK_STANDARD).max(1)
+}
+
+#[test]
+fn stalled_settler_takes_a_safe_site_is_off_by_default_and_toggles() {
+    super::test_support::opt_in_off_in_both_controllers(
+        "stalled-settler-takes-a-safe-site",
+        |ai| ai.stalled_settler_takes_a_safe_site,
+    );
+    let mut ai = AdvancedAi::new();
+    ai.enable_stalled_settler_takes_a_safe_site();
+    assert!(ai.stalled_settler_takes_a_safe_site);
+    ai.disable_stalled_settler_takes_a_safe_site();
+    assert!(!ai.stalled_settler_takes_a_safe_site);
+}
+
+#[test]
+fn a_settler_inside_its_walk_allowance_or_with_the_gene_off_is_left_alone() {
+    let (mut game, settler) = walk_deadline_board(93_401);
+    let cities = game.cities.len();
+    let allowance = stalled_allowance(&game);
+    assert!(allowance >= 2, "the allowance is turns: {allowance}");
+    game.turn += 1;
+    let mut ai = AdvancedAi::new();
+    ai.enable_stalled_settler_takes_a_safe_site();
+    walk_out(&mut ai, &game, settler, allowance - 1);
+    assert_eq!(ai.stalled_settler_step(&mut game, 0, settler), None);
+    // Off: never acts, however long the walk.
+    let mut off = AdvancedAi::new();
+    walk_out(&mut off, &game, settler, allowance + 20);
+    assert_eq!(off.stalled_settler_step(&mut game, 0, settler), None);
+    assert_eq!(game.cities.len(), cities);
+    assert!(off.settler_targets.get(&settler).is_none());
+}
+
+/// Game 355's shape: a Settler hovering beside its capital, where every tile
+/// within two is too near a city for `settler-walk-deadline` to found, still
+/// finds a legal site a few tiles out and walks to it.
+#[test]
+fn a_stalled_settler_beside_its_city_takes_a_site_the_deadline_cannot_reach() {
+    let (mut game, home) = camp_bounty_board(93_402);
+    let near = open_ground_at(&game, home, 1);
+    let settler = game.spawn_test_unit("settler", 0, near);
+    let mut ai = AdvancedAi::new();
+    ai.enable_settler_walk_deadline();
+    ai.enable_stalled_settler_takes_a_safe_site();
+    let journal = crate::reasoning::Journal::recording();
+    ai.attach_journal(journal.handle());
+    game.turn += 1;
+    let allowance = stalled_allowance(&game);
+    walk_out(&mut ai, &game, settler, allowance + 1);
+    assert_eq!(
+        ai.settler_walk_deadline_site(&game, 0, settler),
+        None,
+        "every tile within two of a Settler beside its capital is too near the city"
+    );
+    let (site, _) = ai
+        .stalled_settler_site(&game, 0, settler)
+        .expect("a legal, safe site within four tiles of the capital's doorstep");
+    assert!(game.wdist(site, near) <= STALLED_SETTLER_RADIUS);
+    assert!(
+        ai.base.valid_settle_site(&game, 0, site),
+        "the pick is a legal city site"
+    );
+    let cities = game.cities.len();
+    let acted = ai.stalled_settler_step(&mut game, 0, settler);
+    assert_eq!(acted, Some(true), "the stalled Settler walks to its new site");
+    assert_eq!(game.cities.len(), cities, "nothing founded on the doorstep");
+    assert_eq!(ai.settler_targets.get(&settler), Some(&site));
+    assert!(
+        game.wdist(game.units[&settler].pos, site) < game.wdist(near, site),
+        "the step makes progress"
+    );
+    let lines: Vec<String> = journal
+        .since(0)
+        .thoughts
+        .iter()
+        .map(|thought| format!("{} | {}", thought.headline, thought.detail))
+        .collect();
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("Stalled settler takes the safe site")),
+        "the pick is journaled; journal:\n{}",
+        lines.join("\n")
+    );
+}
+
+/// A site in a visible hostile's reach — what the ordinary target kept
+/// cycling to in game 355 — is never the stalled Settler's pick.
+#[test]
+fn a_stalled_settler_never_picks_a_site_in_a_hostiles_reach() {
+    let (mut game, settler) = walk_deadline_board(93_403);
+    let mut ai = AdvancedAi::new();
+    ai.enable_stalled_settler_takes_a_safe_site();
+    game.turn += 1;
+    walk_out(&mut ai, &game, settler, stalled_allowance(&game) + 1);
+    let (first, _) = ai
+        .stalled_settler_site(&game, 0, settler)
+        .expect("open ground has a legal site within four");
+    // Raiders beside the first pick: it is now inside their reach.
+    let barb = 1;
+    game.players[barb].is_barbarian = true;
+    game.barb_pid = Some(barb);
+    let mut placed = 0;
+    for pos in game.wdisk(first, 1) {
+        if pos == first || placed >= 2 {
+            continue;
+        }
+        let open = game.map.get(pos).is_some_and(|tile| {
+            game.rules.is_passable(tile) && !game.rules.is_water(tile)
+        }) && game.city_at(pos).is_none()
+            && game.unit_ids_at(pos).is_empty();
+        if open {
+            game.spawn_test_unit("warrior", barb, pos);
+            placed += 1;
+        }
+    }
+    assert!(placed > 0, "room for a raider beside the site");
+    let visible = ai.battlefront_visibility(&game, 0);
+    let threatened = ai.settlement_tile_risk(&game, 0, Some(settler), first, &visible)
+        > SETTLER_STEP_RISK_LIMIT;
+    let again = ai.stalled_settler_site(&game, 0, settler);
+    if threatened {
+        assert_ne!(
+            again.map(|(pos, _)| pos),
+            Some(first),
+            "a site in the raiders' reach is skipped"
+        );
+    }
+    if let Some((pos, _)) = again {
+        assert!(
+            ai.settlement_tile_risk(&game, 0, Some(settler), pos, &visible)
+                <= SETTLER_STEP_RISK_LIMIT,
+            "every pick is under the step-risk limit"
+        );
+    }
+}
+
+/// The pick is the best legal, safe site net of the walk, never farther
+/// than the radius, and founds at once when that is the tile underfoot.
+#[test]
+fn the_stalled_pick_ranks_worth_net_of_the_walk() {
+    let (mut game, settler) = walk_deadline_board(93_404);
+    let mut ai = AdvancedAi::new();
+    ai.enable_stalled_settler_takes_a_safe_site();
+    game.turn += 1;
+    walk_out(&mut ai, &game, settler, stalled_allowance(&game) + 1);
+    let here = game.units[&settler].pos;
+    let (site, worth) = ai
+        .stalled_settler_site(&game, 0, settler)
+        .expect("a site within reach");
+    assert!(game.wdist(site, here) <= STALLED_SETTLER_RADIUS);
+    let walk = if site == here {
+        0
+    } else {
+        game.route_distance(settler, site, 0)
+            .map_or(game.wdist(here, site), |steps| steps as i32)
+    };
+    let expected = ai.settle_value(&game, 0, site) - STALLED_SETTLER_TILE_PRICE * walk as f64;
+    assert!((worth - expected).abs() < 1e-9, "{worth} vs {expected}");
+    for pos in ai.settler_legal_sites_within(&game, 0, settler, STALLED_SETTLER_RADIUS) {
+        if pos == site || (pos == here && !game.can_found_city(settler)) {
+            continue;
+        }
+        let steps = if pos == here {
+            0
+        } else {
+            game.route_distance(settler, pos, 0)
+                .map_or(game.wdist(here, pos), |steps| steps as i32)
+        };
+        let net = ai.settle_value(&game, 0, pos) - STALLED_SETTLER_TILE_PRICE * steps as f64;
+        assert!(
+            net <= worth + 1e-9 || steps > STALLED_SETTLER_RADIUS + 1,
+            "{pos:?} nets {net} over the pick's {worth}"
+        );
+    }
+    // Underfoot: the pick founds where it stands.
+    if site == here {
+        let cities = game.cities.len();
+        assert_eq!(ai.stalled_settler_step(&mut game, 0, settler), Some(true));
+        assert_eq!(game.cities.len(), cities + 1);
+    }
+}

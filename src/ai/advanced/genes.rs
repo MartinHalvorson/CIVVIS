@@ -3333,6 +3333,13 @@ pub const GENES: &[Gene] = &[
     // purchase and the road stand-down act on. See
     // `AdvancedAi::long_road_holds`.
     Gene { tag: "long-road-names-the-blocker", field: "long_road_names_the_blocker", kind: Kind::OptIn, enable: AdvancedAi::enable_long_road_names_the_blocker, disable: AdvancedAi::disable_long_road_names_the_blocker },
+    // Live Emperor 10-06/07: 15 finished runs held two or more Settlers at
+    // turns 80 and 100, and in 8 the still turns were safe-step holds — a
+    // Settler cycling threatened sites 7-10 tiles out within four tiles of
+    // its own cities (game 355: one walked turns 51-130). Past its walk
+    // allowance it takes the best legal site within four tiles whose ground
+    // and first step are safe. See `advanced/stalled_settler_site.rs`.
+    Gene { tag: "stalled-settler-takes-a-safe-site", field: "stalled_settler_takes_a_safe_site", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_settler_takes_a_safe_site, disable: AdvancedAi::disable_stalled_settler_takes_a_safe_site },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

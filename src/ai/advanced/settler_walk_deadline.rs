@@ -163,10 +163,40 @@ impl AdvancedAi {
         uid: u32,
     ) -> Vec<(Pos, f64)> {
         let here = g.units[&uid].pos;
+        self.settler_legal_sites_within(g, pid, uid, SETTLER_WALK_DEADLINE_RADIUS)
+            .into_iter()
+            .map(|pos| {
+                let margin = if pos == here {
+                    0.0
+                } else {
+                    SETTLER_WALK_DEADLINE_STEP_MARGIN
+                };
+                (pos, self.settle_value(g, pid, pos) - margin)
+            })
+            .collect()
+    }
+
+    /// Every tile within `radius` of this Settler that it may found on now
+    /// or after a walk, under every legality and Loyalty guard the ordinary
+    /// founding keeps: the host's blocked plots, this Settler's dead sites
+    /// and avoided site, the capture scars, another Settler's reservation, a
+    /// route (the tile underfoot needs none), a priceable site, a rival's
+    /// sphere on a Science lane, the frontier or rate Loyalty verdict, and
+    /// the engine's own revolt forecast at the twenty-turn floor of the
+    /// exhaustion search. Shared by `settler-walk-deadline` and
+    /// `stalled-settler-takes-a-safe-site`.
+    pub(super) fn settler_legal_sites_within(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        radius: i32,
+    ) -> Vec<Pos> {
+        let here = g.units[&uid].pos;
         let avoid = self.settler_avoid.get(&uid).map(|(pos, _)| *pos);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
         let loyalty_rate = self.base.loyalty_rate_alarm || science_targeted;
-        g.wdisk(here, SETTLER_WALK_DEADLINE_RADIUS)
+        g.wdisk(here, radius)
             .into_iter()
             .filter(|pos| {
                 self.base.valid_settle_site(g, pid, *pos)
@@ -189,14 +219,6 @@ impl AdvancedAi {
                             science_targeted || *turns < STRANDED_SITE_MIN_HOLD_TURNS
                         })
                         .is_none()
-            })
-            .map(|pos| {
-                let margin = if pos == here {
-                    0.0
-                } else {
-                    SETTLER_WALK_DEADLINE_STEP_MARGIN
-                };
-                (pos, self.settle_value(g, pid, pos) - margin)
             })
             .collect()
     }

@@ -7539,6 +7539,11 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `stalled-settler-takes-a-safe-site`: a Settler past its walk
+    /// allowance takes the best legal site within a few tiles whose ground
+    /// and first step are out of every visible hostile's reach. See
+    /// `advanced/stalled_settler_site.rs`.
+    stalled_settler_takes_a_safe_site: bool,
     /// `siege-tier-yields-to-the-bombers`: while the air surge has a
     /// research goal, the decisive window yields the slot when its own goal
     /// lies off the Advanced Flight path, and the surge's pre-plan
@@ -9001,6 +9006,9 @@ mod settler_target_floor;
 /// An opening Settler that has walked too long founds within reach. One
 /// opt-in gene; see `advanced/settler_walk_deadline.rs`.
 mod settler_walk_deadline;
+/// A Settler past its walk allowance takes a safe site within reach. One
+/// opt-in gene; see `advanced/stalled_settler_site.rs`.
+mod stalled_settler_site;
 /// A barbarian ring on a city's doorstep is answered before anything else
 /// is built, and a Settler's guard cuts down the raider pinning it. Two
 /// genes; see `advanced/siege_response.rs`.
@@ -10162,6 +10170,7 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            stalled_settler_takes_a_safe_site: false,
             siege_tier_yields_to_the_bombers: false,
             science_denial_spy_reads_the_leader: false,
             science_leader_is_the_target: false,
@@ -37957,6 +37966,12 @@ impl AdvancedAi {
             if let Some(acted) = self.settler_walk_deadline_step(g, pid, uid) {
                 return acted;
             }
+        }
+        // See `stalled_settler_takes_a_safe_site`: past its walk allowance a
+        // Settler takes a safe site within a few tiles before the target
+        // search hands it another exposed one.
+        if let Some(acted) = self.stalled_settler_step(g, pid, uid) {
+            return acted;
         }
         let visible = self.battlefront_visibility(g, pid);
         // The checks in dropping order, each with a name. Run 212725Z spent

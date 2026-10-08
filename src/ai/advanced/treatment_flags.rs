@@ -6870,6 +6870,17 @@ impl AdvancedAi {
         self.long_road_names_the_blocker = false;
     }
 
+    /// Opt-in gene `stalled-settler-takes-a-safe-site`; see
+    /// `advanced/stalled_settler_site.rs`.
+    pub fn enable_stalled_settler_takes_a_safe_site(&mut self) {
+        self.stalled_settler_takes_a_safe_site = true;
+    }
+
+    /// The twin of `enable_stalled_settler_takes_a_safe_site`.
+    pub fn disable_stalled_settler_takes_a_safe_site(&mut self) {
+        self.stalled_settler_takes_a_safe_site = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
