@@ -50353,13 +50353,24 @@ fn native_campus_finish_claim_survives_a_later_civilian_queue_writer() {
     let (mut g, cid, ai, committed, _) = native_campus_finish_fixture("library");
     let claim = ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid));
     assert_eq!(claim, Some((cid, committed.clone())));
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    std::sync::Arc::make_mut(&mut g.host_buildable)
+        .get_mut(&cid)
+        .unwrap()
+        .insert(
+            Game::production_block_key(&builder),
+            crate::game::HostMenuEntry {
+                cost: Some(41.0),
+                turns: Some(2.0),
+            },
+        );
     g.apply(
         0,
         &Action::Produce {
             city: cid,
-            item: Item::Unit {
-                unit: crate::name!("builder"),
-            },
+            item: builder,
         },
     )
     .unwrap();
