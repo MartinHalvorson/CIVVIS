@@ -522,6 +522,11 @@ impl AdvancedAi {
                 if self.housing_bound_granary_queued(g, cid) {
                     continue;
                 }
+                // `counterweight-finishes-one-shrine`: the one sanctuary's
+                // Shrine is not a routine building to displace.
+                if self.counterweight_shrine_held(g, pid, cid) {
+                    continue;
+                }
                 let city = &g.cities[&cid];
                 // `breaker-supply-scales`: a building already under way, not
                 // a defence, may yield to the gun if the gun arrives soon.
