@@ -145,3 +145,34 @@ class ProductionRankPolicyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlayClosuresResolveTest(unittest.TestCase):
+    """`_play`'s turn-record predicate is a closure: a name it reads must be
+    bound in `_play` or the module. The first live build read the limit from
+    `play`'s frame and died with a NameError at the first turn record (live
+    G362, civvis-20261008T073740Z, turn 8)."""
+
+    def test_play_closures_resolve_every_name(self):
+        import builtins
+        import symtable
+        from pathlib import Path
+
+        import civ6_play
+
+        source = Path(civ6_play.__file__).read_text()
+        known = set(dir(civ6_play)) | set(dir(builtins))
+        unresolved = []
+
+        def walk(table, path):
+            for symbol in table.get_symbols():
+                if (symbol.is_referenced() and symbol.is_global()
+                        and not symbol.is_declared_global()
+                        and symbol.get_name() not in known):
+                    unresolved.append((path, symbol.get_name()))
+            for child in table.get_children():
+                walk(child, f"{path}.{child.get_name()}")
+
+        walk(symtable.symtable(source, "civ6_play.py", "exec"), "civ6_play")
+        play_scoped = [item for item in unresolved if item[0].startswith("civ6_play._play")]
+        self.assertEqual(play_scoped, [])

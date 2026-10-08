@@ -4115,6 +4115,10 @@ def play(args: argparse.Namespace) -> int:
     production_rank_limit = getattr(args, "restart_below_production_rank", None)
     if production_rank_limit is None:
         production_rank_limit = production_rank_policy()
+    # `_play` reads the resolved limit from `args`: its turn-record predicate
+    # is a closure there, not in this frame (a NameError at the first turn
+    # record killed live G362, civvis-20261008T073740Z, at turn 8).
+    args.restart_below_production_rank = production_rank_limit
     if production_rank_limit > 0:
         print(f"[policy] a game not top {production_rank_limit} by Production at "
               f"turn {PRODUCTION_RANK_TURN} is retired (operator 2026-10-08)",
@@ -4771,6 +4775,7 @@ def write_attached_summary(args: argparse.Namespace, config: dict, state: dict,
 
 
 def _play(args: argparse.Namespace) -> int:
+    production_rank_limit = getattr(args, "restart_below_production_rank", None) or 0
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
     # Bound the corpus before adding to it. See `prune_old_run_screenshots`.
