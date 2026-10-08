@@ -9032,10 +9032,6 @@ mod victory_conversion;
 mod victory_lane;
 pub mod victory_portfolio;
 
-/// `near-rival-deterrence`: a land unit a turn while a neighbour at peace
-/// out-guns us in the opening. One opt-in gene; see
-/// `advanced/near_rival_deterrence.rs`.
-mod near_rival_deterrence;
 /// `early-settler-floor`: the actuation half of the opening's pace -- a
 /// Settler in the queue while the empire is short of the band floor. One
 /// opt-in gene; see `advanced/early_settler_floor.rs`.
@@ -9058,6 +9054,10 @@ mod expansion_schedule;
 mod government_ladder;
 mod governor_dividends;
 mod higher_level_strategy;
+/// `near-rival-deterrence`: a land unit a turn while a neighbour at peace
+/// out-guns us in the opening. One opt-in gene; see
+/// `advanced/near_rival_deterrence.rs`.
+mod near_rival_deterrence;
 
 /// `growth-to-settle`: while the opening is behind the pace and no city can
 /// build a Settler, the citizens work food. One opt-in gene; see
