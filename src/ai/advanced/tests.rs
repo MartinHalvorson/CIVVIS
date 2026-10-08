@@ -51886,3 +51886,96 @@ fn the_stalled_pick_ranks_worth_net_of_the_walk() {
         assert_eq!(game.cities.len(), cities + 1);
     }
 }
+
+/// The walk deadline's value floor binds the stalled Settler too: a site
+/// worth, net of the deadline's step margin, less than half the plan it was
+/// walking is not taken even when it is the only safe legal site left, and
+/// the floor frozen at the takeover outlives a retarget.
+#[test]
+fn a_stalled_settler_never_takes_a_site_under_the_deadlines_value_floor() {
+    use super::settler_walk_deadline::{
+        SETTLER_WALK_DEADLINE_STEP_MARGIN, SETTLER_WALK_DEADLINE_VALUE_SHARE,
+    };
+    let mut checked = false;
+    for seed in 93_410..93_440u64 {
+        let (mut game, settler) = walk_deadline_board(seed);
+        let mut ai = AdvancedAi::new();
+        ai.enable_stalled_settler_takes_a_safe_site();
+        game.turn += 1;
+        walk_out(&mut ai, &game, settler, stalled_allowance(&game) + 1);
+        let here = game.units[&settler].pos;
+        let Some((only, _)) = ai.stalled_settler_site(&game, 0, settler) else {
+            continue;
+        };
+        // Every other legal site is retired for this Settler: `only` is the
+        // one safe site left.
+        for pos in ai.settler_legal_sites_within(&game, 0, settler, STALLED_SETTLER_RADIUS) {
+            if pos != only {
+                ai.settler_dead_sites
+                    .entry(settler)
+                    .or_default()
+                    .insert(pos, game.turn + 1_000);
+            }
+        }
+        assert_eq!(
+            ai.stalled_settler_site(&game, 0, settler).map(|(pos, _)| pos),
+            Some(only),
+            "with no plan there is no floor, and the one safe site is taken"
+        );
+        let margin = if only == here {
+            0.0
+        } else {
+            SETTLER_WALK_DEADLINE_STEP_MARGIN
+        };
+        let only_net = ai.settle_value(&game, 0, only) - margin;
+        // A plan worth more than twice that: the richest land on the board.
+        let plan = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| {
+                game.map.get(*pos).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                })
+            })
+            .max_by(|a, b| {
+                ai.settle_value(&game, 0, *a)
+                    .total_cmp(&ai.settle_value(&game, 0, *b))
+                    .then(b.cmp(a))
+            })
+            .expect("land on the board");
+        if ai.settle_value(&game, 0, plan) * SETTLER_WALK_DEADLINE_VALUE_SHARE <= only_net {
+            continue;
+        }
+        ai.settler_targets.insert(settler, plan);
+        assert!(!ai.stalled_settler_clears_floor(&game, 0, settler, only));
+        assert_eq!(
+            ai.stalled_settler_site(&game, 0, settler),
+            None,
+            "the only safe site is under the plan's floor"
+        );
+        let cities = game.cities.len();
+        assert_eq!(ai.stalled_settler_step(&mut game, 0, settler), None);
+        assert_eq!(game.cities.len(), cities, "nothing founded under the floor");
+        assert_eq!(
+            ai.settler_targets.get(&settler),
+            Some(&plan),
+            "the plan is left to the ordinary step"
+        );
+        // The takeover froze the plan's floor: retargeting onto the poor site
+        // does not lower it.
+        ai.settler_targets.insert(settler, only);
+        assert_eq!(
+            ai.stalled_settler_site(&game, 0, settler),
+            None,
+            "the frozen floor outlives a retarget"
+        );
+        checked = true;
+        break;
+    }
+    assert!(
+        checked,
+        "a fixture whose richest land is worth more than twice the only safe site"
+    );
+}
