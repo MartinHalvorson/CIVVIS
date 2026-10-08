@@ -51728,7 +51728,7 @@ fn a_settler_inside_its_walk_allowance_or_with_the_gene_off_is_left_alone() {
     walk_out(&mut off, &game, settler, allowance + 20);
     assert_eq!(off.stalled_settler_step(&mut game, 0, settler), None);
     assert_eq!(game.cities.len(), cities);
-    assert!(off.settler_targets.get(&settler).is_none());
+    assert!(!off.settler_targets.contains_key(&settler));
 }
 
 /// Game 355's shape: a Settler hovering beside its capital, where every tile
@@ -51762,7 +51762,11 @@ fn a_stalled_settler_beside_its_city_takes_a_site_the_deadline_cannot_reach() {
     );
     let cities = game.cities.len();
     let acted = ai.stalled_settler_step(&mut game, 0, settler);
-    assert_eq!(acted, Some(true), "the stalled Settler walks to its new site");
+    assert_eq!(
+        acted,
+        Some(true),
+        "the stalled Settler walks to its new site"
+    );
     assert_eq!(game.cities.len(), cities, "nothing founded on the doorstep");
     assert_eq!(ai.settler_targets.get(&settler), Some(&site));
     assert!(
@@ -51805,9 +51809,11 @@ fn a_stalled_settler_never_picks_a_site_in_a_hostiles_reach() {
         if pos == first || placed >= 2 {
             continue;
         }
-        let open = game.map.get(pos).is_some_and(|tile| {
-            game.rules.is_passable(tile) && !game.rules.is_water(tile)
-        }) && game.city_at(pos).is_none()
+        let open = game
+            .map
+            .get(pos)
+            .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            && game.city_at(pos).is_none()
             && game.unit_ids_at(pos).is_empty();
         if open {
             game.spawn_test_unit("warrior", barb, pos);
@@ -51816,8 +51822,8 @@ fn a_stalled_settler_never_picks_a_site_in_a_hostiles_reach() {
     }
     assert!(placed > 0, "room for a raider beside the site");
     let visible = ai.battlefront_visibility(&game, 0);
-    let threatened = ai.settlement_tile_risk(&game, 0, Some(settler), first, &visible)
-        > SETTLER_STEP_RISK_LIMIT;
+    let threatened =
+        ai.settlement_tile_risk(&game, 0, Some(settler), first, &visible) > SETTLER_STEP_RISK_LIMIT;
     let again = ai.stalled_settler_site(&game, 0, settler);
     if threatened {
         assert_ne!(
