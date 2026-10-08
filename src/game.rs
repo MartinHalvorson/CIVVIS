@@ -6586,6 +6586,17 @@ pub struct Game {
     /// there.
     #[serde(default)]
     pub observed_wall_tier_rules: bool,
+    /// `culture-denial-heist`: a Great Work heist the HOST lists on a spy's
+    /// operation menu is offered, though the board cannot see the works. The
+    /// mirror carries only our own Great Works, so a rival city's
+    /// `spy_city_has_stealable_work` always read false and the heist was
+    /// never legal live: the host offered it for 8-14 turns in the culture
+    /// winner's city in three of today's eight culture losses
+    /// (civvis-20261008T062856Z St. Petersburg, T083432Z Tokyo, T090439Z
+    /// Mistahi-Sipihk) and it was never sent. Set by the seat each turn;
+    /// native games have no host menu, so it changes nothing there.
+    #[serde(default)]
+    pub heist_reads_the_host_menu: bool,
     /// Sites a HOST ruleset forbids for a reason CIVVIS's own rules cannot see.
     ///
     /// ★★★★ Empty in an ordinary game, and load-bearing when CIVVIS is driving a
@@ -7584,6 +7595,7 @@ impl From<GameSer> for Game {
             observed_city_ranged_strength: Arc::new(s.observed_city_ranged_strength),
             observed_city_max_wall_hp: Arc::new(s.observed_city_max_wall_hp),
             observed_wall_tier_rules: false,
+            heist_reads_the_host_menu: false,
             // Not carried in a save: host refusals are rebuilt from the run's event
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: Arc::new(BTreeSet::new()),
@@ -8307,6 +8319,7 @@ impl Game {
             observed_city_ranged_strength: Arc::new(BTreeMap::new()),
             observed_city_max_wall_hp: Arc::new(BTreeMap::new()),
             observed_wall_tier_rules: false,
+            heist_reads_the_host_menu: false,
             blocked_city_sites: Arc::new(BTreeSet::new()),
             host_observed: Arc::new(BTreeSet::new()),
             observed_appeal: Arc::new(BTreeMap::new()),
@@ -13099,7 +13112,12 @@ impl Game {
             };
             let useful = match mission {
                 "steal_tech_boost" => self.spy_city_has_stealable_tech(spy.owner, city.owner),
-                "great_work_heist" => self.spy_city_has_stealable_work(spy.owner, city.id),
+                "great_work_heist" => {
+                    self.spy_city_has_stealable_work(spy.owner, city.id)
+                        // See `heist_reads_the_host_menu`.
+                        || (self.heist_reads_the_host_menu
+                            && host_menu.is_some_and(|menu| menu.contains("great_work_heist")))
+                }
                 "recruit_partisans" => self.barb_pid.is_some(),
                 _ => true,
             };

@@ -7006,6 +7006,23 @@ impl AdvancedAi {
         self.science_denial_trains_spies = false;
     }
 
+    /// Enable `culture-denial-heist`.
+    pub fn enable_culture_denial_heist(&mut self) {
+        self.culture_denial_heist = true;
+    }
+    /// Withhold `culture-denial-heist`.
+    pub fn disable_culture_denial_heist(&mut self) {
+        self.culture_denial_heist = false;
+    }
+    /// Enable `war-kills-the-bands`.
+    pub fn enable_war_kills_the_bands(&mut self) {
+        self.war_kills_the_bands = true;
+    }
+    /// Withhold `war-kills-the-bands`.
+    pub fn disable_war_kills_the_bands(&mut self) {
+        self.war_kills_the_bands = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

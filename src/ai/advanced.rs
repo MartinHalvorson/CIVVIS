@@ -5417,6 +5417,10 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-denial-heist`: against a rival the culture counter reads, spies
+    /// post to its Theater Square cities and run the Great Work heist the host
+    /// offers. See `advanced/culture_denial_heist.rs`. Off by default.
+    culture_denial_heist: bool,
     /// `counter-out-of-reach-takes-the-weak`: a denial counter on a rival
     /// stronger than us yields the campaign target to a weak neighbour. See
     /// `AdvancedAi::counter_out_of_reach`.
@@ -8105,6 +8109,10 @@ pub struct AdvancedAi {
     /// See `advanced/science_denial_trains_spies.rs`.
     science_denial_trains_spies: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `war-kills-the-bands`: a land military unit runs down an enemy Rock
+    /// Band in reach while we are at war with its owner. See
+    /// `advanced/band_hunt.rs`. Off by default.
+    war_kills_the_bands: bool,
     /// `urban-planning-fills-the-slot`: Urban Planning (+1 Production in
     /// every city) is wanted at the tail of every lane's policy portfolio, so
     /// it takes any slot no wanted card holds and is protected from a card
@@ -9015,6 +9023,8 @@ mod wonder_clearance;
 /// opt-in genes; see `advanced/wonder_sites.rs`.
 mod wonder_sites;
 
+mod band_hunt;
+mod culture_denial_heist;
 mod science_denial_every_pad;
 mod dvp_leader_front;
 mod science_denial_trains_spies;
@@ -9950,6 +9960,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            culture_denial_heist: false,
             counter_out_of_reach_takes_the_weak: false,
             counterweight_from_the_first_convert: false,
             counter_war_needs_the_emperor_edge: false,
@@ -10366,6 +10377,7 @@ impl AdvancedAi {
             science_denial_every_pad: false,
             science_denial_trains_spies: false,
             // ---- append: t-z ----------------------------------------
+            war_kills_the_bands: false,
             urban_planning_fills_the_slot: false,
             theater_keeps_its_amphitheater: false,
             weak_target_skips_the_muster: false,
@@ -27995,6 +28007,8 @@ impl AdvancedAi {
     }
 
     fn advanced_spies(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        // `culture-denial-heist`: see `Game::heist_reads_the_host_menu`.
+        g.heist_reads_the_host_menu = self.culture_denial_heist;
         self.spy_orders_until.retain(|_, until| *until > g.turn);
         // `science-threat-denial`: the threat model walks every rival's
         // cities, so it is read once for the whole pass rather than per
@@ -28011,6 +28025,11 @@ impl AdvancedAi {
         // gene off. See `advanced/science_denial_every_pad.rs`.
         let every_pad_threats = self.every_pad_threats(g, pid);
         let every_pads = Self::every_pad_cities(g, pid, &every_pad_threats);
+        // `culture-denial-heist`: the rivals racing to a Culture Victory and
+        // their Theater Square cities. Both empty with the gene off. See
+        // `advanced/culture_denial_heist.rs`.
+        let culture_heist_targets = self.culture_heist_targets(g, pid);
+        let culture_heist_cities = Self::culture_heist_cities(g, pid, &culture_heist_targets);
         let ids: Vec<u32> = g
             .spies
             .values()
@@ -28195,6 +28214,29 @@ impl AdvancedAi {
                     continue;
                 }
             }
+            // `culture-denial-heist`: an idle spy in a foreign city that is no
+            // free Theater Square city of a culture racer leaves for the
+            // nearest one. Never taken with the gene off (`culture_heist_cities`
+            // empty).
+            if let Some(heist_city) =
+                Self::culture_heist_repost(g, pid, spy_id, current_city, &culture_heist_cities)
+            {
+                if let Some(action) = legal.iter().find(
+                    |action| matches!(action, Action::AssignSpy { city, .. } if *city == heist_city),
+                ) {
+                    if g.apply(pid, action).is_ok() {
+                        *g.players[pid]
+                            .counters
+                            .entry("culture_heist_posts".to_string())
+                            .or_insert(0) += 1;
+                    }
+                    self.spy_orders_until.insert(
+                        spy_id,
+                        g.turn + g.standard_duration(SPY_TRAVEL_ORDER_PATIENCE),
+                    );
+                    continue;
+                }
+            }
             let offensive = current_city
                 .and_then(|city| g.cities.get(&city))
                 .is_some_and(|city| city.owner != pid);
@@ -28221,6 +28263,25 @@ impl AdvancedAi {
                             .entry("every_pad_disrupts".to_string())
                             .or_insert(0) += 1;
                         self.every_pad_note(g, spy_id);
+                    }
+                    self.spy_orders_until.insert(
+                        spy_id,
+                        g.turn + g.standard_duration(SPY_MISSION_ORDER_PATIENCE),
+                    );
+                    continue;
+                }
+                // `culture-denial-heist`: in a culture racer's city, the Great
+                // Work heist whenever it is offered. `None` with the gene off
+                // (`culture_heist_targets` empty).
+                if let Some(action) =
+                    Self::culture_heist_action(g, pid, spy_id, &culture_heist_targets)
+                {
+                    if g.apply(pid, &action).is_ok() {
+                        *g.players[pid]
+                            .counters
+                            .entry("culture_heists".to_string())
+                            .or_insert(0) += 1;
+                        self.culture_heist_note(g, spy_id);
                     }
                     self.spy_orders_until.insert(
                         spy_id,
@@ -28397,6 +28458,16 @@ impl AdvancedAi {
                                     pid,
                                     spy_id,
                                     &every_pads,
+                                    *city,
+                                )
+                                // `culture-denial-heist`: every free Theater
+                                // Square city of a culture racer. Zero with
+                                // the gene off.
+                                + Self::culture_heist_assignment_bonus(
+                                    g,
+                                    pid,
+                                    spy_id,
+                                    &culture_heist_cities,
                                     *city,
                                 ),
                             std::cmp::Reverse(*city),
@@ -45671,6 +45742,10 @@ impl AdvancedAi {
         // See `advanced/air_surge/heretic_hunt.rs`.
         let hunters = self.plan_heretic_hunt(g, pid, &air_assault_units);
         air_assault_units.extend(hunters);
+        // `war-kills-the-bands`: an enemy Rock Band in reach is run down.
+        // Nothing with the gene off. See `advanced/band_hunt.rs`.
+        let band_hunters = self.plan_band_hunt(g, pid, plan, &air_assault_units);
+        air_assault_units.extend(band_hunters);
         // `pass-picket`: this turn's recon orders, drawn once from the
         // start-of-turn board so units planned in parallel agree on them.
         // Nothing is read with the gene off. See

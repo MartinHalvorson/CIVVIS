@@ -257,6 +257,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-counter-declares` | off (unmeasured) | Opt-in gene `culture-counter-declares`; see `Self::culture_counter_declares`. | 1 \| 1 |
 | `culture-defense-theater` | off (unmeasured) | A Theater Square while the empire's Culture trails the strongest rival's: claimed for one idle city ahead of the delegated governor (`reserve_culture_defense_theater`), and in the delegated governor ahead of the Harbor. | — \| 2 |
 | `culture-defense-theater-2` | off (unmeasured) | `culture-defense-theater-2`: version 1, but the reservation leaves a housing-bound city whose next housing is a Granary to the governor. | — \| 2 |
+| `culture-denial-heist` | off (unmeasured) | Enable `culture-denial-heist`. | 1 \| 1 |
 | `culture-faith-reservation` | off (unmeasured) | Enable `culture-faith-reservation` for measurement. | 1 \| 1 |
 | `culture-finish-at-the-observed-bar` | off (unmeasured) | Opt-in gene `culture-finish-at-the-observed-bar`; see `Self::culture_finish_at_the_observed_bar`. | 1 \| 1 |
 | `culture-lane-forecast-2` | off (unmeasured) | Version 2 of the Culture clock forecast: project secular and religious Tourism through each rival's current international modifiers. | 1 \| 2 |
@@ -437,6 +438,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `victory-deadline-budget` | off (unmeasured) | Enable `victory-deadline-budget` for measurement. | 1 \| 1 |
 | `victory-portfolio` | off (unmeasured) | Preserve victory objectives across temporary expansion and war postures. | 1 \| 1 |
 | `war-bill-prices-the-tier-gap` | off (unmeasured) | Opt-in gene `war-bill-prices-the-tier-gap`; see `Self::war_bill_prices_the_tier_gap`. | 1 \| 1 |
+| `war-kills-the-bands` | off (unmeasured) | Enable `war-kills-the-bands`. | 1 \| 1 |
 | `weak-target-skips-the-muster` | off (unmeasured) | Opt-in gene `weak-target-skips-the-muster`; see `Self::weak_target_skips_the_muster`. | 1 \| 1 |
 | `wounded-taker-finishes-the-breach` | off (unmeasured) | Opt-in gene `wounded-taker-finishes-the-breach`; see `Self::wounded_taker_finishes_the_breach`. | 1 \| 1 |
 

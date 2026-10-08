@@ -3414,6 +3414,10 @@ pub const GENES: &[Gene] = &[
     // of 5 capacity from t175 to its t215 Science loss. See
     // `advanced/science_denial_trains_spies.rs`.
     Gene { tag: "science-denial-trains-spies", field: "science_denial_trains_spies", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denial_trains_spies, disable: AdvancedAi::disable_science_denial_trains_spies },
+    // `advanced/culture_denial_heist.rs`.
+    Gene { tag: "culture-denial-heist", field: "culture_denial_heist", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_denial_heist, disable: AdvancedAi::disable_culture_denial_heist },
+    // `advanced/band_hunt.rs`.
+    Gene { tag: "war-kills-the-bands", field: "war_kills_the_bands", kind: Kind::OptIn, enable: AdvancedAi::enable_war_kills_the_bands, disable: AdvancedAi::disable_war_kills_the_bands },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
