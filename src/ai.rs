@@ -13041,11 +13041,7 @@ impl BasicAi {
         // `housing-cap-builds-the-aqueduct`: a housing-bound city's Aqueduct
         // once its Granary stands, ahead of every economy step and the
         // military floor below. Local defence above still wins.
-        if self.housing_cap_builds_the_aqueduct
-            && !self.minor
-            && !self.barb
-            && !emergency_defense
-        {
+        if self.housing_cap_builds_the_aqueduct && !self.minor && !self.barb && !emergency_defense {
             if let Some(item) = self.housing_cap_aqueduct_step(g, pid, cid) {
                 return Some(item);
             }
@@ -24885,11 +24881,14 @@ mod tests {
             .nbrs(center)
             .into_iter()
             .find(|pos| {
-                game.map.tiles.get(pos).is_some_and(|tile| !game.rules.is_water(tile))
-                    && game.nbrs(*pos).into_iter().any(|other| {
-                        other != center
-                            && game.map.tiles.get(&other).is_some()
-                    })
+                game.map
+                    .tiles
+                    .get(pos)
+                    .is_some_and(|tile| !game.rules.is_water(tile))
+                    && game
+                        .nbrs(*pos)
+                        .into_iter()
+                        .any(|other| other != center && game.map.tiles.get(&other).is_some())
             })
             .expect("a land neighbour of the centre");
         let source = game
@@ -24897,7 +24896,10 @@ mod tests {
             .into_iter()
             .find(|pos| *pos != center && game.map.tiles.get(pos).is_some())
             .expect("a river partner");
-        assert!(game.map.set_river_edge(site, source, true), "river edge set");
+        assert!(
+            game.map.set_river_edge(site, source, true),
+            "river edge set"
+        );
         let housing = game.city_housing(&game.cities[&cid]);
         game.cities.get_mut(&cid).unwrap().pop = housing.floor() as i32;
         let aqueduct = BasicAi::housing_reserve_item(&game, 0, cid)
@@ -24925,12 +24927,24 @@ mod tests {
         };
         let stock = pick(&game, false);
         assert!(stock.is_some(), "the stock governor builds something");
-        assert_ne!(stock.as_ref(), Some(&aqueduct), "the stock pick is not the Aqueduct");
-        assert_eq!(pick(&game, true), Some(aqueduct.clone()), "the Aqueduct comes first");
+        assert_ne!(
+            stock.as_ref(),
+            Some(&aqueduct),
+            "the stock pick is not the Aqueduct"
+        );
+        assert_eq!(
+            pick(&game, true),
+            Some(aqueduct.clone()),
+            "the Aqueduct comes first"
+        );
 
         let mut roomy = game.clone();
         roomy.cities.get_mut(&cid).unwrap().pop = 1;
-        assert_eq!(pick(&roomy, true), pick(&roomy, false), "room to grow: the stock pick");
+        assert_eq!(
+            pick(&roomy, true),
+            pick(&roomy, false),
+            "room to grow: the stock pick"
+        );
 
         // Still at its housing, but too small for the district.
         let mut tiny = game.clone();
@@ -24938,7 +24952,11 @@ mod tests {
         if housing >= 3.0 {
             tiny.cities.get_mut(&cid).unwrap().pop = 2;
             if 2.0 + 1.0 >= housing {
-                assert_eq!(pick(&tiny, true), pick(&tiny, false), "under the population floor");
+                assert_eq!(
+                    pick(&tiny, true),
+                    pick(&tiny, false),
+                    "under the population floor"
+                );
             }
         }
 
@@ -24951,11 +24969,17 @@ mod tests {
                 ..Default::default()
             },
         );
-        let turns = slow.host_production_turns(cid, &aqueduct).unwrap_or_else(|| {
-            slow.item_cost_for(0, &aqueduct) / slow.city_yields(cid).production.max(0.5)
-        });
+        let turns = slow
+            .host_production_turns(cid, &aqueduct)
+            .unwrap_or_else(|| {
+                slow.item_cost_for(0, &aqueduct) / slow.city_yields(cid).production.max(0.5)
+            });
         if turns > BasicAi::HOUSING_CAP_AQUEDUCT_MAX_TURNS {
-            assert_ne!(pick(&slow, true), Some(aqueduct.clone()), "past the turn cap");
+            assert_ne!(
+                pick(&slow, true),
+                Some(aqueduct.clone()),
+                "past the turn cap"
+            );
         }
     }
 
@@ -24973,13 +24997,21 @@ mod tests {
             ai
         };
         let ask = |game: &Game, ai: &BasicAi| ai.pick_item(game, 0, cid, 3, 1, 1, 1, 0, 0, 0, 0);
-        assert_eq!(ask(&game, &governor(true)), Some(aqueduct.clone()), "fixture: the gene fires");
+        assert_eq!(
+            ask(&game, &governor(true)),
+            Some(aqueduct.clone()),
+            "fixture: the gene fires"
+        );
 
         let mut named = governor(true);
         named.plan_threatened_city = Some(cid);
         let mut named_stock = governor(false);
         named_stock.plan_threatened_city = Some(cid);
-        assert_eq!(ask(&game, &named), ask(&game, &named_stock), "the plan's threatened city");
+        assert_eq!(
+            ask(&game, &named),
+            ask(&game, &named_stock),
+            "the plan's threatened city"
+        );
 
         let mut attacked = game.clone();
         attacked.turn = 40;
