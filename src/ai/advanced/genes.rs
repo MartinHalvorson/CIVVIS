@@ -3346,6 +3346,10 @@ pub const GENES: &[Gene] = &[
     // the gun. The gun steps up behind the column instead. See
     // `AdvancedAi::column_queue_step`.
     Gene { tag: "gun-queues-behind-the-column", field: "gun_queues_behind_the_column", kind: Kind::OptIn, enable: AdvancedAi::enable_gun_queues_behind_the_column, disable: AdvancedAi::disable_gun_queues_behind_the_column },
+    // A city within one of its housing whose Granary stands builds its
+    // Aqueduct (Rome's Bath) ahead of the economy steps and the military
+    // floor, within 25 turns. See `BasicAi::housing_cap_builds_the_aqueduct`.
+    Gene { tag: "housing-cap-builds-the-aqueduct", field: "housing_cap_builds_the_aqueduct", kind: Kind::OptIn, enable: AdvancedAi::enable_housing_cap_builds_the_aqueduct, disable: AdvancedAi::disable_housing_cap_builds_the_aqueduct },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

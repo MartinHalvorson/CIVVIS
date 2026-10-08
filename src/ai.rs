@@ -2800,6 +2800,25 @@ pub struct BasicAi {
     /// Set from `AdvancedAi` by the opt-in gene
     /// `housing-bound-city-builds-its-granary`.
     pub(crate) housing_bound_city_builds_its_granary: bool,
+    /// A city within one of its housing that already has its Granary (or
+    /// cannot build one) builds its Aqueduct (Rome's Bath) next, ahead of the
+    /// economy steps and the military floor, when the district finishes
+    /// within `HOUSING_CAP_AQUEDUCT_MAX_TURNS`. An Aqueduct takes no district
+    /// slot and lifts a city's water housing: to 6 without fresh water, by 2
+    /// with it. Measured on the 38 Emperor games of October 6-8 at turn 100:
+    /// 56% of our cities stood within one of their housing (median population
+    /// 6 against housing 6, rivals' median city 10), 113 of those 153 already
+    /// had a Granary, and 5 had an Aqueduct; about 45% of them had a legal
+    /// Aqueduct site. The armed lineage reaches the same `housing_reserve_item`
+    /// too late: `granary-before-the-army-2` only within
+    /// `FIRST_CAMPUS_MAX_TURNS` and behind the Campus, the Builder backlog and
+    /// a due Settler; `first-granary-reserve-3` (`housing_reserve`) only after
+    /// the military floor, the Settler and every district step; and
+    /// `housing-bound-city-builds-its-granary` stops at the Granary. At turn 150 the operator retires a game not top 2
+    /// by Production (G365 120 against 448, G366 132 against 330).
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `housing-cap-builds-the-aqueduct`.
+    pub(crate) housing_cap_builds_the_aqueduct: bool,
     /// From turn 90 standard (t60 Online), ahead of the military floor: the
     /// Market of a standing Commercial Hub, then a Trader while the empire's
     /// routes and Traders leave a route slot open, then a Commercial Hub on
@@ -5760,6 +5779,7 @@ impl BasicAi {
             activation_keeps_its_building: false,
             granary_before_the_army_2: false,
             housing_bound_city_builds_its_granary: false,
+            housing_cap_builds_the_aqueduct: false,
             commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,
@@ -6275,6 +6295,7 @@ impl BasicAi {
             activation_keeps_its_building: false,
             granary_before_the_army_2: false,
             housing_bound_city_builds_its_granary: false,
+            housing_cap_builds_the_aqueduct: false,
             commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,
@@ -13017,6 +13038,18 @@ impl BasicAi {
                 return Some(item);
             }
         }
+        // `housing-cap-builds-the-aqueduct`: a housing-bound city's Aqueduct
+        // once its Granary stands, ahead of every economy step and the
+        // military floor below. Local defence above still wins.
+        if self.housing_cap_builds_the_aqueduct
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+        {
+            if let Some(item) = self.housing_cap_aqueduct_step(g, pid, cid) {
+                return Some(item);
+            }
+        }
         // `monument-first`: the cheapest culture in the game before the
         // military floor and the Settler step, which otherwise kept a city
         // from ever reaching it. The capital sends the land grab's first two
@@ -16394,6 +16427,62 @@ impl BasicAi {
                "{} short of Amenities, and a luxury the empire lacks lies unimproved on our \
                 ground with {builders} Builders held", -surplus);
         Some(builder)
+    }
+
+    /// The longest an Aqueduct may take under `housing-cap-builds-the-aqueduct`.
+    /// A city at its housing grows at a quarter to a half of its rate, so the
+    /// district pays for its own turns there; the cap keeps a tiny city from
+    /// spending half the game on it.
+    const HOUSING_CAP_AQUEDUCT_MAX_TURNS: f64 = 25.0;
+    /// The smallest city `housing-cap-builds-the-aqueduct` builds for: a
+    /// newly founded one reaches its housing on its first improvements.
+    const HOUSING_CAP_AQUEDUCT_MIN_POP: i32 = 3;
+
+    /// `housing-cap-builds-the-aqueduct`: the Aqueduct (Rome's Bath) of a city
+    /// within one of its housing whose Granary already stands or cannot be
+    /// built, on the legal site `housing_reserve_item` uses, when it finishes
+    /// within `HOUSING_CAP_AQUEDUCT_MAX_TURNS`. `None` in a city the plan
+    /// names threatened, a city attacked within four turns, a city holding a
+    /// Settler past half its price, a city under
+    /// `HOUSING_CAP_AQUEDUCT_MIN_POP`, and a city that already has one.
+    fn housing_cap_aqueduct_step(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let city = &g.cities[&cid];
+        let threatened = self.plan_threatened_city == Some(cid)
+            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
+        if threatened
+            || Self::settler_half_built(g, pid, cid)
+            || city.pop < Self::HOUSING_CAP_AQUEDUCT_MIN_POP
+        {
+            return None;
+        }
+        let housing = g.city_housing(city);
+        if (city.pop as f64) + 1.0 < housing
+            || Self::civ_building(g, pid, cid, "granary").is_some()
+            || g.city_has_district_family(city, crate::name!("aqueduct"))
+        {
+            return None;
+        }
+        let aqueduct = Self::civ_district(g, pid, "aqueduct");
+        let pos = g.district_sites(cid, aqueduct).into_iter().min()?;
+        let item = Item::District {
+            district: aqueduct,
+            pos,
+        };
+        if !g.can_produce(pid, cid, &item) {
+            return None;
+        }
+        let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+            g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
+        });
+        if turns > Self::HOUSING_CAP_AQUEDUCT_MAX_TURNS {
+            return None;
+        }
+        think!(self.journal, Cities, Detail,
+               "{} builds its Aqueduct at its housing", city.name;
+               "population {} against housing {housing:.0} with its Granary built: the Aqueduct \
+                takes no district slot and lifts the water housing, about {turns:.0} turns",
+               city.pop);
+        Some(item)
     }
 
     /// Whether `cid` holds production for a Settler past half its price.
@@ -24775,6 +24864,145 @@ mod tests {
             emperor_lineage_governor(true).pick_item(&roomy, 0, cid, 3, 1, 1, 1, 0, 0, 0, 0),
             emperor_lineage_governor(false).pick_item(&roomy, 0, cid, 3, 1, 1, 1, 0, 0, 0, 0),
             "room to grow: the stock pick"
+        );
+    }
+
+    /// The `housing-cap-builds-the-aqueduct` shape: the Emperor capital at
+    /// its housing with its Granary built, Engineering researched and a river
+    /// edge beside a city-centre neighbour, so its Aqueduct is legal.
+    fn housing_capped_capital_with_an_aqueduct_site(tag: &str, seed: u64) -> (Game, u32, Item) {
+        let (mut game, cid) = emperor_housing_bound_capital(tag, seed);
+        for tech in ["masonry", "bronze_working", "engineering"] {
+            game.players[0].techs.insert(Name::new(tech));
+        }
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .push(crate::name!("granary"));
+        let center = game.cities[&cid].pos;
+        let site = game
+            .nbrs(center)
+            .into_iter()
+            .find(|pos| {
+                game.map.tiles.get(pos).is_some_and(|tile| !game.rules.is_water(tile))
+                    && game.nbrs(*pos).into_iter().any(|other| {
+                        other != center
+                            && game.map.tiles.get(&other).is_some()
+                    })
+            })
+            .expect("a land neighbour of the centre");
+        let source = game
+            .nbrs(site)
+            .into_iter()
+            .find(|pos| *pos != center && game.map.tiles.get(pos).is_some())
+            .expect("a river partner");
+        assert!(game.map.set_river_edge(site, source, true), "river edge set");
+        let housing = game.city_housing(&game.cities[&cid]);
+        game.cities.get_mut(&cid).unwrap().pop = housing.floor() as i32;
+        let aqueduct = BasicAi::housing_reserve_item(&game, 0, cid)
+            .expect("fixture: the housing reserve names the Aqueduct");
+        assert!(
+            matches!(&aqueduct, Item::District { district, .. } if game.district_family(*district) == "aqueduct"),
+            "fixture: the reserve is the Aqueduct, not a Granary: {aqueduct:?}"
+        );
+        (game, cid, aqueduct)
+    }
+
+    /// See `housing_cap_builds_the_aqueduct`: the stock governor spends the
+    /// housing-bound capital whose Granary stands on something else; under
+    /// the gene its Aqueduct is the next build. A city with room to grow and
+    /// a city under the population floor keep the stock pick.
+    #[test]
+    fn a_housing_capped_city_builds_its_aqueduct_under_the_gene() {
+        let (game, cid, aqueduct) =
+            housing_capped_capital_with_an_aqueduct_site("HOUSINGAQUEDUCT", 91_921);
+        let pick = |game: &Game, gene: bool| {
+            let mut ai = emperor_lineage_governor(true);
+            ai.granary_before_the_army_2 = false;
+            ai.housing_cap_builds_the_aqueduct = gene;
+            ai.pick_item(game, 0, cid, 3, 1, 1, 1, 0, 0, 0, 0)
+        };
+        let stock = pick(&game, false);
+        assert!(stock.is_some(), "the stock governor builds something");
+        assert_ne!(stock.as_ref(), Some(&aqueduct), "the stock pick is not the Aqueduct");
+        assert_eq!(pick(&game, true), Some(aqueduct.clone()), "the Aqueduct comes first");
+
+        let mut roomy = game.clone();
+        roomy.cities.get_mut(&cid).unwrap().pop = 1;
+        assert_eq!(pick(&roomy, true), pick(&roomy, false), "room to grow: the stock pick");
+
+        // Still at its housing, but too small for the district.
+        let mut tiny = game.clone();
+        let housing = tiny.city_housing(&tiny.cities[&cid]);
+        if housing >= 3.0 {
+            tiny.cities.get_mut(&cid).unwrap().pop = 2;
+            if 2.0 + 1.0 >= housing {
+                assert_eq!(pick(&tiny, true), pick(&tiny, false), "under the population floor");
+            }
+        }
+
+        // A slow city keeps the stock pick: past the turn cap.
+        let mut slow = game.clone();
+        std::sync::Arc::make_mut(&mut slow.observed_city_yield_adjustments).insert(
+            cid,
+            crate::rules::Yields {
+                production: 0.1,
+                ..Default::default()
+            },
+        );
+        let turns = slow.host_production_turns(cid, &aqueduct).unwrap_or_else(|| {
+            slow.item_cost_for(0, &aqueduct) / slow.city_yields(cid).production.max(0.5)
+        });
+        if turns > BasicAi::HOUSING_CAP_AQUEDUCT_MAX_TURNS {
+            assert_ne!(pick(&slow, true), Some(aqueduct.clone()), "past the turn cap");
+        }
+    }
+
+    /// See `housing_cap_aqueduct_step`: a city the plan names threatened and
+    /// a city attacked within four turns keep the stock pick; a city still
+    /// short of its Granary takes the Granary through the granary gene.
+    #[test]
+    fn a_threatened_city_keeps_the_stock_pick_under_the_aqueduct_gene() {
+        let (game, cid, aqueduct) =
+            housing_capped_capital_with_an_aqueduct_site("HOUSINGAQUEDUCTTHREAT", 91_923);
+        let governor = |gene: bool| {
+            let mut ai = emperor_lineage_governor(true);
+            ai.granary_before_the_army_2 = false;
+            ai.housing_cap_builds_the_aqueduct = gene;
+            ai
+        };
+        let ask = |game: &Game, ai: &BasicAi| ai.pick_item(game, 0, cid, 3, 1, 1, 1, 0, 0, 0, 0);
+        assert_eq!(ask(&game, &governor(true)), Some(aqueduct.clone()), "fixture: the gene fires");
+
+        let mut named = governor(true);
+        named.plan_threatened_city = Some(cid);
+        let mut named_stock = governor(false);
+        named_stock.plan_threatened_city = Some(cid);
+        assert_eq!(ask(&game, &named), ask(&game, &named_stock), "the plan's threatened city");
+
+        let mut attacked = game.clone();
+        attacked.turn = 40;
+        attacked.cities.get_mut(&cid).unwrap().last_attacked = 37;
+        assert_eq!(
+            ask(&attacked, &governor(true)),
+            ask(&attacked, &governor(false)),
+            "attacked three turns ago"
+        );
+
+        let mut no_granary = game.clone();
+        no_granary
+            .cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .retain(|building| *building != "granary");
+        assert_eq!(
+            ask(&no_granary, &governor(true)),
+            Some(Item::Building {
+                building: crate::name!("granary"),
+            }),
+            "the Granary before the Aqueduct"
         );
     }
 

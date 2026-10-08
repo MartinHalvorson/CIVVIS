@@ -6892,10 +6892,24 @@ impl AdvancedAi {
         self.gun_queues_behind_the_column = false;
     }
 
+    /// Opt-in gene `housing-cap-builds-the-aqueduct`; see
+    /// `BasicAi::housing_cap_builds_the_aqueduct`.
+    pub fn enable_housing_cap_builds_the_aqueduct(&mut self) {
+        self.housing_cap_builds_the_aqueduct = true;
+        self.base.housing_cap_builds_the_aqueduct = true;
+    }
+
+    /// The twin of `enable_housing_cap_builds_the_aqueduct`.
+    pub fn disable_housing_cap_builds_the_aqueduct(&mut self) {
+        self.housing_cap_builds_the_aqueduct = false;
+        self.base.housing_cap_builds_the_aqueduct = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
+
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
