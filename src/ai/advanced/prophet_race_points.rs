@@ -95,6 +95,8 @@ impl AdvancedAi {
         let city = &g.cities[&cid];
         if plan.threatened_city == Some(cid)
             || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+            // `early-settler-floor`: the floor's Settler keeps its city.
+            || self.early_settler_floor_holds(g, pid, cid, plan)
         {
             return;
         }

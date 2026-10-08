@@ -3431,6 +3431,12 @@ pub const GENES: &[Gene] = &[
     // Ethiopia won on Religion at 132. Empty seats beyond the host's living
     // count retire. See `defeated_majors::retire_defeated_majors`.
     Gene { tag: "defeated-majors-leave-the-board", field: "defeated_majors_leave_the_board", kind: Kind::OptIn, enable: AdvancedAi::enable_defeated_majors_leave_the_board, disable: AdvancedAi::disable_defeated_majors_leave_the_board },
+    // Before the band turn, while cities plus walkers are short of six and
+    // no Settler is in production, the unthreatened city that trains one
+    // soonest queues a Settler ahead of the Prophet race and the routine
+    // builds. 10-08: four or fewer cities at t75 passed the production gate
+    // in 0 of 19 live Emperor runs. See `advanced/early_settler_floor.rs`.
+    Gene { tag: "early-settler-floor", field: "early_settler_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_early_settler_floor, disable: AdvancedAi::disable_early_settler_floor },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

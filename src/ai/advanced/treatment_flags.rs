@@ -7042,6 +7042,15 @@ impl AdvancedAi {
         self.defeated_majors_leave_the_board = false;
     }
 
+    /// Enable `early-settler-floor`.
+    pub fn enable_early_settler_floor(&mut self) {
+        self.early_settler_floor = true;
+    }
+    /// Withhold `early-settler-floor`.
+    pub fn disable_early_settler_floor(&mut self) {
+        self.early_settler_floor = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

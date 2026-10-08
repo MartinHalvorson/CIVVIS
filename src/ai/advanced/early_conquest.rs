@@ -702,7 +702,7 @@ impl AdvancedAi {
 
     /// Whether the reservation is open at all: the gene is on, an opening
     /// stands, the war has not opened yet, and its preparation has not expired.
-    fn conquest_reservation_open(&self, g: &Game) -> bool {
+    pub(super) fn conquest_reservation_open(&self, g: &Game) -> bool {
         self.early_conquest_opening
             && self.conquest_opening.as_ref().is_some_and(|opening| {
                 opening.declared.is_none() && g.turn < Self::conquest_commit_due(g, opening)

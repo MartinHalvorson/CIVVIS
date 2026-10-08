@@ -6150,6 +6150,16 @@ pub struct AdvancedAi {
     /// the declaration edge. See `advanced/dvp_leader_front.rs`.
     dvp_leader_is_the_front: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `early-settler-floor`: before the band turn, while cities plus walkers
+    /// are short of six and no Settler is in production, the unthreatened
+    /// city that trains one soonest puts a Settler at the head of its queue,
+    /// ahead of the Prophet race and the routine builds; the strategic
+    /// scorer, the Prophet's Holy Site and the race's Shrine keep it there.
+    /// 10-08 census: at four or fewer cities at t75, 0 of 19 live Emperor
+    /// runs passed the production gate (8 of 14 at seven or more), and those
+    /// runs started a median one Settler in t20-50 against 2.8. See
+    /// `advanced/early_settler_floor.rs`. Off by default.
+    early_settler_floor: bool,
     /// `founder-defends-its-cities`: once a living rival's faith holds a city
     /// of ours, a founder's religious corps counts only units of its own
     /// faith, its defensive Missionary cap rises to one per rival-held city
@@ -8969,6 +8979,10 @@ mod victory_conversion;
 mod victory_lane;
 pub mod victory_portfolio;
 
+/// `early-settler-floor`: the actuation half of the opening's pace -- a
+/// Settler in the queue while the empire is short of the band floor. One
+/// opt-in gene; see `advanced/early_settler_floor.rs`.
+mod early_settler_floor;
 /// `expansion-scales-with-difficulty`: the measured 4-6 city opening band
 /// was read off a King-level field, and every rung above King hands the
 /// rivals a percentage of every yield and free Settlers. The city target,
@@ -10121,6 +10135,7 @@ impl AdvancedAi {
             congress_guards_the_leader: false,
             dvp_leader_is_the_front: false,
             // ---- append: e-f ----------------------------------------
+            early_settler_floor: false,
             founder_defends_its_cities: false,
             founder_keeps_two_sources: false,
             founder_funds_the_inquisition: false,
@@ -30567,6 +30582,10 @@ impl AdvancedAi {
                         || self.prophet_site_committed(g, pid, cid, item))
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
+            // `early-settler-floor`: the floor's Settler finishes before
+            // routine rescoring can claim the city.
+            let early_settler_commitment = plan.threatened_city != Some(cid)
+                && self.early_settler_floor_holds(g, pid, cid, plan);
             // `industrial-zone-in-the-producers`: a queued Industrial Zone or
             // Workshop finishes before routine rescoring can claim the city.
             let industrial_zone_commitment = committed.as_ref().is_some_and(|(_, item)| {
@@ -30591,6 +30610,7 @@ impl AdvancedAi {
                     || domination_research_commitment
                     || defensive_temple_commitment
                     || race_shrine_commitment
+                    || early_settler_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -30603,6 +30623,7 @@ impl AdvancedAi {
                     || domination_research_commitment
                     || defensive_temple_commitment
                     || race_shrine_commitment
+                    || early_settler_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -47069,6 +47090,11 @@ impl AdvancedAi {
             {
                 self.culture_spending(g, pid);
             }
+            // `early-settler-floor`: a Settler for the opening's band floor
+            // goes first, ahead of the Prophet race and the routine claims
+            // below. Exact no-op while the gene is off. See
+            // `advanced/early_settler_floor.rs`.
+            self.claim_early_settler_floor(g, pid, &plan);
             // `prophet-builds-its-site`: the Holy Site a Prophet founds on
             // goes first. Exact no-op while the gene is off.
             self.reserve_prophet_site(g, pid, &plan);
