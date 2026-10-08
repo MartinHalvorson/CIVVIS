@@ -2889,6 +2889,119 @@ fn append_luxury_buy_order(
     None
 }
 
+// ★★★★ THE SPARE COPY, SWAPPED FOR A LUXURY THE SEAT LACKS
+// (`luxury-swap-asks`). From turn 75 on, 56% of the live seat's city-turns
+// ran Displeased (31 Emperor games of 2026-10-08, 20,432 city-turns) — the
+// host's own 10% off every non-food yield and 15% off growth, 6.2% of all
+// production from turn 75 to 150 — and 84% of those cities were exactly ONE
+// Amenity short, which one more luxury type (+1 in four cities) closes. At
+// turn 100 the median empire held 4 types and 2 spare copies, its peaceful
+// rivals offered 4 types it lacked, and 26 of 32 games had both a spare and
+// an offer. Gold alone never bought a copy (`luxury_buy_asks`: 644 asks, every
+// one refused), while the rivals bought our spares for Gold and took luxury
+// spares in barter for Oil (games 351 and 61202Z); so the ask here is copy for
+// copy: the luxury the rival holds most of against one spare copy of ours
+// (two when four or more spares are held), through the strategic barter's
+// shape on the agent's buy arm (`LUXURY_ANY;RESOURCE_A=a,...`), Gold topping
+// up to what a copy is worth and the treasury carries. In the luxury slot of
+// the deal week, at the rival the turn rotates to among those at peace that
+// offer a type we lack, with no deal already heading their way and no
+// denunciation either way inside `LUXURY_SWAP_DENOUNCE_TURNS`.
+const LUXURY_SWAP_MIN_DEFICIT: f64 = 2.0;
+const LUXURY_SWAP_SECOND_COPY_SPARES: f64 = 4.0;
+const LUXURY_SWAP_DENOUNCE_TURNS: i64 = 30;
+
+fn append_luxury_swap_order(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    if amenity_deficit(state) < LUXURY_SWAP_MIN_DEFICIT {
+        return Some("luxury_swap_hold:content");
+    }
+    if state.turn % LUXURY_BUY_CADENCE != LUXURY_BUY_PHASE {
+        return Some("luxury_swap_hold:cadence");
+    }
+    let Some(counts) = state.luxury_counts.as_ref() else {
+        return Some("luxury_swap_hold:counts_unknown");
+    };
+    // What another sale already gives this turn stays off our side.
+    let selling: std::collections::BTreeSet<&str> = orders
+        .iter()
+        .filter(|order| order.kind == "sell")
+        .filter_map(|order| order.verb.as_deref())
+        .flat_map(|verb| verb.split([',', ';']))
+        .filter_map(|part| part.split_once('=').map(|(name, _)| name))
+        .collect();
+    let mut spares: Vec<(&str, f64)> = counts
+        .iter()
+        .filter(|(name, _)| !selling.contains(name.as_str()))
+        .map(|(name, count)| (name.as_str(), (count.floor() - 1.0).max(0.0)))
+        .filter(|(_, spare)| *spare >= 1.0)
+        .collect();
+    if spares.is_empty() {
+        return Some("luxury_swap_hold:no_spare");
+    }
+    spares.sort_by(|left, right| {
+        right
+            .1
+            .partial_cmp(&left.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.0.cmp(right.0))
+    });
+    let held: f64 = spares.iter().map(|(_, spare)| spare).sum();
+    let given = if held < LUXURY_SWAP_SECOND_COPY_SPARES {
+        format!("{}=1", spares[0].0)
+    } else if spares.len() > 1 {
+        format!("{}=1,{}=1", spares[0].0, spares[1].0)
+    } else {
+        format!("{}=2", spares[0].0)
+    };
+    let recent = |turn: Option<i64>| {
+        turn.is_some_and(|at| at >= 0 && i64::from(state.turn) - at < LUXURY_SWAP_DENOUNCE_TURNS)
+    };
+    let mut partners: Vec<&civvis::mirror::StateRival> = state
+        .rivals
+        .iter()
+        .filter(|rival| !rival.at_war)
+        .filter(|rival| {
+            rival
+                .tradeable_luxuries
+                .as_ref()
+                .is_some_and(|luxuries| !luxuries.is_empty())
+        })
+        .filter(|rival| !recent(rival.our_denounce_turn) && !recent(rival.their_denounce_turn))
+        .filter(|rival| {
+            !orders.iter().any(|order| {
+                (order.kind == "sell" || order.kind == "buy")
+                    && order.subject == Some(rival.player as i64)
+            })
+        })
+        .collect();
+    if partners.is_empty() {
+        return Some("luxury_swap_hold:no_partner");
+    }
+    partners.sort_by_key(|rival| rival.player);
+    let partner = partners[(state.turn / LUXURY_BUY_CADENCE) as usize % partners.len()];
+    let income = state
+        .gold_per_turn
+        .filter(|income| income.is_finite())
+        .unwrap_or(0.0);
+    let carried = (state.gold - LUXURY_BUY_GOLD_RESERVE).max(0)
+        + (25.0 * (income - LUXURY_BUY_INCOME_FLOOR)).floor().max(0.0) as i64;
+    let worth = LUXURY_BUY_CEILING_BASE
+        + LUXURY_BUY_CEILING_PER_CITY * state.cities.len().min(i32::MAX as usize) as i32;
+    let ceiling = carried
+        .min(i64::from(worth.min(LUXURY_BUY_CEILING_MAX)))
+        .max(0) as i32;
+    orders.push(Order {
+        kind: "buy",
+        subject: Some(partner.player as i64),
+        verb: Some(format!("LUXURY_ANY;{given}")),
+        pos: Some((ceiling, 0)),
+    });
+    None
+}
+
 // ★★★★★ THE GUN'S RESOURCE, BOUGHT WHERE A RIVAL OFFERS IT
 // (`siege-buys-the-gun-resource`). Live Emperor civvis-20261007T111017Z (game
 // 343) held Angkor Thom's 400 walls at turns 176-177 at a Trebuchet's 2.3 a
@@ -4945,6 +5058,18 @@ fn decide(
     // EQUALIZE asks of October 4-5, every answer a refusal with nothing on our
     // side (364 of them to rivals we had not denounced) -- while each ask held
     // the rival's one working deal and the trade cooldown the sales share.
+    // `luxury-swap-asks`: a spare copy for a luxury the seat lacks, ahead of
+    // the Gold-only ask on the same slot.
+    if ai.luxury_swap_asks_enabled() {
+        match append_luxury_swap_order(state, &mut orders) {
+            None => note_bits.push("luxury_swap=1".to_string()),
+            Some(why) => {
+                if why == "luxury_swap_hold:no_spare" || why == "luxury_swap_hold:no_partner" {
+                    note_bits.push(why.to_string());
+                }
+            }
+        }
+    }
     let luxury_buy = if ai.luxury_buy_asks_enabled() {
         append_luxury_buy_order(state, &mut orders)
     } else {
@@ -17685,6 +17810,156 @@ mod tests {
             append_luxury_buy_order(&alone, &mut held),
             Some("luxury_buy_hold:no_seller")
         );
+    }
+
+    /// `luxury-swap-asks`: a spare copy of ours for a luxury the seat lacks,
+    /// at the rival the turn rotates to among those at peace that offer one.
+    #[test]
+    fn luxury_swaps_offer_a_spare_for_a_type_we_lack() {
+        let short = |needed: f64, have: f64| StateCity {
+            amenities: have,
+            amenities_needed: needed,
+            ..StateCity::default()
+        };
+        let counts = |pairs: &[(&str, f64)]| {
+            Some(
+                pairs
+                    .iter()
+                    .map(|(name, count)| (name.to_string(), *count))
+                    .collect(),
+            )
+        };
+        let offering = |player, luxuries: &[&str]| StateRival {
+            player,
+            tradeable_luxuries: Some(luxuries.iter().map(|name| name.to_string()).collect()),
+            ..StateRival::default()
+        };
+        let state = StateSnapshot {
+            turn: 94, // 94 % 6 == 4, the luxury slot; 94 / 6 = 15
+            gold: 200,
+            gold_per_turn: Some(12.0),
+            cities: vec![short(5.0, 4.0), short(6.0, 5.0), short(3.0, 4.0)],
+            luxury_counts: counts(&[
+                ("RESOURCE_SPICES", 3.0),
+                ("RESOURCE_HONEY", 1.0),
+                ("RESOURCE_TURTLES", 2.0),
+            ]),
+            rivals: vec![
+                offering(2, &["RESOURCE_SILK"]),
+                offering(4, &["RESOURCE_AMBER"]),
+                StateRival {
+                    player: 5,
+                    at_war: true,
+                    ..offering(5, &["RESOURCE_JADE"])
+                },
+                offering(6, &[]),
+            ],
+            ..StateSnapshot::default()
+        };
+
+        // Three spare copies: one goes, the type held most of; the partner
+        // is seat 4 (15 % 2 == 1 of seats 2 and 4); Gold up to a copy's
+        // worth, 135 + 10·3 = 165, which the treasury and income carry.
+        let mut orders = Vec::new();
+        assert_eq!(append_luxury_swap_order(&state, &mut orders), None);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].kind, "buy");
+        assert_eq!(orders[0].subject, Some(4));
+        assert_eq!(
+            orders[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_SPICES=1")
+        );
+        assert_eq!(orders[0].pos, Some((165, 0)));
+
+        // The next week rotates to the other partner.
+        let mut next = state.clone();
+        next.turn = 100;
+        let mut next_orders = Vec::new();
+        assert_eq!(append_luxury_swap_order(&next, &mut next_orders), None);
+        assert_eq!(next_orders[0].subject, Some(2));
+
+        // Four spare copies or more: two go, one of each of the two largest;
+        // a single spare type gives two of itself.
+        let mut rich = state.clone();
+        rich.luxury_counts = counts(&[("RESOURCE_SPICES", 4.0), ("RESOURCE_TURTLES", 2.0)]);
+        let mut rich_orders = Vec::new();
+        assert_eq!(append_luxury_swap_order(&rich, &mut rich_orders), None);
+        assert_eq!(
+            rich_orders[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_SPICES=1,RESOURCE_TURTLES=1")
+        );
+        let mut one_type = state.clone();
+        one_type.luxury_counts = counts(&[("RESOURCE_SPICES", 5.0)]);
+        let mut one_orders = Vec::new();
+        assert_eq!(append_luxury_swap_order(&one_type, &mut one_orders), None);
+        assert_eq!(
+            one_orders[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_SPICES=2")
+        );
+
+        // A spare another sale gives this turn stays home; the next spare
+        // goes instead, and the buyer's seat is busy.
+        let mut selling = vec![Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("RESOURCE_SPICES=1".to_string()),
+            pos: Some((24, 0)),
+        }];
+        assert_eq!(append_luxury_swap_order(&state, &mut selling), None);
+        assert_eq!(selling.len(), 2);
+        assert_eq!(selling[1].subject, Some(4));
+        assert_eq!(
+            selling[1].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_TURTLES=1")
+        );
+
+        // No Gold to top up: the swap is still asked, at a ceiling of 0.
+        let mut broke = state.clone();
+        broke.gold = 10;
+        broke.gold_per_turn = Some(-2.0);
+        let mut broke_orders = Vec::new();
+        assert_eq!(append_luxury_swap_order(&broke, &mut broke_orders), None);
+        assert_eq!(broke_orders[0].pos, Some((0, 0)));
+
+        // Held: content, off the slot, no export of our copies, no spare, or
+        // nobody at peace offering a type we lack (a denunciation inside the
+        // window either way counts the rival out).
+        let mut held = Vec::new();
+        let mut content = state.clone();
+        content.cities = vec![short(5.0, 4.0), short(3.0, 4.0)];
+        assert_eq!(
+            append_luxury_swap_order(&content, &mut held),
+            Some("luxury_swap_hold:content")
+        );
+        let mut off_slot = state.clone();
+        off_slot.turn = 95;
+        assert_eq!(
+            append_luxury_swap_order(&off_slot, &mut held),
+            Some("luxury_swap_hold:cadence")
+        );
+        let mut blind = state.clone();
+        blind.luxury_counts = None;
+        assert_eq!(
+            append_luxury_swap_order(&blind, &mut held),
+            Some("luxury_swap_hold:counts_unknown")
+        );
+        let mut lean = state.clone();
+        lean.luxury_counts = counts(&[("RESOURCE_SPICES", 1.0), ("RESOURCE_HONEY", 1.0)]);
+        assert_eq!(
+            append_luxury_swap_order(&lean, &mut held),
+            Some("luxury_swap_hold:no_spare")
+        );
+        let mut denounced = state.clone();
+        denounced.rivals[0].our_denounce_turn = Some(80);
+        denounced.rivals[1].their_denounce_turn = Some(70);
+        assert_eq!(
+            append_luxury_swap_order(&denounced, &mut held),
+            Some("luxury_swap_hold:no_partner")
+        );
+        denounced.rivals[1].their_denounce_turn = Some(60);
+        assert_eq!(append_luxury_swap_order(&denounced, &mut held), None);
+        assert_eq!(held.len(), 1);
+        assert_eq!(held[0].subject, Some(4));
     }
 
     /// `siege-buys-the-gun-resource`: the Bombard's Niter, asked of the

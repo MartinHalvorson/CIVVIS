@@ -99,6 +99,8 @@ local resourceRows = {
 		ResourceClassType = "RESOURCECLASS_LUXURY" },
 	RESOURCE_JADE = { ResourceType = "RESOURCE_JADE", Index = 18,
 		ResourceClassType = "RESOURCECLASS_LUXURY" },
+	RESOURCE_TRUFFLES = { ResourceType = "RESOURCE_TRUFFLES", Index = 31,
+		ResourceClassType = "RESOURCECLASS_LUXURY" },
 	RESOURCE_NITER = { ResourceType = "RESOURCE_NITER", Index = 46,
 		ResourceClassType = "RESOURCECLASS_STRATEGIC" },
 }
@@ -1316,6 +1318,103 @@ for _, case in ipairs({
 	check(case[1], answered.sends and answered.sends[1][1], case[3])
 	check(case[1] .. " (settled)", trade.pending[3], nil)
 end
+end)()
+
+-- ─── the luxury swap ────────────────────────────────────────────────────────
+-- `LUXURY_ANY;RESOURCE_A=a,...` (`luxury-swap-asks`): a luxury we lack —
+-- the copy the rival holds most of — against our SPARE copies from our side,
+-- each for thirty turns and never a last copy, Gold up to the ceiling, which
+-- may be nothing. The answer closes on their copy against our spares in no
+-- larger amount; their Gold is welcome, anything else of ours is not.
+;(function()
+local function swapOrder(pid, subject, player, turn, ceiling, verb)
+	return applyOrder(player, pid, {
+		kind = "buy", subject = tostring(subject),
+		verb = verb or "LUXURY_ANY;RESOURCE_TRUFFLES=1", x = ceiling, y = 0,
+	}, turn)
+end
+local function swapFixture(own)
+	return fixture({
+		theirPossible = { RESOURCE_AMBER = 1, RESOURCE_JADE = 2 },
+		possible = { RESOURCE_TRUFFLES = own },
+		own = { RESOURCE_TRUFFLES = own },
+	})
+end
+
+reset()
+local swap, swapPlayer = swapFixture(2)
+local ok, why = swapOrder(7, 3, swapPlayer, 300, 0)
+check("a Gold-free luxury swap is asked", why, "buy_asked")
+local theirs, ours = nil, nil
+for _, item in ipairs(swap.items) do
+	if item.owner == 3 then theirs = item end
+	if item.owner == 7 then ours = item end
+end
+check("the swap asks the rival's spare copy", theirs and theirs.valueType, 18)
+check("their copy runs thirty turns", theirs and theirs.duration, 30)
+check("our spare copy goes from our side", ours and ours.valueType, 31)
+check("one spare copy goes", ours and ours.amount, 1)
+check("our spare runs thirty turns", ours and ours.duration, 30)
+check("the swap is EQUALIZE", swap.sends and swap.sends[1][1], "equalize")
+check("the swap wants their copy", trade.pending[3].want, "RESOURCES:18")
+check("the swap remembers its spare", trade.pending[3].gave and trade.pending[3].gave["RESOURCES:31"], 1)
+check("the swap is no strategic ask", trade.pending[3].strategic, nil)
+check("the swap offer says both sides", eventField(lastEvent("deal_offer"), "want"),
+	"RESOURCE_JADE;RESOURCE_TRUFFLES=1")
+
+-- Our last copy never goes: the ask is refused before it is sent.
+reset()
+local last, lastPlayer = swapFixture(1)
+ok, why = swapOrder(7, 3, lastPlayer, 306, 0)
+check("a swap of our last copy is refused", why, "barter_short")
+check("the refused swap sends nothing", last.sends, nil)
+check("the refused swap leaves nothing pending", trade.pending[3], nil)
+check("the refused swap starts the cooldown", trade.asked[3], 306)
+
+-- A rival with nothing we lack: no swap.
+reset()
+local _, ownedPlayer = fixture({
+	theirPossible = { RESOURCE_JADE = 2 }, possible = { RESOURCE_TRUFFLES = 2 },
+	own = { RESOURCE_TRUFFLES = 2, RESOURCE_JADE = 1 },
+})
+ok, why = swapOrder(7, 3, ownedPlayer, 312, 0)
+check("a swap with nothing we lack is refused", why, "buy_no_luxury")
+
+for _, case in ipairs({
+	{ "a swap answered copy for copy is accepted", 0, {}, "accepted" },
+	{ "a swap topped up under the ceiling is accepted", 100,
+		{ { kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 60 } }, "accepted" },
+	{ "a swap they sweeten with their Gold is accepted", 0,
+		{ { kind = DealItemTypes.GOLD, from = 3, duration = 30, amount = 2 } }, "accepted" },
+	{ "a swap topped up over the ceiling is declined", 0,
+		{ { kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 60 } }, nil },
+	{ "another copy of ours on a swap is declined", 0,
+		{ { kind = DealItemTypes.RESOURCES, from = 7, duration = 30, amount = 1, valueType = 3 } }, nil },
+	{ "a second copy of their luxury on a swap is declined", 0,
+		{ { kind = DealItemTypes.RESOURCES, from = 3, duration = 30, amount = 1, valueType = 3 } }, nil },
+}) do
+	reset()
+	local _, askPlayer = swapFixture(3)
+	swapOrder(7, 3, askPlayer, 318, case[2])
+	local answer = {
+		{ kind = DealItemTypes.RESOURCES, from = 3, duration = 30, amount = 1, valueType = 18 },
+		{ kind = DealItemTypes.RESOURCES, from = 7, duration = 30, amount = 1, valueType = 31 },
+	}
+	for _, extra in ipairs(case[3]) do answer[#answer + 1] = extra end
+	local answered = fixture({ incoming = answer })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check(case[1], answered.sends and answered.sends[1][1], case[4])
+	check(case[1] .. " (settled)", trade.pending[3], nil)
+end
+-- A swap answered with no spare of ours is still the copy for nothing.
+reset()
+local _, freeAskPlayer = swapFixture(2)
+swapOrder(7, 3, freeAskPlayer, 324, 0)
+local free = fixture({ incoming = {
+	{ kind = DealItemTypes.RESOURCES, from = 3, duration = 30, amount = 1, valueType = 18 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a swap they give for nothing is accepted", free.sends and free.sends[1][1], "accepted")
 end)()
 
 -- ─── wiring ─────────────────────────────────────────────────────────────────

@@ -6940,6 +6940,16 @@ impl AdvancedAi {
         self.founder_defends_its_cities = false;
     }
 
+    /// Opt-in gene `luxury-swap-asks`; see [`Self::luxury_swap_asks`].
+    pub fn enable_luxury_swap_asks(&mut self) {
+        self.luxury_swap_asks = true;
+    }
+
+    /// The twin of `enable_luxury_swap_asks`.
+    pub fn disable_luxury_swap_asks(&mut self) {
+        self.luxury_swap_asks = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

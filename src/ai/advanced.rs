@@ -7264,6 +7264,11 @@ pub struct AdvancedAi {
     /// host was never sent, is not a host refusal; see
     /// `BasicAi::note_host_moves` and `advanced/own_column.rs`.
     own_column_is_not_a_refusal: bool,
+    /// `luxury-swap-asks`: the live bridge offers a peaceful rival a spare
+    /// luxury copy of ours for a luxury the seat holds none of
+    /// (`append_luxury_swap_order` in `civvis_orders`). Off: unmeasured; a
+    /// Gold-only ask never closed (`luxury_buy_asks`).
+    luxury_swap_asks: bool,
     // ---- append: p-r ------------------------------------------------
     /// `prophet-builds-its-site`: a held Great Prophet, the race's wanted
     /// Revelation points, or points within `PROPHET_SITE_LEAD_TURNS` of the
@@ -10177,6 +10182,7 @@ impl AdvancedAi {
             one_sanctuary: false,
             naval_escort_patience: false,
             own_column_is_not_a_refusal: false,
+            luxury_swap_asks: false,
             // ---- append: p-r ----------------------------------------
             prophet_builds_its_site: false,
             religious_match_point_defence: false,
@@ -10526,6 +10532,12 @@ impl AdvancedAi {
     /// a luxury purchase (`append_luxury_buy_order` in `civvis_orders`).
     pub fn luxury_buy_asks_enabled(&self) -> bool {
         self.luxury_buy_asks
+    }
+
+    /// Whether `luxury-swap-asks` is on; the live bridge asks before it plans
+    /// a luxury swap (`append_luxury_swap_order` in `civvis_orders`).
+    pub fn luxury_swap_asks_enabled(&self) -> bool {
+        self.luxury_swap_asks
     }
 
     /// Whether `siege-buys-the-gun-resource` is on; the live bridge asks

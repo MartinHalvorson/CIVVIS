@@ -3373,6 +3373,11 @@ pub const GENES: &[Gene] = &[
     // holds a city of ours the founder buys its own faith's defenders now.
     // See `founder_defence::founder_defence_live`.
     Gene { tag: "founder-defends-its-cities", field: "founder_defends_its_cities", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_defends_its_cities, disable: AdvancedAi::disable_founder_defends_its_cities },
+    // From turn 75, 56% of the live seat's city-turns ran Displeased, 84% of
+    // them one Amenity short, while the median empire held spare luxury copies
+    // and its peaceful rivals offered types it lacked; Gold alone never bought
+    // one. The bridge now offers a spare copy for a luxury we lack.
+    Gene { tag: "luxury-swap-asks", field: "luxury_swap_asks", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_swap_asks, disable: AdvancedAi::disable_luxury_swap_asks },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

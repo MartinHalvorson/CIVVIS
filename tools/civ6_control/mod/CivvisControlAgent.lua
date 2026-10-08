@@ -11636,7 +11636,8 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 			matches = (theirs[want] or 0) >= (pending.want_amount or 1)
 				and CivvisWithinGave(mine, pending.gave);
 		else
-			matches = theirs[want] == 1 and next(mine) == nil;
+			-- A swap's spares in no larger amount; otherwise Gold alone.
+			matches = theirs[want] == 1 and CivvisWithinGave(mine, pending.gave);
 		end
 		for key, _ in pairs(theirs) do
 			if key ~= want then matches = false; end
@@ -13516,6 +13517,12 @@ local function applyOrder(player, pid, row, turn)
 		if strategicName == nil then
 			strategicName, strategicAsk = string.match(verb, "^(RESOURCE_[%w_]+)=(%d+)$");
 		end
+		-- `luxury-swap-asks`: `LUXURY_ANY;RESOURCE_A=a,...` is a luxury we
+		-- lack against our spare copies, the strategic barter's shape.
+		if strategicName == nil then
+			barter = string.match(verb, "^LUXURY_ANY;(.+)$");
+			if barter ~= nil then verb = "LUXURY_ANY"; end
+		end
 		strategicAsk = tonumber(strategicAsk);
 		if strategicAsk ~= nil and (strategicAsk <= 0
 				or try(function() return GameInfo.Resources[strategicName]; end, nil) == nil) then
@@ -13604,9 +13611,11 @@ local function applyOrder(player, pid, row, turn)
 					return DealManager.GetPossibleDealItems(subject, pid, DealItemTypes.RESOURCES, deal);
 				end, nil) or {};
 				local resources = try(function() return player:GetResources(); end, nil);
-				local forType = nil;
+				-- The copy the rival holds most of: a spare costs it no
+				-- Amenity, its last copy does (ties keep the table's order).
+				local forType, most = nil, 0;
 				for _, entry in ipairs(possible) do
-					if forType == nil and entry.IsValid ~= false and (entry.MaxAmount or 0) > 0 then
+					if (tonumber(entry.MaxAmount) or 0) > most and entry.IsValid ~= false then
 						local row = try(function() return GameInfo.Resources[entry.ForType]; end, nil);
 						if row ~= nil and row.ResourceClassType == "RESOURCECLASS_LUXURY"
 								and (verb == "LUXURY_ANY" or row.ResourceType == verb) then
@@ -13621,7 +13630,7 @@ local function applyOrder(player, pid, row, turn)
 								if other.gave ~= nil and other.gave[key] ~= nil then selling = true; end
 							end
 							if owned == 0 and not selling then
-								forType, name = entry.ForType, row.ResourceType;
+								forType, name, most = entry.ForType, row.ResourceType, tonumber(entry.MaxAmount);
 							end
 						end
 					end
@@ -13637,6 +13646,12 @@ local function applyOrder(player, pid, row, turn)
 					return false, "resource_invalid";
 				end
 				want = "RESOURCES:" .. tostring(forType);
+				if barter ~= nil then
+					local gaveText;
+					barter, gaveText = CivvisBarterGive(deal, pid, subject, barter, player);
+					if barter == nil then return false, gaveText; end
+					name = name .. ";" .. gaveText;
+				end
 			else
 				-- The agreement rides FROM the rival: they grant, we pay. A
 				-- ruleset without the agreement type has nothing to buy here.
@@ -13659,7 +13674,7 @@ local function applyOrder(player, pid, row, turn)
 			trade.pending[subject] = {
 				turn = turn, ceiling = ceiling, direction = "buy", verb = name, want = want,
 				want_amount = wantAmount, strategic = strategicAsk ~= nil or nil,
-				gave = strategicAsk ~= nil and barter or nil,
+				gave = type(barter) == "table" and barter or nil,
 			};
 			CivvisTrade.ask(pid, subject, "EQUALIZE", "buy", turn);
 			return true, "asked", name;
