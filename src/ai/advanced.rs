@@ -25407,6 +25407,50 @@ impl AdvancedAi {
             })
     }
 
+    /// Complete a one-turn Campus building behind intact walls before a
+    /// slow defender when the existing imminent-attack check finds no threat.
+    /// That check uses visible attack reach and a strength threshold.
+    /// Use both native completion quotes; an unknown timing preserves the
+    /// existing emergency handoff. This does not defer wall construction,
+    /// repairs, actual city damage, or threats that pass that existing check.
+    fn campus_finishes_before_slow_defender(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+        committed: Option<&Item>,
+        defence: &Item,
+    ) -> bool {
+        if !self.victory_planning
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || g.city_max_wall_hp(&g.cities[&city]) <= 0
+            || !matches!(defence, Item::Unit { .. })
+        {
+            return false;
+        }
+        let Some(item @ Item::Building { building }) = committed else {
+            return false;
+        };
+        if !g.can_produce(pid, city, item)
+            || !g
+                .rules
+                .buildings
+                .get(building)
+                .and_then(|spec| spec.district)
+                .is_some_and(|district| g.district_family(district) == "campus")
+        {
+            return false;
+        }
+        let valid_turns = |item: &Item| {
+            g.host_production_turns(city, item)
+                .filter(|turns| turns.is_finite() && *turns > 0.0)
+        };
+        valid_turns(item)
+            .zip(valid_turns(defence))
+            .is_some_and(|(campus, defender)| campus <= 1.0 && defender > 2.0)
+            && !Self::imminent_city_attack(g, pid, city, &g.player_vision_frame(pid))
+    }
+
     /// Let a confirmed city-siege treatment interrupt one unsafe queue.
     /// `BasicAi::besieged_city_item` normally reaches only an empty queue
     /// through `pick_item`, while Recovery's strategic governor skips a
@@ -25540,8 +25584,20 @@ impl AdvancedAi {
             // the preceding frame. Renew its authority while the same threat
             // evidence holds, before diplomacy can remove the active war.
             // Unsafe queues retain priority over this no-op reservation.
+            // Bogotá 117f0 had one Library turn left behind intact walls,
+            // versus six turns for the selected defender. Keep the existing
+            // commitment authoritative through the later production passes.
+            let finish_campus = total_damage == 0
+                && self.campus_finishes_before_slow_defender(
+                    g,
+                    pid,
+                    city,
+                    committed.as_ref(),
+                    &defence,
+                );
             if let Some(item) = committed.as_ref().filter(|item| {
-                Self::active_queue_answers_siege(g, item) && g.can_produce(pid, city, item)
+                (Self::active_queue_answers_siege(g, item) || finish_campus)
+                    && g.can_produce(pid, city, item)
             }) {
                 if retained.as_ref().is_none_or(|(old_damage, old_city, _)| {
                     total_damage > *old_damage || (total_damage == *old_damage && city < *old_city)

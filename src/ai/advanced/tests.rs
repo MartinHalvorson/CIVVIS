@@ -50141,3 +50141,288 @@ fn city_pressure_from_one_hostile_read_matches_the_per_city_scan() {
     }
     assert!(pressed >= 2, "fixture: at least one city under pressure");
 }
+
+// Policy controls for the native Bogotá 117f0 queue interruption.
+// These exercise the public queue selector and its production claim.
+fn native_campus_finish_fixture(building: &str) -> (Game, u32, AdvancedAi, Item, Item) {
+    let (mut g, cid, _) = empire_with_a_capital(117_117);
+    clear_barbarian_fixture(&mut g);
+    g.players[0].techs.extend([
+        crate::name!("writing"),
+        crate::name!("masonry"),
+        crate::name!("archery"),
+        crate::name!("education"),
+    ]);
+    crate::game::install_test_district(&mut g, cid, "campus");
+    let c = g.cities.get_mut(&cid).unwrap();
+    c.buildings.push(crate::name!("walls"));
+    c.wall_hp = 100;
+    c.hp = CITY_MAX_HP;
+    if building == "university" {
+        c.buildings.push(crate::name!("library"));
+    }
+    let committed = Item::Building {
+        building: Name::new(building),
+    };
+    assert!(
+        g.can_produce(0, cid, &committed),
+        "fixture Campus building is legal"
+    );
+    g.apply(
+        0,
+        &Action::Produce {
+            city: cid,
+            item: committed.clone(),
+        },
+    )
+    .unwrap();
+    g.cities.get_mut(&cid).unwrap().production = 33.0;
+    let mut ai = AdvancedAi::new();
+    ai.enable_garrison_under_fire();
+    ai.victory_planning = true;
+    ai.victory_target = Some(VictoryTarget::Domination);
+    let defence = ai
+        .preemptive_major_war_defense_item(&g, 0, cid, Some(cid), true, false)
+        .unwrap();
+    assert!(
+        matches!(&defence, Item::Unit { .. }),
+        "fixture starts with completed walls"
+    );
+    std::sync::Arc::make_mut(&mut g.host_buildable).insert(
+        cid,
+        [
+            (
+                Game::production_block_key(&committed),
+                crate::game::HostMenuEntry {
+                    cost: Some(45.0),
+                    turns: Some(1.0),
+                },
+            ),
+            (
+                Game::production_block_key(&defence),
+                crate::game::HostMenuEntry {
+                    cost: Some(125.0),
+                    turns: Some(6.0),
+                },
+            ),
+        ]
+        .into(),
+    );
+    assert!(
+        !AdvancedAi::imminent_city_attack(&g, 0, cid, &g.player_vision_now(0)),
+        "fixture has no immediate attacker"
+    );
+    (g, cid, ai, committed, defence)
+}
+
+#[test]
+fn native_campus_finish_library_one_turn_before_slow_defender() {
+    let (mut g, cid, ai, committed, _) = native_campus_finish_fixture("library");
+    ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid));
+    assert_eq!(
+        g.cities[&cid].queue.first(),
+        Some(&committed),
+        "finish the one-turn Library behind undamaged walls"
+    );
+    assert_eq!(
+        g.cities[&cid].production, 33.0,
+        "keep its banked progress active"
+    );
+}
+
+#[test]
+fn native_campus_finish_university_one_turn_before_slow_defender() {
+    let (mut g, cid, ai, committed, _) = native_campus_finish_fixture("university");
+    ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid));
+    assert_eq!(g.cities[&cid].queue.first(), Some(&committed));
+}
+
+#[test]
+fn native_campus_finish_city_damage_keeps_emergency_defense() {
+    let (mut g, cid, ai, committed, _) = native_campus_finish_fixture("library");
+    g.cities.get_mut(&cid).unwrap().hp -= 10;
+    ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid));
+    assert_ne!(g.cities[&cid].queue.first(), Some(&committed));
+}
+
+#[test]
+fn native_campus_finish_wall_damage_keeps_emergency_defense() {
+    let (mut g, cid, ai, committed, _) = native_campus_finish_fixture("library");
+    g.cities.get_mut(&cid).unwrap().wall_hp -= 10;
+    ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid));
+    assert_ne!(g.cities[&cid].queue.first(), Some(&committed));
+}
+
+#[test]
+fn native_campus_finish_two_turn_building_keeps_emergency_defense() {
+    let (mut g, cid, ai, committed, _) = native_campus_finish_fixture("library");
+    std::sync::Arc::make_mut(&mut g.host_buildable)
+        .get_mut(&cid)
+        .unwrap()
+        .get_mut(&Game::production_block_key(&committed))
+        .unwrap()
+        .turns = Some(2.0);
+    ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid));
+    assert_ne!(g.cities[&cid].queue.first(), Some(&committed));
+}
+
+#[test]
+fn native_campus_finish_unknown_timing_keeps_emergency_defense() {
+    for missing_defender in [false, true] {
+        let (mut g, cid, ai, committed, defence) = native_campus_finish_fixture("library");
+        let unknown = if missing_defender {
+            &defence
+        } else {
+            &committed
+        };
+        std::sync::Arc::make_mut(&mut g.host_buildable)
+            .get_mut(&cid)
+            .unwrap()
+            .get_mut(&Game::production_block_key(unknown))
+            .unwrap()
+            .turns = None;
+        ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid));
+        assert_ne!(g.cities[&cid].queue.first(), Some(&committed));
+    }
+}
+
+#[test]
+fn native_campus_finish_fast_defender_keeps_emergency_defense() {
+    let (mut g, cid, ai, committed, defence) = native_campus_finish_fixture("library");
+    std::sync::Arc::make_mut(&mut g.host_buildable)
+        .get_mut(&cid)
+        .unwrap()
+        .get_mut(&Game::production_block_key(&defence))
+        .unwrap()
+        .turns = Some(1.0);
+    ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid));
+    assert_ne!(g.cities[&cid].queue.first(), Some(&committed));
+}
+
+#[test]
+fn native_campus_finish_immediate_attacker_keeps_emergency_defense() {
+    let (mut g, cid, ai, committed, _) = native_campus_finish_fixture("library");
+    let center = g.cities[&cid].pos;
+    let post = g.cities[&cid]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|p| g.wdist(center, *p) == 1)
+        .unwrap();
+    let t = g.map.tiles.get_mut(&post).unwrap();
+    t.terrain = crate::name!("plains");
+    t.feature = None;
+    t.hills = false;
+    let attacker = g.spawn_test_unit("line_infantry", 1, post);
+    // Native enemy movement readbacks can be zero after their last turn;
+    // the established fresh-turn threat envelope must still see this attack.
+    g.units.get_mut(&attacker).unwrap().moves_left = 0.0;
+    assert!(AdvancedAi::imminent_city_attack(
+        &g,
+        0,
+        cid,
+        &g.player_vision_now(0)
+    ));
+    ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid));
+    assert_ne!(g.cities[&cid].queue.first(), Some(&committed));
+}
+
+#[test]
+fn native_campus_finish_other_victory_keeps_emergency_defense() {
+    let (mut g, cid, mut ai, committed, _) = native_campus_finish_fixture("library");
+    ai.victory_target = Some(VictoryTarget::Science);
+    ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid));
+    assert_ne!(g.cities[&cid].queue.first(), Some(&committed));
+}
+
+#[test]
+fn native_campus_finish_unwalled_city_keeps_emergency_defense() {
+    let (mut g, cid, ai, committed, _) = native_campus_finish_fixture("library");
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .retain(|b| *b != "walls");
+    g.cities.get_mut(&cid).unwrap().wall_hp = 0;
+    ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid));
+    assert_ne!(g.cities[&cid].queue.first(), Some(&committed));
+}
+
+#[test]
+fn native_campus_finish_claim_survives_a_later_civilian_queue_writer() {
+    let (mut g, cid, ai, committed, _) = native_campus_finish_fixture("library");
+    let claim = ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid));
+    assert_eq!(claim, Some((cid, committed.clone())));
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    std::sync::Arc::make_mut(&mut g.host_buildable)
+        .get_mut(&cid)
+        .unwrap()
+        .insert(
+            Game::production_block_key(&builder),
+            crate::game::HostMenuEntry {
+                cost: Some(41.0),
+                turns: Some(2.0),
+            },
+        );
+    g.apply(
+        0,
+        &Action::Produce {
+            city: cid,
+            item: builder,
+        },
+    )
+    .unwrap();
+    ai.reapply_confirmed_defense_queue(&mut g, 0, claim.as_ref());
+    assert_eq!(g.cities[&cid].queue.first(), Some(&committed));
+    assert_eq!(g.cities[&cid].production, 33.0);
+}
+
+#[test]
+fn native_campus_finish_yields_priority_to_another_damaged_city() {
+    let (mut g, cid, ai, committed, _) = native_campus_finish_fixture("library");
+    let anchor = g.cities[&cid].pos;
+    let threatened = found_nearby_test_city(&mut g, 0, anchor);
+    g.cities.get_mut(&threatened).unwrap().hp -= 20;
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    g.apply(
+        0,
+        &Action::Produce {
+            city: threatened,
+            item: builder.clone(),
+        },
+    )
+    .unwrap();
+    let claim = ai
+        .redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid))
+        .expect("the damaged city needs a defensive queue");
+    assert_eq!(claim.0, threatened);
+    assert_ne!(claim.1, builder);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&committed));
+    assert_eq!(g.cities[&threatened].queue.first(), Some(&claim.1));
+}
+
+#[test]
+fn native_campus_finish_invalid_host_quotes_keep_emergency_defense() {
+    for timing in [0.0, -1.0, f64::INFINITY, f64::NAN] {
+        for invalid_defender in [false, true] {
+            let (mut g, cid, ai, committed, defence) = native_campus_finish_fixture("library");
+            let invalid = if invalid_defender {
+                &defence
+            } else {
+                &committed
+            };
+            std::sync::Arc::make_mut(&mut g.host_buildable)
+                .get_mut(&cid)
+                .unwrap()
+                .get_mut(&Game::production_block_key(invalid))
+                .unwrap()
+                .turns = Some(timing);
+            ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid));
+            assert_ne!(g.cities[&cid].queue.first(), Some(&committed));
+        }
+    }
+}
