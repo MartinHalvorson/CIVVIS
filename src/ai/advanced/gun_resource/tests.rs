@@ -296,3 +296,100 @@ fn barter_spares_keep_the_last_copy_and_the_units_needs() {
         vec![("RESOURCE_SILK", 1, true), ("RESOURCE_COAL", 20, false)]
     );
 }
+
+/// Two cities of ours at peace with Advanced Flight held and no Aluminum: the
+/// Domination air readiness wants its launch wing (the readiness fixture's
+/// board, without its Aluminum).
+fn air_case() -> (Game, AdvancedAi) {
+    let mut g = Game::new_full(2, 40, 24, 371500, 2000, 0, false);
+    for uid in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(uid);
+    }
+    g.barb_camps.clear();
+    g.barb_naval_camps.clear();
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+    }
+    g.found_city_for(0, (6, 12), None);
+    g.found_city_for(0, (12, 12), None);
+    g.found_city_for(1, (24, 12), None);
+    for tech in g.rules.tech_ancestors["advanced_flight"].clone() {
+        g.players[0].techs.insert(crate::name::Name::new(&tech));
+    }
+    g.players[0].techs.insert(crate::name!("advanced_flight"));
+    g.players[0].gold = 1000.0;
+    g.players[0].gold_per_turn = 30.0;
+    g.at_war.clear();
+    g.current = 0;
+    g.turn = 150;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_air_surge_2();
+    (g, ai)
+}
+
+/// No Aluminum, no income: the goal reads no Bombers and the wing asks the
+/// stock that lifts it to the launch wing; bought, the goal rises and the
+/// ask goes. Off, nothing is asked.
+#[test]
+fn the_air_wing_buys_its_aluminum() {
+    let (mut g, mut ai) = air_case();
+    assert!(ai.air_wing_wants_bombers(&g, 0));
+    assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 0);
+    assert!(ai.siege_gun_resource_wants(&g, 0).is_empty(), "off");
+    ai.enable_siege_buys_the_gun_resource();
+    let (metal, needed) = AdvancedAi::air_surge_launch_stock(&g, 0).expect("a metal Bomber");
+    assert_eq!(metal, crate::name!("aluminum"));
+    let wants = ai.siege_gun_resource_wants(&g, 0);
+    assert_eq!(wants.len(), 1, "{wants:?}");
+    assert_eq!(wants[0].resource, "RESOURCE_ALUMINUM");
+    assert_eq!(wants[0].amount, needed.ceil() as u32);
+    assert_eq!(wants[0].minimum, wants[0].amount, "the whole wing or nothing");
+    assert_eq!(wants[0].guns, super::super::air_surge::AIR_SURGE_LAUNCH_BOMBERS);
+
+    // The bought block is read back: the goal fields the launch wing.
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("aluminum"), f64::from(wants[0].amount));
+    assert_eq!(
+        AdvancedAi::air_surge_bomber_goal(&g, 0),
+        super::super::air_surge::AIR_SURGE_LAUNCH_BOMBERS
+    );
+    assert!(ai.siege_gun_resource_wants(&g, 0).is_empty(), "bought, no ask");
+}
+
+/// The Bomber more than three technologies away asks nothing yet.
+#[test]
+fn a_distant_bomber_asks_no_aluminum() {
+    let (mut g, mut ai) = air_case();
+    ai.enable_siege_buys_the_gun_resource();
+    let ancestors = g.rules.tech_ancestors["advanced_flight"].clone();
+    for tech in ancestors.iter().take(3) {
+        g.players[0].techs.remove(&crate::name::Name::new(tech));
+    }
+    g.players[0].techs.remove(&crate::name!("advanced_flight"));
+    assert!(AdvancedAi::air_surge_missing_techs(&g, 0) > super::AIR_WING_RESOURCE_TECHS);
+    assert!(ai.siege_gun_resource_wants(&g, 0).is_empty());
+}
+
+/// While the wing wants Bombers its Aluminum is held from sale and from the
+/// barter, bought or not. Off, nothing is held.
+#[test]
+fn the_wings_aluminum_is_held_from_sale() {
+    let (mut g, mut ai) = air_case();
+    assert!(ai.siege_gun_resources_held(&g, 0, &[]).is_empty(), "off");
+    ai.enable_siege_buys_the_gun_resource();
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("aluminum"), 60.0);
+    let held = ai.siege_gun_resources_held(&g, 0, &[]);
+    assert!(held.contains("RESOURCE_ALUMINUM"), "{held:?}");
+    let spares = ai.siege_barter_spares(&g, 0, &held);
+    assert!(
+        spares.iter().all(|spare| spare.resource != "RESOURCE_ALUMINUM"),
+        "never bartered away"
+    );
+}

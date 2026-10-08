@@ -60,6 +60,10 @@ pub struct GunResourceWant {
     pub renewal: bool,
 }
 
+/// The most technologies the Bomber may still be away for its metal to be
+/// bought ahead of it.
+pub(crate) const AIR_WING_RESOURCE_TECHS: usize = 3;
+
 /// The stock of a strategic kept back from any barter beyond what our units
 /// need: power plants and the next build burn it too.
 pub(crate) const BARTER_STRATEGIC_RESERVE: f64 = 10.0;
@@ -91,8 +95,9 @@ impl AdvancedAi {
     /// `siege-buys-the-gun-resource`: the strategic resources, as the host
     /// names them (`RESOURCE_NITER`), that no sale may give away: each live
     /// want's in `wants` (`siege_gun_resource_wants`), and the resource of
-    /// every land siege gun we field or queue (the Bombard's Niter, the
-    /// Artillery's Oil). The planner's surplus sale reads a stockpile as
+    /// every land siege gun and Bomber we field or queue (the Bombard's
+    /// Niter, the Artillery's Oil, the Bomber's Aluminum), and the Bomber's
+    /// metal while the air wing wants Bombers. The planner's surplus sale reads a stockpile as
     /// surplus once it holds more than a block, so a purchase would otherwise
     /// go back out as the next sale. Empty with the gene off.
     pub fn siege_gun_resources_held(
@@ -122,8 +127,17 @@ impl AdvancedAi {
             .chain(queued)
             .filter_map(|kind| {
                 let spec = g.rules.units.get_interned(kind)?;
-                land_gun(spec).then_some(spec.requires_resource).flatten()
+                (land_gun(spec) || spec.promotion_class == "air_bomber")
+                    .then_some(spec.requires_resource)
+                    .flatten()
             })
+            // The wing's metal while it wants Bombers, before the first flies.
+            .chain(
+                self.air_wing_wants_bombers(g, pid)
+                    .then(|| Self::air_surge_bomber(g, pid))
+                    .flatten()
+                    .and_then(|bomber| g.rules.units[bomber].requires_resource),
+            )
             .map(|resource| format!("RESOURCE_{}", resource.as_str().to_ascii_uppercase()))
             .chain(wants.iter().map(|want| want.resource.clone()))
             .collect()
@@ -222,8 +236,64 @@ impl AdvancedAi {
     /// `breakers-match-the-walls` model), and its resource neither stands in
     /// the stockpile nor arrives within [`GUN_RESOURCE_WAIT_TURNS`] of income.
     /// A fuel-burning gun we field or queue asks again when its fuel runs
-    /// under [`GUN_RESOURCE_FUEL_LOW_TURNS`] turns of upkeep.
+    /// under [`GUN_RESOURCE_FUEL_LOW_TURNS`] turns of upkeep. The air wing's
+    /// metal (`air_wing_resource_want`) comes last, target or none.
     pub fn siege_gun_resource_wants(&self, g: &Game, pid: usize) -> Vec<GunResourceWant> {
+        let mut wants = self.siege_gun_wants_for_target(g, pid);
+        if let Some(want) = self.air_wing_resource_want(g, pid) {
+            if wants.iter().all(|other| other.resource != want.resource) {
+                wants.push(want);
+            }
+        }
+        wants
+    }
+
+    /// `siege-buys-the-gun-resource`: the Bomber's metal (Aluminum) the air
+    /// wing waits on. -d8, 85 Emperor games reaching Advanced Flight: 22 (26%)
+    /// had no Aluminum income or stock five turns after it, and those flew a
+    /// median 0 Bombers thirty turns on (10 of 13 none) against 3 with it; a
+    /// met rival offered Aluminum in 15 of the 22. Live G356 took Advanced
+    /// Flight at turn 135 with an Aerodrome from 127, and the surge appointed
+    /// "raise an aerodrome and 0 bombers", `air_surge_bomber_goal` capped by
+    /// an income of none. Asked while the surge or Domination air readiness
+    /// wants Bombers, the Bomber is at most [`AIR_WING_RESOURCE_TECHS`] away,
+    /// and the goal cannot field the launch wing; the block is the stock that
+    /// lifts the goal to it ([`AdvancedAi::air_surge_launch_stock`]), all of
+    /// it or nothing.
+    fn air_wing_resource_want(&self, g: &Game, pid: usize) -> Option<GunResourceWant> {
+        if !self.siege_buys_the_gun_resource
+            || Self::air_surge_missing_techs(g, pid) > AIR_WING_RESOURCE_TECHS
+            || Self::air_surge_bomber_goal(g, pid) >= super::air_surge::AIR_SURGE_LAUNCH_BOMBERS
+            || !self.air_wing_wants_bombers(g, pid)
+        {
+            return None;
+        }
+        let bomber = Self::air_surge_bomber(g, pid)?;
+        let (resource, needed) = Self::air_surge_launch_stock(g, pid)?;
+        let stock = g.strategic_stockpile(pid, resource);
+        let amount = (needed - stock).ceil();
+        if amount < 1.0 || stock + amount > g.strategic_stockpile_capacity(pid) {
+            return None;
+        }
+        think!(self.journal(), Military, Detail,
+            "Air wing: the {} waits on {}", bomber, resource;
+            "{} {} trains and keeps {} Bombers through the grace window; the goal reads {} now",
+            amount, resource, super::air_surge::AIR_SURGE_LAUNCH_BOMBERS,
+            Self::air_surge_bomber_goal(g, pid));
+        Some(GunResourceWant {
+            resource: format!("RESOURCE_{}", resource.as_str().to_ascii_uppercase()),
+            resource_id: resource.as_str().to_string(),
+            amount: amount as u32,
+            minimum: amount as u32,
+            unit: bomber.as_str().to_string(),
+            guns: super::air_surge::AIR_SURGE_LAUNCH_BOMBERS,
+            hit: 0.0,
+            renewal: false,
+        })
+    }
+
+    /// The siege guns' wants for the walled campaign target.
+    fn siege_gun_wants_for_target(&self, g: &Game, pid: usize) -> Vec<GunResourceWant> {
         if !self.siege_buys_the_gun_resource
             || self.active_victory_target(g) != Some(VictoryTarget::Domination)
         {
