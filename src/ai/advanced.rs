@@ -7310,6 +7310,11 @@ pub struct AdvancedAi {
     /// (`append_luxury_swap_order` in `civvis_orders`). Off: unmeasured; a
     /// Gold-only ask never closed (`luxury_buy_asks`).
     luxury_swap_asks: bool,
+    /// `no-peace-with-a-launcher`: no peace offered to or accepted from a
+    /// rival past its Mars base and short of the Exoplanet launch while a pad
+    /// of its stands, unless our cities are falling. See
+    /// `advanced/launcher_war.rs`.
+    no_peace_with_a_launcher: bool,
     // ---- append: p-r ------------------------------------------------
     /// `prophet-builds-its-site`: a held Great Prophet, the race's wanted
     /// Revelation points, or points within `PROPHET_SITE_LEAD_TURNS` of the
@@ -8147,6 +8152,11 @@ pub struct AdvancedAi {
     /// Band in reach while we are at war with its owner. See
     /// `advanced/band_hunt.rs`. Off by default.
     war_kills_the_bands: bool,
+    /// `war-raids-the-pads`: at war with a decisive space racer, a bomber
+    /// pillages a standing pad in range and a nearby land unit walks onto
+    /// one and pillages it, inside the band hunt's safety envelope. See
+    /// `advanced/launcher_war.rs`.
+    war_raids_the_pads: bool,
     /// `urban-planning-fills-the-slot`: Urban Planning (+1 Production in
     /// every city) is wanted at the tail of every lane's policy portfolio, so
     /// it takes any slot no wanted card holds and is protected from a card
@@ -9064,6 +9074,7 @@ mod wonder_sites;
 mod band_hunt;
 mod culture_denial_heist;
 mod dvp_leader_front;
+mod launcher_war;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
 mod science_endgame;
@@ -10277,6 +10288,7 @@ impl AdvancedAi {
             naval_escort_patience: false,
             own_column_is_not_a_refusal: false,
             luxury_swap_asks: false,
+            no_peace_with_a_launcher: false,
             // ---- append: p-r ----------------------------------------
             prophet_builds_its_site: false,
             religious_match_point_defence: false,
@@ -10422,6 +10434,7 @@ impl AdvancedAi {
             science_suppression_hits_the_pads: false,
             // ---- append: t-z ----------------------------------------
             war_kills_the_bands: false,
+            war_raids_the_pads: false,
             urban_planning_fills_the_slot: false,
             theater_keeps_its_amphitheater: false,
             weak_target_skips_the_muster: false,
@@ -22879,7 +22892,10 @@ impl AdvancedAi {
                         })
                             // `air-surge-2`: the wing's own front, as for our
                             // own offers. See `air_surge_holds_front`.
-                            || self.air_surge_holds_front(g, pid, deal.from));
+                            || self.air_surge_holds_front(g, pid, deal.from)
+                            // `no-peace-with-a-launcher`: see
+                            // `advanced/launcher_war.rs`.
+                            || self.launcher_keeps_the_war(g, pid, deal.from));
                     (
                         worth >= 0.0 && !pins_objective,
                         deal.peace,
@@ -23205,6 +23221,13 @@ impl AdvancedAi {
                     || (interception_handoff && !air_front)
                     || science_defensive_peace)
             {
+                // `no-peace-with-a-launcher`: no peace with a rival past its
+                // Mars base while a pad of its stands, unless our cities are
+                // falling. `false` with the gene off. See
+                // `advanced/launcher_war.rs`.
+                if self.launcher_keeps_the_war(g, pid, *other) {
+                    continue;
+                }
                 self.peace_offers.insert(*other);
                 if policy_peace.is_some() {
                     self.census.war_policy_peace_offers += 1;
@@ -45799,6 +45822,11 @@ impl AdvancedAi {
         // Nothing with the gene off. See `advanced/band_hunt.rs`.
         let band_hunters = self.plan_band_hunt(g, pid, plan, &air_assault_units);
         air_assault_units.extend(band_hunters);
+        // `war-raids-the-pads`: a decisive space racer's standing pads are
+        // pillaged from the air or on foot. Nothing with the gene off. See
+        // `advanced/launcher_war.rs`.
+        let pad_raiders = self.plan_pad_raids(g, pid, plan, &air_assault_units);
+        air_assault_units.extend(pad_raiders);
         // `pass-picket`: this turn's recon orders, drawn once from the
         // start-of-turn board so units planned in parallel agree on them.
         // Nothing is read with the gene off. See

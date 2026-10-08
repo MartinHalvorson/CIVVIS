@@ -7030,6 +7030,22 @@ impl AdvancedAi {
     pub fn disable_war_kills_the_bands(&mut self) {
         self.war_kills_the_bands = false;
     }
+    /// Enable `war-raids-the-pads`.
+    pub fn enable_war_raids_the_pads(&mut self) {
+        self.war_raids_the_pads = true;
+    }
+    /// Withhold `war-raids-the-pads`.
+    pub fn disable_war_raids_the_pads(&mut self) {
+        self.war_raids_the_pads = false;
+    }
+    /// Enable `no-peace-with-a-launcher`.
+    pub fn enable_no_peace_with_a_launcher(&mut self) {
+        self.no_peace_with_a_launcher = true;
+    }
+    /// Withhold `no-peace-with-a-launcher`.
+    pub fn disable_no_peace_with_a_launcher(&mut self) {
+        self.no_peace_with_a_launcher = false;
+    }
 
     /// Opt-in gene `defeated-majors-leave-the-board`; see
     /// [`Self::retire_defeated_majors`].

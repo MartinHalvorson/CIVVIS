@@ -344,6 +344,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `march-uses-its-moves` | off (unmeasured) | Opt-in gene `march-uses-its-moves`; see `Self::march_uses_its_moves`. | 1 \| 1 |
 | `melee-storms-an-open-city` | off (unmeasured) | Opt-in gene `melee-storms-an-open-city`; see `Self::melee_storms_an_open_city`. | 1 \| 1 |
 | `monument-first` | off (unmeasured) | A city's Monument ahead of the military floor and the Settler step in the delegated city governor. | 1 \| 1 |
+| `no-peace-with-a-launcher` | off (unmeasured) | Enable `no-peace-with-a-launcher`. | 1 \| 1 |
 | `one-sanctuary` | off (unmeasured) | Opt-in gene `one-sanctuary`; see `Self::one_sanctuary`. | 1 \| 1 |
 | `one-war-swaps-a-stalled-front` | off (unmeasured) | Opt-in gene `one-war-swaps-a-stalled-front`; see `Self::one_war_swaps_a_stalled_front`. | 1 \| 1 |
 | `opening-force-keeps-its-members` | off (unmeasured) | Opt-in gene `opening-force-keeps-its-members`; see `Self::opening_force_keeps_its_members`. | 1 \| 1 |
@@ -443,6 +444,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `victory-portfolio` | off (unmeasured) | Preserve victory objectives across temporary expansion and war postures. | 1 \| 1 |
 | `war-bill-prices-the-tier-gap` | off (unmeasured) | Opt-in gene `war-bill-prices-the-tier-gap`; see `Self::war_bill_prices_the_tier_gap`. | 1 \| 1 |
 | `war-kills-the-bands` | off (unmeasured) | Enable `war-kills-the-bands`. | 1 \| 1 |
+| `war-raids-the-pads` | off (unmeasured) | Enable `war-raids-the-pads`. | 1 \| 1 |
 | `weak-target-skips-the-muster` | off (unmeasured) | Opt-in gene `weak-target-skips-the-muster`; see `Self::weak_target_skips_the_muster`. | 1 \| 1 |
 | `wounded-taker-finishes-the-breach` | off (unmeasured) | Opt-in gene `wounded-taker-finishes-the-breach`; see `Self::wounded_taker_finishes_the_breach`. | 1 \| 1 |
 
