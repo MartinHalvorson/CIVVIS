@@ -34,8 +34,9 @@
 //!
 //! ## What the gene does
 //!
-//! It shares the walk clock `settler-walk-deadline` keeps (turns out of a
-//! city, a turn on an own city tile or embarked not counted). Once a
+//! It shares the walk clock `settler-walk-deadline` keeps, so it keeps that
+//! gene's two exclusions: a turn on an own city tile or embarked is not a
+//! turn out, and an embarked Settler is left to its crossing. Once a
 //! Settler has spent [`STALLED_SETTLER_WALK_STANDARD`] standard turns out
 //! (fifteen on Online, past the deadline's twelve), it takes the best legal
 //! site within [`STALLED_SETTLER_RADIUS`] tiles under every guard the
@@ -44,12 +45,22 @@
 //! route's first step is too, so the safe-step guard that held it does not
 //! hold the new walk at once. Sites are ranked by worth less
 //! [`STALLED_SETTLER_TILE_PRICE`] a tile of route; it founds at once when
-//! the best is underfoot. There is no value floor: a city a few tiles from
-//! home beats a Settler that has not reached a better one in fifteen
-//! turns, and every site it can choose is one the ordinary founding could
-//! choose too. When nothing qualifies, the ordinary step runs untouched.
-//! Off, every path is byte-identical.
+//! the best is underfoot. When nothing qualifies, the ordinary step runs
+//! untouched. Off, every path is byte-identical.
+//!
+//! It also keeps the deadline's value floor, the test whose absence cost
+//! that gene's first fires probe 0.56 cities a seat and 18 wins in a
+//! hundred by packing cities beside the capital: a site must be worth, net
+//! of the deadline's step margin, at least
+//! `SETTLER_WALK_DEADLINE_VALUE_SHARE` of the site the Settler was walking
+//! to. The floor is read once, at the takeover, and frozen
+//! (`stalled_settler_floor`), so the gene's own pick never becomes its
+//! floor and a retarget cannot lower it. A Settler with no plan has no
+//! floor, as at the deadline.
 
+use super::settler_walk_deadline::{
+    SETTLER_WALK_DEADLINE_STEP_MARGIN, SETTLER_WALK_DEADLINE_VALUE_SHARE,
+};
 use super::{AdvancedAi, SETTLER_STEP_RISK_LIMIT};
 use crate::game::{Action, Game};
 use crate::think;
@@ -70,9 +81,43 @@ pub const STALLED_SETTLER_RADIUS: i32 = 4;
 pub const STALLED_SETTLER_TILE_PRICE: f64 = 2.0;
 
 impl AdvancedAi {
+    /// The value floor of this Settler's plan as `settler-walk-deadline`
+    /// reads it: half the worth of the site it is walking to, `None` with no
+    /// site. The frozen floor wins once the gene has taken over.
+    pub(super) fn stalled_settler_plan_floor(&self, g: &Game, pid: usize, uid: u32) -> Option<f64> {
+        if let Some(frozen) = self.stalled_settler_floor.get(&uid) {
+            return *frozen;
+        }
+        self.settler_targets
+            .get(&uid)
+            .map(|target| self.settle_value(g, pid, *target) * SETTLER_WALK_DEADLINE_VALUE_SHARE)
+    }
+
+    /// Whether `pos` clears the plan's floor by the deadline's own test: its
+    /// worth, less the deadline's step margin when it is not underfoot, at
+    /// least the floor.
+    pub(super) fn stalled_settler_clears_floor(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        pos: Pos,
+    ) -> bool {
+        let Some(floor) = self.stalled_settler_plan_floor(g, pid, uid) else {
+            return true;
+        };
+        let margin = if pos == g.units[&uid].pos {
+            0.0
+        } else {
+            SETTLER_WALK_DEADLINE_STEP_MARGIN
+        };
+        self.settle_value(g, pid, pos) - margin >= floor
+    }
+
     /// The best legal site within [`STALLED_SETTLER_RADIUS`] whose ground and
-    /// first step are under the step-risk limit, and what it is worth net of
-    /// the walk. `None` when nothing qualifies.
+    /// first step are under the step-risk limit and that clears the plan's
+    /// value floor, and what it is worth net of the walk. `None` when nothing
+    /// qualifies.
     pub(super) fn stalled_settler_site(
         &self,
         g: &Game,
@@ -83,6 +128,7 @@ impl AdvancedAi {
         let visible = self.battlefront_visibility(g, pid);
         self.settler_legal_sites_within(g, pid, uid, STALLED_SETTLER_RADIUS)
             .into_iter()
+            .filter(|pos| self.stalled_settler_clears_floor(g, pid, uid, *pos))
             .filter_map(|pos| {
                 if pos == here {
                     if !g.can_found_city(uid) {
@@ -137,6 +183,12 @@ impl AdvancedAi {
         if out < allowance || g.is_embarked(&g.units[&uid]) {
             return None;
         }
+        // The takeover: freeze the plan's floor before any pick of ours
+        // replaces the plan.
+        if !self.stalled_settler_floor.contains_key(&uid) {
+            let floor = self.stalled_settler_plan_floor(g, pid, uid);
+            self.stalled_settler_floor.insert(uid, floor);
+        }
         let here = g.units[&uid].pos;
         let (site, worth) = self.stalled_settler_site(g, pid, uid)?;
         if site == here {
@@ -181,6 +233,7 @@ impl AdvancedAi {
         self.settler_stalls.remove(&uid);
         self.settler_blocked_turns.remove(&uid);
         self.settler_closest.remove(&uid);
+        self.stalled_settler_floor.remove(&uid);
         let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
         if founded {
             think!(self.journal(), Expansion, Decision,

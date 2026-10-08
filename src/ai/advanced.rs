@@ -7544,6 +7544,12 @@ pub struct AdvancedAi {
     /// and first step are out of every visible hostile's reach. See
     /// `advanced/stalled_settler_site.rs`.
     stalled_settler_takes_a_safe_site: bool,
+    /// The value floor each stalled Settler carries from the plan it was
+    /// walking when `stalled-settler-takes-a-safe-site` took over: half the
+    /// worth of the site it was walking to, as `settler-walk-deadline`
+    /// reads it. Frozen at the takeover so the gene's own pick never becomes
+    /// its floor. See `advanced/stalled_settler_site.rs`.
+    stalled_settler_floor: BTreeMap<u32, Option<f64>>,
     /// `siege-tier-yields-to-the-bombers`: while the air surge has a
     /// research goal, the decisive window yields the slot when its own goal
     /// lies off the Advanced Flight path, and the surge's pre-plan
@@ -9367,6 +9373,7 @@ impl AdvancedAi {
         self.settler_idle_streak.clear();
         self.settler_stranded_at.clear();
         self.settler_relaxed_targets.clear();
+        self.stalled_settler_floor.clear();
         self.settler_closest.clear();
         self.builder_targets.clear();
         self.builder_avoid.clear();
@@ -9520,6 +9527,11 @@ impl AdvancedAi {
             .settler_relaxed_targets
             .iter()
             .filter_map(|(uid, target)| map.get(uid).map(|new| (*new, *target)))
+            .collect();
+        self.stalled_settler_floor = self
+            .stalled_settler_floor
+            .iter()
+            .filter_map(|(uid, floor)| map.get(uid).map(|new| (*new, *floor)))
             .collect();
         // Rebuilt from the board every turn regardless, so there is nothing to carry.
         self.force_groups.clear();
@@ -10171,6 +10183,7 @@ impl AdvancedAi {
 
             // ---- append: s-s ----------------------------------------
             stalled_settler_takes_a_safe_site: false,
+            stalled_settler_floor: BTreeMap::new(),
             siege_tier_yields_to_the_bombers: false,
             science_denial_spy_reads_the_leader: false,
             science_leader_is_the_target: false,
@@ -45521,6 +45534,8 @@ impl AdvancedAi {
         self.settler_stranded_at
             .retain(|uid, _| g.units.contains_key(uid));
         self.settler_relaxed_targets
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.stalled_settler_floor
             .retain(|uid, _| g.units.contains_key(uid));
         self.builder_targets
             .retain(|uid, _| g.units.contains_key(uid));
