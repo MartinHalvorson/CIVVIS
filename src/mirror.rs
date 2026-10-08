@@ -4426,6 +4426,14 @@ pub struct StateSnapshot {
     /// a buildable successor. See `apply_strategic_stockpiles`.
     #[serde(default, deserialize_with = "map_or_empty_sequence")]
     pub strategic_resources: Option<BTreeMap<String, f64>>,
+    /// Our luxury copies by host resource type (`RESOURCE_MARBLE` → copies),
+    /// the host's own count net of copies a deal has traded away; absent
+    /// when none is held or on an older export. The mirrored board counts
+    /// improved tiles and cannot see a copy that is out on a deal, so the
+    /// gun-resource barter (`siege-buys-the-gun-resource`) caps its spare
+    /// copies by this.
+    #[serde(default, deserialize_with = "map_or_empty_sequence")]
+    pub luxury_counts: Option<BTreeMap<String, f64>>,
     /// Gross host strategic income: accumulation + imports + bonuses, before
     /// unit or power demand. Missing entries retain the modeled estimate.
     #[serde(default, deserialize_with = "map_or_empty_sequence")]
@@ -6623,6 +6631,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // absent here until 2026-08-26, so every live state record filed a
         // `schema:state.strategic_resources` gap that was not one.
         "strategic_resources",
+        "luxury_counts",
         "strategic_resource_income",
         "foreign_tourists", "domestic_tourists",
         "culture_turns_to_victory",
