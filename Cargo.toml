@@ -198,10 +198,11 @@ memchr = "2"
 mimalloc = "0.1"
 
 [profile.release]
-lto = "thin"
+lto = false
 # One codegen unit is worth about four percent of simulation throughput.
 # Full LTO on top of it measured no further gain and only cost build time.
-codegen-units = 1
+codegen-units = 16
+incremental = true
 
 # The CI gate compiles this 100k-line crate on every push. `codegen-units = 1`
 # serialises the whole backend and `lto` adds a link-time pass; together they
