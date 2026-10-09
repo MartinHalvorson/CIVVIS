@@ -14,11 +14,27 @@ an unrelated recovering soldier whose orders must not cancel the Settler's
 route. The escape control requires the guard to move and remain safe; merely
 holding both units is not an adequate replacement for an unsafe origin.
 
-This checkpoint adds tests without changing production behavior. Results are
-recorded in the PR after the independent baseline runs. Existing preservation
-controls continue to cover damage bounds, uncertain captures, repeated enemy
-replies, recovery through full health, safe finishing attacks, and the real
-turn entry point.
+Independent test-only CI `37887813971` reproduced the recovering-guard
+failure: the Settler reached axial `(6,6)` while its guard stayed at `(5,6)`,
+native offsets `(9,6)` and `(8,6)`. The unchanged safe shared departure passed.
+Fail-fast stopped the run after 2,038 passes and one failure, before the unsafe
+retreat and unrelated-soldier controls were scheduled. Their baseline results
+are not inferred from the first failure.
+
+The candidate recognizes a shared departure only for an assigned land guard
+and Settler that start stacked and propose the same movement endpoint. When
+the guard is withheld, the civilian route and any dependent founding action
+are withheld too. Retreat candidates are applied on a disposable board for
+both units; only an exact arrival licenses the companion move. A survivable
+joint retreat takes priority. If the civilian cannot reach any survivable
+retreat, the guard may escape alone rather than being forced to die with it.
+Unassigned civilians and separately planned routes retain their orders.
+
+Eight new controls cover the original four scenarios, separately routed bound
+units, ordinary single-step movement, an exhausted civilian, and release at
+full health. The original twelve preservation controls remain. Candidate
+focused, full local, and independent CI results are pending; no pass is
+claimed in this implementation checkpoint.
 
 ## Native observation and limits
 
