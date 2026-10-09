@@ -145,6 +145,76 @@ class NativeControlTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     control.observe(1, 0, original, copy.deepcopy(original))
 
+    def test_identical_replies_with_wrong_transport_turn_are_not_a_control(self):
+        original = {**reply(), "turn": 99}
+        control = replay.NativeControl({(1, 0): reply()}, 0)
+        control.observe(1, 0, original, copy.deepcopy(original))
+        result = control.result()
+        self.assertFalse(result["gate_passed"])
+        self.assertEqual(result["changed_complete_reply_frames"], 0)
+        self.assertEqual(result["invalid_request_reply_frames"], 1)
+        self.assertEqual({row["arm"] for row in result["request_identity_errors"]},
+                         {"baseline", "candidate"})
+
+    def test_both_arms_need_an_explicit_matching_integer_reply_turn(self):
+        for arm in ("baseline", "candidate"):
+            for value in (None, True, 1.0, 99):
+                with self.subTest(arm=arm, value=value):
+                    arms = {"baseline": reply(), "candidate": reply()}
+                    if value is None:
+                        del arms[arm]["turn"]
+                    else:
+                        arms[arm]["turn"] = value
+                    control = replay.NativeControl({(1, 0): reply()}, 0)
+                    control.observe(1, 0, arms["baseline"], arms["candidate"])
+                    result = control.result()
+                    self.assertFalse(result["gate_passed"])
+                    self.assertFalse(result["request_identity_gate_passed"])
+                    self.assertTrue(result["native_history_gate_passed"],
+                                    "matching planning payloads and valid request identity are distinct")
+                    self.assertEqual(result["request_identity_errors"][0]["arm"], arm)
+                    self.assertEqual(result["request_identity_errors"][0]["reply"], arms[arm])
+
+    def test_candidate_decision_identity_must_match_the_requested_frame(self):
+        for field, value in (("turn", None), ("turn", True), ("turn", 1.0),
+                             ("turn", 2), ("frame", None), ("frame", False),
+                             ("frame", 0.0), ("frame", 1)):
+            with self.subTest(field=field, value=value):
+                original, candidate = reply(), reply()
+                if value is None:
+                    del candidate["decision"][field]
+                else:
+                    candidate["decision"][field] = value
+                control = replay.NativeControl({(1, 0): original}, 0)
+                control.observe(1, 0, original, candidate)
+                result = control.result()
+                self.assertFalse(result["gate_passed"])
+                self.assertTrue(result["native_history_gate_passed"])
+                self.assertEqual(result["request_identity_errors"][0]["arm"], "candidate")
+
+    def test_a_no_board_reply_is_empty_and_still_identifies_its_turn(self):
+        empty = {"turn": 1, "orders": [], "note": "no terrain"}
+        control = replay.NativeControl({(1, 0): {**empty, "frame": 0}}, 0)
+        control.observe(1, 0, empty, copy.deepcopy(empty))
+        self.assertTrue(control.result()["gate_passed"])
+        self.assertEqual(control.result()["request_identity_errors"], [])
+        for candidate in ({"turn": 1, "orders": reply()["orders"]},
+                          {**empty, "decision": None}):
+            with self.subTest(candidate=candidate):
+                control = replay.NativeControl({(1, 0): empty}, 0)
+                control.observe(1, 0, empty, candidate)
+                self.assertFalse(control.result()["gate_passed"])
+
+    def test_a_later_match_does_not_erase_an_invalid_earlier_reply(self):
+        first, later = reply(), reply(2)
+        control = replay.NativeControl({(1, 0): first, (2, 0): later}, 0)
+        control.observe(1, 0, first, {**first, "turn": 99})
+        control.observe(2, 0, later, reply(2, verb="ATTACK"))
+        result = control.result()
+        self.assertFalse(result["gate_passed"])
+        self.assertTrue(result["native_history_gate_passed"])
+        self.assertEqual(result["request_identity_errors"][0]["turn"], 1)
+
     def test_ambiguous_native_frames_are_rejected(self):
         with TemporaryDirectory() as raw:
             path = Path(raw) / "native.jsonl"
@@ -266,6 +336,41 @@ class ReplayCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(control["frames"], 1)
         self.assertEqual(metadata["frames"], 1)
+
+    def test_wrong_transport_turn_cannot_report_success(self):
+        first = reply()
+        wrong = {**first, "turn": 99}
+        result, control, metadata = self.execute([wrong], [wrong], [first])
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertTrue(control["native_history_gate_passed"])
+        self.assertFalse(control["request_identity_gate_passed"])
+        self.assertFalse(metadata["validation_passed"])
+        self.assertEqual(metadata["returncodes"], {"baseline": 0, "candidate": 0})
+        self.assertEqual(control["request_identity_errors"][0]["reply"]["turn"], 99)
+
+    def test_candidate_cannot_report_a_different_decision_frame(self):
+        first, candidate = reply(), reply(frame=1)
+        result, control, metadata = self.execute([first], [candidate], [first])
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertTrue(control["native_history_gate_passed"])
+        self.assertFalse(metadata["validation_passed"])
+        self.assertEqual(control["request_identity_errors"][0]["arm"], "candidate")
+
+    def test_identical_native_empty_replies_remain_valid(self):
+        empty = {"turn": 1, "orders": [], "note": "no terrain"}
+        result, control, metadata = self.execute([empty], [empty], [{**empty, "frame": 0}])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(control["request_identity_gate_passed"])
+        self.assertEqual(metadata["no_board_frames"], 1)
+
+    def test_candidate_with_orders_but_no_decision_is_invalid(self):
+        first = reply()
+        candidate = {k: v for k, v in first.items() if k != "decision"}
+        result, control, metadata = self.execute([first], [candidate], [first])
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertTrue(control["native_history_gate_passed"])
+        self.assertFalse(metadata["validation_passed"])
+        self.assertEqual(control["request_identity_errors"][0]["arm"], "candidate")
 
 
 if __name__ == "__main__":
