@@ -4709,8 +4709,15 @@ fn a_broke_empire_stops_buying_soldiers_with_faith() {
         "an empire on five gold and falling must not take on more upkeep"
     );
 
-    // A deep balance carries the bill even while income is short.
+    // Funding only the new unit does not carry the already-negative income.
     game.players[0].gold = upkeep * FAITH_ARMY_SOLVENCY_TURNS + 1.0;
+    assert!(
+        !ai.faith_military_is_affordable(&game, 0, &unit),
+        "the existing deficit still drains a bank that funds only new upkeep"
+    );
+
+    // A deep balance carries both bills even while income is short.
+    game.players[0].gold = (upkeep + 3.0) * FAITH_ARMY_SOLVENCY_TURNS + 1.0;
     assert!(
         ai.faith_military_is_affordable(&game, 0, &unit),
         "a treasury that can pay for {FAITH_ARMY_SOLVENCY_TURNS} turns may still arm"
