@@ -26912,14 +26912,15 @@ impl AdvancedAi {
     /// should convert that otherwise stranded treasury into defenders once
     /// Theocracy (or another legal faith-purchase source) makes them available.
     fn military_faith_spending(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) -> bool {
+        let bank = g.players[pid].faith;
+        let below_modelled_floor = bank < 600.0;
         if !matches!(
             plan.strategy,
             GrandStrategy::Conquest | GrandStrategy::Recovery
-        ) || g.players[pid].faith < 600.0
+        ) || (below_modelled_floor && g.host_purchasable.is_empty())
         {
             return false;
         }
-        let bank = g.players[pid].faith;
         // See `counterweight_faith_reserve` (`counterweight-spends-the-bank`).
         let reserve = 180.0
             + self.counterweight_faith_reserve(g, pid)
@@ -26928,19 +26929,37 @@ impl AdvancedAi {
             // See `counterweight_bank_held` (`counterweight-finishes-one-shrine`).
             + self.counterweight_bank_held(g, pid);
         let counts = self.counts(g, pid);
+        if bank < reserve {
+            return false;
+        }
         let mut options = Vec::new();
         let memo = g.query_memo();
         for action in self.legal_purchase_actions(g, pid) {
             let Action::Buy {
-                city: _,
+                city,
                 unit,
-                formation: _,
+                formation,
                 currency,
             } = &action
             else {
                 continue;
             };
             if currency != "faith" || g.rules.units[unit].class != "military" {
+                continue;
+            }
+            // A native quote can fit above the reserve long before the
+            // modelled 600-Faith floor. Only its quoted standard formation
+            // gets that exception; missing quotes and unpriced formations
+            // retain the old floor. The score still applies the purchase
+            // and checks the actual remaining bank against every reserve.
+            if below_modelled_floor
+                && (*formation != 0
+                    || g.host_purchasable
+                        .get(city)
+                        .and_then(|menu| menu.get(&format!("unit:{unit}")))
+                        .and_then(|quote| quote.faith)
+                        .is_none())
+            {
                 continue;
             }
             if !self.faith_military_is_affordable(g, pid, unit) {
@@ -47545,6 +47564,9 @@ mod settlement_ownership_tests;
 
 #[cfg(test)]
 mod treasury_local_builder_tests;
+
+#[cfg(test)]
+mod faith_army_budget_tests;
 
 #[cfg(test)]
 mod tests;
