@@ -44,16 +44,16 @@ fn focus_fire_does_not_disappear_when_allies_are_nearby() {
 fn a_survivable_first_reply_is_rejected_when_the_second_is_inescapable() {
     let mut g = field();
     let ours = g.spawn_unit("warrior", 0, at(10, 7));
-    g.units.get_mut(&ours).unwrap().hp = 75;
-    let enemy = g.spawn_unit("horseman", 1, at(11, 7));
+    g.units.get_mut(&ours).unwrap().hp = 65;
+    let enemy = g.spawn_unit("warrior", 1, at(11, 7));
     for pos in g.nbrs(g.units[&ours].pos) {
         if pos != g.units[&enemy].pos {
             g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
         }
     }
     let mut first = DangerField::with_reach(&g, 0, true);
-    let incoming = reply_damage(&mut first, g.units[&ours].pos, ours, 75);
-    assert!(incoming > 0.0 && incoming < 60.0, "first reply {incoming}");
+    let incoming = reply_damage(&mut first, g.units[&ours].pos, ours, 65);
+    assert!(incoming > 0.0 && incoming < 50.0, "first reply {incoming}");
     assert!(
         !policy().unit_reply_is_safe(&g, 0, ours),
         "one-turn survival is insufficient inside a trap"
@@ -72,7 +72,7 @@ fn an_open_escape_keeps_a_survivable_engagement_available() {
 #[test]
 fn rejected_attack_becomes_a_retreat_and_preserves_the_unit() {
     let mut g = field();
-    let ours = g.spawn_unit("warrior", 0, at(10, 7));
+    let ours = g.spawn_unit("horseman", 0, at(10, 7));
     g.units.get_mut(&ours).unwrap().hp = 35;
     let enemy = g.spawn_unit("warrior", 1, at(11, 7));
     let origin = g.units[&ours].pos;

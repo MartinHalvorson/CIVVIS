@@ -12,6 +12,8 @@ use crate::Pos;
 use std::collections::{BTreeMap, BTreeSet};
 
 const RESERVE_HP: i32 = 15;
+// `game::damage` and the live finisher use the same 0.8 lower roll.
+const MIN_COMBAT_ROLL: f64 = 0.8;
 
 /// Count each source once and price later blows at the health left by earlier
 /// ones. Damage rolls are bounded independently, including their rounding.
@@ -113,10 +115,7 @@ fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>
                                 || expected_damage(pair.0, pair.1),
                                 |preview| f64::from(preview.damage_to_defender),
                             );
-                        Some((
-                            defender.clone(),
-                            (mean * crate::ai::COMBAT_ROLL_MIN).floor() as i32,
-                        ))
+                        Some((defender.clone(), (mean * MIN_COMBAT_ROLL).floor() as i32))
                     })
                     .collect::<Vec<_>>()
             }
@@ -178,7 +177,7 @@ impl AdvancedAi {
             })
             .all(|uid| {
                 !self.battle_planner_recovering.contains(&uid)
-                    && self.unit_reply_is_safe(&after, pid, uid)
+                    && self.reply_outcomes_are_safe(before, &after, pid, uid)
             })
     }
 
@@ -242,6 +241,31 @@ impl AdvancedAi {
         })
     }
 
+    fn reply_outcomes_are_safe(&self, before: &Game, after: &Game, pid: usize, uid: u32) -> bool {
+        if !self.unit_reply_is_safe(after, pid, uid) {
+            return false;
+        }
+        let Some(unit) = after.units.get(&uid) else {
+            return false;
+        };
+        // A restored uncertain victim can share the sampled melee landing
+        // tile on this forecast. Also assess the branch where it survived and
+        // the attacker never advanced. Neither branch promises the other.
+        if after
+            .unit_ids_at(unit.pos)
+            .iter()
+            .any(|other| after.is_at_war(pid, after.units[other].owner))
+        {
+            let Some(start) = before.units.get(&uid) else {
+                return false;
+            };
+            let mut failed_kill = after.speculative_clone();
+            failed_kill.relocate(uid, start.pos);
+            return self.unit_reply_is_safe(&failed_kill, pid, uid);
+        }
+        true
+    }
+
     /// Remove unsafe unit sequences to a fixed point: rejecting a friendly
     /// kill can restore a threat to another unit. Then use the remaining
     /// board to select legal retreats and hold recovering units out of combat.
@@ -268,7 +292,10 @@ impl AdvancedAi {
             let unsafe_units: Vec<u32> = affected
                 .iter()
                 .copied()
-                .filter(|uid| !blocked.contains(uid) && !self.unit_reply_is_safe(&after, pid, *uid))
+                .filter(|uid| {
+                    !blocked.contains(uid)
+                        && !self.reply_outcomes_are_safe(before, &after, pid, *uid)
+                })
                 .collect();
             if unsafe_units.is_empty() {
                 break;
