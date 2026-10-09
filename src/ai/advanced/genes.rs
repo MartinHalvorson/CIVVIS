@@ -3525,6 +3525,12 @@ pub const GENES: &[Gene] = &[
     // The host's fuel shortage costs -1 Strength per unpaid unit, capped at
     // 20, so a small stock flies the wing. See `AIR_WING_SMALL_STOCK_TURNS`.
     Gene { tag: "bombers-fly-on-a-small-stock", field: "bombers_fly_on_a_small_stock", kind: Kind::OptIn, enable: AdvancedAi::enable_bombers_fly_on_a_small_stock, disable: AdvancedAi::disable_bombers_fly_on_a_small_stock },
+    // `granary-claims-the-bound-queue`: 145 Emperor runs held 13,409 of
+    // 21,729 housing-bound city-turns (t25-90) without a buildable Granary,
+    // in streaks of median 9 / p90 29 turns against 5.3 to build it, while
+    // the deterrent, the worked backlog's Builder, recon and catch-up claims
+    // took the queue first. See `advanced/granary_claims_the_bound_queue.rs`.
+    Gene { tag: "granary-claims-the-bound-queue", field: "granary_claims_the_bound_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_granary_claims_the_bound_queue, disable: AdvancedAi::disable_granary_claims_the_bound_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

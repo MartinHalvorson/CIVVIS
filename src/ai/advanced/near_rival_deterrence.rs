@@ -174,6 +174,10 @@ impl AdvancedAi {
             if plan.threatened_city == Some(cid)
                 || self.early_settler_floor_holds(g, pid, cid, plan)
                 || !Self::deterrence_may_displace(g, pid, cid)
+                || g.cities[&cid]
+                    .queue
+                    .first()
+                    .is_some_and(|head| self.bound_granary_holds(g, pid, cid, plan, head))
             {
                 continue;
             }
