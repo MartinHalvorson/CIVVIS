@@ -69,7 +69,7 @@ fn earlier_frame_oppidum_shot_does_not_spend_the_encampment_shot() {
         verb: Some("7:4".into()),
         pos: Some((8, 4)),
     };
-    strikes.observe(state.turn, &[issued.clone()]);
+    strikes.observe(state.turn, std::slice::from_ref(&issued));
     strikes.apply(&mut mirror, state.turn);
     assert!(
         mirror.game.cities[&city]

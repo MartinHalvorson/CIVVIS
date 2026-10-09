@@ -54,7 +54,7 @@ fn threat_sum_counts_two_forts_in_one_city_as_two_sources() {
         .get_mut(&city)
         .unwrap()
         .districts
-        .remove(&crate::name!("encampment"));
+        .remove(crate::name!("encampment"));
     g.cities
         .get_mut(&city)
         .unwrap()

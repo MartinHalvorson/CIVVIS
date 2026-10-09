@@ -160,7 +160,12 @@ fn serialization_roundtrip_keeps_depleted_pools_and_spent_shots() {
 fn legacy_save_without_other_fort_state_gets_one_independent_healthy_pool() {
     let (g, city, _, opp) = fixture();
     let mut value = serde_json::to_value(&g).unwrap();
-    value["cities"][city.to_string()]
+    value["cities"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|saved| saved["id"].as_u64() == Some(u64::from(city)))
+        .unwrap()
         .as_object_mut()
         .unwrap()
         .remove("defending_districts");
@@ -241,6 +246,7 @@ fn repairing_a_pillaged_oppidum_restores_only_that_fort() {
 #[test]
 fn capturing_a_city_removes_fort_state_when_the_roster_converts_to_an_industrial_zone() {
     let (mut g, city, _, opp) = fixture();
+    g.players[1].techs.insert(crate::name!("apprenticeship"));
     g.capture_city(city, 1);
     assert_eq!(
         g.district_family(g.map.tiles[&opp].district.unwrap()),
