@@ -21,6 +21,7 @@ fn host_grass(x: i32, y: i32) -> Plot {
         p: false,
         d: None,
         dc: None,
+        dh: None,
         wo: None,
         rt: None,
         rp: false,

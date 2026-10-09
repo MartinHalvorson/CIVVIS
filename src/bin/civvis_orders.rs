@@ -16967,6 +16967,7 @@ mod tests {
             p: false,
             d: None,
             dc: None,
+            dh: None,
             wo: None,
             rt: None,
             rp: false,

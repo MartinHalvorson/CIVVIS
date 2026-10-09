@@ -10097,7 +10097,7 @@ end
 -- sweep keeps its cadence (resources, improvements and pillage refresh there)
 -- and re-primes `known`. `TileDelta = false` withholds the deltas.
 -- One bare global table (200-local ceiling).
-CivvisTiles = { known = {}, districtPillage = {} };
+CivvisTiles = { known = {}, districtPillage = {}, districtHealth = {}, currentHealth = {} };
 
 -- PlotTooltip_Expansion2.lua:34-35 reads these TerrainManager accessors.
 -- Keep false distinct from unknown: a protected lowland can be dry even when
@@ -10136,6 +10136,72 @@ function CivvisTiles.pillageState(plot, pid, x, y)
     end, nil);
 end
 
+
+-- CityBannerManager.lua:715-718 reads these two independent defense pools.
+-- Expansion2_Districts.xml:45-46 and the Ikanda/Thanh expansion rows give
+-- defending districts AttackRange 2. City-center health uses the city record.
+-- Refresh only visible completed districts; fog retains the last observation.
+function CivvisTiles.healthState(plot, pid, x, y)
+    return try(function()
+        local key = pid .. ":" .. x .. ":" .. y;
+        local kind = plot:GetDistrictType();
+        local owner = plot:GetOwner();
+        local row = GameInfo.Districts[kind];
+        local cached = CivvisTiles.districtHealth[key];
+        if cached ~= nil and (cached.kind ~= kind or cached.owner ~= owner) then
+            CivvisTiles.districtHealth[key] = nil;
+            cached = nil;
+        end
+        if row == nil or row.DistrictType == "DISTRICT_CITY_CENTER"
+            or type(row.AttackRange) ~= "number" or row.AttackRange <= 0 then
+            CivvisTiles.districtHealth[key] = nil;
+            return nil;
+        end
+        if not PlayersVisibility[pid]:IsVisible(x, y) then
+            return cached and cached.health or nil;
+        end
+        local district = CityManager.GetDistrictAt(x, y);
+        if district == nil then return cached and cached.health or nil; end
+        local complete = try(function() return district:IsComplete(); end, nil);
+        if complete == false then
+            CivvisTiles.districtHealth[key] = nil;
+            return nil;
+        end
+        if complete ~= true then return cached and cached.health or nil; end
+        local id = try(function() return district:GetID(); end, nil);
+        if cached ~= nil and id ~= nil and cached.id ~= nil and cached.id ~= id then
+            CivvisTiles.districtHealth[key] = nil;
+            cached = nil;
+        end
+        local health = {};
+        if cached ~= nil then
+            for name, value in pairs(cached.health) do health[name] = value; end
+        end
+        local function pool(defense, damageKey, maximumKey, allowZero)
+            local damage = try(function() return district:GetDamage(defense); end, nil);
+            local maximum = try(function() return district:GetMaxDamage(defense); end, nil);
+            if type(damage) == "number" and damage >= 0 and damage < math.huge and damage == math.floor(damage)
+                and type(maximum) == "number" and maximum >= 0 and maximum < math.huge and maximum == math.floor(maximum)
+                and (maximum > 0 or (allowZero and damage == 0)) then
+                health[damageKey] = damage;
+                health[maximumKey] = maximum;
+            end
+        end
+        pool(DefenseTypes.DISTRICT_GARRISON, "damage", "max_damage", false);
+        pool(DefenseTypes.DISTRICT_OUTER, "wall_damage", "max_wall_damage", true);
+        if next(health) == nil then return nil; end
+        CivvisTiles.districtHealth[key] = { owner = owner, kind = kind, id = id, health = health };
+        return health;
+    end, nil);
+end
+
+function CivvisTiles.healthMark(plot, pid, x, y)
+    local health = CivvisTiles.healthState(plot, pid, x, y);
+    CivvisTiles.currentHealth[pid .. ":" .. x .. ":" .. y] = health;
+    if health == nil then return "?"; end
+    return tostring(health.damage) .. ":" .. tostring(health.max_damage) .. ":"
+        .. tostring(health.wall_damage) .. ":" .. tostring(health.max_wall_damage);
+end
 
 local function exportTiles(player, pid, turn, frame, deltaOnly)
 	if cfg.ExportState ~= true then return; end
@@ -10271,6 +10337,7 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 						.. tostring(CivvisTiles.floodState(plot, "IsSubmerged")) .. ":"
 						.. (try(function() return plot:GetImprovementType(); end, -1) or -1) .. ":"
 						.. (CivvisTiles.pillageState(plot, pid, x, y) and 1 or 0) .. ":"
+						.. CivvisTiles.healthMark(plot, pid, x, y) .. ":"
 						.. (try(function() return plot:GetRouteType(); end, -1) or -1) .. ":"
 						.. (try(function() return plot:IsRoutePillaged(); end, false) and 1 or 0) .. ":"
 						.. (try(function() return plot:GetDistrictType(); end, -1) or -1) .. ":"
@@ -10417,6 +10484,7 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 							local row = GameInfo.Districts[kind];
 							return row and row.DistrictType or nil;
 						end, nil),
+						dh = CivvisTiles.currentHealth[pid .. ":" .. x .. ":" .. y],
 						-- ★★★★ ...AND WHETHER IT IS FINISHED. `GetDistrictType` answers
 						-- for a district the moment it is PLACED, and a placed
 						-- district is not adjacent to anything until it is built:
