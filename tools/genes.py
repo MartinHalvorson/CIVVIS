@@ -1673,6 +1673,29 @@ def latest_reporting_batches(entered: list[Path], recorded: list[Path]) -> list[
     ]
 
 
+def reporting_contract(path: Path) -> tuple:
+    """The player/visibility contract a reporting batch played under — the
+    same three legs `load_reporting_batches` refuses to mix."""
+    profile = load_source(path).get("profile", {})
+    return (profile.get("player_contract", ""), profile.get("target_mix", ""),
+            profile.get("native_competitions", False))
+
+
+def same_reporting_epoch(entered: list[Path], recorded: list[Path]) -> list[Path]:
+    """The recorded display batches that may share columns with ``entered``.
+
+    A batch played under a new player/visibility contract starts a fresh
+    reporting epoch: the recorded batches from the old contract leave the
+    three display columns (they stay in the ledger's ``sources`` history)
+    instead of making `load_reporting_batches` refuse the whole rotation.
+    The first `observed-player-v1` batch (2026-10-09) could not be published
+    at all before this, because every recorded column predated #3386."""
+    if not entered:
+        return recorded
+    epoch = reporting_contract(entered[0])
+    return [path for path in recorded if reporting_contract(path) == epoch]
+
+
 def field_of(profile: dict) -> tuple:
     """The field a batch played: the rung, and who carried its handicap.
 
@@ -2082,7 +2105,8 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                  reporting_build_notes: dict[str, str] | None = None,
                  deployment_policy: str = DEPLOYMENT_POLICY,
                  retained_deployment_genome: tuple[str, ...] | None = None,
-                 prior_deployment_genome: tuple[str, ...] | None = None) -> dict:
+                 prior_deployment_genome: tuple[str, ...] | None = None,
+                 retained_selection_note: str | None = None) -> dict:
     """Merge the sources into one ledger object (the JSON file's content).
     Sources are recorded oldest-first, and a later one overrides an earlier one
     per gene. `filter_known=False` keeps every tag (synthetic tests).
@@ -2095,7 +2119,10 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
     when ``retained_deployment_genome`` was chosen; it is recorded as
     `rules.prior_deployment_genome` so `check` re-derives the same answer.
     ``None`` records the retained genome itself as its own prior (a rotation
-    that changed nothing).
+    that changed nothing). ``retained_selection_note`` is the operator's reason
+    a reporting-only rotation kept its selection instead of re-picking it from
+    the window; it is recorded as `rules.retained_selection_note` until the
+    next reselection clears it.
 
     `build_notes` maps a source's file name to the reason its build check was
     waived, and is what makes `--unverified-build` a *recorded* escape rather
@@ -2335,6 +2362,9 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                 hysteresis_held(batches, sorted(allowed), selected)
                 if deployment_policy == RETAINED_DEPLOYMENT_POLICY else []
             ),
+            **({"retained_selection_note": retained_selection_note}
+               if retained_selection_note and deployment_policy == RETAINED_DEPLOYMENT_POLICY
+               else {}),
             "batch_columns": columns_by_tag,
             "batch_decisions": decisions,
             "removals_due": removals_due if deployment_policy == DEPLOYMENT_POLICY else [],
@@ -2780,7 +2810,8 @@ def rebuild_from_ledger(ledger: dict) -> dict:
                         reporting_build_notes=reporting_batch_notes_from_ledger(ledger),
                         deployment_policy=policy,
                         retained_deployment_genome=retained,
-                        prior_deployment_genome=prior)
+                        prior_deployment_genome=prior,
+                        retained_selection_note=rules.get("retained_selection_note"))
 
 
 def sources_from_ledger(ledger: dict) -> list[Path]:
@@ -4045,6 +4076,11 @@ def _add_source_args(ap: argparse.ArgumentParser) -> None:
         help=("record why every newly named reporting batch cannot have its build "
               "re-verified; requires --reporting-batch"),
     )
+    ap.add_argument(
+        "--retained-selection-note", metavar="REASON", default=None,
+        help=("with --preserve-deployment-defaults: record why this rotation keeps the "
+              "selection instead of re-picking it from the window"),
+    )
     ap.add_argument("--legacy-shape", action="store_true",
                     help="record a source played away from the screen's shape as history")
     ap.add_argument("--unverified-build", metavar="REASON", default=None,
@@ -4188,13 +4224,17 @@ def main(argv=None) -> int:
         raise SystemExit("--reselect-deployment-defaults chooses the deployment genome itself")
     if args.retained_deployment_genome is not None and not args.preserve_deployment_defaults:
         raise SystemExit("--retained-deployment-genome requires --preserve-deployment-defaults")
+    retained_selection_note = getattr(args, "retained_selection_note", None)
+    if retained_selection_note is not None and not args.preserve_deployment_defaults:
+        raise SystemExit("--retained-selection-note requires --preserve-deployment-defaults")
     if args.preserve_deployment_defaults and current is None:
         raise SystemExit("--preserve-deployment-defaults needs an existing deployment genome")
     if args.reselect_deployment_defaults and current is None:
         raise SystemExit("--reselect-deployment-defaults needs an existing reporting ledger")
     if args.prior_ledger is not None and not args.reselect_deployment_defaults:
         raise SystemExit("--prior-ledger requires --reselect-deployment-defaults")
-    reporting = latest_reporting_batches(entered_reporting, recorded_reporting)
+    reporting = latest_reporting_batches(
+        entered_reporting, same_reporting_epoch(entered_reporting, recorded_reporting))
     reporting_notes = dict(recorded_reporting_notes)
     if args.reporting_unverified_build:
         for path in entered_reporting:
@@ -4236,7 +4276,8 @@ def main(argv=None) -> int:
                                 reporting_build_notes=reporting_notes,
                                 deployment_policy=policy,
                                 retained_deployment_genome=selection,
-                                prior_deployment_genome=prior_deployment_genome)
+                                prior_deployment_genome=prior_deployment_genome,
+                                retained_selection_note=retained_selection_note)
     else:
         if current is None:
             raise SystemExit("no existing ledger; provide at least one source")
@@ -4247,7 +4288,8 @@ def main(argv=None) -> int:
                                 reporting_build_notes=reporting_notes,
                                 deployment_policy=policy,
                                 retained_deployment_genome=selection,
-                                prior_deployment_genome=prior_deployment_genome)
+                                prior_deployment_genome=prior_deployment_genome,
+                                retained_selection_note=retained_selection_note)
     ledger = rebuild(deployment_policy, retained_deployment_genome)
     if args.reselect_deployment_defaults:
         retained_deployment_genome = retained_deployment_genome_from_batches(
