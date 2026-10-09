@@ -96,7 +96,7 @@ impl AdvancedAi {
                 || g.turn
                     .saturating_add(g.standard_duration(air_surge::AIR_SURGE_ENDGAME_RESERVE))
                     < g.max_turns)
-            && Self::air_surge_bomber_goal(g, pid) >= air_surge::AIR_SURGE_LAUNCH_BOMBERS
+            && self.air_wing_bomber_goal(g, pid) >= air_surge::AIR_SURGE_LAUNCH_BOMBERS
             // Last: it prices every city's pressure; every gate above is a
             // read and settles the answer first on most turns.
             && self.threatened_city(g, pid).is_none()
@@ -121,7 +121,13 @@ impl AdvancedAi {
         {
             return true;
         }
-        Self::air_surge_bomber_goal_after_spending(g, pid, demand, cost)
+        Self::air_surge_bomber_goal_after_spending(
+            g,
+            pid,
+            demand,
+            cost,
+            self.bombers_fly_on_a_small_stock,
+        )
             >= air_surge::AIR_SURGE_LAUNCH_BOMBERS
     }
 

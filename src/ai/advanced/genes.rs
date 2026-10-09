@@ -3510,6 +3510,13 @@ pub const GENES: &[Gene] = &[
     // rival capitals were never seen in 87 Emperor runs. The decider re-takes
     // the memory. See `mirror::refresh_city_memory`.
     Gene { tag: "unseen-capital-is-unseen", field: "unseen_capital_is_unseen", kind: Kind::OptIn, enable: AdvancedAi::enable_unseen_capital_is_unseen, disable: AdvancedAi::disable_unseen_capital_is_unseen },
+    // Live Emperor 10-08/09: the air wing read no Bomber goal until the bank
+    // held two Bombers' training and fourteen turns of their upkeep (30
+    // Aluminum), and asked rivals for that whole block or nothing. A rival
+    // at peace offered Aluminum on 361 wait-turns, under the block on 224.
+    // The host's fuel shortage costs -1 Strength per unpaid unit, capped at
+    // 20, so a small stock flies the wing. See `AIR_WING_SMALL_STOCK_TURNS`.
+    Gene { tag: "bombers-fly-on-a-small-stock", field: "bombers_fly_on_a_small_stock", kind: Kind::OptIn, enable: AdvancedAi::enable_bombers_fly_on_a_small_stock, disable: AdvancedAi::disable_bombers_fly_on_a_small_stock },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

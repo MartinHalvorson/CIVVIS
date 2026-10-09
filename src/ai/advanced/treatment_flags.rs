@@ -7178,6 +7178,17 @@ impl AdvancedAi {
         self.unseen_capital_is_unseen = false;
     }
 
+    /// Opt-in gene `bombers-fly-on-a-small-stock`; see
+    /// [`Self::bombers_fly_on_a_small_stock`].
+    pub fn enable_bombers_fly_on_a_small_stock(&mut self) {
+        self.bombers_fly_on_a_small_stock = true;
+    }
+
+    /// The twin of `enable_bombers_fly_on_a_small_stock`.
+    pub fn disable_bombers_fly_on_a_small_stock(&mut self) {
+        self.bombers_fly_on_a_small_stock = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
