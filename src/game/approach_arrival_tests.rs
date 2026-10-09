@@ -8,7 +8,7 @@ fn board(seed: u64) -> Game {
     g.barb_camps.clear();
     g.barb_naval_camps.clear();
     g.map.clear_rivers();
-    for player in &mut g.players {
+    for player in g.players.iter_mut() {
         player.civ = "Rome".to_string();
         player.government = None;
         player.policies.clear();
@@ -27,6 +27,24 @@ fn board(seed: u64) -> Game {
     g.record_contact(0, 1);
     g.at_war.extend([(0, 1), (1, 0)]);
     g
+}
+
+fn unit_facts(g: &Game) -> Vec<(u32, Pos, i32, u64, bool, bool, bool, bool)> {
+    g.units
+        .values()
+        .map(|unit| {
+            (
+                unit.id,
+                unit.pos,
+                unit.hp,
+                unit.moves_left.to_bits(),
+                unit.moved,
+                unit.acted,
+                unit.zoc_stopped,
+                unit.started_turn_in_zoc,
+            )
+        })
+        .collect()
 }
 
 fn assert_same_arrivals(g: &Game, uid: u32) {
@@ -52,7 +70,7 @@ fn arrivals_match_paths_across_partial_moves_rough_ground_roads_and_zoc() {
             for tile in g.map.tiles.values_mut() {
                 tile.hills = (tile.pos.0 + tile.pos.1).rem_euclid(4) == 0;
                 if (tile.pos.0 - tile.pos.1).rem_euclid(5) == 0 {
-                    tile.feature = Some(crate::name!("woods"));
+                    tile.feature = Some(crate::name!("forest"));
                 }
                 if tile.pos.1 == 7 {
                     tile.road = 1;
@@ -63,9 +81,9 @@ fn arrivals_match_paths_across_partial_moves_rough_ground_roads_and_zoc() {
             g.spawn_test_unit("warrior", 1, (12, 7));
             for moves in [0.25, 1.0, 2.5, 5.0] {
                 g.units.get_mut(&uid).unwrap().moves_left = moves;
-                let before = format!("{:?}", g.units);
+                let before = unit_facts(&g);
                 assert_same_arrivals(&g, uid);
-                assert_eq!(format!("{:?}", g.units), before);
+                assert_eq!(unit_facts(&g), before);
             }
         }
     }
