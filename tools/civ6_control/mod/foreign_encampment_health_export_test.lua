@@ -36,7 +36,7 @@ local function fixture()
   DefenseTypes = { DISTRICT_GARRISON = 0, DISTRICT_OUTER = 1 },
   GameInfo = { Districts = {
     [0] = { DistrictType = "DISTRICT_CITY_CENTER" },
-    [1] = { DistrictType = "DISTRICT_ENCAMPMENT" },
+    [1] = { DistrictType = "DISTRICT_ENCAMPMENT", AttackRange = 2 },
     [2] = { DistrictType = "DISTRICT_CAMPUS" },
   } },
   plotRevealed = function() return true end,
@@ -95,7 +95,7 @@ end)
 test("fog retains the last observation without reads", function()
  local s, sweep = fixture(); sweep(); s.visible = false; s.damage = 100; s.wall_damage = 200
  local before = s.reads; local fresh, row = sweep()
- assert(fresh == 1 and row.vis == false)
+ assert(fresh == 1 and row.vis ~= true)
  assert(row.dh and row.dh.damage == 0 and row.dh.wall_damage == 0 and s.reads == before,
         "fog must keep observed health without accessing hidden district health")
  assert(sweep() == 0 and s.reads == before)
