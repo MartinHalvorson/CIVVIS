@@ -56,7 +56,7 @@ fn local_barbarian_defense_counts_exposed_coasts_instead_of_every_port() {
 #[test]
 fn several_raiders_at_one_port_do_not_count_the_same_city_twice() {
     let (mut g, ai, _) = board();
-    for pos in [(8, 10), (9, 10), (10, 10)] {
+    for pos in [(8, 10), (8, 11), (9, 10)] {
         raider(&mut g, pos);
     }
     assert_eq!(ai.desired_navy(&g, 0), 2);
