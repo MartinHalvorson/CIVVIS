@@ -39,9 +39,19 @@ Candidate validation adds frozen Bomber and Fighter anchor checks and a
 three-turn comparison using remembered objectives on `player_decision_view`:
 the legacy Bomber cycles through the two bases using actual rebase and
 EndTurn actions, while the current selector keeps its original base.
-Candidate results will be recorded after the focused run finishes.
-The existing siege-forecast and loyalty-evacuation suites are additional
-controls, alongside the full repository regression and required CI cost gate.
+All 11 candidate selector/engine controls pass locally with
+`cargo test --profile ci --locked --lib air_rebase_progress_tests`.
+CI run `37861127818` on `b28909a3353730098321dde75d0d47336d35ee3b`
+passes 4,677 Rust tests, with 50 skipped and four ignored documentation
+examples. This includes the 11 new controls and all 18 existing
+siege-forecast and loyalty-evacuation controls. The full local regression
+result is recorded separately in the PR before shipping.
+
+Required paired-cost run `37861127815` reports a median +0.28% CPU cost
+per completed turn across five pairs, inside its 1% noise floor and 8%
+budget. No resolved speed change is claimed. That standard cost scenario
+has six players, nine city-states and 120 turns on Online Continents; it
+does not measure the native four-player Domination outcome.
 
 ## Native boundary
 
