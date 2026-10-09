@@ -109,7 +109,7 @@ fn completed_source_releases_surplus_and_keeps_missionary_reserve() {
     assert!(reserve > 0.0 && reserve < g.players[0].faith);
 }
 
-/// Native G431 had legal military purchases but no unfinished safe source:
+/// Native run 20261008T233904Z offered military purchases without an unfinished source:
 /// warning-level religious pressure must not make the whole bank unusable.
 #[test]
 fn unavailable_counterweight_source_releases_the_bank() {
