@@ -5422,6 +5422,13 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `civic-awaits-its-inspiration`: on a forced beeline a step whose
+    /// inspiration is still ours to earn (Craftsmanship's improvements, Games
+    /// and Recreation's Construction, Recorded History's Campuses) goes after
+    /// the goal's steps with nothing left to earn; off a beeline, a pick that
+    /// would finish before its near trigger lands gives way. See
+    /// `advanced/civic_inspiration_wait.rs`. Off by default.
+    civic_awaits_its_inspiration: bool,
     /// `capital-campus-before-the-plaza`: the capital's first Campus, then
     /// its Library, claim the idle capital ahead of the Government Plaza and
     /// the development shortfall; the Plaza goes to the idle city that
@@ -9196,6 +9203,9 @@ mod far_settle_site;
 mod gold_buys_the_settler;
 mod granary_claims_the_bound_queue;
 mod trader_fills_the_idle_route;
+/// `civic-awaits-its-inspiration`: the civic chooser waits for a near
+/// inspiration. See `advanced/civic_inspiration_wait.rs`.
+mod civic_inspiration_wait;
 mod launcher_war;
 mod peacetime_republic;
 mod science_denial_every_pad;
@@ -10137,6 +10147,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            civic_awaits_its_inspiration: false,
             capital_campus_before_the_plaza: false,
             counterweight_flips_the_small_towns: false,
             counterweight_finishes_one_shrine: false,
@@ -18339,6 +18350,20 @@ impl AdvancedAi {
                         )
                         .unwrap_or(ordinary)
                     })
+            });
+            // `civic-awaits-its-inspiration`: a civic that would finish before
+            // its near inspiration lands gives way. See
+            // `advanced/civic_inspiration_wait.rs`.
+            let pick = pick.map(|civic| {
+                self.civic_awaits_its_inspiration_pick(
+                    g,
+                    pid,
+                    &available,
+                    &civic,
+                    goal_pick.and(forced_goal),
+                    civic_objective,
+                )
+                .unwrap_or(civic)
             });
             if let Some(civic) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {

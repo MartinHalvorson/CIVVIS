@@ -3564,6 +3564,16 @@ pub const GENES: &[Gene] = &[
     // window never leaves. The safe origin that trains a Trader soonest puts
     // one ahead of the routine claims. See `advanced/trader_fills_the_idle_route.rs`.
     Gene { tag: "trader-fills-the-idle-route", field: "trader_fills_the_idle_route", kind: Kind::OptIn, enable: AdvancedAi::enable_trader_fills_the_idle_route, disable: AdvancedAi::disable_trader_fills_the_idle_route },
+    // `civic-awaits-its-inspiration`: 157 Emperor runs adopted their opening
+    // civics a few turns before their own triggers landed: Craftsmanship 9%
+    // inspired (the third improvement came within 10 turns of adoption in 49
+    // of 136), State Workforce 23% (a district within 5 turns in 52 of 115),
+    // Games and Recreation 9% (Construction within 10 in 40 of 130), while our
+    // Culture ran 0.28 of the median rival's. On a forced beeline a step whose
+    // inspiration is still ours to earn goes after the goal's other steps;
+    // off one, a pick that would finish before its near trigger lands gives
+    // way. See `advanced/civic_inspiration_wait.rs`.
+    Gene { tag: "civic-awaits-its-inspiration", field: "civic_awaits_its_inspiration", kind: Kind::OptIn, enable: AdvancedAi::enable_civic_awaits_its_inspiration, disable: AdvancedAi::disable_civic_awaits_its_inspiration },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
