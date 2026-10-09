@@ -280,6 +280,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `denial-nearest-finish` | off (unmeasured) | Opt-in gene `denial-nearest-finish`; see `Self::denial_nearest_finish`. | 1 \| 1 |
 | `denial-needs-a-road` | off (unmeasured) | Opt-in gene `denial-needs-a-road`; see `Self::denial_needs_a_road`. | 1 \| 1 |
 | `denial-outranks-expansion` | off (unmeasured) | A rival close to winning is answered before the lane's expansion rule. | 1 \| 1 |
+| `deterrence-spares-the-faith-defence` | off (unmeasured) | Opt-in gene `deterrence-spares-the-faith-defence`; see `deterrence_may_displace` in `advanced/near_rival_deterrence.rs`. | 1 \| 1 |
 | `dialogue-never-declares-war` | off (unmeasured) | Opt-in gene `dialogue-never-declares-war`; see `Self::dialogue_never_declares_war`. | 1 \| 1 |
 | `diplomatic-contender-eliminated` | off (unmeasured) | Opt-in gene `diplomatic-contender-eliminated`; see `Self::diplomatic_contender_eliminated`. | 1 \| 1 |
 | `diplomatic-contender-kept` | off (unmeasured) | Opt-in gene `diplomatic-contender-kept`; see `Self::diplomatic_contender_kept`. | — \| 2 |

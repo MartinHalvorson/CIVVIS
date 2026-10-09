@@ -7297,6 +7297,17 @@ impl AdvancedAi {
         self.backlog_builder_takes_the_queue = false;
     }
 
+    /// Opt-in gene `deterrence-spares-the-faith-defence`; see
+    /// `deterrence_may_displace` in `advanced/near_rival_deterrence.rs`.
+    pub fn enable_deterrence_spares_the_faith_defence(&mut self) {
+        self.deterrence_spares_the_faith_defence = true;
+    }
+
+    /// The twin of `enable_deterrence_spares_the_faith_defence`.
+    pub fn disable_deterrence_spares_the_faith_defence(&mut self) {
+        self.deterrence_spares_the_faith_defence = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

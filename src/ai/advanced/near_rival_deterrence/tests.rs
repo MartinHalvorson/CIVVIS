@@ -174,3 +174,55 @@ fn the_settler_floor_keeps_its_city() {
         "the Settler stays at the head"
     );
 }
+
+/// `deterrence-spares-the-faith-defence`: off, a Shrine or an uninvested Holy
+/// Site at the head of the only queue gives way to the deterrent (G222142Z's
+/// 17-turn churn); on, the faith defence keeps its queue.
+#[test]
+fn the_faith_defence_keeps_its_queue_with_the_gene() {
+    let Some((mut game, ours, _theirs)) = neighbours(DETERRENCE_NEAR_TILES) else {
+        panic!("fixture: two capitals within the neighbour radius");
+    };
+    game.players[0].techs.insert(crate::name!("bronze_working"));
+    power(&mut game, 0, 100.0);
+    power(&mut game, 1, 200.0);
+    let home = game.cities[&ours].pos;
+    let site = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| game.wdist(*pos, home) == 1)
+        .min()
+        .expect("fixture: a neighbouring tile");
+    for head in [
+        Item::Building {
+            building: crate::name!("shrine"),
+        },
+        Item::District {
+            district: crate::name!("holy_site"),
+            pos: site,
+        },
+    ] {
+        let mut queued = game.clone();
+        queued.cities.get_mut(&ours).unwrap().queue = vec![head.clone()];
+
+        let off = armed();
+        let mut displaced = queued.clone();
+        let plan = off.assess(&displaced, 0);
+        off.claim_deterrence_unit(&mut displaced, 0, &plan);
+        assert_eq!(
+            land_units_queued(&displaced),
+            1,
+            "off: the deterrent displaces {head:?}"
+        );
+
+        let mut on = armed();
+        on.enable_deterrence_spares_the_faith_defence();
+        let mut kept = queued.clone();
+        let plan = on.assess(&kept, 0);
+        on.claim_deterrence_unit(&mut kept, 0, &plan);
+        assert_eq!(land_units_queued(&kept), 0, "on: {head:?} keeps its queue");
+        assert_eq!(kept.cities[&ours].queue.first(), Some(&head));
+    }
+}

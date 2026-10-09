@@ -5427,6 +5427,10 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `deterrence-spares-the-faith-defence`: near-rival-deterrence never
+    /// displaces a Holy Site, Shrine or Temple at the head of a queue. See
+    /// `deterrence_may_displace` in `advanced/near_rival_deterrence.rs`. Off by default.
+    deterrence_spares_the_faith_defence: bool,
     /// `civic-awaits-its-inspiration`: on a forced beeline a step whose
     /// inspiration is still ours to earn (Craftsmanship's improvements, Games
     /// and Recreation's Construction, Recorded History's Campuses) goes after
@@ -10154,6 +10158,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            deterrence_spares_the_faith_defence: false,
             civic_awaits_its_inspiration: false,
             capital_campus_before_the_plaza: false,
             counterweight_flips_the_small_towns: false,

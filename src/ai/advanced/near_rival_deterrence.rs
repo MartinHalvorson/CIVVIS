@@ -115,10 +115,16 @@ impl AdvancedAi {
     }
 
     /// Whether `cid`'s current queue head may give way to the deterrent.
-    fn deterrence_may_displace(g: &Game, pid: usize, cid: u32) -> bool {
+    fn deterrence_may_displace(&self, g: &Game, pid: usize, cid: u32) -> bool {
         let Some(item) = g.cities[&cid].queue.first() else {
             return true;
         };
+        // `deterrence-spares-the-faith-defence`: an uninvested district is
+        // always displaceable, so a Holy Site re-queued every turn by the
+        // religious defence never started while the deterrent took its slot.
+        if self.deterrence_spares_the_faith_defence && Self::faith_defence_item(item) {
+            return false;
+        }
         let remaining =
             g.item_cost_for_city(pid, cid, item) - g.item_invested_production(cid, item);
         if remaining <= g.city_yields(cid).production {
@@ -134,6 +140,16 @@ impl AdvancedAi {
             }),
             Item::District { .. } => g.item_invested_production(cid, item) <= 0.0,
             Item::Unit { unit } => matches!(unit.as_str(), "scout" | "trader"),
+            _ => false,
+        }
+    }
+
+    /// A Holy Site, Shrine or Temple: the queue items the religious defence
+    /// (counterweight, sanctuary, founder) relies on.
+    pub(super) fn faith_defence_item(item: &Item) -> bool {
+        match item {
+            Item::District { district, .. } => district.as_str() == "holy_site",
+            Item::Building { building } => matches!(building.as_str(), "shrine" | "temple"),
             _ => false,
         }
     }
@@ -173,7 +189,7 @@ impl AdvancedAi {
         for &cid in &city_ids {
             if plan.threatened_city == Some(cid)
                 || self.early_settler_floor_holds(g, pid, cid, plan)
-                || !Self::deterrence_may_displace(g, pid, cid)
+                || !self.deterrence_may_displace(g, pid, cid)
                 || g.cities[&cid]
                     .queue
                     .first()

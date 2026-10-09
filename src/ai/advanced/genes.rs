@@ -3582,6 +3582,13 @@ pub const GENES: &[Gene] = &[
     // idle queue. The city that trains it soonest puts it ahead of the routine
     // claims. See `advanced/backlog_builder_takes_the_queue.rs`.
     Gene { tag: "backlog-builder-takes-the-queue", field: "backlog_builder_takes_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_backlog_builder_takes_the_queue, disable: AdvancedAi::disable_backlog_builder_takes_the_queue },
+    // G222142Z (2026-10-09): Bogotá queued its religious-defence Holy Site on
+    // 17 straight turns (t50-66) and near-rival-deterrence displaced it with an
+    // Archer or Pikeman every frame. An uninvested district is always
+    // displaceable, so it never started; Spain's faith won at t103. 31 of the
+    // last 60 games show the deterrent displacing a Holy Site, Shrine or Temple.
+    // See `deterrence_may_displace` in `advanced/near_rival_deterrence.rs`.
+    Gene { tag: "deterrence-spares-the-faith-defence", field: "deterrence_spares_the_faith_defence", kind: Kind::OptIn, enable: AdvancedAi::enable_deterrence_spares_the_faith_defence, disable: AdvancedAi::disable_deterrence_spares_the_faith_defence },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
