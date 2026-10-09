@@ -20,6 +20,8 @@ This is an isolated native controller experiment. The source module belongs to t
 
 ## Validation and acceptance
 
-The existing unfinished-source and religious-defense tests must remain green. New tests cover a completed source with a nonzero Missionary reserve, an unavailable safe source, and an actual solvent military Faith purchase after completion. Final build and regression validation are in progress; the candidate has not been deployed.
+The existing unfinished-source and religious-defense tests must remain green. New tests cover a completed source with a nonzero Missionary reserve, an unavailable safe source, and an actual solvent military Faith purchase after completion. All 37 focused regressions passed (17 counterweight, 1 faith mobilization, 13 Campus, 4 naval, 2 lake identity). The final release build of both native executables passed in 2m41s. With the rule still enabled and the force-on list unchanged, the built candidate now issues the Tank purchase in the same recorded turn-150 replay and retains 996.5 Faith. Both enabled and diagnostic-withheld replays choose that purchase after the correction.
+
+The verified candidate is queued at the next completed-game boundary. Its `civvis_orders` SHA-256 is `75c3623e5909203c1b51cd1f9b1463d3e3ea4cdfc375a23956ae366af5400cec`. Actual native runtime identity and purchase application have not yet been observed. The combined candidate includes the previously validated lake and Campus fixes; outcomes must be attributed to that bundle.
 
 Acceptance requires the enabled rule in the built candidate to issue a legal military Faith purchase on the recorded observation, then actual native purchase application and game outcomes. Native wins determine success. Natural defeats and production-rank retirements remain non-wins; incomplete attempts remain separate. No win-rate improvement is claimed.
