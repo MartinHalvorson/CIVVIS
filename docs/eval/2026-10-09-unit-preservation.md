@@ -5,8 +5,8 @@ units, and let them heal instead of repeatedly buying or producing replacements.
 
 `unit-preservation` is an opt-in candidate. It validates the complete ordinary
 turn before the observed-player adapters receive its orders. The live finishing
-volley uses the same policy before applying its early attacks. The default
-controller remains the paired control until validation and deployment finish.
+volley uses the same policy before applying its early attacks. The public default remains off; the native deployment explicitly enables this
+policy after its recorded-history and runtime checks.
 
 The reply budget counts every visible hostile source once at its upper combat
 roll. Later blows are priced at the defender's reduced health. Friendly targets
@@ -22,13 +22,18 @@ victim gone. Recovery orders prefer survivable stands, then lower incoming
 damage and actual healing rate. Existing battle recovery memory is retained
 until 100 HP and already participates in native host-ID remapping.
 
-Validation is in progress. The first candidate passed all 4,691 Rust tests
-in CI, including its eight preservation regressions. The final candidate adds
-correct pre-clamp lower damage rolls, uncertain host-kill coverage, shared
-movement forecasts, a reserve on the second reply, and retreat ranking on the
-board after vacating the origin. Its ten focused tests and full CI rerun remain
-pending. Local Python checks passed: 14 append-point tests, 21 evaluation
-manifest tests, and 185 gene metadata tests.
+The ten-test candidate passed all 4,693 Rust tests in CI. The final revision
+adds failed-city-capture outcomes, records the exact approach after earlier
+movement, and reduces stale host preview strength by prior possible wounds.
+The focused suite now has twelve tests, including an unsafe uncertain capture
+and a minimum-damage capture that still reaches safety. Final-head CI is the
+required integration gate. Local Python checks passed: 14 append-point tests,
+21 evaluation manifest tests, and 185 gene metadata tests.
+
+A local full-suite run on the earlier ten-test candidate passed 4,412 tests
+and failed five unrelated map-setup/server assertions under heavy concurrent
+load (50 ignored). The CI full suite on that same candidate passed. These local
+failures are retained here rather than reported as a clean full-suite result.
 
 A completed firing probe varied only `unit-preservation` over six games
 (seeds 761004–761009), 12 independent major seats, two players, 32×22 Pangaea,
@@ -38,10 +43,20 @@ drew the policy on and nine drew it off. The committed analysis is
 passes. This small probe establishes registration/firing evidence only: it is
 not a paired casualty comparison or a win-rate/deployment recommendation.
 
-No live casualty reduction is claimed. Native recorded-history replay and
-runtime/deployment verification remain required. The native build retains its
-observed wall-tier and defeated-player rules before the forecast and uses the
-same explicit host-rule settings when replaying accepted actions.
+Recorded native-history replay of the ten-test release candidate covered 416
+frames through turn 150. All input artifacts remained unchanged, the baseline
+matched at the earliest changed complete native reply, and the replay gate
+passed. Orders changed on 234 frames. Withdrawals included scouts, warriors,
+and siege units. The final revision must pass the same replay before arming.
+This compares decisions on recorded boards, not played counterfactual survival;
+no live casualty reduction is claimed.
+
+The earlier release replay took 131.9 seconds total: candidate decision time
+104.3 seconds versus baseline 26.4 seconds. Median decision time was 45.2 ms
+versus 39.6 ms, with a candidate maximum of 5.37 seconds. The total cost increase
+is larger than the median increase because difficult late-game boards require
+more forecasts. The native build retains observed wall-tier, defeated-player,
+Food/Faith quality, and host OCR rules.
 
 This uses observed enemies and known movement/combat rules. It does not predict
 unseen reinforcements, random future hazards, or the opponent's chosen order.
