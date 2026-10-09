@@ -6942,6 +6942,11 @@ pub struct AdvancedAi {
     /// culture-defense Theater reservation. See
     /// `BasicAi::industrial_zone_in_the_producers`.
     industrial_zone_in_the_producers: bool,
+    /// `granary-claims-the-bound-queue`: a housing-bound city puts the
+    /// Granary it can finish in time ahead of the routine claims, the
+    /// deterrent and the governor's rescoring. See
+    /// `advanced/granary_claims_the_bound_queue.rs`. Off by default.
+    granary_claims_the_bound_queue: bool,
     // ---- append: l-o ------------------------------------------------
     /// `muster-walks-the-road`: a mustering member of a train that cannot
     /// yet close walks in by the dry road, not by straight distance, to the
@@ -9173,6 +9178,7 @@ mod band_hunt;
 mod culture_denial_heist;
 mod dvp_leader_front;
 mod far_settle_site;
+mod granary_claims_the_bound_queue;
 mod launcher_war;
 mod peacetime_republic;
 mod science_denial_every_pad;
@@ -10348,6 +10354,7 @@ impl AdvancedAi {
             golden_dedication_serves_the_conquest: false,
             housing_bound_city_builds_its_granary: false,
             industrial_zone_in_the_producers: false,
+            granary_claims_the_bound_queue: false,
             // ---- append: l-o ----------------------------------------
             muster_walks_the_road: false,
             near_rival_deterrence: false,
@@ -30854,6 +30861,11 @@ impl AdvancedAi {
             let deterrence_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.deterrence_unit_holds(g, pid, item));
+            // `granary-claims-the-bound-queue`: the claimed Granary finishes
+            // while the city is still housing-bound.
+            let bound_granary_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.bound_granary_holds(g, pid, cid, plan, item));
             // `industrial-zone-in-the-producers`: a queued Industrial Zone or
             // Workshop finishes before routine rescoring can claim the city.
             let industrial_zone_commitment = committed.as_ref().is_some_and(|(_, item)| {
@@ -30880,6 +30892,7 @@ impl AdvancedAi {
                     || race_shrine_commitment
                     || early_settler_commitment
                     || deterrence_commitment
+                    || bound_granary_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -30894,6 +30907,7 @@ impl AdvancedAi {
                     || race_shrine_commitment
                     || early_settler_commitment
                     || deterrence_commitment
+                    || bound_granary_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -47453,6 +47467,11 @@ impl AdvancedAi {
             // below. Exact no-op while the gene is off. See
             // `advanced/early_settler_floor.rs`.
             self.claim_early_settler_floor(g, pid, &plan);
+            // `granary-claims-the-bound-queue`: a housing-bound city's Granary
+            // ahead of the deterrent and the routine claims below; a due
+            // Settler and the faith defence above keep their order. See
+            // `advanced/granary_claims_the_bound_queue.rs`.
+            self.claim_bound_granaries(g, pid, &plan);
             // `near-rival-deterrence`: a land unit while a neighbour at peace
             // out-guns us, after the floor's Settler and ahead of the Prophet
             // race and the routine claims. Exact no-op while the gene is off.

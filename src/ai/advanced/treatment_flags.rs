@@ -7231,6 +7231,17 @@ impl AdvancedAi {
         self.early_conquest_stands_down = false;
     }
 
+    /// Opt-in gene `granary-claims-the-bound-queue`; see
+    /// `advanced/granary_claims_the_bound_queue.rs`.
+    pub fn enable_granary_claims_the_bound_queue(&mut self) {
+        self.granary_claims_the_bound_queue = true;
+    }
+
+    /// The twin of `enable_granary_claims_the_bound_queue`.
+    pub fn disable_granary_claims_the_bound_queue(&mut self) {
+        self.granary_claims_the_bound_queue = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

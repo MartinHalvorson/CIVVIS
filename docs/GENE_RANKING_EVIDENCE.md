@@ -320,6 +320,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `government-ladder-3` | off (unmeasured) | Choose a government by its remaining civic cost per extra policy slot, reserving time to use the upgrade. | 2 \| 3 |
 | `granary-before-the-army` | off (unmeasured) | The delegated city governor's housing reserve (Granary, else Aqueduct) ahead of the military floor. | — \| 2 |
 | `granary-before-the-army-2` | off (unmeasured) | Version 2 of `granary-before-the-army`; see `BasicAi::granary_before_the_army_2`. | — \| 2 |
+| `granary-claims-the-bound-queue` | off (unmeasured) | Opt-in gene `granary-claims-the-bound-queue`; see `advanced/granary_claims_the_bound_queue.rs`. | 1 \| 1 |
 | `great-work-completion-value` | off (unmeasured) | Enable `great-work-completion-value` for measurement. | 1 \| 1 |
 | `growth-prices-the-farm` | off (unmeasured) | Opt-in gene `growth-prices-the-farm`; see `AdvancedAi::growth_prices_the_farm`. | 1 \| 1 |
 | `gun-queues-behind-the-column` | off (unmeasured) | Opt-in gene `gun-queues-behind-the-column`; see `Self::gun_queues_behind_the_column`. | 1 \| 1 |
