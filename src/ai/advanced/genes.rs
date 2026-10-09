@@ -2395,6 +2395,7 @@ pub const GENES: &[Gene] = &[
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
+    Gene { tag: "unit-preservation", field: "unit_preservation", kind: Kind::OptIn, enable: AdvancedAi::enable_unit_preservation, disable: AdvancedAi::disable_unit_preservation },
     // ---- append: t-z ------------------------------------------------
 ];
 

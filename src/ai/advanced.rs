@@ -5023,6 +5023,8 @@ pub struct AdvancedAi {
     /// Units the battle plan pulled out to heal, kept out of the kill plan
     /// until `battle_planner::RETURN_HP`; pruned as they heal or die.
     battle_planner_recovering: BTreeSet<u32>,
+    /// Check combat orders against two enemy replies and retain full recovery.
+    unit_preservation: bool,
     /// `battle-planner-2`: version two of `battle_planner` — the positions
     /// plan joins the kill plan and the heal rotation. One version of the
     /// family plays; `enable_battle_planner_2` turns version one off. See
@@ -7459,6 +7461,7 @@ mod fire_plan;
 /// the kill plan and the heal rotation — ahead of the per-unit ladder. One
 /// opt-in gene; see `advanced/battle_planner.rs`.
 mod battle_planner;
+mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
 /// Close as a body, and screen the shooters: two opt-in genes in the deployed
@@ -8417,6 +8420,7 @@ impl AdvancedAi {
             battle_planner: false,
             battle_planner_ordered: BTreeSet::new(),
             battle_planner_recovering: BTreeSet::new(),
+            unit_preservation: false,
             battle_planner_2: false,
             battle_planner_3: false,
             battle_planner_wanted_previews: Vec::new(),
@@ -42337,7 +42341,27 @@ impl AdvancedAi {
         // turn number or the acting civilization.
         self.journal().begin_turn(g.turn, pid);
         let pool = self.work_pool.clone();
-        g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
+        if self.unit_preservation && !g.players[pid].is_minor && !g.players[pid].is_barbarian {
+            let mut proposed = g.clone();
+            let start = proposed.log.len();
+            proposed
+                .with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
+            let actions: Vec<Action> = proposed
+                .log
+                .since(start)
+                .filter(|(seat, _)| *seat == pid)
+                .map(|(_, action)| action.clone())
+                .collect();
+            let actions = self.preserve_unit_actions(g, pid, &actions);
+            // These preferences are decisions rather than simulated turn yields.
+            g.players[pid].citizen_food_bias = proposed.players[pid].citizen_food_bias;
+            g.players[pid].city_directives = proposed.players[pid].city_directives.clone();
+            for action in actions {
+                let _ = g.apply(pid, &action);
+            }
+        } else {
+            g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
+        }
     }
 
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
