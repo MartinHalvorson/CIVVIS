@@ -559,8 +559,8 @@ impl DangerField {
                     out.push((Some(*enemy), expected_damage(att, def)));
                 }
             }
-            // A walled city or a standing Encampment strikes within two tiles
-            // on its next turn whether or not it fired this one. The defence
+            // A walled city or a standing defending district strikes within
+            // two tiles next turn whether or not it fired this one. The defence
             // is `do_city_strike`'s: the unit's own strength on the tile plus
             // the tile's defence.
             let defence = {
@@ -594,7 +594,8 @@ impl DangerField {
                             .probe
                             .defending_district_state(cid, pos)
                             .is_some_and(|district| {
-                                self.probe.defending_district_can_strike(city, &district)
+                                // The enemy's turn resets its shot budget.
+                                district.hp > 0 && district.wall_hp > 0 && !district.pillaged
                             })
                         && encampments.insert((cid, pos))
                     {

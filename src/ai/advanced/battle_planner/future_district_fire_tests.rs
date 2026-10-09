@@ -183,7 +183,7 @@ fn assert_actual_previous_shot_is_future_danger(oppidum: bool) {
     g.current = 1;
 
     let mut ready = g.clone();
-    let mut reset = spent.clone();
+    let mut reset = spent;
     reset.struck = false;
     ready.set_defending_district_state(city, reset);
     let expected = forecasts(&ready, target, victim);
