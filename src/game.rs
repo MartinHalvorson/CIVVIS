@@ -27313,6 +27313,34 @@ impl Game {
         out
     }
 
+    /// Attack arrival movement without materializing a path for each stand.
+    /// Uses the same flood and stopping gates as `approach_reach`. Discovery
+    /// order is private to readers that sort their resulting target set.
+    pub(crate) fn approach_arrivals(&self, uid: u32) -> Vec<(Pos, f64)> {
+        let Some(unit) = self.units.get(&uid) else {
+            return Vec::new();
+        };
+        let (start, moves) = (unit.pos, unit.moves_left);
+        if moves <= 0.0 || self.formation_movement_locked_by_zoc(uid) {
+            return Vec::new();
+        }
+        let _memo = self.query_memo();
+        let mut arrivals: Vec<(Pos, (f64, bool))> = Vec::new();
+        self.relax_movement_into(
+            uid,
+            start,
+            moves,
+            |cur, next| self.can_pass_neighbor(uid, cur, next),
+            |_, _| {},
+            &mut arrivals,
+        );
+        arrivals
+            .into_iter()
+            .filter(|(pos, _)| *pos != start && self.can_stop(uid, *pos))
+            .map(|(pos, (kept, _))| (pos, kept))
+            .collect()
+    }
+
     /// Every destination [`Self::path_to`] can answer this turn, with its
     /// exact path.
     ///
@@ -36309,6 +36337,9 @@ mod combat_scenarios;
 
 #[cfg(test)]
 mod gdr_armor_tests;
+
+#[cfg(test)]
+mod approach_arrival_tests;
 
 #[cfg(test)]
 mod movement_rule_tests;
