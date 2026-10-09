@@ -1,10 +1,10 @@
 use super::*;
 
 impl AdvancedAi {
-    /// Bring an obsolete, otherwise unclaimed land combat unit back to upgrade
+    /// Bring an obsolete, otherwise available land combat unit back to upgrade
     /// ground before its ordinary campaign march takes it farther away. This
     /// prepares a future offer; it never overrides a host refusal or upgrades
-    /// after moving. Escorts, appointed packages and nearby combat keep priority.
+    /// after moving. Escorts, ready assaults and nearby combat keep priority.
     pub(super) fn domination_upgrade_return_step(
         &mut self,
         g: &mut Game,
@@ -14,16 +14,18 @@ impl AdvancedAi {
     ) -> Option<bool> {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination)
             || self.war_plan.is_some()
-            || self.unit_is_reserved(uid)
+            || plan.threatened_city.is_some()
             || self.guard_is_bound_to_any_settler(uid)
-            || !plan.target_player.is_some_and(|target| {
+            || !(plan.target_player.is_some_and(|target| {
                 g.players.get(target).is_some_and(|p| {
                     p.alive
                         && !p.is_minor
                         && !p.is_barbarian
                         && (plan.strategy == GrandStrategy::Conquest || g.is_at_war(pid, target))
                 })
-            })
+            }) || g.players.iter().enumerate().any(|(target, p)| {
+                p.alive && !p.is_minor && !p.is_barbarian && g.is_at_war(pid, target)
+            }))
         {
             return None;
         }
@@ -81,8 +83,23 @@ impl AdvancedAi {
         {
             return None;
         }
-        // Do not peel a body off an actual battle or enemy city's approach.
-        // Remembered hostile units are included in the board's unit collection.
+        // A stalled, unready Stage reservation can otherwise keep its obsolete
+        // finisher waiting forever. Ready assaults and other reservations retain it.
+        let assigned_siege = (self.siege_train || self.siege_positive_damage_budget)
+            && self.force_groups.iter().any(|group| {
+                group.domain == ForceDomain::Land
+                    && group.units.contains(&uid)
+                    && g.city_at(group.objective).is_some_and(|cid| {
+                        g.cities[&cid].owner != pid && g.is_at_war(pid, g.cities[&cid].owner)
+                    })
+            });
+        if (self.unit_is_reserved(uid) || assigned_siege)
+            && !self.upgrade_return_stalled_taker(g, pid, uid)
+        {
+            return None;
+        }
+        // Keep active combat, adjacent civilian pickups and hostile ranged
+        // fortifications ahead of this preparation. Remembered units count too.
         if Self::upgrade_return_near_combat(g, pid, here) {
             return None;
         }
@@ -153,15 +170,39 @@ impl AdvancedAi {
         Some(acted)
     }
 
+    fn upgrade_return_stalled_taker(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        self.sieges.iter().any(|(cid, siege)| {
+            siege.taker == Some(uid)
+                && siege.stage == super::siege_train::SiegeStage::Stage
+                && g.turn.saturating_sub(siege.entered) >= 4
+                && g.turn.saturating_sub(siege.assessed) <= 1
+                && self.force_groups.iter().any(|group| {
+                    group.domain == ForceDomain::Land
+                        && group.units.contains(&uid)
+                        && g.city_at(group.objective) == Some(*cid)
+                        && !self.conversion_siege_ready(g, pid, *cid, &group.units)
+                })
+        })
+    }
+
     fn upgrade_return_near_combat(g: &Game, pid: usize, pos: Pos) -> bool {
         g.units.values().any(|other| {
             g.is_at_war(pid, other.owner)
-                && g.rules.units[other.kind].class == "military"
-                && g.wdist(pos, other.pos) <= 6
+                && (g.wdist(pos, other.pos) <= 1
+                    || (g.rules.units[other.kind].class == "military"
+                        && g.wdist(pos, other.pos) <= 6))
         }) || g
             .cities
             .values()
-            .any(|city| g.is_at_war(pid, city.owner) && g.wdist(pos, city.pos) <= 6)
+            .any(|city| g.is_at_war(pid, city.owner) && g.wdist(pos, city.pos) <= 3)
+            || g.map.tiles.values().any(|tile| {
+                tile.district == Some(crate::name!("encampment"))
+                    && g.wdist(pos, tile.pos) <= 3
+                    && tile
+                        .owner_city
+                        .and_then(|cid| g.cities.get(&cid))
+                        .is_some_and(|city| g.is_at_war(pid, city.owner))
+            })
     }
 
     /// Existing land combat units with an unlocked, materially stronger direct

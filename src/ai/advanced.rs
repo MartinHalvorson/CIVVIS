@@ -44338,6 +44338,11 @@ impl AdvancedAi {
             self.rebuild_force_groups(g, pid, plan);
             self.force_groups_dirty = false;
         }
+        if !unwanted_settler_adjacent && !holding_threatened_city {
+            if let Some(acted) = self.domination_upgrade_return_step(g, pid, uid, plan) {
+                return acted;
+            }
+        }
         let assigned_siege = (self.siege_train || self.siege_positive_damage_budget)
             && self.force_groups.iter().any(|group| {
                 group.domain == ForceDomain::Land
@@ -44432,11 +44437,6 @@ impl AdvancedAi {
         // the ring's ordinary tactical posture.
         if let Some(acted) = self.threatened_city_garrison_step(g, pid, uid, plan.threatened_city) {
             return acted;
-        }
-        if !unwanted_settler_adjacent && !holding_threatened_city {
-            if let Some(acted) = self.domination_upgrade_return_step(g, pid, uid, plan) {
-                return acted;
-            }
         }
         let mut enemies: Vec<usize> = g
             .players
