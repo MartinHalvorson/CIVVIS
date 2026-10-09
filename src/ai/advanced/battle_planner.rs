@@ -329,8 +329,8 @@ fn mirrored_board(g: &Game, pid: usize) -> bool {
 /// it has just ended — `approach_reach` gives the tiles it can end on with
 /// the movement it keeps there (a zone-of-control stop keeps it; `flow_past`
 /// zeroes it), and from its own tile and every stand with movement left it
-/// strikes each neighbour (melee) or each tile in range (ranged; a siege unit
-/// only from its own tile unless it may attack after moving). Ranged blows
+/// strikes each affordable neighbour (melee) or each tile in range (ranged;
+/// a siege unit only from its own tile unless it may attack after moving). Ranged blows
 /// keep the engine's line-of-sight test on a native board and drop it on the
 /// mirrored one, where the host's rule is the player's visibility. Ascending
 /// and distinct, like `attack_reach`. The probe is left as it was found.
@@ -365,6 +365,10 @@ pub(crate) fn strike_reach_of(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos
     if let Some(live) = probe.units.get_mut(&uid) {
         *live = saved.clone();
     }
+    // The speculative probe starts without memo terms, and approach_reach's
+    // scope has ended. All unit fields are restored before this read-only
+    // loop: share allowance and step terms across its stands and neighbors.
+    let _restored_target_memo = probe.query_memo();
     let range = if ranged {
         probe.unit_attack_range(uid).max(1)
     } else {
@@ -387,9 +391,15 @@ pub(crate) fn strike_reach_of(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos
             continue;
         }
         if melee {
+            // A stand with movement left is not enough: entering the target
+            // can still cost more than the approach left in hand. Ask the
+            // executor's exact preflight from this stand, including cliffs
+            // and its full-movement exception, rather than price a phantom
+            // blow across a river or into rough terrain.
             for target in probe.nbrs(from) {
                 if probe.map.tiles.contains_key(&target)
                     && probe.unit_can_melee_target_domain(uid, target)
+                    && probe.can_pay_melee_entry_from(uid, from, kept, target)
                 {
                     targets.push(target);
                 }
@@ -3135,6 +3145,9 @@ mod linked_recovery_tests;
 
 #[cfg(test)]
 mod recon_veto_tests;
+
+#[cfg(test)]
+mod melee_entry_tests;
 
 #[cfg(test)]
 mod tests {
