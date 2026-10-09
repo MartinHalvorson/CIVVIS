@@ -11,8 +11,12 @@ Catapult and Archer cases require assignment to the reachable tile, actual
 movement through the normal recorded tactical step, and a legal wall-damaging
 shot after arrival. A third case seals every approach and requires no firing
 post. Existing route, line-of-sight, current-position, staging, support and
-capture tests remain in the same discovered siege suite. Baseline results are
-pending; production assignment is unchanged.
+capture tests remain in the same discovered siege suite. The complete unchanged-production baseline now executes all 53 cases: all 50
+existing controls pass and exactly the three registered assignment defects
+fail. All 525 registered source/test/data/Cargo hashes remain unchanged.
+Independent CI `37913319750` also reproduces all three defects and passes
+27 scheduled existing siege controls; fail-fast leaves later controls
+unscheduled. Neither result contains a fixture error.
 
 ## Native motivation and limits
 
@@ -33,3 +37,23 @@ remain in `native-081707-siege-source-comparison-receipt.json` and its linked
 journal receipt under retained goal artifacts. No native lane, pin, private
 source, installed mod or process is changed. Synthetic results will not prove
 native adoption, completed city pressure or a Domination win-rate improvement.
+
+## Candidate and validation
+
+The candidate keeps the existing firing-position hold and candidate filters,
+then ranks candidate destinations by the same formation, exposure, distance
+and position key. It selects the first whose route passes the exact
+`siege_route_step` exclusions used by approach, as melee assignment already
+does. A sealed visible pocket therefore does not displace a reachable firing
+tile, and a gun with no route receives no post. Occupancy, reserved inner-ring
+tiles, terrain entry and line of sight retain their existing checks.
+
+The complete local baseline exits 101 on `2e6a0f898` with 50 preservation
+passes and exactly three intended failures. Its log and unchanged-source
+receipt remain in the goal artifacts. Production changes only after that
+proof. Candidate focused siege controls, full local Rust, independent final
+CI and cost validation are pending. Before compiling the candidate, main is
+integrated once so the new preservation/escort fixes and later main tests
+are validated with this route selection. Actual arrival and wall damage
+are required by both unit-class controls; no native operation or win-rate
+gain is inferred from synthetic success.

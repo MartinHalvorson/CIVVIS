@@ -756,7 +756,7 @@ fn siege_posts(
             fire_taken.insert(here);
             continue;
         }
-        let best = g
+        let mut candidates: Vec<Pos> = g
             .wring(city.pos, range)
             .into_iter()
             .filter(|pos| {
@@ -768,11 +768,16 @@ fn siege_posts(
                     && g.unit_has_line_of_sight_from(uid, *pos, city.pos)
                     && g.unit_ids_at(*pos).is_empty()
             })
-            .min_by_key(|pos| {
-                let behind = ring_taken.iter().any(|held| g.wdist(*held, *pos) == 1);
-                let exposure = hostiles.iter().filter(|h| g.wdist(**h, *pos) <= 2).count();
-                (!behind, exposure, g.wdist(here, *pos), *pos)
-            });
+            .collect();
+        candidates.sort_by_key(|pos| {
+            let behind = ring_taken.iter().any(|held| g.wdist(*held, *pos) == 1);
+            let exposure = hostiles.iter().filter(|h| g.wdist(**h, *pos) <= 2).count();
+            (!behind, exposure, g.wdist(here, *pos), *pos)
+        });
+        // Assignment and approach use the same route exclusions.
+        let best = candidates
+            .into_iter()
+            .find(|pos| siege_route_step(g, pid, uid, *pos, city.pos).is_some());
         if let Some(pos) = best {
             posts.insert(uid, pos);
             fire_taken.insert(pos);
