@@ -6952,6 +6952,11 @@ pub struct AdvancedAi {
     /// deterrent and the governor's rescoring. See
     /// `advanced/granary_claims_the_bound_queue.rs`. Off by default.
     granary_claims_the_bound_queue: bool,
+    /// `gold-buys-the-settler`: in the expansion window, at peace and short
+    /// of seven cities and walkers, the treasury saves for a Settler and buys
+    /// it the turn it can. See `advanced/gold_buys_the_settler.rs`. Off by
+    /// default.
+    gold_buys_the_settler: bool,
     // ---- append: l-o ------------------------------------------------
     /// `muster-walks-the-road`: a mustering member of a train that cannot
     /// yet close walks in by the dry road, not by straight distance, to the
@@ -9183,6 +9188,7 @@ mod band_hunt;
 mod culture_denial_heist;
 mod dvp_leader_front;
 mod far_settle_site;
+mod gold_buys_the_settler;
 mod granary_claims_the_bound_queue;
 mod launcher_war;
 mod peacetime_republic;
@@ -10364,6 +10370,7 @@ impl AdvancedAi {
             housing_bound_city_builds_its_granary: false,
             industrial_zone_in_the_producers: false,
             granary_claims_the_bound_queue: false,
+            gold_buys_the_settler: false,
             // ---- append: l-o ----------------------------------------
             muster_walks_the_road: false,
             near_rival_deterrence: false,
@@ -25137,6 +25144,16 @@ impl AdvancedAi {
         // while a city of ours is threatened or bleeding. `stock` comes back
         // unchanged while the gene is off. See `advanced/gold_and_cards.rs`.
         let reserve = self.reserve_for_the_threatened_city(g, pid, plan, reserve);
+        // `gold-buys-the-settler`: in the expansion window the bank buys a
+        // Settler the turn it can, and while one is within reach of the
+        // income every discretionary purchase below must leave its price
+        // behind. Emergency, border and siege buys ran above. `Off` with the
+        // gene off. See `advanced/gold_buys_the_settler.rs`.
+        let reserve = match self.settler_fund(g, pid, plan) {
+            gold_buys_the_settler::SettlerFund::Bought => return true,
+            gold_buys_the_settler::SettlerFund::Saving { reserve: fund } => reserve.max(fund),
+            gold_buys_the_settler::SettlerFund::Off => reserve,
+        };
         // `camp_tile_buyout`: an outpost inside a city's own rings costs
         // that city something no yield in the ranking below can express, and
         // every plot there is a surplus purchase that a unit or a building
