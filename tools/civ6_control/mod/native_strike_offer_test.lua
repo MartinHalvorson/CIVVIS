@@ -175,6 +175,28 @@ for _, fault in ipairs({"missing plot", "unreadable index"}) do
         unknown(refused(s, apply, "RANGE_ATTACK")); assert(s.queries == 0)
     end)
 end
+test("aligned sparse rows stay unknown", function()
+    local s, _, apply = fixture("RANGE_ATTACK")
+    s.results = {plots = {[1] = 20, [3] = 30}, modifiers = {[1] = 7, [3] = 7}}
+    unknown(refused(s, apply, "RANGE_ATTACK")); assert(s.queries == 1)
+end)
+test("a malformed later plot cannot publish a partial positive offer", function()
+    local s, _, apply = fixture("RANGE_ATTACK"); s.results.plots = {20, "bad", 30}
+    unknown(refused(s, apply, "RANGE_ATTACK")); assert(s.queries == 1)
+end)
+test("a malformed modifier stays unknown", function()
+    local s, _, apply = fixture("RANGE_ATTACK"); s.results.modifiers[2] = false
+    unknown(refused(s, apply, "RANGE_ATTACK")); assert(s.queries == 1)
+end)
+test("an unreadable native result table stays unknown", function()
+    local s, _, apply = fixture("RANGE_ATTACK")
+    s.results = setmetatable({}, {__index = function() error("unreadable native rows") end})
+    unknown(refused(s, apply, "RANGE_ATTACK")); assert(s.queries == 1)
+end)
+test("a malformed target enum stays unknown without querying native targets", function()
+    local s, env, apply = fixture("RANGE_ATTACK"); env.UnitOperationResults.MODIFIER_IS_TARGET = false
+    unknown(refused(s, apply, "RANGE_ATTACK")); assert(s.queries == 0)
+end)
 test("a diplomatic refusal performs no diagnostic target query", function()
     local s, _, apply = fixture("RANGE_ATTACK"); s.war = "would_declare_war:2"
     local ok, why = apply("RANGE_ATTACK", 10, 8)
