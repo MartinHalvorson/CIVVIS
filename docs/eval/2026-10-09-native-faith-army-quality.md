@@ -1,0 +1,11 @@
+# Native Faith army quality
+
+Native source `cea88ce70a47d1488daefd3cb6200ac4487834b9` bought Horsemen at turns 109, 112, 114, 116 and 121 of `civvis-20261009T012626Z`; all five orders were verified. That attempt retired at turn 150 with production rank 3 and no captures, and remains a non-win.
+
+The first native state at turn 109, frame 0, reported Faith 264, Gold 195 and net Gold 34.8047. Bogotá's native Faith menu offered Horseman 80, Knight 220, Man-at-Arms 160 and Pikeman 180. The recorded controller bought Horseman 80. A fresh controller, with the current native family's unchanged armed genes and that exact recorded input, repeats the purchase and leaves 184 Faith.
+
+The mirrored Horseman has strength 36. The same city's native production menu permits Knight 50, Man-at-Arms 45 and Pikeman 45. The shared production scorer rejects a unit when a trainable unit in the same land/ranged role is more than five strength stronger. It also rejects a filled army unless an existing threat or missing role warrants reinforcement. The Faith purchase scorer clamps those negative strategic values to zero, then adds combat credit, turning a veto into a positive bid. The newly bounded native purchase floor exposed this with repeated cheap purchases; the same clamp exists above the old 600-Faith floor.
+
+The candidate preserves the shared strategic rejection in `military_faith_score`. A negative value yields no bid before cloning and applying the purchase. Positive and zero values retain the existing combat/cost calculation. Native quotes, purchase legality, upkeep and every Faith reserve remain required. This patch changes no purchase-floor rule; the native verification integration additionally retains the preceding family's quoted-budget and recon corrections.
+
+This is a decision-consistency hypothesis, not a demonstrated win-rate gain. The tests must distinguish obsolete or excess purchases from a wanted shooter and immediate defense, and preserve actual reserve and native-legality failures. Native verification must then observe purchases of useful units, actual bank progression, maintenance and army survival, captures and final wins. All production-rank retirements remain non-wins. Native difficulty, map, opponents, victory conditions and retirement policy remain fixed.
