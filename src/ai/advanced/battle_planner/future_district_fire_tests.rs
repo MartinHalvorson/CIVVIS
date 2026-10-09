@@ -168,3 +168,44 @@ fn peaceful_forts_have_no_future_fire() {
         assert_eq!(forecasts(&g, target, victim), [(0, 0.0); 3]);
     }
 }
+
+fn assert_actual_previous_shot_is_future_danger(oppidum: bool) {
+    let (mut g, city, source, target, victim) = position(oppidum);
+    assert_eq!(g.governor_effect(0, city, "city_extra_strike"), 0.0);
+    g.current = 0;
+    let action = shot(&g, city, source, target);
+    g.apply(0, &action).unwrap();
+    let health = g.units[&victim].hp;
+    assert!(health > 0 && health < 100, "the preceding shot must land");
+    let spent = g.defending_district_state(city, source).unwrap();
+    assert!(spent.struck);
+    assert_eq!(spent.extra_strikes_used, 0);
+    g.current = 1;
+
+    let mut ready = g.clone();
+    let mut reset = spent.clone();
+    reset.struck = false;
+    ready.set_defending_district_state(city, reset);
+    let expected = forecasts(&ready, target, victim);
+    assert!(expected
+        .iter()
+        .all(|(count, damage)| *count == 1 && *damage > 0.0));
+    assert_actual_next_turn_shot(&g, city, source, target, victim);
+    let actual = forecasts(&g, target, victim);
+    assert_eq!(g.units[&victim].hp, health);
+    assert_eq!(g.defending_district_state(city, source), Some(spent));
+    assert_eq!(
+        actual, expected,
+        "an actual previous shot cannot erase future fire"
+    );
+}
+
+#[test]
+fn an_actual_encampment_shot_does_not_erase_next_turn_danger() {
+    assert_actual_previous_shot_is_future_danger(false);
+}
+
+#[test]
+fn an_actual_oppidum_shot_does_not_erase_next_turn_danger() {
+    assert_actual_previous_shot_is_future_danger(true);
+}
