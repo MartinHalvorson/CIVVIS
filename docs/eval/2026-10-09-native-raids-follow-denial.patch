@@ -18,7 +18,7 @@ index 79427dd7b..56ff6c4e5 100644
 +++ b/src/ai/advanced/air_surge/raids/tests.rs
 @@ -1,7 +1,11 @@
  use super::*;
- 
+
  fn fixture() -> (Game, AdvancedAi, u32) {
 -    let mut g = Game::new_full(2, 40, 24, 936101, 650, 0, false);
 +    fixture_with_players(2)
