@@ -70,6 +70,9 @@ impl AdvancedAi {
         if !self.air_surge_2
             || self.active_victory_target(g) != Some(VictoryTarget::Domination)
             || self.threatened_city(g, pid).is_some()
+            // The lifecycle hands the army to a more urgent rival. Leave its
+            // cavalry available to that campaign instead of the old wing.
+            || self.air_surge_status.denial_elsewhere
         {
             return raiders;
         }
