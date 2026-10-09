@@ -109,12 +109,18 @@ def _native_binary() -> Path:
 
 def recognize(path: Path) -> list[dict]:
     """Return text observations in top-left normalized image coordinates."""
-    result = subprocess.run(
-        [str(_native_binary()), str(path)],
-        capture_output=True,
-        text=True,
-        timeout=45,
-    )
+    # A Vision pass that outlives its budget is an unreadable shot, not a crash:
+    # G031347Z (2026-10-09, load ~50) died in the leader-intro probe on an
+    # uncaught TimeoutExpired while every caller already handles OCRUnavailable.
+    try:
+        result = subprocess.run(
+            [str(_native_binary()), str(path)],
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise OCRUnavailable(f"native screenshot OCR timed out after {error.timeout} s") from error
     if result.returncode:
         raise OCRUnavailable(result.stderr.strip() or "native screenshot OCR failed")
     try:
