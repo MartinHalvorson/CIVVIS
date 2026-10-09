@@ -292,6 +292,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `domination-specializes-earlier` | off (unmeasured) | `domination-specializes-earlier`: an assigned Domination lane leaves its development half at 40% of the clock. | 1 \| 1 |
 | `domination-strikes-when-staged` | off (unmeasured) | Opt-in gene `domination-strikes-when-staged`; see `Self::domination_strikes_when_staged`. | 1 \| 1 |
 | `dvp-leader-is-the-front` | off (unmeasured) | Opt-in gene `dvp-leader-is-the-front`; see `Self::dvp_leader_is_the_front`. | 1 \| 1 |
+| `early-conquest-stands-down` | off (unmeasured) | Opt-in gene `early-conquest-stands-down`; see `Self::conquest_stands_down`. | 1 \| 1 |
 | `early-settler-floor` | off (unmeasured) | Enable `early-settler-floor`. | 1 \| 1 |
 | `elimination-waits-on-the-clock` | off (unmeasured) | Opt-in gene `elimination-waits-on-the-clock`; see `Self::elimination_waits_on_the_clock`. | 1 \| 1 |
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |

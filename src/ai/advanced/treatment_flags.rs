@@ -7220,6 +7220,17 @@ impl AdvancedAi {
         self.settler_walks_to_the_better_site = false;
     }
 
+    /// Opt-in gene `early-conquest-stands-down`; see
+    /// [`Self::conquest_stands_down`].
+    pub fn enable_early_conquest_stands_down(&mut self) {
+        self.early_conquest_stands_down = true;
+    }
+
+    /// The twin of `enable_early_conquest_stands_down`.
+    pub fn disable_early_conquest_stands_down(&mut self) {
+        self.early_conquest_stands_down = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
