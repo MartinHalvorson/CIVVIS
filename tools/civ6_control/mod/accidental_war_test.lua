@@ -279,8 +279,9 @@ do
 	local guards = 0
 	for _ in src:gmatch("CivvisLedger%.refuseWarStarter%(") do guards = guards + 1 end
 	-- ATTACK/MOVE_TO/CAPTURE (one call), RANGE_ATTACK, AIR_ATTACK, the city
-	-- strike and the encampment strike.
-	check("source_guards_four_arms_the_assault_and_the_sortie", guards, 6)
+	-- strike, the encampment strike, the source-specific district strike,
+	-- and the pre-existing assault/sortie guard.
+	check("source_guards_all_seven_attack_paths", guards, 7)
 end
 
 if failures > 0 then

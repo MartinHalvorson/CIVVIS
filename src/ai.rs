@@ -6292,13 +6292,13 @@ impl BasicAi {
     ) -> bool {
         city.owner != pid
             && g.is_at_war(pid, city.owner)
-            && city.encampment_hp > 0
-            && city.encampment_wall_hp > 0
-            && !city.encampment_pillaged
-            && g.city_district_family_position(city, crate::name!("encampment"))
-                .is_some_and(|source| {
-                    g.wdist(source, position) <= 2 && g.line_of_sight_from(source, position)
-                })
+            && g.defending_districts(city).any(|district| {
+                district.hp > 0
+                    && district.wall_hp > 0
+                    && !district.pillaged
+                    && g.wdist(district.pos, position) <= 2
+                    && g.line_of_sight_from(district.pos, position)
+            })
     }
 
     /// Whether any observed hostile unit, City Center or Encampment could
@@ -6355,7 +6355,8 @@ impl BasicAi {
         // it. That makes a friendly city a genuine safe refuge even while the
         // enemy can still bombard its walls.
         let hazard = IncomingDamage::default().with(Self::movement_hazard_damage(g, pid, position));
-        let garrisoned = g.city_at(position).is_some() || g.encampment_at(position).is_some();
+        let garrisoned =
+            g.city_at(position).is_some() || g.defending_district_at(position).is_some();
         if garrisoned {
             return hazard;
         }
@@ -6413,10 +6414,20 @@ impl BasicAi {
         let encampment_damage: IncomingDamage = {
             g.cities
                 .values()
-                .filter(|city| Self::city_encampment_strikes(g, pid, city, position))
-                .map(|city| {
-                    (30.0 * ((g.city_ranged_strength(city.id) - defense) / 25.0).exp())
-                        .clamp(1.0, 100.0)
+                .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
+                .flat_map(|city| {
+                    g.defending_districts(city)
+                        .filter(move |district| {
+                            district.hp > 0
+                                && district.wall_hp > 0
+                                && !district.pillaged
+                                && g.wdist(district.pos, position) <= 2
+                                && g.line_of_sight_from(district.pos, position)
+                        })
+                        .map(move |_| {
+                            (30.0 * ((g.city_ranged_strength(city.id) - defense) / 25.0).exp())
+                                .clamp(1.0, 100.0)
+                        })
                 })
                 .fold(IncomingDamage::default(), IncomingDamage::with)
         };
@@ -6546,12 +6557,11 @@ impl BasicAi {
             .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
             .flat_map(|city| {
                 let centre = (city.wall_hp > 0).then_some(city.pos);
-                let encampment = (city.encampment_hp > 0
-                    && city.encampment_wall_hp > 0
-                    && !city.encampment_pillaged)
-                    .then(|| g.city_district_family_position(city, crate::name!("encampment")))
-                    .flatten();
-                centre.into_iter().chain(encampment)
+                let districts = g
+                    .defending_districts(city)
+                    .filter(|state| state.hp > 0 && state.wall_hp > 0 && !state.pillaged)
+                    .map(|state| state.pos);
+                centre.into_iter().chain(districts)
             })
             .collect()
     }
@@ -6607,7 +6617,7 @@ impl BasicAi {
                 continue;
             }
             let city_here = g.city_at(position);
-            let garrisoned = city_here.is_some() || g.encampment_at(position).is_some();
+            let garrisoned = city_here.is_some() || g.defending_district_at(position).is_some();
             if !garrisoned && (covered.binary_search(&position).is_ok() || struck(position)) {
                 continue;
             }
@@ -9334,27 +9344,27 @@ impl BasicAi {
                 }
             }
         }
-        let has_ready_encampment = city_ids.iter().any(|cid| {
-            let city = &g.cities[cid];
-            city.encampment_hp > 0
-                && city.encampment_wall_hp > 0
-                && !city.encampment_pillaged
-                && !city.encampment_struck
-        });
-        if has_ready_encampment {
-            let strikes: Vec<Action> = g
+        loop {
+            if !city_ids.iter().any(|cid| {
+                g.defending_districts(&g.cities[cid])
+                    .any(|district| g.defending_district_can_strike(&g.cities[cid], &district))
+            }) {
+                break;
+            }
+            let strike = g
                 .legal_actions_within(pid, ActionFamilies::CORE)
                 .into_iter()
-                .filter(|action| matches!(action, Action::EncampmentStrike { .. }))
-                .collect();
-            let mut used = HashSet::new();
-            for action in strikes {
-                let Action::EncampmentStrike { city, .. } = &action else {
-                    unreachable!()
-                };
-                if used.insert(*city) {
-                    let _ = g.apply(pid, &action);
-                }
+                .find(|action| {
+                    matches!(
+                        action,
+                        Action::EncampmentStrike { .. } | Action::DistrictStrike { .. }
+                    )
+                });
+            let Some(strike) = strike else {
+                break;
+            };
+            if g.apply(pid, &strike).is_err() {
+                break;
             }
         }
         for cid in &city_ids {
@@ -16118,7 +16128,7 @@ impl BasicAi {
             return 0.0;
         }
         let here = unit.pos;
-        if g.city_at(here).is_some() || g.encampment_at(here).is_some() {
+        if g.city_at(here).is_some() || g.defending_district_at(here).is_some() {
             return 0.0;
         }
         let envelopes = self.enemy_attack_envelopes(g, pid);

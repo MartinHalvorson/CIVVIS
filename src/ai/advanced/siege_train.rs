@@ -371,7 +371,7 @@ pub(super) fn taker_blow(g: &Game, pid: usize, uid: u32, cid: u32) -> f64 {
 /// resolves a blow there against. Units inside a City Center or Encampment
 /// are not targets: a blow on that tile is a blow on the district.
 fn strongest_hostile_at(g: &Game, pid: usize, pos: Pos) -> Option<u32> {
-    if g.city_at(pos).is_some() || g.encampment_at(pos).is_some() {
+    if g.city_at(pos).is_some() || g.defending_district_at(pos).is_some() {
         return None;
     }
     g.unit_ids_at(pos)

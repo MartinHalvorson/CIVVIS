@@ -473,6 +473,10 @@ pub mod quests;
 
 mod actions;
 mod city;
+mod defending_district;
+pub use defending_district::DefendingDistrict;
+#[cfg(test)]
+pub(crate) mod defending_district_tests;
 mod growth;
 mod research_quotes;
 mod route_avoidance;
@@ -2867,6 +2871,14 @@ mod city_roster {
                     city.districts.len() as u64,
                     city.wonders.len() as u64,
                 ]);
+                for state in &city.defending_districts {
+                    stamps.geometry = vision_key(&[
+                        stamps.geometry,
+                        state.pos.0 as u64,
+                        state.pos.1 as u64,
+                        state.pillaged as u64,
+                    ]);
+                }
                 for (district, position) in city.districts.iter() {
                     stamps.geometry = vision_key(&[
                         stamps.geometry,
@@ -3637,6 +3649,9 @@ pub struct City {
     pub encampment_last_attacked: u32,
     #[serde(default)]
     pub encampment_pillaged: bool,
+    /// Independent state for defending districts outside the Encampment family.
+    #[serde(default)]
+    pub defending_districts: Vec<DefendingDistrict>,
     #[serde(default)]
     pub last_attacked: u32,
     #[serde(default)]
@@ -3699,6 +3714,9 @@ pub struct RememberedCity {
     pub encampment_hp: i32,
     pub encampment_wall_hp: i32,
     pub encampment_pillaged: bool,
+    /// Independent state for defending districts outside the Encampment family.
+    #[serde(default)]
+    pub defending_districts: Vec<DefendingDistrict>,
     pub religion: Option<String>,
     #[serde(default)]
     pub seen_turn: u32,
@@ -5495,6 +5513,11 @@ pub enum Action {
     },
     EncampmentStrike {
         city: u32,
+        target: Pos,
+    },
+    DistrictStrike {
+        city: u32,
+        source: Pos,
         target: Pos,
     },
     KeepCity {
@@ -7664,6 +7687,9 @@ impl From<GameSer> for Game {
             if city.encampment_wall_hp < 0 {
                 city.encampment_wall_hp = max;
             }
+        }
+        for cid in g.cities.keys().copied().collect::<Vec<_>>() {
+            g.restore_other_defending_districts(cid);
         }
         let unit_ids: Vec<u32> = g.units.keys().copied().collect();
         for uid in unit_ids {
@@ -22856,7 +22882,7 @@ impl Game {
             .map(|uid| self.units[uid].owner)
             .chain(self.city_at(target).map(|city| self.cities[&city].owner))
             .chain(
-                self.encampment_at(target)
+                self.defending_district_at(target)
                     .map(|city| self.cities[&city].owner),
             )
             .chain(self.tile_owner(target));
@@ -24317,24 +24343,31 @@ impl Game {
         let Some(tile) = self.map.get(pos) else {
             return 0;
         };
-        if !tile
+        let Some(kind) = tile
             .district
-            .is_some_and(|district| self.district_is_family(district, crate::name!("encampment")))
-        {
+            .filter(|kind| self.district_has_defenses(*kind))
+        else {
+            return 0;
+        };
+        if tile.pillaged {
             return 0;
         }
+        let active = |city: &City| {
+            city.districts
+                .iter()
+                .any(|(district, p)| *district == kind && *p == pos)
+                && if self.district_is_family(kind, crate::name!("encampment")) {
+                    !city.encampment_pillaged
+                } else {
+                    city.defending_districts
+                        .iter()
+                        .any(|d| d.pos == pos && !d.pillaged)
+                }
+        };
         if let Some(city) = tile.owner_city.and_then(|city| self.cities.get(&city)) {
-            return i32::from(
-                city.districts.iter().any(|(_, district)| *district == pos)
-                    && !city.encampment_pillaged,
-            );
+            return i32::from(active(city));
         }
-        // Legacy and hand-built states may omit `owner_city` on a district
-        // tile. Preserve their behavior without making the normal path scan
-        // every city for every visibility ray.
-        i32::from(self.cities.values().any(|city| {
-            city.districts.iter().any(|(_, district)| *district == pos) && !city.encampment_pillaged
-        }))
+        i32::from(self.cities.values().any(active))
     }
 
     fn visible_tiles_from(
@@ -25388,9 +25421,42 @@ impl Game {
             encampment_hp: city.encampment_hp,
             encampment_wall_hp: city.encampment_wall_hp,
             encampment_pillaged: city.encampment_pillaged,
+            defending_districts: city
+                .defending_districts
+                .iter()
+                .map(|d| d.remembered())
+                .collect(),
             religion: self.city_religion(city).map(str::to_string),
             seen_turn: self.turn,
         }
+    }
+
+    /// Seeing the center does not disclose defenses on an unseen district.
+    pub(crate) fn remember_city_for_viewer(
+        &self,
+        city: &City,
+        pid: usize,
+        visible: &BTreeSet<Pos>,
+    ) -> RememberedCity {
+        let mut memory = self.remember_city(city);
+        memory
+            .defending_districts
+            .retain(|state| city.owner == pid || visible.contains(&state.pos));
+        if let Some(previous) = self.players[pid]
+            .remembered_cities
+            .get(&city.id)
+            .filter(|old| old.owner == city.owner)
+        {
+            for state in &previous.defending_districts {
+                if !visible.contains(&state.pos) && city.owner != pid {
+                    memory.defending_districts.push(*state);
+                }
+            }
+        }
+        memory
+            .defending_districts
+            .sort_unstable_by_key(|state| state.pos);
+        memory
     }
 
     fn snapshot_tile(&self, position: Pos) -> Option<RememberedTile> {
@@ -25510,6 +25576,17 @@ impl Game {
                 city.name.len() as u64,
                 city.buildings.len() as u64,
             ]);
+            for state in &city.defending_districts {
+                key = vision_key(&[
+                    key,
+                    state.kind.id() as u64,
+                    state.pos.0 as u64,
+                    state.pos.1 as u64,
+                    state.hp as u64,
+                    state.wall_hp as u64,
+                    state.pillaged as u64,
+                ]);
+            }
             // Which religion a city holds is decided by its pressures.
             for (religion, pressure) in &city.pressure {
                 key = vision_key(&[key, religion.len() as u64, pressure.to_bits()]);
@@ -25888,7 +25965,7 @@ impl Game {
             // refresh their population, defenses, or other live details.
             let explored = &self.players[pid].explored;
             let remembered_cities = &self.players[pid].remembered_cities;
-            let cities: Vec<RememberedCity> = self
+            let mut cities: Vec<RememberedCity> = self
                 .cities
                 .values()
                 .filter(|city| {
@@ -25896,8 +25973,19 @@ impl Game {
                         || (explored.contains(&city.pos)
                             && !remembered_cities.contains_key(&city.id))
                 })
-                .map(|city| self.remember_city(city))
+                .map(|city| self.remember_city_for_viewer(city, pid, visible))
                 .collect();
+            for previous in self.players[pid]
+                .remembered_cities
+                .values()
+                .filter(|memory| !visible.contains(&memory.pos))
+            {
+                let mut memory = previous.clone();
+                self.refresh_defending_district_memory(&mut memory, visible);
+                if memory.defending_districts != previous.defending_districts {
+                    cities.push(memory);
+                }
+            }
             let live_city_ids: BTreeSet<u32> = self.cities.keys().copied().collect();
             let player = &mut self.players[pid];
             // Only reach for the memory mutably when a stamp actually has to
@@ -26358,6 +26446,7 @@ impl Game {
 
     fn backfill_visibility_memory(&mut self) {
         for pid in 0..self.players.len() {
+            let visible = self.player_visibility(pid);
             let missing_tiles: Vec<(Pos, RememberedTile)> = self.players[pid]
                 .explored
                 .iter()
@@ -26369,7 +26458,7 @@ impl Game {
                 .values()
                 .filter(|city| self.players[pid].explored.contains(&city.pos))
                 .filter(|city| !self.players[pid].remembered_cities.contains_key(&city.id))
-                .map(|city| self.remember_city(city))
+                .map(|city| self.remember_city_for_viewer(city, pid, &visible))
                 .collect();
             for (position, tile) in missing_tiles {
                 let seen = tile.seen_turn;
@@ -26549,6 +26638,7 @@ impl Game {
 
     /// A standing Encampment remains a combat target at zero HP until a
     /// melee unit enters and pillages it, like a depleted City Center.
+    #[cfg(test)]
     pub(crate) fn encampment_at(&self, pos: Pos) -> Option<u32> {
         let tile = self.map.get(pos)?;
         if !tile
@@ -27012,7 +27102,7 @@ impl Game {
                 return Entry::Blocked;
             }
         }
-        if let Some(cid) = self.encampment_at(pos) {
+        if let Some(cid) = self.defending_district_at(pos) {
             if self.cities[&cid].owner != u.owner {
                 return Entry::Blocked;
             }
@@ -27107,7 +27197,7 @@ impl Game {
             .city_at(pos)
             .is_some_and(|city| self.cities[&city].owner != unit.owner)
             || self
-                .encampment_at(pos)
+                .defending_district_at(pos)
                 .is_some_and(|city| self.cities[&city].owner != unit.owner)
         {
             return false;
@@ -33674,6 +33764,10 @@ impl Game {
         city.extra_strikes_used = 0;
         city.encampment_struck = false;
         city.encampment_extra_strikes_used = 0;
+        for state in &mut city.defending_districts {
+            state.struck = false;
+            state.extra_strikes_used = 0;
+        }
         // Yield assignment asks for housing and amenities as part of its
         // citizen strategy, then turn processing asks for both again to apply
         // growth. Keep those immutable answers in one memo scope before any
@@ -33821,6 +33915,13 @@ impl Game {
         }
         if encampment.is_some() && !city.encampment_pillaged && !encampment_besieged {
             city.encampment_hp = (city.encampment_hp + 20).min(100);
+        }
+        let other_forts: Vec<_> = self.cities[&cid].defending_districts.clone();
+        for mut state in other_forts {
+            if !state.pillaged && !self.district_under_siege(pid, state.pos) {
+                state.hp = (state.hp + 20).min(100);
+                self.set_defending_district_state(cid, state);
+            }
         }
         let city_upkeep = self.city_infrastructure_gold_maintenance(&self.cities[&cid]);
         (ys, city_upkeep, upkeep_updates)
@@ -34255,6 +34356,11 @@ impl Game {
                     let pool = self.city_max_wall_hp(&self.cities[&cid]);
                     let city = self.cities.get_mut(&cid).unwrap();
                     city.wall_hp = (city.wall_hp + spec.outer_defense).min(pool);
+                    for state in &mut city.defending_districts {
+                        if !state.pillaged {
+                            state.wall_hp = (state.wall_hp + spec.outer_defense).min(pool);
+                        }
+                    }
                     if has_encampment && !city.encampment_pillaged {
                         city.encampment_wall_hp =
                             (city.encampment_wall_hp + spec.outer_defense).min(pool);
@@ -34347,12 +34453,12 @@ impl Game {
                 if self.district_is_family(district, crate::name!("aerodrome")) {
                     self.dedication_trigger(pid, "aerodrome", 1);
                 }
-                if self.district_is_family(district, crate::name!("encampment")) {
+                if self.district_has_defenses(*district) {
                     let max_wall = self.city_max_wall_hp(&self.cities[&cid]);
-                    let city = self.cities.get_mut(&cid).unwrap();
-                    city.encampment_hp = 100;
-                    city.encampment_wall_hp = max_wall;
-                    city.encampment_pillaged = false;
+                    self.set_defending_district_state(
+                        cid,
+                        DefendingDistrict::healthy(*district, *pos, max_wall),
+                    );
                 }
                 if let Some(amount) = spec.effects.get("governor_titles") {
                     *self.players[pid]
@@ -34463,6 +34569,12 @@ impl Game {
             Item::Repair { repair, pos } => {
                 if repair == "district" {
                     self.map.tiles.get_mut(pos).unwrap().pillaged = false;
+                    if let Some(mut state) = self.defending_district_state(cid, *pos) {
+                        state.hp = 100;
+                        state.wall_hp = self.city_max_wall_hp(&self.cities[&cid]);
+                        state.pillaged = false;
+                        self.set_defending_district_state(cid, state);
+                    }
                 } else {
                     let city = self.cities.get_mut(&cid).unwrap();
                     let repair = Name::new(repair);
@@ -34481,6 +34593,13 @@ impl Game {
                     city.encampment_hp = 100;
                     city.encampment_wall_hp = max_wall;
                     city.encampment_pillaged = false;
+                    let position = self.city_district_family_position(
+                        &self.cities[&cid],
+                        crate::name!("encampment"),
+                    );
+                    if let Some(tile) = position.and_then(|pos| self.map.tiles.get_mut(&pos)) {
+                        tile.pillaged = false;
+                    }
                     return true;
                 }
                 let spec = self.rules.projects[project].clone();
@@ -35108,6 +35227,11 @@ impl Game {
             // ranged strike it had no Encampment or Walls to fire from.
             city.wall_hp = if steel_retains_defenses { 100 } else { 0 };
             city.encampment_wall_hp = if steel_retains_defenses { 100 } else { 0 };
+            for state in &mut city.defending_districts {
+                state.wall_hp = city.encampment_wall_hp;
+                state.struck = false;
+                state.extra_strikes_used = 0;
+            }
 
             city.buildings = converted_buildings.keys().cloned().collect();
             city.building_eras = converted_buildings
@@ -35131,6 +35255,7 @@ impl Game {
                 }
             }
         }
+        self.restore_other_defending_districts(cid);
         if old != new_owner {
             self.invalidate_routing_paths();
         }
@@ -35524,6 +35649,9 @@ impl Game {
             // may have no wall pool at all.
             city.wall_hp = 0;
             city.encampment_wall_hp = 0;
+            for state in &mut city.defending_districts {
+                state.wall_hp = 0;
+            }
         }
         self.invalidate_routing_paths();
         self.players[original_owner].alive = true;

@@ -10279,44 +10279,66 @@ fn apply_city_religion(live: &mut crate::game::City, state: &StateCity) {
 /// asymmetry is the whole point. A wrong "healthy" costs one skipped repair; a
 /// wrong "destroyed" costs the city's entire production for the rest of the game.
 fn apply_encampment_health(game: &mut crate::game::Game, state: &StateCity, cid: u32) {
-    let encampment = state
+    let Some(city) = game.cities.get(&cid) else {
+        return;
+    };
+    let max_wall = game.city_max_wall_hp(city);
+    let forts: Vec<_> = state
         .districts
         .iter()
-        .find(|district| district.kind.eq_ignore_ascii_case("DISTRICT_ENCAMPMENT"));
-    // Read the wall maximum before taking the mutable borrow below.
-    let Some(max_wall) = game
-        .cities
-        .get(&cid)
-        .map(|city| game.city_max_wall_hp(city))
-    else {
-        return;
-    };
-    let Some(city) = game.cities.get_mut(&cid) else {
-        return;
-    };
-    let Some(encampment) = encampment else {
-        // No Encampment: `can_produce` already refuses on the district test, so
-        // the value cannot be read. Keep it full so it can never be the reason.
-        city.encampment_hp = 100;
-        return;
-    };
-    // Firaxis reports DAMAGE against a maximum; this model holds REMAINING health
-    // on a 0..=100 scale. Rescale rather than subtract, because a district's
-    // maximum is not always 100 on this build and an unscaled remainder would
-    // read as full when it is not.
-    city.encampment_hp = if encampment.max_damage > 0 && encampment.damage >= 0 {
-        let remaining = (encampment.max_damage - encampment.damage).max(0);
-        ((100 * remaining) / encampment.max_damage).clamp(0, 100)
+        .filter(|d| d.complete)
+        .filter_map(|district| {
+            let kind = civvis_node_name(&game.rules.districts, &district.kind, "DISTRICT_")?;
+            let kind = crate::name::Name::new(&kind);
+            let pos = crate::hex::offset_to_axial(district.x, district.y);
+            (game.district_has_defenses(kind)
+                && city.districts.iter().any(|(k, p)| *k == kind && *p == pos))
+            .then_some((kind, pos, district))
+        })
+        .collect();
+    if !forts
+        .iter()
+        .any(|(kind, _, _)| game.district_family(*kind) == crate::name!("encampment"))
+    {
+        game.cities.get_mut(&cid).unwrap().encampment_hp = 100;
+    }
+    for (kind, pos, district) in forts {
+        let mut observed = game
+            .defending_district_state(cid, pos)
+            .unwrap_or_else(|| crate::game::DefendingDistrict::healthy(kind, pos, max_wall));
+        observed.pillaged = district.pillaged;
+        observed.hp = district_garrison_hp(district.damage, district.max_damage);
+        observed.wall_hp =
+            district_outer_hp(district.wall_damage, district.max_wall_damage, max_wall);
+        game.set_defending_district_state(cid, observed);
+    }
+    retain_observed_defending_districts(game, cid);
+}
+
+fn district_garrison_hp(damage: i32, max_damage: i32) -> i32 {
+    if max_damage > 0 && damage >= 0 {
+        let remaining = (i64::from(max_damage) - i64::from(damage)).max(0);
+        ((100 * remaining) / i64::from(max_damage)).clamp(0, 100) as i32
     } else {
         100
-    };
-    city.encampment_wall_hp = if encampment.max_wall_damage > 0 && encampment.wall_damage >= 0 {
-        (encampment.max_wall_damage - encampment.wall_damage).max(0)
+    }
+}
+
+fn district_outer_hp(damage: i32, max_damage: i32, fallback: i32) -> i32 {
+    if max_damage >= 0 && damage >= 0 {
+        (i64::from(max_damage) - i64::from(damage)).clamp(0, i64::from(i32::MAX)) as i32
     } else {
-        // Unanswered: match the city's own maximum so `encampment_wall_hp <
-        // max_wall` cannot fire on a number nobody measured.
-        max_wall
-    };
+        fallback
+    }
+}
+
+fn retain_observed_defending_districts(game: &mut crate::game::Game, cid: u32) {
+    let city = game.cities.get_mut(&cid).unwrap();
+    city.defending_districts.retain(|state| {
+        city.districts
+            .iter()
+            .any(|(kind, pos)| *kind == state.kind && *pos == state.pos)
+    });
 }
 
 /// Carry the host's per-building pillage state onto a reconstructed city.
@@ -12668,10 +12690,11 @@ fn step_observed_host_metrics(ctx: &mut HostStepCtx<'_>) {
         .cities
         .values()
         .filter(|city| city.owner != 0)
-        .filter_map(|city| {
-            ctx.game
-                .city_district_family_position(city, crate::name!("encampment"))
-                .map(|position| (city.id, position))
+        .flat_map(|city| {
+            city.districts
+                .iter()
+                .filter(|(kind, _)| ctx.game.district_has_defenses(**kind))
+                .map(|(_, position)| (city.id, *position))
         })
         .collect();
     for (cid, position) in forts {
@@ -14354,12 +14377,13 @@ fn apply_foreign_infrastructure(game: &mut crate::game::Game, snapshot: &Snapsho
                     .plot(crate::hex::axial_to_offset(pos.0, pos.1))
                     .is_some_and(|plot| plot.p);
             }
-            if game.district_family(name) == crate::name!("encampment") {
+            if game.district_has_defenses(name) {
                 if let Some(plot) = snapshot.plot(crate::hex::axial_to_offset(pos.0, pos.1)) {
                     apply_foreign_encampment_health(game, cid, plot);
                 }
             }
         }
+        retain_observed_defending_districts(game, cid);
         for (name, pos) in wonders {
             if let Some(tile) = game.map.tiles.get_mut(&pos) {
                 tile.improvement = None;
@@ -14375,21 +14399,25 @@ fn apply_foreign_infrastructure(game: &mut crate::game::Game, snapshot: &Snapsho
 /// the plot. Unknown pools use the existing own-city conservative fallback.
 /// A measured zero outer capacity means no walls, rather than an unanswered API.
 fn apply_foreign_encampment_health(game: &mut crate::game::Game, cid: u32, plot: &Plot) {
+    let pos = crate::hex::offset_to_axial(plot.x, plot.y);
+    let Some(kind) = game.map.get(pos).and_then(|tile| tile.district) else {
+        return;
+    };
+    if !game.district_has_defenses(kind) {
+        return;
+    }
     let max_wall = game.city_max_wall_hp(&game.cities[&cid]);
-    let health = plot.dh.as_ref();
-    let city = game.cities.get_mut(&cid).unwrap();
-    city.encampment_pillaged = plot.p;
-    city.encampment_hp = health
-        .filter(|value| value.max_damage > 0 && value.damage >= 0)
-        .map_or(100, |value| {
-            let remaining = (i64::from(value.max_damage) - i64::from(value.damage)).max(0);
-            ((100 * remaining) / i64::from(value.max_damage)).clamp(0, 100) as i32
-        });
-    city.encampment_wall_hp = health
-        .filter(|value| value.max_wall_damage >= 0 && value.wall_damage >= 0)
-        .map_or(max_wall, |value| {
-            (value.max_wall_damage - value.wall_damage).max(0)
-        });
+    let mut observed = game
+        .defending_district_state(cid, pos)
+        .unwrap_or_else(|| crate::game::DefendingDistrict::healthy(kind, pos, max_wall));
+    observed.pillaged = plot.p;
+    observed.hp = plot.dh.as_ref().map_or(100, |health| {
+        district_garrison_hp(health.damage, health.max_damage)
+    });
+    observed.wall_hp = plot.dh.as_ref().map_or(max_wall, |health| {
+        district_outer_hp(health.wall_damage, health.max_wall_damage, max_wall)
+    });
+    game.set_defending_district_state(cid, observed);
 }
 
 /// Refuse a founding plot whose modeled population pressure will erase the city
@@ -15824,3 +15852,6 @@ mod foreign_encampment_health_tests;
 
 #[cfg(test)]
 mod foreign_district_parent_tests;
+
+#[cfg(test)]
+mod defending_district_observation_tests;

@@ -202,7 +202,7 @@ impl AdvancedAi {
         let kind = unit.kind;
         let shooter = (spec.has_ranged_attack() && !spec.is_melee_capable())
             || spec.promotion_class == "recon";
-        if g.city_at(here).is_some() || g.encampment_at(here).is_some() {
+        if g.city_at(here).is_some() || g.defending_district_at(here).is_some() {
             return None;
         }
         let envelopes = self.base.enemy_attack_envelopes(g, pid);
@@ -338,7 +338,7 @@ impl AdvancedAi {
         threats: &[Pos],
         shooter: bool,
     ) -> Refuge {
-        let garrison = g.city_at(pos).is_some() || g.encampment_at(pos).is_some();
+        let garrison = g.city_at(pos).is_some() || g.defending_district_at(pos).is_some();
         let incoming =
             BasicAi::incoming_damage(g, pid, uid, pos, envelopes).total * COMBAT_ROLL_MAX;
         let remembered_margin = remembered_fire.margin(g, pos);

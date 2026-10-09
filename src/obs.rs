@@ -461,8 +461,12 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
     let cities: Vec<Value> = known_cities
         .into_values()
         .map(|known| match known {
-            KnownCity::Remembered(city) => remembered_city_json(city),
-            KnownCity::Live(city) => live_city_json(g, pid, city, omniscient),
+            KnownCity::Remembered(city) => {
+                let mut memory = city.clone();
+                g.refresh_defending_district_memory(&mut memory, &vis);
+                remembered_city_json(&memory)
+            }
+            KnownCity::Live(city) => live_city_json(g, pid, city, omniscient, &vis),
         })
         .collect();
     let camps: Vec<Value> = tiles
@@ -1683,6 +1687,7 @@ struct PublicCity<'a> {
     encampment_hp: i32,
     encampment_wall_hp: i32,
     encampment_pillaged: bool,
+    defending_districts: &'a [crate::game::DefendingDistrict],
     religion: Option<&'a str>,
 }
 
@@ -1703,6 +1708,9 @@ fn public_city_json(city: PublicCity<'_>) -> Value {
         "encampment_hp": city.encampment_hp,
         "encampment_wall_hp": city.encampment_wall_hp,
         "encampment_pillaged": city.encampment_pillaged,
+        "defending_districts": city.defending_districts.iter().map(|d| json!({
+            "kind": d.kind, "pos": d.pos, "hp": d.hp, "wall_hp": d.wall_hp, "pillaged": d.pillaged,
+        })).collect::<Vec<_>>(),
         "religion": city.religion,
     })
 }
@@ -1724,6 +1732,7 @@ fn remembered_city_json(city: &RememberedCity) -> Value {
         encampment_hp: city.encampment_hp,
         encampment_wall_hp: city.encampment_wall_hp,
         encampment_pillaged: city.encampment_pillaged,
+        defending_districts: &city.defending_districts,
         religion: city.religion.as_deref(),
     })
 }
@@ -1768,7 +1777,15 @@ fn viewer_governor_json(g: &Game, pid: usize, city: u32, omniscient: bool) -> Va
     })
 }
 
-fn live_city_json(g: &Game, pid: usize, city: &City, omniscient: bool) -> Value {
+fn live_city_json(
+    g: &Game,
+    pid: usize,
+    city: &City,
+    omniscient: bool,
+    visible: &BTreeSet<Pos>,
+) -> Value {
+    let memory =
+        (city.owner != pid && !omniscient).then(|| g.remember_city_for_viewer(city, pid, visible));
     let mut value = public_city_json(PublicCity {
         id: city.id,
         name: &city.name,
@@ -1785,6 +1802,11 @@ fn live_city_json(g: &Game, pid: usize, city: &City, omniscient: bool) -> Value 
         encampment_hp: city.encampment_hp,
         encampment_wall_hp: city.encampment_wall_hp,
         encampment_pillaged: city.encampment_pillaged,
+        defending_districts: memory
+            .as_ref()
+            .map_or(city.defending_districts.as_slice(), |known| {
+                known.defending_districts.as_slice()
+            }),
         religion: g.city_religion(city),
     });
     // Religious pressure is visible with the city itself. Remembered cities

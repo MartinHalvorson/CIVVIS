@@ -1063,6 +1063,7 @@ fn chronicle_world_events(
         | Action::Ranged { target, .. }
         | Action::AirStrike { target, .. }
         | Action::CityStrike { target, .. }
+        | Action::DistrictStrike { target, .. }
         | Action::EncampmentStrike { target, .. } => Some(*target),
         _ => None,
     }) {
