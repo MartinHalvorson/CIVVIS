@@ -11,6 +11,8 @@ decision, including verification telemetry. The earliest changed complete
 reply must match native in the original arm; a later match cannot replace it.
 With identical arms, every original frame must match. Failed controls exit 2
 after preserving the diagnostics. This gate does not estimate native wins.
+Both arms must also identify the requested integer turn and decision frame;
+matching native planning fields cannot license a reply to another request.
 """
 
 from __future__ import annotations
@@ -77,6 +79,26 @@ def control_payload(reply: dict) -> dict:
     return {key: reply[key] for key in ("orders", "decision") if key in reply}
 
 
+def request_identity_errors(reply: dict, turn: int, frame: int) -> list[str]:
+    errors = []
+    if type(reply.get("turn")) is not int or reply["turn"] != turn:
+        errors.append("reply.turn must match the requested integer turn")
+    if "decision" not in reply:
+        # The CLI can answer before terrain exists. Such a reply has no board
+        # identity to compare, and can carry only an empty order list.
+        if reply.get("orders") != []:
+            errors.append("a reply without a decision must have empty orders")
+        return errors
+    decision = reply["decision"]
+    if not isinstance(decision, dict):
+        errors.append("decision must be an object when present")
+        return errors
+    for key, expected in (("turn", turn), ("frame", frame)):
+        if type(decision.get(key)) is not int or decision[key] != expected:
+            errors.append(f"decision.{key} must match the requested integer {key}")
+    return errors
+
+
 class NativeControl:
     def __init__(self, records: dict, unkeyed: int):
         self.records = records
@@ -85,8 +107,16 @@ class NativeControl:
         self.first_mismatch = None
         self.first_change = None
         self.changed_complete_replies = 0
+        self.request_errors = []
 
     def observe(self, turn: int, frame: int, original: dict, candidate: dict) -> None:
+        identity_errors = {name: request_identity_errors(reply, turn, frame)
+                           for name, reply in (("baseline", original), ("candidate", candidate))}
+        for name, reply in (("baseline", original), ("candidate", candidate)):
+            if identity_errors[name]:
+                self.request_errors.append({"index": len(self.frames), "turn": turn,
+                                            "frame": frame, "arm": name,
+                                            "errors": identity_errors[name], "reply": reply})
         recorded = self.records.get((turn, frame))
         orders_match = recorded is not None and exact_fact(original["orders"], recorded["orders"])
         decision_match = recorded is not None and (
@@ -95,6 +125,8 @@ class NativeControl:
         row = {"index": len(self.frames), "turn": turn, "frame": frame,
                "native_record_present": recorded is not None,
                "orders_match": orders_match, "complete_decision_match": decision_match,
+               "original_request_matches": not identity_errors["baseline"],
+               "candidate_request_matches": not identity_errors["candidate"],
                "whole_match": orders_match and decision_match}
         self.frames.append(row)
         if not row["whole_match"] and self.first_mismatch is None:
@@ -108,10 +140,15 @@ class NativeControl:
 
     def result(self) -> dict:
         mismatches = [row for row in self.frames if not row["whole_match"]]
-        gate = (self.first_change["whole_match"] if self.first_change is not None
-                else bool(self.frames) and not mismatches)
+        history_gate = (self.first_change["whole_match"] if self.first_change is not None
+                        else bool(self.frames) and not mismatches)
+        identity_gate = bool(self.frames) and not self.request_errors
         return {"scope": "Complete native orders and decision; no survival or win estimate",
-                "gate_passed": gate,
+                "gate_passed": history_gate and identity_gate,
+                "native_history_gate_passed": history_gate,
+                "request_identity_gate_passed": identity_gate,
+                "invalid_request_reply_frames": len({row["index"] for row in self.request_errors}),
+                "request_identity_errors": self.request_errors,
                 "gate_kind": ("earliest_changed_complete_reply" if self.first_change is not None
                               else "unchanged_original_history"),
                 "frames": len(self.frames),
@@ -277,7 +314,8 @@ def main() -> int:
         native_control = control.result()
         (args.out / "native-control.json").write_text(json.dumps(native_control, indent=2) + "\n")
         metadata["native_control"] = {key: native_control[key] for key in (
-            "gate_passed", "gate_kind", "frames", "matched_frames",
+            "gate_passed", "native_history_gate_passed", "request_identity_gate_passed",
+            "invalid_request_reply_frames", "gate_kind", "frames", "matched_frames",
             "missing_record_frames", "changed_complete_reply_frames")}
         metadata["validation_passed"] = (
             "error" not in metadata and native_control["gate_passed"]
