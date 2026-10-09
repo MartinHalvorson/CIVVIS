@@ -1091,7 +1091,7 @@ impl Game {
                             });
                         if hit
                             && self.city_at(pos).is_none()
-                            && self.encampment_at(pos).is_none()
+                            && self.defending_district_at(pos).is_none()
                             && self.combat_target_visible_at(
                                 pid,
                                 pos,
@@ -1108,12 +1108,11 @@ impl Game {
                     }
                 }
                 let city = &self.cities[&cid];
-                if self.encampment_can_strike(city) {
-                    let Some(source) =
-                        self.city_district_family_position(city, crate::name!("encampment"))
-                    else {
+                for district in self.defending_districts(city) {
+                    if !self.defending_district_can_strike(city, &district) {
                         continue;
-                    };
+                    }
+                    let source = district.pos;
                     for pos in self.wdisk(source, 2) {
                         // See `peaceful_foreign_unit_at`: same plot order, same
                         // host-chosen defender, same surprise war.
@@ -1126,7 +1125,7 @@ impl Game {
                             });
                         if hit
                             && self.city_at(pos).is_none()
-                            && self.encampment_at(pos).is_none()
+                            && self.defending_district_at(pos).is_none()
                             && self.combat_target_visible_at(
                                 pid,
                                 pos,
@@ -1135,10 +1134,7 @@ impl Game {
                             )
                             && self.has_line_of_sight(source, pos, true)
                         {
-                            acts.push(Action::EncampmentStrike {
-                                city: cid,
-                                target: pos,
-                            });
+                            acts.push(self.defending_district_strike_action(cid, &district, pos));
                         }
                     }
                 }
@@ -1760,7 +1756,7 @@ impl Game {
             let owner = self.cities[&cid].owner;
             return owner != pid && self.is_at_war(pid, owner);
         }
-        if let Some(cid) = self.encampment_at(pos) {
+        if let Some(cid) = self.defending_district_at(pos) {
             let owner = self.cities[&cid].owner;
             return owner != pid && self.is_at_war(pid, owner);
         }
@@ -2120,7 +2116,7 @@ impl Game {
         }
         let hostile_city = self
             .city_at(pos)
-            .or_else(|| self.encampment_at(pos))
+            .or_else(|| self.defending_district_at(pos))
             .is_some_and(|city| {
                 let owner = self.cities[&city].owner;
                 owner != pid && self.is_at_war(pid, owner)
@@ -2217,6 +2213,7 @@ impl Game {
                 | Action::ConvertBarbarians { .. }
                 | Action::CityStrike { .. }
                 | Action::EncampmentStrike { .. }
+                | Action::DistrictStrike { .. }
         );
         if monopoly_context_may_change {
             self.query_memo.monopoly_context.borrow_mut().take();
@@ -2436,6 +2433,11 @@ impl Game {
             Action::EncampmentStrike { city, target } => {
                 self.do_encampment_strike(pid, *city, *target)
             }
+            Action::DistrictStrike {
+                city,
+                source,
+                target,
+            } => self.do_defending_district_strike(pid, *city, *source, *target),
             Action::KeepCity { city } => self.do_keep_city(pid, *city),
             Action::RazeCity { city } => self.do_raze_city(pid, *city),
             Action::LiberateCity { city } => self.do_liberate_city(pid, *city),
@@ -2499,6 +2501,7 @@ impl Game {
                     | Action::WmdStrike { .. }
                     | Action::MassDriverStrike { .. }
                     | Action::EncampmentStrike { .. }
+                    | Action::DistrictStrike { .. }
                     | Action::KeepCity { .. }
                     | Action::RazeCity { .. }
                     | Action::LiberateCity { .. }
@@ -3154,10 +3157,12 @@ impl Game {
             self.remove_unit(id);
             self.on_unit_lost(defender);
         }
-        let city = self.cities.get_mut(&cid).unwrap();
-        city.encampment_hp = 0;
-        city.encampment_wall_hp = 0;
-        city.encampment_pillaged = true;
+        let mut state = self.defending_district_state(cid, target).unwrap();
+        state.hp = 0;
+        state.wall_hp = 0;
+        state.pillaged = true;
+        self.set_defending_district_state(cid, state);
+        self.map.tiles.get_mut(&target).unwrap().pillaged = true;
         self.enter_tile(uid, target);
     }
 
@@ -3172,7 +3177,7 @@ impl Game {
         let defender = self.cities[&cid].owner;
         let participant = self.units[&uid].clone();
         self.record_war_unit_participation(&participant, defender);
-        if self.cities[&cid].encampment_hp <= 0 {
+        if self.defending_district_state(cid, target).unwrap().hp <= 0 {
             self.consume_melee_attack(uid, target);
             self.pillage_encampment(uid, cid, target);
             return Ok(());
@@ -3184,7 +3189,7 @@ impl Game {
         if embarked && self.promotion_effect(&attacker, "amphibious") == 0.0 {
             attack_base -= 10.0;
         }
-        let mut defense = self.encampment_strength(cid);
+        let mut defense = self.defending_district_strength(cid, target);
         if self.crosses_river(attacker.pos, target)
             && self.promotion_effect(&attacker, "amphibious") == 0.0
         {
@@ -3194,17 +3199,24 @@ impl Game {
         let dealt = damage(attack, defense, &mut self.rng);
         let received = damage(defense, attack, &mut self.rng);
         let (ram, tower) = self.siege_support_effects(pid, cid, target, &spec.promotion_class);
-        self.encampment_take_damage(pid, cid, dealt, if ram { 1.0 } else { 0.15 }, tower);
+        self.defending_district_take_damage(
+            cid,
+            target,
+            dealt,
+            if ram { 1.0 } else { 0.15 },
+            tower,
+        );
         self.units.get_mut(&uid).unwrap().hp -= received;
         self.consume_melee_attack(uid, target);
         if self.units[&uid].hp <= 0 {
             self.remove_unit(uid);
             self.on_unit_lost(pid);
-            self.cities.get_mut(&cid).unwrap().encampment_hp =
-                self.cities[&cid].encampment_hp.max(1);
+            let mut state = self.defending_district_state(cid, target).unwrap();
+            state.hp = state.hp.max(1);
+            self.set_defending_district_state(cid, state);
             return Ok(());
         }
-        if self.cities[&cid].encampment_hp <= 0 {
+        if self.defending_district_state(cid, target).unwrap().hp <= 0 {
             self.award_initiated_combat_xp(uid, 10.0);
             self.pillage_encampment(uid, cid, target);
         } else {
@@ -3260,14 +3272,14 @@ impl Game {
         pid: usize,
         uid: u32,
         cid: u32,
-        _target: Pos,
+        target: Pos,
     ) -> Result<(), String> {
         let defender = self.cities[&cid].owner;
         let participant = self.units[&uid].clone();
         self.record_war_unit_participation(&participant, defender);
-        if self.cities[&cid].encampment_hp <= 0 {
+        if self.defending_district_state(cid, target).unwrap().hp <= 0 {
             self.consume_unit_attack(uid);
-            self.cities.get_mut(&cid).unwrap().encampment_hp = 0;
+            self.set_defending_district_hp(cid, target, 0);
             return Ok(());
         }
         let attacker = self.units[&uid].clone();
@@ -3280,15 +3292,25 @@ impl Game {
             attack_base -= 17.0;
         }
         let attack = effective_strength(attack_base, attacker.hp);
-        let dealt = damage(attack, self.encampment_strength(cid), &mut self.rng);
-        self.encampment_take_damage(pid, cid, dealt, if spec.siege { 1.0 } else { 0.5 }, false);
+        let dealt = damage(
+            attack,
+            self.defending_district_strength(cid, target),
+            &mut self.rng,
+        );
+        self.defending_district_take_damage(
+            cid,
+            target,
+            dealt,
+            if spec.siege { 1.0 } else { 0.5 },
+            false,
+        );
         self.consume_unit_attack(uid);
-        if self.cities[&cid].encampment_hp <= 0 {
+        if self.defending_district_state(cid, target).unwrap().hp <= 0 {
             if spec.siege {
-                self.cities.get_mut(&cid).unwrap().encampment_hp = 0;
+                self.set_defending_district_hp(cid, target, 0);
                 self.award_initiated_combat_xp(uid, 10.0);
             } else {
-                self.cities.get_mut(&cid).unwrap().encampment_hp = 1;
+                self.set_defending_district_hp(cid, target, 1);
                 self.award_initiated_combat_xp(uid, 3.0);
             }
         } else {
@@ -3328,7 +3350,7 @@ impl Game {
         {
             return Err("embarked units can only attack onto land".into());
         }
-        if let Some(cid) = self.encampment_at(target) {
+        if let Some(cid) = self.defending_district_at(target) {
             let owner = self.cities[&cid].owner;
             if owner != pid && self.is_at_war(pid, owner) {
                 return self.do_encampment_melee(pid, uid, cid, target, amphibious);
@@ -3684,7 +3706,7 @@ impl Game {
         if !self.unit_has_line_of_sight(uid, target) {
             return Err("line of sight blocked".into());
         }
-        if let Some(cid) = self.encampment_at(target) {
+        if let Some(cid) = self.defending_district_at(target) {
             let owner = self.cities[&cid].owner;
             if owner != pid && self.is_at_war(pid, owner) {
                 return self.do_encampment_ranged(pid, uid, cid, target);
@@ -3946,6 +3968,7 @@ impl Game {
             encampment_extra_strikes_used: 0,
             encampment_last_attacked: 0,
             encampment_pillaged: false,
+            defending_districts: Vec::new(),
             last_attacked: 0,
             pressure: BTreeMap::new(),
             loyalty: 100.0,
@@ -5769,12 +5792,12 @@ impl Game {
                     self.cities.get_mut(&cid).unwrap().hp = 1;
                 }
             }
-        } else if let Some(cid) = self.encampment_at(target) {
+        } else if let Some(cid) = self.defending_district_at(target) {
             if self.cities[&cid].owner != pid && self.is_at_war(pid, self.cities[&cid].owner) {
                 self.record_war_unit_participation(&attacker, self.cities[&cid].owner);
                 let dealt = damage(
                     district_attack,
-                    self.encampment_strength(cid),
+                    self.defending_district_strength(cid, target),
                     &mut self.rng,
                 );
                 let effectiveness = if spec.siege || self.gdr_full_wall_damage(&attacker) {
@@ -5782,9 +5805,9 @@ impl Game {
                 } else {
                     0.5
                 };
-                self.encampment_take_damage(pid, cid, dealt, effectiveness, false);
-                if self.cities[&cid].encampment_hp <= 0 {
-                    self.cities.get_mut(&cid).unwrap().encampment_hp = 1;
+                self.defending_district_take_damage(cid, target, dealt, effectiveness, false);
+                if self.defending_district_state(cid, target).unwrap().hp <= 0 {
+                    self.set_defending_district_hp(cid, target, 1);
                 }
             }
         } else if let Some(defender_id) = self.units_at(target).into_iter().find(|id| {
@@ -7468,7 +7491,10 @@ impl Game {
                 .iter()
                 .map(|uid| self.units[uid].owner)
                 .chain(self.city_at(*position).map(|c| self.cities[&c].owner))
-                .chain(self.encampment_at(*position).map(|c| self.cities[&c].owner));
+                .chain(
+                    self.defending_district_at(*position)
+                        .map(|c| self.cities[&c].owner),
+                );
             for owner in victims {
                 let victim = &self.players[owner];
                 if owner != pid && !victim.is_barbarian && !self.is_at_war(pid, owner) {
@@ -7712,7 +7738,7 @@ impl Game {
         if self.wdist(self.cities[&cid].pos, target) > 2 {
             return Err("out of range".into());
         }
-        if self.city_at(target).is_some() || self.encampment_at(target).is_some() {
+        if self.city_at(target).is_some() || self.defending_district_at(target).is_some() {
             return Err("cities cannot strike defensible districts".into());
         }
         let visible = self.player_vision_frame(pid);
@@ -7808,16 +7834,29 @@ impl Game {
             .get(&cid)
             .filter(|city| city.owner == pid)
             .ok_or_else(|| "not your city".to_string())?;
-        let position = city
-            .districts
-            .iter()
-            .find_map(|(district, position)| {
-                self.district_is_family(district, crate::name!("encampment"))
-                    .then_some(*position)
-            })
+        let position = self
+            .city_district_family_position(city, crate::name!("encampment"))
             .ok_or_else(|| "city has no Encampment".to_string())?;
-        if !self.encampment_can_strike(city) {
-            return Err("Encampment cannot strike".into());
+        self.do_defending_district_strike(pid, cid, position, target)
+    }
+
+    pub(super) fn do_defending_district_strike(
+        &mut self,
+        pid: usize,
+        cid: u32,
+        position: Pos,
+        target: Pos,
+    ) -> Result<(), String> {
+        let city = self
+            .cities
+            .get(&cid)
+            .filter(|city| city.owner == pid)
+            .ok_or_else(|| "not your city".to_string())?;
+        let mut district = self
+            .defending_district_state(cid, position)
+            .ok_or_else(|| "city has no defending district at source".to_string())?;
+        if !self.defending_district_can_strike(city, &district) {
+            return Err("defending district cannot strike".into());
         }
         if self.wdist(position, target) > 2 || !self.has_line_of_sight(position, target, true) {
             return Err("target out of range or sight".into());
@@ -7827,7 +7866,7 @@ impl Game {
         if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("target is not visible".into());
         }
-        if self.city_at(target).is_some() || self.encampment_at(target).is_some() {
+        if self.city_at(target).is_some() || self.defending_district_at(target).is_some() {
             return Err("defensible districts cannot target each other".into());
         }
         // See `peaceful_foreign_unit_at`.
@@ -7878,11 +7917,11 @@ impl Game {
             self.remove_unit(defender_id);
             self.on_unit_lost(owner);
         }
-        let city = self.cities.get_mut(&cid).unwrap();
-        if city.encampment_struck {
-            city.encampment_extra_strikes_used += 1;
+        if district.struck {
+            district.extra_strikes_used += 1;
         }
-        city.encampment_struck = true;
+        district.struck = true;
+        self.set_defending_district_state(cid, district);
         Ok(())
     }
 

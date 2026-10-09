@@ -36963,11 +36963,11 @@ impl AdvancedAi {
                     }
                 })
                 .unwrap_or(0.0)
-            + g.encampment_at(objective)
+            + g.defending_district_at(objective)
                 .filter(|city| enemies.contains(&g.cities[city].owner))
                 .and_then(|city| {
                     if !self.battlefront_observation || g.sees(&visible, g.cities[&city].pos) {
-                        Some(g.encampment_strength(city))
+                        Some(g.defending_district_strength(city, objective))
                     } else {
                         self.remembered_objective_strength(city)
                     }
@@ -37843,15 +37843,15 @@ impl AdvancedAi {
                         target: victim_pos,
                     });
                 }
-                if position.encampment_can_strike(city)
-                    && position
-                        .city_district_family_position(city, crate::name!("encampment"))
-                        .is_some_and(|source| position.wdist(source, victim_pos) <= 2)
-                {
-                    replies.push(Action::EncampmentStrike {
-                        city: city.id,
-                        target: victim_pos,
-                    });
+                for district in position.defending_districts(city) {
+                    if position.defending_district_can_strike(city, &district)
+                        && position.wdist(district.pos, victim_pos) <= 2
+                    {
+                        replies.push(
+                            position
+                                .defending_district_strike_action(city.id, &district, victim_pos),
+                        );
+                    }
                 }
             }
         }
@@ -38103,7 +38103,7 @@ impl AdvancedAi {
             });
         let target_encampment = target_city
             .is_none()
-            .then(|| after.encampment_at(target))
+            .then(|| after.defending_district_at(target))
             .flatten();
         let city_before = target_city.map(|city| {
             let before = &after.cities[&city];
@@ -38118,12 +38118,8 @@ impl AdvancedAi {
             )
         });
         let encampment_before = target_encampment.map(|city| {
-            let before = &after.cities[&city];
-            (
-                before.encampment_wall_hp,
-                before.encampment_hp,
-                before.encampment_pillaged,
-            )
+            let before = after.defending_district_state(city, target).unwrap();
+            (before.wall_hp, before.hp, before.pillaged)
         });
         if let Err(why) = after.apply(pid, action) {
             return (
@@ -38217,10 +38213,10 @@ impl AdvancedAi {
         } else if let Some(city) = target_encampment {
             let (wall_hp, encampment_hp, pillaged) =
                 encampment_before.expect("a target encampment has pre-attack state");
-            let after_city = &after.cities[&city];
-            let progress = (wall_hp - after_city.encampment_wall_hp).max(0) as f64 * 1.35
-                + (encampment_hp - after_city.encampment_hp).max(0) as f64;
-            if !pillaged && after_city.encampment_pillaged {
+            let after_district = after.defending_district_state(city, target).unwrap();
+            let progress = (wall_hp - after_district.wall_hp).max(0) as f64 * 1.35
+                + (encampment_hp - after_district.hp).max(0) as f64;
+            if !pillaged && after_district.pillaged {
                 value += progress + 180.0;
             } else if progress > 0.0 {
                 value += progress;
@@ -38560,6 +38556,11 @@ impl AdvancedAi {
             {
                 city.struck = false;
                 city.encampment_struck = false;
+                city.encampment_extra_strikes_used = 0;
+                for district in &mut city.defending_districts {
+                    district.struck = false;
+                    district.extra_strikes_used = 0;
+                }
             }
             for victim in &victims {
                 worst_reply = worst_reply.max(Self::forcing_reply_line(
@@ -38627,8 +38628,8 @@ impl AdvancedAi {
                     };
                     position.wdist(city.pos, victim.pos) <= 2
                         || position
-                            .city_district_family_position(city, crate::name!("encampment"))
-                            .is_some_and(|source| position.wdist(source, victim.pos) <= 2)
+                            .defending_districts(city)
+                            .any(|district| position.wdist(district.pos, victim.pos) <= 2)
                 })
             })
     }
@@ -38917,7 +38918,7 @@ impl AdvancedAi {
             .filter(|city| g.cities[city].owner != pid && g.is_at_war(pid, g.cities[city].owner));
         let target_encampment = target_city
             .is_none()
-            .then(|| g.encampment_at(target))
+            .then(|| g.defending_district_at(target))
             .flatten();
         let target_unit = (target_city.is_none() && target_encampment.is_none())
             .then(|| {
@@ -38976,11 +38977,10 @@ impl AdvancedAi {
                 value += 25.0;
             }
         } else if let Some(city) = target_encampment {
-            let before = &g.cities[&city];
-            let after_city = &after.cities[&city];
-            value += (before.encampment_wall_hp - after_city.encampment_wall_hp).max(0) as f64
-                * 1.35
-                + (before.encampment_hp - after_city.encampment_hp).max(0) as f64;
+            let before = g.defending_district_state(city, target).unwrap();
+            let after_district = after.defending_district_state(city, target).unwrap();
+            value += (before.wall_hp - after_district.wall_hp).max(0) as f64 * 1.35
+                + (before.hp - after_district.hp).max(0) as f64;
         }
         value
     }
@@ -41042,7 +41042,9 @@ impl AdvancedAi {
 
     fn defensive_strike_value(&self, g: &Game, pid: usize, action: &Action) -> f64 {
         let target = match action {
-            Action::CityStrike { target, .. } | Action::EncampmentStrike { target, .. } => *target,
+            Action::CityStrike { target, .. }
+            | Action::EncampmentStrike { target, .. }
+            | Action::DistrictStrike { target, .. } => *target,
             _ => return f64::NEG_INFINITY,
         };
         let defenders: Vec<(u32, i32, f64, f64, bool, bool)> = g
@@ -41090,33 +41092,44 @@ impl AdvancedAi {
     }
 
     fn advanced_encampment_strikes(&self, g: &mut Game, pid: usize) {
-        let has_ready_encampment = g.player_city_ids(pid).into_iter().any(|cid| {
-            let city = &g.cities[&cid];
-            city.encampment_hp > 0
-                && city.encampment_wall_hp > 0
-                && !city.encampment_pillaged
-                && !city.encampment_struck
-        });
-        if !has_ready_encampment {
-            return;
-        }
-        let mut best: BTreeMap<u32, (f64, Pos)> = BTreeMap::new();
-        for action in g.legal_actions_within(pid, ActionFamilies::CORE) {
-            let Action::EncampmentStrike { city, target } = action else {
-                continue;
-            };
-            let strike = Action::EncampmentStrike { city, target };
-            let target_value = self.defensive_strike_value(g, pid, &strike);
-            let candidate = (target_value, target);
-            if best.get(&city).is_none_or(|old| {
-                target_value.total_cmp(&old.0).is_gt()
-                    || (target_value.total_cmp(&old.0).is_eq() && target < old.1)
-            }) {
-                best.insert(city, candidate);
+        loop {
+            let mut best: BTreeMap<(u32, Pos), (f64, Pos, Action)> = BTreeMap::new();
+            for action in g.legal_actions_within(pid, ActionFamilies::CORE) {
+                let (city, source, target) = match action {
+                    Action::EncampmentStrike { city, target } => {
+                        let Some(source) = g.city_district_family_position(
+                            &g.cities[&city],
+                            crate::name!("encampment"),
+                        ) else {
+                            continue;
+                        };
+                        (city, source, target)
+                    }
+                    Action::DistrictStrike {
+                        city,
+                        source,
+                        target,
+                    } => (city, source, target),
+                    _ => continue,
+                };
+                let target_value = self.defensive_strike_value(g, pid, &action);
+                if !target_value.is_finite() {
+                    continue;
+                }
+                let key = (city, source);
+                if best.get(&key).is_none_or(|old| {
+                    target_value.total_cmp(&old.0).is_gt()
+                        || (target_value.total_cmp(&old.0).is_eq() && target < old.1)
+                }) {
+                    best.insert(key, (target_value, target, action));
+                }
             }
-        }
-        for (city, (_, target)) in best {
-            let _ = g.apply(pid, &Action::EncampmentStrike { city, target });
+            let Some((_, (_, _, strike))) = best.into_iter().next() else {
+                break;
+            };
+            if g.apply(pid, &strike).is_err() {
+                break;
+            }
         }
     }
 
@@ -41205,7 +41218,10 @@ impl AdvancedAi {
                     .iter()
                     .map(|uid| g.units[uid].owner)
                     .chain(g.city_at(*position).map(|city| g.cities[&city].owner))
-                    .chain(g.encampment_at(*position).map(|city| g.cities[&city].owner))
+                    .chain(
+                        g.defending_district_at(*position)
+                            .map(|city| g.cities[&city].owner),
+                    )
                     .any(|owner| {
                         owner == pid || (!g.players[owner].is_barbarian && !g.is_at_war(pid, owner))
                     })
@@ -43148,3 +43164,6 @@ mod faith_army_quality_tests;
 
 #[cfg(test)]
 mod naval_production_tests;
+
+#[cfg(test)]
+mod defending_district_tests;

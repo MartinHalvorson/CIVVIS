@@ -861,6 +861,7 @@ struct HostCityStrikes {
     turn: Option<u32>,
     city: std::collections::BTreeMap<i64, i32>,
     encampment: std::collections::BTreeMap<i64, i32>,
+    district: std::collections::BTreeMap<(i64, (i32, i32)), i32>,
 }
 
 impl HostCityStrikes {
@@ -870,6 +871,7 @@ impl HostCityStrikes {
             self.turn = Some(turn);
             self.city.clear();
             self.encampment.clear();
+            self.district.clear();
         }
         for order in orders {
             let Some(subject) = order.subject else {
@@ -878,6 +880,11 @@ impl HostCityStrikes {
             match order.kind.as_str() {
                 "city_strike" => *self.city.entry(subject).or_insert(0) += 1,
                 "encampment_strike" => *self.encampment.entry(subject).or_insert(0) += 1,
+                "district_strike" => {
+                    if let Some(source) = order.verb.as_deref().and_then(district_strike_source) {
+                        *self.district.entry((subject, source)).or_insert(0) += 1;
+                    }
+                }
                 _ => {}
             }
         }
@@ -901,8 +908,21 @@ impl HostCityStrikes {
                 live.encampment_extra_strikes_used =
                     live.encampment_extra_strikes_used.max(count - 1);
             }
+            for district in &mut live.defending_districts {
+                let source = civvis::hex::axial_to_offset(district.pos.0, district.pos.1);
+                if let Some(&count) = self.district.get(&(host_city, source)) {
+                    district.struck = true;
+                    district.extra_strikes_used = district.extra_strikes_used.max(count - 1);
+                }
+            }
         }
     }
+}
+
+/// Offset source coordinates carried separately from the target in a district order.
+fn district_strike_source(verb: &str) -> Option<(i32, i32)> {
+    let (x, y) = verb.split_once(':')?;
+    Some((x.parse().ok()?, y.parse().ok()?))
 }
 
 /// Plots the host will not walk a unit onto, learned from moves that went
@@ -5459,6 +5479,34 @@ fn translate(
                 verb: None,
                 pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
             }),
+        Action::DistrictStrike {
+            city,
+            source,
+            target,
+        } => {
+            let live = mirror_state.game.cities.get(city)?;
+            let district = live.defending_districts.iter().find(|d| d.pos == *source)?;
+            if !live
+                .districts
+                .iter()
+                .any(|(kind, pos)| *kind == district.kind && *pos == *source)
+            {
+                return None;
+            }
+            mirror_state
+                .cid_of
+                .iter()
+                .find(|(_, cid)| **cid == *city)
+                .map(|(native, _)| {
+                    let (x, y) = civvis::hex::axial_to_offset(source.0, source.1);
+                    Order {
+                        kind: "district_strike",
+                        subject: Some(*native),
+                        verb: Some(format!("{x}:{y}")),
+                        pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
+                    }
+                })
+        }
         // ★★★ THE CAPTURED CITY'S DISPOSITION. `KeepCity` / `RazeCity` /
         // `LiberateCity` are mandatory and exclusive on the board
         // (`pending_city_capture_actions`: nothing else is legal until one is
@@ -7215,7 +7263,7 @@ fn verify_order_with_context(
         }
         "city_focus" => citizen_growth::verify(order, after),
         "city" => verify_city_disposition(order, before, after),
-        "city_strike" | "encampment_strike" => {
+        "city_strike" | "encampment_strike" | "district_strike" => {
             let harmed = order.pos.is_some_and(|p| target_harmed(before, after, p));
             if harmed
                 || order
@@ -19831,3 +19879,7 @@ mod air_receipt_tests;
 #[cfg(test)]
 #[path = "civvis_orders/input_capture_tests.rs"]
 mod input_capture_tests;
+
+#[cfg(test)]
+#[path = "civvis_orders/defending_district_tests.rs"]
+mod defending_district_tests;

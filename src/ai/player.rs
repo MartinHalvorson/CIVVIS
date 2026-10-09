@@ -387,6 +387,7 @@ fn execute_observed_action_recorded(
                     | Action::Ranged { .. }
                     | Action::CityStrike { .. }
                     | Action::EncampmentStrike { .. }
+                    | Action::DistrictStrike { .. }
                     | Action::AirStrike { .. }
                     | Action::TheologicalAttack { .. }
             ),

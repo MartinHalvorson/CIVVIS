@@ -163,6 +163,7 @@ fn narrowed_call_sites_still_see_their_own_kinds() {
                 action,
                 Action::CityStrike { .. }
                     | Action::EncampmentStrike { .. }
+                    | Action::DistrictStrike { .. }
                     | Action::DeclareWar { .. }
                     | Action::DeclareWarWithCasusBelli { .. }
             )
@@ -180,6 +181,7 @@ fn narrowed_call_sites_still_see_their_own_kinds() {
                     | Action::Fortify { .. }
                     | Action::CityStrike { .. }
                     | Action::EncampmentStrike { .. }
+                    | Action::DistrictStrike { .. }
             )
         }),
         (ActionFamilies::UNITS, |action| {

@@ -1683,6 +1683,7 @@ struct PublicCity<'a> {
     encampment_hp: i32,
     encampment_wall_hp: i32,
     encampment_pillaged: bool,
+    defending_districts: &'a [crate::game::DefendingDistrict],
     religion: Option<&'a str>,
 }
 
@@ -1703,6 +1704,9 @@ fn public_city_json(city: PublicCity<'_>) -> Value {
         "encampment_hp": city.encampment_hp,
         "encampment_wall_hp": city.encampment_wall_hp,
         "encampment_pillaged": city.encampment_pillaged,
+        "defending_districts": city.defending_districts.iter().map(|d| json!({
+            "kind": d.kind, "pos": d.pos, "hp": d.hp, "wall_hp": d.wall_hp, "pillaged": d.pillaged,
+        })).collect::<Vec<_>>(),
         "religion": city.religion,
     })
 }
@@ -1724,6 +1728,7 @@ fn remembered_city_json(city: &RememberedCity) -> Value {
         encampment_hp: city.encampment_hp,
         encampment_wall_hp: city.encampment_wall_hp,
         encampment_pillaged: city.encampment_pillaged,
+        defending_districts: &city.defending_districts,
         religion: city.religion.as_deref(),
     })
 }
@@ -1785,6 +1790,7 @@ fn live_city_json(g: &Game, pid: usize, city: &City, omniscient: bool) -> Value 
         encampment_hp: city.encampment_hp,
         encampment_wall_hp: city.encampment_wall_hp,
         encampment_pillaged: city.encampment_pillaged,
+        defending_districts: &city.defending_districts,
         religion: g.city_religion(city),
     });
     // Religious pressure is visible with the city itself. Remembered cities

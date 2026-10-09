@@ -150,6 +150,20 @@ impl Game {
 
     pub fn encampment_strength(&self, cid: u32) -> f64 {
         let city = &self.cities[&cid];
+        let pos = self
+            .city_district_family_position(city, crate::name!("encampment"))
+            .unwrap_or(city.pos);
+        self.district_strength_from_health(cid, pos, city.encampment_hp, city.encampment_wall_hp)
+    }
+
+    pub(super) fn district_strength_from_health(
+        &self,
+        cid: u32,
+        pos: Pos,
+        hp: i32,
+        wall_hp: i32,
+    ) -> f64 {
+        let city = &self.cities[&cid];
         let current_best = self
             .units
             .values()
@@ -162,7 +176,7 @@ impl Game {
             .map(|value| *value as f64)
             .unwrap_or(current_best);
         let mut strength = (strongest_built - 10.0).max(10.0);
-        if city.encampment_wall_hp > 0 {
+        if wall_hp > 0 {
             strength += 3.0
                 * city
                     .buildings
@@ -171,50 +185,14 @@ impl Game {
                     .count() as f64;
         }
         strength += 2.0 * self.city_defense_district_count(city) as f64;
-        if let Some(position) = self.city_district_family_position(city, crate::name!("encampment"))
-        {
-            strength += self.tile_defense_bonus(position);
-        }
+        strength += self.tile_defense_bonus(pos);
         if self.city_has_palace(city) {
             strength += 3.0;
         }
         strength += self.policy_effect(city.owner, "city_defense");
         strength += self.city_state_envoy_strength(city.owner);
-        let damaged = (10.0 - city.encampment_hp.clamp(0, 100) as f64 / 10.0).round();
+        let damaged = (10.0 - hp.clamp(0, 100) as f64 / 10.0).round();
         (strength - damaged).max(0.0)
-    }
-
-    pub(super) fn encampment_take_damage(
-        &mut self,
-        _attacker: usize,
-        cid: u32,
-        damage: i32,
-        wall_mult: f64,
-        bypass_walls: bool,
-    ) {
-        let (wall, max) = {
-            let city = &self.cities[&cid];
-            (city.encampment_wall_hp, self.city_max_wall_hp(city))
-        };
-        let city = self.cities.get_mut(&cid).unwrap();
-        city.encampment_last_attacked = self.turn;
-        if wall > 0 && max > 0 {
-            let fraction = wall as f64 / max as f64;
-            let through = if bypass_walls {
-                damage
-            } else if fraction >= 0.8 {
-                1
-            } else if fraction >= 0.2 {
-                damage / 2
-            } else {
-                damage
-            };
-            city.encampment_wall_hp =
-                (wall - ((damage as f64 * wall_mult).round() as i32).max(1)).max(0);
-            city.encampment_hp -= through.max(1);
-        } else {
-            city.encampment_hp -= damage;
-        }
     }
 
     pub(super) fn district_under_siege(&self, owner: usize, position: Pos) -> bool {

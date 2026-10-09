@@ -499,6 +499,7 @@ fn public_city(c: &RememberedCity) -> City {
         encampment_extra_strikes_used: 0,
         encampment_last_attacked: 0,
         encampment_pillaged: c.encampment_pillaged,
+        defending_districts: c.defending_districts.clone(),
         last_attacked: 0,
         pressure: c.religion.iter().map(|r| (r.clone(), 100.0)).collect(),
         atheist_pressure: 0.0,

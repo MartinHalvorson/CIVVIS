@@ -12798,6 +12798,47 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and "CITY_STRIKE" or "city_strike_throw";
 	end
 
+	-- WorldInput.lua:2626 passes the selected district object to CanStartCommand.
+	-- Expansion2 CityBannerManager.lua:697-700 gives the Oppidum this gun too.
+	-- Keep source coordinates separate from the target, and prove its parent:
+	-- native city IDs are scoped to the player, while one city can have two forts.
+	if kind == "district_strike" then
+		local sx, sy = verb:match("^(%d+):(%d+)$");
+		sx, sy = tonumber(sx), tonumber(sy);
+		if sx == nil or sy == nil then return false, "district_strike_bad_source"; end
+		if x == nil or y == nil then return false, "district_strike_no_target"; end
+		local district = try(function() return CityManager.GetDistrictAt(sx, sy); end, nil);
+		if district == nil then return false, "district_strike_source_missing"; end
+		local parent = try(function() return district:GetCity(); end, nil);
+		if parent == nil or try(function() return parent:GetOwner(); end, -1) ~= pid
+				or try(function() return parent:GetID(); end, -1) ~= subject then
+			return false, "district_strike_wrong_parent";
+		end
+		if try(function() return district:IsComplete(); end, false) ~= true
+				or try(function() return district:IsPillaged(); end, true) ~= false then
+			return false, "district_strike_unavailable";
+		end
+		local base = try(function() return GameInfo.Districts[district:GetType()]; end, nil);
+		local name = base and base.DistrictType;
+		local rangeRow = name and try(function() return GameInfo.Districts_XP2[name]; end, nil);
+		local range = tonumber(rangeRow and rangeRow.AttackRange);
+		if name == "DISTRICT_CITY_CENTER" or range == nil or range <= 0 then
+			return false, "district_strike_not_defending";
+		end
+		local params = {};
+		params[UnitOperationTypes.PARAM_X] = x;
+		params[UnitOperationTypes.PARAM_Y] = y;
+		if not try(function()
+			return CityManager.CanStartCommand(district, CityCommandTypes.RANGE_ATTACK, params);
+		end, false) then return false, "district_strike_refused"; end
+		local warRefusal = CivvisLedger.refuseWarStarter(district, subject, "DISTRICT_STRIKE", x, y, turn);
+		if warRefusal ~= nil then return false, warRefusal; end
+		local ok = pcall(function()
+			CityManager.RequestCommand(district, CityCommandTypes.RANGE_ATTACK, params);
+		end);
+		return ok, ok and "DISTRICT_STRIKE" or "district_strike_throw";
+	end
+
 	-- The encampment's strike, same shape as the city's: `subject` is the
 	-- OWNING city's Firaxis id, and the command goes to the district OBJECT —
 	-- WorldInput.lua:2626 hands `CityManager.CanStartCommand` the selected
@@ -12813,7 +12854,11 @@ local function applyOrder(player, pid, row, turn)
 		local encampment = nil;
 		try(function()
 			for _, d in city:GetDistricts():Members() do
-				if d:GetType() == row.Index then encampment = d; end
+				local candidate = GameInfo.Districts[d:GetType()];
+				local name = candidate and candidate.DistrictType;
+				if d:GetType() == row.Index or name == "DISTRICT_IKANDA" or name == "DISTRICT_THANH" then
+					encampment = d;
+				end
 			end
 		end);
 		if encampment == nil then return false, "encampment_strike_no_encampment"; end

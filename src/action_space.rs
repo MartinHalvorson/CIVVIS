@@ -31,7 +31,7 @@ use crate::Pos;
 /// is eighty-six lines of nothing, and every append would rewrite the block.
 #[rustfmt::skip]
 #[cfg(feature = "closed-experiments")]
-pub const KINDS: [&str; 86] = [
+pub const KINDS: [&str; 87] = [
     "move", "move_to", "attack", "ranged", "found_city", "improve",
     "found_corporation", "move_product", "contribute_project",
     "contribute_district", "perform_concert", "pillage", "repair_improvement",
@@ -52,7 +52,7 @@ pub const KINDS: [&str; 86] = [
     "liberate_city", "end_turn", "air_pillage", "priority_target", "upgrade",
     "build_railroad", "buy_plot", "send_delegation", "send_embassy",
     "propose_defensive_pact", "propose_joint_war", "request_promise", "demand_gold",
-    "aim_mass_driver", "mass_driver_strike", "swap",
+    "aim_mass_driver", "mass_driver_strike", "swap", "district_strike",
 ];
 
 /// The original scalar action block. It is kept as an append-only prefix so
@@ -261,6 +261,7 @@ pub fn kind_name(action: &Action) -> &'static str {
         Action::AimMassDriver { .. } => "aim_mass_driver",
         Action::MassDriverStrike { .. } => "mass_driver_strike",
         Action::EncampmentStrike { .. } => "encampment_strike",
+        Action::DistrictStrike { .. } => "district_strike",
         Action::KeepCity { .. } => "keep_city",
         Action::RazeCity { .. } => "raze_city",
         Action::LiberateCity { .. } => "liberate_city",
@@ -288,6 +289,7 @@ pub fn target_tile(g: &Game, action: &Action) -> Option<Pos> {
         | Action::PriorityTarget { target, .. }
         | Action::CityStrike { target, .. }
         | Action::WmdStrike { target, .. }
+        | Action::DistrictStrike { target, .. }
         | Action::EncampmentStrike { target, .. } => Some(*target),
         Action::FoundCity { unit }
         | Action::Improve { unit, .. }
