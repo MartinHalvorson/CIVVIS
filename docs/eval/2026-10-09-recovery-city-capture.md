@@ -1,124 +1,117 @@
 # City capture during unit recovery
 
-The public preservation module initially blocks every unit in its recovery
-set until it reaches full health. Its finisher admission also rejects every
-recovering attacker before considering the already existing survival bounds.
-The thirteen-control unchanged-production baseline now proves both defects.
-The candidate permits the capture for an unassigned land melee unit while
-retaining recovery memory for its other orders.
+The preservation filter previously withheld every recovering unit's orders
+until full health, including a survivable adjacent city capture. Finisher
+admission also rejected a recovering attacker before considering the existing
+survival bounds. The unchanged-production baseline executes all thirteen
+registered cases: exactly those two defects fail and eleven controls pass.
+The candidate preserves a narrowly verified capture while retaining recovery
+memory for other orders.
 
 ## Native evidence and limits
 
 The completed Gran Colombia four-player native game
-`civvis-20261009T054512Z` lost to Culture on turn 223. Its summary records 80
-unit kills and no city captures. A read-only combat audit accounts for those
-kills: 45 barbarians, 18 player 3, 16 player 2 and one player 4. All 36 recorded
-friendly attacks on districts used Bombers; city centers use the district
-event type. Fourteen attacked Gao, a non-capital Malian city at native
-`(18,22)`. Bomber combat readbacks reach zero city health on turns 222–223,
-while the state exports still give ownership to Mali.
+`civvis-20261009T054512Z` lost to Culture on turn 223. It records 80 unit kills
+and no city captures: 45 kills are barbarians, 18 player 3, 16 player 2 and one
+player 4. All 36 friendly district combats use Bombers; native city centers
+use the district event type. Fourteen target Gao, a non-capital Malian city
+at native `(18,22)`. Combat readbacks reach zero city health on turns 222–223,
+while state exports retain Malian ownership.
 
-Modern Armor `15400963` requests two attacks on Gao on turn 222. Both next-turn
-verdicts are `target_unharmed`, with no attributed melee combat event. On turn
-223, its exported orders fortify it and then move it away. The planner logs
-projected captures, followed by preservation at 73 health with an upper reply
-of zero. Its prefilter action payload is not recorded, so this evidence does
-not establish the exact cause of either failed attack or prove an alternative
-native operation would have captured the city.
+Modern Armor `15400963` requests two attacks on Gao on turn 222. Both verdicts
+are `target_unharmed`, with no attributed melee combat. On turn 223 it fortifies
+and moves away. The planner projects captures and then records preservation
+at 73 health with an upper reply of zero. Original prefilter orders are absent,
+so this does not establish the exact cause of the failed native attacks or
+prove an alternative native operation would capture the city.
 
-The native revision was `a66650568cff2b2d6c4ccb2db59a1c55fb72256f`.
-Its `src/ai/advanced/unit_preservation.rs` is byte-identical to the public
-module at investigation start, SHA-256
+Native revision `a66650568cff2b2d6c4ccb2db59a1c55fb72256f` and the public
+preservation module at investigation start share SHA-256
 `fd3d54fdec3778abcfb629093900b0468f9e6b1ac154ba39eeeb8708c41da576`.
-The rest of the controller is not source-equivalent. Original events,
-decisions, why log and summary hashes remain unchanged in
-`native-054512-capture-gap-receipt.json` under the retained goal artifacts.
+The rest of the controller is not source-equivalent. Original input hashes
+remain unchanged in `native-054512-capture-gap-receipt.json` under the retained
+goal artifacts. No native lane, pin, policy, installed mod, private source or
+process is changed. No candidate adoption, native capture or win-rate gain is
+credited; completed native readbacks and matched outcomes remain needed.
 
-## Registered reproduction
+## Candidate behavior
 
-The fixture starts a 73-health Modern Armor next to an unwalled enemy city at
-one health. A second enemy city prevents the capture from manufacturing safety
-by eliminating the observed opponent. The native strike strength preview
-`95 versus 92` is retained as a conservative retaliation bound. The ordinary
-finisher already considers this capture survivable; adding the recovery latch
-should not erase it in either finisher admission or the final order filter.
-The preserved action must legally change ownership and occupy the city, while
-the input board remains unchanged.
+One original-adjacent land melee attack, optionally followed by fortification,
+may pass recovery when the observed enemy city is at war, unwalled and already
+at zero or one health. A disposable legal replay must change ownership and
+leave the living actor on the city. Existing conservative host retaliation
+bounds remain enforced.
 
-Controls retain ordinary recovery movement, nonrecovering captures, standing
-walls, a city that cannot be captured, lethal native retaliation, an approach
-from two tiles away, a ranged strike, and peace. Additional controls check an exposed enemy reply at post-exchange health,
-a lethal burning tile despite a guaranteed capture, and an attack with no
-movement. The first pushed baseline registered ten tests; the corrected suite
-now registers thirteen. Candidate results are pending. The independent escort work in
-PR #4011 retains its separate tests and joint-movement policy. Its changed
-hunks are not rewritten by this draft's finisher-admission investigation.
+The wounded actor must survive the captured-position reply and an exposed
+original-position probe at post-exchange health. The exposed probe retains
+all originally observed enemies and their city ownership, preventing garrison
+shielding or observed-world elimination from manufacturing permission. The
+whole-turn fixed point rechecks ownership, occupation and survival after the
+other proposed orders are filtered.
 
-The first test checkpoint's quality gate reports one unused trait import in
-the new test module. That import is removed without changing any assertion;
-the warning is separate from the expected recovery-admission failures.
+Recovery memory stays set. Ordinary movement, ranged strikes, approaches,
+standing walls, uncertain captures, peace, lethal retaliation, exposed replies,
+lethal hazards and exhausted attackers retain the existing recovery behavior.
+A living assigned Settler guard keeps its escort role. PR #4011's shared
+movement, founding and retreat handling is preserved.
 
-The first behavioral baseline stops before the intended capture cases on two
-fixture errors. Arena mode forces war despite clearing the relation, so the
-peace control now selects the ordinary Continents mode before clearing it.
-The original ordinary-move destination coincides with a preservation retreat;
-the corrected control uses a longer legal move and verifies its original
-arrival. Four other new controls pass before fail-fast stops the first run.
-The corrected baseline must reproduce the intended recovery failures before
-any production implementation is accepted.
+The fixture uses a 73-health Modern Armor beside an unwalled one-health city
+and retains the `95 versus 92` native strength preview. A second enemy city
+prevents elimination from manufacturing safety. Fourteen candidate controls
+check legal physical ownership and occupation, unchanged input, retained
+recovery memory, both admission/filter defects and the preserved exclusions.
+The city finisher case verifies its API contract; it does not establish that a
+current native city planner calls that finisher API.
 
-No native lane, pin, policy, installed mod or private source is changed.
-Synthetic regression results will not establish a native capture or win-rate
-gain. Adoption, completed native readbacks and matched outcomes remain needed.
+## Validation and retained failures
 
-The complete twelve-test local baseline on `fa8307aa5` exits 101 after all
-cases execute: nine pass, both intended recovery cases fail, and the added
-enemy-reply fixture fails its inappropriate ordinary-finisher assertion.
-The existing danger field shields city garrisons from unit strikes. That
-fixture now directly checks the wounded attacker on its exposed approach
-tile, and an added burning-tile control verifies a lethal 75-damage hazard.
-The thirteen-test baseline still leaves production behavior unchanged and
-must report precisely the two intended failures with eleven controls passing.
-A prospective exception will require survival both at the captured city and
-on the exposed approach at post-exchange health; it will retain recovery
-memory and all existing retaliation, legality and whole-turn safety checks.
+The first baseline's Arena peace fixture still forces war, and its ordinary
+move accidentally matches a preservation retreat. Those fixtures are corrected
+using Continents and a different legal destination. An unused trait import is
+removed separately. None of those failures counts as behavioral defect proof.
 
-## Candidate and validation
+The complete twelve-case local baseline on `fa8307aa5` executes all cases:
+nine pass, the two intended defects fail, and an inappropriate enemy-reply
+assertion fails. Existing danger modeling shields city garrisons. That fixture
+is corrected to verify the exposed original position at post-exchange health;
+an additional control checks a lethal 75-damage burning tile.
 
-The complete thirteen-control baseline on `81c70e045` exits 101 with exactly
-the two intended failures and eleven passing controls. Registered Rust/test/
-Cargo hashes remain unchanged. Independent CI `37904606128` also reproduces
-the erased capture and passes all eleven controls; its fail-fast run stops
-before scheduling the finisher case. Earlier fixture and quality failures
-remain separate from these verified behavior failures.
+The complete thirteen-case local baseline on `81c70e045` exits 101 with exactly
+two intended failures and eleven passes. Registered hashes remain unchanged.
+Independent CI `37904606128` reproduces the erased capture and passes all eleven
+controls; fail-fast stops before scheduling the finisher case. Production is
+implemented only after this exact baseline. The candidate adds a fourteenth
+control for the living Settler guard.
 
-The candidate independently replays one adjacent land melee capture, optionally
-followed by fortification. The observed enemy city must already be unwalled,
-at zero or one health, and at war. A legal replay must change ownership and
-leave the actor alive on that city. Its conservative post-exchange health must
-survive both the captured-tile reply and an exposed original-position probe
-which retains every originally observed enemy. It therefore cannot rely on
-city garrison shielding or an observed-world elimination to license the
-exception. The whole-turn fixed point also checks that the city remains owned
-and the actor still occupies it after the remaining proposed orders.
+The obsolete pre-merge candidate compile is stopped intentionally with exit
+130 before any tests after GitHub reports a real adjacent-insertion conflict
+with merged PR #4011. Only the owned Cargo and rustc processes are interrupted.
+This is not a passing test result or a timeout. Main `66b411361` is merged once
+as `9643f4612`, retaining both recovery eligibility and shared departure lines,
+with every escort hunk preserved.
 
-Recovery memory remains set. Ordinary movements, ranged attacks, approaches,
-standing walls, uncertain captures, lethal host retaliation, exposed replies,
-lethal hazards and exhausted attackers keep the existing recovery behavior. A
-living assigned Settler guard also keeps recovery; a fourteenth candidate
-control checks that it does not take this exception. The original capture
-control additionally checks retained recovery memory after physical occupation.
+Validation on `9643f4612`:
 
-Candidate focused local, complete Rust, cost and final integration checks are
-pending. Main integration will preserve and revalidate all twenty-one escort
-controls from the merged PR #4011. No native adoption or win-rate gain is
-credited by this synthetic candidate.
+- Local focus: all 35 controls pass, zero failures — 14 capture plus all 21
+  preservation/escort controls. All registered hashes remain unchanged.
+- Complete local `cargo test --profile ci --locked -- --test-threads=1` exits
+  zero: 4,739 pass, zero fail, 54 existing ignores, covering the library, CLI,
+  orders, integration, protocol and documentation targets. All 525 registered
+  source/test/data/Cargo file hashes remain unchanged. Both existing spectator
+  timing controls pass without source changes.
+- Independent CI `37907493134`: all 4,739 Rust tests pass with 50 existing
+  ignores and four ignored documentation examples; all 35 preservation
+  controls and overlapping 71/21/22 feature checks pass. Provenance, fidelity,
+  quality, policy, overwrite, mod and publication gates pass.
+- Cost CI `37907493173` passes its 8% budget: median -0.19% over five pairs,
+  within the 1% noise floor, resolution ±0.43 percentage points, IQR 0.66.
+  No speed gain is claimed.
+- `git diff --check origin/main...` passes. This is AI policy with no engine
+  mechanic change requiring an engine soak.
 
-The pre-merge candidate focus run was deliberately stopped with exit 130
-before any tests ran after GitHub reported `CONFLICTING`: the new recovery
-retention line and PR #4011’s shared-departure line occupied the same insertion
-point. This is a compilation stop for an actual integration conflict, not a
-test pass or timeout result. Main `66b411361` is merged once; the resolution
-retains both lines and every escort hunk. The combined local focus run now
-covers fourteen capture controls and all twenty-one preservation/escort
-controls, followed by the required full Rust validation.
+Receipts and complete logs remain in the goal artifacts. The final documentation
+checkpoint changes only this evaluation record; the validated Rust sources,
+tests, data and Cargo files remain byte-identical. Final-head CI, ready gates,
+squash integration and live adoption of the public revision are tracked by the
+repository workflow and integration receipt. Public spectator deployment is
+separate from adoption by the private native verification controller.
