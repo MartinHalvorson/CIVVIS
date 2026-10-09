@@ -39175,7 +39175,12 @@ impl AdvancedAi {
                     {
                         let distance = g.wdist(*to, objective);
                         let improvement = current_distance - distance;
-                        let reaches = (distance <= g.unit_attack_range(uid)) as i32;
+                        let range = g.unit_attack_range(uid);
+                        // Award new reach, rather than paying again for an
+                        // objective already in range. Keep the frozen anchor.
+                        let reaches = (distance <= range
+                            && (self.base.legacy_movement || current_distance > range))
+                            as i32;
                         Some((
                             improvement as f64 * 18.0 + reaches as f64 * 35.0,
                             *to,
@@ -42960,6 +42965,9 @@ mod faith_army_budget_tests;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod air_rebase_progress_tests;
 
 #[cfg(test)]
 mod hostile_memory_tests;
