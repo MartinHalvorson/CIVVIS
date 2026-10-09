@@ -7286,6 +7286,17 @@ impl AdvancedAi {
         self.civic_awaits_its_inspiration = false;
     }
 
+    /// Opt-in gene `backlog-builder-takes-the-queue`; see
+    /// `advanced/backlog_builder_takes_the_queue.rs`.
+    pub fn enable_backlog_builder_takes_the_queue(&mut self) {
+        self.backlog_builder_takes_the_queue = true;
+    }
+
+    /// The twin of `enable_backlog_builder_takes_the_queue`.
+    pub fn disable_backlog_builder_takes_the_queue(&mut self) {
+        self.backlog_builder_takes_the_queue = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

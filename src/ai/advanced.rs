@@ -5067,6 +5067,11 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `backlog-builder-takes-the-queue`: while the worked backlog runs
+    /// ahead of the Builder charges, the city that trains a Builder soonest
+    /// puts one at the head of its queue ahead of the governor's rescoring.
+    /// See `advanced/backlog_builder_takes_the_queue.rs`. Off by default.
+    backlog_builder_takes_the_queue: bool,
     /// `bombers-fly-on-a-small-stock`: the air wing counts its launch wing
     /// fuelled once the bank covers its training cost and a few turns of its
     /// upkeep, and its Aluminum purchase takes any offer that big. See
@@ -9203,6 +9208,7 @@ mod far_settle_site;
 mod gold_buys_the_settler;
 mod granary_claims_the_bound_queue;
 mod trader_fills_the_idle_route;
+mod backlog_builder_takes_the_queue;
 /// `civic-awaits-its-inspiration`: the civic chooser waits for a near
 /// inspiration. See `advanced/civic_inspiration_wait.rs`.
 mod civic_inspiration_wait;
@@ -10074,6 +10080,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            backlog_builder_takes_the_queue: false,
             bombers_fly_on_a_small_stock: false,
             builders_improve_the_worked_for_production: false,
             builder_worked_frame: RefCell::new(worked_production::WorkedTilesFrame::default()),
@@ -30929,6 +30936,11 @@ impl AdvancedAi {
             let idle_route_trader_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.idle_route_trader_holds(g, pid, cid, plan, item));
+            // `backlog-builder-takes-the-queue`: the claimed Builder finishes
+            // while the worked backlog still runs ahead of the charges.
+            let backlog_builder_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.backlog_builder_holds(g, pid, cid, plan, item));
             // `industrial-zone-in-the-producers`: a queued Industrial Zone or
             // Workshop finishes before routine rescoring can claim the city.
             let industrial_zone_commitment = committed.as_ref().is_some_and(|(_, item)| {
@@ -30957,6 +30969,7 @@ impl AdvancedAi {
                     || deterrence_commitment
                     || bound_granary_commitment
                     || idle_route_trader_commitment
+                    || backlog_builder_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -30973,6 +30986,7 @@ impl AdvancedAi {
                     || deterrence_commitment
                     || bound_granary_commitment
                     || idle_route_trader_commitment
+                    || backlog_builder_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -47548,6 +47562,11 @@ impl AdvancedAi {
             // no-op while the gene is off. See
             // `advanced/trader_fills_the_idle_route.rs`.
             self.claim_trader_for_idle_route(g, pid, &plan);
+            // `backlog-builder-takes-the-queue`: the worked backlog's Builder,
+            // after the Trader and ahead of the Prophet race and the routine
+            // claims. Exact no-op while the gene is off. See
+            // `advanced/backlog_builder_takes_the_queue.rs`.
+            self.claim_backlog_builder(g, pid, &plan);
             // `prophet-builds-its-site`: the Holy Site a Prophet founds on
             // goes first. Exact no-op while the gene is off.
             self.reserve_prophet_site(g, pid, &plan);
