@@ -60,6 +60,8 @@ Only a Comandante with a remaining charge and movement is considered. Existing
 aura coverage holds its position. A candidate recipient must be a discovered
 eligible land military unit, on-map and not embarked. A civilian occupying its
 tile, or another Comandante already covering it, excludes that destination.
+A troop ordered toward another tile, or still carrying a queued order, cannot
+serve as a destination: its observed position may already be stale.
 Every path tile must have confirmed ownership by the player, be land and
 passable, and be outside two tiles of the existing hostile-unit inventory.
 Unreadable rules, unit fields, path, ownership, or movement allowance cause a
@@ -77,12 +79,17 @@ its recipient. It is not a native movement-completion or combat-bonus witness.
 
 ## Validation
 
-- Corrected final fixtures against unchanged controller source reproduce seven
-  expected failures among 68 checks: ordinary Páez support, discovered eligible
-  cavalry support, reserved Urdaneta support, and asynchronous request count.
+- Corrected final fixtures against unchanged controller source reproduce nine
+  expected failures among 74 checks: ordinary Páez support, discovered eligible
+  cavalry support, reserved Urdaneta support, stationary Fortify recipient support, and asynchronous request count.
   The preservation controls pass. Baseline source is retained from test-only
   checkpoint `f26e0cd0d`.
-- Candidate: all 68 checks pass under the installed Lua 5.1 runtime.
+- The initial support candidate reproduced two additional stale-recipient
+  failures: a troop received a move request, but the General followed its old
+  position, or still carried a queued order. The corrected driver excludes
+  those recipients and preserves the
+  troop's explicit controller request.
+- Candidate: all 74 checks pass under the installed Lua 5.1 runtime.
 - All 84 discovered `tools/civ6_control/mod/*_test.lua` suites pass under Lua 5.1.
   The existing CI job discovers this new suite through the same glob.
 - The CI type-name gate rejected two synthetic fixture names before running

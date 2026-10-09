@@ -16016,11 +16016,11 @@ CivvisComandante.auraTypes = function()
 	CivvisComandante.auraTags = types;
 	return types;
 end
-CivvisComandante.support = function(player, unit, id, turn)
+CivvisComandante.support = function(player, unit, id, turn, controllerRows)
 	if CivvisComandante.auraChecked[id] == turn then return false; end
 	CivvisComandante.auraChecked[id] = turn;
 	local types = CivvisComandante.auraTypes();
-	if types == nil then return false; end
+	if types == nil or type(controllerRows) ~= "table" then return false; end
 	local gp = greatPersonOf(unit);
 	local charges = tonumber(try(function() return gp:GetActionCharges(); end, nil));
 	local moves = tonumber(try(function() return unit:GetMovesRemaining(); end, nil));
@@ -16056,7 +16056,16 @@ CivvisComandante.support = function(player, unit, id, turn)
 						local d = tonumber(Map.GetPlotDistance(ux, uy, x, y));
 						if d == nil or not (d >= 0 and d < math.huge) then return false; end
 						if d <= 2 then covered = true; end
-						if other:IsEmbarked() == false and d > 2 then
+						-- RequestOperation is asynchronous: this troop may still
+						-- stand on the tile its controller just told it to leave.
+						local departing = CivvisQueue.pending[other:GetID()] ~= nil;
+						for _, order in ipairs(controllerRows) do
+							if order.kind == "unit" and tonumber(order.subject) == other:GetID() then
+								local dx, dy = tonumber(order.x), tonumber(order.y);
+								if dx ~= nil and dy ~= nil and (dx ~= x or dy ~= y) then departing = true; end
+							end
+						end
+						if other:IsEmbarked() == false and d > 2 and not departing then
 							recipients[#recipients + 1] = { x = x, y = y, distance = d, id = other:GetID() };
 						end
 					end
@@ -16128,7 +16137,7 @@ end
 -- Drive one Great Person toward being used. Returns "activated" | "moving" |
 -- "retired" | "idle", or nil when the unit is not a Great Person this code
 -- should touch.
-local function orderGreatPerson(player, unit, id, turn, supportAllowed)
+local function orderGreatPerson(player, unit, id, turn, supportAllowed, controllerRows)
 	local gp = greatPersonOf(unit);
 	if gp == nil then
 		-- ⚠ Distinguish "not a Great Person" from "the accessor is missing in
@@ -16177,7 +16186,7 @@ local function orderGreatPerson(player, unit, id, turn, supportAllowed)
 	end
 	local comandanteTargets = CivvisComandante.targets(player, individual, id);
 	if comandanteTargets ~= nil and #comandanteTargets == 0 then
-		if supportAllowed and CivvisComandante.support(player, unit, id, turn) then return "moving"; end
+		if supportAllowed and CivvisComandante.support(player, unit, id, turn, controllerRows) then return "moving"; end
 		gpPending[id] = nil;
 		emit("gp", { turn = turn, unit = id, individual = individual,
 			class = class, action = "reserved_comandante" });
@@ -16304,7 +16313,7 @@ local function orderGreatPerson(player, unit, id, turn, supportAllowed)
 		end
 	end
 	if class == "GREAT_PERSON_CLASS_COMANDANTE_GENERAL" and supportAllowed
-			and CivvisComandante.support(player, unit, id, turn) then return "moving"; end
+			and CivvisComandante.support(player, unit, id, turn, controllerRows) then return "moving"; end
 	-- 3. Nowhere legal to activate — no empty Great Work slot, no qualifying
 	-- district built yet, or the one legal plot is occupied. A real constraint,
 	-- reported sparsely; the unit stays put and is retried every turn.
@@ -19206,7 +19215,7 @@ local function applyOrders(player, pid, turn, rows)
 		eachUnit(player, function(unit)
 			local id = try(function() return unit:GetID(); end, -1);
 			if id == -1 then return; end
-			local acted = orderGreatPerson(player, unit, id, turn, firstRun[id] == nil);
+			local acted = orderGreatPerson(player, unit, id, turn, firstRun[id] == nil, rows);
 			if acted == nil then return; end
 			gpHandled[id] = true;
 			if acted == "activated" then gpActivated = gpActivated + 1;

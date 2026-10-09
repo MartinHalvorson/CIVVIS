@@ -258,6 +258,7 @@ local function reset()
  host.paths["1:" .. plotIndex(6,1)] = pathTo(6)
  host.paths["1:" .. plotIndex(3,1)] = pathTo(3)
  CivvisComandante.auraTags, CivvisComandante.auraChecked = nil, {}
+ CivvisQueue.pending = {}
 end
 local function run(rows) applyOrders(player, PID, 7, rows or {}) end
 local function moves()
@@ -300,6 +301,10 @@ scenario("refused movement stays idle", function() host.refuseMove=true end,nil)
 scenario("occupied civilian destination holds", function() host.units[3]={id=3,kind="UNIT_BUILDER",x=6,y=1} end,nil)
 scenario("another Comandante already covers recipient", function() host.units[3]={id=3,kind="UNIT_COMANDANTE_GENERAL",x=5,y=1,gp=greatPerson()} end,nil)
 scenario("unrelated Great Person remains idle", function() host.class=2002 end,nil)
+scenario("recipient with queued order holds", function() CivvisQueue.pending[2]={rows={},next=1,expect={x=8,y=1}} end,nil)
+reset();run({{kind="unit",subject=2,verb="FORTIFY"}})
+check("position-preserving troop order remains eligible",#moves(),1)
+check("stationary recipient keeps support destination",moves()[1] and moves()[1].x,6)
 scenario("activation retains first priority", function() host.canActivate=true end,nil,1)
 scenario("activation destination retains priority", function() host.highlights={plotIndex(4,1)};host.paths["1:"..plotIndex(4,1)]=pathTo(4) end,4)
 reset();run();run()
@@ -308,5 +313,9 @@ reset();run({{kind="unit",subject=1,verb="MOVE_TO",x=3,y=1}})
 check("explicit controller movement owns this batch",#moves(),1)
 check("explicit controller destination preserved",moves()[1] and moves()[1].x,3)
 run();check("earlier explicit movement owns later frame",#moves(),1)
+reset();run({{kind="unit",subject=2,verb="MOVE_TO",x=8,y=1}})
+check("recipient with requested movement is not followed to old tile",#moves(),0)
+local buddyMoved=false;for _,op in ipairs(host.ops) do if op.id==2 and op.operation=="UNITOPERATION_MOVE_TO" and op.x==8 then buddyMoved=true end end
+check("moving-recipient fixture applies its controller request",buddyMoved,true)
 if failures>0 then print(failures .. " failure(s) / " .. checks .. " checks");os.exit(1) end
 print("all " .. checks .. " checks passed")
