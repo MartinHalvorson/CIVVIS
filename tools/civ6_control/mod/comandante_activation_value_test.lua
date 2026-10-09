@@ -1,11 +1,11 @@
--- Offline regression for useful Urdaneta retirement.
+-- Offline regressions for useful Urdaneta and Paez retirement.
 --
 -- `GetActivationHighlightPlots` is the host's activation-eligibility list. It
 -- is not a movement path, and Civ6 can accept MOVE_TO for a highlighted plot
 -- that is behind a closed border without moving the unit. The driver must
 -- skip that plot when the host pathfinder explicitly says it is unreachable.
 --
--- Run: lua5.1 tools/civ6_control/mod/great_person_path_test.lua
+-- Run: lua5.1 tools/civ6_control/mod/comandante_activation_value_test.lua
 
 local here = arg[0]:match("(.*)/[^/]*$") or "."
 
@@ -110,6 +110,7 @@ end
 local function unitObject(u)
 	return {
 		GetID = function() return u.id end,
+		IsEmbarked = function() return u.embarked == true end,
 		GetX = function() return u.x end,
 		GetY = function() return u.y end,
 		GetMovesRemaining = function() return u.moves or 4 end,
@@ -140,8 +141,9 @@ UnitManager = {
 			x = params and params.x, y = params and params.y,
 		}
 	end,
-	CanStartCommand = function(_, command)
+	CanStartCommand = function(unit, command)
 		return host.canActivate and command == "UNITCOMMAND_ACTIVATE_GREAT_PERSON"
+			and (host.activationUnit == nil or unit:GetID() == host.activationUnit)
 	end,
 	RequestCommand = function(_, command) host.commands[#host.commands + 1] = command end,
 }
@@ -225,6 +227,7 @@ GameInfo.Units.UNIT_DESTROYER = { UnitType = "UNIT_DESTROYER", Domain = "DOMAIN_
 local function reset()
 	host.units, host.ops, host.paths, host.commands = {}, {}, {}, {}
 	host.individual, host.canActivate, host.missingMoves = 1005, true, false
+	host.activationUnit = nil
 	host.units[1] = { id = 1, kind = "UNIT_COMANDANTE_GENERAL", x = 1, y = 1, gp = greatPerson() }
 	host.units[2] = { id = 2, kind = "UNIT_ROCKET_ARTILLERY", x = 2, y = 1, moves = 4, max_moves = 4, attacks = 1 }
 end
@@ -281,5 +284,67 @@ if rawget(_G, "CivvisComandante") then
 else
 	check("bridge receives useful-retirement policy", false, true)
 end
+-- Native t136 in civvis-20261009T075708Z retired the only Paez while six
+-- army units stood within his aura: two Crossbowmen, a Man-at-Arms, two
+-- Trebuchets and one Knight. Compare recipients, not command legality.
+GameInfo.GreatPersonIndividuals[1006] = { GreatPersonIndividualType = "GREAT_PERSON_INDIVIDUAL_COMMANDANTE_ANTONIO_PAEZ" }
+GameInfo.Units.UNIT_CROSSBOWMAN = { UnitType = "UNIT_CROSSBOWMAN", Domain = "DOMAIN_LAND", Combat = 30, RangedCombat = 40 }
+GameInfo.Units.UNIT_MAN_AT_ARMS = { UnitType = "UNIT_MAN_AT_ARMS", Domain = "DOMAIN_LAND", Combat = 45, RangedCombat = 0 }
+GameInfo.Units.UNIT_TREBUCHET = { UnitType = "UNIT_TREBUCHET", Domain = "DOMAIN_LAND", Combat = 35, RangedCombat = 0 }
+GameInfo.Units.UNIT_KNIGHT = { UnitType = "UNIT_KNIGHT", Domain = "DOMAIN_LAND", Combat = 50, RangedCombat = 0 }
+local tagRows = {
+	{ Type = "ABILITY_COMANDANTE_AOE_STRENGTH", Tag = "CLASS_RANGED" },
+	{ Type = "ABILITY_COMANDANTE_AOE_STRENGTH", Tag = "CLASS_MELEE" },
+	{ Type = "ABILITY_COMANDANTE_AOE_STRENGTH", Tag = "CLASS_SIEGE" },
+	{ Type = "ABILITY_COMANDANTE_AOE_STRENGTH", Tag = "CLASS_HEAVY_CAVALRY" },
+	{ Type = "ABILITY_COMANDANTE_AOE_STRENGTH", Tag = "CLASS_LIGHT_CAVALRY" },
+	{ Type = "ABILITY_COMMANDANTE_CAVALRY_BUFF", Tag = "CLASS_HEAVY_CAVALRY" },
+	{ Type = "ABILITY_COMMANDANTE_CAVALRY_BUFF", Tag = "CLASS_LIGHT_CAVALRY" },
+	{ Type = "UNIT_CROSSBOWMAN", Tag = "CLASS_RANGED" },
+	{ Type = "UNIT_MAN_AT_ARMS", Tag = "CLASS_MELEE" },
+	{ Type = "UNIT_TREBUCHET", Tag = "CLASS_SIEGE" },
+	{ Type = "UNIT_KNIGHT", Tag = "CLASS_HEAVY_CAVALRY" },
+	{ Type = "UNIT_COLOMBIAN_LLANERO", Tag = "CLASS_LIGHT_CAVALRY" },
+}
+local function tags()
+	local i = 0
+	return function() i = i + 1; return tagRows[i] end
+end
+GameInfo.TypeTags = tags
+local function paezArmy()
+	reset(); host.individual, host.activationUnit = 1006, 1
+	local kinds = { "UNIT_CROSSBOWMAN", "UNIT_MAN_AT_ARMS", "UNIT_KNIGHT", "UNIT_TREBUCHET", "UNIT_TREBUCHET", "UNIT_CROSSBOWMAN" }
+	for i, kind in ipairs(kinds) do host.units[i + 1] = { id = i + 1, kind = kind, x = 2, y = 1 } end
+end
+paezArmy(); run()
+check("Paez fallback preserves stronger mixed-army aura", #host.commands, 0)
+paezArmy(); run({ { kind = "unit", subject = 1, verb = "ACTIVATE_GREAT_PERSON" } })
+check("explicit Paez activation cannot bypass aura value", #host.commands, 0)
+paezArmy()
+local reserved = CivvisComandante.forUnit(player, unitObject(host.units[1]))
+check("Paez bridge suppresses retirement highlights", #CivvisComandante.filterPlots(reserved, { { x = 2, y = 1 } }), 0)
+check("Paez bridge suppresses legal immediate retirement", CivvisComandante.usefulAt(reserved, 1, 1), false)
+paezArmy(); host.units[8] = { id = 8, kind = "UNIT_COMANDANTE_GENERAL", x = 2, y = 1, gp = greatPerson() }; run()
+check("another nearby commander permits permanent cavalry buff", #host.commands, 1)
+paezArmy(); host.units[8] = { id = 8, kind = "UNIT_COMANDANTE_GENERAL", x = 9, y = 1, gp = greatPerson() }; run()
+check("distant commander does not replace local aura", #host.commands, 0)
+paezArmy(); host.units[8] = { id = 8, kind = "UNIT_COMANDANTE_GENERAL", x = 2, y = 1, gp = greatPerson() }
+host.units[8].gp.GetActionCharges = function() return 0 end; run()
+check("spent commander does not replace local aura", #host.commands, 0)
+paezArmy(); host.units[4].kind, host.units[4].damage = "UNIT_COLOMBIAN_LLANERO", 25; run()
+check("Paez retirement can heal wounded nearby Llanero", #host.commands, 1)
+paezArmy(); host.units[4].kind = "UNIT_COLOMBIAN_LLANERO"; run()
+check("healthy Llanero does not override mixed-army reservation", #host.commands, 0)
+paezArmy(); for id = 2, 7 do host.units[id].x = 5 end; run()
+check("army outside aura retains retirement behavior", #host.commands, 1)
+paezArmy(); for id = 2, 7 do host.units[id].embarked = true end; run()
+check("embarked army does not reserve land aura", #host.commands, 1)
+paezArmy(); GameInfo.TypeTags = function() error("unavailable") end; run()
+check("unknown aura authority keeps activation compatibility", #host.commands, 1)
+GameInfo.TypeTags = tags
+paezArmy(); GameInfo.Units.UNIT_KNIGHT.Domain = nil; run()
+check("unknown recipient domain keeps activation compatibility", #host.commands, 1)
+GameInfo.Units.UNIT_KNIGHT.Domain = "DOMAIN_LAND"
+
 if failures > 0 then print(string.format("%d failure(s)", failures)); os.exit(1) end
 print("all checks passed")
