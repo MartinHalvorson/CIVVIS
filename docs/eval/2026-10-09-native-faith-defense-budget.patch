@@ -1,0 +1,104 @@
+diff --git a/src/ai/advanced/counterweight_shrine.rs b/src/ai/advanced/counterweight_shrine.rs
+index 5cd1b399d..f11f80a29 100644
+--- a/src/ai/advanced/counterweight_shrine.rs
++++ b/src/ai/advanced/counterweight_shrine.rs
+@@ -33,2 +33,3 @@
+-//!   leave the whole bank (`counterweight_bank_held`), so the counterweight
+-//!   Missionaries have it once the Shrine stands.
++//!   leave the whole bank (`counterweight_bank_held`) while that source is
++//!   waiting for its Shrine. Once the Shrine stands, the priced counterweight
++//!   Missionary reserve protects recruitment and the surplus can fund the army.
+@@ -88,2 +89,4 @@ impl AdvancedAi {
+-    /// The whole Faith bank, held from the non-defensive sinks while a rival
+-    /// faith presses us. Zero otherwise.
++    /// Hold the bank while an actionable counterweight source awaits its
++    /// Shrine. A finished source uses `counterweight_faith_reserve` to protect
++    /// the Missionaries it can actually sell. Without an unfinished source,
++    /// an unlimited hold cannot buy religious defense and starves the army.
+@@ -91 +94 @@ impl AdvancedAi {
+-        if self.rival_faith_presses_us(g, pid).is_some() {
++        if self.counterweight_shrine_city(g, pid).is_some() {
+diff --git a/src/ai/advanced/counterweight_shrine/tests.rs b/src/ai/advanced/counterweight_shrine/tests.rs
+index 37de69cdb..ca63f9721 100644
+--- a/src/ai/advanced/counterweight_shrine/tests.rs
++++ b/src/ai/advanced/counterweight_shrine/tests.rs
+@@ -85,0 +86,79 @@ fn the_one_sanctuary_and_the_held_bank() {
++/// A completed source protects its priced Missionary shortfall rather than
++/// indefinitely reserving the growing bank while the rival faith persists.
++#[test]
++fn completed_source_releases_surplus_and_keeps_missionary_reserve() {
++    let (mut g, mut ai, caracas) = g425_turn_88();
++    ai.enable_counterweight_finishes_one_shrine();
++    ai.enable_counterweight_spends_the_bank();
++    let third = g.player_city_ids(0)[2];
++    g.cities
++        .get_mut(&third)
++        .unwrap()
++        .pressure
++        .insert("Orthodoxy".into(), 100.0);
++    g.cities
++        .get_mut(&caracas)
++        .unwrap()
++        .buildings
++        .push(crate::name!("shrine"));
++    g.players[0].faith = 2_179.0;
++    assert!(ai.rival_faith_presses_us(&g, 0).is_some());
++    assert_eq!(ai.counterweight_shrine_city(&g, 0), None);
++    assert_eq!(ai.counterweight_bank_held(&g, 0), 0.0);
++    let reserve = ai.counterweight_faith_reserve(&g, 0);
++    assert!(reserve > 0.0 && reserve < g.players[0].faith);
++}
++
++/// Native run 20261008T233904Z offered military purchases without an unfinished source:
++/// warning-level religious pressure must not make the whole bank unusable.
++#[test]
++fn unavailable_counterweight_source_releases_the_bank() {
++    let (mut g, mut ai, caracas) = g425_turn_88();
++    ai.enable_counterweight_finishes_one_shrine();
++    g.cities.get_mut(&caracas).unwrap().pressure.clear();
++    g.cities
++        .get_mut(&caracas)
++        .unwrap()
++        .pressure
++        .insert("Orthodoxy".into(), 100.0);
++    assert!(ai.rival_faith_presses_us(&g, 0).is_some());
++    assert_eq!(ai.counterweight_shrine_city(&g, 0), None);
++    assert_eq!(ai.counterweight_bank_held(&g, 0), 0.0);
++}
++
++#[test]
++fn finished_counterweight_source_allows_a_solvent_faith_army_purchase() {
++    let (mut g, mut ai, caracas) = g425_turn_88();
++    ai.enable_counterweight_finishes_one_shrine();
++    ai.enable_counterweight_spends_the_bank();
++    ai.enable_solvent_faith_army();
++    let third = g.player_city_ids(0)[2];
++    g.cities
++        .get_mut(&third)
++        .unwrap()
++        .pressure
++        .insert("Orthodoxy".into(), 100.0);
++    g.cities
++        .get_mut(&caracas)
++        .unwrap()
++        .buildings
++        .push(crate::name!("shrine"));
++    g.players[0].government = Some("theocracy".into());
++    g.players[0].faith = 2_179.0;
++    g.players[0].gold_per_turn = 50.0;
++    let plan = StrategicPlan {
++        strategy: GrandStrategy::Conquest,
++        target_player: None,
++        target_city: None,
++        threatened_city: None,
++        desired_cities: 5,
++        assessed_turn: g.turn,
++        rush: false,
++    };
++    let before = g.units.len();
++    assert!(ai.rival_faith_presses_us(&g, 0).is_some());
++    assert!(ai.military_faith_spending(&mut g, 0, &plan));
++    assert_eq!(g.units.len(), before + 1);
++    assert!(g.players[0].faith >= 180.0 + ai.counterweight_faith_reserve(&g, 0));
++}
++

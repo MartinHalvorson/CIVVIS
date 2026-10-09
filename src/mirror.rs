@@ -2691,6 +2691,16 @@ pub struct StateCity {
     pub happiness_growth_mult: f64,
     #[serde(default = "unknown_metric")]
     pub overall_growth_mult: f64,
+    /// Native citizen preferences (`CityPanel.lua:445-477`). Unknown on old
+    /// exports; false must not be invented when the host accessor fails.
+    #[serde(default)]
+    pub food_favored: Option<bool>,
+    #[serde(default)]
+    pub food_disfavored: Option<bool>,
+    /// The bridge owns this temporary Food preference, so it may release it.
+    /// Preferences set elsewhere are observed but never claimed as ours.
+    #[serde(default)]
+    pub food_focus_managed: Option<bool>,
     /// Where each yield comes from, in the host's own words: the text behind the
     /// city panel's per-yield tooltip (`City:GetYieldToolTip`), icon markup
     /// stripped, one entry per yield name. Diagnostic — nothing in the
@@ -6476,6 +6486,9 @@ const CITY_KEYS: &[&str] = &[
     "housing_growth_mult",
     "happiness_growth_mult",
     "overall_growth_mult",
+    "food_favored",
+    "food_disfavored",
+    "food_focus_managed",
     "yield_sources",
     "center_yields",
     "incoming_routes",
