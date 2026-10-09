@@ -51,10 +51,12 @@ fn fresh_turn(g: &mut Game, uid: u32) {
 fn campaign_fallback_returns_then_funds_a_legal_upgrade() {
     let (mut g, mut ai, plan, uid) = fixture();
     let abroad = g.units[&uid].pos;
+    let home = g.cities[&g.player_city_ids(0)[0]].pos;
     ai.fund_domination_upgrades(&mut g, 0, &plan);
     assert_eq!(g.units[&uid].kind, "archer");
     assert!(ai.advanced_military_step(&mut g, 0, uid, &plan));
     assert_ne!(g.units[&uid].pos, abroad);
+    assert!(g.wdist(g.units[&uid].pos, home) < g.wdist(abroad, home));
     assert_eq!(g.units[&uid].moves_left, 0.0);
     for _ in 0..8 {
         fresh_turn(&mut g, uid);
@@ -98,7 +100,7 @@ fn host_successor_and_resource_bill_survive_return_without_bypassing_refusal() {
     );
     assert_eq!(
         g.unit_upgrade_target(0, crate::name!("warrior")),
-        Some(crate::name!("swordsman"))
+        Some(g.player_unit_replacement(0, crate::name!("swordsman")))
     );
     for _ in 0..8 {
         assert_eq!(
@@ -112,6 +114,10 @@ fn host_successor_and_resource_bill_survive_return_without_bypassing_refusal() {
             .is_some_and(|cid| g.cities[&cid].owner == 0)
         {
             assert_eq!(g.unit_gold_upgrade_detail(0, uid), Err("foreign territory"));
+            assert_eq!(
+                ai.domination_upgrade_return_step(&mut g, 0, uid, &plan),
+                None
+            );
             assert!(g.apply(0, &Action::UpgradeUnit { unit: uid }).is_err());
             std::sync::Arc::make_mut(&mut g.host_unit_facts)
                 .get_mut(&uid)

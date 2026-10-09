@@ -36,6 +36,11 @@ impl AdvancedAi {
             || from.promotion_class == "recon"
             || matches!(from.domain.as_deref(), Some("sea" | "air"))
             || g.is_embarked(unit)
+            || g.map.get(unit.pos).is_some_and(|tile| {
+                tile.owner_city
+                    .and_then(|cid| g.cities.get(&cid))
+                    .is_some_and(|city| city.owner == pid)
+            })
             || !matches!(
                 g.unit_gold_upgrade_detail(pid, uid),
                 Err("foreign territory" | "neutral territory")
