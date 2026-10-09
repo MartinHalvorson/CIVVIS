@@ -82,11 +82,25 @@ the tool requires approval and the session policy is `never`. The PR remains
 draft on its initial claim until publication and candidate checks can proceed.
 
 Read-only follow-up matched all 26 historical refusal events to their recorded
-decisions. Three proposed approach moves were absent from emitted orders. The
-private fork contains friendly-column retargeting absent in public main; causal
-attribution and a current public regression remain unproven. Raw distance
-comparisons also omit wrapping and cannot assume exported range includes
-adjacent support bonuses. No extra range veto is introduced from those records.
+decisions. Three proposed approach moves were absent from emitted orders.
+Executing the unchanged `defer_great_person_plot_conflicts` function with the
+three recorded states and move/strike pairs reproduced each missing move with
+its strike retained. The function and its Prophet exemption are byte-identical
+between public `4ac783905` and the private game source. All three proposed moves
+end on Comandante General 5636111's tile. Six unrelated-pair, own-person,
+trade-route and retired-Prophet controls passed. These are component observations,
+not a replay of the entire planner or proof of native attack legality.
+
+A census of 523 recorded frames found 41 unit/frame pairs with a proposed move
+onto a reserved Great Person plot. Five had a transported strike and no move;
+four recorded native ranged refusals. The other Archer shot dealt seven native
+damage from its unchanged origin. Blanket suppression of later strikes would
+therefore discard a useful shot in that state. A future reservation change must
+cover both military stacking and retirement races before choosing its behavior.
+The private friendly-column helper only changes destinations; it does not delete
+moves. Raw distance comparisons omit wrapping and cannot assume exported range
+includes adjacent support bonuses. No reservation change or extra range veto is
+introduced here.
 
 Native pins, installed mod and verification processes have not been changed.
 Mocked SDK results establish the handler contract, not native attack acceptance,
