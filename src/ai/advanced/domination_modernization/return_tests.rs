@@ -156,6 +156,8 @@ fn return_preserves_roles_cash_permissions_and_nearby_combat() {
         "reserved",
         "enemy_unit",
         "enemy_city",
+        "home_threat",
+        "encampment",
         "host_unknown",
         "host_gold",
         "host_material",
@@ -194,6 +196,14 @@ fn return_preserves_roles_cash_permissions_and_nearby_combat() {
             "enemy_city" => {
                 g.at_war.insert((0, 1));
                 g.found_city_for(1, (13, 4), None);
+            }
+            "home_threat" => plan.threatened_city = Some(g.player_city_ids(0)[0]),
+            "encampment" => {
+                g.at_war.insert((0, 1));
+                let cid = g.player_city_ids(1)[0];
+                let tile = g.map.tiles.get_mut(&(13, 4)).unwrap();
+                tile.owner_city = Some(cid);
+                tile.district = Some(crate::name!("encampment"));
             }
             "host_unknown" | "host_gold" | "host_material" | "host_cash_quote" => {
                 let blocked = match case {
@@ -292,4 +302,95 @@ fn already_owned_units_keep_the_ordinary_upgrade_pass() {
     );
     ai.fund_domination_upgrades(&mut g, 0, &plan);
     assert_eq!(g.units[&uid].kind, "crossbowman");
+}
+
+#[test]
+fn stalled_stage_taker_returns_for_upgrade_while_ready_assault_keeps_it() {
+    use crate::ai::advanced::siege_train::{Siege, SiegeStage};
+    for case in [
+        "stalled",
+        "shooter",
+        "fresh",
+        "ready_rule",
+        "invest",
+        "reduce",
+        "take",
+        "stale",
+    ] {
+        let (mut g, mut ai, mut plan, uid) = fixture();
+        g.units.get_mut(&uid).unwrap().kind = crate::name!("warrior");
+        g.players[0].techs.insert(crate::name!("iron_working"));
+        g.players[0]
+            .strategic_resources
+            .insert(crate::name!("iron"), 50.0);
+        g.at_war.insert((0, 1));
+        g.found_city_for(1, (16, 4), None);
+        let cid = g.city_at((16, 4)).unwrap();
+        g.cities.get_mut(&cid).unwrap().wall_hp = 200;
+        plan.target_city = Some(cid);
+        ai.enable_siege_train();
+        ai.enable_siege_positive_damage_budget();
+        ai.force_groups.push(ForceGroup {
+            id: 1,
+            domain: ForceDomain::Land,
+            units: vec![uid],
+            anchor: g.units[&uid].pos,
+            objective: g.cities[&cid].pos,
+            focus_target: None,
+            posture: ForcePosture::Muster,
+            readiness: 0.0,
+            local_strength_ratio: 0.1,
+        });
+        assert!(!ai.conversion_siege_ready(&g, 0, cid, &[uid]));
+        if case != "shooter" {
+            ai.reserved_units.insert(uid);
+        }
+        ai.sieges.insert(
+            cid,
+            Siege {
+                stage: match case {
+                    "invest" => SiegeStage::Invest,
+                    "reduce" => SiegeStage::Reduce,
+                    "take" => SiegeStage::Take,
+                    _ => SiegeStage::Stage,
+                },
+                taker: (case != "shooter").then_some(uid),
+                entered: if case == "fresh" { g.turn } else { g.turn - 6 },
+                assessed: if case == "stale" { g.turn - 4 } else { g.turn },
+                posts: BTreeMap::new(),
+            },
+        );
+        if case == "ready_rule" {
+            ai.disable_siege_positive_damage_budget();
+        }
+        let before = g.units[&uid].pos;
+        let result = ai.domination_upgrade_return_step(&mut g, 0, uid, &plan);
+        if case == "stalled" {
+            assert_eq!(result, Some(true));
+            assert!(g.units[&uid].pos.0 < before.0);
+        } else {
+            assert_eq!(result, None, "{case}");
+            assert_eq!(g.units[&uid].pos, before, "{case}");
+        }
+    }
+}
+
+#[test]
+fn major_war_prepares_upgrades_even_when_the_current_objective_is_a_minor() {
+    let (mut g, mut ai, mut plan, uid) = fixture();
+    let mut minor = g.players[1].clone();
+    minor.id = g.players.len();
+    minor.is_minor = true;
+    plan.target_player = Some(minor.id);
+    plan.target_city = None;
+    g.players.push(minor);
+    assert_eq!(
+        ai.domination_upgrade_return_step(&mut g, 0, uid, &plan),
+        None
+    );
+    g.at_war.insert((0, 1));
+    assert_eq!(
+        ai.domination_upgrade_return_step(&mut g, 0, uid, &plan),
+        Some(true)
+    );
 }

@@ -39848,6 +39848,11 @@ impl AdvancedAi {
             self.force_groups_dirty |= acted;
             return acted;
         }
+        if !unwanted_settler_adjacent && !holding_threatened_city {
+            if let Some(acted) = self.domination_upgrade_return_step(g, pid, uid, plan) {
+                return acted;
+            }
+        }
         // The siege has already reserved its finisher. Let that doctrine
         // spend the unit before an incidental civilian pickup can walk it
         // away from a capturable city. A stale reservation falls through
@@ -39937,11 +39942,6 @@ impl AdvancedAi {
         // the ring's ordinary tactical posture.
         if let Some(acted) = self.threatened_city_garrison_step(g, pid, uid, plan.threatened_city) {
             return acted;
-        }
-        if !unwanted_settler_adjacent && !holding_threatened_city {
-            if let Some(acted) = self.domination_upgrade_return_step(g, pid, uid, plan) {
-                return acted;
-            }
         }
         let mut enemies: Vec<usize> = g
             .players

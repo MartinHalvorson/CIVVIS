@@ -1,53 +1,76 @@
 # Return obsolete combat units to upgrade ground
 
 The fixed Emperor verification attempt `civvis-20261009T113012Z` ended
-in a Culture defeat at turn 178. It supplies a decision-making hypothesis,
-not a winning result: Warrior `131073` remained unmodernized abroad from
-turn 90 through 167, with 63 first-frame territory-block readings; Archer
-`3080205` had 66 such readings over that interval. These are repeated unit
-observations, not separate failed commands. The same run issued 17 genuine
-upgrade orders. For example, Archer `2424846` became Crossbowman `4456473`
-at the same native position `(31,24)` during turn 94, and turn 95 verified
-the upgrade. Ordinary legal upgrades already work.
+in a Culture defeat at turn 178. Warrior `131073` remained obsolete abroad
+from turn 90 through 167, with 63 first-frame territory-block readings;
+Archer `3080205` had 66 readings. These are repeated observations, not
+separate failed commands. The run issued 17 genuine upgrade orders.
+Archer `2424846` became Crossbowman `4456473` at native `(31,24)` during
+turn 94; turn 95 verified it. Ordinary legal upgrades already work.
 
-The immutable turn-100 terrain/state prefix models ten route edges from
-each of the two persistently obsolete units to owned ground at native
-`(27,21)`. Both native upgrade quotes cost 60 Gold; the Warrior's Man-at-Arms
-offer requires ten Iron, and the Archer's Crossbowman needs no material.
-The treasury and strategic stock cover these bills. By turn 120, the same
-Warrior's nearby home route is unavailable and the Archer's takes nineteen
-edges. This motivates an earlier return; it does not establish that the
-counterfactual route would execute or win the game.
+The immutable turn-100 prefix models ten route edges from each persistently
+obsolete unit to owned ground at native `(27,21)`. Each native upgrade costs
+60 Gold, and the Warrior's Man-at-Arms requires ten Iron. The observed
+cash and material cover the bills. By turn 120, the Warrior's nearby route
+is unavailable and the Archer's takes nineteen edges. This supports a
+return hypothesis, not a counterfactual execution or victory claim.
 
-The policy brings an otherwise unclaimed land combat unit back before its
-ordinary campaign march when a named Domination offensive exists, the
-offered improvement is at least 15 strength, and the current treasury covers
-the bill plus the existing 30-Gold and maintenance-deficit reserve. Native
+## The first hypothesis did not change captured decisions
+
+The first implementation passed the complete governed public suite:
+4,470 library, 14 main, 247 orders, 17 integration and four viewer tests.
+Yet strict same-prefix comparisons changed zero complete replies in both
+captures: 405/405 identical on `114819`, and 417/417 on `113012`.
+Historical-control agreement was only 320/405 and 322/417 respectively;
+both comparisons failed their historical gate. These are diagnostic
+comparisons and provide no native execution or winning credit.
+
+The turn-100 journal names Nazca, owned by minor player 9, as the current
+siege objective while the major Russia is also at war. The train has no
+guns, one wall-DPS unit and an unready damage budget; its muster has been
+closed since turn 88. The first policy required a named major objective,
+ran after the siege reservation and excluded any enemy city within six
+hexes. Those gates explain why its positive synthetic tests were insufficient.
+
+## Revised decision rule
+
+A Domination unit can prepare an upgrade during a named major offensive or
+an ongoing major war even when the immediate objective is a minor. The
+improvement must be at least 15 strength; present cash must cover the host
+bill plus the existing 30-Gold and maintenance-deficit reserve. Native
 successors, Gold quotes and material bills take priority over modeled
-direct upgrades. A territory refusal is followed by separate affordability
-and resource checks. All other native refusals remain final.
+direct upgrades. A territory refusal triggers independent cash and material
+checks. Other native refusals remain final, and movement never grants
+permission to upgrade in the same turn.
 
-The unit returns to owned border ground rather than a City Center. It checks
-up to eight nearest candidate plots and requires an actual route of at most
-twelve edges. It uses available movement along that route and stops on
-arrival to wait for a fresh legal upgrade turn. It leaves appointed war
-packages, reserved finishers, linked formations and Settler guards to their
-existing controllers. Recovery, raids, doctrine actions and city defense
-precede this hook. Visible or remembered enemy military units and enemy
-cities within six hexes of the current or next step prevent the return.
-Sea, air and Recon units retain their existing tasks.
+The return checks up to eight nearest owned border plots and requires an
+actual route of at most twelve edges. It spends available movement along
+that route and stops to wait for a fresh legal upgrade turn. Recovery,
+appointed war packages and Settler guards retain priority. The hook precedes
+the ordinary siege action. Reserved units and assigned siege members stay
+with their controllers except for a named finisher in Stage for at least
+four turns, assessed within the previous turn, whose matching land group
+still cannot meet the siege damage budget. Fresh staging, ready assaults,
+other siege phases and stale assessments retain their units.
 
-These bounds are conservative policy choices. They do not prove optimal
-upgrade scheduling, future affordability, unseen-route safety or native
-execution. The verification challenge, retirement rule and assigned target
-are unchanged. Native wins remain the success criterion.
+A threatened home city prevents a return. Enemy military units within six
+hexes, any hostile unit within one hex, and hostile cities or known enemy
+Encampments within three hexes prevent movement from the current or next
+plot. Sea, air and Recon units retain their tasks. These bounds are policy
+choices; they do not prove optimal scheduling, unseen-route safety or
+future affordability.
 
 ## Validation checkpoint
 
-Six new tests cover the campaign fallback through arrival and a funded legal
-upgrade, a native successor that skips an intermediate unit without bypassing
-its stale refusal, ordinary owned-territory upgrades, missing strategic
-material, blocked routes, and seventeen role/permission/budget exclusions.
-Focused local validation is in progress at this checkpoint. Complete governed
-local tests and final CI must finish before shipping. No native winning gain
-or runtime improvement is claimed for this policy.
+Eight focused tests cover return through a funded legal upgrade, a native
+successor that skips an intermediate unit without bypassing its refusal,
+owned-territory upgrades, missing material, blocked routes, nineteen role
+and budget exclusions, stalled versus protected siege assignments, and a
+minor objective during a major war. The stalled-stage regression fails on
+the first implementation as intended. Complete validation of the revised
+source is in progress. Its native adapter has one extra test fixture field
+(`short_since`); the production return helper is byte-identical.
+
+The verification challenge, retirement rule and assigned target are
+unchanged. Native wins remain the success criterion. No native winning
+gain or runtime improvement is claimed for this policy.
