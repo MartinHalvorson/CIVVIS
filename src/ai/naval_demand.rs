@@ -3,6 +3,8 @@
 //! A distant barbarian on water does not make every port a war front. Use
 //! the existing home-threat radius to count exposed launch sites, with one
 //! spare ship. Civilization wars retain their empire-wide fleet budget.
+//! The current controller's open-water mode owns this repair; the frozen
+//! controller and explicit withholding retain the historical fleet budget.
 
 use super::*;
 
@@ -35,7 +37,7 @@ impl BasicAi {
         let naval_war = g.players.iter().any(|enemy| {
             enemy.id != pid
                 && enemy.alive
-                && !enemy.is_barbarian
+                && (!self.open_water_navy || !enemy.is_barbarian)
                 && g.is_at_war(pid, enemy.id)
                 && (g.units.values().any(|unit| {
                     unit.owner == enemy.id

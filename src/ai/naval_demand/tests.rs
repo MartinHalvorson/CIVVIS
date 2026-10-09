@@ -135,7 +135,17 @@ fn a_harbor_counts_as_an_exposed_launch_site_and_lakes_keep_their_existing_gate(
     ai.open_water_navy = false;
     assert_eq!(
         ai.desired_navy(&g, 0),
-        3,
-        "explicit withholding retains the lake-inclusive launch rule"
+        6,
+        "explicit withholding retains the historical lake-inclusive fleet budget"
     );
+}
+
+#[test]
+fn the_frozen_launch_mode_retains_its_historical_barbarian_war_budget() {
+    let (mut g, mut ai, cities) = board();
+    raider(&mut g, (42, 26));
+    ai.open_water_navy = false;
+    assert_eq!(ai.desired_navy(&g, 0), cities.len() + 1);
+    ai.open_water_navy = true;
+    assert_eq!(ai.desired_navy(&g, 0), 2);
 }
