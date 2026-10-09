@@ -12061,7 +12061,8 @@ CivvisLedger.annotateStrikeOffer = function(unit, operation, x, y, payload)
 		if unit == nil or operation == nil or UnitManager == nil
 				or UnitManager.GetOperationTargets == nil or UnitOperationResults == nil
 				or UnitOperationResults.PLOTS == nil or UnitOperationResults.MODIFIERS == nil
-				or UnitOperationResults.MODIFIER_IS_TARGET == nil then return nil; end
+				or type(UnitOperationResults.MODIFIER_IS_TARGET) ~= "number"
+				or UnitOperationResults.MODIFIER_IS_TARGET % 1 ~= 0 then return nil; end
 		local plot = Map.GetPlot(x, y);
 		local target = plot and plot:GetIndex();
 		if type(target) ~= "number" or target < 0 or target % 1 ~= 0 then return nil; end
