@@ -56,3 +56,15 @@ physical-shot fixture now makes the defending owner current before applying
 its shot. Baseline failures precede that stage. Main `9a2b0dfe6` was merged
 once at `e47d0a14a` before candidate validation. Complete local candidate
 mirror/Rust validation and final published-head checks are pending.
+
+
+The first published candidate `ebe0454f8` fails compilation with E0624: the
+mirror called the private `district_is_family` helper. The corrected code uses
+existing crate-visible `district_family`, including replacement chains; no
+engine visibility or rule changed. CI `37929854240` executes no Rust cases.
+Owned local focus `61466` is intentionally stopped only after that concrete
+compiler failure, Cargo SIGINT -2 (wrapper 254), with no tests credited.
+Its original logs and source registrations remain preserved. Lua gate passed.
+The initial focused source pathspec omitted root Rust files; a supplemental
+clean committed-head manifest covers all 619 tracked source/input files.
+Corrected validation will use whole-directory discovery from the beginning.

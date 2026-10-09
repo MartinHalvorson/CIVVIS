@@ -14316,7 +14316,7 @@ fn apply_foreign_infrastructure(game: &mut crate::game::Game, snapshot: &Snapsho
                     .plot(crate::hex::axial_to_offset(pos.0, pos.1))
                     .is_some_and(|plot| plot.p);
             }
-            if game.district_is_family(&name, crate::name!("encampment")) {
+            if game.district_family(name) == crate::name!("encampment") {
                 if let Some(plot) = snapshot.plot(crate::hex::axial_to_offset(pos.0, pos.1)) {
                     apply_foreign_encampment_health(game, cid, plot);
                 }
