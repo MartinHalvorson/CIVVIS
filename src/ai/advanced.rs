@@ -6821,6 +6821,8 @@ pub struct AdvancedAi {
     skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// Check combat orders against two enemy replies and retain full recovery.
+    unit_preservation: bool,
     /// Price route food by the next population-gated district slot.
     trade_growth_to_district: bool,
     /// Price route production by time saved on an active space project.
@@ -7459,6 +7461,7 @@ mod fire_plan;
 /// the kill plan and the heal rotation — ahead of the per-unit ladder. One
 /// opt-in gene; see `advanced/battle_planner.rs`.
 mod battle_planner;
+mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
 /// Close as a body, and screen the shooters: two opt-in genes in the deployed
@@ -8657,6 +8660,7 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
+            unit_preservation: false,
             trade_growth_to_district: false,
             trade_production_to_launch: false,
             tourism_land_reservation: false,
@@ -23108,29 +23112,60 @@ impl AdvancedAi {
     /// should convert that otherwise stranded treasury into defenders once
     /// Theocracy (or another legal faith-purchase source) makes them available.
     fn military_faith_spending(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) -> bool {
+        let bank = g.players[pid].faith;
+        let below_modelled_floor = bank < 600.0;
         if !matches!(
             plan.strategy,
             GrandStrategy::Conquest | GrandStrategy::Recovery
-        ) || g.players[pid].faith < 600.0
+        ) || (below_modelled_floor && g.host_purchasable.is_empty())
         {
             return false;
         }
-        let bank = g.players[pid].faith;
         let reserve = 180.0;
         let counts = self.counts(g, pid);
+        if bank < reserve {
+            return false;
+        }
         let mut options = Vec::new();
         let memo = g.query_memo();
         for action in self.legal_purchase_actions(g, pid) {
             let Action::Buy {
-                city: _,
+                city,
                 unit,
-                formation: _,
+                formation,
                 currency,
             } = &action
             else {
                 continue;
             };
             if currency != "faith" || g.rules.units[unit].class != "military" {
+                continue;
+            }
+            // A native quote can fit above the reserve long before the
+            // modelled 600-Faith floor. Only its quoted standard formation
+            // gets that exception; missing quotes and unpriced formations
+            // retain the old floor. The score still applies the purchase
+            // and checks the actual remaining bank against every reserve.
+            if below_modelled_floor
+                && (*formation != 0
+                    || g.host_purchasable
+                        .get(city)
+                        .and_then(|menu| menu.get(&format!("unit:{unit}")))
+                        .and_then(|quote| quote.faith)
+                        .is_none())
+            {
+                continue;
+            }
+            // The smaller native surplus must not become a stream of
+            // redundant recon units. The shared scorer rejects a covered
+            // Scout role, but military_faith_score adds combat credit after
+            // clamping that rejection to zero. Respect it for recon under
+            // the new quoted-budget exception; wanted recon stays eligible.
+            if below_modelled_floor
+                && g.rules.units[unit].promotion_class == "recon"
+                && self.production_value(g, pid, *city, &Item::Unit { unit: *unit }, plan, &counts)
+                    <= 0.0
+            {
                 continue;
             }
             if !self.faith_military_is_affordable(g, pid, unit) {
@@ -42337,7 +42372,27 @@ impl AdvancedAi {
         // turn number or the acting civilization.
         self.journal().begin_turn(g.turn, pid);
         let pool = self.work_pool.clone();
-        g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
+        if self.unit_preservation && !g.players[pid].is_minor && !g.players[pid].is_barbarian {
+            let mut proposed = g.clone();
+            let start = proposed.log.len();
+            proposed
+                .with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
+            let actions: Vec<Action> = proposed
+                .log
+                .since(start)
+                .filter(|(seat, _)| *seat == pid)
+                .map(|(_, action)| action.clone())
+                .collect();
+            let actions = self.preserve_unit_actions(g, pid, &actions);
+            // These preferences are decisions rather than simulated turn yields.
+            g.players[pid].citizen_food_bias = proposed.players[pid].citizen_food_bias;
+            g.players[pid].city_directives = proposed.players[pid].city_directives.clone();
+            for action in actions {
+                let _ = g.apply(pid, &action);
+            }
+        } else {
+            g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
+        }
     }
 
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
@@ -42931,6 +42986,9 @@ mod settlement_ownership_tests;
 
 #[cfg(test)]
 mod treasury_local_builder_tests;
+
+#[cfg(test)]
+mod faith_army_budget_tests;
 
 #[cfg(test)]
 mod tests;

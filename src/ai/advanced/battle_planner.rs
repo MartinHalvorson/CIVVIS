@@ -443,6 +443,34 @@ pub(super) struct DangerField {
 }
 
 impl DangerField {
+    /// Possible replies after a visible enemy has had one turn to reposition.
+    /// Each source remains one source even when several routes cover a tile.
+    pub(super) fn second_turn(g: &Game, pid: usize) -> Self {
+        let mut field = Self::with_reach(g, pid, true);
+        let mut probe = g.speculative_clone();
+        for (uid, reach) in &mut field.reaches {
+            let saved = probe.units[uid].clone();
+            let moves = probe.unit_max_moves(*uid);
+            if let Some(unit) = probe.units.get_mut(uid) {
+                unit.moves_left = moves;
+                unit.moved = false;
+                unit.acted = false;
+                unit.zoc_stopped = false;
+                unit.started_turn_in_zoc = false;
+            }
+            let stands = probe.reachable(*uid);
+            for stand in stands {
+                probe.relocate(*uid, stand);
+                reach.extend(strike_reach_of(&mut probe, pid, *uid));
+            }
+            probe.relocate(*uid, saved.pos);
+            *probe.units.get_mut(uid).expect("forecast retains enemy") = saved;
+            reach.sort_unstable();
+            reach.dedup();
+        }
+        field
+    }
+
     /// The field on the movement flood's reach (`Game::attack_reach`).
     pub(super) fn new(g: &Game, pid: usize) -> Self {
         Self::with_reach(g, pid, false)
@@ -497,7 +525,7 @@ impl DangerField {
 
     /// A melee strike wounds the attacker before the enemy replies. Its
     /// reduced defensive strength belongs in the reply price and cache key.
-    fn contributions_at_hp(&mut self, tile: Pos, uid: u32, hp: i32) -> Blows {
+    pub(super) fn contributions_at_hp(&mut self, tile: Pos, uid: u32, hp: i32) -> Blows {
         if let Some(hit) = self.cache.get(&(tile, uid, hp)) {
             return Arc::clone(hit);
         }
@@ -1064,7 +1092,7 @@ fn upper_roll_damage(mean: f64) -> f64 {
     (mean * crate::ai::COMBAT_ROLL_MAX).ceil().min(100.0)
 }
 
-fn melee_health_floor(g: &Game, pid: usize, action: &Action) -> Option<(u32, i32)> {
+pub(super) fn melee_health_floor(g: &Game, pid: usize, action: &Action) -> Option<(u32, i32)> {
     let Action::Attack { unit, target } = action else {
         return None;
     };
@@ -1088,7 +1116,7 @@ impl AdvancedAi {
     /// The live controller must also honor this policy when its fresh combat
     /// preview disagrees with the native damage model.
     pub fn live_strike_survival_enabled(&self) -> bool {
-        self.doomed_blow_veto || self.doomed_blow_veto_2
+        self.unit_preservation || self.doomed_blow_veto || self.doomed_blow_veto_2
     }
 
     /// Apply the selected survival policy to a live bridge finishing volley.
@@ -1102,8 +1130,12 @@ impl AdvancedAi {
         pid: usize,
         actions: impl IntoIterator<Item = &'a Action>,
     ) -> bool {
-        if !self.doomed_blow_veto && !self.doomed_blow_veto_2 {
+        if !self.unit_preservation && !self.doomed_blow_veto && !self.doomed_blow_veto_2 {
             return true;
+        }
+        if self.unit_preservation {
+            let actions: Vec<Action> = actions.into_iter().cloned().collect();
+            return self.preservation_finishing_safe(before, pid, &actions);
         }
         let mut after = before.speculative_clone();
         let mut strikers = BTreeSet::new();
@@ -1160,9 +1192,15 @@ impl AdvancedAi {
         self.battle_planner_ordered = self.withdraw_before_kill_prepass(g, pid, plan);
         let withdrew = !self.battle_planner_ordered.is_empty();
         self.battle_planner_recovering.retain(|uid| {
-            g.units
-                .get(uid)
-                .is_some_and(|unit| unit.owner == pid && unit.hp < RETURN_HP)
+            g.units.get(uid).is_some_and(|unit| {
+                unit.owner == pid
+                    && unit.hp
+                        < if self.unit_preservation {
+                            100
+                        } else {
+                            RETURN_HP
+                        }
+            })
         });
         let mut field = DangerField::with_reach(g, pid, self.strike_reach);
         self.census.strike_reach_widened += field.widened;
