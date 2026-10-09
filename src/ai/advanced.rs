@@ -41093,6 +41093,12 @@ impl AdvancedAi {
 
     fn advanced_encampment_strikes(&self, g: &mut Game, pid: usize) {
         loop {
+            if !g.player_city_ids(pid).into_iter().any(|cid| {
+                g.defending_districts(&g.cities[&cid])
+                    .any(|district| g.defending_district_can_strike(&g.cities[&cid], &district))
+            }) {
+                break;
+            }
             let mut best: BTreeMap<(u32, Pos), (f64, Pos, Action)> = BTreeMap::new();
             for action in g.legal_actions_within(pid, ActionFamilies::CORE) {
                 let (city, source, target) = match action {

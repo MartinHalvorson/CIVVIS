@@ -12799,7 +12799,7 @@ local function applyOrder(player, pid, row, turn)
 	end
 
 	-- WorldInput.lua:2626 passes the selected district object to CanStartCommand.
-	-- Expansion2 CityBannerManager.lua:697-700 gives the Oppidum this gun too.
+	-- Expansion2 CityBannerManager.lua:693-705 gives the Oppidum this gun too.
 	-- Keep source coordinates separate from the target, and prove its parent:
 	-- native city IDs are scoped to the player, while one city can have two forts.
 	if kind == "district_strike" then
@@ -12831,12 +12831,12 @@ local function applyOrder(player, pid, row, turn)
 		if not try(function()
 			return CityManager.CanStartCommand(district, CityCommandTypes.RANGE_ATTACK, params);
 		end, false) then return false, "district_strike_refused"; end
-		local warRefusal = CivvisLedger.refuseWarStarter(district, subject, "DISTRICT_STRIKE", x, y, turn);
+		local warRefusal = CivvisLedger.refuseWarStarter(district, subject, "RANGE_ATTACK", x, y, turn);
 		if warRefusal ~= nil then return false, warRefusal; end
 		local ok = pcall(function()
 			CityManager.RequestCommand(district, CityCommandTypes.RANGE_ATTACK, params);
 		end);
-		return ok, ok and "DISTRICT_STRIKE" or "district_strike_throw";
+		return ok, ok and "RANGE_ATTACK" or "district_strike_throw";
 	end
 
 	-- The encampment's strike, same shape as the city's: `subject` is the

@@ -77,8 +77,56 @@ impl Game {
     }
 
     pub(crate) fn defending_district_state(&self, cid: u32, pos: Pos) -> Option<DefendingDistrict> {
-        self.defending_districts(self.cities.get(&cid)?)
+        let city = self.cities.get(&cid)?;
+        if let Some(state) = self
+            .defending_districts(city)
             .find(|state| state.pos == pos)
+        {
+            return Some(state);
+        }
+        // Public legacy city records do not hold a district roster. Their
+        // observed tile and inline Encampment pools still identify that actor.
+        let tile = self.map.get(pos)?;
+        let kind = tile.district?;
+        (tile.owner_city == Some(cid) && self.district_is_family(kind, crate::name!("encampment")))
+            .then_some(DefendingDistrict {
+                kind,
+                pos,
+                hp: city.encampment_hp,
+                wall_hp: city.encampment_wall_hp,
+                struck: city.encampment_struck,
+                extra_strikes_used: city.encampment_extra_strikes_used,
+                last_attacked: city.encampment_last_attacked,
+                pillaged: city.encampment_pillaged,
+            })
+    }
+
+    pub(crate) fn refresh_defending_district_memory(
+        &self,
+        memory: &mut RememberedCity,
+        visible: &BTreeSet<Pos>,
+    ) {
+        let Some(city) = self
+            .cities
+            .get(&memory.id)
+            .filter(|city| city.owner == memory.owner)
+        else {
+            return;
+        };
+        memory
+            .defending_districts
+            .retain(|state| !visible.contains(&state.pos));
+        memory.defending_districts.extend(
+            self.defending_districts(city)
+                .filter(|state| {
+                    visible.contains(&state.pos)
+                        && !self.district_is_family(state.kind, crate::name!("encampment"))
+                })
+                .map(DefendingDistrict::remembered),
+        );
+        memory
+            .defending_districts
+            .sort_unstable_by_key(|state| state.pos);
     }
 
     pub(crate) fn set_defending_district_state(&mut self, cid: u32, state: DefendingDistrict) {

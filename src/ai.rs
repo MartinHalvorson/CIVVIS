@@ -9392,6 +9392,12 @@ impl BasicAi {
             }
         }
         loop {
+            if !city_ids.iter().any(|cid| {
+                g.defending_districts(&g.cities[cid])
+                    .any(|district| g.defending_district_can_strike(&g.cities[cid], &district))
+            }) {
+                break;
+            }
             let strike = g
                 .legal_actions_within(pid, ActionFamilies::CORE)
                 .into_iter()

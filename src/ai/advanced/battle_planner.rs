@@ -535,7 +535,7 @@ impl DangerField {
         // A garrison is not a combat target: blows on a City Center or an
         // Encampment damage the district, not the unit inside it.
         let garrisoned =
-            self.probe.city_at(tile).is_some() || self.probe.encampment_at(tile).is_some();
+            self.probe.city_at(tile).is_some() || self.probe.defending_district_at(tile).is_some();
         if !garrisoned {
             self.probe.relocate(uid, tile);
             if let Some(unit) = self.probe.units.get_mut(&uid) {
@@ -586,12 +586,17 @@ impl DangerField {
                         ));
                     }
                 }
-                if let Some(cid) = self.probe.encampment_at(pos) {
+                if let Some(cid) = self.probe.defending_district_at(pos) {
                     let city = &self.probe.cities[&cid];
                     if city.owner != self.pid
                         && self.probe.is_at_war(self.pid, city.owner)
-                        && self.probe.encampment_can_strike(city)
-                        && encampments.insert(cid)
+                        && self
+                            .probe
+                            .defending_district_state(cid, pos)
+                            .is_some_and(|district| {
+                                self.probe.defending_district_can_strike(city, &district)
+                            })
+                        && encampments.insert((cid, pos))
                     {
                         out.push((
                             None,
@@ -1393,7 +1398,7 @@ impl AdvancedAi {
                 || spec.class != "military"
                 || !g.unit_visible_to(unit.id, pid)
                 || g.city_at(unit.pos).is_some()
-                || g.encampment_at(unit.pos).is_some()
+                || g.defending_district_at(unit.pos).is_some()
             {
                 continue;
             }
@@ -2114,7 +2119,7 @@ impl AdvancedAi {
             {
                 continue;
             }
-            if g.city_at(unit.pos).is_some() || g.encampment_at(unit.pos).is_some() {
+            if g.city_at(unit.pos).is_some() || g.defending_district_at(unit.pos).is_some() {
                 // A recovering garrison already reached safety. Keep its
                 // reservation across live frames until RETURN_HP, otherwise
                 // the per-unit ladder can undo the rotation with a sortie.
@@ -2494,7 +2499,7 @@ impl AdvancedAi {
                     && unit.moves_left > 0.0
                     && !g.is_embarked(unit)
                     && g.city_at(unit.pos).is_none()
-                    && g.encampment_at(unit.pos).is_none()
+                    && g.defending_district_at(unit.pos).is_none()
                     && !self.guard_is_reserved_for_civilian(*uid)
                     && !matches!(
                         Self::force_role(g, *uid),

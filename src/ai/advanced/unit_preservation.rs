@@ -163,7 +163,8 @@ fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>
         });
         let victims = match action {
             Action::Attack { unit, target } | Action::Ranged { unit, target }
-                if after.city_at(*target).is_none() && after.encampment_at(*target).is_none() =>
+                if after.city_at(*target).is_none()
+                    && after.defending_district_at(*target).is_none() =>
             {
                 let ranged = matches!(action, Action::Ranged { .. });
                 after

@@ -20,19 +20,26 @@ pub(crate) fn fixture() -> (Game, u32, Pos, Pos) {
     g.at_war.insert(pair(0, 1));
     let center = crate::hex::offset_to_axial(10, 10);
     let city = g.found_city_for(0, center, None);
+    g.cities.get_mut(&city).unwrap().pop = 7;
+    for tech in ["mining", "bronze_working", "iron_working", "masonry"] {
+        g.players[0].techs.insert(Name::new(tech));
+    }
     let enc = crate::hex::offset_to_axial(7, 10);
     let opp = crate::hex::offset_to_axial(13, 10);
     for (kind, pos) in [("encampment", enc), ("oppidum", opp)] {
         g.map.tiles.get_mut(&pos).unwrap().owner_city = Some(city);
         g.cities.get_mut(&city).unwrap().owned_tiles.push(pos);
-        assert!(g.complete_item(
-            0,
-            city,
-            &Item::District {
-                district: Name::new(kind),
-                pos
-            }
-        ));
+        assert!(
+            g.complete_item(
+                0,
+                city,
+                &Item::District {
+                    district: Name::new(kind),
+                    pos
+                }
+            ),
+            "fixture must be able to complete {kind}"
+        );
     }
     assert!(g.complete_item(
         0,
@@ -181,6 +188,69 @@ fn public_memory_keeps_fort_health_without_revealing_shot_history() {
         (seen.struck, seen.extra_strikes_used, seen.last_attacked),
         (false, 0, 0)
     );
+}
+
+#[test]
+fn seeing_a_center_does_not_reveal_an_unseen_oppidum() {
+    let (g, city, enc, _) = fixture();
+    let visible = BTreeSet::from([g.cities[&city].pos, enc]);
+    let memory = g.remember_city_for_viewer(&g.cities[&city], 1, &visible);
+    assert!(memory.defending_districts.is_empty());
+}
+
+#[test]
+fn seeing_a_center_does_not_refresh_hidden_fort_health() {
+    let (mut g, city, _, opp) = fixture();
+    let mut state = g.defending_district_state(city, opp).unwrap();
+    state.hp = 77;
+    g.set_defending_district_state(city, state);
+    let seen = BTreeSet::from([g.cities[&city].pos, opp]);
+    let memory = g.remember_city_for_viewer(&g.cities[&city], 1, &seen);
+    g.players[1].remembered_cities.insert(city, memory);
+    state.hp = 21;
+    g.set_defending_district_state(city, state);
+    let center_only = BTreeSet::from([g.cities[&city].pos]);
+    let memory = g.remember_city_for_viewer(&g.cities[&city], 1, &center_only);
+    assert_eq!(memory.defending_districts[0].hp, 77);
+}
+
+#[test]
+fn repairing_a_pillaged_oppidum_restores_only_that_fort() {
+    let (mut g, city, enc, opp) = fixture();
+    let before = g.defending_district_state(city, enc).unwrap();
+    let mut state = g.defending_district_state(city, opp).unwrap();
+    state.hp = 0;
+    state.wall_hp = 0;
+    state.pillaged = true;
+    g.set_defending_district_state(city, state);
+    g.map.tiles.get_mut(&opp).unwrap().pillaged = true;
+    let repair = Item::Repair {
+        repair: crate::name!("district"),
+        pos: opp,
+    };
+    assert!(g.can_produce(0, city, &repair));
+    assert!(g.complete_item(0, city, &repair));
+    assert_eq!(g.defending_district_state(city, opp).unwrap().hp, 100);
+    assert!(g.defending_district_can_strike(
+        &g.cities[&city],
+        &g.defending_district_state(city, opp).unwrap()
+    ));
+    assert_eq!(g.defending_district_state(city, enc), Some(before));
+}
+
+#[test]
+fn capturing_a_city_removes_fort_state_when_the_roster_converts_to_an_industrial_zone() {
+    let (mut g, city, _, opp) = fixture();
+    g.capture_city(city, 1);
+    assert_eq!(
+        g.district_family(g.map.tiles[&opp].district.unwrap()),
+        crate::name!("industrial_zone")
+    );
+    assert!(!g.cities[&city]
+        .defending_districts
+        .iter()
+        .any(|state| state.pos == opp));
+    assert_eq!(g.defending_district_at(opp), None);
 }
 
 #[test]

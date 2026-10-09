@@ -170,7 +170,7 @@ impl BasicAi {
                             && g.wdist(*pos, target) <= range
                             && Self::city_centre_strikes(g, pid, city, *pos)
                             && g.city_at(*pos).is_none()
-                            && g.encampment_at(*pos).is_none()
+                            && g.defending_district_at(*pos).is_none()
                             && g.line_of_sight_from(*pos, target)
                             && !g.map.get(*pos).is_some_and(|t| {
                                 g.rules.is_water(t) && spec.domain.as_deref() != Some("sea")
@@ -475,7 +475,7 @@ impl MovementRiskFrame {
             if let Some(city) = self.target_city.and_then(|cid| g.cities.get(&cid)) {
                 if BasicAi::city_centre_strikes(g, pid, city, position)
                     && g.city_at(position).is_none()
-                    && g.encampment_at(position).is_none()
+                    && g.defending_district_at(position).is_none()
                 {
                     let mut standing = unit.clone();
                     standing.pos = position;

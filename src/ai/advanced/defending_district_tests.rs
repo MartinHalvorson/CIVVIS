@@ -92,3 +92,15 @@ fn a_pillaged_oppidum_contributes_no_district_shot() {
         .iter()
         .any(|action| matches!(action, Action::DistrictStrike { .. })));
 }
+
+#[test]
+fn retreat_danger_field_includes_an_oppidum_as_its_own_actor() {
+    let (mut g, city, _, opp) = fixture();
+    let target = (opp.0 + 1, opp.1);
+    let victim = g.spawn_test_unit("warrior", 1, target);
+    let mut field = battle_planner::DangerField::with_reach(&g, 1, true);
+    let blows = field.contributions(target, victim);
+    assert_eq!(blows.len(), 1);
+    assert!(blows[0].0.is_none() && blows[0].1 > 0.0);
+    assert!(g.wdist(g.cities[&city].pos, target) > 2);
+}

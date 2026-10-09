@@ -32,7 +32,11 @@ impl Game {
             }
         }
         for city in self.cities.values().filter(|c| visible.contains(&c.pos)) {
-            remembered.insert(city.id, self.remember_city(city));
+            remembered.insert(city.id, self.remember_city_for_viewer(city, pid, &visible));
+        }
+        // A fort can be seen while its center stays under fog.
+        for memory in remembered.values_mut() {
+            self.refresh_defending_district_memory(memory, &visible);
         }
         remembered
             .retain(|id, city| !visible.contains(&city.pos) || self.city_at(city.pos) == Some(*id));
@@ -123,6 +127,30 @@ impl Game {
                 Arc::make_mut(&mut view.observed_city_strength)
                     .insert(city.id, self.city_strength(city.id));
             }
+        }
+        // Only revealed map placements enter a foreign city's public roster.
+        // This also lets a seen fort protect its garrison on the decision board.
+        for tile in view.map.tiles.values() {
+            let Some(city) = tile.owner_city.and_then(|cid| view.cities.get_mut(&cid)) else {
+                continue;
+            };
+            if city.owner != pid {
+                if let Some(kind) = tile.district.filter(|kind| {
+                    self.district_has_defenses(*kind)
+                        && !self.district_is_family(*kind, crate::name!("encampment"))
+                }) {
+                    city.districts.insert(kind, tile.pos);
+                }
+            }
+        }
+        let foreign: Vec<_> = view
+            .cities
+            .values()
+            .filter(|city| city.owner != pid)
+            .map(|city| city.id)
+            .collect();
+        for cid in foreign {
+            view.restore_other_defending_districts(cid);
         }
         view.unseen_city_owners.extend(
             self.cities
