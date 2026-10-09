@@ -78,13 +78,17 @@ its recipient. It is not a native movement-completion or combat-bonus witness.
 ## Validation
 
 - Corrected final fixtures against unchanged controller source reproduce seven
-  expected failures among 64 checks: ordinary Páez support, discovered custom
+  expected failures among 68 checks: ordinary Páez support, discovered eligible
   cavalry support, reserved Urdaneta support, and asynchronous request count.
   The preservation controls pass. Baseline source is retained from test-only
   checkpoint `f26e0cd0d`.
-- Candidate: all 64 checks pass under the installed Lua 5.1 runtime.
+- Candidate: all 68 checks pass under the installed Lua 5.1 runtime.
 - All 84 discovered `tools/civ6_control/mod/*_test.lua` suites pass under Lua 5.1.
   The existing CI job discovers this new suite through the same glob.
+- The CI type-name gate rejected two synthetic fixture names before running
+  Lua. Final fixtures use shipped Horseman and Giant Death Robot names; tag
+  removal still proves that eligibility is read from host rule data. The
+  unchanged-source behavior failures above are local regression evidence.
 - Full local Rust validation and final CI remain pending in the draft PR.
 
 No Rust game mechanic, mirror schema, native pin, policy, installed mod, or

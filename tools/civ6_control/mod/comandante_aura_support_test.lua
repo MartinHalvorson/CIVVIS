@@ -215,6 +215,7 @@ local function check(name, got, want)
  if got ~= want then failures = failures + 1; print("FAIL " .. name .. ": got " .. tostring(got) .. " want " .. tostring(want))
  else print("ok   " .. name) end
 end
+local originalHostilePlots = CivvisBoard.hostilePlots
 local tagRows = {}
 local function tagIterator()
  local i = 0
@@ -225,10 +226,10 @@ GameInfo.GreatPersonIndividuals[1005] = { GreatPersonIndividualType = "GREAT_PER
 GameInfo.GreatPersonClasses[2002] = { GreatPersonClassType = "GREAT_PERSON_CLASS_SCIENTIST" }
 GameInfo.Units.UNIT_COMANDANTE_GENERAL = { UnitType = "UNIT_COMANDANTE_GENERAL", Domain = "DOMAIN_LAND", Combat = 0, RangedCombat = 0 }
 GameInfo.Units.UNIT_WARRIOR = { UnitType = "UNIT_WARRIOR", Domain = "DOMAIN_LAND", Combat = 20, RangedCombat = 0 }
-GameInfo.Units.UNIT_CUSTOM_CAVALRY = { UnitType = "UNIT_CUSTOM_CAVALRY", Domain = "DOMAIN_LAND", Combat = 60, RangedCombat = 0 }
+GameInfo.Units.UNIT_HORSEMAN = { UnitType = "UNIT_HORSEMAN", Domain = "DOMAIN_LAND", Combat = 60, RangedCombat = 0 }
 GameInfo.Units.UNIT_DESTROYER = { UnitType = "UNIT_DESTROYER", Domain = "DOMAIN_SEA", Combat = 80, RangedCombat = 0 }
 GameInfo.Units.UNIT_BUILDER = { UnitType = "UNIT_BUILDER", Domain = "DOMAIN_LAND", Combat = 0, RangedCombat = 0 }
-GameInfo.Units.UNIT_UNTAGGED_LAND = { UnitType = "UNIT_UNTAGGED_LAND", Domain = "DOMAIN_LAND", Combat = 130, RangedCombat = 0 }
+GameInfo.Units.UNIT_GIANT_DEATH_ROBOT = { UnitType = "UNIT_GIANT_DEATH_ROBOT", Domain = "DOMAIN_LAND", Combat = 130, RangedCombat = 0 }
 local function pathTo(x)
  local path = {}
  for col = 1,x do path[#path + 1] = plotIndex(col,1) end
@@ -242,11 +243,12 @@ local function reset()
  host.unknownOwner, host.refuseMove, host.missingMoves = false, false, false
  UnitManager.GetMoveToPathEx = pathFinder
  GameInfo.TypeTags = tagIterator
+ CivvisBoard.hostilePlots = originalHostilePlots
  tagRows = {
   { Type = "ABILITY_COMANDANTE_AOE_STRENGTH", Tag = "CLASS_MELEE" },
   { Type = "ABILITY_COMANDANTE_AOE_STRENGTH", Tag = "CLASS_LIGHT_CAVALRY" },
   { Type = "UNIT_WARRIOR", Tag = "CLASS_MELEE" },
-  { Type = "UNIT_CUSTOM_CAVALRY", Tag = "CLASS_LIGHT_CAVALRY" },
+  { Type = "UNIT_HORSEMAN", Tag = "CLASS_LIGHT_CAVALRY" },
   { Type = "UNIT_DESTROYER", Tag = "CLASS_MELEE" },
   { Type = "UNIT_BUILDER", Tag = "CLASS_MELEE" },
  }
@@ -271,12 +273,14 @@ local function scenario(name, configure, expectedX, expectedCommands)
  check(name .. " activation count", #host.commands, expectedCommands or 0)
 end
 scenario("idle Paez moves to owned reachable recipient", nil, 6)
-scenario("tag discovery includes custom cavalry", function() host.units[2].kind="UNIT_CUSTOM_CAVALRY" end,6)
+scenario("tag discovery includes cavalry", function() host.units[2].kind="UNIT_HORSEMAN" end,6)
 scenario("Urdaneta reserves ready army and follows for aura", function() host.individual=1005 end,6)
 scenario("existing aura recipient preserves position", function() host.units[2].x=3 end,nil)
 scenario("naval unit is not an aura recipient", function() host.units[2].kind="UNIT_DESTROYER" end,nil)
 scenario("civilian with a matching tag is not an army recipient", function() host.units[2].kind="UNIT_BUILDER" end,nil)
-scenario("untagged land military is ineligible", function() host.units[2].kind="UNIT_UNTAGGED_LAND" end,nil)
+scenario("host tag removal excludes an otherwise eligible unit", function() tagRows[3].Tag="CLASS_SUPPORT" end,nil)
+scenario("hostile unit beside owned path holds", function() CivvisBoard.hostilePlots=function() return {["4,2"]=true} end end,nil)
+scenario("untagged land military is ineligible", function() host.units[2].kind="UNIT_GIANT_DEATH_ROBOT" end,nil)
 scenario("embarked recipient is not a destination", function() host.units[2].embarked=true end,nil)
 scenario("off-map recipient is ignored", function() host.units[2].x=-1 end,nil)
 scenario("empty army holds", function() host.units[2]=nil end,nil)
