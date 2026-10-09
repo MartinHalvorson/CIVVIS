@@ -37,8 +37,18 @@ Oppidum export coverage does not establish a modeled Oppidum ranged action.
 | Unchanged exporter, new range suite | 8 of 11 fail; 3 pass |
 | Unchanged exporter, all other discovered Lua suites | 86 pass |
 | Baseline parsing/source freeze | All 93 control-mod Lua files parse under 5.1; 636 inputs unchanged |
-| Corrected exporter, discovered Lua suites | Pending |
-| Final independent CI | Pending |
+| Corrected exporter, discovered Lua suites | All 88 pass, including all 11 range cases and all 19 original health assertions; 636 inputs unchanged |
+| All scripts in both CI mod directories | All 95 parse under Lua 5.1 |
+| Independent source-head CI | Control-mod, native-type/sandbox/local-slot guards and cargo integrity checks pass; Rust gate explicitly reports `rust_gate=false` |
+| Rust/data/build inputs | All 548 byte-identical to the task base; no redundant compilation required by the tools/docs fast lane |
+| Local normal overwrite guard | Pass; five recent deleted lines below its threshold; no exception |
+
+The first hosted overwrite job timed out during repository checkout after
+15 minutes; its blame step never ran. That failure is retained in
+`district-defense-range-source-head-overwrite-checkout-timeout.{log,receipt.json}`.
+The final head must still pass the ordinary hosted guard. The paired-cost job
+passed its scope decision and skipped both builds and measurement for unchanged
+Rust; it supplies no measured cost or speed result.
 
 Artifacts are retained under
 `civvis-tactics-results/2026-10-08/public-campus-finish-before-defender/`:
@@ -46,6 +56,11 @@ Artifacts are retained under
 `district-defense-range-unchanged-baseline-lua.{registration,receipt}.json`.
 The complete baseline log SHA256 is
 `7459aee1d108f6e0119009c6c9a3b8bcc2594a6fc2c7a8cfd360139bc937d741`.
+The complete passing candidate log SHA256 is
+`91da0b3ab50502cd23d45416659e97258637f083b2b43494d6a7d731bc00acb6`.
+`district-defense-range-candidate-validation-proof.json` records the original
+19 test-body identity and the unchanged Rust/data/build inputs. Evaluation-only
+changes reuse the passing candidate's byte-identical validated inputs.
 
 This change corrects a reproduced export boundary. It changes no Rust engine,
 AI policy, native lane, installed mod, runtime pin or game settings. No controlled
