@@ -26598,7 +26598,6 @@ impl Game {
 
     /// A standing Encampment remains a combat target at zero HP until a
     /// melee unit enters and pillages it, like a depleted City Center.
-    #[cfg(test)]
     pub(crate) fn encampment_at(&self, pos: Pos) -> Option<u32> {
         let tile = self.map.get(pos)?;
         if !tile

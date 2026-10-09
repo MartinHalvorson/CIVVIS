@@ -10298,7 +10298,7 @@ fn apply_encampment_health(game: &mut crate::game::Game, state: &StateCity, cid:
         .collect();
     if !forts
         .iter()
-        .any(|(kind, _, _)| game.district_is_family(*kind, crate::name!("encampment")))
+        .any(|(kind, _, _)| game.district_family(*kind) == crate::name!("encampment"))
     {
         game.cities.get_mut(&cid).unwrap().encampment_hp = 100;
     }
