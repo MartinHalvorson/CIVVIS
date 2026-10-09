@@ -41,7 +41,7 @@ fn a_sampled_kill_does_not_remove_a_possible_reply() {
         target: g.units[&enemy].pos,
     };
     // Supply a host mean that can kill, with a lower roll that cannot.
-    g.host_previews.insert(
+    std::sync::Arc::make_mut(&mut g.host_previews).insert(
         (ours, g.units[&enemy].pos, false),
         crate::game::HostStrikePreview {
             attacker_strength: 20.0,
