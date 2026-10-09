@@ -4644,6 +4644,13 @@ fn decide(
         eprintln!("civvis-orders: {why}");
         std::process::exit(2);
     }
+    // `unseen-capital-is-unseen`: the board's capital and founder facts are
+    // the host's by now; the seat's city memory, taken earlier in the
+    // rebuild, still crowns each rival's first planted city. Re-take it
+    // before anything plans on it. See `mirror::refresh_city_memory`.
+    if ai.unseen_capital_is_unseen() {
+        civvis::mirror::refresh_city_memory(&mut mirror_state.game);
+    }
     let emergency_wall_adoptions = adopt_emergency_wall_production(ours, state);
     let (production_hints_consumed, production_hints_expired) =
         settle_deferred_production_hints(ours, state);
@@ -5014,6 +5021,17 @@ fn decide(
         &mirror_state.game.sealed_border_owners,
     );
     add_siege_passage_targets(&mut exploration_targets, &siege_blockers);
+    // `unseen-capital-is-unseen`: the lane asks one rival a cadence, the one
+    // with the most explorers at its border, and a rival the book prices
+    // under the 30 Gold minimum ask can only ever hold. Keep the rivals it
+    // would ask, so a rival whose capital we have never seen is not starved
+    // by one whose capital we know: G120134Z t121 held on Babylon's 28 Gold
+    // book with 314 Gold in the bank while France, the culture winner, was
+    // never seen.
+    if ai.unseen_capital_is_unseen() {
+        exploration_targets
+            .retain(|seat, _| passage_value(*seat) >= BORDER_BUY_CEILING_MIN as f64);
+    }
     match append_border_buy_order(
         &mirror_state.game.sealed_border_owners,
         &exploration_targets,

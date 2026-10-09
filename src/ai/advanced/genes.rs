@@ -3503,6 +3503,13 @@ pub const GENES: &[Gene] = &[
     // coast or pocket with a dry road round it. A mustering member walks in
     // by the dry road. See `muster_step` in `siege_train`.
     Gene { tag: "muster-walks-the-road", field: "muster_walks_the_road", kind: Kind::OptIn, enable: AdvancedAi::enable_muster_walks_the_road, disable: AdvancedAi::disable_muster_walks_the_road },
+    // The rebuild takes the seat's city memory before the host's capital
+    // flags land, so every rival's first planted city was remembered as its
+    // capital: find-the-capital never priced a passage or hunted, and the
+    // planning board drew fogged cities with the planting's crown. 113 of 258
+    // rival capitals were never seen in 87 Emperor runs. The decider re-takes
+    // the memory. See `mirror::refresh_city_memory`.
+    Gene { tag: "unseen-capital-is-unseen", field: "unseen_capital_is_unseen", kind: Kind::OptIn, enable: AdvancedAi::enable_unseen_capital_is_unseen, disable: AdvancedAi::disable_unseen_capital_is_unseen },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

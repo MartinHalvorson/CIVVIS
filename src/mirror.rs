@@ -1950,6 +1950,24 @@ pub(crate) fn apply_city_memory(game: &mut crate::game::Game) {
     }
 }
 
+/// Re-take the seat's city memory from the board as it stands now.
+///
+/// ⚠ The rebuild takes the memory (`city_memory`, Board phase) BEFORE the
+/// host's city facts land (`capital_identity::apply`, inside
+/// `observed_host_metrics`). Every revealed rival city is planted through
+/// `Game::found_city_for`, which crowns a player's first planted city its
+/// capital and makes its current owner its founder; the host's
+/// `original_capital` and `original_owner` correct the board afterwards, but
+/// the memory keeps the planting's guess. The planning board
+/// (`Game::player_decision_view`) draws every fogged rival city from that
+/// memory, and `find-the-capital` counts a remembered capital as seen. The
+/// live brain rebuilds the board every frame (`--fresh-board`), so the guess
+/// was there on every decision. Called by the decider under
+/// `unseen-capital-is-unseen`; the rebuild itself is unchanged.
+pub fn refresh_city_memory(game: &mut crate::game::Game) {
+    apply_city_memory(game);
+}
+
 /// Tell the seat what the ground it has seen actually LOOKED like.
 ///
 /// ★★★★★ **THE SEAT REMEMBERED NOTHING, SO THE MIRROR DREW ONLY WHAT IT COULD SEE THIS

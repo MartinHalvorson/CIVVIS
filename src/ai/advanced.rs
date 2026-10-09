@@ -8212,6 +8212,11 @@ pub struct AdvancedAi {
     /// reliever slots take only tiles a hostile soldier stands on. See
     /// `hostile_soldier_at` in `siege_train`.
     wall_sortie_skips_the_encampment: bool,
+    /// `unseen-capital-is-unseen`: the decider re-takes the seat's city
+    /// memory after the host's capital and founder facts land, so a fogged
+    /// rival city is no longer remembered as the capital the rebuild's
+    /// planting crowned it. See `mirror::refresh_city_memory`.
+    unseen_capital_is_unseen: bool,
     /// `war-kills-the-bands-2`: the band hunt runs before the battle is
     /// planned and only with melee-capable land units. See
     /// `advanced/band_hunt.rs`. Off by default.
@@ -10513,6 +10518,7 @@ impl AdvancedAi {
             science_suppression_hits_the_pads: false,
             // ---- append: t-z ----------------------------------------
             wall_sortie_skips_the_encampment: false,
+            unseen_capital_is_unseen: false,
             war_kills_the_bands_2: false,
             war_kills_the_bands: false,
             war_raids_the_pads: false,

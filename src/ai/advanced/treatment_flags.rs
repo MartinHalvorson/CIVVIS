@@ -7170,6 +7170,14 @@ impl AdvancedAi {
         self.muster_walks_the_road = false;
     }
 
+    pub fn enable_unseen_capital_is_unseen(&mut self) {
+        self.unseen_capital_is_unseen = true;
+    }
+
+    pub fn disable_unseen_capital_is_unseen(&mut self) {
+        self.unseen_capital_is_unseen = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

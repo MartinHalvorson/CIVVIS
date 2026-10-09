@@ -272,3 +272,51 @@ fn a_dead_city_states_capital_is_never_its_holders_original_capital() {
     }
 }
 
+/// `unseen-capital-is-unseen`: rival 1's original capital is not in the
+/// export, only Plymouth. The rebuild plants Plymouth through
+/// `found_city_for`, which crowns a player's first city; the host's flag
+/// corrects the board, but the seat's memory was taken before it and keeps
+/// the crown. Live Emperor 10-08: `find-the-capital` read every such rival's
+/// capital as seen, and the planning board drew the fogged crowned city as
+/// that rival's capital.
+fn unseen_capital_fixture() -> (Snapshot, StateSnapshot) {
+    let (snapshot, mut state) = fixture();
+    state.cities.truncate(1);
+    state.rivals[0].cities = vec![city(3, "Plymouth", 13, false, false, 1)];
+    (snapshot, state)
+}
+
+#[test]
+fn the_rebuilt_memory_keeps_the_plantings_crown_until_refreshed() {
+    let (snapshot, state) = unseen_capital_fixture();
+    let mut game = rebuild_from_state(&snapshot, &state, 3, 364000, 500, 0).game;
+    let plymouth = named(&game, "Plymouth");
+    assert!(!game.cities[&plymouth].is_capital, "the host's flag on the board");
+    assert!(
+        game.players[0].remembered_cities[&plymouth].is_capital,
+        "the planting's crown in the seat's memory"
+    );
+    refresh_city_memory(&mut game);
+    assert!(!game.players[0].remembered_cities[&plymouth].is_capital);
+    // The host's own original capital stays one.
+    let next = named(&game, "Next");
+    assert!(game.players[0].remembered_cities[&next].is_capital);
+}
+
+#[test]
+fn a_refreshed_memory_lets_find_the_capital_price_the_passage() {
+    let (snapshot, state) = unseen_capital_fixture();
+    let mut game = rebuild_from_state(&snapshot, &state, 3, 364000, 500, 0).game;
+    let mut ai = crate::ai::AdvancedAi::targeting(crate::ai::VictoryTarget::Domination);
+    ai.enable_find_the_capital();
+    assert!(!game.is_at_war(0, 1));
+    assert_eq!(ai.find_the_capital_passage_gold(&game, 0, 1), None, "the crown hides it");
+    refresh_city_memory(&mut game);
+    assert_eq!(
+        ai.find_the_capital_passage_gold(&game, 0, 1),
+        Some(150.0),
+        "FIND_CAPITAL_PASSAGE_GOLD"
+    );
+    // Rival 2's capital is in the export: no passage for it.
+    assert_eq!(ai.find_the_capital_passage_gold(&game, 0, 2), None);
+}

@@ -232,3 +232,51 @@ fn the_board_sends_a_fast_body_when_no_scout_is_free() {
         .any(|row| row.key == ObjectiveKey::FindCapital(1)));
     assert!(assigned(&ai), "the horseman takes the hunt");
 }
+
+#[test]
+fn the_unseen_capital_gene_ships_off_and_is_registered() {
+    assert!(!AdvancedAi::new().unseen_capital_is_unseen());
+    let gene = super::super::genes::GENES
+        .iter()
+        .find(|gene| gene.tag == "unseen-capital-is-unseen")
+        .expect("registered");
+    let mut ai = AdvancedAi::new();
+    (gene.enable)(&mut ai);
+    assert!(ai.unseen_capital_is_unseen());
+    (gene.disable)(&mut ai);
+    assert!(!ai.unseen_capital_is_unseen());
+}
+
+#[test]
+fn under_the_unseen_capital_gene_a_slow_body_takes_the_hunt() {
+    let (mut g, _) = board();
+    g.at_war.insert((0, 1));
+    let warrior = g.spawn_test_unit("warrior", 0, at(10, 11));
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    let assigned = |ai: &AdvancedAi| {
+        ai.objective_board()
+            .forces
+            .iter()
+            .find(|force| force.objective_key == ObjectiveKey::FindCapital(1))
+            .is_some_and(|force| force.units.contains(&warrior))
+    };
+
+    let mut v1 = on();
+    v1.enable_objective_board();
+    v1.board_rebuild_force_groups(&g, 0, &plan);
+    assert!(!assigned(&v1), "find-the-capital alone takes only scouts and fast bodies");
+
+    let mut ai = on();
+    ai.enable_unseen_capital_is_unseen();
+    ai.enable_objective_board();
+    ai.board_rebuild_force_groups(&g, 0, &plan);
+    assert!(assigned(&ai), "the warrior takes the hunt");
+}
