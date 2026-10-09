@@ -398,6 +398,7 @@ mod campus_buildings;
 mod commercial_hub;
 mod industrial_zones;
 mod movement_risk;
+mod naval_demand;
 mod scout_first;
 mod scout_inference;
 mod siege_support;
@@ -5375,54 +5376,6 @@ impl BasicAi {
             _ => return None,
         };
         (!g.players[pid].techs.contains(&Name::new(goal))).then_some(goal)
-    }
-
-    pub(crate) fn desired_navy(&self, g: &Game, pid: usize) -> usize {
-        let coastal_cities = g
-            .player_city_ids(pid)
-            .into_iter()
-            .filter(|cid| self.naval_city_can_launch(g, *cid))
-            .count();
-        if coastal_cities == 0 || !g.players[pid].techs.contains(&crate::name!("sailing")) {
-            return 0;
-        }
-        let mut desired = 1;
-        let settlers_at_sea = g.units.values().any(|unit| {
-            unit.owner == pid
-                && unit.kind == "settler"
-                && g.map
-                    .get(unit.pos)
-                    .is_some_and(|tile| g.rules.is_water(tile))
-        });
-        if settlers_at_sea
-            || (g.players[pid].techs.contains(&crate::name!("shipbuilding"))
-                && g.units
-                    .values()
-                    .any(|unit| unit.owner == pid && unit.kind == "settler"))
-        {
-            desired = desired.max(2);
-        }
-        let naval_war = g.players.iter().any(|enemy| {
-            enemy.id != pid
-                && enemy.alive
-                && g.is_at_war(pid, enemy.id)
-                && (g.units.values().any(|unit| {
-                    unit.owner == enemy.id
-                        && g.map
-                            .get(unit.pos)
-                            .is_some_and(|tile| g.rules.is_water(tile))
-                }) || g
-                    .player_city_ids(enemy.id)
-                    .into_iter()
-                    .any(|cid| self.naval_city_can_launch(g, cid)))
-        });
-        if naval_war {
-            desired = desired.max(coastal_cities.saturating_add(1).max(2));
-        } else if g.players[pid].techs.contains(&crate::name!("cartography")) && coastal_cities >= 2
-        {
-            desired = desired.max(2);
-        }
-        desired
     }
 
     fn has_exploration_target(&self, g: &Game, pid: usize, uid: u32) -> bool {
