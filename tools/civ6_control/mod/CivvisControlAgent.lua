@@ -6785,32 +6785,30 @@ end;
 -- PARAM_YIELD_TYPE and PARAM_DATA0=1/0. Preserve other yield preferences and
 -- release only a Food preference this bridge requested. A successful request
 -- is not readback: keep release ownership until IsFavoredYield says false.
-CivvisCitizenGrowth = { managed = {} };
-CivvisCitizenGrowth.read = function(city)
+CivvisCitizenGrowth = { managed = {}, cities = {}, blocked = {} };
+CivvisCitizenGrowth.facts = function(city)
 	return try(function()
-		local key = tostring(city:GetOwner()) .. ":" .. tostring(city:GetID());
+		local owner, id = city:GetOwner(), city:GetID();
+		if type(owner) ~= "number" or owner < 0 or type(id) ~= "number" then return nil; end
+		local key = tostring(owner) .. ":" .. tostring(id);
 		local citizens = city:GetCitizens();
 		local favored = citizens:IsFavoredYield(YieldTypes.FOOD);
 		local disfavored = citizens:IsDisfavoredYield(YieldTypes.FOOD);
 		if type(favored) ~= "boolean" or type(disfavored) ~= "boolean" then return nil; end
-		if not favored and CivvisCitizenGrowth.managed[key] == "releasing" then
-			CivvisCitizenGrowth.managed[key] = nil;
-		end
-		return { key = key, favored = favored, disfavored = disfavored,
-			managed = CivvisCitizenGrowth.managed[key] ~= nil };
+		local growth = try(function() return city:GetGrowth(); end, nil);
+		return { key = key, owner = owner, favored = favored, disfavored = disfavored,
+			pop = try(function() return city:GetPopulation(); end, nil),
+			housing = try(function() return growth:GetHousing(); end, nil),
+			surplus = try(function() return growth:GetFoodSurplus(); end, nil) };
 	end, nil);
 end;
-CivvisCitizenGrowth.request = function(city, enable)
-	local before = CivvisCitizenGrowth.read(city);
-	if before == nil then return false, "no_food_focus_readback"; end
-	if enable then
-		if before.disfavored then return false, "food_disfavored"; end
-		if before.favored then
-			return before.managed, before.managed and "food_already_favored" or "food_focus_not_owned";
-		end
-	elseif not before.managed then
-		return false, "food_focus_not_owned";
+CivvisCitizenGrowth.signature = function(facts)
+	for _, value in ipairs({facts.pop or false, facts.housing or false, facts.surplus or false}) do
+		if type(value) ~= "number" or value ~= value or math.abs(value) == math.huge then return nil; end
 	end
+	return tostring(facts.pop) .. ":" .. tostring(facts.housing) .. ":" .. tostring(facts.surplus);
+end;
+CivvisCitizenGrowth.command = function(city, enable)
 	local params = try(function()
 		local out = {};
 		out[CityCommandTypes.PARAM_FLAGS] = 0;
@@ -6822,12 +6820,106 @@ CivvisCitizenGrowth.request = function(city, enable)
 	local can = try(function()
 		return CityManager.CanStartCommand(city, CityCommandTypes.SET_FOCUS, params);
 	end, false);
-	if not can then return false, "cannot_set_food_focus"; end
+	if can ~= true then return false, "cannot_set_food_focus"; end
 	local ok = pcall(function()
 		CityManager.RequestCommand(city, CityCommandTypes.SET_FOCUS, params);
 	end);
-	if ok then CivvisCitizenGrowth.managed[before.key] = enable and "growing" or "releasing"; end
 	return ok, ok and "food_focus_requested" or "food_focus_throw";
+end;
+-- IsFavoredYield=false alone does not make a release safe. Native Panama
+-- t104 switched from10 workedFood to7 for4 citizens, then starved at105.
+-- Keep the turn pending until the new allocation has a nonnegative native
+-- Food surplus, or Food preference has actually been restored.
+CivvisCitizenGrowth.read = function(city, final)
+	local facts = CivvisCitizenGrowth.facts(city);
+	if facts == nil then return nil; end
+	local key = facts.key;
+	local phase = CivvisCitizenGrowth.managed[key];
+	if phase == "releasing" and not facts.favored then
+		if facts.disfavored then
+			-- An external disfavor is an explicit choice; do not overwrite it.
+			CivvisCitizenGrowth.managed[key] = nil;
+			CivvisCitizenGrowth.cities[key] = nil;
+			CivvisCitizenGrowth.blocked[key] = nil;
+		elseif type(facts.surplus) == "number" and facts.surplus == facts.surplus
+				and facts.surplus >= 0 and facts.surplus < math.huge then
+			-- Export can precede more orders. Commit a safe release only at
+			-- the final end-turn guard, after all other own actions settled.
+			if final then
+				CivvisCitizenGrowth.managed[key] = nil;
+				CivvisCitizenGrowth.cities[key] = nil;
+				CivvisCitizenGrowth.blocked[key] = nil;
+			end
+		else
+			CivvisCitizenGrowth.managed[key] = "recovering";
+			CivvisCitizenGrowth.blocked[key] = true;
+			local ok = CivvisCitizenGrowth.command(city, true);
+			if not ok then CivvisCitizenGrowth.managed[key] = "releasing"; end
+		end
+	elseif phase == "recovering" and facts.favored then
+		CivvisCitizenGrowth.managed[key] = "growing";
+		CivvisCitizenGrowth.blocked[key] = CivvisCitizenGrowth.signature(facts) or true;
+	elseif phase == "growing" and facts.favored and CivvisCitizenGrowth.blocked[key] then
+		local signature = CivvisCitizenGrowth.signature(facts);
+		if signature ~= nil then
+			if CivvisCitizenGrowth.blocked[key] == true then
+				CivvisCitizenGrowth.blocked[key] = signature;
+			elseif signature ~= CivvisCitizenGrowth.blocked[key] then
+				CivvisCitizenGrowth.blocked[key] = nil;
+			end
+		end
+	end
+	facts.managed = CivvisCitizenGrowth.managed[key] ~= nil;
+	return facts;
+end;
+CivvisCitizenGrowth.request = function(city, enable)
+	local before = CivvisCitizenGrowth.read(city);
+	if before == nil then return false, "no_food_focus_readback"; end
+	if enable then
+		if before.disfavored then return false, "food_disfavored"; end
+		if before.favored then
+			return before.managed, before.managed and "food_already_favored" or "food_focus_not_owned";
+		end
+	elseif not before.managed then
+		return false, "food_focus_not_owned";
+	elseif CivvisCitizenGrowth.blocked[before.key] then
+		return false, "food_release_would_starve";
+	end
+	if CivvisCitizenGrowth.managed[before.key] == "releasing"
+			or CivvisCitizenGrowth.managed[before.key] == "recovering" then
+		return false, "food_focus_pending";
+	end
+	local previous = CivvisCitizenGrowth.managed[before.key];
+	CivvisCitizenGrowth.managed[before.key] = enable and "growing" or "releasing";
+	CivvisCitizenGrowth.cities[before.key] = city;
+	local ok, why = CivvisCitizenGrowth.command(city, enable);
+	if not ok then
+		CivvisCitizenGrowth.managed[before.key] = previous;
+		if previous == nil then CivvisCitizenGrowth.cities[before.key] = nil; end
+	end
+	return ok, why;
+end;
+CivvisCitizenGrowth.pending = function(final)
+	local pending = false;
+	for key, city in pairs(CivvisCitizenGrowth.cities) do
+		local phase = CivvisCitizenGrowth.managed[key];
+		if phase == "releasing" or phase == "recovering" then
+			local owner = try(function() return city:GetOwner(); end, nil);
+			if type(owner) == "number" and tostring(owner) ~= key:match("^([^:]+):") then
+				CivvisCitizenGrowth.managed[key] = nil;
+				CivvisCitizenGrowth.cities[key] = nil;
+				CivvisCitizenGrowth.blocked[key] = nil;
+			else
+				local facts = CivvisCitizenGrowth.read(city, final);
+				phase = CivvisCitizenGrowth.managed[key];
+				local safe = facts ~= nil and not facts.favored
+					and type(facts.surplus) == "number" and facts.surplus == facts.surplus
+					and facts.surplus >= 0 and facts.surplus < math.huge;
+				if phase == "recovering" or (phase == "releasing" and not safe) then pending = true; end
+			end
+		end
+	end
+	return pending;
 end;
 
 local function exportState(player, pid, turn, frame, eventKind)
@@ -21368,6 +21460,7 @@ end;
 
 -- Submission is not acceptance: the host may still be settling a movement.
 CivvisQueue.requestEndTurn = function(turn, parameters)
+	if CivvisCitizenGrowth ~= nil and CivvisCitizenGrowth.pending() then return false; end
 	-- Before the sent-turn guard: a session can hold the turn in either state.
 	CivvisTrade.answerOrphanSessions(turn);
 	-- ActionPanel.lua:505-506 uses the same guard for automatic end turns.
@@ -21394,6 +21487,9 @@ CivvisQueue.requestEndTurn = function(turn, parameters)
 			end
 			return false;
 		end
+	end
+	if CivvisCitizenGrowth ~= nil and CivvisCitizenGrowth.pending(true) then return false; end
+	if type(now) == "number" and now == now and now >= 0 and now < math.huge then
 		CivvisQueue.endTurnSubmittedTurn = turn;
 		CivvisQueue.endTurnSubmittedAt = now;
 	end
