@@ -73,13 +73,15 @@ impl AdvancedAi {
                 }
                 // The capital is building a wonder or a Holy Site: the
                 // idle city that produces most takes the Plaza instead.
-                let capital_busy = match g.cities[&capital].queue.first() {
-                    Some(Item::Building { building }) => g.rules.buildings[building].wonder,
-                    Some(Item::District { district, .. }) => {
-                        g.district_family(*district) == "holy_site"
-                    }
-                    _ => false,
-                };
+                // `capital-campus-before-the-plaza`: so is its Campus.
+                let capital_busy = self.capital_builds_its_campus(g, capital)
+                    || match g.cities[&capital].queue.first() {
+                        Some(Item::Building { building }) => g.rules.buildings[building].wonder,
+                        Some(Item::District { district, .. }) => {
+                            g.district_family(*district) == "holy_site"
+                        }
+                        _ => false,
+                    };
                 if !capital_busy {
                     return None;
                 }
