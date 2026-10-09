@@ -6781,6 +6781,55 @@ CivvisExportClock.report = function(turn, frame)
 	});
 end;
 
+-- Base/Assets/UI/Panels/CityPanel.lua:445-458 uses SET_FOCUS with flags=0,
+-- PARAM_YIELD_TYPE and PARAM_DATA0=1/0. Preserve other yield preferences and
+-- release only a Food preference this bridge requested. A successful request
+-- is not readback: keep release ownership until IsFavoredYield says false.
+CivvisCitizenGrowth = { managed = {} };
+CivvisCitizenGrowth.read = function(city)
+	return try(function()
+		local key = tostring(city:GetOwner()) .. ":" .. tostring(city:GetID());
+		local citizens = city:GetCitizens();
+		local favored = citizens:IsFavoredYield(YieldTypes.FOOD);
+		local disfavored = citizens:IsDisfavoredYield(YieldTypes.FOOD);
+		if type(favored) ~= "boolean" or type(disfavored) ~= "boolean" then return nil; end
+		if not favored and CivvisCitizenGrowth.managed[key] == "releasing" then
+			CivvisCitizenGrowth.managed[key] = nil;
+		end
+		return { key = key, favored = favored, disfavored = disfavored,
+			managed = CivvisCitizenGrowth.managed[key] ~= nil };
+	end, nil);
+end;
+CivvisCitizenGrowth.request = function(city, enable)
+	local before = CivvisCitizenGrowth.read(city);
+	if before == nil then return false, "no_food_focus_readback"; end
+	if enable then
+		if before.disfavored then return false, "food_disfavored"; end
+		if before.favored then
+			return before.managed, before.managed and "food_already_favored" or "food_focus_not_owned";
+		end
+	elseif not before.managed then
+		return false, "food_focus_not_owned";
+	end
+	local params = try(function()
+		local out = {};
+		out[CityCommandTypes.PARAM_FLAGS] = 0;
+		out[CityCommandTypes.PARAM_YIELD_TYPE] = YieldTypes.FOOD;
+		out[CityCommandTypes.PARAM_DATA0] = enable and 1 or 0;
+		return out;
+	end, nil);
+	if params == nil then return false, "no_food_focus_parameters"; end
+	local can = try(function()
+		return CityManager.CanStartCommand(city, CityCommandTypes.SET_FOCUS, params);
+	end, false);
+	if not can then return false, "cannot_set_food_focus"; end
+	local ok = pcall(function()
+		CityManager.RequestCommand(city, CityCommandTypes.SET_FOCUS, params);
+	end);
+	if ok then CivvisCitizenGrowth.managed[before.key] = enable and "growing" or "releasing"; end
+	return ok, ok and "food_focus_requested" or "food_focus_throw";
+end;
+
 local function exportState(player, pid, turn, frame, eventKind)
 	-- Keep export-only helpers inside this function: the main chunk is near
 	-- Lua's local-variable ceiling.
@@ -7606,6 +7655,9 @@ local function exportState(player, pid, turn, frame, eventKind)
 			-- Growth, as the host computes it: the surplus after consumption,
 			-- the next-citizen threshold, the housing/happiness multipliers and
 			-- the turns the host itself forecasts. `food` above is the stockpile.
+			food_favored = try(function() return CivvisCitizenGrowth.read(city).favored; end, nil),
+			food_disfavored = try(function() return CivvisCitizenGrowth.read(city).disfavored; end, nil),
+			food_focus_managed = try(function() return CivvisCitizenGrowth.read(city).managed; end, nil),
 			food_surplus = try(function()
 				return city:GetGrowth():GetFoodSurplus();
 			end, -1),
@@ -12779,6 +12831,13 @@ local function applyOrder(player, pid, row, turn)
 	-- refusal `cannot_<verb>`, never a silent no-op. Until this branch every
 	-- one of these decisions was untranslated and the host's default — keep
 	-- — took every city.
+	if kind == "city_focus" then
+		local city = liveCity(player, subject);
+		if city == nil then return false, "no_city"; end
+		if verb ~= "FAVOR_FOOD" and verb ~= "RELEASE_FOOD" then return false, "unknown_food_focus"; end
+		return CivvisCitizenGrowth.request(city, verb == "FAVOR_FOOD");
+	end
+
 	if kind == "city" then
 		local city = try(function() return CityManager.GetCity(pid, subject); end);
 		if city == nil then return false, "city_missing:" .. tostring(subject); end
