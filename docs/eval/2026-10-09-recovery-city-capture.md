@@ -3,8 +3,9 @@
 The public preservation module initially blocks every unit in its recovery
 set until it reaches full health. Its finisher admission also rejects every
 recovering attacker before considering the already existing survival bounds.
-This draft first adds a separate regression suite without changing that
-production behavior.
+The thirteen-control unchanged-production baseline now proves both defects.
+The candidate permits the capture for an unassigned land melee unit while
+retaining recovery memory for its other orders.
 
 ## Native evidence and limits
 
@@ -81,3 +82,34 @@ must report precisely the two intended failures with eleven controls passing.
 A prospective exception will require survival both at the captured city and
 on the exposed approach at post-exchange health; it will retain recovery
 memory and all existing retaliation, legality and whole-turn safety checks.
+
+## Candidate and validation
+
+The complete thirteen-control baseline on `81c70e045` exits 101 with exactly
+the two intended failures and eleven passing controls. Registered Rust/test/
+Cargo hashes remain unchanged. Independent CI `37904606128` also reproduces
+the erased capture and passes all eleven controls; its fail-fast run stops
+before scheduling the finisher case. Earlier fixture and quality failures
+remain separate from these verified behavior failures.
+
+The candidate independently replays one adjacent land melee capture, optionally
+followed by fortification. The observed enemy city must already be unwalled,
+at zero or one health, and at war. A legal replay must change ownership and
+leave the actor alive on that city. Its conservative post-exchange health must
+survive both the captured-tile reply and an exposed original-position probe
+which retains every originally observed enemy. It therefore cannot rely on
+city garrison shielding or an observed-world elimination to license the
+exception. The whole-turn fixed point also checks that the city remains owned
+and the actor still occupies it after the remaining proposed orders.
+
+Recovery memory remains set. Ordinary movements, ranged attacks, approaches,
+standing walls, uncertain captures, lethal host retaliation, exposed replies,
+lethal hazards and exhausted attackers keep the existing recovery behavior. A
+living assigned Settler guard also keeps recovery; a fourteenth candidate
+control checks that it does not take this exception. The original capture
+control additionally checks retained recovery memory after physical occupation.
+
+Candidate focused local, complete Rust, cost and final integration checks are
+pending. Main integration will preserve and revalidate all twenty-one escort
+controls from the merged PR #4011. No native adoption or win-rate gain is
+credited by this synthetic candidate.

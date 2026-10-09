@@ -66,6 +66,7 @@ fn recovering_adjacent_armor_keeps_a_survivable_guaranteed_city_capture() {
     assert_eq!(executed.cities[&city].owner, 0);
     assert_eq!(executed.units[&ours].pos, g.cities[&city].pos);
     assert!(executed.units[&ours].hp > 0);
+    assert!(ai.battle_planner_recovering.contains(&ours));
     assert_eq!(g.cities[&city].owner, 1);
     assert_eq!(g.units[&ours].hp, 73);
 }
@@ -222,4 +223,15 @@ fn an_attacker_without_movement_cannot_release_recovery() {
     let kept = ai.preserve_unit_actions(&g, 0, std::slice::from_ref(&attack));
     assert!(!kept.contains(&attack));
     assert_eq!(g.cities[&city].owner, 1);
+}
+
+#[test]
+fn a_recovering_settler_guard_does_not_leave_its_companion_for_the_capture() {
+    let (mut g, ours, _, attack) = breach();
+    let settler = g.spawn_unit("settler", 0, g.units[&ours].pos);
+    let mut ai = policy(Some(ours));
+    ai.settler_guards.insert(settler, ours);
+    assert!(!ai.preservation_finishing_safe(&g, 0, std::slice::from_ref(&attack)));
+    let kept = ai.preserve_unit_actions(&g, 0, std::slice::from_ref(&attack));
+    assert!(!kept.contains(&attack));
 }
