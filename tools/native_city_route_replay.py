@@ -24,6 +24,8 @@ import subprocess
 import sys
 import time
 
+from civ6_decision_trace import exact_fact
+
 
 def digest(path: Path) -> str:
     sha = hashlib.sha256()
@@ -86,10 +88,10 @@ class NativeControl:
 
     def observe(self, turn: int, frame: int, original: dict, candidate: dict) -> None:
         recorded = self.records.get((turn, frame))
-        orders_match = recorded is not None and original["orders"] == recorded["orders"]
+        orders_match = recorded is not None and exact_fact(original["orders"], recorded["orders"])
         decision_match = recorded is not None and (
             "decision" in original) == ("decision" in recorded) and (
-            original.get("decision") == recorded.get("decision"))
+            exact_fact(original.get("decision"), recorded.get("decision")))
         row = {"index": len(self.frames), "turn": turn, "frame": frame,
                "native_record_present": recorded is not None,
                "orders_match": orders_match, "complete_decision_match": decision_match,
@@ -98,7 +100,7 @@ class NativeControl:
         if not row["whole_match"] and self.first_mismatch is None:
             self.first_mismatch = {**row, "recorded": control_payload(recorded or {}),
                                    "original": control_payload(original)}
-        if original != candidate:
+        if not exact_fact(original, candidate):
             self.changed_complete_replies += 1
             if self.first_change is None:
                 self.first_change = {**row, "recorded": control_payload(recorded or {}),

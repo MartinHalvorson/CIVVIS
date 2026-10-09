@@ -115,6 +115,36 @@ class NativeControlTests(unittest.TestCase):
         control.observe(1, 0, original, copy.deepcopy(original))
         self.assertFalse(control.result()["gate_passed"])
 
+    def test_boolean_and_numeric_values_do_not_establish_native_agreement(self):
+        original = reply()
+        for value in (False, 0):
+            with self.subTest(value=value):
+                recorded = copy.deepcopy(original)
+                recorded["decision"]["victory_portfolio"]["focus"] = value
+                control = replay.NativeControl({(1, 0): recorded}, 0)
+                control.observe(1, 0, original, copy.deepcopy(original))
+                self.assertFalse(control.result()["gate_passed"])
+
+    def test_type_only_change_cannot_be_replaced_by_a_later_native_match(self):
+        original, later = reply(), reply(2)
+        candidate = copy.deepcopy(original)
+        candidate["decision"]["victory_portfolio"]["focus"] = False
+        control = replay.NativeControl({(1, 0): reply(verb="ATTACK"), (2, 0): later}, 0)
+        control.observe(1, 0, original, candidate)
+        control.observe(2, 0, later, reply(2, verb="MOVE_TO"))
+        result = control.result()
+        self.assertEqual(result["first_changed_complete_reply"]["turn"], 1)
+        self.assertFalse(result["gate_passed"])
+
+    def test_nonfinite_reply_values_cannot_establish_control(self):
+        for value in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(value=value):
+                original = reply()
+                original["decision"]["victory_portfolio"]["focus"] = value
+                control = replay.NativeControl({(1, 0): original}, 0)
+                with self.assertRaises(ValueError):
+                    control.observe(1, 0, original, copy.deepcopy(original))
+
     def test_ambiguous_native_frames_are_rejected(self):
         with TemporaryDirectory() as raw:
             path = Path(raw) / "native.jsonl"

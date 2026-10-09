@@ -24,6 +24,9 @@ complete orders and decision at every explicit turn/frame. It retains all
 native mismatches, the first mismatch's payloads, and both replay arms.
 Duplicate native frame keys are ambiguous and rejected. Unkeyed records and
 missing frame coverage are reported instead of assigning a frame number.
+Comparisons preserve JSON scalar types using the existing decision-trace
+comparator: a Boolean is not a number, and an integer is not a float.
+Non-finite reply values fail validation.
 
 For differing arms, the first changed **complete reply** selects the native
 comparison gate. A telemetry-only or decision-only difference counts; the
@@ -40,12 +43,16 @@ policies and binaries. Neither gate estimates survival, victories or win rate.
 
 ## Validation evidence
 
-Sixteen focused tests include persistent-decider CLI fixtures. They cover
+Nineteen focused tests include persistent-decider CLI fixtures. They cover
 identical replay arms that differ from native, first telemetry and decision
 changes, whole-decision comparison, retained earlier mismatches, missing or
 ambiguous native records, a changed input, a partial replay after a decider
-exits, and a turn-limited prefix. They run through the existing tools unittest
-discovery in the collaboration workflow.
+exits, and a turn-limited prefix. Additional controls reproduce Boolean/number
+equality falsely passing native agreement, a type-only first change being
+replaced by a later native match, and non-finite replies being accepted. Those
+three controls failed before strict comparison (six failing subcases); all
+19 tests pass after it. They run through the existing tools unittest discovery
+in the collaboration workflow.
 
 The new tool also replayed the frozen native witness with the exact original
 binary in both arms, the same 224 requested treatments and `--explain`.
