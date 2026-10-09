@@ -33,9 +33,24 @@ Unassigned civilians and separately planned routes retain their orders.
 Nine new controls cover the original four scenarios, separately routed bound
 units, ordinary single-step movement, an exhausted civilian, and release at
 full health, and cancellation of a founding order after a withheld departure.
-The original twelve preservation controls remain. Candidate
-focused, full local, and independent CI results are pending; no pass is
-claimed in this implementation checkpoint.
+The original twelve preservation controls remain. Independent candidate
+CI `37889113065` passes all 21 preservation controls and all 4,715 Rust tests,
+with 50 skips and four ignored documentation examples. It tests synthetic
+merge `6edc5356` with main `efe715a03`; quality, tooling, publish, and the
+remaining fidelity/provenance checks also pass.
+
+Cost CI `37889112948` passes the 8% budget: five paired 120-turn six-player
+74-by-46 Online Continents games report a median -1.30% per completed turn,
+with a 1% noise floor and resolution of plus or minus 0.83 percentage points.
+Its baseline is `d0c0ddc03` and its candidate includes newer independent main
+changes, so this result does not isolate the escort fix's speed. It does not
+measure native Gran Colombia Domination outcomes.
+
+Main `efe715a03` is merged once into the task branch. The preservation module
+and all 21 fixtures remain byte-identical to the independently tested
+candidate. Focused and complete local Rust validation remain pending while
+the shared build cache is in use by another owned task. A complete successful
+local run is required before readiness.
 
 ## Native observation and limits
 
