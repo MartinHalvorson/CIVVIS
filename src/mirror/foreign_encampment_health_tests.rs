@@ -220,3 +220,25 @@ fn an_observed_health_change_updates_the_existing_foreign_district() {
         assert_eq!((city.encampment_hp, city.encampment_wall_hp), expected);
     }
 }
+
+#[test]
+fn persistent_sync_resolves_unknown_pools_after_city_facts_without_overwriting_zero() {
+    let (snapshot, state) = fixture(None, true, false, false);
+    let mut live = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+    let position = crate::hex::offset_to_axial(10, 10);
+    let cid = live.game.city_at(position).unwrap();
+    assert_eq!(live.game.cities[&cid].encampment_wall_hp, 200);
+    for (value, expected) in [
+        (None, (100, 400)),
+        (Some(health(0, 100, 0, 0)), (100, 0)),
+        (Some(health(100, 100, 200, 200)), (0, 0)),
+        (Some(health(60, 100, 75, 200)), (40, 125)),
+    ] {
+        let (snapshot, mut state) = fixture(value, true, false, false);
+        state.rivals[0].cities[0].max_wall_damage = 400.0;
+        live.sync(&snapshot, &state, 0);
+        let city = &live.game.cities[&cid];
+        assert_eq!(live.game.city_max_wall_hp(city), 400);
+        assert_eq!((city.encampment_hp, city.encampment_wall_hp), expected);
+    }
+}

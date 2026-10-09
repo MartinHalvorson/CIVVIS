@@ -51,7 +51,7 @@ snapshot and exporter retain actual observations across fog. Own city roster
 health and engine mechanics are unchanged.
 
 All 86 discovered Lua5.1 suites pass, including 19 new export cases. All 91
-Lua scripts compile. The original eight Rust assertions are retained; the
+Lua scripts compile. The original eight Rust cases and their health/damage assertions are retained; the
 physical-shot fixture now makes the defending owner current before applying
 its shot. Baseline failures precede that stage. Main `9a2b0dfe6` was merged
 once at `e47d0a14a` before candidate validation. Complete local candidate
@@ -68,3 +68,22 @@ Its original logs and source registrations remain preserved. Lua gate passed.
 The initial focused source pathspec omitted root Rust files; a supplemental
 clean committed-head manifest covers all 619 tracked source/input files.
 Corrected validation will use whole-directory discovery from the beginning.
+
+
+Corrected candidate `778e40f03` compiles and passes all seven other new cases
+in CI `37930377135`, including the actual legal Encampment shot. Its legacy
+unknown-pool case fails outer health 0 versus final city maximum 200: foreign
+infrastructure is applied before city-banner facts set the fallback maximum.
+The shared city-metrics step now resolves foreign defenses again after those
+facts, on both rebuild and persistent sync; explicit measured zero still wins.
+An added persistent-sync test covers missing pools, a changed city maximum,
+measured zero, destruction and partial damage. The original eight cases and
+assertions are retained. CI later coverage is unscheduled after fail-fast.
+
+The obsolete owned local focus `91931` is stopped only after this concrete
+independent failure, Cargo SIGINT -2/wrapper 254, with no local Rust cases
+credited. Its 619 registered hashes are unchanged. Dependent full runner
+`76448` exits 1 without starting Cargo when its focused prerequisite fails.
+Both original logs remain. Cost `37930377190` passes: -0.05% median over five
+pairs/600 turns per arm, inside the ±1% noise floor and +8% budget; IQR 0.28pp
+[-0.28%, +0.09%], resolution ±0.19%, pooled -0.11%. No speed gain is claimed.

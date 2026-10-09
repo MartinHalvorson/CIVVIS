@@ -12659,6 +12659,28 @@ fn step_host_congress(ctx: &mut HostStepCtx<'_>) {
 
 fn step_observed_host_metrics(ctx: &mut HostStepCtx<'_>) {
     apply_observed_host_metrics(ctx.game, ctx.state, Some(ctx.snapshot), ctx.unmapped);
+    // Foreign infrastructure lands before city-banner facts. Resolve missing
+    // district pools again after their fallback wall maximum is imported, on
+    // both rebuild and sync. Measured district pools still take precedence.
+    let forts: Vec<_> = ctx
+        .game
+        .cities
+        .values()
+        .filter(|city| city.owner != 0)
+        .filter_map(|city| {
+            ctx.game
+                .city_district_family_position(city, crate::name!("encampment"))
+                .map(|position| (city.id, position))
+        })
+        .collect();
+    for (cid, position) in forts {
+        if let Some(plot) = ctx
+            .snapshot
+            .plot(crate::hex::axial_to_offset(position.0, position.1))
+        {
+            apply_foreign_encampment_health(ctx.game, cid, plot);
+        }
+    }
 }
 
 fn step_loyalty_doomed_sites(ctx: &mut HostStepCtx<'_>) {
