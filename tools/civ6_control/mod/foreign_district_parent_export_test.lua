@@ -23,6 +23,7 @@ local function fixture()
   end,
  }
  local plot = setmetatable({
+  GetX = function() return 0 end, GetY = function() return 0 end,
   GetDistrictType = function() return s.kind end,
   GetOwner = function() return s.owner end,
   IsWater = function() return false end,
@@ -149,6 +150,19 @@ end)
 test("nondefending districts also name their parent", function()
  local s, sweep = fixture(); s.kind = 2
  local _, row = sweep(); assert(row.d == "DISTRICT_CAMPUS" and row.oc == 31)
+end)
+test("changed parent cannot expose an unrevealed city", function()
+ local s, sweep = fixture(); local _, row = sweep(); assert(row.oc == 31)
+ s.parent = 32; s.parent_known = false
+ local fresh; fresh, row = sweep()
+ assert(fresh == 1 and row.oc == nil, "a new unseen parent must clear the old assignment")
+end)
+test("capture by us clears the former foreign parent", function()
+ local s, sweep = fixture(); local _, row = sweep(); assert(row.oc == 31)
+ local before = s.reads; s.owner = 0; s.parent_owner = 0
+ _, row = sweep(); assert(row.oc == 31 and s.reads == before)
+ s.owner = 2; s.parent_owner = 2; s.fail = true
+ _, row = sweep(); assert(row.oc == nil, "former ownership must not revive a cached district parent")
 end)
 print("RESULT " .. cases .. " cases; " .. #failures .. " failed")
 assert(#failures == 0, "foreign district parent failures: " .. table.concat(failures, ", "))
