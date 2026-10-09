@@ -27048,6 +27048,21 @@ impl AdvancedAi {
         else {
             unreachable!("faith military shortlist contains only Buy actions")
         };
+        let item = if *formation == 0 {
+            Item::Unit { unit: *unit }
+        } else {
+            Item::Formation {
+                unit: *unit,
+                formation: *formation,
+            }
+        };
+        let strategic = self.production_value(g, pid, *city, &item, plan, counts);
+        // Obsolete and surplus roles are vetoed by the shared governor.
+        // Combat credit must not resurrect that rejection for a purchase.
+        // Check before cloning/applying an action that has no strategic bid.
+        if strategic < 0.0 {
+            return None;
+        }
         let mut after = g.speculative_clone();
         if after.apply(pid, action).is_err() || after.players[pid].faith < reserve {
             return None;
@@ -27063,17 +27078,6 @@ impl AdvancedAi {
                 2.. => 17.0,
                 _ => 0.0,
             };
-        let item = if *formation == 0 {
-            Item::Unit { unit: *unit }
-        } else {
-            Item::Formation {
-                unit: *unit,
-                formation: *formation,
-            }
-        };
-        let strategic = self
-            .production_value(g, pid, *city, &item, plan, counts)
-            .max(0.0);
         Some(strategic + combat * 12.0 - cost * 0.25)
     }
 
@@ -47783,3 +47787,6 @@ mod native_research_eta_tests;
 
 #[cfg(test)]
 mod naval_production_tests;
+
+#[cfg(test)]
+mod faith_army_quality_tests;
