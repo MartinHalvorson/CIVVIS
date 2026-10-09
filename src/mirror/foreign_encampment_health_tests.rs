@@ -120,6 +120,7 @@ fn a_healthy_foreign_encampment_keeps_its_independent_shot() {
     let uid = reconstruction.game.spawn_test_unit("warrior", 0, target);
     let action = crate::game::Action::EncampmentStrike { city: cid, target };
     assert!(reconstruction.game.is_at_war(0, owner));
+    reconstruction.game.current = owner;
     assert!(reconstruction.game.legal_actions(owner).contains(&action));
     reconstruction
         .game

@@ -6,14 +6,14 @@ local section = assert(source:match("(CivvisTiles = .-)\n%-%- ★★★★★ CH
 local function fixture()
  local state = { visible = true, complete = true, owner = 2, kind = 1,
                  damage = 0, max_damage = 100, wall_damage = 0, max_wall_damage = 200,
-                 reads = 0, fail = false, events = {} }
+                 reads = 0, fail = false, id = 42, events = {} }
  local function reading(key)
   state.reads = state.reads + 1
-  if state.fail then error("unavailable district health") end
+  if state.fail or state.fail_key == key then error("unavailable district health") end
   return state[key]
  end
  local district = {
-  GetID = function() return 42 end,
+  GetID = function() return state.id end,
   IsComplete = function() return state.complete end,
   IsPillaged = function() return false end,
   GetDamage = function(_, pool) return reading(pool == 0 and "damage" or "wall_damage") end,
@@ -38,6 +38,8 @@ local function fixture()
     [0] = { DistrictType = "DISTRICT_CITY_CENTER" },
     [1] = { DistrictType = "DISTRICT_ENCAMPMENT", AttackRange = 2 },
     [2] = { DistrictType = "DISTRICT_CAMPUS" },
+    [3] = { DistrictType = "DISTRICT_IKANDA", AttackRange = 2 },
+    [4] = { DistrictType = "DISTRICT_THANH", AttackRange = 2 },
   } },
   plotRevealed = function() return true end,
   visibleResourceName = function() return nil end,
@@ -132,6 +134,33 @@ end)
 test("city center health remains in the city record", function()
  local s, sweep = fixture(); s.kind = 0
  local _, row = sweep(); assert(row.d == "DISTRICT_CITY_CENTER" and row.dh == nil and s.reads == 0)
+end)
+test("Encampment replacements export their own defenses", function()
+ for _, kind in ipairs({ 3, 4 }) do
+  local s, sweep = fixture(); s.kind = kind; s.damage = 40
+  local _, row = sweep()
+  assert(row.dh and row.dh.damage == 40 and row.dh.max_damage == 100)
+ end
+end)
+test("a failed pool retains the previous pair", function()
+ local s, sweep = fixture(); sweep(); s.fail_key = "max_damage"; s.damage = 60; s.wall_damage = 50
+ local fresh, row = sweep()
+ assert(fresh == 1 and row.dh.damage == 0 and row.dh.max_damage == 100 and row.dh.wall_damage == 50)
+end)
+test("an initially missing pool remains unknown", function()
+ local s, sweep = fixture(); s.fail_key = "max_damage"
+ local _, row = sweep()
+ assert(row.dh and row.dh.damage == nil and row.dh.max_damage == nil and row.dh.max_wall_damage == 200)
+end)
+test("invalid initial pools are not observations", function()
+ local s, sweep = fixture(); s.damage = 0/0; s.max_damage = math.huge; s.wall_damage = -1; s.max_wall_damage = 200
+ local _, row = sweep(); assert(row.dh == nil)
+end)
+test("a rebuilt district cannot inherit the former fort in fog", function()
+ local s, sweep = fixture(); sweep(); s.id = 43; s.fail = true
+ local fresh, row = sweep(); assert(fresh == 1 and row.dh == nil)
+ s.visible = false; _, row = sweep()
+ assert(row.dh == nil, "a changed visible district identity must discard its old health cache")
 end)
 print("RESULT " .. cases .. " cases; " .. #failures .. " failed")
 assert(#failures == 0, "foreign Encampment health failures: " .. table.concat(failures, ", "))

@@ -203,6 +203,11 @@ pub struct Plot {
     /// is what every earlier export meant.
     #[serde(default)]
     pub dc: Option<bool>,
+    /// Last observed defense pools of a completed defending district. The mod
+    /// refreshes these only in sight and retains them in fog. Missing is unknown,
+    /// distinct from a measured zero; city-center health uses `StateCity`.
+    #[serde(default)]
+    pub dh: Option<PlotDistrictHealth>,
     /// Wonder type standing here (`Plot:GetWonderType`), any owner, e.g.
     /// `BUILDING_PYRAMIDS`.
     #[serde(default)]
@@ -287,6 +292,19 @@ pub struct Plot {
     /// `plotYieldTuple` in `CivvisControlAgent.lua` for how it is gathered.
     #[serde(default)]
     pub yl: Option<Vec<f64>>,
+}
+
+/// Raw district damage and capacities from the shipped city-banner accessors.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlotDistrictHealth {
+    #[serde(default = "unknown_damage")]
+    pub damage: i32,
+    #[serde(default = "unknown_damage")]
+    pub max_damage: i32,
+    #[serde(default = "unknown_damage")]
+    pub wall_damage: i32,
+    #[serde(default = "unknown_damage")]
+    pub max_wall_damage: i32,
 }
 
 impl Plot {
@@ -14298,6 +14316,11 @@ fn apply_foreign_infrastructure(game: &mut crate::game::Game, snapshot: &Snapsho
                     .plot(crate::hex::axial_to_offset(pos.0, pos.1))
                     .is_some_and(|plot| plot.p);
             }
+            if game.district_is_family(&name, crate::name!("encampment")) {
+                if let Some(plot) = snapshot.plot(crate::hex::axial_to_offset(pos.0, pos.1)) {
+                    apply_foreign_encampment_health(game, cid, plot);
+                }
+            }
         }
         for (name, pos) in wonders {
             if let Some(tile) = game.map.tiles.get_mut(&pos) {
@@ -14308,6 +14331,27 @@ fn apply_foreign_infrastructure(game: &mut crate::game::Game, snapshot: &Snapsho
             }
         }
     }
+}
+
+/// Rival city records omit districts; their independent defenses cross with
+/// the plot. Unknown pools use the existing own-city conservative fallback.
+/// A measured zero outer capacity means no walls, rather than an unanswered API.
+fn apply_foreign_encampment_health(game: &mut crate::game::Game, cid: u32, plot: &Plot) {
+    let max_wall = game.city_max_wall_hp(&game.cities[&cid]);
+    let health = plot.dh.as_ref();
+    let city = game.cities.get_mut(&cid).unwrap();
+    city.encampment_pillaged = plot.p;
+    city.encampment_hp = health
+        .filter(|value| value.max_damage > 0 && value.damage >= 0)
+        .map_or(100, |value| {
+            let remaining = (i64::from(value.max_damage) - i64::from(value.damage)).max(0);
+            ((100 * remaining) / i64::from(value.max_damage)).clamp(0, 100) as i32
+        });
+    city.encampment_wall_hp = health
+        .filter(|value| value.max_wall_damage >= 0 && value.wall_damage >= 0)
+        .map_or(max_wall, |value| {
+            (value.max_wall_damage - value.wall_damage).max(0)
+        });
 }
 
 /// Refuse a founding plot whose modeled population pressure will erase the city

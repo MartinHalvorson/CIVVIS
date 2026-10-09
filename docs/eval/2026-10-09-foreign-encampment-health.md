@@ -33,3 +33,26 @@ The original failure log is retained. Production may now change after this
 complete baseline proof. Unknown health is
 tested separately from measured zero, matching the existing own-city conservative
 fallback. Native input adoption and matched completed games remain unverified.
+
+
+The candidate observes raw defense pools for visible completed defending
+non-city-center districts, using the shipped `AttackRange` rows to include
+Encampment replacements. A health-only change joins the tile signature and
+emits a delta. Fog and failed getters retain prior observed pools; new
+ownership, district type or a changed visible district ID discards old health.
+The first candidate's added rebuilt-district test caught a stale cache entry;
+the cache is now cleared, with its original failure retained.
+
+Foreign Encampment-family districts import garrison damage on the existing
+0..100 remaining-health scale, outer health as its measured remainder, and
+pillage state. A measured zero outer capacity stays zero. Missing/failed
+observations keep the existing own-city conservative fallback. The tile
+snapshot and exporter retain actual observations across fog. Own city roster
+health and engine mechanics are unchanged.
+
+All 86 discovered Lua5.1 suites pass, including 19 new export cases. All 91
+Lua scripts compile. The original eight Rust assertions are retained; the
+physical-shot fixture now makes the defending owner current before applying
+its shot. Baseline failures precede that stage. Main `9a2b0dfe6` was merged
+once at `e47d0a14a` before candidate validation. Complete local candidate
+mirror/Rust validation and final published-head checks are pending.
