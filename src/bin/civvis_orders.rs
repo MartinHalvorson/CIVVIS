@@ -47,6 +47,8 @@ use civvis::mirror;
 mod air_assault;
 #[path = "civvis_orders/air_assault_continuation.rs"]
 mod air_assault_continuation;
+#[path = "civvis_orders/citizen_growth.rs"]
+mod citizen_growth;
 #[path = "civvis_orders/host_move_postconditions.rs"]
 mod host_move_postconditions;
 #[path = "civvis_orders/host_ranged_history.rs"]
@@ -467,6 +469,22 @@ struct Order {
     subject: Option<i64>,
     verb: Option<String>,
     pos: Option<(i32, i32)>,
+}
+
+fn append_citizen_growth_orders(
+    snapshot: &mirror::Snapshot,
+    state: &mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> usize {
+    let choices = citizen_growth::choices(snapshot, state);
+    let count = choices.len();
+    orders.extend(choices.into_iter().map(|choice| Order {
+        kind: "city_focus",
+        subject: Some(choice.city),
+        verb: Some(choice.verb.to_string()),
+        pos: None,
+    }));
+    count
 }
 
 /// Marker kept in `ours` while a `produce_next` lease is waiting for the host
@@ -3866,6 +3884,10 @@ fn decide(
     let mut skipped: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     let mut skipped_examples: Vec<String> = Vec::new();
     let mut note_bits: Vec<String> = Vec::new();
+    let citizen_growth_orders = append_citizen_growth_orders(snapshot, state, &mut orders);
+    if citizen_growth_orders > 0 {
+        note_bits.push(format!("citizen_growth_orders={citizen_growth_orders}"));
+    }
     if air_assault_resumed {
         note_bits.push("air_assault_continuation=1".into());
     }
@@ -7189,6 +7211,7 @@ fn verify_order_with_context(
                 failed("no_great_person".to_string())
             }
         }
+        "city_focus" => citizen_growth::verify(order, after),
         "city" => verify_city_disposition(order, before, after),
         "city_strike" | "encampment_strike" => {
             let harmed = order.pos.is_some_and(|p| target_harmed(before, after, p));
