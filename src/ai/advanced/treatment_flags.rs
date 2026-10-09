@@ -7137,6 +7137,17 @@ impl AdvancedAi {
         self.near_rival_deterrence = false;
     }
 
+    /// Opt-in gene `counterweight-flips-the-small-towns`; see
+    /// [`Self::small_town_threat`] and [`Self::small_town_target_adjustment`].
+    pub fn enable_counterweight_flips_the_small_towns(&mut self) {
+        self.counterweight_flips_the_small_towns = true;
+    }
+
+    /// The twin of `enable_counterweight_flips_the_small_towns`.
+    pub fn disable_counterweight_flips_the_small_towns(&mut self) {
+        self.counterweight_flips_the_small_towns = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

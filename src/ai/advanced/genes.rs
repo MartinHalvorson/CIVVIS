@@ -3485,6 +3485,12 @@ pub const GENES: &[Gene] = &[
     // the urgent denial on Persia under 1.5x for seven turns after its Mars
     // base. See `advanced/launcher_war.rs`.
     Gene { tag: "launcher-war-ignores-the-edge", field: "launcher_war_ignores_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_ignores_the_edge, disable: AdvancedAi::disable_launcher_war_ignores_the_edge },
+    // A defensive spreader breaks the faith holding our cities from the
+    // smallest town up: every city counts the same toward a Religious
+    // Victory's majority. G211317Z spent five Catholic charges on a pop-9
+    // Orthodox Maracaibo while three towns of pop 2-3 were the flips that
+    // broke the majority. See `advanced/counterweight_small_towns.rs`.
+    Gene { tag: "counterweight-flips-the-small-towns", field: "counterweight_flips_the_small_towns", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_flips_the_small_towns, disable: AdvancedAi::disable_counterweight_flips_the_small_towns },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
