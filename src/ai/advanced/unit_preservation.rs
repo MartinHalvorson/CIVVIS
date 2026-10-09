@@ -2,7 +2,8 @@
 //! damage is a focus-fire budget, never divided among friendly targets. A
 //! survivor must also have a survivable stand after the next full movement
 //! refresh against enemies that had a turn to reposition. Withdrawn units
-//! keep recovering until full health. Off, the original turn is untouched.
+//! keep recovering until full health, apart from a guaranteed, survivable
+//! adjacent city occupation. Off, the original turn is untouched.
 
 use super::battle_planner::{melee_health_floor, DangerField};
 use super::AdvancedAi;
@@ -351,9 +352,99 @@ impl AdvancedAi {
                 _ => None,
             })
             .all(|uid| {
-                !self.battle_planner_recovering.contains(&uid)
+                (!self.battle_planner_recovering.contains(&uid)
+                    || self
+                        .recovery_city_capture(before, pid, uid, actions)
+                        .is_some_and(|target| {
+                            after
+                                .board
+                                .units
+                                .get(&uid)
+                                .is_some_and(|unit| unit.pos == target)
+                                && after
+                                    .board
+                                    .city_at(target)
+                                    .is_some_and(|cid| after.board.cities[&cid].owner == pid)
+                        }))
                     && self.reply_outcomes_are_safe(before, &after, pid, uid, &mut forecast)
             })
+    }
+
+    /// Admit only a capture this actor can complete alone from its observed
+    /// adjacent tile. Keep the recovery latch and price its wounded exposed
+    /// stand too: garrison shielding or an observed-world elimination must
+    /// not manufacture permission to attack.
+    fn recovery_city_capture(
+        &self,
+        before: &Game,
+        pid: usize,
+        uid: u32,
+        actions: &[Action],
+    ) -> Option<Pos> {
+        let actor = before.units.get(&uid)?;
+        let spec = &before.rules.units[actor.kind];
+        if actor.owner != pid
+            || spec.class != "military"
+            || !spec.is_melee_capable()
+            || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            || before.is_embarked(actor)
+            || self.settler_guards.iter().any(|(settler, guard)| {
+                *guard == uid
+                    && before
+                        .units
+                        .get(settler)
+                        .is_some_and(|unit| unit.owner == pid && unit.kind == "settler")
+            })
+        {
+            return None;
+        }
+        let sequence: Vec<Action> = actions
+            .iter()
+            .filter(|action| actors(action).contains(&uid))
+            .cloned()
+            .collect();
+        let mut capture = None;
+        for action in &sequence {
+            match action {
+                Action::Attack { target, .. }
+                    if capture.is_none() && before.wdist(actor.pos, *target) == 1 =>
+                {
+                    capture = Some(*target);
+                }
+                Action::Fortify { .. } if capture.is_some() => {}
+                _ => return None,
+            }
+        }
+        let target = capture?;
+        let city = &before.cities[&before.city_at(target)?];
+        if !before.is_at_war(pid, city.owner) || city.hp > 1 || city.wall_hp > 0 {
+            return None;
+        }
+        let outcome = replay(before, pid, &sequence, &BTreeSet::new());
+        let survivor = outcome.board.units.get(&uid)?;
+        if outcome.board.cities.get(&city.id)?.owner != pid
+            || survivor.pos != target
+            || !outcome.uncertain_captures.is_empty()
+            || outcome.failed_advances.contains_key(&uid)
+        {
+            return None;
+        }
+        // Retain every observed enemy on this separate probe. The host may
+        // know another city which the mirrored board has not observed yet.
+        let mut exposed = before.speculative_clone();
+        exposed.units.get_mut(&uid)?.hp = survivor.hp;
+        if !self.unit_reply_is_safe(&exposed, pid, uid)
+            || !self.reply_outcomes_are_safe(
+                before,
+                &outcome,
+                pid,
+                uid,
+                &mut ReplyForecast::new(&outcome.board, pid),
+            )
+        {
+            return None;
+        }
+        Some(target)
     }
 
     /// A safe immediate reply is insufficient when the survivor cannot get
@@ -503,7 +594,16 @@ impl AdvancedAi {
                 .get(uid)
                 .is_some_and(|unit| unit.owner == pid && unit.hp < 100)
         });
+        let captures: BTreeMap<u32, Pos> = self
+            .battle_planner_recovering
+            .iter()
+            .filter_map(|uid| {
+                self.recovery_city_capture(before, pid, *uid, actions)
+                    .map(|target| (*uid, target))
+            })
+            .collect();
         let mut blocked = self.battle_planner_recovering.clone();
+        blocked.retain(|uid| !captures.contains_key(uid));
         let departures = self.shared_settler_departures(before, pid, actions);
         let affected: BTreeSet<u32> = actions
             .iter()
@@ -525,7 +625,23 @@ impl AdvancedAi {
                 .copied()
                 .filter(|uid| {
                     !blocked.contains(uid)
-                        && !self.reply_outcomes_are_safe(before, &after, pid, *uid, &mut forecast)
+                        && (captures.get(uid).is_some_and(|target| {
+                            after
+                                .board
+                                .units
+                                .get(uid)
+                                .is_none_or(|unit| unit.pos != *target)
+                                || after
+                                    .board
+                                    .city_at(*target)
+                                    .is_none_or(|cid| after.board.cities[&cid].owner != pid)
+                        }) || !self.reply_outcomes_are_safe(
+                            before,
+                            &after,
+                            pid,
+                            *uid,
+                            &mut forecast,
+                        ))
                 })
                 .collect();
             if unsafe_units.is_empty() {
@@ -681,3 +797,6 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod capture_recovery_tests;
