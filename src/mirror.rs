@@ -15824,3 +15824,6 @@ mod foreign_encampment_health_tests;
 
 #[cfg(test)]
 mod foreign_district_parent_tests;
+
+#[cfg(test)]
+mod defending_district_observation_tests;
