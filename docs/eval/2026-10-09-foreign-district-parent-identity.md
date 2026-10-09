@@ -1,7 +1,7 @@
 # Observed parent cities for foreign districts
 
-A visible rival district currently uses the nearest known city as its mirrored
-parent. Two Encampments belonging to different cities can therefore enter one
+Before this change, a visible rival district used the nearest known city as
+its mirrored parent. Two Encampments belonging to different cities can therefore enter one
 city's district map under the same name, dropping one defensive position. This
 was reproduced before changing production code.
 
@@ -15,7 +15,7 @@ if (pDistrict ~= nil) then
     local cityID = pCity:GetID();
 ```
 
-The proposed observation is limited to visible, completed foreign districts
+The observation is limited to visible, completed foreign districts
 whose parent city center is revealed. Own plots retain the existing purchase
 city API; older recordings retain the nearest-city fallback. An explicit but
 unresolved parent must not be reassigned to another known city. Parent IDs are
@@ -55,8 +55,33 @@ passes 3,617 tests before that failure; later tests are unexecuted.
 
 ## Candidate validation
 
-Pending: complete mirror controls, every Lua suite and parse check, full
-process-isolated Rust tests, documentation examples, and independent final CI.
+Source checkpoint `1090467a6629fd4f332ad7c4de1eeb6f75f707ad` passes all
+396 local mirror cases, including all eight new cases and both actual
+independent fort shots, with two existing cases ignored.
+
+The complete, unfiltered local Nextest run passes all 4,774 tests across five
+binaries, with 51 existing skips, one worker and zero retries (534.222 seconds).
+All 396 mirror cases, eight parent cases, nine foreign-health cases and all
+other crate/binary tests pass. Documentation examples have zero failures and
+four existing ignored examples. All 633 registered source/input hashes stay
+unchanged through the focused/full/documentation sequence.
+
+The actual worktree Lua run passes all 87 discovered suites, all 21 new parent
+cases and all 19 foreign-health cases; all 92 mod scripts parse under Lua 5.1.
+All 633 registered input hashes remain unchanged.
+
+Independent source-head CI `37949522999` passes all 4,774 tests, 51 existing
+skips, four ignored documentation examples, all 396 mirror cases, all eight
+parent cases, all nine foreign-health cases, and the overlapping 71/21/22
+tournament/provenance sets. Quality, mod, policy, overwrite, publication and
+security checks pass. Cost CI `37949522883` passes at -0.25% median over five
+pairs/600 turns per arm, within the ±1% noise floor; IQR 1.60pp
+[-2.59%, +0.09%], resolution ±1.06%, pooled -0.75%, +8% budget passed.
+This is simulator CPU cost, not a native winning measurement. No speed gain
+is claimed.
+
+The final evaluation-only checkpoint leaves all 633 validated input files
+byte-identical; independent final-head CI remains the integration gate.
 The candidate keeps the eight original Rust cases byte-identical. Explicit
 native parents resolve within the observed owner; observations without a
 resolved native ID retain the legacy nearest-city approximation. Unknown
