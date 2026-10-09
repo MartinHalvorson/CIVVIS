@@ -46,8 +46,10 @@ the input board remains unchanged.
 
 Controls retain ordinary recovery movement, nonrecovering captures, standing
 walls, a city that cannot be captured, lethal native retaliation, an approach
-from two tiles away, a ranged strike, and peace. Ten tests are registered;
-baseline and candidate results are pending. The independent escort work in
+from two tiles away, a ranged strike, and peace. Two additional controls retain the enemy-reply survival bound
+when a capture itself is guaranteed and reject an attack with no movement.
+The pushed baseline registers ten tests; the final candidate suite registers
+twelve. Baseline and candidate results are pending. The independent escort work in
 PR #4011 retains its separate tests and joint-movement policy. Its changed
 hunks are not rewritten by this draft's finisher-admission investigation.
 

@@ -175,3 +175,28 @@ fn a_peaceful_city_does_not_release_recovery_or_start_a_war() {
     assert!(!kept.contains(&attack));
     assert!(!g.is_at_war(0, 1));
 }
+
+#[test]
+fn a_guaranteed_capture_does_not_bypass_the_enemy_reply() {
+    let (mut g, ours, city, attack) = breach();
+    g.spawn_unit("modern_armor", 1, at(12, 7));
+    g.spawn_unit("modern_armor", 1, at(12, 8));
+    let outcome = replay(&g, 0, std::slice::from_ref(&attack), &BTreeSet::new());
+    assert_eq!(outcome.board.cities[&city].owner, 0);
+    assert!(outcome.uncertain_captures.is_empty());
+    assert!(!policy(None).preservation_finishing_safe(&g, 0, std::slice::from_ref(&attack)));
+    let mut ai = policy(Some(ours));
+    let kept = ai.preserve_unit_actions(&g, 0, std::slice::from_ref(&attack));
+    assert!(!kept.contains(&attack));
+}
+
+#[test]
+fn an_attacker_without_movement_cannot_release_recovery() {
+    let (mut g, ours, city, attack) = breach();
+    g.units.get_mut(&ours).unwrap().moves_left = 0.0;
+    assert!(g.clone().apply(0, &attack).is_err());
+    let mut ai = policy(Some(ours));
+    let kept = ai.preserve_unit_actions(&g, 0, std::slice::from_ref(&attack));
+    assert!(!kept.contains(&attack));
+    assert_eq!(g.cities[&city].owner, 1);
+}
