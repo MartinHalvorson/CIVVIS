@@ -1,5 +1,4 @@
 use super::*;
-use crate::ai::Ai;
 
 fn at(x: i32, y: i32) -> Pos {
     crate::hex::offset_to_axial(x, y)

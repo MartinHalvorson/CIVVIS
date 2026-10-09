@@ -53,6 +53,10 @@ twelve. Baseline and candidate results are pending. The independent escort work 
 PR #4011 retains its separate tests and joint-movement policy. Its changed
 hunks are not rewritten by this draft's finisher-admission investigation.
 
+The first test checkpoint's quality gate reports one unused trait import in
+the new test module. That import is removed without changing any assertion;
+the warning is separate from the expected recovery-admission failures.
+
 No native lane, pin, policy, installed mod or private source is changed.
 Synthetic regression results will not establish a native capture or win-rate
 gain. Adoption, completed native readbacks and matched outcomes remain needed.
