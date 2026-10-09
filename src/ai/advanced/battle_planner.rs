@@ -4787,3 +4787,6 @@ mod siege_position_tests;
 
 #[cfg(test)]
 mod siege_veto_advance_tests;
+
+#[cfg(test)]
+mod future_district_fire_tests;
