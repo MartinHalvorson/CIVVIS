@@ -29,7 +29,9 @@ fn board(seed: u64) -> Game {
     g
 }
 
-fn unit_facts(g: &Game) -> Vec<(u32, Pos, i32, u64, bool, bool, bool, bool)> {
+type UnitFacts = (u32, Pos, i32, u64, bool, bool, bool, bool);
+
+fn unit_facts(g: &Game) -> Vec<UnitFacts> {
     g.units
         .values()
         .map(|unit| {
