@@ -205,3 +205,80 @@ fn source_guard_releases_beyond_movement_and_spread_warning() {
         .inquisitor_purchase_source_guard(&g, 0, inquisitor, "Home Faith")
         .is_none());
 }
+
+fn adjacent_source_guard_fixture() -> (Game, AdvancedAi, u32, u32, u32) {
+    let (mut g, ai, inquisitor, source, old_invader) = source_guard_fixture();
+    g.remove_unit(old_invader);
+    let invader = g.spawn_test_unit("missionary", 1, (11, 10));
+    let unit = g.units.get_mut(&invader).unwrap();
+    unit.religion = Some("Foreign Faith".into());
+    unit.charges = 3;
+    assert_eq!(
+        ai.inquisitor_purchase_source_guard(&g, 0, inquisitor, "Home Faith"),
+        Some(g.cities[&source].pos)
+    );
+    assert!(g.legal_actions(0).iter().any(|action| {
+        matches!(action, Action::TheologicalAttack { unit, target }
+            if *unit == inquisitor && *target == g.units[&invader].pos)
+    }));
+    (g, ai, inquisitor, source, invader)
+}
+
+#[test]
+fn a_holding_source_guard_can_fight_an_adjacent_spreader() {
+    let (mut g, ai, inquisitor, source, invader) = adjacent_source_guard_fixture();
+    let start = g.log.len();
+    assert!(ai.advanced_religious_step(&mut g, 0, inquisitor, false));
+    assert!(g.log.since(start).any(|(_, action)| {
+        matches!(action, Action::TheologicalAttack { unit, .. } if *unit == inquisitor)
+    }));
+    assert!(g.units.get(&invader).is_none_or(|unit| unit.hp < 100));
+    assert_eq!(g.units[&inquisitor].pos, g.cities[&source].pos);
+    assert_eq!(g.units[&inquisitor].charges, 3);
+}
+
+#[test]
+fn a_wounded_source_guard_holds_against_a_fresh_spreader() {
+    let (mut g, ai, inquisitor, source, invader) = adjacent_source_guard_fixture();
+    g.units.get_mut(&inquisitor).unwrap().hp = 40;
+    let start = g.log.len();
+    assert!(!ai.advanced_religious_step(&mut g, 0, inquisitor, false));
+    assert_eq!(g.log.len(), start);
+    assert_eq!(g.units[&invader].hp, 100);
+    assert_eq!(g.units[&inquisitor].pos, g.cities[&source].pos);
+    assert_eq!(g.units[&inquisitor].charges, 3);
+}
+
+#[test]
+fn a_holding_source_guard_can_finish_a_wounded_spreader() {
+    let (mut g, ai, inquisitor, source, invader) = adjacent_source_guard_fixture();
+    g.units.get_mut(&inquisitor).unwrap().hp = 40;
+    g.units.get_mut(&invader).unwrap().hp = 40;
+    let start = g.log.len();
+    assert!(ai.advanced_religious_step(&mut g, 0, inquisitor, false));
+    assert!(g.log.since(start).any(|(_, action)| {
+        matches!(action, Action::TheologicalAttack { unit, .. } if *unit == inquisitor)
+    }));
+    assert!(g.units.get(&invader).is_none_or(|unit| unit.hp < 40));
+    assert_eq!(g.units[&inquisitor].pos, g.cities[&source].pos);
+    assert_eq!(g.units[&inquisitor].charges, 3);
+}
+
+#[test]
+fn a_source_guard_cleanses_before_adjacent_theological_combat() {
+    let (mut g, ai, inquisitor, source, invader) = adjacent_source_guard_fixture();
+    g.cities
+        .get_mut(&source)
+        .unwrap()
+        .pressure
+        .insert("Foreign Faith".into(), 500.0);
+    let start = g.log.len();
+    assert!(ai.advanced_religious_step(&mut g, 0, inquisitor, false));
+    assert!(g.log.since(start).any(|(_, action)| {
+        matches!(action, Action::RemoveHeresy { unit } if *unit == inquisitor)
+    }));
+    assert_eq!(g.units[&invader].hp, 100);
+    assert_eq!(g.units[&inquisitor].pos, g.cities[&source].pos);
+    assert_eq!(g.units[&inquisitor].charges, 2);
+    assert!(g.cities[&source].pressure["Foreign Faith"] < 500.0);
+}
