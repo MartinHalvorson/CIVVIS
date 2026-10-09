@@ -327,7 +327,9 @@ impl AdvancedAi {
 
     /// Reclaim a previously chosen wall breaker after all routine queue
     /// writers. A confirmed defender, recent attack, or another siege weapon
-    /// remains in charge; a completed peace ends this claim.
+    /// remains in charge; a completed peace ends this claim. A nonmilitary
+    /// queue also keeps its slot while the governor's treasury-recovery
+    /// condition holds: finishing another gun cannot repair its upkeep bill.
     pub(super) fn restore_wall_breaker_queues(
         &self,
         g: &mut Game,
@@ -345,6 +347,8 @@ impl AdvancedAi {
         {
             return;
         }
+        let recovery_due = g.players[pid].gold_per_turn < -0.5
+            && g.players[pid].gold < 100.0 + 25.0 * g.player_city_ids(pid).len() as f64;
         for (cid, item) in claimed {
             let Some(city) = g.cities.get(cid) else {
                 continue;
@@ -359,6 +363,24 @@ impl AdvancedAi {
                 })
                 || !g.can_produce(pid, *cid, item)
             {
+                continue;
+            }
+            if recovery_due
+                && city.queue.first().is_some_and(|current| match current {
+                    Item::Unit { unit } | Item::Formation { unit, .. } => g
+                        .rules
+                        .units
+                        .get(unit)
+                        .is_some_and(|spec| spec.class != "military"),
+                    _ => true,
+                })
+            {
+                if self.journal().wants(crate::reasoning::Level::Decision) {
+                    think!(self.journal(), Economy, Decision,
+                        "{} keeps its nonmilitary queue while the treasury recovers", city.name;
+                        "income {:.1} with {:.0} Gold; an extra wall breaker would add upkeep",
+                        g.players[pid].gold_per_turn, g.players[pid].gold);
+                }
                 continue;
             }
             let city_name = city.name.clone();
@@ -762,6 +784,9 @@ mod war_strategy_tests;
 
 #[cfg(test)]
 mod modernization_tests;
+
+#[cfg(test)]
+mod treasury_tests;
 
 #[cfg(test)]
 mod breaker_match_tests;
