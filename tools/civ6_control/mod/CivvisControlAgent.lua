@@ -16779,7 +16779,92 @@ end
 -- with AOE_LAND_REQUIREMENTS; GranColombia_Maya_Units_Text.xml:135 includes
 -- attack capability. A fully ready army is not a recipient for this charge.
 CivvisComandante = {};
+-- Paez's permanent cavalry buff is +4; his live aura is +5 for the land
+-- classes in TypeTags (GranColombia_Maya_GreatPeople.xml:94-107,299-302,
+-- 329-337). Keep him when retiring would remove a stronger local army aura.
+-- Another commander covering the troops removes that opportunity cost;
+-- healing a wounded Llanero keeps precedence. This is a spending decision,
+-- shared by state export, explicit commands and the fallback driver.
+CivvisComandante.reservePaez = function(player, ownID)
+	return try(function()
+		local tags, rows = {}, {};
+		local aura, cavalry = {}, {};
+		for row in GameInfo.TypeTags() do
+			if type(row.Type) ~= "string" or type(row.Tag) ~= "string" then return false; end
+			rows[#rows + 1] = { kind = row.Type, tag = row.Tag };
+			if row.Type == "ABILITY_COMANDANTE_AOE_STRENGTH"
+					or row.Type == "ABILITY_COMMANDANTE_CAVALRY_BUFF" then
+				tags[row.Type] = tags[row.Type] or {};
+				tags[row.Type][row.Tag] = true;
+			end
+		end
+		if tags.ABILITY_COMANDANTE_AOE_STRENGTH == nil
+				or tags.ABILITY_COMMANDANTE_CAVALRY_BUFF == nil then return false; end
+		for _, row in ipairs(rows) do
+			if tags.ABILITY_COMANDANTE_AOE_STRENGTH[row.tag] then aura[row.kind] = true; end
+			if tags.ABILITY_COMMANDANTE_CAVALRY_BUFF[row.tag] then cavalry[row.kind] = true; end
+		end
+		local own, troops, commanders = nil, {}, {};
+		for _, unit in player:GetUnits():Members() do
+			local kind = unitTypeName(unit);
+			local row = GameInfo.Units[kind];
+			if row == nil or row.Domain == nil then return false; end
+			local x, y = tonumber(unit:GetX()), tonumber(unit:GetY());
+			if x == nil or y == nil then return false; end
+			if x >= 0 and y >= 0 then
+				local pos = { x = x, y = y };
+				if unit:GetID() == ownID then own = pos;
+				else
+					local gp = greatPersonOf(unit);
+					if gp ~= nil then
+						local _, class = gpName(gp);
+						if class == "GREAT_PERSON_CLASS_COMANDANTE_GENERAL" then
+							local charges = tonumber(gp:GetActionCharges());
+							if charges == nil or not (charges >= 0) then return false; end
+							if charges > 0 then commanders[#commanders + 1] = pos; end
+						end
+					end
+					if row.Domain == "DOMAIN_LAND" and aura[kind] then
+						local embarked = unit:IsEmbarked();
+						if type(embarked) ~= "boolean" then return false; end
+						if not embarked then
+							pos.kind, pos.unit = kind, unit;
+							troops[#troops + 1] = pos;
+						end
+					end
+				end
+			end
+		end
+		if own == nil then return false; end
+		local function nearby(a, b)
+			local d = tonumber(Map.GetPlotDistance(a.x, a.y, b.x, b.y));
+			if d == nil or not (d >= 0 and d < math.huge) then error("unknown distance"); end
+			return d <= 2;
+		end
+		local lost, buffed = 0, 0;
+		for _, troop in ipairs(troops) do
+			if nearby(own, troop) then
+				if troop.kind == "UNIT_COLOMBIAN_LLANERO" then
+					local damage = tonumber(troop.unit:GetDamage());
+					if damage == nil or not (damage >= 0) then return false; end
+					if damage > 0 then return false; end
+				end
+				if cavalry[troop.kind] then buffed = buffed + 1; end
+				local covered = false;
+				for _, commander in ipairs(commanders) do
+					if nearby(commander, troop) then covered = true; break; end
+				end
+				if not covered then lost = lost + 1; end
+			end
+		end
+		return lost >= 2 and lost * 5 > buffed * 4;
+	end, false);
+end
 CivvisComandante.targets = function(player, individual, ownID)
+	if individual == "GREAT_PERSON_INDIVIDUAL_COMMANDANTE_ANTONIO_PAEZ" then
+		if CivvisComandante.reservePaez(player, ownID) then return {}; end
+		return nil;
+	end
 	if individual ~= "GREAT_PERSON_INDIVIDUAL_COMMANDANTE_URDANETA" then return nil; end
 	local targets = {};
 	local readable = try(function()
