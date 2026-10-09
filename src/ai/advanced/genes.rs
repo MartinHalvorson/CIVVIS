@@ -2388,6 +2388,7 @@ pub const GENES: &[Gene] = &[
     // and below. King ladder proxy, 64 paired games: foreign cities held
     // 8 -> 22, alive 49 -> 54, +0.90 pp; Emperor -1.06 pp, so not above King. See `AdvancedAi::phase_specialization_active`.
     Gene { tag: "domination-specializes-earlier", field: "domination_specializes_earlier", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_specializes_earlier, disable: AdvancedAi::disable_domination_specializes_earlier },
+    Gene { tag: "unit-preservation", field: "unit_preservation", kind: Kind::OptIn, enable: AdvancedAi::enable_unit_preservation, disable: AdvancedAi::disable_unit_preservation },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
@@ -2395,7 +2396,6 @@ pub const GENES: &[Gene] = &[
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
-    Gene { tag: "unit-preservation", field: "unit_preservation", kind: Kind::OptIn, enable: AdvancedAi::enable_unit_preservation, disable: AdvancedAi::disable_unit_preservation },
     // ---- append: t-z ------------------------------------------------
 ];
 

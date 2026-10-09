@@ -39,15 +39,6 @@
 use super::AdvancedAi;
 
 impl AdvancedAi {
-    /// Enable combat preservation and full-health recovery.
-    pub fn enable_unit_preservation(&mut self) {
-        self.unit_preservation = true;
-    }
-    /// Withhold combat preservation for paired evaluation.
-    pub fn disable_unit_preservation(&mut self) {
-        self.unit_preservation = false;
-    }
-
     /// Enable `victory-deadline-budget` for measurement.
     pub fn enable_victory_deadline_budget(&mut self) {
         self.victory_deadline_budget = true;
@@ -4551,6 +4542,15 @@ impl AdvancedAi {
     /// The twin of `enable_domination_specializes_earlier`.
     pub fn disable_domination_specializes_earlier(&mut self) {
         self.domination_specializes_earlier = false;
+    }
+
+    /// Enable combat preservation and full-health recovery.
+    pub fn enable_unit_preservation(&mut self) {
+        self.unit_preservation = true;
+    }
+    /// Withhold combat preservation for paired evaluation.
+    pub fn disable_unit_preservation(&mut self) {
+        self.unit_preservation = false;
     }
 
     // ---- append: a-b ------------------------------------------------

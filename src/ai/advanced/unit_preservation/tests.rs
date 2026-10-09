@@ -24,6 +24,39 @@ fn policy() -> AdvancedAi {
 }
 
 #[test]
+fn guaranteed_damage_uses_the_roll_before_rounding_and_clamping() {
+    assert_eq!(damage_floor(200.0, 20.0), 100);
+    assert_eq!(damage_floor(20.0, 200.0), 1);
+    assert_eq!(damage_floor(20.0, 20.0), 24);
+}
+
+#[test]
+fn a_sampled_kill_does_not_remove_a_possible_reply() {
+    let mut g = field();
+    let ours = g.spawn_unit("warrior", 0, at(10, 7));
+    let enemy = g.spawn_unit("warrior", 1, at(11, 7));
+    g.units.get_mut(&enemy).unwrap().hp = 30;
+    let action = Action::Attack {
+        unit: ours,
+        target: g.units[&enemy].pos,
+    };
+    // Supply a host mean that can kill, with a lower roll that cannot.
+    g.host_previews.insert(
+        (ours, g.units[&enemy].pos, false),
+        crate::game::HostStrikePreview {
+            attacker_strength: 20.0,
+            defender_strength: 20.0,
+            damage_to_defender: 35,
+            ..Default::default()
+        },
+    );
+    let after = replay(&g, 0, &[action], &BTreeSet::new());
+    assert!(after.units.contains_key(&enemy));
+    assert!(after.units[&enemy].hp >= 6);
+    assert_eq!(g.units[&enemy].hp, 30);
+}
+
+#[test]
 fn focus_fire_does_not_disappear_when_allies_are_nearby() {
     let mut g = field();
     let ours = g.spawn_unit("warrior", 0, at(10, 7));
@@ -81,7 +114,7 @@ fn rejected_attack_becomes_a_retreat_and_preserves_the_unit() {
         target: g.units[&enemy].pos,
     };
     let mut ai = policy();
-    let actions = ai.preserve_unit_actions(&g, 0, &[attack.clone()]);
+    let actions = ai.preserve_unit_actions(&g, 0, std::slice::from_ref(&attack));
     assert!(!actions.contains(&attack));
     for action in &actions {
         g.apply(0, action).unwrap();
@@ -103,13 +136,13 @@ fn recovery_keeps_orders_until_full_health_then_releases_the_unit() {
     ai.battle_planner_recovering.insert(ours);
     for hp in [80, 90, 99] {
         g.units.get_mut(&ours).unwrap().hp = hp;
-        let kept = ai.preserve_unit_actions(&g, 0, &[movement.clone()]);
+        let kept = ai.preserve_unit_actions(&g, 0, std::slice::from_ref(&movement));
         assert!(!kept.contains(&movement), "{hp} hp is still recovering");
         assert!(kept.contains(&Action::Fortify { unit: ours }));
     }
     g.units.get_mut(&ours).unwrap().hp = 100;
     assert_eq!(
-        ai.preserve_unit_actions(&g, 0, &[movement.clone()]),
+        ai.preserve_unit_actions(&g, 0, std::slice::from_ref(&movement)),
         vec![movement]
     );
     assert!(!ai.battle_planner_recovering.contains(&ours));
@@ -128,7 +161,7 @@ fn safe_finishing_kills_remain_available_and_the_authoritative_board_is_untouche
     let mut ai = policy();
     assert!(ai.live_finishing_actions_survive(&g, 0, [&action]));
     assert_eq!(
-        ai.preserve_unit_actions(&g, 0, &[action.clone()]),
+        ai.preserve_unit_actions(&g, 0, std::slice::from_ref(&action)),
         vec![action]
     );
     assert_eq!(g.units[&enemy].hp, 1);

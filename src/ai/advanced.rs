@@ -5023,8 +5023,6 @@ pub struct AdvancedAi {
     /// Units the battle plan pulled out to heal, kept out of the kill plan
     /// until `battle_planner::RETURN_HP`; pruned as they heal or die.
     battle_planner_recovering: BTreeSet<u32>,
-    /// Check combat orders against two enemy replies and retain full recovery.
-    unit_preservation: bool,
     /// `battle-planner-2`: version two of `battle_planner` — the positions
     /// plan joins the kill plan and the heal rotation. One version of the
     /// family plays; `enable_battle_planner_2` turns version one off. See
@@ -6823,6 +6821,8 @@ pub struct AdvancedAi {
     skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// Check combat orders against two enemy replies and retain full recovery.
+    unit_preservation: bool,
     /// Price route food by the next population-gated district slot.
     trade_growth_to_district: bool,
     /// Price route production by time saved on an active space project.
@@ -8420,7 +8420,6 @@ impl AdvancedAi {
             battle_planner: false,
             battle_planner_ordered: BTreeSet::new(),
             battle_planner_recovering: BTreeSet::new(),
-            unit_preservation: false,
             battle_planner_2: false,
             battle_planner_3: false,
             battle_planner_wanted_previews: Vec::new(),
@@ -8661,6 +8660,7 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
+            unit_preservation: false,
             trade_growth_to_district: false,
             trade_production_to_launch: false,
             tourism_land_reservation: false,

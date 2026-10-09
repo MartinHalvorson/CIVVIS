@@ -15,6 +15,28 @@ const RESERVE_HP: i32 = 15;
 // `game::damage` and the live finisher use the same 0.8 lower roll.
 const MIN_COMBAT_ROLL: f64 = 0.8;
 
+fn damage_floor(att: f64, def: f64) -> i32 {
+    (30.0 * ((att - def) / 25.0).exp() * MIN_COMBAT_ROLL)
+        .round()
+        .clamp(1.0, 100.0) as i32
+}
+
+/// Share the enemy movement forecasts among units on the same proposed board.
+/// The second field is built only when an immediate reply is survivable.
+struct ReplyForecast {
+    first: DangerField,
+    second: Option<DangerField>,
+}
+
+impl ReplyForecast {
+    fn new(g: &Game, pid: usize) -> Self {
+        Self {
+            first: DangerField::with_reach(g, pid, true),
+            second: None,
+        }
+    }
+}
+
 /// Count each source once and price later blows at the health left by earlier
 /// ones. Damage rolls are bounded independently, including their rounding.
 fn reply_damage(field: &mut DangerField, pos: Pos, uid: u32, hp: i32) -> f64 {
@@ -69,13 +91,30 @@ fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>
         {
             continue;
         }
+        // Reprice a later exchange at the health the earlier upper rolls
+        // could leave, without changing the sampled movement/kill sequence.
+        let risk = matches!(action, Action::Attack { .. }).then(|| {
+            let mut risk = after.speculative_clone();
+            for (uid, hp) in &health_floors {
+                if let Some(unit) = risk.units.get_mut(uid) {
+                    unit.hp = unit.hp.min(*hp);
+                }
+            }
+            for (uid, (_, hp)) in &defender_floors {
+                if let Some(unit) = risk.units.get_mut(uid) {
+                    unit.hp = unit.hp.max(*hp);
+                }
+            }
+            risk
+        });
+        let risk = risk.as_ref().unwrap_or(&after);
         let floor = match action {
-            Action::Attack { unit, target } => after
+            Action::Attack { unit, target } => risk
                 .city_at(*target)
-                .filter(|city| after.is_at_war(pid, after.cities[city].owner))
-                .and_then(|city| after.city_melee_exchange_strengths(*unit, city))
+                .filter(|city| risk.is_at_war(pid, risk.cities[city].owner))
+                .and_then(|city| risk.city_melee_exchange_strengths(*unit, city))
                 .and_then(|(att, def)| {
-                    after.units.get(unit).map(|actor| {
+                    risk.units.get(unit).map(|actor| {
                         (
                             *unit,
                             actor.hp
@@ -85,9 +124,32 @@ fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>
                         )
                     })
                 })
-                .or_else(|| melee_health_floor(&after, pid, action)),
+                .or_else(|| melee_health_floor(risk, pid, action)),
             _ => None,
         };
+        let floor = floor.map(|(uid, hp)| {
+            let Action::Attack { target, .. } = action else {
+                return (uid, hp);
+            };
+            let actor = &risk.units[&uid];
+            let Some(preview) = after.host_previews.get(&(uid, *target, false)) else {
+                return (uid, hp);
+            };
+            let extra_wounds = f64::from(after.units[&uid].hp - actor.hp) / 10.0;
+            let host_retaliation = expected_damage(
+                preview.defender_strength,
+                (preview.attacker_strength - extra_wounds.ceil()).max(0.0),
+            );
+            (
+                uid,
+                hp.min(
+                    actor.hp
+                        - (host_retaliation * crate::ai::COMBAT_ROLL_MAX)
+                            .ceil()
+                            .min(100.0) as i32,
+                ),
+            )
+        });
         let victims = match action {
             Action::Attack { unit, target } | Action::Ranged { unit, target }
                 if after.city_at(*target).is_none() && after.encampment_at(*target).is_none() =>
@@ -104,24 +166,35 @@ fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>
                             return None;
                         }
                         let pair = if ranged {
-                            after.ranged_strike_strengths(*unit, *uid, *target)
+                            risk.ranged_strike_strengths(*unit, *uid, *target)
                         } else {
-                            after.melee_exchange_strengths(*unit, *uid)
+                            risk.melee_exchange_strengths(*unit, *uid)
                         }?;
-                        let mean = after
+                        let strengths = after
                             .host_previews
                             .get(&(*unit, *target, ranged))
-                            .map_or_else(
-                                || expected_damage(pair.0, pair.1),
-                                |preview| f64::from(preview.damage_to_defender),
-                            );
-                        Some((defender.clone(), (mean * MIN_COMBAT_ROLL).floor() as i32))
+                            .filter(|preview| {
+                                preview.attacker_strength > 0.0 && preview.defender_strength > 0.0
+                            })
+                            .map_or(pair, |preview| {
+                                (preview.attacker_strength, preview.defender_strength)
+                            });
+                        Some((defender.clone(), damage_floor(strengths.0, strengths.1)))
                     })
                     .collect::<Vec<_>>()
             }
             _ => Vec::new(),
         };
-        let previous_hp = floor.and_then(|(uid, _)| after.units.get(&uid).map(|unit| unit.hp));
+        let previous_hp = floor.and_then(|(uid, _)| risk.units.get(&uid).map(|unit| unit.hp));
+        let healing_actors = match action {
+            Action::Promote { unit, .. } => vec![*unit],
+            _ => actors(action),
+        };
+        let healing: Vec<(u32, i32)> = healing_actors
+            .into_iter()
+            .filter(|uid| health_floors.contains_key(uid))
+            .filter_map(|uid| after.units.get(&uid).map(|unit| (uid, unit.hp)))
+            .collect();
         if after.apply(pid, action).is_ok() {
             for (victim, damage) in victims {
                 let entry = defender_floors
@@ -133,6 +206,18 @@ fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>
                 let previous_hp = previous_hp.expect("a floor has an actor");
                 let budget = health_floors.entry(uid).or_insert(previous_hp);
                 *budget -= previous_hp - hp;
+            }
+            // Pillaging and promotion can heal a wounded striker. Credit
+            // only health actually gained by a successful explicit order.
+            if floor.is_none() {
+                for (uid, previous) in healing {
+                    if let Some(unit) = after.units.get(&uid) {
+                        let gained = (unit.hp - previous).max(0);
+                        if let Some(hp) = health_floors.get_mut(&uid) {
+                            *hp = (*hp + gained).min(100);
+                        }
+                    }
+                }
             }
         }
     }
@@ -169,6 +254,7 @@ impl AdvancedAi {
         actions: &[Action],
     ) -> bool {
         let after = replay(before, pid, actions, &BTreeSet::new());
+        let mut forecast = ReplyForecast::new(&after, pid);
         actions
             .iter()
             .filter_map(|action| match action {
@@ -177,7 +263,7 @@ impl AdvancedAi {
             })
             .all(|uid| {
                 !self.battle_planner_recovering.contains(&uid)
-                    && self.reply_outcomes_are_safe(before, &after, pid, uid)
+                    && self.reply_outcomes_are_safe(before, &after, pid, uid, &mut forecast)
             })
     }
 
@@ -185,6 +271,16 @@ impl AdvancedAi {
     /// away from the following one. Use only currently visible hostile facts;
     /// enemy relocation is a possible route, not knowledge of a future order.
     pub(super) fn unit_reply_is_safe(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        self.unit_reply_with_forecast(g, pid, uid, &mut ReplyForecast::new(g, pid))
+    }
+
+    fn unit_reply_with_forecast(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        forecast: &mut ReplyForecast,
+    ) -> bool {
         let Some(unit) = g.units.get(&uid) else {
             return false;
         };
@@ -207,8 +303,7 @@ impl AdvancedAi {
         {
             return true;
         }
-        let mut first = DangerField::with_reach(g, pid, true);
-        let incoming = reply_damage(&mut first, unit.pos, uid, unit.hp);
+        let incoming = reply_damage(&mut forecast.first, unit.pos, uid, unit.hp);
         let left = unit.hp - incoming.ceil() as i32;
         if left <= 0 || (incoming > 0.0 && left < RESERVE_HP) {
             return false;
@@ -228,7 +323,9 @@ impl AdvancedAi {
         survivor.acted = false;
         survivor.zoc_stopped = false;
         survivor.started_turn_in_zoc = false;
-        let mut second = DangerField::second_turn(&next, pid);
+        let second = forecast
+            .second
+            .get_or_insert_with(|| DangerField::second_turn(g, pid));
         let mut stands = vec![unit.pos];
         stands.extend(next.reachable(uid));
         stands.into_iter().any(|stand| {
@@ -237,12 +334,22 @@ impl AdvancedAi {
                 .unit_ids_at(stand)
                 .iter()
                 .any(|other| next.is_at_war(pid, next.units[other].owner))
-                && reply_damage(&mut second, stand, uid, left) < f64::from(left)
+                && {
+                    let damage = reply_damage(second, stand, uid, left).ceil() as i32;
+                    left - damage > 0 && (damage == 0 || left - damage >= RESERVE_HP)
+                }
         })
     }
 
-    fn reply_outcomes_are_safe(&self, before: &Game, after: &Game, pid: usize, uid: u32) -> bool {
-        if !self.unit_reply_is_safe(after, pid, uid) {
+    fn reply_outcomes_are_safe(
+        &self,
+        before: &Game,
+        after: &Game,
+        pid: usize,
+        uid: u32,
+        forecast: &mut ReplyForecast,
+    ) -> bool {
+        if !self.unit_reply_with_forecast(after, pid, uid, forecast) {
             return false;
         }
         let Some(unit) = after.units.get(&uid) else {
@@ -289,12 +396,13 @@ impl AdvancedAi {
             .collect();
         loop {
             let after = replay(before, pid, actions, &blocked);
+            let mut forecast = ReplyForecast::new(&after, pid);
             let unsafe_units: Vec<u32> = affected
                 .iter()
                 .copied()
                 .filter(|uid| {
                     !blocked.contains(uid)
-                        && !self.reply_outcomes_are_safe(before, &after, pid, *uid)
+                        && !self.reply_outcomes_are_safe(before, &after, pid, *uid, &mut forecast)
                 })
                 .collect();
             if unsafe_units.is_empty() {
@@ -309,9 +417,12 @@ impl AdvancedAi {
             .cloned()
             .collect();
         let mut board = replay(before, pid, &kept, &BTreeSet::new());
+        let mut forecast = ReplyForecast::new(&board, pid);
         // Unordered units can be exposed too, e.g. a gun exempted by a siege.
         for uid in before.player_unit_ids(pid) {
-            if military(before, pid, uid) && !self.unit_reply_is_safe(&board, pid, uid) {
+            if military(before, pid, uid)
+                && !self.unit_reply_with_forecast(&board, pid, uid, &mut forecast)
+            {
                 blocked.insert(uid);
             }
         }
@@ -322,7 +433,6 @@ impl AdvancedAi {
             if unit.moves_left <= 0.0 {
                 continue;
             }
-            let mut first = DangerField::with_reach(&board, pid, true);
             let mut stands = vec![unit.pos];
             stands.extend(board.reachable(uid));
             let mut choices = Vec::new();
@@ -344,8 +454,11 @@ impl AdvancedAi {
                 if trial.units.get(&uid).is_none_or(|now| now.pos != stand) {
                     continue;
                 }
-                let safe = self.unit_reply_is_safe(&trial, pid, uid);
-                let incoming = reply_damage(&mut first, stand, uid, unit.hp);
+                // Vacating the origin can open an enemy route; assess and rank
+                // the destination on the board after that actual move.
+                let mut forecast = ReplyForecast::new(&trial, pid);
+                let safe = self.unit_reply_with_forecast(&trial, pid, uid, &mut forecast);
+                let incoming = reply_damage(&mut forecast.first, stand, uid, unit.hp);
                 choices.push((
                     !safe,
                     incoming.ceil() as i32,
