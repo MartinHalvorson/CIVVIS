@@ -48,9 +48,12 @@ measure native Gran Colombia Domination outcomes.
 
 Main `efe715a03` is merged once into the task branch. The preservation module
 and all 21 fixtures remain byte-identical to the independently tested
-candidate. Focused and complete local Rust validation remain pending while
-the shared build cache is in use by another owned task. A complete successful
-local run is required before readiness.
+candidate. All 21 focused local preservation controls pass. The complete
+local `cargo test --profile ci --locked -- --test-threads=1` run passes 4,715
+tests with zero failures and 54 existing ignored tests and documentation
+examples. Both spectator timing fixtures pass in this full run. Rust source,
+test and Cargo input hashes remain unchanged from the registered candidate;
+the local result does not establish a native capture or win-rate gain.
 
 ## Native observation and limits
 
