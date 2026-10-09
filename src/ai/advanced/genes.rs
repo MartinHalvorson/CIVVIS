@@ -3557,6 +3557,13 @@ pub const GENES: &[Gene] = &[
     // with Gold in 144 runs. In the expansion window, at peace, the treasury
     // saves for a Settler and buys it. See `advanced/gold_buys_the_settler.rs`.
     Gene { tag: "gold-buys-the-settler", field: "gold_buys_the_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_settler, disable: AdvancedAi::disable_gold_buys_the_settler },
+    // `trader-fills-the-idle-route`: 134 Emperor runs opened the first trade
+    // route slot at a median turn 25 and ran the first route at turn 69 (a
+    // 42-turn lag; 63 empty slot-turns by t100, passers 50 against retirees
+    // 68), because every Trader claim reads an idle queue the expansion
+    // window never leaves. The safe origin that trains a Trader soonest puts
+    // one ahead of the routine claims. See `advanced/trader_fills_the_idle_route.rs`.
+    Gene { tag: "trader-fills-the-idle-route", field: "trader_fills_the_idle_route", kind: Kind::OptIn, enable: AdvancedAi::enable_trader_fills_the_idle_route, disable: AdvancedAi::disable_trader_fills_the_idle_route },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

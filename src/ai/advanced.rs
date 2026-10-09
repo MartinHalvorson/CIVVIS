@@ -8241,6 +8241,11 @@ pub struct AdvancedAi {
     /// `advanced/science_suppression_pads.rs`.
     science_suppression_hits_the_pads: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `trader-fills-the-idle-route`: while a trade route slot stands
+    /// empty, the safe origin that trains a Trader soonest puts one at the
+    /// head of its queue ahead of the governor's rescoring. See
+    /// `advanced/trader_fills_the_idle_route.rs`. Off by default.
+    trader_fills_the_idle_route: bool,
     /// `wall-sortie-skips-the-encampment`: the wall sortie's guard and
     /// reliever slots take only tiles a hostile soldier stands on. See
     /// `hostile_soldier_at` in `siege_train`.
@@ -9190,6 +9195,7 @@ mod dvp_leader_front;
 mod far_settle_site;
 mod gold_buys_the_settler;
 mod granary_claims_the_bound_queue;
+mod trader_fills_the_idle_route;
 mod launcher_war;
 mod peacetime_republic;
 mod science_denial_every_pad;
@@ -10567,6 +10573,7 @@ impl AdvancedAi {
             science_denial_refused_pads: BTreeMap::new(),
             science_suppression_hits_the_pads: false,
             // ---- append: t-z ----------------------------------------
+            trader_fills_the_idle_route: false,
             wall_sortie_skips_the_encampment: false,
             unseen_capital_is_unseen: false,
             war_kills_the_bands_2: false,
@@ -30892,6 +30899,11 @@ impl AdvancedAi {
             let bound_granary_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.bound_granary_holds(g, pid, cid, plan, item));
+            // `trader-fills-the-idle-route`: the claimed Trader finishes while
+            // its slot still stands empty.
+            let idle_route_trader_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.idle_route_trader_holds(g, pid, cid, plan, item));
             // `industrial-zone-in-the-producers`: a queued Industrial Zone or
             // Workshop finishes before routine rescoring can claim the city.
             let industrial_zone_commitment = committed.as_ref().is_some_and(|(_, item)| {
@@ -30919,6 +30931,7 @@ impl AdvancedAi {
                     || early_settler_commitment
                     || deterrence_commitment
                     || bound_granary_commitment
+                    || idle_route_trader_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -30934,6 +30947,7 @@ impl AdvancedAi {
                     || early_settler_commitment
                     || deterrence_commitment
                     || bound_granary_commitment
+                    || idle_route_trader_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -47508,6 +47522,12 @@ impl AdvancedAi {
             // race and the routine claims. Exact no-op while the gene is off.
             // See `advanced/near_rival_deterrence.rs`.
             self.claim_deterrence_unit(g, pid, &plan);
+            // `trader-fills-the-idle-route`: an empty trade route slot's
+            // Trader, after the floor's Settler, the Granary and the deterrent
+            // and ahead of the Prophet race and the routine claims. Exact
+            // no-op while the gene is off. See
+            // `advanced/trader_fills_the_idle_route.rs`.
+            self.claim_trader_for_idle_route(g, pid, &plan);
             // `prophet-builds-its-site`: the Holy Site a Prophet founds on
             // goes first. Exact no-op while the gene is off.
             self.reserve_prophet_site(g, pid, &plan);
