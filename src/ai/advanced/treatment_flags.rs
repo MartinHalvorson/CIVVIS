@@ -7264,6 +7264,28 @@ impl AdvancedAi {
         self.gold_buys_the_settler = false;
     }
 
+    /// Opt-in gene `trader-fills-the-idle-route`; see
+    /// `advanced/trader_fills_the_idle_route.rs`.
+    pub fn enable_trader_fills_the_idle_route(&mut self) {
+        self.trader_fills_the_idle_route = true;
+    }
+
+    /// The twin of `enable_trader_fills_the_idle_route`.
+    pub fn disable_trader_fills_the_idle_route(&mut self) {
+        self.trader_fills_the_idle_route = false;
+    }
+
+    /// Opt-in gene `civic-awaits-its-inspiration`; see
+    /// `advanced/civic_inspiration_wait.rs`.
+    pub fn enable_civic_awaits_its_inspiration(&mut self) {
+        self.civic_awaits_its_inspiration = true;
+    }
+
+    /// The twin of `enable_civic_awaits_its_inspiration`.
+    pub fn disable_civic_awaits_its_inspiration(&mut self) {
+        self.civic_awaits_its_inspiration = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -237,6 +237,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `capture-hold-chain` | off (unmeasured) | Enable `capture-hold-chain` for measurement. | 1 \| 1 |
 | `capture-holds-the-ring` | off (unmeasured) | Opt-in gene `capture-holds-the-ring`; see `Self::capture_holds_the_ring`. | 1 \| 1 |
 | `capture-waits-on-the-march` | off (unmeasured) | Opt-in gene `capture-waits-on-the-march`; see `Self::capture_waits_on_the_march`. | 1 \| 1 |
+| `civic-awaits-its-inspiration` | off (unmeasured) | Opt-in gene `civic-awaits-its-inspiration`; see `advanced/civic_inspiration_wait.rs`. | 1 \| 1 |
 | `colonization-earns-its-slot` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot`; see `Self::colonization_earns_its_slot`. | — \| 2 |
 | `colonization-earns-its-slot-2` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot-2`; see `Self::colonization_earns_its_slot_2`. | — \| 2 |
 | `commercial-hub-and-traders` | off (unmeasured) | Opt-in gene `commercial-hub-and-traders`; see `BasicAi::commercial_hub_and_traders` and `Self::international_gold_route_premium`. | 1 \| 1 |
@@ -446,6 +447,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `tower-assault` | off (unmeasured) | Opt-in gene `tower-assault`; see `Self::tower_assault`. | 1 \| 1 |
 | `trade-growth-to-district` | off (unmeasured) | Price route food by the next population-gated district slot. | 1 \| 1 |
 | `trade-production-to-launch` | off (unmeasured) | Price route production by time saved on an active space project. | 1 \| 1 |
+| `trader-fills-the-idle-route` | off (unmeasured) | Opt-in gene `trader-fills-the-idle-route`; see `advanced/trader_fills_the_idle_route.rs`. | 1 \| 1 |
 | `treasury-at-work-2-2` | off (unmeasured) | Keep the working reserve and buy the first Builder near local work. | 1 \| 2 |
 | `unique-unit-preference` | off (unmeasured) | Opt-in gene `unique-unit-preference`; see `BasicAi::unique_unit_preference`. | 1 \| 1 |
 | `unit-preservation` | off (unmeasured) | Enable combat preservation and full-health recovery. | 1 \| 1 |

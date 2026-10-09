@@ -3557,6 +3557,23 @@ pub const GENES: &[Gene] = &[
     // with Gold in 144 runs. In the expansion window, at peace, the treasury
     // saves for a Settler and buys it. See `advanced/gold_buys_the_settler.rs`.
     Gene { tag: "gold-buys-the-settler", field: "gold_buys_the_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_settler, disable: AdvancedAi::disable_gold_buys_the_settler },
+    // `trader-fills-the-idle-route`: 134 Emperor runs opened the first trade
+    // route slot at a median turn 25 and ran the first route at turn 69 (a
+    // 42-turn lag; 63 empty slot-turns by t100, passers 50 against retirees
+    // 68), because every Trader claim reads an idle queue the expansion
+    // window never leaves. The safe origin that trains a Trader soonest puts
+    // one ahead of the routine claims. See `advanced/trader_fills_the_idle_route.rs`.
+    Gene { tag: "trader-fills-the-idle-route", field: "trader_fills_the_idle_route", kind: Kind::OptIn, enable: AdvancedAi::enable_trader_fills_the_idle_route, disable: AdvancedAi::disable_trader_fills_the_idle_route },
+    // `civic-awaits-its-inspiration`: 157 Emperor runs adopted their opening
+    // civics a few turns before their own triggers landed: Craftsmanship 9%
+    // inspired (the third improvement came within 10 turns of adoption in 49
+    // of 136), State Workforce 23% (a district within 5 turns in 52 of 115),
+    // Games and Recreation 9% (Construction within 10 in 40 of 130), while our
+    // Culture ran 0.28 of the median rival's. On a forced beeline a step whose
+    // inspiration is still ours to earn goes after the goal's other steps;
+    // off one, a pick that would finish before its near trigger lands gives
+    // way. See `advanced/civic_inspiration_wait.rs`.
+    Gene { tag: "civic-awaits-its-inspiration", field: "civic_awaits_its_inspiration", kind: Kind::OptIn, enable: AdvancedAi::enable_civic_awaits_its_inspiration, disable: AdvancedAi::disable_civic_awaits_its_inspiration },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
