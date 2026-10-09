@@ -162,7 +162,8 @@ pub struct Plot {
     /// Owning player, or -1 for nobody.
     #[serde(default = "minus_one")]
     pub o: i32,
-    /// Native owning city for our plots; absent in older or foreign exports.
+    /// Native purchase city for our plots or observed parent of a foreign district.
+    /// Absent in legacy exports, ordinary foreign ground, or unavailable observations.
     #[serde(default)]
     pub oc: Option<i64>,
     #[serde(default)]
@@ -14110,22 +14111,36 @@ fn apply_territory(game: &mut crate::game::Game, snapshot: &Snapshot, state: &St
                 assign.push((pos, None));
                 continue;
             };
-            // Older recordings and foreign plots carry only the owning player.
-            // Keep their nearest-city fallback; our new plots name the actual
-            // purchasing city below.
+            // Legacy recordings and ordinary foreign ground name only the
+            // player. Explicit purchase/district parents override proximity.
             let nearest = centres.get(&seat).and_then(|list| {
                 list.iter()
                     .min_by_key(|(cid, centre)| (game.wdist(pos, *centre), *cid))
                     .map(|(cid, centre)| (*cid, game.wdist(pos, *centre)))
             });
-            // Our native city assignment can differ from the nearest city,
-            // especially after a tile swap. Never redirect an explicit but
-            // unresolved city ID to a different production queue.
-            let owner = if seat == 0 && plot.oc.is_some() {
-                state
-                    .cities
-                    .iter()
-                    .find(|city| Some(city.id) == plot.oc)
+            // City IDs belong to native players, not a global namespace.
+            // An observed district may belong to a farther city; assigning it
+            // by proximity can collapse two cities' Encampments into one roster.
+            // Never redirect an explicit but unresolved parent to another city.
+            let owner = if plot.oc.is_some() {
+                let native_city = if seat == 0 {
+                    state.cities.iter().find(|city| Some(city.id) == plot.oc)
+                } else {
+                    state
+                        .rivals
+                        .iter()
+                        .filter(|rival| rival.player == plot.o as usize)
+                        .flat_map(|rival| &rival.cities)
+                        .chain(
+                            state
+                                .minors
+                                .iter()
+                                .filter(|minor| minor.player == plot.o as usize)
+                                .flat_map(|minor| &minor.cities),
+                        )
+                        .find(|city| Some(city.id) == plot.oc)
+                };
+                native_city
                     .and_then(|city| game.city_at(crate::hex::offset_to_axial(city.x, city.y)))
                     .filter(|cid| game.cities.get(cid).is_some_and(|city| city.owner == seat))
             } else {
@@ -14138,6 +14153,7 @@ fn apply_territory(game: &mut crate::game::Game, snapshot: &Snapshot, state: &St
                 // ring it must be unseen. Mark either case for the live
                 // settlement Loyalty guard.
                 if is_major(seat)
+                    && plot.oc.is_none()
                     && nearest.is_some_and(|(_, distance)| distance >= CIV6_CITY_OWNERSHIP_REACH)
                 {
                     unseen_major.insert(pos);
@@ -15805,3 +15821,6 @@ mod lake_identity_tests;
 
 #[cfg(test)]
 mod foreign_encampment_health_tests;
+
+#[cfg(test)]
+mod foreign_district_parent_tests;
