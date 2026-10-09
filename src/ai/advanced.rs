@@ -23084,8 +23084,8 @@ impl AdvancedAi {
     /// Base ruleset maintenance is a deliberate approximation of the eventual
     /// bill: formation multipliers and policy discounts are applied by
     /// `Game::unit_gold_maintenance_cost` to a unit that does not exist yet.
-    /// Erring low is the safe direction — it refuses fewer purchases than the
-    /// true cost would, so this never blocks an empire that can actually pay.
+    /// Keep that approximation of the new bill, and carry any existing
+    /// deficit over the same funding horizon.
     fn faith_military_is_affordable(&self, g: &Game, pid: usize, unit: &str) -> bool {
         if !self.solvent_faith_army {
             return true;
@@ -23105,7 +23105,8 @@ impl AdvancedAi {
         // A treasury Civilization VI has clamped at zero reports as negative
         // income, so an already-broke empire fails here however much faith it
         // has piled up — which is the whole point.
-        g.players[pid].gold >= upkeep * FAITH_ARMY_SOLVENCY_TURNS
+        let existing_deficit = (-g.players[pid].gold_per_turn).max(0.0);
+        g.players[pid].gold >= (upkeep + existing_deficit) * FAITH_ARMY_SOLVENCY_TURNS
     }
 
     /// A faith-rich empire countering a military or religious victory threat
@@ -23226,6 +23227,21 @@ impl AdvancedAi {
         else {
             unreachable!("faith military shortlist contains only Buy actions")
         };
+        let item = if *formation == 0 {
+            Item::Unit { unit: *unit }
+        } else {
+            Item::Formation {
+                unit: *unit,
+                formation: *formation,
+            }
+        };
+        let strategic = self.production_value(g, pid, *city, &item, plan, counts);
+        // Obsolete and surplus roles are vetoed by the shared governor.
+        // Combat credit must not resurrect that rejection for a purchase.
+        // Check before cloning/applying an action that has no strategic bid.
+        if strategic < 0.0 {
+            return None;
+        }
         let mut after = g.speculative_clone();
         if after.apply(pid, action).is_err() || after.players[pid].faith < reserve {
             return None;
@@ -23241,17 +23257,6 @@ impl AdvancedAi {
                 2.. => 17.0,
                 _ => 0.0,
             };
-        let item = if *formation == 0 {
-            Item::Unit { unit: *unit }
-        } else {
-            Item::Formation {
-                unit: *unit,
-                formation: *formation,
-            }
-        };
-        let strategic = self
-            .production_value(g, pid, *city, &item, plan, counts)
-            .max(0.0);
         Some(strategic + combat * 12.0 - cost * 0.25)
     }
 
@@ -43132,6 +43137,9 @@ mod native_production_eta_tests;
 
 #[cfg(test)]
 mod native_research_eta_tests;
+
+#[cfg(test)]
+mod faith_army_quality_tests;
 
 #[cfg(test)]
 mod naval_production_tests;
