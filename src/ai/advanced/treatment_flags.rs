@@ -7187,6 +7187,17 @@ impl AdvancedAi {
         self.unseen_capital_is_unseen = false;
     }
 
+    /// Opt-in gene `peacetime-classical-republic`; see
+    /// [`Self::peacetime_republic_choice`].
+    pub fn enable_peacetime_classical_republic(&mut self) {
+        self.peacetime_classical_republic = true;
+    }
+
+    /// The twin of `enable_peacetime_classical_republic`.
+    pub fn disable_peacetime_classical_republic(&mut self) {
+        self.peacetime_classical_republic = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

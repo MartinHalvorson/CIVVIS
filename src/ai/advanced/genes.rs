@@ -3511,6 +3511,13 @@ pub const GENES: &[Gene] = &[
     // the memory. See `mirror::refresh_city_memory`.
     Gene { tag: "unseen-capital-is-unseen", field: "unseen_capital_is_unseen", kind: Kind::OptIn, enable: AdvancedAi::enable_unseen_capital_is_unseen, disable: AdvancedAi::disable_unseen_capital_is_unseen },
     Gene { tag: "unit-preservation", field: "unit_preservation", kind: Kind::OptIn, enable: AdvancedAi::enable_unit_preservation, disable: AdvancedAi::disable_unit_preservation },
+    // `peacetime-classical-republic`: 115 Emperor runs ran Oligarchy on 4,672
+    // of 4,780 turns between Political Philosophy (median t41) and Divine
+    // Right (t80), at war with a major on 15% of them, while 54% of our
+    // cities sat at their housing. The Republic gives +1 Housing and +1
+    // Amenity to every city with a district and a second Economic card.
+    // See `advanced/peacetime_republic.rs`.
+    Gene { tag: "peacetime-classical-republic", field: "peacetime_classical_republic", kind: Kind::OptIn, enable: AdvancedAi::enable_peacetime_classical_republic, disable: AdvancedAi::disable_peacetime_classical_republic },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

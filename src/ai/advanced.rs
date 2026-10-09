@@ -7376,6 +7376,10 @@ pub struct AdvancedAi {
     /// or not. See `advanced/launcher_war.rs`.
     launcher_war_ignores_the_edge: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `peacetime-classical-republic`: the first government is Classical
+    /// Republic, not Oligarchy, while no major is at war with us. See
+    /// `advanced/peacetime_republic.rs`.
+    peacetime_classical_republic: bool,
     /// `prophet-builds-its-site`: a held Great Prophet, the race's wanted
     /// Revelation points, or points within `PROPHET_SITE_LEAD_TURNS` of the
     /// cost put the Holy Site at the head of the city that builds it soonest;
@@ -9155,6 +9159,7 @@ mod band_hunt;
 mod culture_denial_heist;
 mod dvp_leader_front;
 mod launcher_war;
+mod peacetime_republic;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
 mod science_endgame;
@@ -10377,6 +10382,7 @@ impl AdvancedAi {
             no_peace_with_a_launcher: false,
             launcher_war_ignores_the_edge: false,
             // ---- append: p-r ----------------------------------------
+            peacetime_classical_republic: false,
             prophet_builds_its_site: false,
             religious_match_point_defence: false,
             rival_power_peak_seen: BTreeMap::new(),
@@ -19198,6 +19204,10 @@ impl AdvancedAi {
         } else {
             choice
         };
+        // `peacetime-classical-republic`: the lane's Oligarchy becomes the
+        // Republic while no major is at war with us. See
+        // `advanced/peacetime_republic.rs`.
+        let choice = self.peacetime_republic_choice(g, pid, choice);
         if let Some(government) = choice
             .filter(|government| g.players[pid].government.as_deref() != Some(government.as_str()))
         {
