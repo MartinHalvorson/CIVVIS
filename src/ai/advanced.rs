@@ -6821,6 +6821,8 @@ pub struct AdvancedAi {
     skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// Check combat orders against two enemy replies and retain full recovery.
+    unit_preservation: bool,
     /// Price route food by the next population-gated district slot.
     trade_growth_to_district: bool,
     /// Price route production by time saved on an active space project.
@@ -7459,6 +7461,7 @@ mod fire_plan;
 /// the kill plan and the heal rotation — ahead of the per-unit ladder. One
 /// opt-in gene; see `advanced/battle_planner.rs`.
 mod battle_planner;
+mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
 /// Close as a body, and screen the shooters: two opt-in genes in the deployed
@@ -8657,6 +8660,7 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
+            unit_preservation: false,
             trade_growth_to_district: false,
             trade_production_to_launch: false,
             tourism_land_reservation: false,
@@ -28930,8 +28934,11 @@ impl AdvancedAi {
             Item::Formation { unit, formation } => {
                 let spec = &g.rules.units[unit];
                 let naval = spec.domain.as_deref() == Some("sea");
+                if naval && self.base.open_water_navy && !self.base.naval_city_can_launch(g, cid) {
+                    return -10_000.0;
+                }
                 let desired = if naval {
-                    BasicAi::desired_navy(g, pid)
+                    self.base.desired_navy(g, pid)
                 } else {
                     desired_military
                 };
@@ -28965,13 +28972,13 @@ impl AdvancedAi {
                 if spec.class == "military" {
                     let naval = spec.domain.as_deref() == Some("sea");
                     let aircraft = spec.domain.as_deref() == Some("air");
-                    let desired_naval = BasicAi::desired_navy(g, pid);
+                    let desired_naval = self.base.desired_navy(g, pid);
                     let desired_aircraft = if plan.strategy == GrandStrategy::Conquest {
                         city_count.max(1)
                     } else {
                         city_count.div_ceil(2).max(1)
                     };
-                    if naval && !BasicAi::city_is_coastal(g, cid) {
+                    if naval && !self.base.naval_city_can_launch(g, cid) {
                         return -10_000.0;
                     }
                     let domain_saturated = if naval {
@@ -42334,7 +42341,27 @@ impl AdvancedAi {
         // turn number or the acting civilization.
         self.journal().begin_turn(g.turn, pid);
         let pool = self.work_pool.clone();
-        g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
+        if self.unit_preservation && !g.players[pid].is_minor && !g.players[pid].is_barbarian {
+            let mut proposed = g.clone();
+            let start = proposed.log.len();
+            proposed
+                .with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
+            let actions: Vec<Action> = proposed
+                .log
+                .since(start)
+                .filter(|(seat, _)| *seat == pid)
+                .map(|(_, action)| action.clone())
+                .collect();
+            let actions = self.preserve_unit_actions(g, pid, &actions);
+            // These preferences are decisions rather than simulated turn yields.
+            g.players[pid].citizen_food_bias = proposed.players[pid].citizen_food_bias;
+            g.players[pid].city_directives = proposed.players[pid].city_directives.clone();
+            for action in actions {
+                let _ = g.apply(pid, &action);
+            }
+        } else {
+            g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
+        }
     }
 
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
@@ -43060,3 +43087,6 @@ mod native_production_eta_tests;
 
 #[cfg(test)]
 mod native_research_eta_tests;
+
+#[cfg(test)]
+mod naval_production_tests;

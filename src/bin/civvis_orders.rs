@@ -16956,6 +16956,7 @@ mod tests {
             o: -1,
             oc: None,
             w: false,
+            lk: None,
             i: false,
             fw: None,
             im: None,

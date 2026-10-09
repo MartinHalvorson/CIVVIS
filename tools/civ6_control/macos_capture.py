@@ -5,16 +5,23 @@ window is composited. The popup clearer needs a fresh frame inside its two
 second budget, so use CoreGraphics directly.  A denied screen-capture grant is
 reported without asking for one: an unattended game must never cover itself
 with macOS's permission sheet.
+
+Frames come from long-lived helpers (one per backend), not one process per
+frame: see `_CaptureServer` for what the per-frame processes did to the
+operator's own Cmd-Shift-5 recordings.
 """
 
 from __future__ import annotations
 
+import atexit
 import hashlib
 import os
+import select
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -49,30 +56,11 @@ if rawArguments == ["--preflight"] {
     FileHandle.standardError.write(Data("screen capture permission unavailable".utf8))
     exit(77)
 }
-let fallbackMode = rawArguments.first == "--fallback"
-let args = fallbackMode ? Array(rawArguments.dropFirst()) : rawArguments
-guard args.count == 5 else { exit(64) }
+let serveMode = rawArguments.first == "--serve"
+let modeArguments = serveMode ? Array(rawArguments.dropFirst()) : rawArguments
+let fallbackMode = modeArguments.first == "--fallback"
+let args = fallbackMode ? Array(modeArguments.dropFirst()) : modeArguments
 
-// The interactive request API would open the system permission dialog.  This
-// helper is deliberately preflight-only: the caller can wait and retry later
-// without ever putting a modal over the game.
-guard CGPreflightScreenCaptureAccess() else {
-    FileHandle.standardError.write(Data("screen capture permission unavailable".utf8))
-    exit(77)
-}
-
-func number(_ index: Int) -> Double {
-    guard let value = Double(args[index]) else { exit(64) }
-    return value
-}
-
-let rect = CGRect(
-    x: number(0),
-    y: number(1),
-    width: number(2),
-    height: number(3)
-)
-let output = URL(fileURLWithPath: args[4])
 // The macOS 15 SDK marks both of these CoreGraphics entry points unavailable
 // even though the symbols remain present. Resolve them dynamically so the
 // source still compiles on the new SDK; neither path invokes the interactive
@@ -88,7 +76,7 @@ guard let framework = dlopen(
     exit(1)
 }
 
-func windowListImage() -> CGImage? {
+func windowListImage(_ rect: CGRect) -> CGImage? {
     guard let symbol = dlsym(framework, "CGWindowListCreateImage") else { return nil }
     let capture = unsafeBitCast(symbol, to: WindowCaptureImage.self)
     guard let unmanaged = capture(
@@ -100,7 +88,7 @@ func windowListImage() -> CGImage? {
     return unmanaged.takeRetainedValue()
 }
 
-func mainDisplayImage() -> CGImage? {
+func mainDisplayImage(_ rect: CGRect) -> CGImage? {
     guard let symbol = dlsym(framework, "CGDisplayCreateImage") else { return nil }
     let capture = unsafeBitCast(symbol, to: DisplayCaptureImage.self)
     let display = CGMainDisplayID()
@@ -120,9 +108,11 @@ func mainDisplayImage() -> CGImage? {
     return image.cropping(to: crop)
 }
 
-func screenCaptureKitImage() -> CGImage? {
+func screenCaptureKitImage(_ rect: CGRect) -> CGImage? {
     guard #available(macOS 15.0, *) else { return nil }
     let semaphore = DispatchSemaphore(value: 0)
+    // Local to this request: a callback that lands after the guard expired
+    // writes into its own abandoned slot, never into a later request's.
     var captured: CGImage?
     SCScreenshotManager.captureImage(in: rect) { image, _ in
         captured = image
@@ -139,41 +129,98 @@ func screenCaptureKitImage() -> CGImage? {
 // display-space rectangle without interacting with the recording UI, so it is
 // the preferred current-macOS path. But a native recording can also leave
 // ScreenCaptureKit with a granted preflight and a nil frame. That callback can
-// poison CoreGraphics work attempted in the same process, so Python starts a
-// fresh `--fallback` helper instead of chaining the window-list call here.
-let image: CGImage?
-let signalFallback: Bool
-if fallbackMode {
-    // Window-list capture is the fast recording-safe alternate backend. Do
-    // not reach direct-display capture from this fast retry: it can block
-    // behind the native recorder for tens of seconds.
-    image = windowListImage()
-    signalFallback = false
-} else if #available(macOS 15.0, *) {
-    image = screenCaptureKitImage()
-    signalFallback = true
-} else {
-    image = mainDisplayImage() ?? windowListImage()
-    signalFallback = false
+// poison CoreGraphics work attempted in the same process, so Python asks a
+// separate `--fallback` helper instead of chaining the window-list call here:
+// a ScreenCaptureKit helper never runs CoreGraphics capture, and the reverse.
+func capture(_ rect: CGRect, to output: URL, fallback: Bool) -> (Int32, String) {
+    let image: CGImage?
+    let signalFallback: Bool
+    if fallback {
+        // Window-list capture is the fast recording-safe alternate backend. Do
+        // not reach direct-display capture from this fast retry: it can block
+        // behind the native recorder for tens of seconds.
+        image = windowListImage(rect)
+        signalFallback = false
+    } else if #available(macOS 15.0, *) {
+        image = screenCaptureKitImage(rect)
+        signalFallback = true
+    } else {
+        image = mainDisplayImage(rect) ?? windowListImage(rect)
+        signalFallback = false
+    }
+    guard let image else {
+        return (signalFallback ? 78 : 1, "CoreGraphics capture returned no image")
+    }
+    guard let destination = CGImageDestinationCreateWithURL(
+        output as CFURL,
+        "public.png" as CFString,
+        1,
+        nil
+    ) else {
+        return (1, "could not create PNG destination")
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else {
+        return (1, "could not finalize PNG")
+    }
+    return (0, "")
 }
-guard let image else {
-    FileHandle.standardError.write(Data("CoreGraphics capture returned no image".utf8))
-    exit(signalFallback ? 78 : 1)
+
+// The interactive request API would open the system permission dialog.  This
+// helper is deliberately preflight-only: the caller can wait and retry later
+// without ever putting a modal over the game.
+if serveMode {
+    // One line per frame in: `x y width height output-path`. One line out:
+    // the status a one-shot helper would have exited with, then its detail.
+    // EOF (the Python side closed the pipe or died) ends the helper.
+    func reply(_ status: Int32, _ detail: String) {
+        let line = detail.isEmpty ? "\(status)\n" : "\(status) \(detail)\n"
+        FileHandle.standardOutput.write(Data(line.utf8))
+    }
+    while let request = readLine() {
+        let fields = request.split(
+            separator: " ", maxSplits: 4, omittingEmptySubsequences: false
+        ).map(String.init)
+        guard fields.count == 5,
+              let x = Double(fields[0]), let y = Double(fields[1]),
+              let width = Double(fields[2]), let height = Double(fields[3]),
+              !fields[4].isEmpty else {
+            reply(64, "malformed capture request")
+            continue
+        }
+        guard CGPreflightScreenCaptureAccess() else {
+            reply(77, "screen capture permission unavailable")
+            continue
+        }
+        let (status, detail) = capture(
+            CGRect(x: x, y: y, width: width, height: height),
+            to: URL(fileURLWithPath: fields[4]),
+            fallback: fallbackMode
+        )
+        reply(status, detail)
+    }
+    exit(0)
 }
-guard let destination = CGImageDestinationCreateWithURL(
-    output as CFURL,
-    "public.png" as CFString,
-    1,
-    nil
-) else {
-    FileHandle.standardError.write(Data("could not create PNG destination".utf8))
-    exit(1)
+
+// One-shot form, kept for diagnosis by hand: `cgcapture-<digest> x y w h out.png`.
+guard args.count == 5 else { exit(64) }
+guard CGPreflightScreenCaptureAccess() else {
+    FileHandle.standardError.write(Data("screen capture permission unavailable".utf8))
+    exit(77)
 }
-CGImageDestinationAddImage(destination, image, nil)
-guard CGImageDestinationFinalize(destination) else {
-    FileHandle.standardError.write(Data("could not finalize PNG".utf8))
-    exit(1)
+func number(_ index: Int) -> Double {
+    guard let value = Double(args[index]) else { exit(64) }
+    return value
 }
+let (status, detail) = capture(
+    CGRect(x: number(0), y: number(1), width: number(2), height: number(3)),
+    to: URL(fileURLWithPath: args[4]),
+    fallback: fallbackMode
+)
+if status != 0 {
+    FileHandle.standardError.write(Data(detail.utf8))
+}
+exit(status)
 '''.strip()
 
 _NATIVE_BINARY: Path | None = None
@@ -293,18 +340,182 @@ def _capture_command(box_points, output: str | Path, *, fallback: bool) -> list[
     return command
 
 
+#: ★★★★★ ONE PROCESS FOR MANY FRAMES, BECAUSE A PROCESS PER FRAME BROKE THE
+#: OPERATOR'S OWN SCREEN RECORDINGS.
+#:
+#: Every capture used to start a fresh `cgcapture-<digest>` and let it exit.
+#: The popup keeper polls at 0.25 s, so on 2026-10-08 that was ~34 helper
+#: processes a minute, ~1,500 an hour, each one a NEW screen-capture client
+#: that `systemstatusd` (the daemon behind the menu-bar recording indicator)
+#: had to attribute, publish to Control Center, and -- once the helper had
+#: already exited -- fail to name ("Failed to find any name for executable",
+#: then a directory-services lookup). Measured the same evening:
+#:
+#:   * 48 attribution publishes in one minute against 34 helper launches,
+#:     and the clip recorder's two long-lived streams contributing none;
+#:   * 20 frames from ONE process published NOTHING for 5 s straight, at
+#:     10-20 ms a frame; 20 spawned helpers each published, took 150-200 ms,
+#:     and half of them hit the 3.5 s guard;
+#:   * `popup_clear.log`'s own "systemstatusd is spinning" pauses climbed
+#:     24 -> 52 -> 86 -> 137 -> 154 -> 177 an hour after a reboot, the same
+#:     daemon that had sat at ~550 an hour (permanently spinning) for days.
+#:
+#: While `systemstatusd` spins, ScreenCaptureKit cannot start a stream:
+#: Cmd-Shift-5 dies one second after "Recording started" with
+#: `getDisplayForDisplayId timed out` (19:29:49 that night). So the lane's
+#: churn, not anything the operator did, was stopping the operator's
+#: recordings. A long-lived helper is attributed once and stays attributed.
+#:
+#: The helpers are still recycled: after a timeout (killed), a permission
+#: denial, a crash, `SERVER_MAX_CONSECUTIVE_MISSES` failed frames in a row,
+#: or `SERVER_MAX_AGE_SECONDS` -- two processes an hour instead of 1,500.
+#: ScreenCaptureKit and the CoreGraphics fallback never share a process (see
+#: the Swift comment above `capture`).
+SERVER_MAX_AGE_SECONDS = 1800.0
+SERVER_MAX_CONSECUTIVE_MISSES = 3
+
+
+class _CaptureServer:
+    """One long-lived `cgcapture --serve [--fallback]` helper.
+
+    Requests are one line, `x y width height output`; the reply is one line,
+    the status a one-shot helper would have exited with, then its detail. A
+    reply comes back as the `subprocess.CompletedProcess` the one-shot helper
+    produced, so every caller above `_capture_once` is unchanged.
+    """
+
+    def __init__(self, binary: Path, fallback: bool) -> None:
+        self.binary = binary
+        self.fallback = fallback
+        self.process: subprocess.Popen | None = None
+        self.buffer = b""
+        self.started = 0.0
+        self.misses = 0
+        self.lock = threading.Lock()
+
+    def command(self) -> list[str]:
+        return [str(self.binary), "--serve"] + (["--fallback"] if self.fallback else [])
+
+    def _start(self) -> subprocess.Popen:
+        self.process = subprocess.Popen(
+            self.command(),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            bufsize=0,
+        )
+        self.buffer = b""
+        self.started = time.monotonic()
+        self.misses = 0
+        return self.process
+
+    def stop(self, *, kill: bool = False) -> None:
+        process, self.process = self.process, None
+        self.buffer = b""
+        if process is None:
+            return
+        try:
+            process.stdin.close()
+        except OSError:
+            pass
+        if not kill:
+            try:
+                process.wait(timeout=1.0)  # EOF ends a healthy helper at once
+                return
+            except subprocess.TimeoutExpired:
+                pass
+        try:
+            process.kill()
+            process.wait(timeout=2.0)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    def _failed(self, arguments: list[str], detail: str) -> subprocess.CompletedProcess:
+        self.stop(kill=True)
+        return subprocess.CompletedProcess(arguments, 1, "", detail)
+
+    def request(self, arguments: list[str], *, timeout: float) -> subprocess.CompletedProcess | None:
+        """One frame; None when the helper had to be killed for taking too long."""
+        with self.lock:
+            process = self.process
+            if process is not None and (
+                    process.poll() is not None
+                    or time.monotonic() - self.started >= SERVER_MAX_AGE_SECONDS):
+                self.stop()
+                process = None
+            if process is None:
+                process = self._start()
+            try:
+                os.write(process.stdin.fileno(), (" ".join(arguments) + "\n").encode())
+            except OSError:
+                return self._failed(arguments, "native capture helper exited")
+            deadline = time.monotonic() + timeout
+            descriptor = process.stdout.fileno()
+            while b"\n" not in self.buffer:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self.stop(kill=True)
+                    return None
+                ready, _, _ = select.select([descriptor], [], [], remaining)
+                if not ready:
+                    continue
+                chunk = os.read(descriptor, 4096)
+                if not chunk:
+                    return self._failed(arguments, "native capture helper exited")
+                self.buffer += chunk
+            reply, _, self.buffer = self.buffer.partition(b"\n")
+            status_text, _, detail = reply.decode("utf-8", "replace").partition(" ")
+            try:
+                status = int(status_text)
+            except ValueError:
+                return self._failed(arguments, f"unreadable capture reply {reply[:80]!r}")
+            if status == 0:
+                self.misses = 0
+            else:
+                self.misses += 1
+                if (status == SCREEN_CAPTURE_PERMISSION_DENIED
+                        or self.misses >= SERVER_MAX_CONSECUTIVE_MISSES):
+                    self.stop()
+            return subprocess.CompletedProcess(arguments, status, "", detail)
+
+
+_SERVERS: dict[bool, _CaptureServer] = {}
+_SERVERS_LOCK = threading.Lock()
+
+
+def _server(binary: Path, fallback: bool) -> _CaptureServer:
+    with _SERVERS_LOCK:
+        server = _SERVERS.get(fallback)
+        if server is not None and server.binary != binary:
+            server.stop()  # the helper source changed under a running caller
+            server = None
+        if server is None:
+            server = _SERVERS[fallback] = _CaptureServer(binary, fallback)
+        return server
+
+
+def stop_capture_servers() -> None:
+    """End the long-lived helpers (also run at interpreter exit)."""
+    with _SERVERS_LOCK:
+        servers = list(_SERVERS.values())
+        _SERVERS.clear()
+    for server in servers:
+        with server.lock:
+            server.stop()
+
+
+atexit.register(stop_capture_servers)
+
+
 def _capture_once(command: list[str]) -> subprocess.CompletedProcess | None:
     """Run one native capture backend without letting a hung helper persist."""
-    try:
-        return subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=NATIVE_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired:
-        return None
+    binary, arguments = Path(command[0]), list(command[1:])
+    fallback = bool(arguments) and arguments[0] == "--fallback"
+    if fallback:
+        arguments = arguments[1:]
+    if any("\n" in argument for argument in arguments):
+        raise CaptureUnavailable("capture output path may not contain a newline")
+    return _server(binary, fallback).request(arguments, timeout=NATIVE_TIMEOUT_SECONDS)
 
 
 #: ★★★★★ HOW LONG THE FALLBACK IS LEFT ALONE ONCE IT HAS PROVED IT WILL HANG.
