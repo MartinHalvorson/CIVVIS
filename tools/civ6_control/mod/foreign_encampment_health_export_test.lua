@@ -36,10 +36,15 @@ local function fixture()
   DefenseTypes = { DISTRICT_GARRISON = 0, DISTRICT_OUTER = 1 },
   GameInfo = { Districts = {
     [0] = { DistrictType = "DISTRICT_CITY_CENTER" },
-    [1] = { DistrictType = "DISTRICT_ENCAMPMENT", AttackRange = 2 },
+    [1] = { DistrictType = "DISTRICT_ENCAMPMENT" },
     [2] = { DistrictType = "DISTRICT_CAMPUS" },
-    [3] = { DistrictType = "DISTRICT_IKANDA", AttackRange = 2 },
-    [4] = { DistrictType = "DISTRICT_THANH", AttackRange = 2 },
+    [3] = { DistrictType = "DISTRICT_IKANDA" },
+    [4] = { DistrictType = "DISTRICT_THANH" },
+  }, Districts_XP2 = {
+    DISTRICT_CITY_CENTER = { AttackRange = 2 },
+    DISTRICT_ENCAMPMENT = { AttackRange = 2 },
+    DISTRICT_IKANDA = { AttackRange = 2 },
+    DISTRICT_THANH = { AttackRange = 2 },
   } },
   plotRevealed = function() return true end,
   visibleResourceName = function() return nil end,

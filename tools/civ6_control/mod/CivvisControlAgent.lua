@@ -10097,7 +10097,7 @@ end
 -- sweep keeps its cadence (resources, improvements and pillage refresh there)
 -- and re-primes `known`. `TileDelta = false` withholds the deltas.
 -- One bare global table (200-local ceiling).
-CivvisTiles = { known = {}, districtPillage = {}, districtHealth = {}, currentHealth = {} };
+CivvisTiles = { known = {}, districtPillage = {}, districtHealth = {}, currentHealth = {}, districtParent = {} };
 
 -- PlotTooltip_Expansion2.lua:34-35 reads these TerrainManager accessors.
 -- Keep false distinct from unknown: a protected lowland can be dry even when
@@ -10138,8 +10138,9 @@ end
 
 
 -- CityBannerManager.lua:715-718 reads these two independent defense pools.
--- Expansion2_Districts.xml:45-46 and the Ikanda/Thanh expansion rows give
--- defending districts AttackRange 2. City-center health uses the city record.
+-- Expansion2_Schema.sql:180-188 puts AttackRange in Districts_XP2, keyed
+-- by DistrictType; Expansion2_Districts.xml:45-46 gives defending forts 2.
+-- City-center health uses the city record.
 -- Refresh only visible completed districts; fog retains the last observation.
 function CivvisTiles.healthState(plot, pid, x, y)
     return try(function()
@@ -10152,8 +10153,13 @@ function CivvisTiles.healthState(plot, pid, x, y)
             CivvisTiles.districtHealth[key] = nil;
             cached = nil;
         end
+        local attackRange = row and row.AttackRange;
+        if row ~= nil and GameInfo.Districts_XP2 ~= nil then
+            local defenseRow = GameInfo.Districts_XP2[row.DistrictType];
+            attackRange = defenseRow and defenseRow.AttackRange or 0;
+        end
         if row == nil or row.DistrictType == "DISTRICT_CITY_CENTER"
-            or type(row.AttackRange) ~= "number" or row.AttackRange <= 0 then
+            or type(attackRange) ~= "number" or attackRange <= 0 then
             CivvisTiles.districtHealth[key] = nil;
             return nil;
         end
@@ -10201,6 +10207,67 @@ function CivvisTiles.healthMark(plot, pid, x, y)
     if health == nil then return "?"; end
     return tostring(health.damage) .. ":" .. tostring(health.max_damage) .. ":"
         .. tostring(health.wall_damage) .. ":" .. tostring(health.max_wall_damage);
+end
+
+-- CityBannerManager.lua:2635-2638 reads GetCity() and its native GetID().
+-- Foreign ground must not expose an unseen purchase city: observe only a
+-- visible completed district with a revealed parent center. Fog/API failures
+-- keep the last valid parent for this district identity.
+function CivvisTiles.parentState(plot, pid)
+    return try(function()
+        local x, y = plot:GetX(), plot:GetY();
+        local key = pid .. ":" .. x .. ":" .. y;
+        local kind, owner = plot:GetDistrictType(), plot:GetOwner();
+        local cached = CivvisTiles.districtParent[key];
+        if cached ~= nil and (cached.kind ~= kind or cached.owner ~= owner) then
+            CivvisTiles.districtParent[key] = nil;
+            cached = nil;
+        end
+        local row = GameInfo.Districts[kind];
+        if owner == pid or owner < 0 or row == nil
+            or row.DistrictType == "DISTRICT_CITY_CENTER" or row.DistrictType == "DISTRICT_WONDER" then
+            CivvisTiles.districtParent[key] = nil;
+            return nil;
+        end
+        if not PlayersVisibility[pid]:IsVisible(x, y) then
+            return cached and cached.parent or nil;
+        end
+        local district = CityManager.GetDistrictAt(x, y);
+        if district == nil then return cached and cached.parent or nil; end
+        local complete = try(function() return district:IsComplete(); end, nil);
+        if complete == false then
+            CivvisTiles.districtParent[key] = nil;
+            return nil;
+        end
+        if complete ~= true then return cached and cached.parent or nil; end
+        local id = try(function() return district:GetID(); end, nil);
+        if cached ~= nil and id ~= nil and cached.id ~= nil and cached.id ~= id then
+            CivvisTiles.districtParent[key] = nil;
+            cached = nil;
+        end
+        local city = try(function() return district:GetCity(); end, nil);
+        if city == nil then return cached and cached.parent or nil; end
+        local cityOwner = try(function() return city:GetOwner(); end, nil);
+        if cityOwner ~= nil and cityOwner ~= owner then
+            CivvisTiles.districtParent[key] = nil;
+            return nil;
+        end
+        if cityOwner == nil then return cached and cached.parent or nil; end
+        local revealed = try(function()
+            return PlayersVisibility[pid]:IsRevealed(city:GetX(), city:GetY());
+        end, nil);
+        if revealed == false then
+            CivvisTiles.districtParent[key] = nil;
+            return nil;
+        end
+        if revealed ~= true then return cached and cached.parent or nil; end
+        local parent = try(function() return city:GetID(); end, nil);
+        if type(parent) ~= "number" or parent < 0 or parent >= math.huge or parent ~= math.floor(parent) then
+            return cached and cached.parent or nil;
+        end
+        CivvisTiles.districtParent[key] = { owner = owner, kind = kind, id = id, parent = parent };
+        return parent;
+    end, nil);
 end
 
 local function exportTiles(player, pid, turn, frame, deltaOnly)
@@ -10281,12 +10348,18 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 		end);
 	end
 
-	-- PlotToolTip.lua:661 uses this host API for the owning city. Restrict
-	-- the observation to our plots: revealed rival ground need not reveal
-	-- the city purchasing it. A failed read stays unknown, never city zero.
+	-- PlotToolTip.lua:661 names our purchase city; foreign plots name only
+	-- an observed district parent. Keep this field in both payload and delta.
 	CivvisTiles.owningCity = function(plot, ownerID)
 		return try(function()
-			if plot:GetOwner() ~= ownerID then return nil; end
+			if plot:GetOwner() ~= ownerID then
+				return CivvisTiles.parentState and CivvisTiles.parentState(plot, ownerID) or nil;
+			end
+			if CivvisTiles.districtParent ~= nil and next(CivvisTiles.districtParent) ~= nil then
+				try(function()
+					CivvisTiles.districtParent[ownerID .. ":" .. plot:GetX() .. ":" .. plot:GetY()] = nil;
+				end, nil);
+			end
 			local city = Cities.GetPlotPurchaseCity(plot);
 			if city ~= nil and city:GetOwner() == ownerID then return city:GetID(); end
 		end, nil);
