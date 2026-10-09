@@ -91,3 +91,65 @@ fn native_faith_army_does_not_invent_a_formation_quote() {
         action, Action::Buy { formation: 1.., currency, .. } if currency == "faith"
     )));
 }
+
+// Native f0ae0f319 bought a Scout at t114 and again at t116-t118,
+// with banks of 234, 229 and 224. A covered recon role must not absorb
+// each small surplus merely because it has positive combat strength.
+#[test]
+fn native_faith_army_keeps_small_surpluses_from_redundant_scouts() {
+    for (bank, archer_price, buys_archer) in [(234.0, 180.0, false), (300.0, 90.0, true)] {
+        let (mut game, ai, plan, home) = quoted_army(bank, archer_price);
+        game.spawn_test_unit("scout", 0, game.cities[&home].pos);
+        Arc::make_mut(&mut game.host_purchasable)
+            .get_mut(&home)
+            .unwrap()
+            .insert(
+                "unit:scout".into(),
+                HostPurchaseEntry {
+                    gold: None,
+                    faith: Some(30.0),
+                },
+            );
+        let scout = Action::Buy {
+            city: home,
+            unit: crate::name!("scout"),
+            formation: 0,
+            currency: "faith".into(),
+        };
+        assert!(game.legal_actions(0).contains(&scout));
+        assert!(
+            ai.production_value(
+                &game,
+                0,
+                home,
+                &Item::Unit {
+                    unit: crate::name!("scout")
+                },
+                &plan,
+                &ai.counts(&game, 0)
+            ) < 0.0
+        );
+        assert_eq!(ai.military_faith_spending(&mut game, 0, &plan), buys_archer);
+        assert_eq!(
+            game.units
+                .values()
+                .filter(|unit| unit.owner == 0 && unit.kind == "scout")
+                .count(),
+            1
+        );
+        assert_eq!(
+            game.players[0].faith,
+            if buys_archer {
+                bank - archer_price
+            } else {
+                bank
+            }
+        );
+        assert_eq!(
+            game.units
+                .values()
+                .any(|unit| unit.owner == 0 && unit.kind == "archer"),
+            buys_archer
+        );
+    }
+}
