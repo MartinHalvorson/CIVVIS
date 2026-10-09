@@ -30,9 +30,10 @@ joint retreat takes priority. If the civilian cannot reach any survivable
 retreat, the guard may escape alone rather than being forced to die with it.
 Unassigned civilians and separately planned routes retain their orders.
 
-Eight new controls cover the original four scenarios, separately routed bound
+Nine new controls cover the original four scenarios, separately routed bound
 units, ordinary single-step movement, an exhausted civilian, and release at
-full health. The original twelve preservation controls remain. Candidate
+full health, and cancellation of a founding order after a withheld departure.
+The original twelve preservation controls remain. Candidate
 focused, full local, and independent CI results are pending; no pass is
 claimed in this implementation checkpoint.
 

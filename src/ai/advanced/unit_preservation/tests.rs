@@ -416,3 +416,28 @@ fn full_health_releases_both_original_escort_orders() {
     assert_eq!(ai.preserve_unit_actions(&g, 0, &proposed), proposed);
     assert!(!ai.battle_planner_recovering.contains(&guard));
 }
+
+#[test]
+fn a_withheld_departure_does_not_found_its_planned_city_on_the_original_tile() {
+    let (mut g, mut ai, settler, guard, mut proposed) = escorted_departure(80, at(8, 6), at(9, 6));
+    g.map_script = crate::setup::MapScript::Continents;
+    ai.battle_planner_recovering.insert(guard);
+    proposed.push(Action::FoundCity { unit: settler });
+    let mut original = g.speculative_clone();
+    for action in &proposed {
+        original
+            .apply(0, action)
+            .expect("the original departure and settlement must be legal");
+    }
+    assert!(original.city_at(at(9, 6)).is_some());
+
+    for action in ai.preserve_unit_actions(&g, 0, &proposed) {
+        g.apply(0, &action).expect("preserved orders must execute");
+    }
+    assert!(
+        g.cities.is_empty(),
+        "a retreat must not choose a new city site"
+    );
+    assert!(g.units.contains_key(&settler));
+    assert_eq!(g.units[&settler].pos, g.units[&guard].pos);
+}
