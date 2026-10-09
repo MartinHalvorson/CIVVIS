@@ -7264,6 +7264,17 @@ impl AdvancedAi {
         self.gold_buys_the_settler = false;
     }
 
+    /// Opt-in gene `trader-fills-the-idle-route`; see
+    /// `advanced/trader_fills_the_idle_route.rs`.
+    pub fn enable_trader_fills_the_idle_route(&mut self) {
+        self.trader_fills_the_idle_route = true;
+    }
+
+    /// The twin of `enable_trader_fills_the_idle_route`.
+    pub fn disable_trader_fills_the_idle_route(&mut self) {
+        self.trader_fills_the_idle_route = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

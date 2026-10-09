@@ -446,6 +446,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `tower-assault` | off (unmeasured) | Opt-in gene `tower-assault`; see `Self::tower_assault`. | 1 \| 1 |
 | `trade-growth-to-district` | off (unmeasured) | Price route food by the next population-gated district slot. | 1 \| 1 |
 | `trade-production-to-launch` | off (unmeasured) | Price route production by time saved on an active space project. | 1 \| 1 |
+| `trader-fills-the-idle-route` | off (unmeasured) | Opt-in gene `trader-fills-the-idle-route`; see `advanced/trader_fills_the_idle_route.rs`. | 1 \| 1 |
 | `treasury-at-work-2-2` | off (unmeasured) | Keep the working reserve and buy the first Builder near local work. | 1 \| 2 |
 | `unique-unit-preference` | off (unmeasured) | Opt-in gene `unique-unit-preference`; see `BasicAi::unique_unit_preference`. | 1 \| 1 |
 | `unit-preservation` | off (unmeasured) | Enable combat preservation and full-health recovery. | 1 \| 1 |
