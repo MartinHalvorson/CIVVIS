@@ -113,3 +113,12 @@ Candidate focused local, complete Rust, cost and final integration checks are
 pending. Main integration will preserve and revalidate all twenty-one escort
 controls from the merged PR #4011. No native adoption or win-rate gain is
 credited by this synthetic candidate.
+
+The pre-merge candidate focus run was deliberately stopped with exit 130
+before any tests ran after GitHub reported `CONFLICTING`: the new recovery
+retention line and PR #4011’s shared-departure line occupied the same insertion
+point. This is a compilation stop for an actual integration conflict, not a
+test pass or timeout result. Main `66b411361` is merged once; the resolution
+retains both lines and every escort hunk. The combined local focus run now
+covers fourteen capture controls and all twenty-one preservation/escort
+controls, followed by the required full Rust validation.

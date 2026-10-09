@@ -1,6 +1,62 @@
 use super::*;
 use crate::game::HostPurchaseEntry;
 
+// Native 030214 t119 bought Man-at-Arms with 77 Gold and -11.2891 income;
+// readback verified the purchase at120. Its 3 upkeep alone fits the old
+// 25-turn reserve, while the existing deficit consumes the same bank.
+#[test]
+fn native_faith_army_prices_the_existing_deficit_with_the_new_unit() {
+    let (mut game, ai, _, _) = quoted_army(393.0, 180.0);
+    game.players[0].gold = 77.0;
+    game.players[0].gold_per_turn = -11.2891;
+    assert!(!ai.faith_military_is_affordable(&game, 0, "man_at_arms"));
+}
+
+#[test]
+fn native_faith_army_withholds_a_quoted_purchase_that_cannot_carry_the_deficit() {
+    let (mut game, ai, plan, home) = quoted_army(393.0, 180.0);
+    game.players[0].gold = 77.0;
+    game.players[0].gold_per_turn = -11.2891;
+    assert_eq!(
+        game.unit_purchase_cost(0, home, "archer", "faith"),
+        Some(180.0)
+    );
+    assert!(!ai.military_faith_spending(&mut game, 0, &plan));
+    assert_eq!(game.players[0].faith, 393.0);
+    assert!(game.player_unit_ids(0).is_empty());
+}
+
+#[test]
+fn native_faith_army_can_carry_a_deficit_with_a_funded_bank() {
+    let (mut game, ai, _, _) = quoted_army(393.0, 180.0);
+    game.players[0].gold = 400.0;
+    game.players[0].gold_per_turn = -11.2891;
+    assert!(ai.faith_military_is_affordable(&game, 0, "man_at_arms"));
+}
+
+#[test]
+fn native_faith_army_preserves_surplus_and_partial_surplus_admission() {
+    let (mut game, ai, _, _) = quoted_army(393.0, 180.0);
+    game.players[0].gold = 0.0;
+    game.players[0].gold_per_turn = 3.0;
+    assert!(ai.faith_military_is_affordable(&game, 0, "man_at_arms"));
+    game.players[0].gold = 25.0;
+    game.players[0].gold_per_turn = 0.5;
+    assert!(ai.faith_military_is_affordable(&game, 0, "archer"));
+    game.players[0].gold = 24.0;
+    assert!(!ai.faith_military_is_affordable(&game, 0, "archer"));
+}
+
+#[test]
+fn native_faith_army_preserves_zero_upkeep_and_the_explicit_withhold() {
+    let (mut game, mut ai, _, _) = quoted_army(393.0, 180.0);
+    game.players[0].gold = 0.0;
+    game.players[0].gold_per_turn = -20.0;
+    assert!(ai.faith_military_is_affordable(&game, 0, "warrior"));
+    ai.disable_solvent_faith_army();
+    assert!(ai.faith_military_is_affordable(&game, 0, "man_at_arms"));
+}
+
 fn quoted_army(bank: f64, price: f64) -> (Game, AdvancedAi, StrategicPlan, u32) {
     let mut game = Game::new_full(2, 24, 16, 600_433, 200, 0, false);
     for uid in game.units.keys().copied().collect::<Vec<_>>() {

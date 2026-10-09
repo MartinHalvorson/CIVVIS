@@ -75,6 +75,7 @@ fn actors(action: &Action) -> Vec<u32> {
         | Action::AirPatrol { unit, .. }
         | Action::AirPillage { unit, .. }
         | Action::CoastalRaid { unit, .. }
+        | Action::FoundCity { unit }
         | Action::Pillage { unit }
         | Action::Fortify { unit } => vec![*unit],
         Action::Swap { unit, other } => vec![*unit, *other],
@@ -303,6 +304,39 @@ fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>
 }
 
 impl AdvancedAi {
+    /// A bound, stacked land escort with the same proposed movement endpoint
+    /// is one departure. A binding alone does not license rewriting a soldier
+    /// or Settler whose proposed route has a different destination.
+    fn shared_settler_departures(
+        &self,
+        before: &Game,
+        pid: usize,
+        actions: &[Action],
+    ) -> BTreeMap<u32, u32> {
+        let destinations: BTreeMap<u32, Pos> = actions
+            .iter()
+            .filter_map(|action| match action {
+                Action::Move { unit, to } | Action::MoveTo { unit, to } => Some((*unit, *to)),
+                _ => None,
+            })
+            .collect();
+        self.settler_guards
+            .iter()
+            .filter_map(|(settler, guard)| {
+                let civilian = before.units.get(settler)?;
+                let soldier = before.units.get(guard)?;
+                let destination = destinations.get(settler)?;
+                (civilian.owner == pid
+                    && civilian.kind == "settler"
+                    && military(before, pid, *guard)
+                    && before.rules.units[soldier.kind].domain.as_deref() != Some("air")
+                    && civilian.pos == soldier.pos
+                    && destinations.get(guard) == Some(destination))
+                .then_some((*guard, *settler))
+            })
+            .collect()
+    }
+
     pub(super) fn preservation_finishing_safe(
         &self,
         before: &Game,
@@ -570,12 +604,20 @@ impl AdvancedAi {
             .collect();
         let mut blocked = self.battle_planner_recovering.clone();
         blocked.retain(|uid| !captures.contains_key(uid));
+        let departures = self.shared_settler_departures(before, pid, actions);
         let affected: BTreeSet<u32> = actions
             .iter()
             .flat_map(actors)
             .filter(|uid| military(before, pid, *uid))
             .collect();
         loop {
+            let companions: Vec<u32> = departures
+                .iter()
+                .filter_map(|(guard, settler)| blocked.contains(guard).then_some(*settler))
+                .collect();
+            // Withhold the whole civilian route, including a founding order
+            // whose intended site that route would have reached.
+            blocked.extend(companions);
             let after = replay(before, pid, actions, &blocked);
             let mut forecast = ReplyForecast::new(&after.board, pid);
             let unsafe_units: Vec<u32> = affected
@@ -625,6 +667,10 @@ impl AdvancedAi {
         }
         let mut board = outcome.board;
         for uid in blocked {
+            // Companions move only with their guard's selected retreat.
+            if !military(&board, pid, uid) {
+                continue;
+            }
             let Some(unit) = board.units.get(&uid).cloned() else {
                 continue;
             };
@@ -633,6 +679,12 @@ impl AdvancedAi {
             }
             let mut stands = vec![unit.pos];
             stands.extend(board.reachable(uid));
+            let companion = departures.get(&uid).copied().filter(|settler| {
+                board
+                    .units
+                    .get(settler)
+                    .is_some_and(|civilian| civilian.pos == unit.pos)
+            });
             let mut choices = Vec::new();
             for stand in stands {
                 let mut trial = board.speculative_clone();
@@ -652,6 +704,31 @@ impl AdvancedAi {
                 if trial.units.get(&uid).is_none_or(|now| now.pos != stand) {
                     continue;
                 }
+                let together = companion.is_none_or(|settler| {
+                    if trial.units[&settler].pos == stand {
+                        return true;
+                    }
+                    let mut joint = trial.speculative_clone();
+                    if joint
+                        .apply(
+                            pid,
+                            &Action::MoveTo {
+                                unit: settler,
+                                to: stand,
+                            },
+                        )
+                        .is_ok()
+                        && joint
+                            .units
+                            .get(&settler)
+                            .is_some_and(|now| now.pos == stand)
+                    {
+                        trial = joint;
+                        true
+                    } else {
+                        false
+                    }
+                });
                 // Vacating the origin can open an enemy route; assess and rank
                 // the destination on the board after that actual move.
                 let mut forecast = ReplyForecast::new(&trial, pid);
@@ -659,14 +736,18 @@ impl AdvancedAi {
                 let incoming = reply_damage(&mut forecast.first, stand, uid, unit.hp);
                 choices.push((
                     !safe,
+                    // Prefer a survivable joint retreat. If none exists, a
+                    // stranded civilian cannot require a soldier to die too.
+                    safe && !together,
                     incoming.ceil() as i32,
+                    !together,
                     -trial.unit_heal_rate_at(uid, stand),
                     board.wdist(unit.pos, stand),
                     stand,
                 ));
             }
             choices.sort_unstable();
-            let Some(&(unsafe_stand, incoming, _, _, stand)) = choices.first() else {
+            let Some(&(unsafe_stand, _, incoming, separated, _, _, stand)) = choices.first() else {
                 continue;
             };
             // If all retreats are losing, still reduce incoming damage rather
@@ -678,6 +759,18 @@ impl AdvancedAi {
                 };
                 if board.apply(pid, &action).is_ok() {
                     kept.push(action);
+                }
+            }
+            if !separated && board.units[&uid].pos == stand {
+                if let Some(settler) = companion.filter(|settler| board.units[settler].pos != stand)
+                {
+                    let action = Action::MoveTo {
+                        unit: settler,
+                        to: stand,
+                    };
+                    if board.apply(pid, &action).is_ok() {
+                        kept.push(action);
+                    }
                 }
             }
             let fortify = Action::Fortify { unit: uid };
