@@ -55,6 +55,8 @@ mod formation_refusals;
 mod host_move_postconditions;
 #[path = "civvis_orders/host_ranged_history.rs"]
 mod host_ranged_history;
+#[path = "civvis_orders/unit_identity.rs"]
+mod unit_identity;
 
 fn arg_text(args: &[String], flag: &str) -> Option<String> {
     args.iter()
@@ -10110,6 +10112,7 @@ fn main() {
             Some((snapshot, state)) => {
                 let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
                 host_city_attack_cooldowns.observe(&state);
+                let upgraded_units = unit_identity::replacement_ids(&pending_orders, &state);
                 // The verdicts on the previous turn's orders ride at the end of
                 // this turn's reply; the checks read the frame the decision is
                 // about to read, before anything is decided on it.
@@ -10200,12 +10203,8 @@ fn main() {
                     );
                     match previous {
                         Some(old) => {
-                            let carried: std::collections::BTreeMap<u32, u32> = old
-                                .iter()
-                                .filter_map(|(old_uid, civ6)| {
-                                    board.uid_of.get(civ6).map(|new| (*old_uid, *new))
-                                })
-                                .collect();
+                            let carried =
+                                unit_identity::carried_units(&old, &board.uid_of, &upgraded_units);
                             if let Some(previous_board) = live.as_ref() {
                                 ai.remap_campaign_city_memory(&previous_board.game, &board.game);
                                 ai.remap_siege_memory(&previous_board.game, &board.game, &carried);
