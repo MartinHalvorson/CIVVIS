@@ -187,6 +187,26 @@ fn a_guaranteed_capture_does_not_bypass_the_enemy_reply() {
     let outcome = replay(&g, 0, std::slice::from_ref(&attack), &BTreeSet::new());
     assert_eq!(outcome.board.cities[&city].owner, 0);
     assert!(outcome.uncertain_captures.is_empty());
+    let mut exposed = outcome.board.speculative_clone();
+    exposed.relocate(ours, g.units[&ours].pos);
+    assert!(!policy(None).unit_reply_is_safe(&exposed, 0, ours));
+    let mut ai = policy(Some(ours));
+    let kept = ai.preserve_unit_actions(&g, 0, std::slice::from_ref(&attack));
+    assert!(!kept.contains(&attack));
+}
+
+#[test]
+fn a_guaranteed_capture_does_not_bypass_a_lethal_tile_hazard() {
+    let (mut g, ours, city, attack) = breach();
+    g.map.tiles.get_mut(&g.cities[&city].pos).unwrap().feature =
+        Some(crate::name!("burning_forest"));
+    let outcome = replay(&g, 0, std::slice::from_ref(&attack), &BTreeSet::new());
+    assert_eq!(outcome.board.cities[&city].owner, 0);
+    assert!(outcome.uncertain_captures.is_empty());
+    assert_eq!(
+        crate::ai::BasicAi::movement_hazard_damage(&outcome.board, 0, g.cities[&city].pos),
+        75.0,
+    );
     assert!(!policy(None).preservation_finishing_safe(&g, 0, std::slice::from_ref(&attack)));
     let mut ai = policy(Some(ours));
     let kept = ai.preserve_unit_actions(&g, 0, std::slice::from_ref(&attack));

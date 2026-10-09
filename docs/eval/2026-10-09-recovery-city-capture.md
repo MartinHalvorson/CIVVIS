@@ -46,10 +46,10 @@ the input board remains unchanged.
 
 Controls retain ordinary recovery movement, nonrecovering captures, standing
 walls, a city that cannot be captured, lethal native retaliation, an approach
-from two tiles away, a ranged strike, and peace. Two additional controls retain the enemy-reply survival bound
-when a capture itself is guaranteed and reject an attack with no movement.
-The pushed baseline registers ten tests; the final candidate suite registers
-twelve. Baseline and candidate results are pending. The independent escort work in
+from two tiles away, a ranged strike, and peace. Additional controls check an exposed enemy reply at post-exchange health,
+a lethal burning tile despite a guaranteed capture, and an attack with no
+movement. The first pushed baseline registered ten tests; the corrected suite
+now registers thirteen. Candidate results are pending. The independent escort work in
 PR #4011 retains its separate tests and joint-movement policy. Its changed
 hunks are not rewritten by this draft's finisher-admission investigation.
 
@@ -69,3 +69,15 @@ any production implementation is accepted.
 No native lane, pin, policy, installed mod or private source is changed.
 Synthetic regression results will not establish a native capture or win-rate
 gain. Adoption, completed native readbacks and matched outcomes remain needed.
+
+The complete twelve-test local baseline on `fa8307aa5` exits 101 after all
+cases execute: nine pass, both intended recovery cases fail, and the added
+enemy-reply fixture fails its inappropriate ordinary-finisher assertion.
+The existing danger field shields city garrisons from unit strikes. That
+fixture now directly checks the wounded attacker on its exposed approach
+tile, and an added burning-tile control verifies a lethal 75-damage hazard.
+The thirteen-test baseline still leaves production behavior unchanged and
+must report precisely the two intended failures with eleven controls passing.
+A prospective exception will require survival both at the captured city and
+on the exposed approach at post-exchange health; it will retain recovery
+memory and all existing retaliation, legality and whole-turn safety checks.
