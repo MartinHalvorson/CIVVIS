@@ -1,7 +1,7 @@
 //! Exceptional routing around temporarily unavailable tiles.
 use super::Game;
 use crate::Pos;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 impl Game {
     /// Shortest tile route excluding a known unavailable tile. Like ordinary
@@ -112,5 +112,54 @@ impl Game {
             }
         }
         None
+    }
+
+    /// The steps over dry land from each tile to a tile within `range` of
+    /// `target`, as `uid` would walk them, at most `max_len` steps out: a
+    /// breadth-first flood back from the dry tiles within `range`. Terrain,
+    /// territory access and city entry are read as [`Self::route_step_dry`]
+    /// reads them past its first edge; occupancy is not read at all, the
+    /// field being a road map rather than this turn's route. A tile with no
+    /// dry road is absent. No route cache is written.
+    pub(crate) fn dry_road_steps(
+        &self,
+        uid: u32,
+        target: Pos,
+        range: i32,
+        max_len: usize,
+    ) -> BTreeMap<Pos, usize> {
+        let mut steps = BTreeMap::new();
+        let Some(unit) = self.units.get(&uid) else {
+            return steps;
+        };
+        let access = self.unit_territory_access(unit);
+        let _memo = self.query_memo();
+        let walkable = |pos: Pos| {
+            self.map
+                .get(pos)
+                .is_some_and(|tile| !self.rules.is_water(tile))
+                && self.can_path_through_neighbor(uid, pos, &access)
+        };
+        let mut queue = VecDeque::new();
+        for pos in self.wdisk(target, range) {
+            if walkable(pos) {
+                steps.insert(pos, 0);
+                queue.push_back(pos);
+            }
+        }
+        while let Some(current) = queue.pop_front() {
+            let at = steps[&current];
+            if at >= max_len {
+                continue;
+            }
+            for next in self.nbrs(current) {
+                if steps.contains_key(&next) || !walkable(next) {
+                    continue;
+                }
+                steps.insert(next, at + 1);
+                queue.push_back(next);
+            }
+        }
+        steps
     }
 }

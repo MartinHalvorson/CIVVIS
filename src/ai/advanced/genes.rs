@@ -3485,6 +3485,12 @@ pub const GENES: &[Gene] = &[
     // the urgent denial on Persia under 1.5x for seven turns after its Mars
     // base. See `advanced/launcher_war.rs`.
     Gene { tag: "launcher-war-ignores-the-edge", field: "launcher_war_ignores_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_ignores_the_edge, disable: AdvancedAi::disable_launcher_war_ignores_the_edge },
+    // Live Emperor 10-08: gate passers held 2,796 train-member turns "at the
+    // muster line" past turn 150, 69% more than ten tiles from the city where
+    // the muster cannot count them; replays traced 36% of those holds to a
+    // coast or pocket with a dry road round it. A mustering member walks in
+    // by the dry road. See `muster_step` in `siege_train`.
+    Gene { tag: "muster-walks-the-road", field: "muster_walks_the_road", kind: Kind::OptIn, enable: AdvancedAi::enable_muster_walks_the_road, disable: AdvancedAi::disable_muster_walks_the_road },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

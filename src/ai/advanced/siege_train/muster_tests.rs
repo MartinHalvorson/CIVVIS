@@ -394,3 +394,95 @@ fn a_muster_member_in_an_archer_s_reach_falls_back() {
         "the member stands out of the Archer's reach: {here:?} -> {at:?}"
     );
 }
+
+/// `muster-walks-the-road`: `walled_city` on open grassland at war, with a
+/// bay of coast on every tile five to seven out from the city on its own row
+/// and the rows north of it, and our Warrior eight tiles west. Every tile in
+/// its reach nearer the city by straight distance is water; the dry road runs
+/// south round the bay. Live Emperor civvis-20261008T192219Z (game 433) held
+/// Taiyuan's train 22-25 tiles out that way from turn 183.
+fn behind_a_bay() -> (Game, u32, u32, Pos) {
+    let (mut g, cid) = walled_city();
+    let city = g.cities[&cid].pos;
+    for tile in g.map.tiles.values_mut() {
+        if tile.pos != city {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+        }
+    }
+    g.map_script = crate::setup::MapScript::Pangaea;
+    g.turn = 30;
+    g.at_war.insert((0, 1));
+    let bay: Vec<Pos> = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| (5..=7).contains(&g.wdist(*pos, city)) && pos.1 <= city.1 + 2)
+        .collect();
+    for pos in bay {
+        g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("coast");
+    }
+    let start = (city.0 - 8, city.1);
+    assert_eq!(g.wdist(start, city), 8, "fixture: the start");
+    let warrior = g.spawn_unit("warrior", 0, start);
+    (g, cid, warrior, start)
+}
+
+#[test]
+fn a_member_behind_a_bay_walks_the_road_only_under_the_gene() {
+    for gene in [false, true] {
+        let (mut g, cid, warrior, start) = behind_a_bay();
+        let city = g.cities[&cid].pos;
+        assert!(
+            g.reachable(warrior).into_iter().all(|pos| {
+                g.wdist(pos, city) >= g.wdist(start, city)
+                    || g.map.get(pos).is_some_and(|tile| g.rules.is_water(tile))
+            }),
+            "fixture: no dry tile in reach is nearer by straight distance"
+        );
+        let road = g.dry_road_steps(warrior, city, STAGING_FAR, MUSTER_ROAD_STEPS);
+        let from = *road
+            .get(&start)
+            .expect("fixture: a dry road leads round the bay");
+        let view = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        let mut ai = train(true);
+        if gene {
+            ai.enable_muster_walks_the_road();
+        }
+        ai.stage_muster_ready.insert(cid, false);
+        ai.siege_stage_step(&mut g, 0, warrior, &view, &plan);
+        let at = g.units[&warrior].pos;
+        if gene {
+            let now = *road.get(&at).expect("the member stands on the road map");
+            assert!(
+                now < from,
+                "the member walks the road: {from} -> {now} steps at {at:?}"
+            );
+            assert!(g.map.get(at).is_some_and(|tile| !g.rules.is_water(tile)));
+            assert!(g.wdist(at, city) > CITY_STRIKE_RANGE);
+        } else {
+            assert_eq!(at, start, "today the member holds at the muster line");
+        }
+    }
+}
+
+/// The road map leaves out water and reads no tile farther than its limit.
+#[test]
+fn the_dry_road_map_keeps_to_land_within_its_limit() {
+    let (g, cid, warrior, start) = behind_a_bay();
+    let city = g.cities[&cid].pos;
+    let road = g.dry_road_steps(warrior, city, STAGING_FAR, MUSTER_ROAD_STEPS);
+    assert!(road
+        .keys()
+        .all(|pos| g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))));
+    assert!(road.get(&start).copied().unwrap() > (g.wdist(start, city) - STAGING_FAR) as usize);
+    let short = g.dry_road_steps(warrior, city, STAGING_FAR, 2);
+    assert!(short.values().all(|steps| *steps <= 2));
+    assert!(
+        !short.contains_key(&start),
+        "the start lies past a two-step road"
+    );
+}
