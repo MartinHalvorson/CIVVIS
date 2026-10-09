@@ -442,6 +442,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `trade-production-to-launch` | off (unmeasured) | Price route production by time saved on an active space project. | 1 \| 1 |
 | `treasury-at-work-2-2` | off (unmeasured) | Keep the working reserve and buy the first Builder near local work. | 1 \| 2 |
 | `unique-unit-preference` | off (unmeasured) | Opt-in gene `unique-unit-preference`; see `BasicAi::unique_unit_preference`. | 1 \| 1 |
+| `unit-preservation` | off (unmeasured) | Enable combat preservation and full-health recovery. | 1 \| 1 |
 | `unseen-capital-is-unseen` | off (unmeasured) | `unseen-capital-is-unseen`: the decider re-takes the seat's city memory after the host's capital and founder facts land, so a fogged rival city is no longer remembered as the capital the rebuild's planting crowned it. | 1 \| 1 |
 | `unwalled-city-takes-the-swarm` | off (unmeasured) | Opt-in gene `unwalled-city-takes-the-swarm`; see `Self::unwalled_city_takes_the_swarm`. | 1 \| 1 |
 | `unwalled-target-declares-into-the-strike` | off (unmeasured) | Opt-in gene `unwalled-target-declares-into-the-strike`; see `Self::unwalled_target_declares_into_the_strike`. | 1 \| 1 |
