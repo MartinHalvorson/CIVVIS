@@ -359,12 +359,30 @@ class StaleInteractiveCaptureRecoveryTest(unittest.TestCase):
             self.assertFalse(popup_clear.recover_stale_interactive_recording())
         kill.assert_not_called()
 
-    def _lsof(self, names, returncode=0):
-        completed = subprocess.CompletedProcess(
-            ["lsof"], returncode,
-            stdout="".join(f"n{name}\n" for name in names), stderr="")
-        return mock.patch.object(popup_clear.subprocess, "run",
-                                 return_value=completed)
+    def setUp(self) -> None:
+        # The real staging folder belongs to whoever runs the suite; point the
+        # check at an empty scratch folder unless a test fills it.
+        root = tempfile.TemporaryDirectory()
+        self.addCleanup(root.cleanup)
+        self.staging = Path(root.name) / "ScreenRecordings"
+        self.staging.mkdir()
+        patcher = mock.patch.object(popup_clear, "RECORDING_STAGING_DIR", self.staging)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _lsof(self, names, returncode=0, replayd=(), replayd_answers=True):
+        """`names` is what the helper pid holds; `replayd` what replayd holds."""
+        def run(arguments, **_kwargs):
+            if "replayd" in arguments:
+                header = "p1104\n" if replayd_answers else ""
+                return subprocess.CompletedProcess(
+                    arguments, 0,
+                    stdout=header + "".join(f"n{name}\n" for name in replayd),
+                    stderr="")
+            return subprocess.CompletedProcess(
+                arguments, returncode,
+                stdout="".join(f"n{name}\n" for name in names), stderr="")
+        return mock.patch.object(popup_clear.subprocess, "run", side_effect=run)
 
     def test_an_open_movie_file_is_how_a_recording_is_recognised(self) -> None:
         for name in ("/Users/x/Desktop/Screen Recording 2026-09-10.mov",
@@ -375,10 +393,42 @@ class StaleInteractiveCaptureRecoveryTest(unittest.TestCase):
 
     def test_a_helper_holding_no_movie_is_free_to_be_stale(self) -> None:
         with self._lsof(["/dev/null", "/usr/lib/dyld",
-                         "/Users/x/Library/Caches/thing.plist"]):
+                         "/Users/x/Library/Caches/thing.plist"],
+                        replayd=["/usr/libexec/replayd", "/dev/null"]):
             self.assertFalse(popup_clear.writes_a_recording(4242))
         # lsof answers 1 for "nothing matched", including a process already gone.
         with self._lsof([], returncode=1):
+            self.assertFalse(popup_clear.writes_a_recording(4242))
+
+    def test_replayd_writing_the_movie_is_a_recording(self) -> None:
+        """★★★★★ 2026-10-08: a recording's movie is held by replayd, never by
+        screencapture. Asking only the helper's pid called every real recording
+        stale, so past five minutes it was eligible for SIGKILL -- which cuts
+        it and strands it unsaved in the staging folder."""
+        movie = ("/Users/x/Library/Group Containers/group.com.apple.screencapture/"
+                 "ScreenRecordings/4BC2097D-4586-4AD8-B7F5-3C6D6202DF32.mov")
+        with self._lsof(["/dev/null"], replayd=[movie]):
+            self.assertTrue(popup_clear.writes_a_recording(4242))
+
+    def test_an_unreadable_replayd_counts_as_recording(self) -> None:
+        with self._lsof(["/dev/null"], replayd_answers=False):
+            self.assertTrue(popup_clear.writes_a_recording(4242))
+
+    def test_a_movie_waiting_for_its_hand_off_is_a_recording(self) -> None:
+        """After the stop, screencapture still owes the move to the Desktop."""
+        (self.staging / "4BC2097D-4586-4AD8-B7F5-3C6D6202DF32.mov").write_bytes(b"")
+        with self._lsof(["/dev/null"]):
+            self.assertTrue(popup_clear.writes_a_recording(4242))
+
+    def test_an_unreadable_staging_folder_counts_as_recording(self) -> None:
+        with self._lsof(["/dev/null"]), \
+             mock.patch.object(popup_clear.os, "listdir",
+                               side_effect=PermissionError("TCC")):
+            self.assertTrue(popup_clear.writes_a_recording(4242))
+
+    def test_no_staging_folder_is_no_staged_recording(self) -> None:
+        self.staging.rmdir()
+        with self._lsof(["/dev/null"]):
             self.assertFalse(popup_clear.writes_a_recording(4242))
 
     def test_an_unreadable_answer_counts_as_recording(self) -> None:
