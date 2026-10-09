@@ -30,8 +30,9 @@
 //!   reservation leaves that city alone, and while it stands without a
 //!   Shrine the sanctuary names no other city;
 //! - Great Person patronage, Faith buildings and Faith-bought military
-//!   leave the whole bank (`counterweight_bank_held`), so the counterweight
-//!   Missionaries have it once the Shrine stands.
+//!   leave the whole bank (`counterweight_bank_held`) while that source is
+//!   waiting for its Shrine. Once the Shrine stands, the priced counterweight
+//!   Missionary reserve protects recruitment and the surplus can fund the army.
 //!
 //! Replay note: in G425 the Shrine, held from turn 86 at Caracas's 4 to 7
 //! production (35 on Online speed), finishes at the turn 92-93 boundary,
@@ -85,10 +86,12 @@ impl AdvancedAi {
             .map(|(_, faith)| faith)
     }
 
-    /// The whole Faith bank, held from the non-defensive sinks while a rival
-    /// faith presses us. Zero otherwise.
+    /// Hold the bank while an actionable counterweight source awaits its
+    /// Shrine. A finished source uses `counterweight_faith_reserve` to protect
+    /// the Missionaries it can actually sell. Without an unfinished source,
+    /// an unlimited hold cannot buy religious defense and starves the army.
     pub(super) fn counterweight_bank_held(&self, g: &Game, pid: usize) -> f64 {
-        if self.rival_faith_presses_us(g, pid).is_some() {
+        if self.counterweight_shrine_city(g, pid).is_some() {
             g.players[pid].faith.max(0.0)
         } else {
             0.0

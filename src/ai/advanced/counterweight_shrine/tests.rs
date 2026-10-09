@@ -83,6 +83,85 @@ fn the_one_sanctuary_and_the_held_bank() {
     assert_eq!(ai.counterweight_bank_held(&quiet, 0), 0.0);
 }
 
+/// A completed source protects its priced Missionary shortfall rather than
+/// indefinitely reserving the growing bank while the rival faith persists.
+#[test]
+fn completed_source_releases_surplus_and_keeps_missionary_reserve() {
+    let (mut g, mut ai, caracas) = g425_turn_88();
+    ai.enable_counterweight_finishes_one_shrine();
+    ai.enable_counterweight_spends_the_bank();
+    let third = g.player_city_ids(0)[2];
+    g.cities
+        .get_mut(&third)
+        .unwrap()
+        .pressure
+        .insert("Orthodoxy".into(), 100.0);
+    g.cities
+        .get_mut(&caracas)
+        .unwrap()
+        .buildings
+        .push(crate::name!("shrine"));
+    g.players[0].faith = 2_179.0;
+    assert!(ai.rival_faith_presses_us(&g, 0).is_some());
+    assert_eq!(ai.counterweight_shrine_city(&g, 0), None);
+    assert_eq!(ai.counterweight_bank_held(&g, 0), 0.0);
+    let reserve = ai.counterweight_faith_reserve(&g, 0);
+    assert!(reserve > 0.0 && reserve < g.players[0].faith);
+}
+
+/// Native G431 had legal military purchases but no unfinished safe source:
+/// warning-level religious pressure must not make the whole bank unusable.
+#[test]
+fn unavailable_counterweight_source_releases_the_bank() {
+    let (mut g, mut ai, caracas) = g425_turn_88();
+    ai.enable_counterweight_finishes_one_shrine();
+    g.cities.get_mut(&caracas).unwrap().pressure.clear();
+    g.cities
+        .get_mut(&caracas)
+        .unwrap()
+        .pressure
+        .insert("Orthodoxy".into(), 100.0);
+    assert!(ai.rival_faith_presses_us(&g, 0).is_some());
+    assert_eq!(ai.counterweight_shrine_city(&g, 0), None);
+    assert_eq!(ai.counterweight_bank_held(&g, 0), 0.0);
+}
+
+#[test]
+fn finished_counterweight_source_allows_a_solvent_faith_army_purchase() {
+    let (mut g, mut ai, caracas) = g425_turn_88();
+    ai.enable_counterweight_finishes_one_shrine();
+    ai.enable_counterweight_spends_the_bank();
+    ai.enable_solvent_faith_army();
+    let third = g.player_city_ids(0)[2];
+    g.cities
+        .get_mut(&third)
+        .unwrap()
+        .pressure
+        .insert("Orthodoxy".into(), 100.0);
+    g.cities
+        .get_mut(&caracas)
+        .unwrap()
+        .buildings
+        .push(crate::name!("shrine"));
+    g.players[0].government = Some("theocracy".into());
+    g.players[0].faith = 2_179.0;
+    g.players[0].gold_per_turn = 50.0;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 5,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    let before = g.units.len();
+    assert!(ai.rival_faith_presses_us(&g, 0).is_some());
+    assert!(ai.military_faith_spending(&mut g, 0, &plan));
+    assert_eq!(g.units.len(), before + 1);
+    assert!(g.players[0].faith >= 180.0 + ai.counterweight_faith_reserve(&g, 0));
+}
+
 /// G425: Caracas's queue held a Trebuchet every turn. The sanctuary still
 /// names its Shrine there, the reservation queues it, and the siege
 /// reservation must leave the city alone; a threatened Caracas is not taken.
