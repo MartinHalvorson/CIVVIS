@@ -260,26 +260,45 @@ impl AdvancedAi {
     /// and the goal cannot field the launch wing; the block is the stock that
     /// lifts the goal to it ([`AdvancedAi::air_surge_launch_stock`]), all of
     /// it or nothing.
+    ///
+    /// `bombers-fly-on-a-small-stock`: the ask is the small stock that trains
+    /// the launch wing and fuels it
+    /// [`super::air_surge::AIR_WING_SMALL_STOCK_TURNS`] turns (never under one
+    /// Bomber and a turn of the wing's upkeep), and it stops once the seat's
+    /// goal fields the launch wing. Live Emperor 10-08/09: a rival at peace
+    /// offered Aluminum on 361 wait-turns, under the asked block on 224
+    /// (median 14 against 30), so the all-or-nothing want held "no_seller";
+    /// and of the Aluminum asks a rival answered, 0 of 28 above 15 were
+    /// accepted against 2 of 8 at 15 or less.
     fn air_wing_resource_want(&self, g: &Game, pid: usize) -> Option<GunResourceWant> {
+        let small_stock = self.bombers_fly_on_a_small_stock;
         if !self.siege_buys_the_gun_resource
             || Self::air_surge_missing_techs(g, pid) > AIR_WING_RESOURCE_TECHS
-            || Self::air_surge_bomber_goal(g, pid) >= super::air_surge::AIR_SURGE_LAUNCH_BOMBERS
+            || Self::air_surge_bomber_goal_after_spending(g, pid, 0.0, 0.0, small_stock)
+                >= super::air_surge::AIR_SURGE_LAUNCH_BOMBERS
             || !self.air_wing_wants_bombers(g, pid)
         {
             return None;
         }
         let bomber = Self::air_surge_bomber(g, pid)?;
-        let (resource, needed) = Self::air_surge_launch_stock(g, pid)?;
+        let (resource, needed) = Self::air_surge_launch_stock(g, pid, small_stock)?;
         let stock = g.strategic_stockpile(pid, resource);
-        let amount = (needed - stock).ceil();
+        let mut amount = (needed - stock).ceil();
+        if small_stock {
+            let spec = &g.rules.units[bomber];
+            let floor = spec.resource_cost
+                + super::air_surge::AIR_SURGE_LAUNCH_BOMBERS as f64 * spec.resource_maintenance;
+            amount = amount.max(floor.ceil());
+        }
         if amount < 1.0 || stock + amount > g.strategic_stockpile_capacity(pid) {
             return None;
         }
         think!(self.journal(), Military, Detail,
             "Air wing: the {} waits on {}", bomber, resource;
-            "{} {} trains and keeps {} Bombers through the grace window; the goal reads {} now",
+            "{} {} trains and keeps {} Bombers through the {}; the goal reads {} now",
             amount, resource, super::air_surge::AIR_SURGE_LAUNCH_BOMBERS,
-            Self::air_surge_bomber_goal(g, pid));
+            if small_stock { "first turns of the wing" } else { "grace window" },
+            self.air_wing_bomber_goal(g, pid));
         Some(GunResourceWant {
             resource: format!("RESOURCE_{}", resource.as_str().to_ascii_uppercase()),
             resource_id: resource.as_str().to_string(),

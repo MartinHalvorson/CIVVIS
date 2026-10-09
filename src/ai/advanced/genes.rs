@@ -3497,6 +3497,13 @@ pub const GENES: &[Gene] = &[
     // Orthodox Maracaibo while three towns of pop 2-3 were the flips that
     // broke the majority. See `advanced/counterweight_small_towns.rs`.
     Gene { tag: "counterweight-flips-the-small-towns", field: "counterweight_flips_the_small_towns", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_flips_the_small_towns, disable: AdvancedAi::disable_counterweight_flips_the_small_towns },
+    // Live Emperor 10-08/09: the air wing read no Bomber goal until the bank
+    // held two Bombers' training and fourteen turns of their upkeep (30
+    // Aluminum), and asked rivals for that whole block or nothing. A rival
+    // at peace offered Aluminum on 361 wait-turns, under the block on 224.
+    // The host's fuel shortage costs -1 Strength per unpaid unit, capped at
+    // 20, so a small stock flies the wing. See `AIR_WING_SMALL_STOCK_TURNS`.
+    Gene { tag: "bombers-fly-on-a-small-stock", field: "bombers_fly_on_a_small_stock", kind: Kind::OptIn, enable: AdvancedAi::enable_bombers_fly_on_a_small_stock, disable: AdvancedAi::disable_bombers_fly_on_a_small_stock },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

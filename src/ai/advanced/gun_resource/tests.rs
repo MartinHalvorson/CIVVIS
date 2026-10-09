@@ -341,7 +341,7 @@ fn the_air_wing_buys_its_aluminum() {
     assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 0);
     assert!(ai.siege_gun_resource_wants(&g, 0).is_empty(), "off");
     ai.enable_siege_buys_the_gun_resource();
-    let (metal, needed) = AdvancedAi::air_surge_launch_stock(&g, 0).expect("a metal Bomber");
+    let (metal, needed) = AdvancedAi::air_surge_launch_stock(&g, 0, false).expect("a metal Bomber");
     assert_eq!(metal, crate::name!("aluminum"));
     let wants = ai.siege_gun_resource_wants(&g, 0);
     assert_eq!(wants.len(), 1, "{wants:?}");
@@ -359,6 +359,44 @@ fn the_air_wing_buys_its_aluminum() {
         super::super::air_surge::AIR_SURGE_LAUNCH_BOMBERS
     );
     assert!(ai.siege_gun_resource_wants(&g, 0).is_empty(), "bought, no ask");
+}
+
+/// `bombers-fly-on-a-small-stock`: the ask is the small stock that trains
+/// the launch wing and fuels it a few turns, not the grace-window block; that
+/// bank lifts the seat's goal to the launch wing (the grace-window goal still
+/// reads none) and the ask goes. Off, the seat's goal is the grace-window goal.
+#[test]
+fn a_small_stock_flies_the_launch_wing() {
+    let (mut g, mut ai) = air_case();
+    ai.enable_siege_buys_the_gun_resource();
+    let full = ai.siege_gun_resource_wants(&g, 0);
+    assert_eq!(full.len(), 1, "{full:?}");
+    ai.enable_bombers_fly_on_a_small_stock();
+    let wants = ai.siege_gun_resource_wants(&g, 0);
+    assert_eq!(wants.len(), 1, "{wants:?}");
+    let (_, small) = AdvancedAi::air_surge_launch_stock(&g, 0, true).expect("a metal Bomber");
+    assert_eq!(wants[0].amount, small.ceil() as u32);
+    assert_eq!(wants[0].minimum, wants[0].amount);
+    assert!(wants[0].amount < full[0].amount, "{wants:?} against {full:?}");
+    let launch = super::super::air_surge::AIR_SURGE_LAUNCH_BOMBERS;
+    let aluminum = crate::name!("aluminum");
+    // One short of the small stock flies nothing and still asks.
+    g.players[0]
+        .strategic_resources
+        .insert(aluminum, f64::from(wants[0].amount - 1));
+    assert_eq!(ai.air_wing_bomber_goal(&g, 0), 0);
+    assert!(!ai.siege_gun_resource_wants(&g, 0).is_empty());
+    // The small lot bought: the seat fields the launch wing while the
+    // grace-window goal still reads none, and the ask goes.
+    g.players[0]
+        .strategic_resources
+        .insert(aluminum, f64::from(wants[0].amount));
+    assert_eq!(ai.air_wing_bomber_goal(&g, 0), launch);
+    assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 0);
+    assert!(ai.siege_gun_resource_wants(&g, 0).is_empty(), "bought, no ask");
+    ai.disable_bombers_fly_on_a_small_stock();
+    assert_eq!(ai.air_wing_bomber_goal(&g, 0), 0, "off: the grace-window bank");
+    assert!(!ai.siege_gun_resource_wants(&g, 0).is_empty(), "off: the block is asked");
 }
 
 /// The Bomber more than three technologies away asks nothing yet.

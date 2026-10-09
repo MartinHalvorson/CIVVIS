@@ -125,6 +125,14 @@ pub(crate) const AIR_SURGE_ENDGAME_RESERVE: u32 = 30;
 /// before it gives the wing up. `radio` reveals the deposits one tech
 /// earlier, so a Builder has had that long to reach one.
 pub(crate) const AIR_SURGE_ALUMINUM_GRACE: u32 = 20;
+/// `bombers-fly-on-a-small-stock`: the standard turns of the launch wing's
+/// unpaid upkeep a stockpile must cover, besides the wing's training cost,
+/// before the goal counts the wing. The host's shortage rule is mild: every
+/// unit short of its fuel loses one Strength per unpaid unit, capped at 20
+/// (`UNIT_MAX_STR_REDUCTION_INSUFFICIENT_RESOURCES` in
+/// `Expansion2_GlobalParameters.xml`; `Game::process_strategic_resources`),
+/// so a Bomber that runs dry still bombards at 90 or better against its 110.
+pub(crate) const AIR_WING_SMALL_STOCK_TURNS: u32 = 3;
 /// The share of the ground ranking's wall terms a Domination wing does not
 /// pay. See [`AdvancedAi::air_surge_objective_value`].
 pub(crate) const AIR_SURGE_WALL_DISCOUNT: f64 = 0.75;
@@ -550,7 +558,17 @@ impl AdvancedAi {
     /// but only for the two-plane launch wing. It is not mistaken for a
     /// permanent four-plane income.
     pub(crate) fn air_surge_bomber_goal(g: &Game, pid: usize) -> usize {
-        Self::air_surge_bomber_goal_after_spending(g, pid, 0.0, 0.0)
+        Self::air_surge_bomber_goal_after_spending(g, pid, 0.0, 0.0, false)
+    }
+
+    /// The bomber goal the seat plays: [`Self::air_surge_bomber_goal`], read
+    /// with `bombers-fly-on-a-small-stock` when that gene is on.
+    pub(crate) fn air_wing_bomber_goal(&self, g: &Game, pid: usize) -> usize {
+        if self.bombers_fly_on_a_small_stock {
+            Self::air_surge_bomber_goal_after_spending(g, pid, 0.0, 0.0, true)
+        } else {
+            Self::air_surge_bomber_goal(g, pid)
+        }
     }
 
     pub(super) fn air_surge_supply_commitments(g: &Game, pid: usize) -> (usize, usize) {
@@ -562,6 +580,7 @@ impl AdvancedAi {
         pid: usize,
         extra_demand: f64,
         resource_cost: f64,
+        small_stock: bool,
     ) -> usize {
         let Some(bomber) = Self::air_surge_bomber(g, pid) else {
             return 0;
@@ -599,8 +618,11 @@ impl AdvancedAi {
         // route. A bank can still pay for an immediate two-Bomber strike, but
         // it must cover their training cost and the whole bounded wait for a
         // replacement source; otherwise this is not a viable wing at all.
+        // `bombers-fly-on-a-small-stock`: the wait is a few turns of fuel, not
+        // the grace window; past it the wing flies short at -1 Strength per
+        // unpaid unit (see `AIR_WING_SMALL_STOCK_TURNS`).
         let launch_maintenance = AIR_SURGE_LAUNCH_BOMBERS as f64 * spec.resource_maintenance;
-        let grace = g.standard_duration(AIR_SURGE_ALUMINUM_GRACE) as f64;
+        let grace = Self::air_wing_stock_window(g, small_stock);
         let (_, committed) = Self::domination_air_readiness_counts(g, pid);
         let temporary_cost = AIR_SURGE_LAUNCH_BOMBERS.saturating_sub(committed) as f64
             * spec.resource_cost
@@ -647,7 +669,11 @@ impl AdvancedAi {
     /// fielded or queued, and the launch wing's upkeep the income leaves
     /// unpaid for the Aluminum grace window, read exactly as the goal reads
     /// it. `None` without a Bomber that burns a metal.
-    pub(super) fn air_surge_launch_stock(g: &Game, pid: usize) -> Option<(Name, f64)> {
+    pub(super) fn air_surge_launch_stock(
+        g: &Game,
+        pid: usize,
+        small_stock: bool,
+    ) -> Option<(Name, f64)> {
         let bomber = Self::air_surge_bomber(g, pid)?;
         let spec = &g.rules.units[bomber];
         let resource = spec.requires_resource?;
@@ -656,7 +682,7 @@ impl AdvancedAi {
         }
         let income = Self::air_surge_metal_income(g, pid, resource, 0.0);
         let launch_maintenance = AIR_SURGE_LAUNCH_BOMBERS as f64 * spec.resource_maintenance;
-        let grace = g.standard_duration(AIR_SURGE_ALUMINUM_GRACE) as f64;
+        let grace = Self::air_wing_stock_window(g, small_stock);
         let (_, committed) = Self::domination_air_readiness_counts(g, pid);
         Some((
             resource,
@@ -672,9 +698,20 @@ impl AdvancedAi {
         self.air_surge_active() || self.domination_air_readiness_active(g, pid)
     }
 
+    /// The turns of the launch wing's unpaid upkeep a bank must cover: the
+    /// Aluminum grace window, or `AIR_WING_SMALL_STOCK_TURNS` under
+    /// `bombers-fly-on-a-small-stock`.
+    fn air_wing_stock_window(g: &Game, small_stock: bool) -> f64 {
+        g.standard_duration(if small_stock {
+            AIR_WING_SMALL_STOCK_TURNS
+        } else {
+            AIR_SURGE_ALUMINUM_GRACE
+        }) as f64
+    }
+
     /// Aluminum enough to train and keep the launch wing alive.
-    fn air_surge_metal_ready(g: &Game, pid: usize) -> bool {
-        Self::air_surge_bomber_goal(g, pid) >= AIR_SURGE_LAUNCH_BOMBERS
+    fn air_surge_metal_ready(&self, g: &Game, pid: usize) -> bool {
+        self.air_wing_bomber_goal(g, pid) >= AIR_SURGE_LAUNCH_BOMBERS
     }
 
     /// The Bomber's metal, once a technology has revealed it to us.
@@ -710,7 +747,7 @@ impl AdvancedAi {
         let Some(metal) = Self::air_surge_metal(g, pid) else {
             return false;
         };
-        !Self::air_surge_metal_ready(g, pid)
+        !self.air_surge_metal_ready(g, pid)
             && !g
                 .cities
                 .values()
@@ -755,7 +792,7 @@ impl AdvancedAi {
         let field = Self::air_surge_field(g, pid);
         let mut status = AirSurgeStatus {
             wing_in_range: Self::air_surge_in_range(g, pid, plan.objective_pos),
-            metal_ready: Self::air_surge_metal_ready(g, pid),
+            metal_ready: self.air_surge_metal_ready(g, pid),
             ..AirSurgeStatus::default()
         };
         let metal_grab = self.air_surge_metal_grab(g, pid, plan);
@@ -1499,7 +1536,7 @@ impl AdvancedAi {
                            Self::air_surge_field(g, pid)
                                .map(|field| plain(field.as_str()))
                                .unwrap_or_else(|| "airfield".to_string()),
-                           Self::air_surge_bomber_goal(g, pid),
+                           self.air_wing_bomber_goal(g, pid),
                            Self::air_surge_bomber(g, pid)
                                .map(|unit| plain(unit.as_str()))
                                .unwrap_or_else(|| "bomber".to_string()),
@@ -1686,7 +1723,7 @@ impl AdvancedAi {
             && !g.players[pid].techs.contains(&crate::name!("composites"))
             && self.wartime_modernization_tech(g, pid).is_some_and(|goal| {
                 let supplied_air = self.active_victory_target(g) == Some(VictoryTarget::Domination)
-                    && Self::air_surge_metal_ready(g, pid)
+                    && self.air_surge_metal_ready(g, pid)
                     && self.threatened_city(g, pid).is_none()
                     && Self::air_surge_upgrade_lacks_fuel(g, pid, goal);
                 !supplied_air
@@ -1982,7 +2019,7 @@ impl AdvancedAi {
         status: AirSurgeStatus,
     ) -> Option<f64> {
         let plan = self.air_surge_plan.as_ref()?;
-        let bomber_goal = Self::air_surge_bomber_goal(g, pid);
+        let bomber_goal = self.air_wing_bomber_goal(g, pid);
         match item {
             Item::District { district, .. }
                 if Self::air_surge_field(g, pid)
@@ -2209,7 +2246,7 @@ impl AdvancedAi {
         // treasury carries it, beside whatever the queues train.
         if self.surge_fields_the_bombers
             && self.air_surge_status.aerodromes > 0
-            && self.air_surge_status.bombers_committed < Self::air_surge_bomber_goal(g, pid)
+            && self.air_surge_status.bombers_committed < self.air_wing_bomber_goal(g, pid)
             && self.surge_buy_a_bomber(g, pid, threatened)
         {
             self.air_surge_status = self.air_surge_status(g, pid, &plan);
@@ -2221,7 +2258,7 @@ impl AdvancedAi {
         // until one city holds it. Commit the two-plane launch wing, then
         // the two land capturers before filling the follow-through wing.
         let wants_field = status.aerodromes_committed == 0;
-        let bomber_goal = Self::air_surge_bomber_goal(g, pid);
+        let bomber_goal = self.air_wing_bomber_goal(g, pid);
         let wants_bomber = status.bombers_committed < bomber_goal;
         // A metal grab is taken by the ground package alone, so it trains
         // its bodies before any metal arrives.
@@ -2422,7 +2459,7 @@ impl AdvancedAi {
                    "{} starts {} for the air surge", city_name, Self::plain_item(&item);
                    "{:.0} turns; the surge holds {}/{} bombers ({} to launch) and {}/{} {}s ({} to launch) in the {} phase",
                    build_turns,
-                   self.air_surge_status.bombers, Self::air_surge_bomber_goal(g, pid),
+                   self.air_surge_status.bombers, self.air_wing_bomber_goal(g, pid),
                    AIR_SURGE_LAUNCH_BOMBERS,
                    self.air_surge_status.bodies, AIR_SURGE_BODIES,
                    plain(plan.body_unit.as_str()), AIR_SURGE_LAUNCH_BODIES,
