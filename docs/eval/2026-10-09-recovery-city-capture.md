@@ -57,6 +57,15 @@ The first test checkpoint's quality gate reports one unused trait import in
 the new test module. That import is removed without changing any assertion;
 the warning is separate from the expected recovery-admission failures.
 
+The first behavioral baseline stops before the intended capture cases on two
+fixture errors. Arena mode forces war despite clearing the relation, so the
+peace control now selects the ordinary Continents mode before clearing it.
+The original ordinary-move destination coincides with a preservation retreat;
+the corrected control uses a longer legal move and verifies its original
+arrival. Four other new controls pass before fail-fast stops the first run.
+The corrected baseline must reproduce the intended recovery failures before
+any production implementation is accepted.
+
 No native lane, pin, policy, installed mod or private source is changed.
 Synthetic regression results will not establish a native capture or win-rate
 gain. Adoption, completed native readbacks and matched outcomes remain needed.

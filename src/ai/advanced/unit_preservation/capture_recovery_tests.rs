@@ -94,8 +94,11 @@ fn a_ready_city_does_not_release_an_ordinary_recovery_move() {
     let (g, ours, _, _) = breach();
     let movement = Action::MoveTo {
         unit: ours,
-        to: at(9, 7),
+        to: at(7, 7),
     };
+    let mut original = g.clone();
+    original.apply(0, &movement).unwrap();
+    assert_eq!(original.units[&ours].pos, at(7, 7));
     let mut ai = policy(Some(ours));
     let kept = ai.preserve_unit_actions(&g, 0, std::slice::from_ref(&movement));
     assert!(!kept.contains(&movement));
@@ -167,6 +170,7 @@ fn a_ranged_strike_cannot_release_recovery_for_city_occupation() {
 #[test]
 fn a_peaceful_city_does_not_release_recovery_or_start_a_war() {
     let (mut g, ours, _, attack) = breach();
+    g.map_script = crate::setup::MapScript::Continents;
     g.at_war.remove(&(0, 1));
     assert!(!g.is_at_war(0, 1));
     let mut ai = policy(Some(ours));
