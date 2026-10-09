@@ -1,0 +1,11 @@
+# Native raids follow urgent denial
+
+The fixed Emperor verification attempt `civvis-20261009T092113Z` runs native source `53933b81b56298cdaf552db5c6dd19dfcbecf476`, immutable controller SHA-256 `1387b4f47736ce67b0bd5db4c41e2c8c6a9a2152832429fcb630359d1defbe74`, with the existing Domination objective. Its main campaign turns toward Germany's Science finish while the air campaign retains an Arabian objective. At turns 185–186, the native journal still sends Modern Armor and Llanero on raids behind that old wing. This is a coordination hypothesis; those raid orders alone do not establish a lost capture or a counterfactual victory.
+
+The air lifecycle already derives `air_surge_status.denial_elsewhere` from the actionable denial rival. Its strategic override yields when that rival differs from the old wing's opponent. The raid planner does not read that handoff and can reserve cavalry for the old objective before the ordinary unit loop handles the active campaign.
+
+The attached patch applies the same handoff to `plan_air_surge_raids`: return no raiders while denial is elsewhere, leaving the cavalry's action available to the existing campaign. The engine, raid valuation, native rules, force file and verification challenge remain unchanged. The native raid module is absent from public main; this contribution archives a native research patch and its evidence, rather than installing a public controller feature.
+
+The regression uses three players, a profitable old-front mine and two protected capture bodies. A third rival reaches 19 diplomatic victory points; the actual lifecycle must derive the handoff while retaining the old wing. With the original controller the test fails because the spare cavalry is sent raiding. Candidate tests, release builds and a complete native-history comparison are still being validated. The opening replay control reproduced all nine native replies through turn 5, including complete decisions and orders; this is preliminary coverage only.
+
+At this checkpoint the preceding native family has **0 wins out of 2 completed attempts**, both turn-150 production retirements. The third attempt is still active. Retirements count as non-wins. No win-rate improvement is established; only completed native verification outcomes can establish one. Unmatched random maps cannot isolate this patch's effect.
