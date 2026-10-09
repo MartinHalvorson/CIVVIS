@@ -7253,6 +7253,17 @@ impl AdvancedAi {
         self.capital_campus_before_the_plaza = false;
     }
 
+    /// Opt-in gene `gold-buys-the-settler`; see
+    /// `advanced/gold_buys_the_settler.rs`.
+    pub fn enable_gold_buys_the_settler(&mut self) {
+        self.gold_buys_the_settler = true;
+    }
+
+    /// The twin of `enable_gold_buys_the_settler`.
+    pub fn disable_gold_buys_the_settler(&mut self) {
+        self.gold_buys_the_settler = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -3551,6 +3551,12 @@ pub const GENES: &[Gene] = &[
     // at turns 50/75/100. The capital's Campus, then its Library, claim the
     // idle capital ahead of the Plaza claim. See `advanced/capital_campus_claim.rs`.
     Gene { tag: "capital-campus-before-the-plaza", field: "capital_campus_before_the_plaza", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_campus_before_the_plaza, disable: AdvancedAi::disable_capital_campus_before_the_plaza },
+    // `gold-buys-the-settler`: 144 Emperor runs banked a median 145-170
+    // Gold from t30 to t60 while the gate's line is the city count at t60
+    // (4 or fewer cities 8% pass, five 22%, six 50%); one Settler was bought
+    // with Gold in 144 runs. In the expansion window, at peace, the treasury
+    // saves for a Settler and buys it. See `advanced/gold_buys_the_settler.rs`.
+    Gene { tag: "gold-buys-the-settler", field: "gold_buys_the_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_settler, disable: AdvancedAi::disable_gold_buys_the_settler },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
