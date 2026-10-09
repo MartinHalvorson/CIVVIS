@@ -15991,10 +15991,144 @@ CivvisComandante.filterPlots = function(targets, plots)
 	return eligible;
 end
 
+-- GranColombia_Maya_GreatPeople.xml:41 grants Páez the same passive aura as
+-- every Comandante: COMANDANTE_AOE_STRENGTH is +5, AOE_LAND_REQUIREMENTS has
+-- MaxDistance=2, and TypeTags determines which units can receive the ability.
+-- A retirement with no useful/legal destination need not leave that aura at
+-- the capital. Move only when nobody currently benefits, along a complete
+-- same-turn path through owned land, to an eligible friendly military unit.
+CivvisComandante.auraChecked = {};
+CivvisComandante.auraTypes = function()
+	if CivvisComandante.auraTags ~= nil then return CivvisComandante.auraTags; end
+	local types = try(function()
+		local tags, rows, result = {}, {}, {};
+		for row in GameInfo.TypeTags() do
+			if type(row.Type) ~= "string" or type(row.Tag) ~= "string" then return nil; end
+			rows[#rows + 1] = { kind = row.Type, tag = row.Tag };
+			if row.Type == "ABILITY_COMANDANTE_AOE_STRENGTH" then tags[row.Tag] = true; end
+		end
+		if next(tags) == nil then return nil; end
+		for _, row in ipairs(rows) do
+			if tags[row.tag] then result[row.kind] = true; end
+		end
+		return result;
+	end, nil);
+	CivvisComandante.auraTags = types;
+	return types;
+end
+CivvisComandante.support = function(player, unit, id, turn)
+	if CivvisComandante.auraChecked[id] == turn then return false; end
+	CivvisComandante.auraChecked[id] = turn;
+	local types = CivvisComandante.auraTypes();
+	if types == nil then return false; end
+	local gp = greatPersonOf(unit);
+	local charges = tonumber(try(function() return gp:GetActionCharges(); end, nil));
+	local moves = tonumber(try(function() return unit:GetMovesRemaining(); end, nil));
+	local ux, uy = tonumber(try(function() return unit:GetX(); end, nil)),
+		tonumber(try(function() return unit:GetY(); end, nil));
+	if charges == nil or not (charges > 0) or moves == nil or not (moves > 0)
+			or ux == nil or uy == nil or not (ux >= 0 and uy >= 0) then return false; end
+	local recipients, blockers, commanders = {}, {}, {};
+	local covered = false;
+	local readable = try(function()
+		for _, other in player:GetUnits():Members() do
+			if other:GetID() ~= id then
+				local kind = unitTypeName(other);
+				local row = GameInfo.Units[kind];
+				if row == nil or row.Domain == nil then return false; end
+				local x, y = tonumber(other:GetX()), tonumber(other:GetY());
+				if x == nil or y == nil then return false; end
+				if x >= 0 and y >= 0 then
+					local combat, ranged = tonumber(row.Combat), tonumber(row.RangedCombat);
+					if combat == nil or ranged == nil then return false; end
+					if row.Domain == "DOMAIN_LAND" and combat <= 0 and ranged <= 0 then
+						blockers[x .. "," .. y] = true;
+					end
+					local person = greatPersonOf(other);
+					if person ~= nil then
+						local _, class = gpName(person);
+						if class == "GREAT_PERSON_CLASS_COMANDANTE_GENERAL" then
+							commanders[#commanders + 1] = { x = x, y = y };
+						end
+					end
+					if row.Domain == "DOMAIN_LAND" and types[kind]
+							and (combat > 0 or ranged > 0) then
+						local d = tonumber(Map.GetPlotDistance(ux, uy, x, y));
+						if d == nil or not (d >= 0 and d < math.huge) then return false; end
+						if d <= 2 then covered = true; end
+						if other:IsEmbarked() == false and d > 2 then
+							recipients[#recipients + 1] = { x = x, y = y, distance = d, id = other:GetID() };
+						end
+					end
+				end
+			end
+		end
+		return true;
+	end, false);
+	if not readable or covered then return false; end
+	table.sort(recipients, function(a, b)
+		if a.distance ~= b.distance then return a.distance < b.distance; end
+		return a.id < b.id;
+	end);
+	local pid = player:GetID();
+	local hostile = CivvisBoard.hostilePlots(pid);
+	local attempts, seen = 0, {};
+	for _, target in ipairs(recipients) do
+		local key = target.x .. "," .. target.y;
+		local otherAura = false;
+		for _, commander in ipairs(commanders) do
+			local d = tonumber(try(function()
+				return Map.GetPlotDistance(target.x, target.y, commander.x, commander.y);
+			end, nil));
+			if d == nil or not (d > 2 and d < math.huge) then otherAura = true; end
+		end
+		if not seen[key] and not blockers[key] and not otherAura then
+			seen[key] = true;
+			attempts = attempts + 1;
+			if attempts > 8 then break; end
+			local safe = try(function()
+				local destination = Map.GetPlotIndex(target.x, target.y);
+				local path = UnitManager.GetMoveToPathEx(unit, destination);
+				if type(path) ~= "table" or type(path.plots) ~= "table"
+						or type(path.turns) ~= "table" then return false; end
+				local n = #path.plots;
+				if n <= 1 or path.plots[1] ~= Map.GetPlotIndex(ux, uy)
+						or path.plots[n] ~= destination then return false; end
+				for i = 1, n do
+					local t = tonumber(path.turns[i]);
+					if t == nil or not (t >= 0 and t <= 1) then return false; end
+					local plot = Map.GetPlotByIndex(path.plots[i]);
+					if plot == nil or plot:GetOwner() ~= pid or plot:IsWater() ~= false
+							or plot:IsImpassable() ~= false then return false; end
+					local px, py = plot:GetX(), plot:GetY();
+					for hostileKey in pairs(hostile) do
+						local hx, hy = hostileKey:match("^(-?%d+),(-?%d+)$");
+						if hx == nil or Map.GetPlotDistance(px, py, tonumber(hx), tonumber(hy)) <= 2 then
+							return false;
+						end
+					end
+				end
+				return true;
+			end, false);
+			if safe then
+				local params = {};
+				params[UnitOperationTypes.PARAM_X], params[UnitOperationTypes.PARAM_Y] = target.x, target.y;
+				if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+					gpPending[id] = nil;
+					emit("gp", { turn = turn, unit = id, action = "aura_support",
+						x = target.x, y = target.y, recipient = target.id, dist = target.distance });
+					return true;
+				end
+			end
+		end
+	end
+	return false;
+end
+
 -- Drive one Great Person toward being used. Returns "activated" | "moving" |
 -- "retired" | "idle", or nil when the unit is not a Great Person this code
 -- should touch.
-local function orderGreatPerson(player, unit, id, turn)
+local function orderGreatPerson(player, unit, id, turn, supportAllowed)
 	local gp = greatPersonOf(unit);
 	if gp == nil then
 		-- ⚠ Distinguish "not a Great Person" from "the accessor is missing in
@@ -16010,6 +16144,9 @@ local function orderGreatPerson(player, unit, id, turn)
 		return nil;
 	end
 	local individual, class = gpName(gp);
+	if class == "GREAT_PERSON_CLASS_COMANDANTE_GENERAL" and not supportAllowed then
+		CivvisComandante.auraChecked[id] = turn;
+	end
 	-- ⚠ A Prophet's activation opens the religion chooser, a modal this harness
 	-- does not answer yet — a stalled run loses more than an unspent Prophet.
 	-- Deferred, visibly, until that screen has a handler.
@@ -16040,6 +16177,7 @@ local function orderGreatPerson(player, unit, id, turn)
 	end
 	local comandanteTargets = CivvisComandante.targets(player, individual, id);
 	if comandanteTargets ~= nil and #comandanteTargets == 0 then
+		if supportAllowed and CivvisComandante.support(player, unit, id, turn) then return "moving"; end
 		gpPending[id] = nil;
 		emit("gp", { turn = turn, unit = id, individual = individual,
 			class = class, action = "reserved_comandante" });
@@ -16165,6 +16303,8 @@ local function orderGreatPerson(player, unit, id, turn)
 			end
 		end
 	end
+	if class == "GREAT_PERSON_CLASS_COMANDANTE_GENERAL" and supportAllowed
+			and CivvisComandante.support(player, unit, id, turn) then return "moving"; end
 	-- 3. Nowhere legal to activate — no empty Great Work slot, no qualifying
 	-- district built yet, or the one legal plot is occupied. A real constraint,
 	-- reported sparsely; the unit stays put and is retried every turn.
@@ -19066,7 +19206,7 @@ local function applyOrders(player, pid, turn, rows)
 		eachUnit(player, function(unit)
 			local id = try(function() return unit:GetID(); end, -1);
 			if id == -1 then return; end
-			local acted = orderGreatPerson(player, unit, id, turn);
+			local acted = orderGreatPerson(player, unit, id, turn, firstRun[id] == nil);
 			if acted == nil then return; end
 			gpHandled[id] = true;
 			if acted == "activated" then gpActivated = gpActivated + 1;

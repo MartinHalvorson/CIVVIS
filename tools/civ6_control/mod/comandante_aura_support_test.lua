@@ -28,6 +28,7 @@ local function emptyIterator()
 	return function() return nil end
 end
 
+local host
 local function plot(x, y)
 	return {
 		GetX = function() return x end,
@@ -38,7 +39,6 @@ local function plot(x, y)
 	}
 end
 
-local host
 local plots = {
 	[plotIndex(2, 1)] = plot(2, 1), -- nearest highlight, but unreachable
 	[plotIndex(4, 1)] = plot(4, 1), -- farther highlight, reachable
@@ -232,7 +232,8 @@ GameInfo.Units.UNIT_UNTAGGED_LAND = { UnitType = "UNIT_UNTAGGED_LAND", Domain = 
 local function pathTo(x)
  local path = {}
  for col = 1,x do path[#path + 1] = plotIndex(col,1) end
- return { plots = path }
+ local turns = {}; for i=1,#path do turns[i]=i==1 and 0 or 1 end
+ return { plots = path, turns = turns }
 end
 local function reset()
  host.units, host.ops, host.paths, host.commands = {}, {}, {}, {}
@@ -254,7 +255,7 @@ local function reset()
  host.units[2] = { id = 2, kind = "UNIT_WARRIOR", x = 6, y = 1, moves = 4, max_moves = 4, attacks = 1 }
  host.paths["1:" .. plotIndex(6,1)] = pathTo(6)
  host.paths["1:" .. plotIndex(3,1)] = pathTo(3)
- CivvisComandante.auraTags, CivvisComandante.auraRequested = nil, {}
+ CivvisComandante.auraTags, CivvisComandante.auraChecked = nil, {}
 end
 local function run(rows) applyOrders(player, PID, 7, rows or {}) end
 local function moves()
@@ -282,6 +283,8 @@ scenario("empty army holds", function() host.units[2]=nil end,nil)
 scenario("spent charge holds", function() host.charges=0 end,nil)
 scenario("zero remaining movement holds", function() host.units[1].moves=0 end,nil)
 scenario("unreachable recipient holds", function() host.paths={} end,nil)
+scenario("future-turn path holds", function() host.paths["1:"..plotIndex(6,1)].turns[6]=2 end,nil)
+scenario("missing turn allowance holds", function() host.paths["1:"..plotIndex(6,1)].turns=nil end,nil)
 scenario("partial path holds", function() host.paths["1:"..plotIndex(6,1)]=pathTo(3) end,nil)
 scenario("one-entry no-progress path holds", function() host.paths["1:"..plotIndex(6,1)]={plots={plotIndex(6,1)}} end,nil)
 scenario("path through foreign land holds", function() host.owners[plotIndex(4,1)]=1 end,nil)
@@ -300,5 +303,6 @@ check("asynchronous support requested once per turn",#moves(),1)
 reset();run({{kind="unit",subject=1,verb="MOVE_TO",x=3,y=1}})
 check("explicit controller movement owns this batch",#moves(),1)
 check("explicit controller destination preserved",moves()[1] and moves()[1].x,3)
+run();check("earlier explicit movement owns later frame",#moves(),1)
 if failures>0 then print(failures .. " failure(s) / " .. checks .. " checks");os.exit(1) end
 print("all " .. checks .. " checks passed")
