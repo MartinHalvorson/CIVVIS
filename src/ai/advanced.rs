@@ -28930,8 +28930,11 @@ impl AdvancedAi {
             Item::Formation { unit, formation } => {
                 let spec = &g.rules.units[unit];
                 let naval = spec.domain.as_deref() == Some("sea");
+                if naval && self.base.open_water_navy && !self.base.naval_city_can_launch(g, cid) {
+                    return -10_000.0;
+                }
                 let desired = if naval {
-                    BasicAi::desired_navy(g, pid)
+                    self.base.desired_navy(g, pid)
                 } else {
                     desired_military
                 };
@@ -28965,13 +28968,13 @@ impl AdvancedAi {
                 if spec.class == "military" {
                     let naval = spec.domain.as_deref() == Some("sea");
                     let aircraft = spec.domain.as_deref() == Some("air");
-                    let desired_naval = BasicAi::desired_navy(g, pid);
+                    let desired_naval = self.base.desired_navy(g, pid);
                     let desired_aircraft = if plan.strategy == GrandStrategy::Conquest {
                         city_count.max(1)
                     } else {
                         city_count.div_ceil(2).max(1)
                     };
-                    if naval && !BasicAi::city_is_coastal(g, cid) {
+                    if naval && !self.base.naval_city_can_launch(g, cid) {
                         return -10_000.0;
                     }
                     let domain_saturated = if naval {
@@ -43060,3 +43063,6 @@ mod native_production_eta_tests;
 
 #[cfg(test)]
 mod native_research_eta_tests;
+
+#[cfg(test)]
+mod naval_production_tests;
