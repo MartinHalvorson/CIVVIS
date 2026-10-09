@@ -1061,12 +1061,27 @@ class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
         self.assertEqual(rules["operator_default_on"], [])
         self.assertEqual(rules["operator_default_off"], [])
         batches = ranking.load_reporting_batches(ledger)
-        self.assertEqual(len(batches), 3)
+        # A new player contract opens a fresh epoch with fewer than three columns.
+        self.assertTrue(1 <= len(batches) <= len(ranking.REPORTING_BATCH_LABELS))
         # ⭐ Hysteresis reads the previous published selection, which the
         # ledger records so this re-derivation has the same input.
         prior = rules["prior_deployment_genome"]
         self.assertEqual(prior, sorted(set(prior)), "sorted, unique")
         tags = gene_ledger.screenable_tags()
+        note = rules.get("retained_selection_note")
+        if note:
+            # A reporting-only rotation the operator kept instead of re-picking
+            # (2026-10-09: the first observed-player batch, 18,660 seats alone
+            # in its epoch, would have flipped 139 defaults). The window re-pick
+            # is evidence, not the oracle, until the next reselection clears it.
+            self.assertGreater(len(note), 40)
+            self.assertEqual(prior, rules["deployment_genome"])
+            self.assertEqual(rules["hysteresis_held"],
+                             gene_ledger.hysteresis_held(batches, tags, rules["deployment_genome"]))
+            for family in gene_ledger.families_of(tags):
+                self.assertLessEqual(
+                    len([tag for tag in family if tag in rules["deployment_genome"]]), 1, family)
+            return
         eligible = set(gene_ledger.retained_deployment_genome_from_batches(
             batches, tags, prior_on=prior))
         # The exact set is the regression oracle. Its count intentionally
@@ -1710,6 +1725,26 @@ class TheBuildGuard(unittest.TestCase):
             [Path("new.json"), Path("last.json"), Path("prior.json")],
         )
 
+    def test_a_new_player_contract_starts_a_fresh_reporting_epoch(self):
+        """The first observed-player batch could not publish beside the
+        pre-#3386 columns; it now replaces them instead of being refused."""
+        with tempfile.TemporaryDirectory() as tmp:
+            def batch(name: str, **profile) -> Path:
+                path = Path(tmp) / name
+                path.write_text(json.dumps(analysis([{"tag": "a"}], **profile)))
+                return path
+            observed = {"player_contract": "observed-player-v1", "target_mix": "civvis,score"}
+            old, older = batch("old.json"), batch("older.json")
+            same = batch("same.json", **observed)
+            new = batch("new.json", **observed)
+            self.assertEqual(gene_ledger.same_reporting_epoch([new], [old, older]), [])
+            self.assertEqual(gene_ledger.same_reporting_epoch([new], [same, old]), [same])
+            self.assertEqual(gene_ledger.same_reporting_epoch([], [old, older]), [old, older])
+            self.assertEqual(
+                gene_ledger.latest_reporting_batches(
+                    [new], gene_ledger.same_reporting_epoch([new], [old, older])),
+                [new])
+
 
 class ContinuousBatchTiming(unittest.TestCase):
     """Reporting headers use scheduler time, never inferred row timing."""
@@ -1931,7 +1966,7 @@ class GeneratedFiles(unittest.TestCase):
         )
 
         reporting = ranking.load_reporting_batches(current)
-        self.assertEqual(len(reporting), len(ranking.REPORTING_BATCH_LABELS))
+        self.assertTrue(1 <= len(reporting) <= len(ranking.REPORTING_BATCH_LABELS))
         for batch in reporting:
             newest = batch["meta"]
             artifact = ranking.load_source(ranking.ROOT / newest["path"])
@@ -2477,7 +2512,7 @@ class TheTableIsDerived(unittest.TestCase):
         """Each fixed batch has one total-seat `n` header, never row clutter."""
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
         batches = ranking.load_reporting_batches(ledger)
-        self.assertEqual(len(batches), 3)
+        self.assertTrue(1 <= len(batches) <= len(ranking.REPORTING_BATCH_LABELS))
         slots = batches + [None] * (len(ranking.REPORTING_BATCH_LABELS) - len(batches))
         columns = tuple(
             (index, ranking.reporting_batch_header(label, batch))
@@ -2487,7 +2522,7 @@ class TheTableIsDerived(unittest.TestCase):
         for cells in self._ranked_rows():
             tag = cell(cells, "Gene").strip("`")
             for back, column in columns:
-                expected = ranking.reporting_batch_cell(batches[back], tag)
+                expected = ranking.reporting_batch_cell(slots[back], tag)
                 self.assertEqual(cell(cells, column), expected, f"{tag}: {column}")
                 self.assertNotIn("n=", cell(cells, column), f"{tag}: {column}")
 
