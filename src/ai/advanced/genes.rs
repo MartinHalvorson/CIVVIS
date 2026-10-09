@@ -3518,6 +3518,12 @@ pub const GENES: &[Gene] = &[
     // Amenity to every city with a district and a second Economic card.
     // See `advanced/peacetime_republic.rs`.
     Gene { tag: "peacetime-classical-republic", field: "peacetime_classical_republic", kind: Kind::OptIn, enable: AdvancedAi::enable_peacetime_classical_republic, disable: AdvancedAi::disable_peacetime_classical_republic },
+    // `settler-walks-to-the-better-site`: the routed settle pick returned the
+    // best site reachable THIS turn whenever one existed, over far better
+    // ranked sites a turn or two out (G034655Z t51: dry 77.9 a tile away
+    // over fresh 143.5 two tiles away). 49% of 1,224 of our foundings were
+    // fresh water against the rivals' 64%. See `advanced/far_settle_site.rs`.
+    Gene { tag: "settler-walks-to-the-better-site", field: "settler_walks_to_the_better_site", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walks_to_the_better_site, disable: AdvancedAi::disable_settler_walks_to_the_better_site },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

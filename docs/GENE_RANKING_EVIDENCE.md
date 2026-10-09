@@ -400,6 +400,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `second-front-waits-for-its-war` | off (unmeasured) | Opt-in gene `second-front-waits-for-its-war`; see `Self::second_front_waits_for_its_war`. | 1 \| 1 |
 | `settler-before-the-navy` | off (unmeasured) | The delegated city governor's navy step yields to a due Settler. | 1 \| 1 |
 | `settler-detour-stays-near` | off (unmeasured) | `settler-detour-stays-near`: a threat detour's fallback must lie about as close as the site it leaves. | 1 \| 1 |
+| `settler-walks-to-the-better-site` | off (unmeasured) | Opt-in gene `settler-walks-to-the-better-site`; see `Self::better_site_beyond_the_turn`. | 1 \| 1 |
 | `shared-danger` | off (unmeasured) | Opt-in gene `shared-danger`; see `Self::shared_danger`. | 1 \| 1 |
 | `siege-budget-counts-what-fires` | off (unmeasured) | Opt-in gene `siege-budget-counts-what-fires`; see `Self::siege_budget_counts_what_fires`. | 1 \| 1 |
 | `siege-buys-the-gun-resource` | off (unmeasured) | Opt-in gene `siege-buys-the-gun-resource`; see `Self::siege_buys_the_gun_resource`. | 1 \| 1 |
@@ -442,6 +443,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `trade-production-to-launch` | off (unmeasured) | Price route production by time saved on an active space project. | 1 \| 1 |
 | `treasury-at-work-2-2` | off (unmeasured) | Keep the working reserve and buy the first Builder near local work. | 1 \| 2 |
 | `unique-unit-preference` | off (unmeasured) | Opt-in gene `unique-unit-preference`; see `BasicAi::unique_unit_preference`. | 1 \| 1 |
+| `unit-preservation` | off (unmeasured) | Enable combat preservation and full-health recovery. | 1 \| 1 |
 | `unseen-capital-is-unseen` | off (unmeasured) | `unseen-capital-is-unseen`: the decider re-takes the seat's city memory after the host's capital and founder facts land, so a fogged rival city is no longer remembered as the capital the rebuild's planting crowned it. | 1 \| 1 |
 | `unwalled-city-takes-the-swarm` | off (unmeasured) | Opt-in gene `unwalled-city-takes-the-swarm`; see `Self::unwalled_city_takes_the_swarm`. | 1 \| 1 |
 | `unwalled-target-declares-into-the-strike` | off (unmeasured) | Opt-in gene `unwalled-target-declares-into-the-strike`; see `Self::unwalled_target_declares_into_the_strike`. | 1 \| 1 |
