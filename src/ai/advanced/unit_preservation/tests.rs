@@ -50,10 +50,69 @@ fn a_sampled_kill_does_not_remove_a_possible_reply() {
             ..Default::default()
         },
     );
-    let after = replay(&g, 0, &[action], &BTreeSet::new());
+    let after = replay(&g, 0, &[action], &BTreeSet::new()).board;
     assert!(after.units.contains_key(&enemy));
     assert!(after.units[&enemy].hp >= 6);
     assert_eq!(g.units[&enemy].hp, 30);
+}
+
+fn city_capture(hp: i32) -> (Game, u32, u32, Vec<Action>) {
+    let mut g = field();
+    let ours = g.spawn_unit("horseman", 0, at(8, 7));
+    g.units.get_mut(&ours).unwrap().hp = 40;
+    let city = g.found_city_for(1, at(11, 7), None);
+    g.cities.get_mut(&city).unwrap().hp = hp;
+    g.cities.get_mut(&city).unwrap().wall_hp = 0;
+    g.spawn_unit("archer", 1, at(12, 7));
+    g.spawn_unit("archer", 1, at(12, 8));
+    let actions = vec![
+        Action::MoveTo {
+            unit: ours,
+            to: at(10, 7),
+        },
+        Action::Attack {
+            unit: ours,
+            target: at(11, 7),
+        },
+    ];
+    (g, ours, city, actions)
+}
+
+#[test]
+fn uncertain_city_capture_checks_the_actual_approach_after_moving() {
+    let (mut g, ours, city, actions) = city_capture(20);
+    let outcome = (0..100)
+        .find_map(|seed| {
+            g.rng = crate::rng::Rng::new(seed);
+            let outcome = replay(&g, 0, &actions, &BTreeSet::new());
+            (outcome.board.cities[&city].owner == 0).then_some(outcome)
+        })
+        .expect("at least one sampled roll captures the unwalled city");
+    assert_eq!(outcome.board.units[&ours].pos, at(11, 7));
+    assert_eq!(outcome.failed_advances[&ours], BTreeSet::from([at(10, 7)]));
+    assert!(outcome.uncertain_captures.contains(&city));
+    let ai = policy();
+    assert!(ai.unit_reply_is_safe(&outcome.board, 0, ours));
+    assert!(!ai.reply_outcomes_are_safe(
+        &g,
+        &outcome,
+        0,
+        ours,
+        &mut ReplyForecast::new(&outcome.board, 0),
+    ));
+    assert_eq!(g.units[&ours].pos, at(8, 7));
+    assert_eq!(g.cities[&city].owner, 1);
+}
+
+#[test]
+fn minimum_damage_city_capture_can_still_reach_safety() {
+    let (g, ours, city, actions) = city_capture(1);
+    let outcome = replay(&g, 0, &actions, &BTreeSet::new());
+    assert_eq!(outcome.board.cities[&city].owner, 0);
+    assert_eq!(outcome.board.units[&ours].pos, at(11, 7));
+    assert!(outcome.failed_advances.is_empty());
+    assert!(outcome.uncertain_captures.is_empty());
+    assert!(policy().preservation_finishing_safe(&g, 0, &actions));
 }
 
 #[test]

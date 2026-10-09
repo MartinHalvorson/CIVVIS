@@ -81,8 +81,17 @@ fn actors(action: &Action) -> Vec<u32> {
     }
 }
 
-fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>) -> Game {
+struct ReplayOutcome {
+    board: Game,
+    failed_advances: BTreeMap<u32, BTreeSet<Pos>>,
+    uncertain_captures: BTreeSet<u32>,
+    guaranteed_dead: BTreeSet<u32>,
+}
+
+fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>) -> ReplayOutcome {
     let mut after = before.speculative_clone();
+    let mut failed_advances: BTreeMap<u32, BTreeSet<Pos>> = BTreeMap::new();
+    let mut uncertain_captures = BTreeSet::new();
     let mut health_floors = BTreeMap::new();
     let mut defender_floors: BTreeMap<u32, (Unit, i32)> = BTreeMap::new();
     for action in actions {
@@ -93,7 +102,7 @@ fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>
         }
         // Reprice a later exchange at the health the earlier upper rolls
         // could leave, without changing the sampled movement/kill sequence.
-        let risk = matches!(action, Action::Attack { .. }).then(|| {
+        let risk = matches!(action, Action::Attack { .. } | Action::Ranged { .. }).then(|| {
             let mut risk = after.speculative_clone();
             for (uid, hp) in &health_floors {
                 if let Some(unit) = risk.units.get_mut(uid) {
@@ -135,7 +144,7 @@ fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>
             let Some(preview) = after.host_previews.get(&(uid, *target, false)) else {
                 return (uid, hp);
             };
-            let extra_wounds = f64::from(after.units[&uid].hp - actor.hp) / 10.0;
+            let extra_wounds = f64::from((before.units[&uid].hp - actor.hp).max(0)) / 10.0;
             let host_retaliation = expected_damage(
                 preview.defender_strength,
                 (preview.attacker_strength - extra_wounds.ceil()).max(0.0),
@@ -170,22 +179,44 @@ fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>
                         } else {
                             risk.melee_exchange_strengths(*unit, *uid)
                         }?;
-                        let strengths = after
+                        let lower_damage = damage_floor(pair.0, pair.1);
+                        let lower_damage = after
                             .host_previews
                             .get(&(*unit, *target, ranged))
                             .filter(|preview| {
                                 preview.attacker_strength > 0.0 && preview.defender_strength > 0.0
                             })
-                            .map_or(pair, |preview| {
-                                (preview.attacker_strength, preview.defender_strength)
+                            .map_or(lower_damage, |preview| {
+                                // A preview describes the observed frame,
+                                // before any earlier exchange wounded us.
+                                let wounds =
+                                    f64::from((before.units[unit].hp - risk.units[unit].hp).max(0))
+                                        / 10.0;
+                                lower_damage.min(damage_floor(
+                                    (preview.attacker_strength - wounds.ceil()).max(0.0),
+                                    preview.defender_strength,
+                                ))
                             });
-                        Some((defender.clone(), damage_floor(strengths.0, strengths.1)))
+                        Some((defender.clone(), lower_damage))
                     })
                     .collect::<Vec<_>>()
             }
             _ => Vec::new(),
         };
         let previous_hp = floor.and_then(|(uid, _)| risk.units.get(&uid).map(|unit| unit.hp));
+        let approach = match action {
+            Action::Attack { unit, target } => after.units.get(unit).map(|actor| {
+                let city = after.city_at(*target).and_then(|cid| {
+                    let city = &after.cities[&cid];
+                    let initial = before.cities.get(&cid).unwrap_or(city);
+                    after
+                        .is_at_war(pid, city.owner)
+                        .then_some((cid, initial.hp, initial.wall_hp))
+                });
+                (*unit, actor.pos, city)
+            }),
+            _ => None,
+        };
         let healing_actors = match action {
             Action::Promote { unit, .. } => vec![*unit],
             _ => actors(action),
@@ -196,11 +227,27 @@ fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>
             .filter_map(|uid| after.units.get(&uid).map(|unit| (uid, unit.hp)))
             .collect();
         if after.apply(pid, action).is_ok() {
+            let mut uncertain_kill = false;
             for (victim, damage) in victims {
                 let entry = defender_floors
                     .entry(victim.id)
                     .or_insert((victim.clone(), victim.hp));
                 entry.1 -= damage;
+                uncertain_kill |= entry.1 > 0;
+            }
+            if let Some((uid, origin, city)) = approach {
+                if after.units.get(&uid).is_some_and(|unit| unit.pos != origin) {
+                    let uncertain_city = city.filter(|(cid, hp, walls)| {
+                        after.cities.get(cid).is_some_and(|city| city.owner == pid)
+                            && (*walls > 0 || *hp > 1)
+                    });
+                    if let Some((cid, _, _)) = uncertain_city {
+                        uncertain_captures.insert(cid);
+                    }
+                    if uncertain_kill || uncertain_city.is_some() {
+                        failed_advances.entry(uid).or_default().insert(origin);
+                    }
+                }
             }
             if let Some((uid, hp)) = floor {
                 let previous_hp = previous_hp.expect("a floor has an actor");
@@ -223,6 +270,7 @@ fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>
     }
     // A favorable sampled kill is not a promised host kill. Keep any victim
     // the lower damage budget could leave alive in the reply forecast.
+    let mut guaranteed_dead = BTreeSet::new();
     for (uid, (mut saved, hp)) in defender_floors {
         if hp > 0 {
             if let Some(unit) = after.units.get_mut(&uid) {
@@ -233,6 +281,8 @@ fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>
                 after.units.insert(uid, saved);
                 after.relocate(uid, pos);
             }
+        } else {
+            guaranteed_dead.insert(uid);
         }
     }
     // Keep the exact action sequence intact while replaying: reducing health
@@ -243,7 +293,12 @@ fn replay(before: &Game, pid: usize, actions: &[Action], blocked: &BTreeSet<u32>
             unit.hp = unit.hp.min(hp);
         }
     }
-    after
+    ReplayOutcome {
+        board: after,
+        failed_advances,
+        uncertain_captures,
+        guaranteed_dead,
+    }
 }
 
 impl AdvancedAi {
@@ -254,7 +309,7 @@ impl AdvancedAi {
         actions: &[Action],
     ) -> bool {
         let after = replay(before, pid, actions, &BTreeSet::new());
-        let mut forecast = ReplyForecast::new(&after, pid);
+        let mut forecast = ReplyForecast::new(&after.board, pid);
         actions
             .iter()
             .filter_map(|action| match action {
@@ -344,31 +399,57 @@ impl AdvancedAi {
     fn reply_outcomes_are_safe(
         &self,
         before: &Game,
-        after: &Game,
+        outcome: &ReplayOutcome,
         pid: usize,
         uid: u32,
         forecast: &mut ReplyForecast,
     ) -> bool {
+        let after = &outcome.board;
         if !self.unit_reply_with_forecast(after, pid, uid, forecast) {
             return false;
         }
-        let Some(unit) = after.units.get(&uid) else {
-            return false;
-        };
-        // A restored uncertain victim can share the sampled melee landing
-        // tile on this forecast. Also assess the branch where it survived and
-        // the attacker never advanced. Neither branch promises the other.
-        if after
-            .unit_ids_at(unit.pos)
-            .iter()
-            .any(|other| after.is_at_war(pid, after.units[other].owner))
-        {
-            let Some(start) = before.units.get(&uid) else {
-                return false;
-            };
+        // A favorable roll may advance a striker into a protected captured
+        // city. Check every uncertain melee advance at its actual approach
+        // tile, including moves earlier in the same turn.
+        let mut origins = outcome
+            .failed_advances
+            .get(&uid)
+            .cloned()
+            .unwrap_or_default();
+        if !outcome.uncertain_captures.is_empty() {
+            // Other units cannot rely on a capture eliminating that army.
+            origins.insert(after.units[&uid].pos);
+        }
+        for origin in origins {
             let mut failed_kill = after.speculative_clone();
-            failed_kill.relocate(uid, start.pos);
-            return self.unit_reply_is_safe(&failed_kill, pid, uid);
+            for cid in &outcome.uncertain_captures {
+                if let Some(city) = before.cities.get(cid) {
+                    failed_kill.cities.insert(*cid, city.clone());
+                    failed_kill.players[city.owner].alive = before.players[city.owner].alive;
+                    failed_kill
+                        .at_war
+                        .insert((pid.min(city.owner), pid.max(city.owner)));
+                    // A capture can erase the garrison or eliminate its
+                    // owner's remaining army. Those disappearances depend on
+                    // the capture too, unless their own damage proves a kill.
+                    for enemy in before
+                        .units
+                        .values()
+                        .filter(|unit| unit.owner == city.owner)
+                    {
+                        if !failed_kill.units.contains_key(&enemy.id)
+                            && !outcome.guaranteed_dead.contains(&enemy.id)
+                        {
+                            failed_kill.units.insert(enemy.id, enemy.clone());
+                            failed_kill.relocate(enemy.id, enemy.pos);
+                        }
+                    }
+                }
+            }
+            failed_kill.relocate(uid, origin);
+            if !self.unit_reply_is_safe(&failed_kill, pid, uid) {
+                return false;
+            }
         }
         true
     }
@@ -396,7 +477,7 @@ impl AdvancedAi {
             .collect();
         loop {
             let after = replay(before, pid, actions, &blocked);
-            let mut forecast = ReplyForecast::new(&after, pid);
+            let mut forecast = ReplyForecast::new(&after.board, pid);
             let unsafe_units: Vec<u32> = affected
                 .iter()
                 .copied()
@@ -416,16 +497,17 @@ impl AdvancedAi {
             .filter(|action| !matches!(action, Action::EndTurn))
             .cloned()
             .collect();
-        let mut board = replay(before, pid, &kept, &BTreeSet::new());
-        let mut forecast = ReplyForecast::new(&board, pid);
+        let outcome = replay(before, pid, &kept, &BTreeSet::new());
+        let mut forecast = ReplyForecast::new(&outcome.board, pid);
         // Unordered units can be exposed too, e.g. a gun exempted by a siege.
         for uid in before.player_unit_ids(pid) {
             if military(before, pid, uid)
-                && !self.unit_reply_with_forecast(&board, pid, uid, &mut forecast)
+                && !self.reply_outcomes_are_safe(before, &outcome, pid, uid, &mut forecast)
             {
                 blocked.insert(uid);
             }
         }
+        let mut board = outcome.board;
         for uid in blocked {
             let Some(unit) = board.units.get(&uid).cloned() else {
                 continue;
