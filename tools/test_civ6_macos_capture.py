@@ -3,26 +3,89 @@
 
 from __future__ import annotations
 
+import os
+import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from civ6_control import macos_capture  # noqa: E402
 
 
-def completed(arguments, **_kwargs):
-    Path(arguments[-1]).write_bytes(b"png")
-    return subprocess.CompletedProcess(arguments, 0, "", "")
+# A stand-in for `cgcapture-<digest> --serve [--fallback]` that speaks the same
+# line protocol. FAKE_CAPTURE_NATIVE / FAKE_CAPTURE_FALLBACK script each
+# backend: "ok" writes the frame, a number replies that status, "hang" never
+# answers, "crash" exits mid-request. Every request is logged with the pid that
+# served it, so a test can see whether frames shared one helper.
+FAKE_HELPER = r"""
+import os, sys, time
+fallback = "--fallback" in sys.argv
+backend = "fallback" if fallback else "native"
+while True:
+    line = sys.stdin.readline()
+    if not line:
+        break
+    with open(os.environ["FAKE_CAPTURE_LOG"], "a") as log:
+        log.write(f"{os.getpid()} {backend} {line}")
+    behaviour = os.environ.get("FAKE_CAPTURE_" + backend.upper(), "ok")
+    if behaviour == "hang":
+        time.sleep(60)
+    elif behaviour == "crash":
+        sys.exit(3)
+    elif behaviour != "ok":
+        print(f"{behaviour} scripted {backend} failure", flush=True)
+        continue
+    with open(line.rstrip("\n").split(" ", 4)[4], "wb") as frame:
+        frame.write(b"png")
+    print("0", flush=True)
+"""
 
 
-class MacOSCaptureTest(unittest.TestCase):
-    def tearDown(self) -> None:
+class FakeHelperCase(unittest.TestCase):
+    """Run `capture_region` against FAKE_HELPER through real pipes."""
+
+    def setUp(self) -> None:
+        macos_capture.stop_capture_servers()
         macos_capture.reset_fallback_breaker()
+        self.addCleanup(macos_capture.reset_fallback_breaker)
+        self.addCleanup(macos_capture.stop_capture_servers)
+        root = tempfile.TemporaryDirectory()
+        self.addCleanup(root.cleanup)
+        self.root = Path(root.name)
+        script = self.root / "fake_helper.py"
+        script.write_text(FAKE_HELPER)
+        self.binary = self.root / "cgcapture"
+        self.binary.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{script}" "$@"\n')
+        self.binary.chmod(self.binary.stat().st_mode | stat.S_IXUSR)
+        self.log = self.root / "requests.log"
+        self.log.touch()
+        for patcher in (
+            patch.object(macos_capture, "_native_binary", return_value=self.binary),
+            patch.dict(os.environ, {"FAKE_CAPTURE_LOG": str(self.log)}),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.output = self.root / "shot.png"
+
+    def behave(self, native: str = "ok", fallback: str = "ok") -> None:
+        os.environ["FAKE_CAPTURE_NATIVE"] = native
+        os.environ["FAKE_CAPTURE_FALLBACK"] = fallback
+
+    def requests(self) -> list[tuple[int, str, str]]:
+        rows = []
+        for line in self.log.read_text().splitlines():
+            pid, backend, request = line.split(" ", 2)
+            rows.append((int(pid), backend, request))
+        return rows
+
+
+class MacOSCaptureTest(FakeHelperCase):
 
     def test_helper_uses_the_fast_coregraphics_symbol_and_noninteractive_preflight(self) -> None:
         source = macos_capture._SWIFT_SOURCE
@@ -34,66 +97,41 @@ class MacOSCaptureTest(unittest.TestCase):
         self.assertIn("import ScreenCaptureKit", source)
         self.assertIn("SCScreenshotManager.captureImage(in: rect)", source)
         self.assertIn("if #available(macOS 15.0, *)", source)
-        self.assertIn('let fallbackMode = rawArguments.first == "--fallback"', source)
-        self.assertIn("image = screenCaptureKitImage()", source)
-        self.assertIn("image = windowListImage()", source)
-        self.assertIn("exit(signalFallback ? 78 : 1)", source)
+        self.assertIn('let serveMode = rawArguments.first == "--serve"', source)
+        self.assertIn('let fallbackMode = modeArguments.first == "--fallback"', source)
+        self.assertIn("image = screenCaptureKitImage(rect)", source)
+        self.assertIn("image = windowListImage(rect)", source)
+        self.assertIn("return (signalFallback ? 78 : 1,", source)
+        self.assertIn("while let request = readLine()", source)
         self.assertIn("CGPreflightScreenCaptureAccess()", source)
         self.assertNotIn("CGRequestScreenCaptureAccess", source)
 
     def test_capture_passes_a_screen_point_region_to_the_cached_helper(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            output = Path(root) / "shot.png"
-            with patch.object(macos_capture, "_native_binary",
-                              return_value=Path("/tmp/cgcapture")), \
-                 patch.object(macos_capture.subprocess, "run",
-                              side_effect=completed) as run:
-                macos_capture.capture_region((864, 33, 864, 542), output)
+        self.behave()
+        macos_capture.capture_region((864, 33, 864, 542), self.output)
 
-        run.assert_called_once_with(
-            ["/tmp/cgcapture", "864", "33", "864", "542", str(output)],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=macos_capture.NATIVE_TIMEOUT_SECONDS,
-        )
+        self.assertEqual([(backend, request) for _, backend, request in self.requests()],
+                         [("native", f"864 33 864 542 {self.output}")])
+        self.assertEqual(self.output.read_bytes(), b"png")
 
-    def test_capture_retries_in_a_fresh_window_list_helper_after_a_screen_capture_kit_miss(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            output = Path(root) / "shot.png"
-            initial = subprocess.CompletedProcess(
-                ["/tmp/cgcapture"], macos_capture.SCREEN_CAPTURE_FALLBACK_NEEDED,
-                "", "ScreenCaptureKit returned no image",
-            )
-            def screen_capture_kit_then_window_list(arguments, **kwargs):
-                if "--fallback" in arguments:
-                    return completed(arguments, **kwargs)
-                return initial
-            with patch.object(macos_capture, "_native_binary",
-                              return_value=Path("/tmp/cgcapture")), \
-                 patch.object(macos_capture.subprocess, "run",
-                              side_effect=screen_capture_kit_then_window_list) as run:
-                macos_capture.capture_region((864, 33, 864, 542), output)
+    def test_capture_retries_in_a_window_list_helper_after_a_screen_capture_kit_miss(self) -> None:
+        self.behave(native=str(macos_capture.SCREEN_CAPTURE_FALLBACK_NEEDED))
+        with patch("builtins.print"):
+            macos_capture.capture_region((864, 33, 864, 542), self.output)
 
-        normal = ["/tmp/cgcapture", "864", "33", "864", "542", str(output)]
-        fallback = ["/tmp/cgcapture", "--fallback", "864", "33", "864", "542", str(output)]
-        expected = dict(capture_output=True, text=True, check=False,
-                        timeout=macos_capture.NATIVE_TIMEOUT_SECONDS)
-        self.assertEqual(run.call_args_list, [call(normal, **expected), call(fallback, **expected)])
+        rows = self.requests()
+        self.assertEqual([backend for _, backend, _ in rows], ["native", "fallback"])
+        # ScreenCaptureKit and CoreGraphics never share a process.
+        self.assertNotEqual(rows[0][0], rows[1][0])
+        self.assertEqual(self.output.read_bytes(), b"png")
 
     def test_capture_does_not_compound_a_stalled_primary_backend(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            output = Path(root) / "shot.png"
-            timeout = subprocess.TimeoutExpired(["/tmp/cgcapture"],
-                                                macos_capture.NATIVE_TIMEOUT_SECONDS)
-            with patch.object(macos_capture, "_native_binary",
-                              return_value=Path("/tmp/cgcapture")), \
-                 patch.object(macos_capture.subprocess, "run",
-                              side_effect=timeout) as run:
-                with self.assertRaises(macos_capture.CaptureUnavailable):
-                    macos_capture.capture_region((864, 33, 864, 542), output)
+        self.behave(native="hang")
+        with patch.object(macos_capture, "NATIVE_TIMEOUT_SECONDS", 0.5):
+            with self.assertRaises(macos_capture.CaptureUnavailable):
+                macos_capture.capture_region((864, 33, 864, 542), self.output)
 
-        self.assertEqual(run.call_count, 1)
+        self.assertEqual([backend for _, backend, _ in self.requests()], ["native"])
 
     def test_preflight_reports_denial_without_attempting_a_capture(self) -> None:
         with patch.object(macos_capture, "_native_binary",
@@ -115,18 +153,9 @@ class MacOSCaptureTest(unittest.TestCase):
         )
 
     def test_capture_maps_permission_denial_to_a_specific_safe_error(self) -> None:
-        with tempfile.TemporaryDirectory() as root:
-            output = Path(root) / "shot.png"
-            with patch.object(macos_capture, "_native_binary",
-                              return_value=Path("/tmp/cgcapture")), \
-                 patch.object(macos_capture.subprocess, "run", return_value=subprocess.CompletedProcess(
-                     ["/tmp/cgcapture"],
-                     macos_capture.SCREEN_CAPTURE_PERMISSION_DENIED,
-                     "",
-                     "screen capture permission unavailable",
-                )):
-                with self.assertRaises(macos_capture.CapturePermissionUnavailable):
-                    macos_capture.capture_region((0, 0, 864, 542), output)
+        self.behave(native=str(macos_capture.SCREEN_CAPTURE_PERMISSION_DENIED))
+        with self.assertRaises(macos_capture.CapturePermissionUnavailable):
+            macos_capture.capture_region((0, 0, 864, 542), self.output)
 
     def test_capture_probe_uses_the_real_capture_path(self) -> None:
         with patch.object(macos_capture, "capture_region") as capture:
@@ -153,6 +182,90 @@ class MacOSCaptureTest(unittest.TestCase):
         ):
             with self.assertRaises(macos_capture.CapturePermissionUnavailable):
                 macos_capture.capture_probe()
+
+
+class OneHelperServesManyFrames(FakeHelperCase):
+    """★★★★★ A process per frame stopped the operator's own recordings.
+
+    Each fresh helper is a new screen-capture client `systemstatusd` must
+    attribute and publish; ~1,500 an hour kept it spinning, and while it spins
+    Cmd-Shift-5 dies one second after "Recording started"
+    (`getDisplayForDisplayId timed out`). See `_CaptureServer`.
+    """
+
+    def test_consecutive_frames_share_one_helper_process(self) -> None:
+        self.behave()
+        for _ in range(5):
+            macos_capture.capture_region((0, 33, 864, 542), self.output)
+        pids = {pid for pid, _, _ in self.requests()}
+        self.assertEqual(len(self.requests()), 5)
+        self.assertEqual(len(pids), 1, "every frame must come from the same helper")
+
+    def test_a_hung_helper_is_killed_and_the_next_frame_gets_a_fresh_one(self) -> None:
+        self.behave(native="hang")
+        with patch.object(macos_capture, "NATIVE_TIMEOUT_SECONDS", 0.5):
+            self.assertIsNone(macos_capture._capture_once(
+                macos_capture._capture_command((0, 0, 8, 8), self.output, fallback=False)))
+        hung = self.requests()[0][0]
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(hung, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            self.fail("the hung helper is still alive")
+        self.behave()
+        macos_capture.capture_region((0, 0, 8, 8), self.output)
+        self.assertNotEqual(self.requests()[1][0], hung)
+
+    def test_a_helper_that_crashes_mid_frame_fails_that_frame_only(self) -> None:
+        self.behave(native="crash")
+        with self.assertRaises(macos_capture.CaptureUnavailable):
+            macos_capture.capture_region((0, 0, 8, 8), self.output)
+        self.behave()
+        macos_capture.capture_region((0, 0, 8, 8), self.output)
+        first, second = (pid for pid, _, _ in self.requests())
+        self.assertNotEqual(first, second)
+
+    def test_repeated_misses_recycle_the_helper(self) -> None:
+        self.behave(native="1", fallback="1")
+        for _ in range(macos_capture.SERVER_MAX_CONSECUTIVE_MISSES + 1):
+            with self.assertRaises(macos_capture.CaptureUnavailable):
+                macos_capture.capture_region((0, 0, 8, 8), self.output)
+        native = [pid for pid, backend, _ in self.requests() if backend == "native"]
+        limit = macos_capture.SERVER_MAX_CONSECUTIVE_MISSES
+        self.assertEqual(len(set(native[:limit])), 1)
+        self.assertNotEqual(native[limit], native[0])
+
+    def test_a_permission_denial_recycles_the_helper(self) -> None:
+        self.behave(native=str(macos_capture.SCREEN_CAPTURE_PERMISSION_DENIED))
+        with self.assertRaises(macos_capture.CapturePermissionUnavailable):
+            macos_capture.capture_region((0, 0, 8, 8), self.output)
+        self.behave()
+        macos_capture.capture_region((0, 0, 8, 8), self.output)
+        first, second = (pid for pid, _, _ in self.requests())
+        self.assertNotEqual(first, second)
+
+    def test_an_old_helper_is_retired_between_frames(self) -> None:
+        self.behave()
+        macos_capture.capture_region((0, 0, 8, 8), self.output)
+        with patch.object(macos_capture, "SERVER_MAX_AGE_SECONDS", 0.0):
+            macos_capture.capture_region((0, 0, 8, 8), self.output)
+        first, second = (pid for pid, _, _ in self.requests())
+        self.assertNotEqual(first, second)
+
+    def test_stopping_the_servers_ends_the_helpers(self) -> None:
+        self.behave()
+        macos_capture.capture_region((0, 0, 8, 8), self.output)
+        process = macos_capture._SERVERS[False].process
+        macos_capture.stop_capture_servers()
+        self.assertIsNotNone(process.poll())
+
+    def test_a_newline_in_the_output_path_is_refused(self) -> None:
+        with self.assertRaises(macos_capture.CaptureUnavailable):
+            macos_capture.capture_region((0, 0, 8, 8), self.root / "a\nb.png")
 
 
 class TheKillIsLooserThanTheHelpersOwnGuard(unittest.TestCase):
