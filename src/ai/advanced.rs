@@ -36433,17 +36433,24 @@ impl AdvancedAi {
                 return g.apply(pid, &action).is_ok();
             }
         }
+        let mut inquisitor_holding = false;
         if unit.kind == "inquisitor" {
             // `religious_veto_defence`: the charge goes where the heresy is.
-            if let Some(acted) = self.inquisitor_veto_step(g, pid, uid, &legal) {
-                return acted;
-            }
-            if let Some(action) = legal
-                .iter()
-                .find(|action| matches!(action, Action::RemoveHeresy { unit } if *unit == uid))
-                .cloned()
-            {
-                return g.apply(pid, &action).is_ok();
+            match self.inquisitor_veto_step(g, pid, uid, &legal) {
+                Some(true) => return true,
+                // Holding a faithful source still permits the existing
+                // adjacent combat choice. It spends no cleansing charge
+                // and must not send the defender off its post afterward.
+                Some(false) => inquisitor_holding = true,
+                None => {
+                    if let Some(action) = legal
+                        .iter()
+                        .find(|action| matches!(action, Action::RemoveHeresy { unit } if *unit == uid))
+                        .cloned()
+                    {
+                        return g.apply(pid, &action).is_ok();
+                    }
+                }
             }
         }
 
@@ -36471,6 +36478,10 @@ impl AdvancedAi {
             if unit.hp >= 55 || score >= 45 {
                 return g.apply(pid, &action).is_ok();
             }
+        }
+
+        if inquisitor_holding {
+            return false;
         }
 
         // The same hold, after the fight rather than before it: a unit already
