@@ -3544,6 +3544,13 @@ pub const GENES: &[Gene] = &[
     // the deterrent, the worked backlog's Builder, recon and catch-up claims
     // took the queue first. See `advanced/granary_claims_the_bound_queue.rs`.
     Gene { tag: "granary-claims-the-bound-queue", field: "granary_claims_the_bound_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_granary_claims_the_bound_queue, disable: AdvancedAi::disable_granary_claims_the_bound_queue },
+    // `capital-campus-before-the-plaza`: 145 live Emperor runs (10-08/09) put a
+    // Holy Site (83) or a Government Plaza (58) in the capital first and a
+    // Campus never; the capital's Campus stood at a median turn 86, its
+    // Library at 92, while our Science ran 0.21/0.26/0.39 of the best rival's
+    // at turns 50/75/100. The capital's Campus, then its Library, claim the
+    // idle capital ahead of the Plaza claim. See `advanced/capital_campus_claim.rs`.
+    Gene { tag: "capital-campus-before-the-plaza", field: "capital_campus_before_the_plaza", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_campus_before_the_plaza, disable: AdvancedAi::disable_capital_campus_before_the_plaza },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -7242,6 +7242,17 @@ impl AdvancedAi {
         self.granary_claims_the_bound_queue = false;
     }
 
+    /// Opt-in gene `capital-campus-before-the-plaza`; see
+    /// `advanced/capital_campus_claim.rs`.
+    pub fn enable_capital_campus_before_the_plaza(&mut self) {
+        self.capital_campus_before_the_plaza = true;
+    }
+
+    /// The twin of `enable_capital_campus_before_the_plaza`.
+    pub fn disable_capital_campus_before_the_plaza(&mut self) {
+        self.capital_campus_before_the_plaza = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

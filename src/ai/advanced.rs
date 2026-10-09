@@ -5422,6 +5422,11 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `capital-campus-before-the-plaza`: the capital's first Campus, then
+    /// its Library, claim the idle capital ahead of the Government Plaza and
+    /// the development shortfall; the Plaza goes to the idle city that
+    /// produces most meanwhile. See `advanced/capital_campus_claim.rs`.
+    capital_campus_before_the_plaza: bool,
     /// `counterweight-flips-the-small-towns`: while a rival-founded faith
     /// holds a city of ours, a defensive spreader ranks our cities off its
     /// own faith smallest first (the shipped list ranks them largest first),
@@ -9195,6 +9200,9 @@ mod domination_research;
 mod decisive_window;
 mod culture_defense;
 mod government_plaza;
+/// `capital-campus-before-the-plaza`: the capital's Campus and Library
+/// ahead of the Plaza claim. See `advanced/capital_campus_claim.rs`.
+mod capital_campus_claim;
 mod prophet_race_points;
 /// `prophet-builds-its-site`: a Great Prophet never waits for its Holy Site,
 /// and the race stops paying once the host has no Prophet left. See
@@ -10117,6 +10125,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            capital_campus_before_the_plaza: false,
             counterweight_flips_the_small_towns: false,
             counterweight_finishes_one_shrine: false,
             defeated_majors_leave_the_board: false,
@@ -47526,6 +47535,10 @@ impl AdvancedAi {
             self.reserve_culture_defense_theater(g, pid, &plan);
             // `plaza-in-the-district-list`: the Plaza and its tier buildings
             // take one idle queue before the development shortfall's.
+            // `capital-campus-before-the-plaza`: the capital's first Campus,
+            // then its Library, ahead of the Plaza and the shortfall. Exact
+            // no-op while the gene is off. See `advanced/capital_campus_claim.rs`.
+            self.claim_capital_campus(g, pid, &plan);
             self.reserve_government_plaza(g, pid, &plan);
             self.reserve_higher_level_investment(g, pid, &plan);
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
