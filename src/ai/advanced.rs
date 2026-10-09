@@ -7691,6 +7691,10 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `settler-walks-to-the-better-site`: a Settler that can reach some site
+    /// this turn still walks to a ranked site beyond the turn worth more by
+    /// `FAR_SITE_MARGIN`. See `advanced/far_settle_site.rs`.
+    settler_walks_to_the_better_site: bool,
     /// `staging-reaches-the-border`: a peacetime staging band that reaches
     /// just past the target's closed border when the 3-5 band lies inside it.
     /// See `AdvancedAi::campaign_staging_reach`.
@@ -9163,6 +9167,7 @@ mod wonder_sites;
 mod band_hunt;
 mod culture_denial_heist;
 mod dvp_leader_front;
+mod far_settle_site;
 mod launcher_war;
 mod peacetime_republic;
 mod science_denial_every_pad;
@@ -10440,6 +10445,7 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            settler_walks_to_the_better_site: false,
             staging_reaches_the_border: false,
             staging_reach_memo: RefCell::new(BTreeMap::new()),
             stalled_settler_takes_a_safe_site: false,
@@ -36932,7 +36938,16 @@ impl AdvancedAi {
             return BasicAi::first_reachable_settle_site(g, uid, &candidates);
         }
         routed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
-        routed.into_iter().next()
+        let near = routed.into_iter().next();
+        // `settler-walks-to-the-better-site`: the one-turn pick yields to a
+        // far better ranked site beyond this turn's walk. `None` with the
+        // gene off. See `advanced/far_settle_site.rs`.
+        if let Some(far) = near.and_then(|near| {
+            self.better_site_beyond_the_turn(g, uid, &candidates, &paths, near)
+        }) {
+            return Some(far);
+        }
+        near
     }
 
     /// Remember the capital that existed when a live Settler was first

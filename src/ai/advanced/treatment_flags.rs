@@ -7209,6 +7209,17 @@ impl AdvancedAi {
         self.bombers_fly_on_a_small_stock = false;
     }
 
+    /// Opt-in gene `settler-walks-to-the-better-site`; see
+    /// [`Self::better_site_beyond_the_turn`].
+    pub fn enable_settler_walks_to_the_better_site(&mut self) {
+        self.settler_walks_to_the_better_site = true;
+    }
+
+    /// The twin of `enable_settler_walks_to_the_better_site`.
+    pub fn disable_settler_walks_to_the_better_site(&mut self) {
+        self.settler_walks_to_the_better_site = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
