@@ -1,0 +1,152 @@
+diff --git a/src/ai/advanced/siege_production.rs b/src/ai/advanced/siege_production.rs
+index d62730521..64eacad70 100644
+--- a/src/ai/advanced/siege_production.rs
++++ b/src/ai/advanced/siege_production.rs
+@@ -330 +330,3 @@ impl AdvancedAi {
+-    /// remains in charge; a completed peace ends this claim.
++    /// remains in charge; a completed peace ends this claim. A nonmilitary
++    /// queue also keeps its slot while the governor's treasury-recovery
++    /// condition holds: finishing another gun cannot repair its upkeep bill.
+@@ -347,0 +350,2 @@ impl AdvancedAi {
++        let recovery_due = g.players[pid].gold_per_turn < -0.5
++            && g.players[pid].gold < 100.0 + 25.0 * g.player_city_ids(pid).len() as f64;
+@@ -363,0 +368,18 @@ impl AdvancedAi {
++            if recovery_due
++                && city.queue.first().is_some_and(|current| match current {
++                    Item::Unit { unit } | Item::Formation { unit, .. } => g
++                        .rules
++                        .units
++                        .get(unit)
++                        .is_some_and(|spec| spec.class != "military"),
++                    _ => true,
++                })
++            {
++                if self.journal().wants(crate::reasoning::Level::Decision) {
++                    think!(self.journal(), Economy, Decision,
++                        "{} keeps its nonmilitary queue while the treasury recovers", city.name;
++                        "income {:.1} with {:.0} Gold; an extra wall breaker would add upkeep",
++                        g.players[pid].gold_per_turn, g.players[pid].gold);
++                }
++                continue;
++            }
+@@ -765,0 +788,3 @@ mod modernization_tests;
++#[cfg(test)]
++mod treasury_tests;
++
+diff --git a/src/ai/advanced/siege_production/treasury_tests.rs b/src/ai/advanced/siege_production/treasury_tests.rs
+new file mode 100644
+index 000000000..30eb36415
+--- /dev/null
++++ b/src/ai/advanced/siege_production/treasury_tests.rs
+@@ -0,0 +1,111 @@
++use super::super::*;
++
++fn recovery_case() -> (Game, AdvancedAi, StrategicPlan, u32, Item, Vec<(u32, Item)>) {
++    let (mut g, ai, plan, home, _) = super::tests::siege_gap_case();
++    g.players[0].techs.insert(crate::name!("pottery"));
++    let gun = Item::Unit {
++        unit: crate::name!("catapult"),
++    };
++    g.apply(
++        0,
++        &Action::Produce {
++            city: home,
++            item: gun.clone(),
++        },
++    )
++    .unwrap();
++    g.cities.get_mut(&home).unwrap().production = 60.0;
++    let claim = ai.invested_wall_breaker_queues(&g, 0, &plan);
++    assert_eq!(claim, vec![(home, gun.clone())]);
++    g.players[0].gold = 24.0;
++    g.players[0].gold_per_turn = -8.0;
++    let recovery = ai
++        .base
++        .economic_recovery_item(&g, 0, home, ai.counts(&g, 0).traders)
++        .or_else(|| ai.base.upkeep_free_recovery_item(&g, 0, home))
++        .expect("recovery uses a legal queue");
++    assert_ne!(recovery, gun);
++    g.apply(
++        0,
++        &Action::Produce {
++            city: home,
++            item: recovery.clone(),
++        },
++    )
++    .unwrap();
++    (g, ai, plan, home, recovery, claim)
++}
++
++#[test]
++fn a_low_treasury_deficit_keeps_the_governors_recovery_queue() {
++    let (mut g, ai, plan, home, recovery, claim) = recovery_case();
++    let start = g.log.len();
++    ai.restore_wall_breaker_queues(&mut g, 0, &plan, &claim, None);
++    assert_eq!(g.cities[&home].queue.first(), Some(&recovery));
++    assert_eq!(g.log.len(), start, "no countermanded production order");
++    assert_eq!(g.item_invested_production(home, &claim[0].1), 60.0);
++}
++
++#[test]
++fn positive_income_restores_the_invested_wall_breaker_with_a_small_bank() {
++    let (mut g, ai, plan, home, _, claim) = recovery_case();
++    g.players[0].gold_per_turn = 8.0;
++    ai.restore_wall_breaker_queues(&mut g, 0, &plan, &claim, None);
++    assert_eq!(g.cities[&home].queue.first(), Some(&claim[0].1));
++    assert_eq!(g.item_invested_production(home, &claim[0].1), 60.0);
++}
++
++#[test]
++fn a_funded_deficit_restores_the_gun_at_the_governors_reserve_boundary() {
++    let (mut g, ai, plan, home, _, claim) = recovery_case();
++    g.players[0].gold = 100.0 + 25.0 * g.player_city_ids(0).len() as f64;
++    ai.restore_wall_breaker_queues(&mut g, 0, &plan, &claim, None);
++    assert_eq!(g.cities[&home].queue.first(), Some(&claim[0].1));
++}
++
++#[test]
++fn an_unrelated_queue_does_not_inherit_recovery_protection() {
++    let (mut g, ai, plan, home, recovery, claim) = recovery_case();
++    let ordinary = Item::Unit {
++        unit: crate::name!("warrior"),
++    };
++    assert_ne!(ordinary, recovery);
++    g.apply(
++        0,
++        &Action::Produce {
++            city: home,
++            item: ordinary,
++        },
++    )
++    .unwrap();
++    ai.restore_wall_breaker_queues(&mut g, 0, &plan, &claim, None);
++    assert_eq!(g.cities[&home].queue.first(), Some(&claim[0].1));
++}
++
++#[test]
++fn a_short_treasury_also_keeps_the_reserved_faith_shrine() {
++    let (mut g, ai, plan, home, _, claim) = recovery_case();
++    g.players[0].techs.insert(crate::name!("astrology"));
++    let center = g.cities[&home].pos;
++    let site = (center.0 + 1, center.1);
++    g.cities
++        .get_mut(&home)
++        .unwrap()
++        .districts
++        .insert(crate::name!("holy_site"), site);
++    g.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("holy_site"));
++    let shrine = Item::Building {
++        building: crate::name!("shrine"),
++    };
++    g.apply(
++        0,
++        &Action::Produce {
++            city: home,
++            item: shrine.clone(),
++        },
++    )
++    .unwrap();
++    ai.restore_wall_breaker_queues(&mut g, 0, &plan, &claim, None);
++    assert_eq!(g.cities[&home].queue.first(), Some(&shrine));
++    assert_eq!(g.item_invested_production(home, &claim[0].1), 60.0);
++}
