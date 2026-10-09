@@ -350,3 +350,69 @@ fn an_unrelated_recovering_soldier_does_not_cancel_a_settlers_route() {
         "co-location alone is not an escort assignment"
     );
 }
+
+#[test]
+fn a_bound_guard_with_a_different_route_does_not_rewrite_the_settlers_plan() {
+    let (g, mut ai, settler, guard, _) = escorted_departure(80, at(8, 6), at(9, 6));
+    ai.battle_planner_recovering.insert(guard);
+    let departure = Action::MoveTo {
+        unit: settler,
+        to: at(9, 6),
+    };
+    let proposed = vec![
+        departure.clone(),
+        Action::MoveTo {
+            unit: guard,
+            to: at(10, 6),
+        },
+    ];
+    assert!(ai
+        .preserve_unit_actions(&g, 0, &proposed)
+        .contains(&departure));
+}
+
+#[test]
+fn shared_single_step_orders_remain_together_during_recovery() {
+    let (mut g, mut ai, settler, guard, _) = escorted_departure(80, at(8, 6), at(9, 6));
+    ai.battle_planner_recovering.insert(guard);
+    let proposed = vec![
+        Action::Move {
+            unit: settler,
+            to: at(9, 6),
+        },
+        Action::Move {
+            unit: guard,
+            to: at(9, 6),
+        },
+    ];
+    for action in ai.preserve_unit_actions(&g, 0, &proposed) {
+        g.apply(0, &action).expect("preserved orders must execute");
+    }
+    assert_eq!(g.units[&settler].pos, g.units[&guard].pos);
+}
+
+#[test]
+fn a_settler_without_movement_does_not_prevent_its_guards_required_escape() {
+    let origin = at(10, 7);
+    let (mut g, mut ai, settler, guard, proposed) = escorted_departure(35, origin, at(10, 8));
+    g.units.get_mut(&settler).unwrap().moves_left = 0.0;
+    g.spawn_unit("warrior", 1, at(11, 7));
+    assert!(!ai.unit_reply_is_safe(&g, 0, guard));
+    for action in ai.preserve_unit_actions(&g, 0, &proposed) {
+        // The original Settler order cannot execute. The authoritative turn
+        // entry point likewise ignores refused orders and continues the turn.
+        let _ = g.apply(0, &action);
+    }
+    assert_eq!(g.units[&settler].pos, origin);
+    assert_ne!(g.units[&guard].pos, origin);
+    assert!(ai.unit_reply_is_safe(&g, 0, guard));
+}
+
+#[test]
+fn full_health_releases_both_original_escort_orders() {
+    let (mut g, mut ai, _, guard, proposed) = escorted_departure(80, at(8, 6), at(9, 6));
+    ai.battle_planner_recovering.insert(guard);
+    g.units.get_mut(&guard).unwrap().hp = 100;
+    assert_eq!(ai.preserve_unit_actions(&g, 0, &proposed), proposed);
+    assert!(!ai.battle_planner_recovering.contains(&guard));
+}
