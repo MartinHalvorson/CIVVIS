@@ -44447,11 +44447,6 @@ impl AdvancedAi {
         if let Some(acted) = self.threatened_city_garrison_step(g, pid, uid, plan.threatened_city) {
             return acted;
         }
-        if !unwanted_settler_adjacent && !holding_threatened_city {
-            if let Some(acted) = self.domination_upgrade_return_step(g, pid, uid, plan) {
-                return acted;
-            }
-        }
         let mut enemies: Vec<usize> = g
             .players
             .iter()
