@@ -368,12 +368,7 @@ pub(crate) fn strike_reach_of(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos
         live.started_turn_in_zoc = false;
     }
     let mut stands: Vec<(Pos, f64)> = vec![(saved.pos, max_moves)];
-    stands.extend(
-        probe
-            .approach_reach(uid)
-            .into_iter()
-            .map(|(pos, (kept, _path))| (pos, kept)),
-    );
+    stands.extend(probe.approach_arrivals(uid));
     if let Some(live) = probe.units.get_mut(&uid) {
         *live = saved.clone();
     }
