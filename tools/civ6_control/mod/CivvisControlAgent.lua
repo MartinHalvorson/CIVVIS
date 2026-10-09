@@ -15305,8 +15305,9 @@ local function applyOrder(player, pid, row, turn)
 				-- the decision and the host verdict separate so the next run can
 				-- repair the right side of the bridge instead of guessing from the
 				-- aggregate RANGE_ATTACK refusal count.
-				emit("range_attack_refused", CivvisLedger.annotateStrikeOffer(
-					unit, OP["UNITOPERATION_RANGE_ATTACK"], x, y, {
+				local nativeOffer = CivvisLedger.annotateStrikeOffer(
+					unit, OP["UNITOPERATION_RANGE_ATTACK"], x, y, {});
+				emit("range_attack_refused", {
 					turn = turn, unit = subject, unit_kind = unitTypeName(unit),
 					unit_x = try(function() return unit:GetX(); end, -1),
 					unit_y = try(function() return unit:GetY(); end, -1),
@@ -15317,7 +15318,10 @@ local function applyOrder(player, pid, row, turn)
 						return UnitManager.GetActivityType(unit);
 					end, nil),
 					why = refusalReason(unit, OP["UNITOPERATION_RANGE_ATTACK"], params),
-				}));
+					native_target_known = nativeOffer.native_target_known,
+					native_target_offered = nativeOffer.native_target_offered,
+					native_target_rows = nativeOffer.native_target_rows,
+				});
 			end
 			return accepted, verb;
 		end
@@ -15363,7 +15367,8 @@ local function applyOrder(player, pid, row, turn)
 				if verb == "AIR_ATTACK" then
 					-- The same event RANGE_ATTACK files, so the decider's
 					-- `blocked_strikes` keeps the refused pair off the next frame.
-					emit("range_attack_refused", CivvisLedger.annotateStrikeOffer(unit, hash, x, y, {
+					local nativeOffer = CivvisLedger.annotateStrikeOffer(unit, hash, x, y, {});
+					emit("range_attack_refused", {
 						turn = turn, unit = subject, unit_kind = unitTypeName(unit),
 						verb = verb,
 						unit_x = try(function() return unit:GetX(); end, -1),
@@ -15372,7 +15377,10 @@ local function applyOrder(player, pid, row, turn)
 						moves = try(function() return unit:GetMovesRemaining(); end, -1),
 						attacks = try(function() return unit:GetAttacksRemaining(); end, -1),
 						why = refusalReason(unit, hash, params),
-					}));
+						native_target_known = nativeOffer.native_target_known,
+						native_target_offered = nativeOffer.native_target_offered,
+						native_target_rows = nativeOffer.native_target_rows,
+					});
 				end
 				return false, "cannot_" .. string.lower(verb);
 			end
