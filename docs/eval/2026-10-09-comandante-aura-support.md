@@ -96,7 +96,12 @@ its recipient. It is not a native movement-completion or combat-bonus witness.
   Lua. Final fixtures use shipped Horseman and Giant Death Robot names; tag
   removal still proves that eligibility is read from host rule data. The
   unchanged-source behavior failures above are local regression evidence.
-- Full local Rust validation and final CI remain pending in the draft PR.
+- Final source `5294cbfc6` passes every CI check. Control-mod run
+  `37879169778` confirms the 74 new checks; tooling run `37879169783` passes
+  3,270 tests with 215 skipped. Rust compilation and cost measurement are
+  explicitly skipped for this Lua/documentation-only task diff.
+- The required full local Rust regression is recorded separately in the PR
+  before ship. Its result is distinct from the mod tests and native outcomes.
 
 No Rust game mechanic, mirror schema, native pin, policy, installed mod, or
 verification lane was changed. Native adoption and completed matched outcomes
