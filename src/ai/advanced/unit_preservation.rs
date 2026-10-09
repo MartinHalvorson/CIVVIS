@@ -588,3 +588,6 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod capture_recovery_tests;
