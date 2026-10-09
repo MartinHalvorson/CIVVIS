@@ -10138,8 +10138,9 @@ end
 
 
 -- CityBannerManager.lua:715-718 reads these two independent defense pools.
--- Expansion2_Districts.xml:45-46 and the Ikanda/Thanh expansion rows give
--- defending districts AttackRange 2. City-center health uses the city record.
+-- Expansion2_Schema.sql:180-188 puts AttackRange in Districts_XP2, keyed
+-- by DistrictType; Expansion2_Districts.xml:45-46 gives defending forts 2.
+-- City-center health uses the city record.
 -- Refresh only visible completed districts; fog retains the last observation.
 function CivvisTiles.healthState(plot, pid, x, y)
     return try(function()
@@ -10152,8 +10153,13 @@ function CivvisTiles.healthState(plot, pid, x, y)
             CivvisTiles.districtHealth[key] = nil;
             cached = nil;
         end
+        local attackRange = row and row.AttackRange;
+        if row ~= nil and GameInfo.Districts_XP2 ~= nil then
+            local defenseRow = GameInfo.Districts_XP2[row.DistrictType];
+            attackRange = defenseRow and defenseRow.AttackRange or 0;
+        end
         if row == nil or row.DistrictType == "DISTRICT_CITY_CENTER"
-            or type(row.AttackRange) ~= "number" or row.AttackRange <= 0 then
+            or type(attackRange) ~= "number" or attackRange <= 0 then
             CivvisTiles.districtHealth[key] = nil;
             return nil;
         end
