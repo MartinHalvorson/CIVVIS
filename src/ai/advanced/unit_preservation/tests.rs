@@ -254,3 +254,190 @@ fn the_gene_is_registered_opt_in_and_reversible() {
     (gene.disable)(&mut ai);
     assert!(!ai.unit_preservation);
 }
+
+fn escorted_departure(
+    hp: i32,
+    origin: Pos,
+    destination: Pos,
+) -> (Game, AdvancedAi, u32, u32, Vec<Action>) {
+    let mut g = field();
+    let settler = g.spawn_unit("settler", 0, origin);
+    let guard = g.spawn_unit("warrior", 0, origin);
+    g.units.get_mut(&guard).unwrap().hp = hp;
+    let mut ai = policy();
+    ai.settler_guards.insert(settler, guard);
+    let actions = vec![
+        Action::MoveTo {
+            unit: settler,
+            to: destination,
+        },
+        Action::MoveTo {
+            unit: guard,
+            to: destination,
+        },
+    ];
+    (g, ai, settler, guard, actions)
+}
+
+#[test]
+fn a_recovering_guard_does_not_leave_its_departing_settler_alone() {
+    let (mut g, mut ai, settler, guard, proposed) = escorted_departure(80, at(8, 6), at(9, 6));
+    ai.battle_planner_recovering.insert(guard);
+    let kept = ai.preserve_unit_actions(&g, 0, &proposed);
+    for action in &kept {
+        g.apply(0, action).expect("preserved orders must execute");
+    }
+    assert_eq!(
+        g.units[&settler].pos, g.units[&guard].pos,
+        "withholding an escort's move must also reconcile its Settler's departure"
+    );
+    assert_eq!(g.units[&guard].hp, 80);
+    assert!(ai.battle_planner_recovering.contains(&guard));
+}
+
+#[test]
+fn an_unsafe_guard_takes_its_settler_to_the_same_survivable_retreat() {
+    let origin = at(10, 7);
+    let (mut g, mut ai, settler, guard, proposed) = escorted_departure(35, origin, at(10, 8));
+    g.spawn_unit("warrior", 1, at(11, 7));
+    assert!(
+        !ai.unit_reply_is_safe(&g, 0, guard),
+        "the origin requires a retreat"
+    );
+    let kept = ai.preserve_unit_actions(&g, 0, &proposed);
+    for action in &kept {
+        g.apply(0, action).expect("preserved orders must execute");
+    }
+    assert_ne!(
+        g.units[&guard].pos, origin,
+        "a hold cannot replace the required escape"
+    );
+    assert!(
+        ai.unit_reply_is_safe(&g, 0, guard),
+        "the guard's escape must remain survivable"
+    );
+    assert_eq!(
+        g.units[&settler].pos, g.units[&guard].pos,
+        "the retreat must preserve the escort's companion too"
+    );
+}
+
+#[test]
+fn a_safe_escorted_departure_keeps_both_original_orders() {
+    let (g, mut ai, _, _, proposed) = escorted_departure(100, at(8, 6), at(9, 6));
+    assert_eq!(ai.preserve_unit_actions(&g, 0, &proposed), proposed);
+}
+
+#[test]
+fn an_unrelated_recovering_soldier_does_not_cancel_a_settlers_route() {
+    let (g, mut ai, settler, guard, _) = escorted_departure(80, at(8, 6), at(9, 6));
+    ai.settler_guards.clear();
+    ai.battle_planner_recovering.insert(guard);
+    let departure = Action::MoveTo {
+        unit: settler,
+        to: at(9, 6),
+    };
+    let proposed = vec![
+        departure.clone(),
+        Action::MoveTo {
+            unit: guard,
+            to: at(10, 6),
+        },
+    ];
+    let kept = ai.preserve_unit_actions(&g, 0, &proposed);
+    assert!(
+        kept.contains(&departure),
+        "co-location alone is not an escort assignment"
+    );
+}
+
+#[test]
+fn a_bound_guard_with_a_different_route_does_not_rewrite_the_settlers_plan() {
+    let (g, mut ai, settler, guard, _) = escorted_departure(80, at(8, 6), at(9, 6));
+    ai.battle_planner_recovering.insert(guard);
+    let departure = Action::MoveTo {
+        unit: settler,
+        to: at(9, 6),
+    };
+    let proposed = vec![
+        departure.clone(),
+        Action::MoveTo {
+            unit: guard,
+            to: at(10, 6),
+        },
+    ];
+    assert!(ai
+        .preserve_unit_actions(&g, 0, &proposed)
+        .contains(&departure));
+}
+
+#[test]
+fn shared_single_step_orders_remain_together_during_recovery() {
+    let (mut g, mut ai, settler, guard, _) = escorted_departure(80, at(8, 6), at(9, 6));
+    ai.battle_planner_recovering.insert(guard);
+    let proposed = vec![
+        Action::Move {
+            unit: settler,
+            to: at(9, 6),
+        },
+        Action::Move {
+            unit: guard,
+            to: at(9, 6),
+        },
+    ];
+    for action in ai.preserve_unit_actions(&g, 0, &proposed) {
+        g.apply(0, &action).expect("preserved orders must execute");
+    }
+    assert_eq!(g.units[&settler].pos, g.units[&guard].pos);
+}
+
+#[test]
+fn a_settler_without_movement_does_not_prevent_its_guards_required_escape() {
+    let origin = at(10, 7);
+    let (mut g, mut ai, settler, guard, proposed) = escorted_departure(35, origin, at(10, 8));
+    g.units.get_mut(&settler).unwrap().moves_left = 0.0;
+    g.spawn_unit("warrior", 1, at(11, 7));
+    assert!(!ai.unit_reply_is_safe(&g, 0, guard));
+    for action in ai.preserve_unit_actions(&g, 0, &proposed) {
+        // The original Settler order cannot execute. The authoritative turn
+        // entry point likewise ignores refused orders and continues the turn.
+        let _ = g.apply(0, &action);
+    }
+    assert_eq!(g.units[&settler].pos, origin);
+    assert_ne!(g.units[&guard].pos, origin);
+    assert!(ai.unit_reply_is_safe(&g, 0, guard));
+}
+
+#[test]
+fn full_health_releases_both_original_escort_orders() {
+    let (mut g, mut ai, _, guard, proposed) = escorted_departure(80, at(8, 6), at(9, 6));
+    ai.battle_planner_recovering.insert(guard);
+    g.units.get_mut(&guard).unwrap().hp = 100;
+    assert_eq!(ai.preserve_unit_actions(&g, 0, &proposed), proposed);
+    assert!(!ai.battle_planner_recovering.contains(&guard));
+}
+
+#[test]
+fn a_withheld_departure_does_not_found_its_planned_city_on_the_original_tile() {
+    let (mut g, mut ai, settler, guard, mut proposed) = escorted_departure(80, at(8, 6), at(9, 6));
+    g.map_script = crate::setup::MapScript::Continents;
+    ai.battle_planner_recovering.insert(guard);
+    proposed.push(Action::FoundCity { unit: settler });
+    let mut original = g.speculative_clone();
+    for action in &proposed {
+        original
+            .apply(0, action)
+            .expect("the original departure and settlement must be legal");
+    }
+    assert!(original.city_at(at(9, 6)).is_some());
+
+    for action in ai.preserve_unit_actions(&g, 0, &proposed) {
+        g.apply(0, &action).expect("preserved orders must execute");
+    }
+    assert!(
+        g.cities.is_empty(),
+        "a retreat must not choose a new city site"
+    );
+    assert!(g.units.contains_key(&settler));
+    assert_eq!(g.units[&settler].pos, g.units[&guard].pos);
+}
