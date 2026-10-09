@@ -3525,6 +3525,12 @@ pub const GENES: &[Gene] = &[
     // The host's fuel shortage costs -1 Strength per unpaid unit, capped at
     // 20, so a small stock flies the wing. See `AIR_WING_SMALL_STOCK_TURNS`.
     Gene { tag: "bombers-fly-on-a-small-stock", field: "bombers_fly_on_a_small_stock", kind: Kind::OptIn, enable: AdvancedAi::enable_bombers_fly_on_a_small_stock, disable: AdvancedAi::disable_bombers_fly_on_a_small_stock },
+    // `settler-walks-to-the-better-site`: the routed settle pick returned the
+    // best site reachable THIS turn whenever one existed, over far better
+    // ranked sites a turn or two out (G034655Z t51: dry 77.9 a tile away
+    // over fresh 143.5 two tiles away). 49% of 1,224 of our foundings were
+    // fresh water against the rivals' 64%. See `advanced/far_settle_site.rs`.
+    Gene { tag: "settler-walks-to-the-better-site", field: "settler_walks_to_the_better_site", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walks_to_the_better_site, disable: AdvancedAi::disable_settler_walks_to_the_better_site },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
