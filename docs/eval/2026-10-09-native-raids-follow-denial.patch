@@ -1,0 +1,92 @@
+diff --git a/src/ai/advanced/air_surge/raids.rs b/src/ai/advanced/air_surge/raids.rs
+index 3d40f3d8b..ea6a37768 100644
+--- a/src/ai/advanced/air_surge/raids.rs
++++ b/src/ai/advanced/air_surge/raids.rs
+@@ -70,6 +70,9 @@ impl AdvancedAi {
+         if !self.air_surge_2
+             || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+             || self.threatened_city(g, pid).is_some()
++            // The lifecycle hands the army to a more urgent rival. Leave its
++            // cavalry available to that campaign instead of the old wing.
++            || self.air_surge_status.denial_elsewhere
+         {
+             return raiders;
+         }
+diff --git a/src/ai/advanced/air_surge/raids/tests.rs b/src/ai/advanced/air_surge/raids/tests.rs
+index 79427dd7b..56ff6c4e5 100644
+--- a/src/ai/advanced/air_surge/raids/tests.rs
++++ b/src/ai/advanced/air_surge/raids/tests.rs
+@@ -1,7 +1,11 @@
+ use super::*;
+
+ fn fixture() -> (Game, AdvancedAi, u32) {
+-    let mut g = Game::new_full(2, 40, 24, 936101, 650, 0, false);
++    fixture_with_players(2)
++}
++
++fn fixture_with_players(players: usize) -> (Game, AdvancedAi, u32) {
++    let mut g = Game::new_full(players, 40, 24, 936101, 650, 0, false);
+     for uid in g.units.keys().copied().collect::<Vec<_>>() {
+         g.remove_unit(uid);
+     }
+@@ -83,7 +87,10 @@ fn spare_cavalry_pillages_behind_the_wing_and_the_takers_stay() {
+     let raiders = ai.plan_air_surge_raids(&mut g, 0, &peace_plan(), &BTreeSet::new());
+     assert_eq!(raiders, BTreeSet::from([raider]));
+     assert_eq!(g.units[&raider].pos, mine);
+-    assert!(!g.map.tiles[&mine].pillaged, "no pillage queued behind the walk");
++    assert!(
++        !g.map.tiles[&mine].pillaged,
++        "no pillage queued behind the walk"
++    );
+     for taker in takers {
+         assert!(!g.units[&taker].acted, "the capture keeps its bodies");
+     }
+@@ -275,3 +282,48 @@ fn a_raid_on_the_culture_rival_takes_its_theater_square() {
+         "the Theater Square under the gene"
+     );
+ }
++
++/// An urgent rival redirects the army while the existing wing still fights
++/// its first opponent. Keep the cavalry available for that active front;
++/// a profitable mine at the old objective must not take it back.
++#[test]
++fn an_urgent_other_front_holds_the_old_wings_spare_cavalry() {
++    let (mut g, mut ai, target) = fixture_with_players(3);
++    mine_near(&mut g, target);
++    for pos in [(20, 12), (20, 13)] {
++        g.spawn_test_unit("cavalry", 0, pos);
++    }
++    let raider = g.spawn_test_unit("cavalry", 0, (16, 12));
++    let origin = g.units[&raider].pos;
++    let urgent = g.found_city_for(2, (34, 2), None);
++    g.record_contact(0, 2);
++    g.at_war.extend([(0, 2), (2, 0)]);
++    g.players[2].dvp = 19;
++    ai.deny_leaders = true;
++    ai.enable_dvp_leader_is_the_front();
++    ai.maintain_air_surge(&g, 0);
++    assert_eq!(ai.air_surge_plan.as_ref().unwrap().target_player, 1);
++    assert!(
++        ai.air_surge_status.denial_elsewhere,
++        "the real lifecycle derives the urgent handoff; the fixture does not set its flag"
++    );
++    let campaign = StrategicPlan {
++        strategy: GrandStrategy::Conquest,
++        target_player: Some(2),
++        target_city: Some(urgent),
++        threatened_city: None,
++        desired_cities: 4,
++        assessed_turn: g.turn,
++        rush: false,
++    };
++    let raids = ai.plan_air_surge_raids(&mut g, 0, &campaign, &BTreeSet::new());
++    assert!(
++        !raids.contains(&raider),
++        "a profitable old-front raid must yield to the urgent campaign"
++    );
++    assert_eq!(g.units[&raider].pos, origin);
++    assert!(
++        !g.units[&raider].acted,
++        "the campaign still has this unit's action"
++    );
++}
