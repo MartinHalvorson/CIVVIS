@@ -3485,6 +3485,13 @@ pub const GENES: &[Gene] = &[
     // the urgent denial on Persia under 1.5x for seven turns after its Mars
     // base. See `advanced/launcher_war.rs`.
     Gene { tag: "launcher-war-ignores-the-edge", field: "launcher_war_ignores_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_ignores_the_edge, disable: AdvancedAi::disable_launcher_war_ignores_the_edge },
+    // The rebuild takes the seat's city memory before the host's capital
+    // flags land, so every rival's first planted city was remembered as its
+    // capital: find-the-capital never priced a passage or hunted, and the
+    // planning board drew fogged cities with the planting's crown. 113 of 258
+    // rival capitals were never seen in 87 Emperor runs. The decider re-takes
+    // the memory. See `mirror::refresh_city_memory`.
+    Gene { tag: "unseen-capital-is-unseen", field: "unseen_capital_is_unseen", kind: Kind::OptIn, enable: AdvancedAi::enable_unseen_capital_is_unseen, disable: AdvancedAi::disable_unseen_capital_is_unseen },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

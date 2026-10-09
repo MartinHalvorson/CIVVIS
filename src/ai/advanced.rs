@@ -8187,6 +8187,11 @@ pub struct AdvancedAi {
     /// `advanced/science_suppression_pads.rs`.
     science_suppression_hits_the_pads: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `unseen-capital-is-unseen`: the decider re-takes the seat's city
+    /// memory after the host's capital and founder facts land, so a fogged
+    /// rival city is no longer remembered as the capital the rebuild's
+    /// planting crowned it. See `mirror::refresh_city_memory`.
+    unseen_capital_is_unseen: bool,
     /// `war-kills-the-bands-2`: the band hunt runs before the battle is
     /// planned and only with melee-capable land units. See
     /// `advanced/band_hunt.rs`. Off by default.
@@ -10485,6 +10490,7 @@ impl AdvancedAi {
             science_denial_refused_pads: BTreeMap::new(),
             science_suppression_hits_the_pads: false,
             // ---- append: t-z ----------------------------------------
+            unseen_capital_is_unseen: false,
             war_kills_the_bands_2: false,
             war_kills_the_bands: false,
             war_raids_the_pads: false,

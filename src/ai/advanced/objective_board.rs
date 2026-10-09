@@ -1756,6 +1756,13 @@ impl AdvancedAi {
                             && !unit.recon
                             // `find-the-capital`: a fast body may hunt it too.
                             && !(unit.mobile && matches!(row.key, ObjectiveKey::FindCapital(_)))
+                            // `unseen-capital-is-unseen`: so may any land body
+                            // but a siege gun. Replayed G090439Z t130 and
+                            // G201550Z t170, the hunt rows for Cree's and
+                            // Hungary's capitals read "no force" at war.
+                            && !(self.unseen_capital_is_unseen
+                                && !unit.siege
+                                && matches!(row.key, ObjectiveKey::FindCapital(_)))
                         {
                             continue;
                         }

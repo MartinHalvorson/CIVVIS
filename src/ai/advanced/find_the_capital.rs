@@ -47,6 +47,15 @@ const FIND_CAPITAL_FOG_REACH: i32 = 4;
 const FIND_CAPITAL_GROUND_REACH: i32 = 6;
 
 impl AdvancedAi {
+    /// `unseen-capital-is-unseen`: whether the decider re-takes the seat's
+    /// city memory after the host's capital and founder facts land
+    /// (`mirror::refresh_city_memory`). Without it the memory crowns every
+    /// rival's first planted city, so this module never saw an unseen
+    /// capital live.
+    pub fn unseen_capital_is_unseen(&self) -> bool {
+        self.unseen_capital_is_unseen
+    }
+
     /// Met major rivals whose original capital a Domination plan still needs
     /// and that this seat has never seen. Empty with the gene off or on any
     /// other lane.
