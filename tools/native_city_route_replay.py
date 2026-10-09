@@ -5,6 +5,12 @@ This measures decisions and emitted routes, not counterfactual survival or wins.
 Both arms see identical event prefixes, carry their own AI memory, and rebuild
 the observed board on every state frame. Output must be a new directory; the
 source run, its orders database, and the live game are never modified.
+
+The original replay is compared to recorded native orders AND the complete
+decision, including verification telemetry. The earliest changed complete
+reply must match native in the original arm; a later match cannot replace it.
+With identical arms, every original frame must match. Failed controls exit 2
+after preserving the diagnostics. This gate does not estimate native wins.
 """
 
 from __future__ import annotations
@@ -15,7 +21,10 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
 import time
+
+from civ6_decision_trace import exact_fact
 
 
 def digest(path: Path) -> str:
@@ -32,7 +41,90 @@ def actionable_orders(reply: dict) -> list[dict]:
             if order["kind"] not in ("order_verified", "order_failed", "turn_verified")]
 
 
-def main() -> None:
+def frame_key(record: dict) -> tuple[int, int] | None:
+    decision = record.get("decision")
+    frame = decision if isinstance(decision, dict) else record
+    turn, number = frame.get("turn"), frame.get("frame")
+    if (type(turn) is not int or type(number) is not int
+            or turn < 0 or number < 0):
+        return None
+    return turn, number
+
+
+def load_native_records(path: Path) -> tuple[dict, int]:
+    records = {}
+    unkeyed = 0
+    with path.open() as source:
+        for number, line in enumerate(source, 1):
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            if not isinstance(record, dict) or not isinstance(record.get("orders"), list):
+                raise ValueError(f"{path}:{number}: expected a native reply with orders")
+            key = frame_key(record)
+            if key is None:
+                # A reply without an explicit frame cannot establish which
+                # request saw it. Keep the coverage gap instead of guessing 0.
+                unkeyed += 1
+                continue
+            if key in records:
+                raise ValueError(f"{path}:{number}: ambiguous duplicate native frame {key}")
+            records[key] = record
+    return records, unkeyed
+
+
+def control_payload(reply: dict) -> dict:
+    return {key: reply[key] for key in ("orders", "decision") if key in reply}
+
+
+class NativeControl:
+    def __init__(self, records: dict, unkeyed: int):
+        self.records = records
+        self.unkeyed = unkeyed
+        self.frames = []
+        self.first_mismatch = None
+        self.first_change = None
+        self.changed_complete_replies = 0
+
+    def observe(self, turn: int, frame: int, original: dict, candidate: dict) -> None:
+        recorded = self.records.get((turn, frame))
+        orders_match = recorded is not None and exact_fact(original["orders"], recorded["orders"])
+        decision_match = recorded is not None and (
+            "decision" in original) == ("decision" in recorded) and (
+            exact_fact(original.get("decision"), recorded.get("decision")))
+        row = {"index": len(self.frames), "turn": turn, "frame": frame,
+               "native_record_present": recorded is not None,
+               "orders_match": orders_match, "complete_decision_match": decision_match,
+               "whole_match": orders_match and decision_match}
+        self.frames.append(row)
+        if not row["whole_match"] and self.first_mismatch is None:
+            self.first_mismatch = {**row, "recorded": control_payload(recorded or {}),
+                                   "original": control_payload(original)}
+        if not exact_fact(original, candidate):
+            self.changed_complete_replies += 1
+            if self.first_change is None:
+                self.first_change = {**row, "recorded": control_payload(recorded or {}),
+                                     "original": original, "candidate": candidate}
+
+    def result(self) -> dict:
+        mismatches = [row for row in self.frames if not row["whole_match"]]
+        gate = (self.first_change["whole_match"] if self.first_change is not None
+                else bool(self.frames) and not mismatches)
+        return {"scope": "Complete native orders and decision; no survival or win estimate",
+                "gate_passed": gate,
+                "gate_kind": ("earliest_changed_complete_reply" if self.first_change is not None
+                              else "unchanged_original_history"),
+                "frames": len(self.frames),
+                "matched_frames": len(self.frames) - len(mismatches),
+                "missing_record_frames": sum(not row["native_record_present"] for row in self.frames),
+                "unkeyed_native_records": self.unkeyed,
+                "changed_complete_reply_frames": self.changed_complete_replies,
+                "first_mismatch": self.first_mismatch,
+                "first_changed_complete_reply": self.first_change,
+                "all_native_mismatches": mismatches}
+
+
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", type=Path, required=True)
     parser.add_argument("--baseline", type=Path, required=True)
@@ -40,8 +132,13 @@ def main() -> None:
     parser.add_argument("--force-file", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--through-turn", type=int)
+    parser.add_argument("--recorded-decisions", type=Path,
+                        help="native replies (default: <run>/decisions.jsonl)")
+    parser.add_argument("--explain", action="store_true", help="record each decider's journal")
     args = parser.parse_args()
     source = args.run.resolve() / "events.jsonl"
+    recorded = (args.recorded_decisions or args.run / "decisions.jsonl").resolve()
+    control = NativeControl(*load_native_records(recorded))
     policies = [
         tag.strip()
         for tag in args.force_file.read_text().strip().replace("\n", ",").split(",")
@@ -58,7 +155,12 @@ def main() -> None:
         "force_file_sha256": digest(args.force_file),
         "forced_policies": policies,
         "through_turn": args.through_turn,
+        "recorded_decisions": str(recorded),
+        "recorded_decisions_sha256": digest(recorded),
     }
+    inputs = {"events": source, "recorded_decisions": recorded,
+              "force_file": args.force_file.resolve(), **binaries}
+    input_hashes = {name: digest(path) for name, path in inputs.items()}
     args.out.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     processes = {}
@@ -77,6 +179,8 @@ def main() -> None:
                 command = [str(binary), "--mirror", str(directory.resolve()),
                            "--serve", "--fresh-board", "--victory", "domination",
                            "--civ", "CIVILIZATION_GRAN_COLOMBIA"]
+                if args.explain:
+                    command.append("--explain")
                 for policy in policies:
                     command.extend(["--with", policy])
                 processes[name] = subprocess.Popen(
@@ -100,6 +204,9 @@ def main() -> None:
                         events.write(line)
                     if event.get("kind") != "state":
                         continue
+                    frame = event.get("frame")
+                    if type(turn) is not int or type(frame) is not int:
+                        raise ValueError("state frame needs explicit integer turn and frame")
                     answers = {}
                     for name, (events, replies) in arms.items():
                         events.flush()
@@ -113,6 +220,7 @@ def main() -> None:
                         replies.write(answer)
                         replies.flush()
                     before, after = answers["baseline"], answers["candidate"]
+                    control.observe(turn, frame, before, after)
                     if actionable_orders(before) != actionable_orders(after):
                         changed_orders += 1
                         changed_routes.append({
@@ -163,9 +271,22 @@ def main() -> None:
         metadata["returncodes"] = {name: process.returncode
                                    for name, process in processes.items()}
         metadata["elapsed_seconds"] = round(time.monotonic() - started, 3)
+        metadata["inputs_unchanged"] = {
+            name: digest(path) == input_hashes[name] if path.is_file() else False
+            for name, path in inputs.items()}
+        native_control = control.result()
+        (args.out / "native-control.json").write_text(json.dumps(native_control, indent=2) + "\n")
+        metadata["native_control"] = {key: native_control[key] for key in (
+            "gate_passed", "gate_kind", "frames", "matched_frames",
+            "missing_record_frames", "changed_complete_reply_frames")}
+        metadata["validation_passed"] = (
+            "error" not in metadata and native_control["gate_passed"]
+            and all(metadata["inputs_unchanged"].values())
+            and all(code == 0 for code in metadata["returncodes"].values()))
         (args.out / "provenance.json").write_text(json.dumps(metadata, indent=2) + "\n")
     print(json.dumps(metadata), flush=True)
+    return 0 if metadata["validation_passed"] else 2
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
