@@ -237,6 +237,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `capture-hold-chain` | off (unmeasured) | Enable `capture-hold-chain` for measurement. | 1 \| 1 |
 | `capture-holds-the-ring` | off (unmeasured) | Opt-in gene `capture-holds-the-ring`; see `Self::capture_holds_the_ring`. | 1 \| 1 |
 | `capture-waits-on-the-march` | off (unmeasured) | Opt-in gene `capture-waits-on-the-march`; see `Self::capture_waits_on_the_march`. | 1 \| 1 |
+| `civic-awaits-its-inspiration` | off (unmeasured) | Opt-in gene `civic-awaits-its-inspiration`; see `advanced/civic_inspiration_wait.rs`. | 1 \| 1 |
 | `colonization-earns-its-slot` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot`; see `Self::colonization_earns_its_slot`. | — \| 2 |
 | `colonization-earns-its-slot-2` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot-2`; see `Self::colonization_earns_its_slot_2`. | — \| 2 |
 | `commercial-hub-and-traders` | off (unmeasured) | Opt-in gene `commercial-hub-and-traders`; see `BasicAi::commercial_hub_and_traders` and `Self::international_gold_route_premium`. | 1 \| 1 |
