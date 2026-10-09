@@ -3531,6 +3531,13 @@ pub const GENES: &[Gene] = &[
     // over fresh 143.5 two tiles away). 49% of 1,224 of our foundings were
     // fresh water against the rivals' 64%. See `advanced/far_settle_site.rs`.
     Gene { tag: "settler-walks-to-the-better-site", field: "settler_walks_to_the_better_site", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walks_to_the_better_site, disable: AdvancedAi::disable_settler_walks_to_the_better_site },
+    // `early-conquest-stands-down`: 28 live Emperor early-conquest declarations
+    // (10-08/09) took 0 cities within 30 turns at every power ratio (3 under
+    // 0.7, 13 at 0.7-1.0, 5 at 1.0-1.5, 7 at 1.5-4.6 times the target's
+    // military) and 1 by turn 120; peace came a median 15 turns later. The
+    // opening still scans, its scouts keep their caution, but it never opens.
+    // See `AdvancedAi::conquest_stands_down`.
+    Gene { tag: "early-conquest-stands-down", field: "early_conquest_stands_down", kind: Kind::OptIn, enable: AdvancedAi::enable_early_conquest_stands_down, disable: AdvancedAi::disable_early_conquest_stands_down },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

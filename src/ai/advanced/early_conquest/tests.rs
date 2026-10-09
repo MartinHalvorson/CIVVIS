@@ -2354,3 +2354,49 @@ fn declaration_needs_production_parity_is_a_native_opt_in_off_in_both_controller
         ai.declaration_needs_production_parity
     });
 }
+
+// ------------------------------------------------------------ stands down
+
+#[test]
+fn early_conquest_stands_down_is_a_native_opt_in_off_in_both_controllers() {
+    opt_in_off_in_both_controllers("early-conquest-stands-down", |ai| {
+        ai.early_conquest_stands_down
+    });
+}
+
+#[test]
+fn a_standing_down_opening_names_its_target_but_never_opens() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let off = opened(&mut game);
+    assert!(off.conquest_opening.is_some(), "off: the shipped opening opens");
+
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    meet_and_explore(&mut game, 1);
+    let mut on = armed();
+    on.enable_early_conquest_stands_down();
+    assert!(
+        on.conquest_target(&game, 0).is_some(),
+        "the scan still names the city in reach"
+    );
+    on.maintain_conquest_opening(&mut game, 0);
+    assert!(on.conquest_opening.is_none(), "on: the opening stays shut");
+    assert_eq!(
+        on.conquest_feasibility_noted,
+        Some(game.turn),
+        "the stand-down is journalled"
+    );
+    assert!(
+        !on.conquest_declaration(&mut game, 0),
+        "with no opening there is nothing to declare"
+    );
+    assert!(!game.is_at_war(0, 1));
+
+    game.turn += 1;
+    on.maintain_conquest_opening(&mut game, 0);
+    assert!(on.conquest_opening.is_none(), "still shut a turn later");
+    assert_eq!(
+        on.conquest_feasibility_noted,
+        Some(game.turn - 1),
+        "not re-journalled inside the note window"
+    );
+}

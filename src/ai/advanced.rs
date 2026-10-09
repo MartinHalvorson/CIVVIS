@@ -6180,6 +6180,11 @@ pub struct AdvancedAi {
     /// the declaration edge. See `advanced/dvp_leader_front.rs`.
     dvp_leader_is_the_front: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `early-conquest-stands-down`: the early conquest opening still scans
+    /// for its target (and its scouts keep their caution) but never opens:
+    /// no capital reservation, no rally, no declaration. See
+    /// `AdvancedAi::conquest_stands_down` in `advanced/early_conquest.rs`.
+    early_conquest_stands_down: bool,
     /// `falling-city-outranks-the-heal`: a recovering melee unit near a
     /// falling city stays in the fight. See
     /// `AdvancedAi::falling_city_calls`.
@@ -10248,6 +10253,7 @@ impl AdvancedAi {
             congress_guards_the_leader: false,
             dvp_leader_is_the_front: false,
             // ---- append: e-f ----------------------------------------
+            early_conquest_stands_down: false,
             falling_city_outranks_the_heal: false,
             elimination_waits_on_the_clock: false,
             early_settler_floor: false,

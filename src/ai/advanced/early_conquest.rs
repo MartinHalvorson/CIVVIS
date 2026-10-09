@@ -1830,6 +1830,51 @@ impl AdvancedAi {
                g.cities[&city].name, distance, CONQUEST_NEAR_REACH_TILES);
     }
 
+    /// `early-conquest-stands-down`: whether the opening declines to open on
+    /// `city` although it is in reach. Journalled once every
+    /// [`CONQUEST_FEASIBILITY_NOTE_TURNS`], the window the feasibility note
+    /// shares (both are "not opening" notes and never fire on the same turn:
+    /// this one returns before the force is priced). `false` with the gene
+    /// off.
+    ///
+    /// Live Emperor census, 10-08/09 (every run with a journal): 28
+    /// declarations by this opening ("…of the strike force stands at the
+    /// rally and the preview covers X's bill") took 0 cities within 30 turns
+    /// at every ratio of our military to the target's — 3 under 0.7, 13 at
+    /// 0.7-1.0, 5 at 1.0-1.5, 7 at 1.5-4.6 — and 1 city of the target by turn
+    /// 120. Peace followed a median 15 turns after the declaration. Those
+    /// games held a median 5 cities at turn 75 and 7 at turn 100 against 6
+    /// and 8 in the 95 that never opened, and passed the turn-150 production
+    /// gate 18% of the time against 21%. After `near-rival-deterrence`
+    /// shipped, the opening declared in 27% of games (11% before): the
+    /// deterrent's units fill the strike force and the local bill preview
+    /// lets it declare on the very neighbour the deterrent was raised
+    /// against (civvis-20261009T072248Z: 97 power against America's 228 at
+    /// turn 40; Bogotá lost at turn 123).
+    ///
+    /// The scan, the scouts' caution (`recon_declines_the_swing`, the board's
+    /// recon exclusion) and the search Scout keep reading the shipped flag;
+    /// only the opening itself — reservation, rally and declaration — stays
+    /// shut.
+    fn conquest_stands_down(&mut self, g: &Game, target: usize, city: u32) -> bool {
+        if !self.early_conquest_stands_down {
+            return false;
+        }
+        let note_due = self.conquest_feasibility_noted.is_none_or(|noted| {
+            g.turn >= noted + g.standard_duration(CONQUEST_FEASIBILITY_NOTE_TURNS)
+        });
+        if note_due {
+            self.conquest_feasibility_noted = Some(g.turn);
+            think!(self.journal(), Military, Strategy,
+                   "Not opening a conquest against {}", g.players[target].civ;
+                   "{} is in reach, but the opening stands down: 28 live Emperor openings \
+                    that declared took no city within 30 turns at any power ratio; the \
+                    capital keeps its own builds",
+                   g.cities[&city].name);
+        }
+        true
+    }
+
     fn conquest_open(&mut self, g: &mut Game, pid: usize) {
         if self.conquest_closed || g.turn >= self.conquest_naming_deadline(g) {
             return;
@@ -1838,6 +1883,9 @@ impl AdvancedAi {
             self.conquest_note_a_far_target(g, pid);
             return;
         };
+        if self.conquest_stands_down(g, target, city) {
+            return;
+        }
         let Some(capital) = Self::conquest_capital(g, pid) else {
             return;
         };
