@@ -1,6 +1,210 @@
 use super::*;
 
 impl AdvancedAi {
+    /// Bring an obsolete, otherwise available land combat unit back to upgrade
+    /// ground before its ordinary campaign march takes it farther away. This
+    /// prepares a future offer; it never overrides a host refusal or upgrades
+    /// after moving. Escorts, ready assaults and nearby combat keep priority.
+    pub(super) fn domination_upgrade_return_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+    ) -> Option<bool> {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || self.war_plan.is_some()
+            || plan.threatened_city.is_some()
+            || self.guard_is_bound_to_any_settler(uid)
+            || !(plan.target_player.is_some_and(|target| {
+                g.players.get(target).is_some_and(|p| {
+                    p.alive
+                        && !p.is_minor
+                        && !p.is_barbarian
+                        && (plan.strategy == GrandStrategy::Conquest || g.is_at_war(pid, target))
+                })
+            }) || g.players.iter().enumerate().any(|(target, p)| {
+                p.alive && !p.is_minor && !p.is_barbarian && g.is_at_war(pid, target)
+            }))
+        {
+            return None;
+        }
+        let unit = g.units.get(&uid)?;
+        let from = &g.rules.units[unit.kind];
+        if unit.owner != pid
+            || unit.moves_left <= 0.0
+            || unit.linked_to.is_some()
+            || from.class != "military"
+            || from.promotion_class == "recon"
+            || matches!(from.domain.as_deref(), Some("sea" | "air"))
+            || g.is_embarked(unit)
+            || g.map.get(unit.pos).is_some_and(|tile| {
+                tile.owner_city
+                    .and_then(|cid| g.cities.get(&cid))
+                    .is_some_and(|city| city.owner == pid)
+            })
+            || !matches!(
+                g.unit_gold_upgrade_detail(pid, uid),
+                Err("foreign territory" | "neutral territory")
+            )
+        {
+            return None;
+        }
+        let here = unit.pos;
+        // The territory refusal can hide a second failure. Read the exact
+        // native successor and bill when present, then check cash and material
+        // independently before committing even one movement point.
+        let host = g
+            .host_unit_facts
+            .get(&uid)
+            .and_then(|facts| facts.upgrade.as_ref());
+        let target = host
+            .and_then(|offer| offer.to)
+            .or_else(|| g.unit_upgrade_target(pid, unit.kind))?;
+        let to = &g.rules.units[target];
+        let gain = to.strength.max(to.ranged_attack_strength())
+            - from.strength.max(from.ranged_attack_strength());
+        if gain < 15.0 {
+            return None;
+        }
+        let gold = host.and_then(|offer| offer.cost).or_else(|| {
+            g.unit_upgrade_price_in_formation(pid, unit.kind, target, unit.formation)
+                .map(|quote| quote.0)
+        })?;
+        let resources = g.unit_upgrade_resource_price(pid, uid, target)?;
+        let floor = 30.0 + (-g.players[pid].gold_per_turn).max(0.0);
+        if !gold.is_finite()
+            || gold < 0.0
+            || g.players[pid].gold - gold < floor
+            || to.requires_resource.is_some_and(|resource| {
+                g.strategic_stockpile(pid, resource) + f64::EPSILON < resources
+            })
+            || !self.air_resource_upgrade_preserves_wing(g, pid, uid, target, resources)
+        {
+            return None;
+        }
+        // A stalled, unready Stage reservation can otherwise keep its obsolete
+        // finisher waiting forever. Ready assaults and other reservations retain it.
+        let assigned_siege = (self.siege_train || self.siege_positive_damage_budget)
+            && self.force_groups.iter().any(|group| {
+                group.domain == ForceDomain::Land
+                    && group.units.contains(&uid)
+                    && g.city_at(group.objective).is_some_and(|cid| {
+                        g.cities[&cid].owner != pid && g.is_at_war(pid, g.cities[&cid].owner)
+                    })
+            });
+        if (self.unit_is_reserved(uid) || assigned_siege)
+            && !self.upgrade_return_stalled_taker(g, pid, uid)
+        {
+            return None;
+        }
+        // Keep active combat, adjacent civilian pickups and hostile ranged
+        // fortifications ahead of this preparation. Remembered units count too.
+        if Self::upgrade_return_near_combat(g, pid, here) {
+            return None;
+        }
+        // The nearest border is enough; marching all the way into a City
+        // Center adds time and can deadlock behind a garrison. Bound both the
+        // number of route searches and the actual route length, so a short
+        // geometric distance cannot send this unit around a closed frontier.
+        let mut homes: Vec<_> = g
+            .map
+            .tiles
+            .iter()
+            .filter_map(|(pos, tile)| {
+                (tile
+                    .owner_city
+                    .and_then(|cid| g.cities.get(&cid))
+                    .is_some_and(|city| city.owner == pid)
+                    && !g.rules.is_water(tile)
+                    && g.rules.is_passable(tile)
+                    && g.wdist(here, *pos) <= 12)
+                    .then_some((g.wdist(here, *pos), *pos))
+            })
+            .collect();
+        homes.sort_unstable();
+        let (home, mut next) = homes.into_iter().take(8).find_map(|(_, home)| {
+            let distance = g.route_distance(uid, home, 0)?;
+            if distance == 0 || distance > 12 {
+                return None;
+            }
+            g.route_step(uid, home, 0)
+                .filter(|next| {
+                    g.can_move(uid, *next) && !Self::upgrade_return_near_combat(g, pid, *next)
+                })
+                .map(|next| (home, next))
+        })?;
+        let mut acted = false;
+        for _ in 0..12 {
+            if g.apply(
+                pid,
+                &Action::Move {
+                    unit: uid,
+                    to: next,
+                },
+            )
+            .is_err()
+            {
+                break;
+            }
+            acted = true;
+            if next == home {
+                break;
+            }
+            let Some(step) = g.route_step(uid, home, 0).filter(|step| {
+                g.can_move(uid, *step) && !Self::upgrade_return_near_combat(g, pid, *step)
+            }) else {
+                break;
+            };
+            next = step;
+        }
+        if acted {
+            // Arriving with movement left must not let the ordinary campaign
+            // fallback march straight back out. Upgrading needs a fresh turn.
+            self.base.fortify_or_stop(g, pid, uid);
+            think!(self.journal(), Military, Decision,
+                "Returning an obsolete unit to upgrade ground";
+                "a {gain:.0}-strength upgrade costs {gold:.0} Gold, material is ready, and the bounded return route avoids nearby combat";
+                next);
+        }
+        Some(acted)
+    }
+
+    fn upgrade_return_stalled_taker(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        self.sieges.iter().any(|(cid, siege)| {
+            siege.taker == Some(uid)
+                && siege.stage == super::siege_train::SiegeStage::Stage
+                && g.turn.saturating_sub(siege.entered) >= 4
+                && g.turn.saturating_sub(siege.assessed) <= 1
+                && self.force_groups.iter().any(|group| {
+                    group.domain == ForceDomain::Land
+                        && group.units.contains(&uid)
+                        && g.city_at(group.objective) == Some(*cid)
+                        && !self.conversion_siege_ready(g, pid, *cid, &group.units)
+                })
+        })
+    }
+
+    fn upgrade_return_near_combat(g: &Game, pid: usize, pos: Pos) -> bool {
+        g.units.values().any(|other| {
+            g.is_at_war(pid, other.owner)
+                && (g.wdist(pos, other.pos) <= 1
+                    || (g.rules.units[other.kind].class == "military"
+                        && g.wdist(pos, other.pos) <= 6))
+        }) || g
+            .cities
+            .values()
+            .any(|city| g.is_at_war(pid, city.owner) && g.wdist(pos, city.pos) <= 3)
+            || g.map.tiles.values().any(|tile| {
+                tile.district == Some(crate::name!("encampment"))
+                    && g.wdist(pos, tile.pos) <= 3
+                    && tile
+                        .owner_city
+                        .and_then(|cid| g.cities.get(&cid))
+                        .is_some_and(|city| g.is_at_war(pid, city.owner))
+            })
+    }
+
     /// Existing land combat units with an unlocked, materially stronger direct
     /// successor. This is a funding need, so an empty treasury or a march away
     /// from friendly territory must not hide it. Actual purchases still use
@@ -171,3 +375,6 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod return_tests;
