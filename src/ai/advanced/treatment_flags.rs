@@ -4544,6 +4544,15 @@ impl AdvancedAi {
         self.domination_specializes_earlier = false;
     }
 
+    /// Enable combat preservation and full-health recovery.
+    pub fn enable_unit_preservation(&mut self) {
+        self.unit_preservation = true;
+    }
+    /// Withhold combat preservation for paired evaluation.
+    pub fn disable_unit_preservation(&mut self) {
+        self.unit_preservation = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
