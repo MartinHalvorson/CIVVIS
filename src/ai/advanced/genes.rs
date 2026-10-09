@@ -3574,6 +3574,14 @@ pub const GENES: &[Gene] = &[
     // off one, a pick that would finish before its near trigger lands gives
     // way. See `advanced/civic_inspiration_wait.rs`.
     Gene { tag: "civic-awaits-its-inspiration", field: "civic_awaits_its_inspiration", kind: Kind::OptIn, enable: AdvancedAi::enable_civic_awaits_its_inspiration, disable: AdvancedAi::disable_civic_awaits_its_inspiration },
+    // `backlog-builder-takes-the-queue`: per citizen our Production is the
+    // rivals' less their +40% Emperor handicap; the tiles are the gap. A
+    // quarter to a third of our worked tiles are improved at t40-t60, the
+    // unimproved worked tiles run 6 → 14 (t30-t70) against 1-4 charges and the
+    // backlog gate wants a Builder on 93% of turns, but its claim reads only an
+    // idle queue. The city that trains it soonest puts it ahead of the routine
+    // claims. See `advanced/backlog_builder_takes_the_queue.rs`.
+    Gene { tag: "backlog-builder-takes-the-queue", field: "backlog_builder_takes_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_backlog_builder_takes_the_queue, disable: AdvancedAi::disable_backlog_builder_takes_the_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

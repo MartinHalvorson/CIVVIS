@@ -189,6 +189,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `air-fire-counts-on-the-city` | off (unmeasured) | Opt-in gene `air-fire-counts-on-the-city`; see `Self::air_fire_counts_on_the_city`. | 1 \| 1 |
 | `air-surge-strikes-through-urgency` | off (unmeasured) | Opt-in gene `air-surge-strikes-through-urgency`; see `Self::air_surge_strikes_through_urgency`. | 1 \| 1 |
 | `air-volley-needs-a-road` | off (unmeasured) | Opt-in gene `air-volley-needs-a-road`; see `Self::air_volley_needs_a_road`. | 1 \| 1 |
+| `backlog-builder-takes-the-queue` | off (unmeasured) | Opt-in gene `backlog-builder-takes-the-queue`; see `advanced/backlog_builder_takes_the_queue.rs`. | 1 \| 1 |
 | `beeline-orders-by-value` | off (unmeasured) | `beeline-orders-by-value`: a forced research or civic goal walks its prerequisites by value, not by printed price. | 1 \| 1 |
 | `befriend-the-strongest` | off (unmeasured) | `befriend-the-strongest`: offer a friendship-only deal to the strongest neighbour at peace. | 1 \| 1 |
 | `bleeding-capital-loyalty` | off (unmeasured) | Opt-in gene `bleeding-capital-loyalty`; see `Self::bleeding_capital_loyalty`. | 1 \| 1 |

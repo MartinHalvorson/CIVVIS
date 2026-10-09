@@ -123,7 +123,7 @@ impl AdvancedAi {
     /// or a Builder, Walls, a wonder, a project or a repair, not the faith
     /// defence's Holy Site, Shrine or Temple, not an Aqueduct, not finishing
     /// this turn, and not a military unit while a major is at war with us.
-    fn idle_route_trader_may_defer(
+    pub(super) fn idle_route_trader_may_defer(
         g: &Game,
         pid: usize,
         cid: u32,
