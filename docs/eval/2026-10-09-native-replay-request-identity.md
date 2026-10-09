@@ -31,9 +31,15 @@ negative controls incorrectly returned zero. The local candidate passes all
 valid empty replies, strict JSON comparison, first-change selection, earlier
 mismatches, partial-process failures and unchanged-input requirements.
 
-The registered original-binary replay through turn 161 is also being checked
-before integration; its result and the required full Rust regression are
-recorded in the PR. Request identity cannot resolve unrecorded input timing
-or make a mismatching original replay conform to native. This change modifies
-verification tooling only. It changes no native lane, pin, policy, mod,
-private source or AI selection, and establishes no native win-rate gain.
+Candidate CI run `37873044143` passes all 3,266 tooling tests with 215 skipped.
+The registered original-binary replay through turn 161 also finished as
+expected: 438 replies, zero identity errors, 296 native matches, 142 native
+mismatches and zero missing native records. Identical arms produce zero
+changed replies. Both deciders exit zero, all input hashes remain unchanged,
+and the tool exits 2 because the native-history control still fails. The
+required full Rust regression is recorded separately in the PR before ship.
+
+Request identity cannot resolve unrecorded input timing or make a mismatching
+original replay conform to native. This change modifies verification tooling
+only. It changes no native lane, pin, policy, mod, private source or AI
+selection, and establishes no native win-rate gain.
