@@ -74,7 +74,7 @@ impl AdvancedAi {
             .and_then(|bomber| g.rules.units[bomber].requires_resource)
             .and_then(|resource| g.rules.resources.get(&resource).and_then(|spec| spec.tech))
             .is_none_or(|tech| g.players[pid].techs.contains(&tech));
-        !revealed || Self::air_surge_bomber_goal(g, pid) > 0
+        !revealed || self.air_wing_bomber_goal(g, pid) > 0
     }
 
     /// `surge-fields-the-bombers`: the districts that would take the air

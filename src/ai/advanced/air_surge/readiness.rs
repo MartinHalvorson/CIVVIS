@@ -125,7 +125,7 @@ impl AdvancedAi {
                 let upkeep = g.rules.units[*unit].maintenance;
                 let deficit = (upkeep - g.players[pid].gold_per_turn).max(0.0);
                 (bombers < self.decisive_air_wing_bombers(g, pid)
-                    && Self::air_surge_metal_ready(g, pid)
+                    && self.air_surge_metal_ready(g, pid)
                     && g.players[pid].gold >= 40.0 + deficit * 6.0)
                     .then_some(AIR_SURGE_BOMBER_VALUE - turns * 8.0)
             }

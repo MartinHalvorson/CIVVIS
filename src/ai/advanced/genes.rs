@@ -3518,6 +3518,13 @@ pub const GENES: &[Gene] = &[
     // Amenity to every city with a district and a second Economic card.
     // See `advanced/peacetime_republic.rs`.
     Gene { tag: "peacetime-classical-republic", field: "peacetime_classical_republic", kind: Kind::OptIn, enable: AdvancedAi::enable_peacetime_classical_republic, disable: AdvancedAi::disable_peacetime_classical_republic },
+    // Live Emperor 10-08/09: the air wing read no Bomber goal until the bank
+    // held two Bombers' training and fourteen turns of their upkeep (30
+    // Aluminum), and asked rivals for that whole block or nothing. A rival
+    // at peace offered Aluminum on 361 wait-turns, under the block on 224.
+    // The host's fuel shortage costs -1 Strength per unpaid unit, capped at
+    // 20, so a small stock flies the wing. See `AIR_WING_SMALL_STOCK_TURNS`.
+    Gene { tag: "bombers-fly-on-a-small-stock", field: "bombers_fly_on_a_small_stock", kind: Kind::OptIn, enable: AdvancedAi::enable_bombers_fly_on_a_small_stock, disable: AdvancedAi::disable_bombers_fly_on_a_small_stock },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

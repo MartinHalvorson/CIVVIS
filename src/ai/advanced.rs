@@ -5067,6 +5067,11 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `bombers-fly-on-a-small-stock`: the air wing counts its launch wing
+    /// fuelled once the bank covers its training cost and a few turns of its
+    /// upkeep, and its Aluminum purchase takes any offer that big. See
+    /// `AIR_WING_SMALL_STOCK_TURNS` in `advanced/air_surge.rs`. Off by default.
+    bombers_fly_on_a_small_stock: bool,
     /// `builders-improve-the-worked-for-production`: an improvement's Production
     /// on a tile one of our cities works is priced again, unless the city is
     /// starving with Housing to grow into. See `advanced/worked_production.rs`.
@@ -10023,6 +10028,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            bombers_fly_on_a_small_stock: false,
             builders_improve_the_worked_for_production: false,
             builder_worked_frame: RefCell::new(worked_production::WorkedTilesFrame::default()),
             builders_cover_the_worked_backlog: false,

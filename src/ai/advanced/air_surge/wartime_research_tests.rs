@@ -198,7 +198,7 @@ fn supplied_air_without_oil() -> (Game, AdvancedAi, StrategicPlan) {
         ai.wartime_modernization_tech(&g, 0),
         Some(crate::name!("combustion"))
     );
-    assert!(AdvancedAi::air_surge_metal_ready(&g, 0));
+    assert!(ai.air_surge_metal_ready(&g, 0));
     assert_eq!(g.strategic_stockpile(0, crate::name!("oil")), 0.0);
     assert_eq!(g.strategic_resource_rate(0, "oil"), 0.0);
     (g, ai, plan)
