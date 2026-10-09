@@ -3544,6 +3544,12 @@ pub const GENES: &[Gene] = &[
     // the deterrent, the worked backlog's Builder, recon and catch-up claims
     // took the queue first. See `advanced/granary_claims_the_bound_queue.rs`.
     Gene { tag: "granary-claims-the-bound-queue", field: "granary_claims_the_bound_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_granary_claims_the_bound_queue, disable: AdvancedAi::disable_granary_claims_the_bound_queue },
+    // `gold-buys-the-settler`: 144 Emperor runs banked a median 145-170
+    // Gold from t30 to t60 while the gate's line is the city count at t60
+    // (4 or fewer cities 8% pass, five 22%, six 50%); one Settler was bought
+    // with Gold in 144 runs. In the expansion window, at peace, the treasury
+    // saves for a Settler and buys it. See `advanced/gold_buys_the_settler.rs`.
+    Gene { tag: "gold-buys-the-settler", field: "gold_buys_the_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_settler, disable: AdvancedAi::disable_gold_buys_the_settler },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
