@@ -3491,6 +3491,12 @@ pub const GENES: &[Gene] = &[
     // reliever slots take only tiles a hostile soldier stands on. See
     // `hostile_soldier_at` in `siege_train`.
     Gene { tag: "wall-sortie-skips-the-encampment", field: "wall_sortie_skips_the_encampment", kind: Kind::OptIn, enable: AdvancedAi::enable_wall_sortie_skips_the_encampment, disable: AdvancedAi::disable_wall_sortie_skips_the_encampment },
+    // A defensive spreader breaks the faith holding our cities from the
+    // smallest town up: every city counts the same toward a Religious
+    // Victory's majority. G211317Z spent five Catholic charges on a pop-9
+    // Orthodox Maracaibo while three towns of pop 2-3 were the flips that
+    // broke the majority. See `advanced/counterweight_small_towns.rs`.
+    Gene { tag: "counterweight-flips-the-small-towns", field: "counterweight_flips_the_small_towns", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_flips_the_small_towns, disable: AdvancedAi::disable_counterweight_flips_the_small_towns },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

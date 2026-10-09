@@ -5417,6 +5417,18 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `counterweight-flips-the-small-towns`: while a rival-founded faith
+    /// holds a city of ours, a defensive spreader ranks our cities off its
+    /// own faith smallest first (the shipped list ranks them largest first),
+    /// with a bonus for a city that faith holds or is closing on and a
+    /// penalty for one on a third faith: every city counts the same toward a
+    /// Religious Victory's majority, and a small town flips cheapest. Live
+    /// Emperor G211317Z spent five Catholic charges on Maracaibo (pop 7-10,
+    /// Orthodox since turn 30) while Cuenca, Angostura (pop 2) and Guayaquil
+    /// (pop 3) were the three flips that broke Orthodoxy's majority; Russia
+    /// won on Religion at 105. See `advanced/counterweight_small_towns.rs`.
+    /// Off by default.
+    counterweight_flips_the_small_towns: bool,
     /// `counterweight-finishes-one-shrine`: while a rival faith holds a city
     /// of ours at the religious early-warning bar or match point, a city on a
     /// safe counterfaith with a finished Holy Site and no Shrine is the one
@@ -10061,6 +10073,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            counterweight_flips_the_small_towns: false,
             counterweight_finishes_one_shrine: false,
             defeated_majors_leave_the_board: false,
             culture_denial_heist: false,
@@ -40537,6 +40550,9 @@ impl AdvancedAi {
         // closing on outrank the rest, cheapest flip first.
         let veto = self.religious_veto_engaged(g, pid);
         let recovery = self.counterfaith_recruitment_targets(g, pid, &religion);
+        // `counterweight-flips-the-small-towns`: against the faith holding
+        // our cities, the smallest town first. `None` off.
+        let small_town_threat = self.small_town_threat(g, pid, &religion);
         let mut targets: Vec<(bool, i32, std::cmp::Reverse<u32>, Pos)> = g
             .cities
             .values()
@@ -40567,6 +40583,13 @@ impl AdvancedAi {
                     + city.is_capital as i32 * 18
                     + swing / 10
                     + Self::religious_veto_target_bonus(pid, city, veto.as_ref(), held)
+                    + Self::small_town_target_adjustment(
+                        g,
+                        pid,
+                        city,
+                        &religion,
+                        small_town_threat.as_deref(),
+                    )
                     - g.wdist(current, city.pos) * 4;
                 (
                     recovery.contains(&city.id),
@@ -40577,6 +40600,18 @@ impl AdvancedAi {
             })
             .collect();
         targets.sort_by(|left, right| right.cmp(left));
+        if let Some(threat) = small_town_threat.as_deref() {
+            if let Some(city) = targets
+                .first()
+                .and_then(|(_, _, _, pos)| g.city_at(*pos))
+                .map(|cid| &g.cities[&cid])
+                .filter(|city| city.owner == pid)
+            {
+                think!(self.journal(), Faith, Detail,
+                    "{} spreader heads for {} (pop {})", religion, city.name, city.pop;
+                    "counterweight-flips-the-small-towns: {} holds our cities, every city counts the same toward its majority, and the smallest town flips cheapest", threat);
+            }
+        }
         // `missionary_last_charge_explores*`: the third charge is the unit's
         // life, and the fog is worth more than a third pass at the same city.
         // Version two is an intentionally separate long-range expedition, so
@@ -47651,6 +47686,11 @@ mod match_point_last_holdout;
 /// finished and the Faith bank waits for it. See
 /// `advanced/counterweight_shrine.rs`.
 mod counterweight_shrine;
+
+/// `counterweight-flips-the-small-towns`: a defensive spreader breaks a
+/// rival faith's majority of our cities from the smallest town up. See
+/// `advanced/counterweight_small_towns.rs`.
+mod counterweight_small_towns;
 
 mod second_faith_source;
 
