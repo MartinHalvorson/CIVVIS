@@ -3510,6 +3510,7 @@ pub const GENES: &[Gene] = &[
     // rival capitals were never seen in 87 Emperor runs. The decider re-takes
     // the memory. See `mirror::refresh_city_memory`.
     Gene { tag: "unseen-capital-is-unseen", field: "unseen_capital_is_unseen", kind: Kind::OptIn, enable: AdvancedAi::enable_unseen_capital_is_unseen, disable: AdvancedAi::disable_unseen_capital_is_unseen },
+    Gene { tag: "unit-preservation", field: "unit_preservation", kind: Kind::OptIn, enable: AdvancedAi::enable_unit_preservation, disable: AdvancedAi::disable_unit_preservation },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

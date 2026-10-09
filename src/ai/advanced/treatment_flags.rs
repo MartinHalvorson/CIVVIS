@@ -4652,6 +4652,15 @@ impl AdvancedAi {
         self.base.district_buildings_first = true;
         self.base.capital_library_first = false;
     }
+    /// Enable combat preservation and full-health recovery.
+    pub fn enable_unit_preservation(&mut self) {
+        self.unit_preservation = true;
+    }
+    /// Withhold combat preservation for paired evaluation.
+    pub fn disable_unit_preservation(&mut self) {
+        self.unit_preservation = false;
+    }
+
 
     /// The twin of `enable_district_buildings_first`.
     pub fn disable_district_buildings_first(&mut self) {

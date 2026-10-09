@@ -8322,6 +8322,8 @@ pub struct AdvancedAi {
     /// treasury instead of a flat 30 Gold at war. Opt-in gene
     /// `upkeep-reserve`; see `gold_and_cards::UPKEEP_RESERVE_TURNS`.
     upkeep_reserve: bool,
+    /// Check combat orders against two enemy replies and retain full recovery.
+    unit_preservation: bool,
     /// Price route food by the next population-gated district slot.
     trade_growth_to_district: bool,
     /// Price route production by time saved on an active space project.
@@ -8996,6 +8998,7 @@ mod fire_plan;
 /// opt-in gene; see `advanced/battle_planner.rs`.
 mod battle_planner;
 mod guns_stay_out_of_reach;
+mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
 /// Close as a body, and screen the shooters: two opt-in genes in the deployed
@@ -10535,6 +10538,7 @@ impl AdvancedAi {
             tier_gap_priced_once: false,
             war_bill_prices_the_tier_gap: false,
             upkeep_reserve: false,
+            unit_preservation: false,
             trade_growth_to_district: false,
             trade_production_to_launch: false,
             tourism_land_reservation: false,
@@ -46907,7 +46911,32 @@ impl AdvancedAi {
         // turn number or the acting civilization.
         self.journal().begin_turn(g.turn, pid);
         let pool = self.work_pool.clone();
-        g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
+        if self.unit_preservation && !g.players[pid].is_minor && !g.players[pid].is_barbarian {
+            // These are observed-rule settings, not speculative combat outcomes.
+            // The safety forecast and committed replay use the same host rules.
+            g.observed_wall_tier_rules = self.breach_support_reads_the_wall_tier;
+            self.retire_defeated_majors(g, pid);
+            let mut proposed = g.clone();
+            let start = proposed.log.len();
+            proposed
+                .with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
+            let actions: Vec<Action> = proposed
+                .log
+                .since(start)
+                .filter(|(seat, _)| *seat == pid)
+                .map(|(_, action)| action.clone())
+                .collect();
+            let actions = self.preserve_unit_actions(g, pid, &actions);
+            // These preferences are decisions rather than simulated turn yields.
+            g.players[pid].citizen_food_bias = proposed.players[pid].citizen_food_bias;
+            g.players[pid].city_directives = proposed.players[pid].city_directives.clone();
+            g.heist_reads_the_host_menu = proposed.heist_reads_the_host_menu;
+            for action in actions {
+                let _ = g.apply(pid, &action);
+            }
+        } else {
+            g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
+        }
     }
 
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
