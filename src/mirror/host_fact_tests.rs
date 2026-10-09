@@ -10,6 +10,7 @@ fn host_grass(x: i32, y: i32) -> Plot {
         o: 0,
         oc: None,
         w: false,
+        lk: None,
         i: false,
         fw: None,
         im: None,
