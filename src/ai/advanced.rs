@@ -26962,6 +26962,18 @@ impl AdvancedAi {
             {
                 continue;
             }
+            // The smaller native surplus must not become a stream of
+            // redundant recon units. The shared scorer rejects a covered
+            // Scout role, but military_faith_score adds combat credit after
+            // clamping that rejection to zero. Respect it for recon under
+            // the new quoted-budget exception; wanted recon stays eligible.
+            if below_modelled_floor
+                && g.rules.units[unit].promotion_class == "recon"
+                && self.production_value(g, pid, *city, &Item::Unit { unit: *unit }, plan, &counts)
+                    <= 0.0
+            {
+                continue;
+            }
             if !self.faith_military_is_affordable(g, pid, unit) {
                 continue;
             }
