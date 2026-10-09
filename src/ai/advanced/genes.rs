@@ -3497,6 +3497,12 @@ pub const GENES: &[Gene] = &[
     // Orthodox Maracaibo while three towns of pop 2-3 were the flips that
     // broke the majority. See `advanced/counterweight_small_towns.rs`.
     Gene { tag: "counterweight-flips-the-small-towns", field: "counterweight_flips_the_small_towns", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_flips_the_small_towns, disable: AdvancedAi::disable_counterweight_flips_the_small_towns },
+    // Live Emperor 10-08: gate passers held 2,796 train-member turns "at the
+    // muster line" past turn 150, 69% more than ten tiles from the city where
+    // the muster cannot count them; replays traced 36% of those holds to a
+    // coast or pocket with a dry road round it. A mustering member walks in
+    // by the dry road. See `muster_step` in `siege_train`.
+    Gene { tag: "muster-walks-the-road", field: "muster_walks_the_road", kind: Kind::OptIn, enable: AdvancedAi::enable_muster_walks_the_road, disable: AdvancedAi::disable_muster_walks_the_road },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

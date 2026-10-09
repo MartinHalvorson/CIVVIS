@@ -6933,6 +6933,15 @@ pub struct AdvancedAi {
     /// `BasicAi::industrial_zone_in_the_producers`.
     industrial_zone_in_the_producers: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `muster-walks-the-road`: a mustering member of a train that cannot
+    /// yet close walks in by the dry road, not by straight distance, to the
+    /// stand nearest the city's staging band under the muster's danger line.
+    /// Live Emperor 10-08 gate passers held 2,796 member-turns "at the muster
+    /// line" past turn 150, 69% more than ten tiles out, where they could
+    /// never count toward the muster; replays read 36% of the traced holds as
+    /// a coast or a pocket (every straight-nearer tile water, or none nearer
+    /// at all) with a dry road round it. See `muster_step`. Off by default.
+    muster_walks_the_road: bool,
     /// `near-rival-deterrence`: from live turn 30 to 80, while a met major at
     /// peace with a city within ten tiles out-guns us, one idle or routine
     /// queue a turn trains a land unit (two in training at most) until our
@@ -10310,6 +10319,7 @@ impl AdvancedAi {
             housing_bound_city_builds_its_granary: false,
             industrial_zone_in_the_producers: false,
             // ---- append: l-o ----------------------------------------
+            muster_walks_the_road: false,
             near_rival_deterrence: false,
             match_point_interception_ignores_power: false,
             long_road_names_the_blocker: false,

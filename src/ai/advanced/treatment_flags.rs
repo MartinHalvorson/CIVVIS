@@ -7159,6 +7159,17 @@ impl AdvancedAi {
         self.counterweight_flips_the_small_towns = false;
     }
 
+    /// Opt-in gene `muster-walks-the-road`; see
+    /// [`Self::muster_walks_the_road`].
+    pub fn enable_muster_walks_the_road(&mut self) {
+        self.muster_walks_the_road = true;
+    }
+
+    /// The twin of `enable_muster_walks_the_road`.
+    pub fn disable_muster_walks_the_road(&mut self) {
+        self.muster_walks_the_road = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

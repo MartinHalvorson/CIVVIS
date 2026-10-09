@@ -270,6 +270,12 @@ pub(super) const MUSTER_BREACH_FAR: i32 = STAGING_FAR + 5;
 /// march of a six-step road.
 pub(super) const MUSTER_COMMIT_TURNS: u32 = 5;
 
+/// `muster-walks-the-road`: the longest dry road, in steps from the staging
+/// band, a mustering member reads: the Stage march's own [`STAGE_DRY_LIMIT`],
+/// so a member walks in by the road its march would take once the train
+/// closes.
+pub(super) const MUSTER_ROAD_STEPS: usize = STAGE_DRY_LIMIT;
+
 /// `stage-musters-out-of-reach`: a train that closed at `closed`, within
 /// `window` turns of `turn`, keeps closing while the whole train still meets
 /// the bill (its members walk in from the muster line) and no breaker hold
@@ -3701,6 +3707,28 @@ impl AdvancedAi {
         let shot_here = ranged_reach(&mut field, here);
         let distance = g.wdist(here, city.pos);
         let dry = |g: &Game, pos: Pos| dry_stand(g, uid, pos);
+        // `muster-walks-the-road`: wherever a dry road leads from here to
+        // the staging band, a stand is nearer by that road, not by straight
+        // distance. Live Emperor civvis-20261008T192219Z (game 433) held
+        // Taiyuan's Llaneros and Machine Guns 22-25 tiles out from turn 183 at
+        // 2,000 power against China's 861; replayed, 36% of 381 such holds
+        // over six gate passers had every straight-nearer tile in reach water,
+        // or none nearer in reach at all, with a dry road round. A member that
+        // never comes within `MUSTER_BREACH_FAR` never counts toward the
+        // muster, so the train cannot close. `None` reads straight distance.
+        let road = self
+            .muster_walks_the_road
+            .then(|| g.dry_road_steps(uid, city.pos, STAGING_FAR, MUSTER_ROAD_STEPS))
+            .filter(|steps| steps.contains_key(&here));
+        let nearness = |g: &Game, pos: Pos| -> i32 {
+            match &road {
+                Some(steps) => steps
+                    .get(&pos)
+                    .map_or(i32::MAX, |steps| i32::try_from(*steps).unwrap_or(i32::MAX)),
+                None => g.wdist(pos, city.pos),
+            }
+        };
+        let here_nearness = nearness(g, here);
         let candidates: Vec<Pos> = g
             .reachable(uid)
             .into_iter()
@@ -3715,9 +3743,10 @@ impl AdvancedAi {
         for pos in candidates {
             let risk = field.rotation_danger(pos, uid);
             if risk <= limit && !ranged_reach(&mut field, pos) {
-                stands.push((g.wdist(pos, city.pos), risk, pos));
+                stands.push((nearness(g, pos), risk, pos));
             }
         }
+        let by_road = road.is_some();
         stands.sort_by(|a, b| {
             a.0.cmp(&b.0)
                 .then_with(|| a.1.total_cmp(&b.1))
@@ -3744,14 +3773,28 @@ impl AdvancedAi {
             return None;
         }
         // Safe here: walk in only as far as the line, never past it.
-        if let Some((d, _, dest)) = stands.first().copied().filter(|(d, _, _)| *d < distance) {
+        if let Some((d, _, dest)) = stands
+            .first()
+            .copied()
+            .filter(|(d, _, _)| *d < here_nearness)
+        {
             let kind = g.units[&uid].kind;
             if self.base.path_walk_to(g, pid, uid, dest) {
-                think!(self.journal(), Military, Detail,
-                    "Siege of {name}: the {kind} musters at {dest:?}";
-                    "{d} tiles from the city, the nearest stand under {limit:.0} danger while the \
-                     train cannot close";
-                    city.pos);
+                if by_road {
+                    think!(self.journal(), Military, Detail,
+                        "Siege of {name}: the {kind} musters at {dest:?} by the road";
+                        "{} tiles from the city and {d} steps of dry road from its staging band \
+                         against {here_nearness} from {here:?}, the nearest stand under {limit:.0} \
+                         danger while the train cannot close",
+                        g.wdist(dest, city.pos);
+                        city.pos);
+                } else {
+                    think!(self.journal(), Military, Detail,
+                        "Siege of {name}: the {kind} musters at {dest:?}";
+                        "{d} tiles from the city, the nearest stand under {limit:.0} danger while the \
+                         train cannot close";
+                        city.pos);
+                }
                 return Some(true);
             }
         }
