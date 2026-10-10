@@ -3623,6 +3623,15 @@ pub const GENES: &[Gene] = &[
     // only when the mean exchange kills or trades evenly and survives. See
     // `advanced/theology_fights.rs`.
     Gene { tag: "theology-fights-only-to-win", field: "theology_fights_only_to_win", kind: Kind::OptIn, enable: AdvancedAi::enable_theology_fights_only_to_win, disable: AdvancedAi::disable_theology_fights_only_to_win },
+    // Live Emperor founders 10-09/10: the Holy City left our faith in 40 of 83
+    // games and in five of the seven Religious defeats, 27-51 turns before the
+    // end. The host named the rival as its next faith in 29 of the 40 flips
+    // while its clock read hundreds of turns (183646Z: 501 turns at t57,
+    // Zoroastrian at t61), so the shipped 20-turn warning never rose; our one
+    // Missionary walked away from Guayaquil the turn before. Our nearest spreader
+    // spreads there first and, with none near, the Holy City buys one ahead of
+    // the Apostle save. See `advanced/holy_city_guard.rs`.
+    Gene { tag: "founder-holds-the-holy-city", field: "founder_holds_the_holy_city", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_holds_the_holy_city, disable: AdvancedAi::disable_founder_holds_the_holy_city },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

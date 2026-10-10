@@ -315,6 +315,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `found-against-a-rival-faith` | off (unmeasured) | Opt-in gene `found-against-a-rival-faith`; see `Self::found_against_a_rival_faith`. | 1 \| 1 |
 | `founder-defends-its-cities` | off (unmeasured) | Opt-in gene `founder-defends-its-cities`; see `Self::founder_defence_live`. | 1 \| 1 |
 | `founder-funds-the-inquisition` | off (unmeasured) | Opt-in gene `founder-funds-the-inquisition`; see `advanced/inquisition_first.rs`. | 1 \| 1 |
+| `founder-holds-the-holy-city` | off (unmeasured) | Opt-in gene `founder-holds-the-holy-city`; see `advanced/holy_city_guard.rs`. | 1 \| 1 |
 | `founder-keeps-two-sources` | off (unmeasured) | Opt-in gene `founder-keeps-two-sources`; see `advanced/second_faith_source.rs`. | 1 \| 1 |
 | `founder-spreads-only-its-faith` | off (unmeasured) | Opt-in gene `founder-spreads-only-its-faith`; see `advanced/founder_faith.rs`. | 1 \| 1 |
 | `front-finishes-its-capital` | off (unmeasured) | Opt-in gene `front-finishes-its-capital`; see `Self::front_finishes_its_capital`. | 1 \| 1 |

@@ -10372,6 +10372,13 @@ fn apply_city_religion(live: &mut crate::game::City, state: &StateCity) {
     const MAJORITY_CONVERSION_MARKER: f64 = 60.0;
 
     let current = state.religion.as_deref().and_then(civvis_religion_name);
+    // `founder-holds-the-holy-city` reads the host's next faith raw, before
+    // the conversion clock below decides whether it is actionable.
+    live.religion_next_seen = state
+        .religion_next
+        .as_deref()
+        .and_then(civvis_religion_name)
+        .filter(|next| current.as_deref() != Some(next.as_str()));
     live.pressure.clear();
     match current.as_ref() {
         Some(religion) => {

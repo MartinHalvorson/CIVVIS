@@ -7362,6 +7362,17 @@ impl AdvancedAi {
         self.theology_fights_only_to_win = false;
     }
 
+    /// Opt-in gene `founder-holds-the-holy-city`; see
+    /// `advanced/holy_city_guard.rs`.
+    pub fn enable_founder_holds_the_holy_city(&mut self) {
+        self.founder_holds_the_holy_city = true;
+    }
+
+    /// The twin of `enable_founder_holds_the_holy_city`.
+    pub fn disable_founder_holds_the_holy_city(&mut self) {
+        self.founder_holds_the_holy_city = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

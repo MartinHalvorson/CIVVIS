@@ -3658,6 +3658,12 @@ pub struct City {
     /// liberate the city before taking another action.
     #[serde(default)]
     pub captured_from: Option<usize>,
+    /// The faith the host names as this city's next majority, whatever its
+    /// turn estimate (`religion_next`). The mirror keeps it raw so a founder
+    /// can see a rival faith closing on its Holy City long before the host's
+    /// conversion clock reads short. `None` on a native board.
+    #[serde(default)]
+    pub religion_next_seen: Option<String>,
     /// The civilization from which this city was taken in war. Unlike
     /// `captured_from`, this survives the mandatory keep decision: an
     /// occupied city keeps its -5 Loyalty pressure until the former owner is

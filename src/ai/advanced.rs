@@ -6211,6 +6211,11 @@ pub struct AdvancedAi {
     /// and otherwise calls the nearest fit land melee bodies one safe step
     /// in. See `advanced/falling_city_takers.rs`.
     falling_city_calls_the_takers: bool,
+    /// `founder-holds-the-holy-city`: while a rival faith closes on our Holy
+    /// City, our nearest spreader spends a charge there first and, with none
+    /// near, the Holy City buys one ahead of the Apostle save. See
+    /// `advanced/holy_city_guard.rs`.
+    founder_holds_the_holy_city: bool,
     /// `early-conquest-stands-down`: the early conquest opening still scans
     /// for its target (and its scouts keep their caution) but never opens:
     /// no capital reservation, no rally, no declaration. See
@@ -6754,6 +6759,10 @@ pub struct AdvancedAi {
     /// See `BasicAi::front_weighted_floor_2`.
     front_weighted_floor_2: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `founder-holds-the-holy-city`'s memory: the last threat seen at the
+    /// Holy City and the last spread of ours there, by position. See
+    /// `advanced/holy_city_guard.rs`.
+    holy_city_guard: RefCell<holy_city_guard::HolyCityGuard>,
     /// `gun-queues-behind-the-column`: a siege gun with no free route to its
     /// post and nothing of ours beside it to cross steps up behind the
     /// column instead of standing. See `AdvancedAi::column_queue_step`.
@@ -9232,6 +9241,9 @@ mod falling_city_takers;
 mod far_settle_site;
 mod gold_buys_the_settler;
 mod granary_claims_the_bound_queue;
+/// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
+/// faith. See `advanced/holy_city_guard.rs`.
+mod holy_city_guard;
 mod trader_fills_the_idle_route;
 mod backlog_builder_takes_the_queue;
 /// `civic-awaits-its-inspiration`: the civic chooser waits for a near
@@ -10326,6 +10338,7 @@ impl AdvancedAi {
             // ---- append: e-f ----------------------------------------
             first_luxury_first_2: false,
             falling_city_calls_the_takers: false,
+            founder_holds_the_holy_city: false,
             early_conquest_stands_down: false,
             falling_city_outranks_the_heal: false,
             elimination_waits_on_the_clock: false,
@@ -10384,6 +10397,7 @@ impl AdvancedAi {
             front_weighted_floor: false,
             front_weighted_floor_2: false,
             // ---- append: g-k ----------------------------------------
+            holy_city_guard: RefCell::new(holy_city_guard::HolyCityGuard::default()),
             gun_queues_behind_the_column: false,
             housing_cap_builds_the_aqueduct: false,
             growth_prices_the_farm: false,
@@ -26221,6 +26235,11 @@ impl AdvancedAi {
                 "founder-spreads-only-its-faith: our religion was founded on this turn's board and the host has not shown it yet, so a unit bought now takes its city's old faith (G186 turn 48 bought a Hindu Missionary)");
             return;
         }
+        // See `holy_city_guard_buys` (`founder-holds-the-holy-city`): the
+        // Holy City's own cover comes before the Apostle save.
+        if self.holy_city_guard_buys(g, pid) {
+            return;
+        }
         if self.prepare_defensive_inquisition(g, pid) {
             return;
         }
@@ -40760,6 +40779,11 @@ impl AdvancedAi {
                 "Holding an adopted {} spreader", religion;
                 "this faith is now our conversion threat or holds every other major; preserve its charges until it is a safe counterweight again");
             return false;
+        }
+        // See `holy_city_guard_step` (`founder-holds-the-holy-city`): the
+        // guarded Holy City takes the spreader before any other target.
+        if let Some(acted) = self.holy_city_guard_step(g, pid, uid, &religion) {
+            return acted;
         }
         let current = g.units[&uid].pos;
         // `religious_veto_defence`: our cities the threat faith holds or is

@@ -3961,6 +3961,7 @@ impl Game {
             loyalty: 100.0,
             free_city_pressure: BTreeMap::new(),
             captured_from: None,
+            religion_next_seen: None,
             occupied_from: None,
             occupation_grievance: None,
             reactor_age: 0,
