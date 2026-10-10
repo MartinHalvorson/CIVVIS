@@ -287,6 +287,41 @@ class OneHelperServesManyFrames(FakeHelperCase):
         first, second = (pid for pid, _, _ in self.requests())
         self.assertNotEqual(first, second)
 
+    def test_every_live_helper_runs_from_its_own_executable(self) -> None:
+        # ★★★★★ replayd keeps one connection per executable path: two live
+        # helpers from one file evict each other and neither gets a frame.
+        started = []
+        real_popen = subprocess.Popen
+
+        def popen(command, **kwargs):
+            started.append(command)
+            return real_popen(command, **kwargs)
+
+        self.behave(native=str(macos_capture.SCREEN_CAPTURE_FALLBACK_NEEDED))
+        with patch("builtins.print"), \
+             patch.object(macos_capture.subprocess, "Popen", side_effect=popen):
+            macos_capture.capture_region((0, 0, 8, 8), self.output)
+        native, fallback = (command[0] for command in started)
+        self.assertNotEqual(native, fallback)
+        for executable in (native, fallback):
+            self.assertNotEqual(Path(executable), self.binary)
+            self.assertIn(f"-{os.getpid()}-", Path(executable).name)
+            self.assertEqual(Path(executable).read_bytes(), self.binary.read_bytes())
+
+    def test_copies_of_exited_processes_are_swept_and_ours_removed_at_stop(self) -> None:
+        live = self.root / "live"
+        live.mkdir()
+        stale = live / f"cgcapture-{2 ** 22 + 7}-native"   # no such pid
+        stale.write_text("old")
+        self.behave()
+        with patch.object(macos_capture, "_SWEPT_PRIVATE_COPIES", False):
+            macos_capture.capture_region((0, 0, 8, 8), self.output)
+        self.assertFalse(stale.exists())
+        ours = Path(macos_capture._SERVERS[False].process.args[0])
+        self.assertTrue(ours.is_file())
+        macos_capture.stop_capture_servers()
+        self.assertFalse(ours.exists())
+
     def test_stopping_the_servers_ends_the_helpers(self) -> None:
         self.behave()
         macos_capture.capture_region((0, 0, 8, 8), self.output)
