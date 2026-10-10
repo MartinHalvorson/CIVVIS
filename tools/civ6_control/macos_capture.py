@@ -172,12 +172,16 @@ func capture(_ rect: CGRect, to output: URL, fallback: Bool) -> (Int32, String) 
 if serveMode {
     // One line per frame in: `x y width height output-path`. One line out:
     // the status a one-shot helper would have exited with, then its detail.
-    // EOF (the Python side closed the pipe or died) ends the helper.
+    // EOF (the Python side closed the pipe or died) ends the helper, and so
+    // does two idle minutes (SIGALRM's default action): Python retires an idle
+    // helper after one, so this only ends one a parent stopped asking.
     func reply(_ status: Int32, _ detail: String) {
         let line = detail.isEmpty ? "\(status)\n" : "\(status) \(detail)\n"
         FileHandle.standardOutput.write(Data(line.utf8))
     }
-    while let request = readLine() {
+    while true {
+        alarm(120)
+        guard let request = readLine() else { break }
         let fields = request.split(
             separator: " ", maxSplits: 4, omittingEmptySubsequences: false
         ).map(String.init)
@@ -366,13 +370,30 @@ def _capture_command(box_points, output: str | Path, *, fallback: bool) -> list[
 #: churn, not anything the operator did, was stopping the operator's
 #: recordings. A long-lived helper is attributed once and stays attributed.
 #:
-#: The helpers are still recycled: after a timeout (killed), a permission
-#: denial, a crash, `SERVER_MAX_CONSECUTIVE_MISSES` failed frames in a row,
-#: or `SERVER_MAX_AGE_SECONDS` -- two processes an hour instead of 1,500.
+#: The helpers are still recycled: after ANY failed frame (killed, see below),
+#: `SERVER_MAX_IDLE_SECONDS` without a frame, or `SERVER_MAX_AGE_SECONDS`.
 #: ScreenCaptureKit and the CoreGraphics fallback never share a process (see
 #: the Swift comment above `capture`).
+#:
+#: ★★★★★ A HELPER THAT FAILED A FRAME NEVER SERVES ANOTHER. The first version
+#: kept one for three misses in a row, and an idle one indefinitely. On
+#: 2026-10-09 the helpers at the cached path were re-dialling `replayd` (the
+#: daemon that writes the operator's Cmd-Shift-5 movie) 3,300-5,600 times a
+#: second -- "RPDaemonProxy: connection INTERRUPTED", replayd error 4097 --
+#: with replayd at 88 % CPU and the unified log flooded down to ~1.5 h of
+#: retention. One popup-keeper helper had sat idle 21 min at 1 GB RSS, still
+#: dialling. While any helper at that path kept dialling, replayd dropped EVERY
+#: new connection from the path: fresh helpers joined the storm at birth, the
+#: popup keeper failed ~500 frames an hour for a day, and resumed games sat
+#: 24.5 min and 4 h in `wait_for_safe_screen_capture`. The same binary
+#: at any other path captured in 8-40 ms, and the original path captured again
+#: ~8 min after its last helper died. A failed frame is where the dialling
+#: starts, so a failure ends the process -- bounding any storm to one frame,
+#: as the old process-per-frame helper did -- and a healthy helper still
+#: serves every frame. During an outage that is one start per failed frame,
+#: never more than the 1,500 an hour this replaced.
 SERVER_MAX_AGE_SECONDS = 1800.0
-SERVER_MAX_CONSECUTIVE_MISSES = 3
+SERVER_MAX_IDLE_SECONDS = 60.0  # the Swift helper exits by itself at 120 s idle
 
 
 class _CaptureServer:
@@ -390,7 +411,7 @@ class _CaptureServer:
         self.process: subprocess.Popen | None = None
         self.buffer = b""
         self.started = 0.0
-        self.misses = 0
+        self.last_used = 0.0
         self.lock = threading.Lock()
 
     def command(self) -> list[str]:
@@ -405,8 +426,7 @@ class _CaptureServer:
             bufsize=0,
         )
         self.buffer = b""
-        self.started = time.monotonic()
-        self.misses = 0
+        self.started = self.last_used = time.monotonic()
         return self.process
 
     def stop(self, *, kill: bool = False) -> None:
@@ -438,9 +458,11 @@ class _CaptureServer:
         """One frame; None when the helper had to be killed for taking too long."""
         with self.lock:
             process = self.process
+            now = time.monotonic()
             if process is not None and (
                     process.poll() is not None
-                    or time.monotonic() - self.started >= SERVER_MAX_AGE_SECONDS):
+                    or now - self.started >= SERVER_MAX_AGE_SECONDS
+                    or now - self.last_used >= SERVER_MAX_IDLE_SECONDS):
                 self.stop()
                 process = None
             if process is None:
@@ -469,13 +491,9 @@ class _CaptureServer:
                 status = int(status_text)
             except ValueError:
                 return self._failed(arguments, f"unreadable capture reply {reply[:80]!r}")
-            if status == 0:
-                self.misses = 0
-            else:
-                self.misses += 1
-                if (status == SCREEN_CAPTURE_PERMISSION_DENIED
-                        or self.misses >= SERVER_MAX_CONSECUTIVE_MISSES):
-                    self.stop()
+            self.last_used = time.monotonic()
+            if status != 0:
+                self.stop(kill=True)  # see the ★★★★★ above SERVER_MAX_AGE_SECONDS
             return subprocess.CompletedProcess(arguments, status, "", detail)
 
 

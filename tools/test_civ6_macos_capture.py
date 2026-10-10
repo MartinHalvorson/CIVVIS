@@ -102,7 +102,9 @@ class MacOSCaptureTest(FakeHelperCase):
         self.assertIn("image = screenCaptureKitImage(rect)", source)
         self.assertIn("image = windowListImage(rect)", source)
         self.assertIn("return (signalFallback ? 78 : 1,", source)
-        self.assertIn("while let request = readLine()", source)
+        self.assertIn("guard let request = readLine() else { break }", source)
+        self.assertIn("alarm(120)", source)
+        self.assertLess(macos_capture.SERVER_MAX_IDLE_SECONDS, 120)
         self.assertIn("CGPreflightScreenCaptureAccess()", source)
         self.assertNotIn("CGRequestScreenCaptureAccess", source)
 
@@ -229,15 +231,44 @@ class OneHelperServesManyFrames(FakeHelperCase):
         first, second = (pid for pid, _, _ in self.requests())
         self.assertNotEqual(first, second)
 
-    def test_repeated_misses_recycle_the_helper(self) -> None:
-        self.behave(native="1", fallback="1")
-        for _ in range(macos_capture.SERVER_MAX_CONSECUTIVE_MISSES + 1):
-            with self.assertRaises(macos_capture.CaptureUnavailable):
-                macos_capture.capture_region((0, 0, 8, 8), self.output)
-        native = [pid for pid, backend, _ in self.requests() if backend == "native"]
-        limit = macos_capture.SERVER_MAX_CONSECUTIVE_MISSES
-        self.assertEqual(len(set(native[:limit])), 1)
-        self.assertNotEqual(native[limit], native[0])
+    def assert_ended(self, pid: int) -> None:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return
+            time.sleep(0.05)
+        self.fail(f"helper {pid} is still alive")
+
+    def test_a_failed_frame_retires_its_helper_at_once(self) -> None:
+        # ★★★★★ A helper that failed a frame can be left re-dialling replayd
+        # thousands of times a second for as long as it lives (2026-10-09).
+        self.behave(native="1")
+        with self.assertRaises(macos_capture.CaptureUnavailable):
+            macos_capture.capture_region((0, 0, 8, 8), self.output)
+        failed = self.requests()[0][0]
+        self.assert_ended(failed)
+        self.behave()
+        macos_capture.capture_region((0, 0, 8, 8), self.output)
+        self.assertNotEqual(self.requests()[1][0], failed)
+
+    def test_a_screen_capture_kit_miss_retires_the_native_helper(self) -> None:
+        self.behave(native=str(macos_capture.SCREEN_CAPTURE_FALLBACK_NEEDED))
+        with patch("builtins.print"):
+            macos_capture.capture_region((0, 0, 8, 8), self.output)
+        native = next(pid for pid, backend, _ in self.requests() if backend == "native")
+        self.assert_ended(native)
+        self.assertEqual(self.output.read_bytes(), b"png")  # the fallback still served it
+
+    def test_an_idle_helper_is_retired_before_the_next_frame(self) -> None:
+        self.behave()
+        macos_capture.capture_region((0, 0, 8, 8), self.output)
+        with patch.object(macos_capture, "SERVER_MAX_IDLE_SECONDS", 0.0):
+            macos_capture.capture_region((0, 0, 8, 8), self.output)
+        first, second = (pid for pid, _, _ in self.requests())
+        self.assertNotEqual(first, second)
+        self.assert_ended(first)
 
     def test_a_permission_denial_recycles_the_helper(self) -> None:
         self.behave(native=str(macos_capture.SCREEN_CAPTURE_PERMISSION_DENIED))
