@@ -15107,6 +15107,41 @@ impl Game {
                     .count() as f64
     }
 
+    /// The exchange a `TheologicalAttack` from `uid` on `target` would resolve,
+    /// both rolls taken at their mean (the strengths `do_theological_attack`
+    /// fights with, no RNG): `(blow dealt, blow received, defender hp)`.
+    /// `None` when there is no such attacker or no opposing religious unit.
+    pub(crate) fn theological_exchange_preview(
+        &self,
+        uid: u32,
+        target: Pos,
+    ) -> Option<(f64, f64, i32)> {
+        let attacker = self.units.get(&uid)?;
+        let attacker_religion = attacker.religion.clone()?;
+        let defender_id = self.units_at(target).into_iter().find(|other_id| {
+            let defender = &self.units[other_id];
+            defender.owner != attacker.owner
+                && self.rules.units[defender.kind].class == "religious"
+                && defender
+                    .religion
+                    .as_deref()
+                    .is_some_and(|r| r != attacker_religion)
+        })?;
+        let defender = &self.units[&defender_id];
+        let defender_religion = defender.religion.clone()?;
+        let att = effective_strength(
+            self.theological_strength(attacker)
+                + self.religious_alliance_combat_bonus(attacker.owner, &defender_religion),
+            attacker.hp,
+        );
+        let def = effective_strength(
+            self.theological_strength(defender)
+                + self.religious_alliance_combat_bonus(defender.owner, &attacker_religion),
+            defender.hp,
+        );
+        Some((expected_damage(att, def), expected_damage(def, att), defender.hp))
+    }
+
     fn do_theological_attack(&mut self, pid: usize, uid: u32, target: Pos) -> Result<(), String> {
         let attacker = self.own_unit(pid, uid)?;
         if !matches!(attacker.kind.as_str(), "apostle" | "inquisitor") || attacker.moves_left <= 0.0

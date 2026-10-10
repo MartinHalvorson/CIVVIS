@@ -7351,6 +7351,17 @@ impl AdvancedAi {
         self.first_luxury_first_2 = false;
     }
 
+    /// Opt-in gene `theology-fights-only-to-win`; see
+    /// `advanced/theology_fights.rs`.
+    pub fn enable_theology_fights_only_to_win(&mut self) {
+        self.theology_fights_only_to_win = true;
+    }
+
+    /// The twin of `enable_theology_fights_only_to_win`.
+    pub fn disable_theology_fights_only_to_win(&mut self) {
+        self.theology_fights_only_to_win = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

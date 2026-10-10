@@ -3616,6 +3616,13 @@ pub const GENES: &[Gene] = &[
     // while the Builder paid it the flat +14. v1 also pays +26 to a content empire;
     // v2 prices the first copy only while the host-calibrated deficit is positive.
     Gene { tag: "first-luxury-first-2", field: "first_luxury_first_2", kind: Kind::OptIn, enable: AdvancedAi::enable_first_luxury_first_2, disable: AdvancedAi::disable_first_luxury_first_2 },
+    // Founder losses G215527Z/G094619Z: our Inquisitors started 15 theological
+    // fights at strength 75 against 100-strength Apostles, took 443 damage for
+    // 367, and all nine died with most Remove Heresy charges unspent; each death
+    // gives the winner's faith 250 pressure beside our cities. A fight is taken
+    // only when the mean exchange kills or trades evenly and survives. See
+    // `advanced/theology_fights.rs`.
+    Gene { tag: "theology-fights-only-to-win", field: "theology_fights_only_to_win", kind: Kind::OptIn, enable: AdvancedAi::enable_theology_fights_only_to_win, disable: AdvancedAi::disable_theology_fights_only_to_win },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

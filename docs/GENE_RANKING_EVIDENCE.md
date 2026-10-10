@@ -446,6 +446,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `strategic-deposit-prey` | off (unmeasured) | Opt-in gene `strategic-deposit-prey`; see `Self::strategic_deposit_prey`. | 1 \| 1 |
 | `surge-fields-the-bombers` | off (unmeasured) | Opt-in gene `surge-fields-the-bombers`; see `Self::surge_fields_the_bombers`. | 1 \| 1 |
 | `theater-keeps-its-amphitheater` | off (unmeasured) | Opt-in gene `theater-keeps-its-amphitheater`; see `AdvancedAi::theater_keeps_its_amphitheater`. | 1 \| 1 |
+| `theology-fights-only-to-win` | off (unmeasured) | Opt-in gene `theology-fights-only-to-win`; see `advanced/theology_fights.rs`. | 1 \| 1 |
 | `threatened-city-reserve-2` | off (unmeasured) | V2 reserves the engine's local quote for an available defender in the threatened city. | 1 \| 2 |
 | `tier-gap-priced-once` | off (unmeasured) | Opt-in gene `tier-gap-priced-once`; see `Self::tier_gap_priced_once`. | 1 \| 1 |
 | `tier-gap-reads-the-fielded-line` | off (unmeasured) | Opt-in gene `tier-gap-reads-the-fielded-line`; see `Self::tier_gap_reads_the_fielded_line`. | 1 \| 1 |

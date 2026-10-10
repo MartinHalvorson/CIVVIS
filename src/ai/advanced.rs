@@ -8272,6 +8272,10 @@ pub struct AdvancedAi {
     /// `advanced/science_suppression_pads.rs`.
     science_suppression_hits_the_pads: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `theology-fights-only-to-win`: an Apostle or Inquisitor starts a
+    /// theological fight only when the mean exchange kills the defender or
+    /// trades evenly and survives. See `advanced/theology_fights.rs`. Off by default.
+    theology_fights_only_to_win: bool,
     /// `trader-fills-the-idle-route`: while a trade route slot stands
     /// empty, the safe origin that trains a Trader soonest puts one at the
     /// head of its queue ahead of the governor's rescoring. See
@@ -9164,6 +9168,7 @@ mod higher_level_strategy;
 /// out-guns us in the opening. One opt-in gene; see
 /// `advanced/near_rival_deterrence.rs`.
 mod near_rival_deterrence;
+mod theology_fights;
 
 /// `growth-to-settle`: while the opening is behind the pace and no city can
 /// build a Settler, the citizens work food. One opt-in gene; see
@@ -10615,6 +10620,7 @@ impl AdvancedAi {
             science_denial_refused_pads: BTreeMap::new(),
             science_suppression_hits_the_pads: false,
             // ---- append: t-z ----------------------------------------
+            theology_fights_only_to_win: false,
             trader_fills_the_idle_route: false,
             wall_sortie_skips_the_encampment: false,
             unseen_capital_is_unseen: false,
@@ -40963,6 +40969,13 @@ impl AdvancedAi {
             .iter()
             .filter_map(|action| match action {
                 Action::TheologicalAttack { unit, target } if *unit == uid => {
+                    // `theology-fights-only-to-win`: a fight the mean roll loses
+                    // is not taken (see `theology_fight_is_winnable`).
+                    if self.theology_fights_only_to_win
+                        && !Self::theology_fight_is_winnable(g, uid, *target)
+                    {
+                        return None;
+                    }
                     let defender_hp = g
                         .unit_ids_at(*target)
                         .iter()
