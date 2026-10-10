@@ -7732,6 +7732,11 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `space-denial-spies-from-rocketry`: the denial spy network (training
+    /// and every-pad posting) answers a rival from its Rocketry or first space
+    /// project, and trains to our Spy capacity. See `denial_spy_racers` in
+    /// `advanced/science_denial_every_pad.rs`. Off by default.
+    space_denial_spies_from_rocketry: bool,
     /// `settler-walks-to-the-better-site`: a Settler that can reach some site
     /// this turn still walks to a ranked site beyond the turn worth more by
     /// `FAR_SITE_MARGIN`. See `advanced/far_settle_site.rs`.
@@ -10510,6 +10515,7 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            space_denial_spies_from_rocketry: false,
             settler_walks_to_the_better_site: false,
             staging_reaches_the_border: false,
             staging_reach_memo: RefCell::new(BTreeMap::new()),

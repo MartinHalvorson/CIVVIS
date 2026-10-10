@@ -52,6 +52,23 @@ impl AdvancedAi {
         (g.spy_capacity(pid).max(0) as usize).min(pads + 1)
     }
 
+    /// The Spies the network trains to: [`Self::denial_spies_needed`], or
+    /// under `space-denial-spies-from-rocketry` our whole Spy capacity, so the
+    /// agents are trained before the racer's pads stand.
+    pub(crate) fn denial_spies_wanted(
+        &self,
+        g: &Game,
+        pid: usize,
+        racers: &BTreeSet<usize>,
+    ) -> usize {
+        let needed = Self::denial_spies_needed(g, pid, racers);
+        if self.space_denial_spies_from_rocketry {
+            needed.max(g.spy_capacity(pid).max(0) as usize)
+        } else {
+            needed
+        }
+    }
+
     /// Whether `item`, at the head of a queue, is routine work a Spy may
     /// displace.
     fn denial_spy_displaces(g: &Game, item: &Item) -> bool {
@@ -84,7 +101,7 @@ impl AdvancedAi {
         if !self.science_denial_trains_spies {
             return;
         }
-        let racers = self.decisive_space_racers(g, pid);
+        let racers = self.denial_spy_racers(g, pid);
         if racers.is_empty() {
             return;
         }
@@ -97,7 +114,7 @@ impl AdvancedAi {
             .filter(|cid| g.cities[cid].queue.contains(&spy))
             .count();
         let held = g.spy_agents(pid);
-        let needed = Self::denial_spies_needed(g, pid, &racers);
+        let needed = self.denial_spies_wanted(g, pid, &racers);
         // One Spy in training at a time, in the best city: the host trains
         // them one by one. Live G411 (civvis-20261008T151915Z) sent a second
         // (and third) Spy order on the same turn five times — turns 161, 171,

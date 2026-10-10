@@ -3597,6 +3597,12 @@ pub const GENES: &[Gene] = &[
     // when a body can, else calls the nearest fit bodies one safe step in.
     // See `advanced/falling_city_takers.rs`.
     Gene { tag: "falling-city-calls-the-takers", field: "falling_city_calls_the_takers", kind: Kind::OptIn, enable: AdvancedAi::enable_falling_city_calls_the_takers, disable: AdvancedAi::disable_falling_city_calls_the_takers },
+    // 9 Emperor science losses after the t150 gate (10-08/09): the winner had
+    // Rocketry 31-60 turns before its Exoplanet launch (median ~35) but the
+    // spy network only starts at its Moon landing (8-23 turns out), held 0-3
+    // Spies against capacity 2-5 and ran 0-3 Disrupt Rocketry on the winner
+    // before launch. See `denial_spy_racers` in `science_denial_every_pad.rs`.
+    Gene { tag: "space-denial-spies-from-rocketry", field: "space_denial_spies_from_rocketry", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_spies_from_rocketry, disable: AdvancedAi::disable_space_denial_spies_from_rocketry },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

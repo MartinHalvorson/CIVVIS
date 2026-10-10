@@ -70,7 +70,38 @@ impl AdvancedAi {
         if !self.science_denial_every_pad {
             return BTreeSet::new();
         }
-        self.decisive_space_racers(g, pid)
+        self.denial_spy_racers(g, pid)
+    }
+
+    /// The rivals the denial SPY network answers: the decisive space racers
+    /// and, under `space-denial-spies-from-rocketry`, any met living non-team
+    /// major that holds Rocketry or has landed a space project. Wars keep
+    /// reading [`Self::decisive_space_racers`]; only the spies move earlier.
+    /// Census (9 science losses after the t150 gate, 10-08/09): the winner's
+    /// Rocketry came 31-60 turns before its Exoplanet launch, its Moon landing
+    /// 8-23 turns before, and the network that waits for the Moon held 0-3
+    /// Spies against a capacity of 2-5 when it mattered.
+    pub(crate) fn denial_spy_racers(&self, g: &Game, pid: usize) -> BTreeSet<usize> {
+        let mut racers = self.decisive_space_racers(g, pid);
+        if !self.space_denial_spies_from_rocketry || !g.victory_conditions.science {
+            return racers;
+        }
+        racers.extend(
+            g.players
+                .iter()
+                .filter(|rival| {
+                    rival.id != pid
+                        && rival.alive
+                        && !rival.is_minor
+                        && !rival.is_barbarian
+                        && !g.same_team(pid, rival.id)
+                        && g.has_met(pid, rival.id)
+                        && (rival.techs.contains(&crate::name!("rocketry"))
+                            || Self::science_denial_stages(g, rival.id) >= 1)
+                })
+                .map(|rival| rival.id),
+        );
+        racers
     }
 
     /// The decisive space racers, whichever gene asks: met, living,

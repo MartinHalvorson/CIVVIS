@@ -7319,6 +7319,17 @@ impl AdvancedAi {
         self.falling_city_calls_the_takers = false;
     }
 
+    /// Opt-in gene `space-denial-spies-from-rocketry`; see
+    /// `denial_spy_racers` in `advanced/science_denial_every_pad.rs`.
+    pub fn enable_space_denial_spies_from_rocketry(&mut self) {
+        self.space_denial_spies_from_rocketry = true;
+    }
+
+    /// The twin of `enable_space_denial_spies_from_rocketry`.
+    pub fn disable_space_denial_spies_from_rocketry(&mut self) {
+        self.space_denial_spies_from_rocketry = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
