@@ -3603,6 +3603,12 @@ pub const GENES: &[Gene] = &[
     // Spies against capacity 2-5 and ran 0-3 Disrupt Rocketry on the winner
     // before launch. See `denial_spy_racers` in `science_denial_every_pad.rs`.
     Gene { tag: "space-denial-spies-from-rocketry", field: "space_denial_spies_from_rocketry", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_spies_from_rocketry, disable: AdvancedAi::disable_space_denial_spies_from_rocketry },
+    // The live opening's barbarian defense displaced the capital's Settler
+    // twice in 73 of 123 Emperor runs (2026-10-10), the second a median six
+    // turns after the first once its Slinger left to hunt; those runs saw
+    // their second Settler at t24 against t19. The Settler now keeps the
+    // queue after one displacement. See `opening_defense_settler_preempts`.
+    Gene { tag: "opening-defense-preempts-once", field: "opening_defense_preempts_once", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_defense_preempts_once, disable: AdvancedAi::disable_opening_defense_preempts_once },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

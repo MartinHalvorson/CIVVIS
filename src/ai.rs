@@ -3571,6 +3571,11 @@ pub struct BasicAi {
     /// Settlers the opening's barbarian defense has displaced on a live
     /// board. See `OPENING_DEFENSE_SETTLER_PREEMPTS`.
     pub(crate) opening_defense_preempts: u32,
+    /// `opening-defense-preempts-once`: on a live board the opening's
+    /// barbarian defense displaces a queued Settler at most once rather than
+    /// `OPENING_DEFENSE_SETTLER_PREEMPTS` times. See
+    /// `opening_defense_settler_preempts`. Opt-in gene, off by default.
+    pub(crate) opening_defense_preempts_once: bool,
     /// Version two preserves every wonder pocket V1 would scout, but among
     /// goals no more than one tile beyond V1's nearest it picks the tile that
     /// reveals the most of the pocket. It therefore buys information without
@@ -5843,6 +5848,7 @@ impl BasicAi {
             explore_commit: false,
             wonder_ring_recon: false,
             opening_defense_preempts: 0,
+            opening_defense_preempts_once: false,
             wonder_ring_recon_2: false,
             hut_collection: false,
             village_seeking: false,
@@ -6360,6 +6366,7 @@ impl BasicAi {
             explore_commit: false,
             wonder_ring_recon: false,
             opening_defense_preempts: 0,
+            opening_defense_preempts_once: false,
             wonder_ring_recon_2: false,
             hut_collection: false,
             village_seeking: false,
@@ -10193,6 +10200,24 @@ impl BasicAi {
     /// `besieged_city_item`.
     const OPENING_DEFENSE_SETTLER_PREEMPTS: u32 = 2;
 
+    /// The live cap on the opening defense's Settler displacements.
+    ///
+    /// `opening-defense-preempts-once` (2026-10-10 census, 123 live Emperor
+    /// runs): the second displacement fired in 73 of them, a median six turns
+    /// after the first, once the first Slinger had been drawn off to hunt.
+    /// Those runs saw their first and second Settlers at a median t15/t24
+    /// against t11/t19 with no displacement, and the second Settler before
+    /// t18 passed the t150 gate 5 of 16 against 3 of 38 after t26. One
+    /// Settler was captured by t60 across the window, so the second hold buys
+    /// little safety for four turns of the expansion clock.
+    fn opening_defense_settler_preempts(&self) -> u32 {
+        if self.opening_defense_preempts_once {
+            1
+        } else {
+            Self::OPENING_DEFENSE_SETTLER_PREEMPTS
+        }
+    }
+
     fn opening_barbarian_defense_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
         let city = g.cities.get(&cid).filter(|city| city.owner == pid)?;
         if self.minor
@@ -10422,7 +10447,7 @@ impl BasicAi {
                 let live = pid == crate::game::MIRRORED_SEAT && !g.host_observed.is_empty();
                 if live
                     && displaces_settler
-                    && self.opening_defense_preempts >= Self::OPENING_DEFENSE_SETTLER_PREEMPTS
+                    && self.opening_defense_preempts >= self.opening_defense_settler_preempts()
                 {
                     think!(self.journal, Military, Detail,
                            "{} keeps its Settler despite nearby barbarians", g.cities[cid].name;
@@ -28234,6 +28259,32 @@ mod tests {
             if live && yields {
                 assert_eq!(ai.opening_defense_preempts, preempts + 1);
             }
+        }
+    }
+
+    /// `opening-defense-preempts-once`: with the gene a live opening keeps its
+    /// Settler after one displacement; without it the second still yields.
+    #[test]
+    fn a_live_opening_keeps_its_settler_after_one_preempt_with_the_gene() {
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        for (gene, preempts, yields) in [(true, 0, true), (true, 1, false), (false, 1, true)] {
+            let (mut g, city, scout) = barbarian_at_the_gates_game(91_503);
+            for uid in g.player_unit_ids(0) {
+                g.remove_unit(uid);
+            }
+            g.units.get_mut(&scout).unwrap().kind = crate::name!("scout");
+            g.cities.get_mut(&city).unwrap().pop = 2;
+            let pos = g.cities[&city].pos;
+            std::sync::Arc::make_mut(&mut g.host_observed).insert(pos);
+            g.apply(0, &Action::Produce { city, item: settler.clone() }).unwrap();
+            let mut ai = BasicAi::new();
+            ai.opening_defense_preempts_once = gene;
+            ai.opening_defense_preempts = preempts;
+            ai.cities(&mut g, 0);
+            let kept = g.cities[&city].queue.first() == Some(&settler);
+            assert_eq!(!kept, yields, "gene {gene}, preempts {preempts}");
         }
     }
 

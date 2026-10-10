@@ -7330,6 +7330,17 @@ impl AdvancedAi {
         self.space_denial_spies_from_rocketry = false;
     }
 
+    /// `BasicAi::opening_defense_preempts_once`; opt-in gene
+    /// `opening-defense-preempts-once`.
+    pub fn enable_opening_defense_preempts_once(&mut self) {
+        self.base.opening_defense_preempts_once = true;
+    }
+
+    /// The twin of `enable_opening_defense_preempts_once`.
+    pub fn disable_opening_defense_preempts_once(&mut self) {
+        self.base.opening_defense_preempts_once = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
