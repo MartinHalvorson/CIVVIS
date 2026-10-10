@@ -6201,6 +6201,11 @@ pub struct AdvancedAi {
     /// the declaration edge. See `advanced/dvp_leader_front.rs`.
     dvp_leader_is_the_front: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `first-luxury-first-2`: version 2 of `first-luxury-first`. The first
+    /// copy of a luxury earns its premium only while the host-calibrated
+    /// empire is actually Amenity-short; a content empire keeps the shipped
+    /// flat +14. See `advanced/first_luxury.rs`. Off by default.
+    first_luxury_first_2: bool,
     /// `falling-city-calls-the-takers`: a hostile city behind fallen walls at
     /// or under `FALLING_CITY_HP` health is taken this turn when a body can,
     /// and otherwise calls the nearest fit land melee bodies one safe step
@@ -10314,6 +10319,7 @@ impl AdvancedAi {
             congress_guards_the_leader: false,
             dvp_leader_is_the_front: false,
             // ---- append: e-f ----------------------------------------
+            first_luxury_first_2: false,
             falling_city_calls_the_takers: false,
             early_conquest_stands_down: false,
             falling_city_outranks_the_heal: false,

@@ -47052,6 +47052,75 @@ fn the_builder_opens_the_empires_first_luxury_before_the_iron() {
     assert!(!ai.first_luxury_first);
 }
 
+/// `first-luxury-first-2`: version 1 pays a first copy +26 even with every city
+/// content; version 2 prices it only while the empire is actually Amenity-short,
+/// and then exactly as version 1 does.
+#[test]
+fn the_second_version_prices_the_first_luxury_only_while_a_city_is_short() {
+    let (mut game, capital, home) = empire_with_a_capital(43_000_002);
+    game.players[0].techs.insert(Name::new("irrigation"));
+    let silk = game.cities[&capital]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|pos| *pos != home)
+        .expect("fixture: a ring tile");
+    {
+        let tile = game.map.tiles.get_mut(&silk).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = Some(crate::name!("forest"));
+        tile.hills = false;
+        tile.resource = Some(crate::name!("silk"));
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+        tile.pillaged = false;
+    }
+    let armed = |second: bool| {
+        let mut ai = AdvancedAi::new();
+        if second {
+            ai.enable_first_luxury_first_2();
+        } else {
+            ai.enable_first_luxury_first();
+        }
+        ai
+    };
+    assert!(!AdvancedAi::new().first_luxury_first_2, "the gene ships off");
+    assert_eq!(
+        AdvancedAi::new().first_luxury_premium(&game, 0, silk, "plantation"),
+        0.0,
+        "off, no premium"
+    );
+
+    // Content: the Palace's two Amenities against ceil(2 / 2).
+    game.cities.get_mut(&capital).unwrap().pop = 2;
+    assert_eq!(armed(true).empire_amenity_deficit(&game, 0), 0.0, "fixture: content");
+    assert_eq!(
+        armed(false).first_luxury_premium(&game, 0, silk, "plantation"),
+        first_luxury::FIRST_COPY_BASE,
+        "version 1 pays the base to a content empire"
+    );
+    assert_eq!(
+        armed(true).first_luxury_premium(&game, 0, silk, "plantation"),
+        0.0,
+        "version 2 leaves a content empire on the shipped flat +14"
+    );
+
+    // Three Amenities short: both versions price the first copy the same.
+    game.cities.get_mut(&capital).unwrap().pop = 10;
+    let short = armed(true);
+    assert_eq!(short.empire_amenity_deficit(&game, 0), 3.0, "fixture: three short");
+    assert_eq!(
+        short.first_luxury_premium(&game, 0, silk, "plantation"),
+        first_luxury::FIRST_COPY_BASE + first_luxury::FIRST_COPY_PER_AMENITY * 3.0,
+    );
+    assert_eq!(
+        short.first_luxury_premium(&game, 0, silk, "plantation"),
+        armed(false).first_luxury_premium(&game, 0, silk, "plantation"),
+        "short, version 2 matches version 1"
+    );
+}
+
 /// `live-move-refusal-break`: an issued step seen untaken on two judged turns
 /// is barred, the pathing gate refuses it, any other step stays open, and the
 /// bar expires. The proof needs no host channel — the step is ours and the

@@ -178,7 +178,7 @@ impl AdvancedAi {
         pos: Pos,
         improvement: &str,
     ) -> f64 {
-        if !self.first_luxury_first {
+        if !self.first_luxury_first && !self.first_luxury_first_2 {
             return 0.0;
         }
         let first_copy = luxury_at(g, pos).is_some_and(|resource| {
@@ -194,6 +194,12 @@ impl AdvancedAi {
         let deficit = self
             .empire_amenity_deficit(g, pid)
             .min(FIRST_COPY_DEFICIT_CAP);
+        // `first-luxury-first-2`: a content empire (by the host-calibrated
+        // ledger `Game::city_amenities` carries on a live board) keeps the
+        // shipped flat +14 for its first copy too; only a real shortfall pays.
+        if !self.first_luxury_first && deficit <= 0.0 {
+            return 0.0;
+        }
         FIRST_COPY_BASE + FIRST_COPY_PER_AMENITY * deficit
     }
 
@@ -228,7 +234,7 @@ impl AdvancedAi {
         pos: Pos,
         improvement: &str,
     ) {
-        if !self.first_luxury_first {
+        if !self.first_luxury_first && !self.first_luxury_first_2 {
             return;
         }
         // Asked AFTER the order landed, so the tile now connects and

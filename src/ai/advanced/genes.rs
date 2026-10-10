@@ -3609,6 +3609,13 @@ pub const GENES: &[Gene] = &[
     // their second Settler at t24 against t19. The Settler now keeps the
     // queue after one displacement. See `opening_defense_settler_preempts`.
     Gene { tag: "opening-defense-preempts-once", field: "opening_defense_preempts_once", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_defense_preempts_once, disable: AdvancedAi::disable_opening_defense_preempts_once },
+    // Version 2 of `first-luxury-first` (2026-10-10, eco9): 77 Emperor runs had
+    // 36% of cities Amenity-short at t50 and 47-49% at t100-125 (a short city
+    // loses 15% growth and 10% of every yield); at t50, 27 of 51 runs with a short
+    // city owned a luxury type they lacked, unimproved and tech-ready (39 of 42),
+    // while the Builder paid it the flat +14. v1 also pays +26 to a content empire;
+    // v2 prices the first copy only while the host-calibrated deficit is positive.
+    Gene { tag: "first-luxury-first-2", field: "first_luxury_first_2", kind: Kind::OptIn, enable: AdvancedAi::enable_first_luxury_first_2, disable: AdvancedAi::disable_first_luxury_first_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -7341,6 +7341,16 @@ impl AdvancedAi {
         self.base.opening_defense_preempts_once = false;
     }
 
+    /// Opt-in gene `first-luxury-first-2`; see `advanced/first_luxury.rs`.
+    pub fn enable_first_luxury_first_2(&mut self) {
+        self.first_luxury_first_2 = true;
+    }
+
+    /// The twin of `enable_first_luxury_first_2`.
+    pub fn disable_first_luxury_first_2(&mut self) {
+        self.first_luxury_first_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
