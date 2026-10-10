@@ -7308,6 +7308,17 @@ impl AdvancedAi {
         self.deterrence_spares_the_faith_defence = false;
     }
 
+    /// Opt-in gene `falling-city-calls-the-takers`; see
+    /// `advanced/falling_city_takers.rs`.
+    pub fn enable_falling_city_calls_the_takers(&mut self) {
+        self.falling_city_calls_the_takers = true;
+    }
+
+    /// The twin of `enable_falling_city_calls_the_takers`.
+    pub fn disable_falling_city_calls_the_takers(&mut self) {
+        self.falling_city_calls_the_takers = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

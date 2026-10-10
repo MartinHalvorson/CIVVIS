@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 const AIR_ASSAULT_BREACH_HP: i32 = 1;
 /// A breach may be finished by any healthy land melee body, not only the
 /// cavalry the volley maneuver keeps for its spotting move.
-const AIR_ASSAULT_BREACH_TAKER_HP: i32 = 30;
+pub(super) const AIR_ASSAULT_BREACH_TAKER_HP: i32 = 30;
 /// `wounded-taker-finishes-the-breach`: the health a taker must keep after
 /// the blow that takes a city, under the gene (30 without it).
 const BREACH_TAKER_MIN_HP: i32 = 15;
@@ -71,7 +71,7 @@ impl AdvancedAi {
         self.air_assault_observation = Some((visible, frames_left));
     }
 
-    fn air_assault_target_visible(&self, g: &Game, pid: usize, target: Pos) -> bool {
+    pub(super) fn air_assault_target_visible(&self, g: &Game, pid: usize, target: Pos) -> bool {
         self.air_assault_observation.as_ref().map_or_else(
             || g.player_can_see(pid, target),
             |(visible, _)| visible.contains(&target),
@@ -783,7 +783,7 @@ impl AdvancedAi {
 
     /// The first taker, strongest first, whose ring step and blow take the
     /// city on this board. Bounded: each try clones the board per ring tile.
-    fn air_assault_best_capture(
+    pub(super) fn air_assault_best_capture(
         &self,
         g: &Game,
         pid: usize,
@@ -881,7 +881,7 @@ impl AdvancedAi {
     /// turn 103 to 113 reading "the nearest has no safe step closer"; there
     /// the approach was also closed by our own spent Trebuchets on every
     /// distance-two tile, which no danger reading can open.
-    fn air_assault_advance(
+    pub(super) fn air_assault_advance(
         &self,
         g: &mut Game,
         pid: usize,

@@ -3589,6 +3589,14 @@ pub const GENES: &[Gene] = &[
     // last 60 games show the deterrent displacing a Holy Site, Shrine or Temple.
     // See `deterrence_may_displace` in `advanced/near_rival_deterrence.rs`.
     Gene { tag: "deterrence-spares-the-faith-defence", field: "deterrence_spares_the_faith_defence", kind: Kind::OptIn, enable: AdvancedAi::enable_deterrence_spares_the_faith_defence, disable: AdvancedAi::disable_deterrence_spares_the_faith_defence },
+    // 10-08/09 live Emperor: 27 siege targets reached walls 0 and at most 25
+    // health under our strikes; 17 fell within two turns, 4 took three to
+    // eight, 6 never fell, while healthy melee bodies held 4-9 tiles off
+    // (Amboise t149 "waits for a body" with a Knight at 8; Majapahit at 1
+    // health t163-169 with a full Pike-and-Shot at 7). A falling city is taken
+    // when a body can, else calls the nearest fit bodies one safe step in.
+    // See `advanced/falling_city_takers.rs`.
+    Gene { tag: "falling-city-calls-the-takers", field: "falling_city_calls_the_takers", kind: Kind::OptIn, enable: AdvancedAi::enable_falling_city_calls_the_takers, disable: AdvancedAi::disable_falling_city_calls_the_takers },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -6201,6 +6201,11 @@ pub struct AdvancedAi {
     /// the declaration edge. See `advanced/dvp_leader_front.rs`.
     dvp_leader_is_the_front: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `falling-city-calls-the-takers`: a hostile city behind fallen walls at
+    /// or under `FALLING_CITY_HP` health is taken this turn when a body can,
+    /// and otherwise calls the nearest fit land melee bodies one safe step
+    /// in. See `advanced/falling_city_takers.rs`.
+    falling_city_calls_the_takers: bool,
     /// `early-conquest-stands-down`: the early conquest opening still scans
     /// for its target (and its scouts keep their caution) but never opens:
     /// no capital reservation, no rally, no declaration. See
@@ -9208,6 +9213,7 @@ mod wonder_sites;
 mod band_hunt;
 mod culture_denial_heist;
 mod dvp_leader_front;
+mod falling_city_takers;
 mod far_settle_site;
 mod gold_buys_the_settler;
 mod granary_claims_the_bound_queue;
@@ -10303,6 +10309,7 @@ impl AdvancedAi {
             congress_guards_the_leader: false,
             dvp_leader_is_the_front: false,
             // ---- append: e-f ----------------------------------------
+            falling_city_calls_the_takers: false,
             early_conquest_stands_down: false,
             falling_city_outranks_the_heal: false,
             elimination_waits_on_the_clock: false,
@@ -46200,6 +46207,11 @@ impl AdvancedAi {
         self.mark_gun_lethal_tiles(g, pid);
         self.guns_step_out_of_reach(g, pid);
         let mut air_assault_units = self.plan_air_city_assault(g, pid, plan);
+        // `falling-city-calls-the-takers`: a falling city is taken, or its
+        // nearest fit bodies close in. Nothing with the gene off. See
+        // `advanced/falling_city_takers.rs`.
+        let falling_takers = self.plan_falling_city_takers(g, pid, plan, &air_assault_units);
+        air_assault_units.extend(falling_takers);
         // `air-surge-2` raiders: spare surge cavalry pillage behind the wing.
         // Nothing is read outside a Domination surge at war. See
         // `advanced/air_surge/raids.rs`.
