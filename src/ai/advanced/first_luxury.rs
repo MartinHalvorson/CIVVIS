@@ -248,6 +248,11 @@ impl AdvancedAi {
             return;
         };
         let deficit = self.empire_amenity_deficit(g, pid);
+        // Version 2 paid nothing to a content empire, so the order was not ours
+        // to claim.
+        if !self.first_luxury_first && deficit <= 0.0 {
+            return;
+        }
         think!(self.journal(), Cities, Decision,
                "A {} improves the empire's first {}",
                plain(improvement), plain(resource.as_str());
