@@ -29,6 +29,16 @@ HOST_PROBE_TIMEOUT_S = 10.0
 #: repeatedly at the same instant.
 SHOT_BACKOFF_SECONDS = (0.5, 1.5, 3.0, 4.0)
 CAPTURE_ACCESS_POLL_SECONDS = 10.0
+# ★★★★ HOW LONG SETUP WAITS FOR A FRAME BESIDE THE OPERATOR'S OWN RECORDER.
+# A native recorder can leave capture authorized but frameless, so setup waits
+# rather than fight it -- but not forever. Until 2026-10-09 the wait ended only
+# when `recover_stale_interactive_recording` killed the "stale" recorder, which
+# was the operator's live Cmd-Shift-5 recording every time (#4006). Once that
+# stopped, a resume whose helper could not reach replayd waited on: 4 h for
+# 152221Z-cont1, 24.5 min for 040446Z-cont1, with the recorder fine and fresh
+# games bootstrapping around it. After this long the bounded screenshot retries
+# decide, so a capture that truly cannot work ends the attempt instead.
+CAPTURE_RECORDER_WAIT_SECONDS = 600.0
 # Setup readers already have an outer bounded poll, so they take one native
 # capture per pass instead of spending the whole retry schedule inside it.
 SETUP_SCREENSHOT_ATTEMPTS = 1
@@ -269,11 +279,13 @@ def wait_for_safe_screen_capture(
 ) -> None:
     """Wait until the path used by screenshots can produce a real frame."""
     last_reason = None
+    frameless_since = None
     while True:
         recording_ui = popup_clear.native_recording_ui_active()
         try:
             if not macos_capture.screen_capture_access_available():
                 reason = "screen capture access is unavailable"
+                frameless_since = None
             elif macos_capture.capture_probe():
                 if recording_ui:
                     print("[capture] native macOS recording/capture UI is active; using "
@@ -298,12 +310,22 @@ def wait_for_safe_screen_capture(
                           "recorder; continuing to the bounded screenshot retries",
                           flush=True)
                     return
+                now = time.monotonic()
+                if frameless_since is None:
+                    frameless_since = now
+                elif now - frameless_since >= CAPTURE_RECORDER_WAIT_SECONDS:
+                    print(f"[capture] no frame for {now - frameless_since:.0f}s beside a "
+                          "native recorder; continuing to the bounded screenshot retries",
+                          flush=True)
+                    return
             if recording_ui:
                 reason += " while a native macOS recording/capture UI is active"
         except macos_capture.CapturePermissionUnavailable:
             reason = "screen capture access is unavailable"
+            frameless_since = None
         except macos_capture.CaptureUnavailable as error:
             reason = f"native screen capture is unavailable: {error}"
+            frameless_since = None
         if reason != last_reason:
             print(f"[capture] {reason}; waiting without opening a permission popup", flush=True)
             last_reason = reason

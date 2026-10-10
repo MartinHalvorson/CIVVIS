@@ -360,6 +360,46 @@ class SafeScreenCaptureTests(unittest.TestCase):
         self.assertEqual(probe.call_count, 2)
         sleep.assert_called_once_with(0.25)
 
+    def test_a_frameless_wait_beside_a_recorder_is_bounded(self) -> None:
+        # A resume sat 4 h here on 2026-10-09 while the operator's recording
+        # ran fine; past the bound the bounded screenshot retries decide.
+        limit = macos_window.CAPTURE_RECORDER_WAIT_SECONDS
+        with patch.object(macos_window.popup_clear, "native_recording_ui_active",
+                          return_value=True), \
+             patch.object(macos_window.macos_capture,
+                          "screen_capture_access_available", return_value=True), \
+             patch.object(macos_window.macos_capture,
+                          "capture_probe", return_value=False) as probe, \
+             patch.object(macos_window.popup_clear,
+                          "recover_stale_interactive_recording", return_value=False), \
+             patch.object(macos_window.time, "monotonic",
+                          side_effect=[0.0, limit / 2, limit]), \
+             patch.object(macos_window.time, "sleep") as sleep, \
+             patch("builtins.print") as printed:
+            macos_window.wait_for_safe_screen_capture(poll_s=0.25)
+
+        self.assertEqual(probe.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertIn("beside a native recorder", printed.call_args.args[0])
+
+    def test_a_permission_gap_restarts_the_frameless_clock(self) -> None:
+        limit = macos_window.CAPTURE_RECORDER_WAIT_SECONDS
+        with patch.object(macos_window.popup_clear, "native_recording_ui_active",
+                          return_value=True), \
+             patch.object(macos_window.macos_capture, "screen_capture_access_available",
+                          side_effect=[True, False, True, True]), \
+             patch.object(macos_window.macos_capture,
+                          "capture_probe", side_effect=[False, False, True]) as probe, \
+             patch.object(macos_window.popup_clear,
+                          "recover_stale_interactive_recording", return_value=False), \
+             patch.object(macos_window.time, "monotonic",
+                          side_effect=[0.0, limit, limit * 2]), \
+             patch.object(macos_window.time, "sleep"), \
+             patch("builtins.print"):
+            macos_window.wait_for_safe_screen_capture(poll_s=0.25)
+
+        self.assertEqual(probe.call_count, 3)  # waited on to the real frame
+
     def test_a_daemon_spike_without_a_recorder_does_not_hold_startup(self) -> None:
         with patch.object(macos_window.popup_clear, "native_recording_ui_active",
                           return_value=False), \
