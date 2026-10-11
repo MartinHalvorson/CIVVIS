@@ -3667,6 +3667,12 @@ pub const GENES: &[Gene] = &[
     // barbarian camp is within four tiles of a road that is all in sight.
     // See `advanced/settler_path_clear.rs`.
     Gene { tag: "settler-marches-alone-when-clear", field: "settler_marches_alone_when_clear", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_marches_alone_when_clear, disable: AdvancedAi::disable_settler_marches_alone_when_clear },
+    // `aqueduct-claims-the-capped-queue`: at Immortal t100 59% of our cities
+    // grew at the host's housing ×0.25/×0.5 and 8% held an Aqueduct, while
+    // 22 of 67 capped cities without one had a legal Aqueduct (20 with the
+    // Granary built); the pick_item step reads an idle queue the claims take
+    // first. See `advanced/aqueduct_claims_the_capped_queue.rs`.
+    Gene { tag: "aqueduct-claims-the-capped-queue", field: "aqueduct_claims_the_capped_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_aqueduct_claims_the_capped_queue, disable: AdvancedAi::disable_aqueduct_claims_the_capped_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

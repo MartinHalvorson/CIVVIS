@@ -5426,6 +5426,11 @@ pub struct AdvancedAi {
     /// military against our 1,622, and never declared on them. See
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
+    /// `aqueduct-claims-the-capped-queue`: a city within one of its housing,
+    /// Granary built, puts the legal Aqueduct it can finish in time ahead of
+    /// the routine claims, the deterrent and the governor's rescoring. See
+    /// `advanced/aqueduct_claims_the_capped_queue.rs`. Off by default.
+    aqueduct_claims_the_capped_queue: bool,
     // ---- append: c-d ------------------------------------------------
     /// `crushing-steady-passes-the-edge`: a staged declaration passes the
     /// version-2 edge at `CRUSHING_STEADY_RATIO` times the target's steady
@@ -9263,6 +9268,7 @@ mod far_settle_site;
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
 mod gold_buys_the_settler;
+mod aqueduct_claims_the_capped_queue;
 mod granary_claims_the_bound_queue;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
 /// faith. See `advanced/holy_city_guard.rs`.
@@ -10214,6 +10220,7 @@ impl AdvancedAi {
             breaker_to_the_fastest: false,
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
+            aqueduct_claims_the_capped_queue: false,
             // ---- append: c-d ----------------------------------------
             crushing_steady_passes_the_edge: false,
             deterrence_spares_the_faith_defence: false,
@@ -31038,6 +31045,11 @@ impl AdvancedAi {
             let backlog_builder_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.backlog_builder_holds(g, pid, cid, plan, item));
+            // `aqueduct-claims-the-capped-queue`: the claimed Aqueduct finishes
+            // while the city still stands at its housing.
+            let capped_aqueduct_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.capped_aqueduct_holds(g, pid, cid, plan, item));
             // `industrial-zone-in-the-producers`: a queued Industrial Zone or
             // Workshop finishes before routine rescoring can claim the city.
             let industrial_zone_commitment = committed.as_ref().is_some_and(|(_, item)| {
@@ -31067,6 +31079,7 @@ impl AdvancedAi {
                     || bound_granary_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
+                    || capped_aqueduct_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -31084,6 +31097,7 @@ impl AdvancedAi {
                     || bound_granary_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
+                    || capped_aqueduct_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -47705,6 +47719,11 @@ impl AdvancedAi {
             // claims. Exact no-op while the gene is off. See
             // `advanced/backlog_builder_takes_the_queue.rs`.
             self.claim_backlog_builder(g, pid, &plan);
+            // `aqueduct-claims-the-capped-queue`: the most capped city's legal
+            // Aqueduct, after the backlog Builder and ahead of the Prophet race
+            // and the routine claims. Exact no-op while the gene is off. See
+            // `advanced/aqueduct_claims_the_capped_queue.rs`.
+            self.claim_capped_aqueduct(g, pid, &plan);
             // `prophet-builds-its-site`: the Holy Site a Prophet founds on
             // goes first. Exact no-op while the gene is off.
             self.reserve_prophet_site(g, pid, &plan);

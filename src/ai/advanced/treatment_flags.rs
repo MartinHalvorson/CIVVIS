@@ -7417,6 +7417,17 @@ impl AdvancedAi {
         self.settler_marches_alone_when_clear = false;
     }
 
+    /// Opt-in gene `aqueduct-claims-the-capped-queue`; see
+    /// `advanced/aqueduct_claims_the_capped_queue.rs`.
+    pub fn enable_aqueduct_claims_the_capped_queue(&mut self) {
+        self.aqueduct_claims_the_capped_queue = true;
+    }
+
+    /// The twin of `enable_aqueduct_claims_the_capped_queue`.
+    pub fn disable_aqueduct_claims_the_capped_queue(&mut self) {
+        self.aqueduct_claims_the_capped_queue = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
