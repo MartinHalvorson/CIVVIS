@@ -6773,6 +6773,12 @@ pub struct AdvancedAi {
     /// campaign's target builds the floor's unit ahead of its economy steps.
     /// See `BasicAi::front_weighted_floor_2`.
     front_weighted_floor_2: bool,
+    /// `engineering-for-capped-fresh-water`: two capped cities with their
+    /// Granary and a legal Aqueduct site once Engineering is known buy the
+    /// technology when the path costs a few turns, ahead of the air surge and
+    /// the production goal. See `advanced/engineering_for_capped_fresh_water.rs`.
+    /// Off by default.
+    engineering_for_capped_fresh_water: bool,
     // ---- append: g-k ------------------------------------------------
     /// `founder-holds-the-holy-city`'s memory: the last threat seen at the
     /// Holy City and the last spread of ours there, by position. See
@@ -9268,6 +9274,10 @@ mod far_settle_site;
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
 mod gold_buys_the_settler;
+/// `engineering-for-capped-fresh-water`: the Aqueduct technology for a
+/// capped empire when it costs a few turns. See
+/// `advanced/engineering_for_capped_fresh_water.rs`.
+mod engineering_for_capped_fresh_water;
 mod aqueduct_claims_the_capped_queue;
 mod granary_claims_the_bound_queue;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
@@ -10429,6 +10439,7 @@ impl AdvancedAi {
 
             front_weighted_floor: false,
             front_weighted_floor_2: false,
+            engineering_for_capped_fresh_water: false,
             // ---- append: g-k ----------------------------------------
             holy_city_guard: RefCell::new(holy_city_guard::HolyCityGuard::default()),
             gun_queues_behind_the_column: false,
@@ -17893,6 +17904,9 @@ impl AdvancedAi {
                     }
                 }
             }
+            // `engineering-for-capped-fresh-water`: read once, only if every arm
+            // above it passes. See the arm below.
+            let capped_engineering = std::cell::OnceCell::new();
             let forced_goal = match objective {
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
@@ -17935,6 +17949,21 @@ impl AdvancedAi {
                 // breaker arrived one wall tier late while the surge and the
                 // one-step modernization owned research.
                 _ if decisive_window_goal.is_some() => decisive_window_goal.map(Name::as_str),
+                // `engineering-for-capped-fresh-water`: behind the breaker and
+                // ahead of the air surge and every lane beeline, a technology a
+                // turn or two away that unlocks the Aqueducts two capped
+                // cities are waiting on. One-shot: it ends once known. See
+                // `advanced/engineering_for_capped_fresh_water.rs`.
+                _ if capped_engineering
+                    .get_or_init(|| self.capped_fresh_water_engineering_goal(g, pid))
+                    .is_some() =>
+                {
+                    capped_engineering
+                        .get()
+                        .copied()
+                        .flatten()
+                        .map(|pick| self.capped_engineering_pick(&pick))
+                }
                 _ if self.air_surge_research_goal(g, pid).is_some() => {
                     self.air_surge_research_goal(g, pid)
                 }

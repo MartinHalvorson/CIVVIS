@@ -3673,6 +3673,12 @@ pub const GENES: &[Gene] = &[
     // Granary built); the pick_item step reads an idle queue the claims take
     // first. See `advanced/aqueduct_claims_the_capped_queue.rs`.
     Gene { tag: "aqueduct-claims-the-capped-queue", field: "aqueduct_claims_the_capped_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_aqueduct_claims_the_capped_queue, disable: AdvancedAi::disable_aqueduct_claims_the_capped_queue },
+    // `engineering-for-capped-fresh-water`: in 11 of 25 Immortal runs two or
+    // more capped fresh-water cities with their Granary waited on Engineering
+    // while it was a median 1.6 turns of research away; in six it landed
+    // 36-74 turns later behind the conquest beeline (551 capped city-turns).
+    // See `advanced/engineering_for_capped_fresh_water.rs`.
+    Gene { tag: "engineering-for-capped-fresh-water", field: "engineering_for_capped_fresh_water", kind: Kind::OptIn, enable: AdvancedAi::enable_engineering_for_capped_fresh_water, disable: AdvancedAi::disable_engineering_for_capped_fresh_water },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

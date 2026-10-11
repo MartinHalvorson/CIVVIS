@@ -7428,6 +7428,17 @@ impl AdvancedAi {
         self.aqueduct_claims_the_capped_queue = false;
     }
 
+    /// Opt-in gene `engineering-for-capped-fresh-water`; see
+    /// `advanced/engineering_for_capped_fresh_water.rs`.
+    pub fn enable_engineering_for_capped_fresh_water(&mut self) {
+        self.engineering_for_capped_fresh_water = true;
+    }
+
+    /// The twin of `enable_engineering_for_capped_fresh_water`.
+    pub fn disable_engineering_for_capped_fresh_water(&mut self) {
+        self.engineering_for_capped_fresh_water = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
