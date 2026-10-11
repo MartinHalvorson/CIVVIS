@@ -9320,6 +9320,10 @@ mod industrial_zone_claims_the_producer_queue;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
 mod campus_building_claims_the_queue;
+/// Diagnostic journal: why a city's menu passed a Settler over while the
+/// empire is short of its settlement target. Reads only. See
+/// `advanced/settler_admission_journal.rs`.
+mod settler_admission_journal;
 mod granary_claims_the_bound_queue;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
 /// faith. See `advanced/holy_city_guard.rs`.
@@ -31708,6 +31712,9 @@ impl AdvancedAi {
                         &mut scores,
                     );
                 }
+                // Diagnostic only, no order reads it: why the menu passed a
+                // Settler over. See `advanced/settler_admission_journal.rs`.
+                self.journal_settler_admission(g, pid, cid, plan, &counts, &items, &scores);
                 let menu = items
                     .into_iter()
                     .zip(scores)

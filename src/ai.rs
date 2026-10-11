@@ -69,6 +69,10 @@ const FRONT_NEAR_TILES: i32 = 8;
 
 /// The gates of `BasicAi::pick_item`'s Settler step; see
 /// `BasicAi::settler_gates`.
+/// Turns between one city's `journal_settler_hold` lines: a sample of every
+/// game for the census without a line per city per turn.
+const SETTLER_HOLD_JOURNAL_STRIDE: u32 = 3;
+
 struct SettlerGates {
     room: bool,
     stranded: usize,
@@ -10708,6 +10712,9 @@ impl BasicAi {
                 melee,
                 ranged,
             ) {
+                // Diagnostic only, no order reads it: why this pick is not a
+                // Settler while the empire has room. See `journal_settler_hold`.
+                self.journal_settler_hold(g, pid, *cid, n_cities, settlers, &item);
                 if g.apply(
                     pid,
                     &Action::Produce {
@@ -15766,6 +15773,60 @@ impl BasicAi {
     }
 
     /// Whether the Settler step would train a Settler in this city now.
+    /// Diagnostic only: when the empire has room for another city and the
+    /// build order picked something other than a Settler for `cid`, journal
+    /// the first Settler gate that refused it — the pipeline, the city's
+    /// population, the expansion window, a practical site — or, when every
+    /// gate admitted it, the earlier step that took the queue. One Detail line
+    /// every `SETTLER_HOLD_JOURNAL_STRIDE` turns; it reads only, so no order
+    /// changes. See `advanced/settler_admission_journal.rs` for the governor's
+    /// twin.
+    fn journal_settler_hold(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        settlers: usize,
+        picked: &Item,
+    ) {
+        if !g.turn.is_multiple_of(SETTLER_HOLD_JOURNAL_STRIDE)
+            || !self.journal.wants(crate::reasoning::Level::Detail)
+            || matches!(picked, Item::Unit { unit } if unit == "settler")
+        {
+            return;
+        }
+        let city = &g.cities[&cid];
+        let gates = self.settler_gates(g, pid, city.pop, n_cities, settlers);
+        if !gates.room {
+            return;
+        }
+        let reason = if !gates.none_in_flight {
+            if gates.parked_brake {
+                "a parked Settler holds the pipeline".to_string()
+            } else {
+                format!(
+                    "the Settler pipeline is full ({settlers} in flight of {})",
+                    gates.pipeline
+                )
+            }
+        } else if !gates.grown {
+            format!("population {} is below the Settler floor", city.pop)
+        } else if !gates.in_window {
+            "the expansion window is closed".to_string()
+        } else if !self.has_practical_settle_site(g, pid) {
+            "no practical settle site".to_string()
+        } else {
+            format!(
+                "outranked by {} earlier in the build order",
+                Self::item_label(picked)
+            )
+        };
+        think!(self.journal, Cities, Detail, "Settler held in {}", city.name;
+               "{reason}; {n_cities} cities and {settlers} settler{} against a target of {:.1}",
+               if settlers == 1 { "" } else { "s" }, self.w.city_target);
+    }
+
     pub(crate) fn settler_due(
         &self,
         g: &Game,
