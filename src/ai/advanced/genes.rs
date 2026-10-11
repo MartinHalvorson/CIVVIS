@@ -3632,6 +3632,14 @@ pub const GENES: &[Gene] = &[
     // spreads there first and, with none near, the Holy City buys one ahead of
     // the Apostle save. See `advanced/holy_city_guard.rs`.
     Gene { tag: "founder-holds-the-holy-city", field: "founder_holds_the_holy_city", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_holds_the_holy_city, disable: AdvancedAi::disable_founder_holds_the_holy_city },
+    // Live Emperor founders 10-09/11: our faith held half or more of our cities
+    // at t80 in 61 of 85 founders that kept clear of a Religious defeat against
+    // 4 of the 10 that lost. Once a rival faith holds one of our cities, the
+    // small-town counterweight charges our own towns 24 a citizen while foreign
+    // targets keep 12, so a founder's Missionaries walked abroad (005957Z:
+    // Plymouth 190 against our unconverted Bogotá 70; lost t118 with 14
+    // cities). See `advanced/founder_home.rs`.
+    Gene { tag: "founder-converts-its-own-cities", field: "founder_converts_its_own_cities", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_converts_its_own_cities, disable: AdvancedAi::disable_founder_converts_its_own_cities },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

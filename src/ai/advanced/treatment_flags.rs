@@ -7373,6 +7373,17 @@ impl AdvancedAi {
         self.founder_holds_the_holy_city = false;
     }
 
+    /// Opt-in gene `founder-converts-its-own-cities`; see
+    /// [`Self::founder_converts_its_own_cities`].
+    pub fn enable_founder_converts_its_own_cities(&mut self) {
+        self.founder_converts_its_own_cities = true;
+    }
+
+    /// The twin of `enable_founder_converts_its_own_cities`.
+    pub fn disable_founder_converts_its_own_cities(&mut self) {
+        self.founder_converts_its_own_cities = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

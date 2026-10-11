@@ -6216,6 +6216,11 @@ pub struct AdvancedAi {
     /// near, the Holy City buys one ahead of the Apostle save. See
     /// `advanced/holy_city_guard.rs`.
     founder_holds_the_holy_city: bool,
+    /// `founder-converts-its-own-cities`: while we founded the spreader's
+    /// faith and two or more of our cities are off it, a spreader's targets
+    /// drop foreign cities whenever one of ours is on the list. See
+    /// `advanced/founder_home.rs`.
+    founder_converts_its_own_cities: bool,
     /// `early-conquest-stands-down`: the early conquest opening still scans
     /// for its target (and its scouts keep their caution) but never opens:
     /// no capital reservation, no rally, no declaration. See
@@ -9239,6 +9244,9 @@ mod culture_denial_heist;
 mod dvp_leader_front;
 mod falling_city_takers;
 mod far_settle_site;
+/// `founder-converts-its-own-cities`: a founder's spreaders convert our own
+/// cities before any foreign one. See `advanced/founder_home.rs`.
+mod founder_home;
 mod gold_buys_the_settler;
 mod granary_claims_the_bound_queue;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
@@ -10339,6 +10347,7 @@ impl AdvancedAi {
             first_luxury_first_2: false,
             falling_city_calls_the_takers: false,
             founder_holds_the_holy_city: false,
+            founder_converts_its_own_cities: false,
             early_conquest_stands_down: false,
             falling_city_outranks_the_heal: false,
             elimination_waits_on_the_clock: false,
@@ -40840,6 +40849,9 @@ impl AdvancedAi {
             })
             .collect();
         targets.sort_by(|left, right| right.cmp(left));
+        // See `founder_home_targets` (`founder-converts-its-own-cities`): a
+        // founder's spreader converts our own cities before any foreign one.
+        self.founder_home_targets(g, pid, &religion, &mut targets, |(_, _, _, pos)| *pos);
         if let Some(threat) = small_town_threat.as_deref() {
             if let Some(city) = targets
                 .first()
