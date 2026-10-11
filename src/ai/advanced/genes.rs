@@ -3702,6 +3702,15 @@ pub const GENES: &[Gene] = &[
     // our power over theirs, stood on our side of the water. See
     // `advanced/sea_locked_front.rs`.
     Gene { tag: "sea-locked-front-moves-on", field: "sea_locked_front_moves_on", kind: Kind::OptIn, enable: AdvancedAi::enable_sea_locked_front_moves_on, disable: AdvancedAi::disable_sea_locked_front_moves_on },
+    // 10-11 live census, 54 Immortal and 118 Emperor GC runs: the rivals'
+    // walls reach 400 at a median t111 (Immortal) while our Metal Casting
+    // lands at t131 and 21 of 54 runs never research it; at t125 our best gun
+    // is a Trebuchet in 27 of 49 runs. 444 research picks t60-150 walked the
+    // Advanced Flight beeline against 28 for a siege technology, and Advanced
+    // Flight came by t150 in 17 of 41 runs. The next fed siege design's
+    // technology now takes the slot ahead of the beeline when it costs a few
+    // turns. See `advanced/siege_tier_before_the_beeline.rs`.
+    Gene { tag: "siege-tier-before-the-beeline", field: "siege_tier_before_the_beeline", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_tier_before_the_beeline, disable: AdvancedAi::disable_siege_tier_before_the_beeline },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

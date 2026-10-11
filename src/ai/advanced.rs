@@ -7783,6 +7783,12 @@ pub struct AdvancedAi {
     /// with us that the army can walk to. See `advanced/sea_locked_front.rs`.
     /// Off by default.
     sea_locked_front_moves_on: bool,
+    /// `siege-tier-before-the-beeline`: behind 300+ walls, the next fed siege
+    /// design's technology from `domination-siege-research-2` takes the
+    /// research slot ahead of the air surge's beeline when it costs a few
+    /// turns and the Bomber is still far. See
+    /// `advanced/siege_tier_before_the_beeline.rs`. Off by default.
+    siege_tier_before_the_beeline: bool,
     /// `settler-marches-alone-when-clear`: up to live turn 80, a Settler's
     /// guard holds give way while no hostile unit or barbarian camp is near
     /// its road and all of the road is in sight. See
@@ -9297,6 +9303,10 @@ mod gold_buys_the_settler;
 /// capped empire when it costs a few turns. See
 /// `advanced/engineering_for_capped_fresh_water.rs`.
 mod engineering_for_capped_fresh_water;
+/// `siege-tier-before-the-beeline`: the next siege tier ahead of the air
+/// surge's beeline behind Medieval walls. See
+/// `advanced/siege_tier_before_the_beeline.rs`.
+mod siege_tier_before_the_beeline;
 mod aqueduct_claims_the_capped_queue;
 /// `industrial-zone-claims-the-producer-queue`: the producer step's
 /// Industrial Zone or Workshop claims its city's queue. See
@@ -10613,6 +10623,7 @@ impl AdvancedAi {
 
             // ---- append: s-s ----------------------------------------
             sea_locked_front_moves_on: false,
+            siege_tier_before_the_beeline: false,
             settler_marches_alone_when_clear: false,
             spreader_steps_out_of_the_apostle: false,
             space_denial_spies_from_rocketry: false,
@@ -17936,6 +17947,9 @@ impl AdvancedAi {
             // `engineering-for-capped-fresh-water`: read once, only if every arm
             // above it passes. See the arm below.
             let capped_engineering = std::cell::OnceCell::new();
+            // `siege-tier-before-the-beeline`: read once, only if every arm
+            // above it passes. See the arm below.
+            let siege_tier = std::cell::OnceCell::new();
             let forced_goal = match objective {
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
@@ -17992,6 +18006,22 @@ impl AdvancedAi {
                         .copied()
                         .flatten()
                         .map(|pick| self.capped_engineering_pick(&pick))
+                }
+                // `siege-tier-before-the-beeline`: behind Medieval walls the
+                // next fed siege design's technology, a few turns away, ahead
+                // of the air surge and every lane beeline while the Bomber is
+                // still far. See `advanced/siege_tier_before_the_beeline.rs`.
+                _ if siege_tier
+                    .get_or_init(|| {
+                        self.siege_tier_before_the_beeline_goal(g, pid, plan, domination_siege_goal)
+                    })
+                    .is_some() =>
+                {
+                    siege_tier
+                        .get()
+                        .copied()
+                        .flatten()
+                        .map(|pick| self.siege_tier_pick(&pick))
                 }
                 _ if self.air_surge_research_goal(g, pid).is_some() => {
                     self.air_surge_research_goal(g, pid)
@@ -18160,6 +18190,23 @@ impl AdvancedAi {
             if let Some(goal) = decisive_window_goal.filter(|goal| forced_goal == Some(goal.as_str())) {
                 for tech in g.available_techs(pid) {
                     if self.tech_leads_to(g, &tech, goal.as_str()) && !available.contains(&tech) {
+                        available.push(tech);
+                    }
+                }
+            }
+            // `siege-tier-before-the-beeline`: Metal Casting and Ballistics sit
+            // a Renaissance step beyond a Medieval backlog the rolling window
+            // still holds; admit every legal step toward the siege technology
+            // while it owns the forced goal.
+            if let Some(pick) = siege_tier
+                .get()
+                .copied()
+                .flatten()
+                .filter(|pick| forced_goal == Some(pick.tech.as_str()))
+            {
+                for tech in g.available_techs(pid) {
+                    if self.tech_leads_to(g, &tech, pick.tech.as_str()) && !available.contains(&tech)
+                    {
                         available.push(tech);
                     }
                 }
