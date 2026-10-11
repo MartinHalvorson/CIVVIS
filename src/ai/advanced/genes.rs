@@ -3687,6 +3687,12 @@ pub const GENES: &[Gene] = &[
     // city and wall health with no attack in reach, such a foundation goes
     // back to the head of its queue and the defence handoff keeps it there.
     Gene { tag: "paused-district-finishes", field: "paused_district_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_paused_district_finishes, disable: AdvancedAi::disable_paused_district_finishes },
+    // `sea-locked-front-moves-on`: live Emperor G004440Z kept the Netherlands
+    // as its front from turn 146 to 192 and stood ten Dutch sieges down for
+    // want of a land road while the Maya and Egypt, at war with us at 3-5x
+    // our power over theirs, stood on our side of the water. See
+    // `advanced/sea_locked_front.rs`.
+    Gene { tag: "sea-locked-front-moves-on", field: "sea_locked_front_moves_on", kind: Kind::OptIn, enable: AdvancedAi::enable_sea_locked_front_moves_on, disable: AdvancedAi::disable_sea_locked_front_moves_on },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

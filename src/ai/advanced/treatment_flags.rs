@@ -7452,6 +7452,18 @@ impl AdvancedAi {
         self.paused_district_finishes = false;
     }
 
+    /// Move a one-war front cut off from every land road to an enemy the
+    /// army can walk to. Opt-in gene `sea-locked-front-moves-on`; see
+    /// `advanced/sea_locked_front.rs`.
+    pub fn enable_sea_locked_front_moves_on(&mut self) {
+        self.sea_locked_front_moves_on = true;
+    }
+
+    /// The twin of `enable_sea_locked_front_moves_on`.
+    pub fn disable_sea_locked_front_moves_on(&mut self) {
+        self.sea_locked_front_moves_on = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
