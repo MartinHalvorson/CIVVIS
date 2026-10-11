@@ -133,3 +133,21 @@ fn no_claim_before_apprenticeship() {
         "no zone before the technology"
     );
 }
+
+/// A wall breaker the siege reservation queued keeps its queue: a reserved
+/// Trebuchet at the head is never deferred for the zone, though a routine
+/// Knight in the same city is (see the first test).
+#[test]
+fn a_reserved_trebuchet_keeps_its_queue() {
+    let (mut game, ranked) = producer_empire("ZONECLAIM", 93_105, 1);
+    all_queue(&mut game, &ranked, &unit("trebuchet"));
+    let ai = armed();
+    let plan = ai.assess(&game, 0);
+    ai.claim_producer_zone(&mut game, 0, &plan);
+    assert!(
+        ranked
+            .iter()
+            .all(|cid| head(&game, *cid) == Some(unit("trebuchet"))),
+        "the reserved Trebuchet is never displaced"
+    );
+}

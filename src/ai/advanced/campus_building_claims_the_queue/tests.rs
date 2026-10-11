@@ -168,3 +168,21 @@ fn no_claim_without_a_due_campus_building() {
         "nothing due"
     );
 }
+
+/// A wall breaker the siege reservation queued keeps its queue: a reserved
+/// Trebuchet at the head is never deferred, though a routine Knight in the
+/// same city is (see the first test).
+#[test]
+fn a_reserved_trebuchet_keeps_its_queue() {
+    let (mut game, ranked) = with_education("CAMPUSCLAIM", 94_106, 1);
+    all_queue(&mut game, &ranked, &unit("trebuchet"));
+    let ai = armed();
+    let plan = ai.assess(&game, 0);
+    ai.claim_campus_building(&mut game, 0, &plan);
+    assert!(
+        ranked
+            .iter()
+            .all(|cid| head(&game, *cid) == Some(unit("trebuchet"))),
+        "the reserved Trebuchet is never displaced"
+    );
+}

@@ -8,9 +8,10 @@
 //! (Campus, Theater Square, Government Plaza, Monument, Library, University,
 //! Amphitheater), a claimed Granary, Aqueduct, deterrent, Trader or backlog
 //! Builder, the early Settler floor's city, a threatened or freshly attacked
-//! city, a city due its Granary, and anything finishing this turn keep their
-//! queue; at war with a major a military unit keeps its queue too. The
-//! displaced item keeps its progress.
+//! city, a city due its Granary, a wall breaker the siege reservation queued
+//! (any siege unit; [`AdvancedAi::queued_wall_breaker`]), and anything
+//! finishing this turn keep their queue; at war with a major a military unit
+//! keeps its queue too. The displaced item keeps its progress.
 //!
 //! **Why (2026-10-11 census, 38 live Immortal and 120 Emperor GC runs).** We
 //! learn Apprenticeship at a median t82 at Immortal (first rival t48), but the
@@ -47,6 +48,19 @@ use super::*;
 const PRODUCER_CLAIM_MIN_CITIES: usize = 3;
 
 impl AdvancedAi {
+    /// Whether the queue head `item` is a wall breaker -- a siege unit the
+    /// delegated siege reservation, the breaker budget or the siege train
+    /// queued for a walled assault (`reserve_delegated_domination_siege`
+    /// keeps no per-city marker, so the unit itself is the mark). The
+    /// Industrial Zone and Campus building claims never defer one: siege
+    /// tier is what holds the post-gate captures (rival walls reach 400 at a
+    /// median t111 at Immortal). Live 073131Z t76 and 065902Z t82: the
+    /// Campus claim took a reserved Trebuchet's queue in replay.
+    pub(super) fn queued_wall_breaker(g: &Game, item: &Item) -> bool {
+        matches!(item, Item::Unit { unit }
+            if g.rules.units.get(unit).is_some_and(|spec| spec.siege))
+    }
+
     /// The Industrial Zone or Workshop `cid` would claim and how long it
     /// takes: the producer step's pick for an unthreatened city not due its
     /// Granary. `None` with the gene off.
@@ -166,6 +180,7 @@ impl AdvancedAi {
                         || self.idle_route_trader_holds(g, pid, cid, plan, item)
                         || self.backlog_builder_holds(g, pid, cid, plan, item)
                         || self.capped_aqueduct_holds(g, pid, cid, plan, item)
+                        || Self::queued_wall_breaker(g, item)
                         || !Self::capped_aqueduct_may_defer(g, pid, cid, item, at_major_war)
                     {
                         continue;

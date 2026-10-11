@@ -9,9 +9,10 @@
 //! Government Plaza, Monument, Library, University, Amphitheater), a claimed
 //! Granary, Aqueduct, Industrial Zone, deterrent, Trader or backlog Builder,
 //! the early Settler floor's city, a threatened or freshly attacked city, a
-//! city due its Granary, and anything finishing this turn keep their queue; at
-//! war with a major a military unit keeps its queue too. The displaced item
-//! keeps its progress.
+//! city due its Granary, a wall breaker the siege reservation queued (any
+//! siege unit; [`AdvancedAi::queued_wall_breaker`]), and anything finishing
+//! this turn keep their queue; at war with a major a military unit keeps its
+//! queue too. The displaced item keeps its progress.
 //!
 //! **Why (2026-10-11 census, 63 live Immortal and 105 Emperor GC runs since
 //! capital-campus-before-the-plaza).** The Campus districts come (Immortal
@@ -153,6 +154,7 @@ impl AdvancedAi {
                         || self.backlog_builder_holds(g, pid, cid, plan, item)
                         || self.capped_aqueduct_holds(g, pid, cid, plan, item)
                         || self.producer_zone_claim_holds(g, pid, cid, plan, item)
+                        || Self::queued_wall_breaker(g, item)
                         || !Self::capped_aqueduct_may_defer(g, pid, cid, item, at_major_war)
                     {
                         continue;
