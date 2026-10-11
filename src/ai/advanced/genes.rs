@@ -3632,6 +3632,13 @@ pub const GENES: &[Gene] = &[
     // spreads there first and, with none near, the Holy City buys one ahead of
     // the Apostle save. See `advanced/holy_city_guard.rs`.
     Gene { tag: "founder-holds-the-holy-city", field: "founder_holds_the_holy_city", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_holds_the_holy_city, disable: AdvancedAi::disable_founder_holds_the_holy_city },
+    // 10-09/10: rival Apostles attacked our religious units 1,039 times in 109
+    // Emperor runs and killed 395, 55% of the fights one or two tiles from our
+    // cities; each kill hands the winner 250 pressure across ten tiles
+    // (G231456Z: five Buddhist cities to none t96-104, lost t106). A unit of
+    // ours never ends a step where a rival that would win the fight reaches
+    // it. See `advanced/apostle_evasion.rs`.
+    Gene { tag: "spreader-steps-out-of-the-apostle", field: "spreader_steps_out_of_the_apostle", kind: Kind::OptIn, enable: AdvancedAi::enable_spreader_steps_out_of_the_apostle, disable: AdvancedAi::disable_spreader_steps_out_of_the_apostle },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -15103,13 +15103,18 @@ impl Game {
         {
             strength += 15.0;
         }
+        // The unit's own id never stands beside its own tile; the filter
+        // matters only to a probe read off its tile (see
+        // `theological_exchange_preview_with_defender_at`).
         strength
             + 2.0
                 * self
                     .nbrs(unit.pos)
                     .into_iter()
                     .flat_map(|pos| self.unit_ids_at(pos))
-                    .filter(|id| self.units[id].religion.as_deref() == Some(religion))
+                    .filter(|id| {
+                        **id != unit.id && self.units[id].religion.as_deref() == Some(religion)
+                    })
                     .count() as f64
     }
 
@@ -15146,6 +15151,38 @@ impl Game {
             defender.hp,
         );
         Some((expected_damage(att, def), expected_damage(def, att), defender.hp))
+    }
+
+    /// [`Self::theological_exchange_preview`] with `defender` read as if it
+    /// stood on `at`: the tile-bound terms of its strength (home territory, a
+    /// city or Holy Site of its faith, its Holy City, the units of its faith
+    /// beside it) follow it there. `None` when either unit is missing or
+    /// faithless, or the two share a faith.
+    pub(crate) fn theological_exchange_preview_with_defender_at(
+        &self,
+        uid: u32,
+        defender: u32,
+        at: Pos,
+    ) -> Option<(f64, f64, i32)> {
+        let attacker = self.units.get(&uid)?;
+        let attacker_religion = attacker.religion.clone()?;
+        let mut probe = self.units.get(&defender)?.clone();
+        let defender_religion = probe.religion.clone()?;
+        if defender_religion == attacker_religion {
+            return None;
+        }
+        probe.pos = at;
+        let att = effective_strength(
+            self.theological_strength(attacker)
+                + self.religious_alliance_combat_bonus(attacker.owner, &defender_religion),
+            attacker.hp,
+        );
+        let def = effective_strength(
+            self.theological_strength(&probe)
+                + self.religious_alliance_combat_bonus(probe.owner, &attacker_religion),
+            probe.hp,
+        );
+        Some((expected_damage(att, def), expected_damage(def, att), probe.hp))
     }
 
     fn do_theological_attack(&mut self, pid: usize, uid: u32, target: Pos) -> Result<(), String> {
