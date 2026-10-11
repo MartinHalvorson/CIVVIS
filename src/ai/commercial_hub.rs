@@ -47,7 +47,7 @@ impl BasicAi {
 
     /// The plan's threatened city (lent by `AdvancedAi::delegated_cities`)
     /// or a city attacked within four turns: the test the housing step uses.
-    fn commercial_city_threatened(&self, g: &Game, cid: u32) -> bool {
+    pub(super) fn commercial_city_threatened(&self, g: &Game, cid: u32) -> bool {
         let city = &g.cities[&cid];
         self.plan_threatened_city == Some(cid)
             || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
@@ -103,7 +103,7 @@ impl BasicAi {
     /// The Market (or this civilization's replacement) of the Commercial Hub
     /// standing in `cid`, when the city finishes it within
     /// `COMMERCIAL_HUB_MAX_TURNS`.
-    fn commercial_market_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+    pub(super) fn commercial_market_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
         let city = g.cities.get(&cid)?;
         if !g.city_has_district_family(city, crate::name!("commercial_hub")) {
             return None;
@@ -183,7 +183,13 @@ impl BasicAi {
     /// of the unthreatened cities that lack one and have a site -- as many
     /// as the hubs still wanted -- and finishes it within
     /// `COMMERCIAL_HUB_MAX_TURNS`.
-    fn commercial_hub_item(&self, g: &Game, pid: usize, cid: u32, n_cities: usize) -> Option<Item> {
+    pub(super) fn commercial_hub_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+    ) -> Option<Item> {
         let hub = Self::civ_district(g, pid, "commercial_hub");
         let spec = g.rules.districts.get(&hub)?;
         let unlocked = spec

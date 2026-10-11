@@ -7501,6 +7501,24 @@ impl AdvancedAi {
         self.campus_building_claims_the_queue = false;
     }
 
+    /// The Commercial Hub step's hub (or the hub's Market) claims its city's
+    /// queue over a deferrable head. Opt-in gene
+    /// `commercial-hub-claims-the-trade-city`; see
+    /// `AdvancedAi::claim_commercial_hub`.
+    /// Requires and arms `commercial-hub-and-traders`, whose step names the
+    /// city.
+    pub fn enable_commercial_hub_claims_the_trade_city(&mut self) {
+        self.commercial_hub_and_traders = true;
+        self.base.commercial_hub_and_traders = true;
+        self.commercial_hub_claims_the_trade_city = true;
+    }
+
+    /// The twin of `enable_commercial_hub_claims_the_trade_city`: the base
+    /// stays as it was.
+    pub fn disable_commercial_hub_claims_the_trade_city(&mut self) {
+        self.commercial_hub_claims_the_trade_city = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
