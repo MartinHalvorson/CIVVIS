@@ -12308,12 +12308,7 @@ fn step_district_progress(ctx: &mut HostStepCtx<'_>) {
         .cities
         .iter()
         .filter_map(|city| {
-            let ours = |cid: &u32| {
-                ctx.game
-                    .cities
-                    .get(cid)
-                    .is_some_and(|city| city.owner == 0)
-            };
+            let ours = |cid: &u32| ctx.game.cities.get(cid).is_some_and(|city| city.owner == 0);
             // Our own centre names the city planted for this export in the same
             // pass. Civilization VI numbers cities per player, so the native id
             // alone is ambiguous: Bogotá's 65536 is every other player's first
@@ -12324,12 +12319,12 @@ fn step_district_progress(ctx: &mut HostStepCtx<'_>) {
             let cid = ctx
                 .game
                 .city_at(crate::hex::offset_to_axial(city.x, city.y))
-                .filter(&ours)
+                .filter(ours)
                 .or_else(|| {
                     (city.id > 0)
                         .then(|| ctx.known_city_ids.get(&city.id).copied())
                         .flatten()
-                        .filter(&ours)
+                        .filter(ours)
                 })?;
             Some((cid, city.id))
         })
