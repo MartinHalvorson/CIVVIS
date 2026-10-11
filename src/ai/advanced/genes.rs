@@ -3640,6 +3640,13 @@ pub const GENES: &[Gene] = &[
     // Plymouth 190 against our unconverted Bogotá 70; lost t118 with 14
     // cities). See `advanced/founder_home.rs`.
     Gene { tag: "founder-converts-its-own-cities", field: "founder_converts_its_own_cities", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_converts_its_own_cities, disable: AdvancedAi::disable_founder_converts_its_own_cities },
+    // 10-09/10: rival Apostles attacked our religious units 1,039 times in 109
+    // Emperor runs and killed 395, 55% of the fights one or two tiles from our
+    // cities; each kill hands the winner 250 pressure across ten tiles
+    // (G231456Z: five Buddhist cities to none t96-104, lost t106). A unit of
+    // ours never ends a step where a rival that would win the fight reaches
+    // it. See `advanced/apostle_evasion.rs`.
+    Gene { tag: "spreader-steps-out-of-the-apostle", field: "spreader_steps_out_of_the_apostle", kind: Kind::OptIn, enable: AdvancedAi::enable_spreader_steps_out_of_the_apostle, disable: AdvancedAi::disable_spreader_steps_out_of_the_apostle },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

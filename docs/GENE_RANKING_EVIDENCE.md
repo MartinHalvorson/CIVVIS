@@ -432,6 +432,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-train-scales-with-walls` | off (unmeasured) | Opt-in gene `siege-train-scales-with-walls`; see `Self::siege_train_scales_with_walls`. | 1 \| 1 |
 | `siege-train-upgrades-first` | off (unmeasured) | Opt-in gene `siege-train-upgrades-first`; see `Self::siege_train_upgrades_first`. | 1 \| 1 |
 | `space-denial-spies-from-rocketry` | off (unmeasured) | Opt-in gene `space-denial-spies-from-rocketry`; see `denial_spy_racers` in `advanced/science_denial_every_pad.rs`. | 1 \| 1 |
+| `spreader-steps-out-of-the-apostle` | off (unmeasured) | Opt-in gene `spreader-steps-out-of-the-apostle`; see `advanced/apostle_evasion.rs`. | 1 \| 1 |
 | `stage-march-keeps-to-land` | off (unmeasured) | Opt-in gene `stage-march-keeps-to-land`; see `Self::stage_march_keeps_to_land`. | 1 \| 1 |
 | `stage-musters-out-of-reach` | off (unmeasured) | Opt-in gene `stage-musters-out-of-reach`; see `Self::stage_musters_out_of_reach`. | 1 \| 1 |
 | `staging-column-passes-through` | off (unmeasured) | Opt-in gene `staging-column-passes-through`; see `Self::staging_column_passes_through`. | 1 \| 1 |

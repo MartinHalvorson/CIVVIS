@@ -7384,6 +7384,17 @@ impl AdvancedAi {
         self.founder_converts_its_own_cities = false;
     }
 
+    /// Opt-in gene `spreader-steps-out-of-the-apostle`; see
+    /// `advanced/apostle_evasion.rs`.
+    pub fn enable_spreader_steps_out_of_the_apostle(&mut self) {
+        self.spreader_steps_out_of_the_apostle = true;
+    }
+
+    /// The twin of `enable_spreader_steps_out_of_the_apostle`.
+    pub fn disable_spreader_steps_out_of_the_apostle(&mut self) {
+        self.spreader_steps_out_of_the_apostle = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

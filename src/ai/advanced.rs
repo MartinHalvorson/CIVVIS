@@ -7751,6 +7751,10 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `spreader-steps-out-of-the-apostle`: a religious unit of ours never
+    /// ends a step inside a rival Apostle's reach when that rival would win
+    /// the fight. See `advanced/apostle_evasion.rs`. Off by default.
+    spreader_steps_out_of_the_apostle: bool,
     /// `space-denial-spies-from-rocketry`: the denial spy network (training
     /// and every-pad posting) answers a rival from its Rocketry or first space
     /// project, and trains to our Spy capacity. See `denial_spy_racers` in
@@ -9043,6 +9047,7 @@ mod lane_delegates_production;
 /// The Missionary in the field: a last-charge Missionary explores the fog,
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.
+mod apostle_evasion;
 mod missionary_field;
 /// One war at a time: one campaign front, peace on every other front, and
 /// peace on the front once the tide has run against us for long enough
@@ -10549,6 +10554,7 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            spreader_steps_out_of_the_apostle: false,
             space_denial_spies_from_rocketry: false,
             settler_walks_to_the_better_site: false,
             staging_reaches_the_border: false,
@@ -40766,6 +40772,11 @@ impl AdvancedAi {
         if let Some(acted) = self.religious_unit_evades_raiders(g, pid, uid) {
             return acted;
         }
+        // `spreader-steps-out-of-the-apostle`: out of a rival Apostle's reach
+        // before the heal, too — a unit killed in a fight heals nothing.
+        if let Some(acted) = self.religious_unit_evades_apostles(g, pid, uid) {
+            return acted;
+        }
         if self.religious_unit_holds_to_heal(g, pid, uid) {
             return false;
         }
@@ -40891,6 +40902,11 @@ impl AdvancedAi {
         // `missionary_evades_raiders` covers the whole corps: an Apostle or a
         // Guru inside a raider's reach leaves it before it does anything else.
         if let Some(acted) = self.religious_unit_evades_raiders(g, pid, uid) {
+            return acted;
+        }
+        // `spreader-steps-out-of-the-apostle`: the whole corps, likewise, out
+        // of a rival Apostle's reach first.
+        if let Some(acted) = self.religious_unit_evades_apostles(g, pid, uid) {
             return acted;
         }
         let unit = g.units[&uid].clone();
