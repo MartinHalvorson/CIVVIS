@@ -1762,14 +1762,19 @@ fn siege_posts_keeping(
                 && g.unit_can_traverse(uid, *pos)
                 && g.unit_has_line_of_sight_from(uid, *pos, city.pos)
                 && g.unit_ids_at(*pos).is_empty()
+                && siege_route_step(g, pid, uid, *pos, city.pos).is_some()
         });
         if let Some(pos) = kept {
             posts.insert(uid, pos);
             fire_taken.insert(pos);
             continue;
         }
+        // Each band offers its candidates in the existing order and keeps the
+        // first one `siege_route_step` can reach: the approach's own route
+        // rules (#4016). A gun with no reachable firing tile gets no post.
         let best = (1..=range).rev().find_map(|distance| {
-            g.wring(city.pos, distance)
+            let mut candidates: Vec<Pos> = g
+                .wring(city.pos, distance)
                 .into_iter()
                 .filter(|pos| {
                     *pos != here
@@ -1781,17 +1786,21 @@ fn siege_posts_keeping(
                         && g.unit_has_line_of_sight_from(uid, *pos, city.pos)
                         && g.unit_ids_at(*pos).is_empty()
                 })
-                .min_by_key(|pos| {
-                    // The gun's own side of the city first: a post across the
-                    // city is a walk around its strike ring (Natal, game 30:
-                    // guns on the west were posted east).
-                    let far_side = g.wdist(here, *pos) > g.wdist(here, city.pos);
-                    let behind = ring_taken.iter().any(|held| g.wdist(*held, *pos) == 1);
-                    let exposure = hostiles.iter().filter(|h| g.wdist(**h, *pos) <= 2).count();
-                    // Out of every other hostile city's strike first; see
-                    // `third_strike_sources`.
-                    (third_exposed(*pos), far_side, !behind, exposure, g.wdist(here, *pos), *pos)
-                })
+                .collect();
+            candidates.sort_by_key(|pos| {
+                // The gun's own side of the city first: a post across the
+                // city is a walk around its strike ring (Natal, game 30:
+                // guns on the west were posted east).
+                let far_side = g.wdist(here, *pos) > g.wdist(here, city.pos);
+                let behind = ring_taken.iter().any(|held| g.wdist(*held, *pos) == 1);
+                let exposure = hostiles.iter().filter(|h| g.wdist(**h, *pos) <= 2).count();
+                // Out of every other hostile city's strike first; see
+                // `third_strike_sources`.
+                (third_exposed(*pos), far_side, !behind, exposure, g.wdist(here, *pos), *pos)
+            });
+            candidates
+                .into_iter()
+                .find(|pos| siege_route_step(g, pid, uid, *pos, city.pos).is_some())
         });
         if let Some(pos) = best {
             posts.insert(uid, pos);
@@ -6214,3 +6223,6 @@ mod air_tests;
 
 #[cfg(test)]
 mod swarm_tests;
+
+#[cfg(test)]
+mod post_reachability_tests;
