@@ -673,6 +673,13 @@ impl AdvancedAi {
         if let Some(next) = capital_handoff {
             return Some(next);
         }
+        // See `sea_locked_front_swap` (`sea-locked-front-moves-on`): a front
+        // the army cannot walk to gives way before the stall clock runs.
+        if let Some(next) =
+            current.and_then(|front| self.sea_locked_front_swap(g, pid, front, enemies))
+        {
+            return Some(next);
+        }
         // See `stalled_front_swap`.
         if let Some(next) =
             current.and_then(|front| self.stalled_front_swap(g, pid, front, enemies))

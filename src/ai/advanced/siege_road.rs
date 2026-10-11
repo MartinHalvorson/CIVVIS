@@ -303,6 +303,25 @@ impl AdvancedAi {
             && !self.rival_reachable_by_land(g, pid, rival)
     }
 
+    /// `sea-locked-front-moves-on`: how many of `rival`'s cities have a road
+    /// stand-down still holding that named no closed border, the train held
+    /// short of water or impassable ground. Zero with
+    /// `siege-target-needs-a-road` off (nothing is recorded).
+    pub(super) fn water_road_stand_downs(&self, g: &Game, pid: usize, rival: usize) -> usize {
+        if !self.siege_target_needs_a_road {
+            return 0;
+        }
+        self.siege_road_closed
+            .iter()
+            .filter(|(city, closed)| {
+                closed.seat == pid
+                    && closed.owner == rival
+                    && closed.blocker.is_none()
+                    && self.capture_stood_down_holds(g, **city)
+            })
+            .count()
+    }
+
     /// `blocker-becomes-the-target`: whether the second front `rival`, still
     /// at peace, is displaced from the plan by a war the plan keeps: the
     /// plan's target is another rival already at war with us, so neither the

@@ -7778,6 +7778,11 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `sea-locked-front-moves-on`: a one-war front cut off from every land
+    /// road (its siege stood down for want of one) moves to an enemy at war
+    /// with us that the army can walk to. See `advanced/sea_locked_front.rs`.
+    /// Off by default.
+    sea_locked_front_moves_on: bool,
     /// `settler-marches-alone-when-clear`: up to live turn 80, a Settler's
     /// guard holds give way while no hostile unit or barbarian camp is near
     /// its road and all of the road is in sight. See
@@ -9139,6 +9144,9 @@ mod siege_train;
 /// `siege-target-needs-a-road`: a siege the army cannot walk to is stood
 /// down. See `advanced/siege_road.rs`.
 mod siege_road;
+/// `sea-locked-front-moves-on`: a front the army cannot walk to gives way to
+/// an enemy it can. See `advanced/sea_locked_front.rs`.
+mod sea_locked_front;
 
 /// `siege-buys-the-gun-resource`: the Niter or Oil our better siege gun
 /// waits on, bought from a rival's trade screen. See
@@ -10604,6 +10612,7 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            sea_locked_front_moves_on: false,
             settler_marches_alone_when_clear: false,
             spreader_steps_out_of_the_apostle: false,
             space_denial_spies_from_rocketry: false,

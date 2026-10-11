@@ -3696,6 +3696,12 @@ pub const GENES: &[Gene] = &[
     // or Workshop now claims its city's queue over a deferrable head. See
     // `advanced/industrial_zone_claims_the_producer_queue.rs`.
     Gene { tag: "industrial-zone-claims-the-producer-queue", field: "industrial_zone_claims_the_producer_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_zone_claims_the_producer_queue, disable: AdvancedAi::disable_industrial_zone_claims_the_producer_queue },
+    // `sea-locked-front-moves-on`: live Emperor G004440Z kept the Netherlands
+    // as its front from turn 146 to 192 and stood ten Dutch sieges down for
+    // want of a land road while the Maya and Egypt, at war with us at 3-5x
+    // our power over theirs, stood on our side of the water. See
+    // `advanced/sea_locked_front.rs`.
+    Gene { tag: "sea-locked-front-moves-on", field: "sea_locked_front_moves_on", kind: Kind::OptIn, enable: AdvancedAi::enable_sea_locked_front_moves_on, disable: AdvancedAi::disable_sea_locked_front_moves_on },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

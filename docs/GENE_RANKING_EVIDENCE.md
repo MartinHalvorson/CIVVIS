@@ -412,6 +412,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-ladder-reads-the-clock` | off (unmeasured) | Opt-in gene `science-ladder-reads-the-clock`; see `Self::science_ladder_reads_the_clock`. | 1 \| 1 |
 | `science-leader-is-the-target` | off (unmeasured) | Opt-in gene `science-leader-is-the-target`; see `Self::science_leader_is_the_target`. | 1 \| 1 |
 | `science-suppression-hits-the-pads` | off (unmeasured) | Enable `science-suppression-hits-the-pads`. | 1 \| 1 |
+| `sea-locked-front-moves-on` | off (unmeasured) | Move a one-war front cut off from every land road to an enemy the army can walk to. | 1 \| 1 |
 | `second-front-keeps-its-war` | off (unmeasured) | Opt-in gene `second-front-keeps-its-war`; see `Self::second_front_keeps_its_war`. | 1 \| 1 |
 | `second-front-kept-when-winning` | off (unmeasured) | Opt-in gene `second-front-kept-when-winning`; see `Self::second_front_kept_when_winning`. | — \| 2 |
 | `second-front-kept-when-winning-2` | off (unmeasured) | Opt-in gene `second-front-kept-when-winning-2`; see `Self::second_front_kept_when_winning_2`. | — \| 2 |
