@@ -9,9 +9,10 @@
 //! (Campus, Theater Square, Government Plaza, Industrial Zone, Monument,
 //! Library, University, Amphitheater), a claimed Granary, deterrent, Trader or
 //! backlog Builder, the early Settler floor's city, a threatened or freshly
-//! attacked city, and anything finishing this turn keep their queue; at war
-//! with a major a military unit keeps its queue too. The displaced item keeps
-//! its progress.
+//! attacked city, a wall breaker the siege reservation queued (any siege
+//! unit; [`AdvancedAi::queued_wall_breaker`]), and anything finishing this
+//! turn keep their queue; at war with a major a military unit keeps its
+//! queue too. The displaced item keeps its progress.
 //!
 //! **Why (2026-10-11 census, 19 live Immortal and 45 Emperor GC runs).**
 //! Food per citizen is at parity with the AI (gross food per population, ours
@@ -211,6 +212,7 @@ impl AdvancedAi {
                         || self.bound_granary_holds(g, pid, cid, plan, item)
                         || self.idle_route_trader_holds(g, pid, cid, plan, item)
                         || self.backlog_builder_holds(g, pid, cid, plan, item)
+                        || Self::queued_wall_breaker(g, item)
                         || !Self::capped_aqueduct_may_defer(g, pid, cid, item, at_major_war)
                     {
                         continue;

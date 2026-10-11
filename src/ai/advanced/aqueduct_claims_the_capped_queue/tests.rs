@@ -276,3 +276,26 @@ fn the_gene_is_an_opt_in_off_by_default() {
     assert!(matches!(gene.kind, crate::ai::advanced::genes::Kind::OptIn));
     assert!(!AdvancedAi::new().aqueduct_claims_the_capped_queue);
 }
+
+/// A wall breaker the siege reservation queued keeps its queue: a reserved
+/// Trebuchet at the head of a capped city is never deferred for the
+/// Aqueduct, though a routine Warrior there is (see the first test).
+#[test]
+fn a_reserved_trebuchet_keeps_its_queue() {
+    let Some((mut game, city, _aqueduct)) = capped_city(1, LATE) else {
+        panic!("fixture: a city with a legal Aqueduct site");
+    };
+    queue(&mut game, city, unit("trebuchet"));
+    let ai = armed();
+    let plan = ai.assess(&game, 0);
+    assert!(
+        ai.capped_aqueduct_item(&game, 0, city, &plan).is_some(),
+        "fixture: claimable"
+    );
+    ai.claim_capped_aqueduct(&mut game, 0, &plan);
+    assert_eq!(
+        head(&game, city),
+        Some(unit("trebuchet")),
+        "the reserved Trebuchet is never displaced"
+    );
+}
