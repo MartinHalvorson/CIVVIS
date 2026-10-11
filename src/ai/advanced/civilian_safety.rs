@@ -1153,6 +1153,7 @@ impl AdvancedAi {
             // in the same turn, the follow never landed, taken that night.
             if self.live_settler_capture_lessons
                 && self.summoned_guard_turn.get(&uid) == Some(&g.turn)
+                && !self.settler_marches_alone(g, pid, uid, 0)
             {
                 think!(self.journal(), Expansion, Detail, "Settler waits with the guard it just called";
                        "the guard spent its move reaching this tile; the pair marches next turn"; current);

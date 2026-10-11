@@ -414,6 +414,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `second-front-waits-for-its-war` | off (unmeasured) | Opt-in gene `second-front-waits-for-its-war`; see `Self::second_front_waits_for_its_war`. | 1 \| 1 |
 | `settler-before-the-navy` | off (unmeasured) | The delegated city governor's navy step yields to a due Settler. | 1 \| 1 |
 | `settler-detour-stays-near` | off (unmeasured) | `settler-detour-stays-near`: a threat detour's fallback must lie about as close as the site it leaves. | 1 \| 1 |
+| `settler-marches-alone-when-clear` | off (unmeasured) | Opt-in gene `settler-marches-alone-when-clear`; see `AdvancedAi::settler_path_clear`. | 1 \| 1 |
 | `settler-walks-to-the-better-site` | off (unmeasured) | Opt-in gene `settler-walks-to-the-better-site`; see `Self::better_site_beyond_the_turn`. | 1 \| 1 |
 | `shared-danger` | off (unmeasured) | Opt-in gene `shared-danger`; see `Self::shared_danger`. | 1 \| 1 |
 | `siege-budget-counts-what-fires` | off (unmeasured) | Opt-in gene `siege-budget-counts-what-fires`; see `Self::siege_budget_counts_what_fires`. | 1 \| 1 |

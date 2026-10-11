@@ -7756,6 +7756,11 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `settler-marches-alone-when-clear`: up to live turn 80, a Settler's
+    /// guard holds give way while no hostile unit or barbarian camp is near
+    /// its road and all of the road is in sight. See
+    /// `advanced/settler_path_clear.rs`. Off by default.
+    settler_marches_alone_when_clear: bool,
     /// `spreader-steps-out-of-the-apostle`: a religious unit of ours never
     /// ends a step inside a rival Apostle's reach when that rival would win
     /// the fight. See `advanced/apostle_evasion.rs`. Off by default.
@@ -9277,6 +9282,7 @@ mod science_threat_denial;
 mod science_trade;
 mod science_victory_drive;
 mod settler_departure;
+mod settler_path_clear;
 pub use science_victory_drive::ScienceDrive;
 
 mod domination_research;
@@ -10560,6 +10566,7 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            settler_marches_alone_when_clear: false,
             spreader_steps_out_of_the_apostle: false,
             space_denial_spies_from_rocketry: false,
             settler_walks_to_the_better_site: false,
@@ -38142,6 +38149,11 @@ impl AdvancedAi {
             let risk = self.settlement_tile_risk(g, pid, Some(uid), current, &visible);
             let guard_pos = g.units[&guard].pos;
             if risk > 0.0 {
+                // See `settler_marches_alone_when_clear`: nothing hostile can
+                // come near the road, so the fallback gives way.
+                if self.settler_marches_alone(g, pid, uid, waited) {
+                    return None;
+                }
                 think!(self.journal(), Expansion, Detail, "Settler falls back toward its guard";
                        "its tile is threatened (risk {risk:.0}) and the guard is {} tiles \
                         away — waiting here is how the last settler was captured",
@@ -38203,6 +38215,12 @@ impl AdvancedAi {
             think!(self.journal(), Expansion, Detail, "Settler stops waiting for its guard";
                    "{waited} turns waited and the guard has not stacked; the third \
                     city cannot wait longer than the opening does");
+            return None;
+        }
+        // See `settler_marches_alone_when_clear`: nothing hostile can come
+        // near the road and this turn's steps are in sight, so the wait gives
+        // way; the guard stays assigned and keeps following.
+        if self.settler_marches_alone(g, pid, uid, waited) {
             return None;
         }
         think!(self.journal(), Expansion, Detail, "Settler waits for its guard";

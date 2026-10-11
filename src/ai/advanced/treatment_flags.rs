@@ -7406,6 +7406,17 @@ impl AdvancedAi {
         self.crushing_steady_passes_the_edge = false;
     }
 
+    /// Opt-in gene `settler-marches-alone-when-clear`; see
+    /// `AdvancedAi::settler_path_clear`.
+    pub fn enable_settler_marches_alone_when_clear(&mut self) {
+        self.settler_marches_alone_when_clear = true;
+    }
+
+    /// The twin of `enable_settler_marches_alone_when_clear`.
+    pub fn disable_settler_marches_alone_when_clear(&mut self) {
+        self.settler_marches_alone_when_clear = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

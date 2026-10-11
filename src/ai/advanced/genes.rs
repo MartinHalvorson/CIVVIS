@@ -3657,6 +3657,16 @@ pub const GENES: &[Gene] = &[
     // on the Aztecs at turn 110 at 2.8 times). Three times the steady power
     // with at least 1.5 times the peak passes the edge.
     Gene { tag: "crushing-steady-passes-the-edge", field: "crushing_steady_passes_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_crushing_steady_passes_the_edge, disable: AdvancedAi::disable_crushing_steady_passes_the_edge },
+    // Live October 9-11 openings: a Settler took a median 5 turns at
+    // Immortal (4 at Emperor) to found 4 tiles from its birth, and the last
+    // 39 games logged 419 "Settler waits for its guard" turns before t80
+    // (about 10 a game) while settler captures by t60 had become rare (1 of 7
+    // Immortal, 4 of 50 Emperor). Cities at t60 set the t50 production ratio
+    // against the second rival (0.27 at three or fewer, 0.53 at six or more).
+    // Up to live turn 80 the guard holds give way while no hostile unit or
+    // barbarian camp is within four tiles of a road that is all in sight.
+    // See `advanced/settler_path_clear.rs`.
+    Gene { tag: "settler-marches-alone-when-clear", field: "settler_marches_alone_when_clear", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_marches_alone_when_clear, disable: AdvancedAi::disable_settler_marches_alone_when_clear },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
