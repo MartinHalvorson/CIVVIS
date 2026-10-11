@@ -3667,6 +3667,14 @@ pub const GENES: &[Gene] = &[
     // barbarian camp is within four tiles of a road that is all in sight.
     // See `advanced/settler_path_clear.rs`.
     Gene { tag: "settler-marches-alone-when-clear", field: "settler_marches_alone_when_clear", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_marches_alone_when_clear, disable: AdvancedAi::disable_settler_marches_alone_when_clear },
+    // 10-11 live Emperor/Immortal census, 53 runs: in 51 a city held a paused
+    // district foundation the host quoted at one or two turns while it built
+    // something else (274 stretches, 1,912 city-turns, 83% at full health,
+    // 702 of them on military units). Immortal G054318Z's capital Campus sat
+    // at 46 of 56 from turn 53 to 82 behind a zero-damage war handoff. At full
+    // city and wall health with no attack in reach, such a foundation goes
+    // back to the head of its queue and the defence handoff keeps it there.
+    Gene { tag: "paused-district-finishes", field: "paused_district_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_paused_district_finishes, disable: AdvancedAi::disable_paused_district_finishes },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
