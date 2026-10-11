@@ -7465,6 +7465,17 @@ impl AdvancedAi {
         self.industrial_zone_claims_the_producer_queue = false;
     }
 
+    /// Opt-in gene `siege-tier-before-the-beeline`; see
+    /// `advanced/siege_tier_before_the_beeline.rs`.
+    pub fn enable_siege_tier_before_the_beeline(&mut self) {
+        self.siege_tier_before_the_beeline = true;
+    }
+
+    /// The twin of `enable_siege_tier_before_the_beeline`.
+    pub fn disable_siege_tier_before_the_beeline(&mut self) {
+        self.siege_tier_before_the_beeline = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

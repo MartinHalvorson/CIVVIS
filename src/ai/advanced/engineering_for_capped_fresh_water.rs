@@ -149,7 +149,7 @@ impl AdvancedAi {
     /// earned boosts included, even on a node not being researched), else
     /// the ruleset price less the active node's progress; less the shared
     /// overflow bank.
-    fn engineering_path_cost(g: &Game, pid: usize, missing: &BTreeSet<Name>) -> f64 {
+    pub(super) fn engineering_path_cost(g: &Game, pid: usize, missing: &BTreeSet<Name>) -> f64 {
         let player = &g.players[pid];
         let owed: f64 = missing
             .iter()
