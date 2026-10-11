@@ -5437,6 +5437,11 @@ pub struct AdvancedAi {
     /// Lab) puts it at the head of its queue over a deferrable head. See
     /// `advanced/campus_building_claims_the_queue.rs`. Off by default.
     campus_building_claims_the_queue: bool,
+    /// `commercial-hub-claims-the-trade-city`: the Commercial Hub step's city
+    /// puts its hub (or the hub's Market) at the head of its queue over a
+    /// deferrable head. See `advanced/commercial_hub_claims_the_trade_city.rs`.
+    /// Off by default.
+    commercial_hub_claims_the_trade_city: bool,
     /// `crushing-steady-passes-the-edge`: a staged declaration passes the
     /// version-2 edge at `CRUSHING_STEADY_RATIO` times the target's steady
     /// military and `CRUSHING_PEAK_FLOOR` times its 30-turn peak, though it
@@ -9320,6 +9325,10 @@ mod industrial_zone_claims_the_producer_queue;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
 mod campus_building_claims_the_queue;
+/// `commercial-hub-claims-the-trade-city`: the Commercial Hub step's hub or
+/// Market claims its city's queue. See
+/// `advanced/commercial_hub_claims_the_trade_city.rs`.
+mod commercial_hub_claims_the_trade_city;
 /// Diagnostic journal: why a city's menu passed a Settler over while the
 /// empire is short of its settlement target. Reads only. See
 /// `advanced/settler_admission_journal.rs`.
@@ -10281,6 +10290,7 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             // ---- append: c-d ----------------------------------------
             campus_building_claims_the_queue: false,
+            commercial_hub_claims_the_trade_city: false,
             crushing_steady_passes_the_edge: false,
             deterrence_spares_the_faith_defence: false,
             civic_awaits_its_inspiration: false,
@@ -31199,10 +31209,16 @@ impl AdvancedAi {
             // `commercial-hub-in-the-strategic-queue`: a queued Commercial Hub
             // or its Market finishes before routine rescoring can claim the
             // city.
-            let commercial_hub_commitment = self.commercial_hub_in_the_strategic_queue
+            let commercial_hub_commitment = (self.commercial_hub_in_the_strategic_queue
                 && committed.as_ref().is_some_and(|(_, item)| {
                     self.base
                         .commercial_hub_build_holds(g, cid, item, plan.threatened_city)
+                        && Self::production_commitment_is_legal(g, pid, cid, item)
+                }))
+                // `commercial-hub-claims-the-trade-city`: the claimed hub or
+                // Market finishes while the step still holds it.
+                || committed.as_ref().is_some_and(|(_, item)| {
+                    self.commercial_hub_claim_holds(g, pid, cid, plan, item)
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
             if committed.as_ref().is_some_and(|(value, _)| {
@@ -47878,6 +47894,11 @@ impl AdvancedAi {
             // and the routine claims. Exact no-op while the gene is off. See
             // `advanced/campus_building_claims_the_queue.rs`.
             self.claim_campus_building(g, pid, &plan);
+            // `commercial-hub-claims-the-trade-city`: the Commercial Hub
+            // step's hub or Market, after the Campus building and ahead of the
+            // Prophet race and the routine claims. Exact no-op while the gene
+            // is off. See `advanced/commercial_hub_claims_the_trade_city.rs`.
+            self.claim_commercial_hub(g, pid, &plan);
             // `prophet-builds-its-site`: the Holy Site a Prophet founds on
             // goes first. Exact no-op while the gene is off.
             self.reserve_prophet_site(g, pid, &plan);

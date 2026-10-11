@@ -3721,6 +3721,16 @@ pub const GENES: &[Gene] = &[
     // now claims its city's queue over a deferrable head. See
     // `advanced/campus_building_claims_the_queue.rs`.
     Gene { tag: "campus-building-claims-the-queue", field: "campus_building_claims_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_building_claims_the_queue, disable: AdvancedAi::disable_campus_building_claims_the_queue },
+    // 2026-10-11 census, 75 live Immortal and 82 Emperor GC runs: Gold a
+    // turn 15.5 vs the best rival's 99.5 at t100 and 12.4 vs 171 at t125 as
+    // unit and building upkeep rose; a median 0 Commercial Hubs at t100 and 1
+    // at t125 (first t101), 1-2 trade routes against a capacity of 1-2, and a
+    // legal hub in the host's buildable list but none standing for a median
+    // 211 city-turns a game over t60-125. commercial-hub-and-traders names the
+    // city but asks only idle queues the claims take first. Its hub (or the
+    // hub's Market) now claims the city's queue over a deferrable head. See
+    // `advanced/commercial_hub_claims_the_trade_city.rs`.
+    Gene { tag: "commercial-hub-claims-the-trade-city", field: "commercial_hub_claims_the_trade_city", kind: Kind::OptIn, enable: AdvancedAi::enable_commercial_hub_claims_the_trade_city, disable: AdvancedAi::disable_commercial_hub_claims_the_trade_city },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

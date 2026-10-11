@@ -212,6 +212,7 @@ impl AdvancedAi {
                         || self.bound_granary_holds(g, pid, cid, plan, item)
                         || self.idle_route_trader_holds(g, pid, cid, plan, item)
                         || self.backlog_builder_holds(g, pid, cid, plan, item)
+                        || self.commercial_hub_claim_holds(g, pid, cid, plan, item)
                         || Self::queued_wall_breaker(g, item)
                         || !Self::capped_aqueduct_may_defer(g, pid, cid, item, at_major_war)
                     {
