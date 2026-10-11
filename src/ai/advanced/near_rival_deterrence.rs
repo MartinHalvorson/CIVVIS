@@ -202,6 +202,10 @@ impl AdvancedAi {
                     .queue
                     .first()
                     .is_some_and(|head| self.producer_zone_claim_holds(g, pid, cid, plan, head))
+                || g.cities[&cid]
+                    .queue
+                    .first()
+                    .is_some_and(|head| self.campus_building_claim_holds(g, pid, cid, plan, head))
             {
                 continue;
             }

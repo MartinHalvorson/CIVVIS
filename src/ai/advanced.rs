@@ -5432,6 +5432,11 @@ pub struct AdvancedAi {
     /// `advanced/aqueduct_claims_the_capped_queue.rs`. Off by default.
     aqueduct_claims_the_capped_queue: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `campus-building-claims-the-queue`: a city whose standing Campus can
+    /// build its next building (Library, else University, else Research
+    /// Lab) puts it at the head of its queue over a deferrable head. See
+    /// `advanced/campus_building_claims_the_queue.rs`. Off by default.
+    campus_building_claims_the_queue: bool,
     /// `crushing-steady-passes-the-edge`: a staged declaration passes the
     /// version-2 edge at `CRUSHING_STEADY_RATIO` times the target's steady
     /// military and `CRUSHING_PEAK_FLOOR` times its 30-turn peak, though it
@@ -9312,6 +9317,9 @@ mod aqueduct_claims_the_capped_queue;
 /// Industrial Zone or Workshop claims its city's queue. See
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
+/// `campus-building-claims-the-queue`: a standing Campus's next building
+/// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
+mod campus_building_claims_the_queue;
 mod granary_claims_the_bound_queue;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
 /// faith. See `advanced/holy_city_guard.rs`.
@@ -10268,6 +10276,7 @@ impl AdvancedAi {
             blocker_becomes_the_target: false,
             aqueduct_claims_the_capped_queue: false,
             // ---- append: c-d ----------------------------------------
+            campus_building_claims_the_queue: false,
             crushing_steady_passes_the_edge: false,
             deterrence_spares_the_faith_defence: false,
             civic_awaits_its_inspiration: false,
@@ -31166,6 +31175,11 @@ impl AdvancedAi {
             let capped_aqueduct_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.capped_aqueduct_holds(g, pid, cid, plan, item));
+            // `campus-building-claims-the-queue`: the claimed Campus building
+            // finishes while the Campus still names it.
+            let campus_building_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                self.campus_building_claim_holds(g, pid, cid, plan, item)
+            });
             // `industrial-zone-in-the-producers`: a queued Industrial Zone or
             // Workshop finishes before routine rescoring can claim the city.
             let industrial_zone_commitment = committed.as_ref().is_some_and(|(_, item)| {
@@ -31201,6 +31215,7 @@ impl AdvancedAi {
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
+                    || campus_building_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -31219,6 +31234,7 @@ impl AdvancedAi {
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
+                    || campus_building_commitment
                     || sanctuary_commitment
                     || air_resource_colony_commitment
                     || higher_level_builder_commitment
@@ -47850,6 +47866,11 @@ impl AdvancedAi {
             // Prophet race and the routine claims. Exact no-op while the gene
             // is off. See `advanced/industrial_zone_claims_the_producer_queue.rs`.
             self.claim_producer_zone(g, pid, &plan);
+            // `campus-building-claims-the-queue`: a standing Campus's next
+            // building, after the Industrial Zone and ahead of the Prophet race
+            // and the routine claims. Exact no-op while the gene is off. See
+            // `advanced/campus_building_claims_the_queue.rs`.
+            self.claim_campus_building(g, pid, &plan);
             // `prophet-builds-its-site`: the Holy Site a Prophet founds on
             // goes first. Exact no-op while the gene is off.
             self.reserve_prophet_site(g, pid, &plan);

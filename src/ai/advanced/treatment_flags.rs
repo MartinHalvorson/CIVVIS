@@ -7488,6 +7488,19 @@ impl AdvancedAi {
         self.siege_tier_before_the_beeline = false;
     }
 
+    /// A standing Campus's next building (Library, else University, else
+    /// Research Lab) claims its city's queue over a deferrable head. Opt-in
+    /// gene `campus-building-claims-the-queue`; see
+    /// `AdvancedAi::claim_campus_building`.
+    pub fn enable_campus_building_claims_the_queue(&mut self) {
+        self.campus_building_claims_the_queue = true;
+    }
+
+    /// The twin of `enable_campus_building_claims_the_queue`.
+    pub fn disable_campus_building_claims_the_queue(&mut self) {
+        self.campus_building_claims_the_queue = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

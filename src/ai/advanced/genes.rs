@@ -3711,6 +3711,16 @@ pub const GENES: &[Gene] = &[
     // technology now takes the slot ahead of the beeline when it costs a few
     // turns. See `advanced/siege_tier_before_the_beeline.rs`.
     Gene { tag: "siege-tier-before-the-beeline", field: "siege_tier_before_the_beeline", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_tier_before_the_beeline, disable: AdvancedAi::disable_siege_tier_before_the_beeline },
+    // 10-11 live census, 63 Immortal and 105 Emperor GC runs: Campuses come
+    // (Immortal 2 at t100, 4 at t125) but their buildings lag (1.5 Libraries,
+    // 0 Universities at t100); the top third by Science per citizen held 4.5
+    // Libraries and 3 Universities at t125 to the bottom third's 1 and 0. A
+    // median game spent 45 city-turns with a Campus and no Library and 47 with
+    // a University buildable but not in production; campus-buildings-first
+    // asks only idle queues the claims take first. The next Campus building
+    // now claims its city's queue over a deferrable head. See
+    // `advanced/campus_building_claims_the_queue.rs`.
+    Gene { tag: "campus-building-claims-the-queue", field: "campus_building_claims_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_building_claims_the_queue, disable: AdvancedAi::disable_campus_building_claims_the_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

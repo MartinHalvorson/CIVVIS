@@ -228,6 +228,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-before-the-army` | off (unmeasured) | A city's first Campus ahead of the military floor and the capital Settler in the delegated city governor. | — \| 3 |
 | `campus-before-the-army-2` | off (unmeasured) | `campus-before-the-army-2`: the same Campus and Library, behind the Monument and the capital Settler. | — \| 3 |
 | `campus-before-the-army-3` | off (unmeasured) | `campus-before-the-army-3`: version 2, on through the University and the Research Lab. | — \| 3 |
+| `campus-building-claims-the-queue` | off (unmeasured) | A standing Campus's next building (Library, else University, else Research Lab) claims its city's queue over a deferrable head. | 1 \| 1 |
 | `campus-buildings-first` | off (unmeasured) | Opt-in gene `campus-buildings-first`; see `BasicAi::campus_buildings_first` and `Self::reserve_culture_defense_theater`. | 1 \| 1 |
 | `capital-campaign-router` | off (unmeasured) | Enable `capital-campaign-router` for measurement. | 1 \| 1 |
 | `capital-campus-before-the-plaza` | off (unmeasured) | Opt-in gene `capital-campus-before-the-plaza`; see `advanced/capital_campus_claim.rs`. | 1 \| 1 |
