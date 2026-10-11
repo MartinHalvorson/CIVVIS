@@ -7013,6 +7013,11 @@ pub struct AdvancedAi {
     /// it the turn it can. See `advanced/gold_buys_the_settler.rs`. Off by
     /// default.
     gold_buys_the_settler: bool,
+    /// `industrial-zone-claims-the-producer-queue`: once Apprenticeship is
+    /// known, the producer step's zone city puts its Industrial Zone (or the
+    /// zone's Workshop) at the head of its queue over a deferrable head. See
+    /// `advanced/industrial_zone_claims_the_producer_queue.rs`. Off by default.
+    industrial_zone_claims_the_producer_queue: bool,
     // ---- append: l-o ------------------------------------------------
     /// `muster-walks-the-road`: a mustering member of a train that cannot
     /// yet close walks in by the dry road, not by straight distance, to the
@@ -9285,6 +9290,10 @@ mod gold_buys_the_settler;
 /// `advanced/engineering_for_capped_fresh_water.rs`.
 mod engineering_for_capped_fresh_water;
 mod aqueduct_claims_the_capped_queue;
+/// `industrial-zone-claims-the-producer-queue`: the producer step's
+/// Industrial Zone or Workshop claims its city's queue. See
+/// `advanced/industrial_zone_claims_the_producer_queue.rs`.
+mod industrial_zone_claims_the_producer_queue;
 mod granary_claims_the_bound_queue;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
 /// faith. See `advanced/holy_city_guard.rs`.
@@ -10490,6 +10499,7 @@ impl AdvancedAi {
             industrial_zone_in_the_producers: false,
             granary_claims_the_bound_queue: false,
             gold_buys_the_settler: false,
+            industrial_zone_claims_the_producer_queue: false,
             // ---- append: l-o ----------------------------------------
             muster_walks_the_road: false,
             near_rival_deterrence: false,
@@ -31103,8 +31113,13 @@ impl AdvancedAi {
             // `industrial-zone-in-the-producers`: a queued Industrial Zone or
             // Workshop finishes before routine rescoring can claim the city.
             let industrial_zone_commitment = committed.as_ref().is_some_and(|(_, item)| {
-                self.base
+                (self
+                    .base
                     .industrial_zone_build_holds(g, cid, item, plan.threatened_city)
+                    // `industrial-zone-claims-the-producer-queue`: the claimed
+                    // zone or Workshop finishes while the producer step still
+                    // names it.
+                    || self.producer_zone_claim_holds(g, pid, cid, plan, item))
                     && Self::production_commitment_is_legal(g, pid, cid, item)
             });
             // `commercial-hub-in-the-strategic-queue`: a queued Commercial Hub
@@ -47774,6 +47789,11 @@ impl AdvancedAi {
             // and the routine claims. Exact no-op while the gene is off. See
             // `advanced/aqueduct_claims_the_capped_queue.rs`.
             self.claim_capped_aqueduct(g, pid, &plan);
+            // `industrial-zone-claims-the-producer-queue`: the producer step's
+            // Industrial Zone or Workshop, after the Aqueduct and ahead of the
+            // Prophet race and the routine claims. Exact no-op while the gene
+            // is off. See `advanced/industrial_zone_claims_the_producer_queue.rs`.
+            self.claim_producer_zone(g, pid, &plan);
             // `prophet-builds-its-site`: the Holy Site a Prophet founds on
             // goes first. Exact no-op while the gene is off.
             self.reserve_prophet_site(g, pid, &plan);

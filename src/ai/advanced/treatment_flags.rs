@@ -7452,6 +7452,19 @@ impl AdvancedAi {
         self.paused_district_finishes = false;
     }
 
+    /// Once Apprenticeship is known, the producer step's Industrial Zone (or
+    /// the zone's Workshop) claims its city's queue over a deferrable head.
+    /// Opt-in gene `industrial-zone-claims-the-producer-queue`; see
+    /// `AdvancedAi::claim_producer_zone`.
+    pub fn enable_industrial_zone_claims_the_producer_queue(&mut self) {
+        self.industrial_zone_claims_the_producer_queue = true;
+    }
+
+    /// The twin of `enable_industrial_zone_claims_the_producer_queue`.
+    pub fn disable_industrial_zone_claims_the_producer_queue(&mut self) {
+        self.industrial_zone_claims_the_producer_queue = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
