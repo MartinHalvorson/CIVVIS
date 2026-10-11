@@ -2010,3 +2010,52 @@ fn a_faith_counter_needs_the_emperor_edge_under_the_gene() {
     assert!(ai.counter_war_has_the_emperor_edge(&g, 0, 2), "2.6 times");
     assert!(ai.faith_counter_due(&g, 0, 2));
 }
+
+/// See `DeclarationEdge::crushing_steady`: under
+/// `crushing-steady-passes-the-edge` a staged war at 3.2 times the steady
+/// power of a rival that out-produces us passes version 2's edge with its
+/// 30-turn peak at 1.6 times; with the peak at 1.4 times it is still held,
+/// and with the gene off version 2 holds both.
+#[test]
+fn a_crushing_steady_power_passes_the_edge_under_the_gene() {
+    let (mut g, mut ai) = two_fronts();
+    let ours = g.military_power(0);
+    set_production_margin(&mut g, 10.0);
+    ai.enable_declaration_needs_the_edge_2();
+    set_power(&mut g, 2, ours / 1.6);
+    ai.record_rival_power(&g, 0);
+    set_power(&mut g, 2, ours / 3.2);
+    g.turn += 5;
+    ai.record_rival_power(&g, 0);
+    let reading = ai.declaration_edge_2(&g, 0, 2);
+    assert!(reading.their_production > reading.our_production);
+    assert!(
+        !reading.passes(),
+        "1.6 times the peak of a rival that out-produces us"
+    );
+    assert!(reading.crushing_steady());
+    assert!(
+        !ai.declaration_has_the_edge(&g, 0, 2),
+        "gene off: version 2 holds it"
+    );
+    ai.enable_crushing_steady_passes_the_edge();
+    assert!(
+        ai.declaration_has_the_edge(&g, 0, 2),
+        "3.2 times steady, 1.6 times the peak"
+    );
+
+    g.turn += DECLARATION_PEAK_TURNS;
+    set_power(&mut g, 2, ours / 1.4);
+    ai.record_rival_power(&g, 0);
+    set_power(&mut g, 2, ours / 3.2);
+    g.turn += 5;
+    ai.record_rival_power(&g, 0);
+    let reading = ai.declaration_edge_2(&g, 0, 2);
+    assert!(!reading.crushing_steady(), "the peak floor");
+    assert!(
+        !ai.declaration_has_the_edge(&g, 0, 2),
+        "1.4 times the peak stays held"
+    );
+    ai.disable_crushing_steady_passes_the_edge();
+    ai.disable_declaration_needs_the_edge_2();
+}

@@ -3647,6 +3647,16 @@ pub const GENES: &[Gene] = &[
     // ours never ends a step where a rival that would win the fight reaches
     // it. See `advanced/apostle_evasion.rs`.
     Gene { tag: "spreader-steps-out-of-the-apostle", field: "spreader_steps_out_of_the_apostle", kind: Kind::OptIn, enable: AdvancedAi::enable_spreader_steps_out_of_the_apostle, disable: AdvancedAi::disable_spreader_steps_out_of_the_apostle },
+    // 10-09/11 live Emperor: 23 games held a STAGED, ready declaration in
+    // turns 100-130 at 2-10 times the target's steady military (median 3.45)
+    // because version 2's edge asks twice its 30-turn peak against a rival
+    // that out-produces us (median peak 1.64 times, our Production 0.65 of
+    // theirs); 17 of 27 such targets were never declared on. Wars declared in
+    // that window took a city within 30 turns in 5 of 17 at 2.5 times or more
+    // and 0 of 7 under it (G190448Z, the only Emperor domination win, opened
+    // on the Aztecs at turn 110 at 2.8 times). Three times the steady power
+    // with at least 1.5 times the peak passes the edge.
+    Gene { tag: "crushing-steady-passes-the-edge", field: "crushing_steady_passes_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_crushing_steady_passes_the_edge, disable: AdvancedAi::disable_crushing_steady_passes_the_edge },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

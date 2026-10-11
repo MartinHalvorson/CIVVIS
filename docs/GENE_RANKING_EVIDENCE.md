@@ -259,6 +259,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `counterweight-flips-the-small-towns` | off (unmeasured) | Opt-in gene `counterweight-flips-the-small-towns`; see `Self::small_town_threat` and `Self::small_town_target_adjustment`. | 1 \| 1 |
 | `counterweight-from-the-first-convert` | off (unmeasured) | Opt-in gene `counterweight-from-the-first-convert`; see `Self::first_convert_threat` and `Self::counterweight_need_for`. | 1 \| 1 |
 | `counterweight-spends-the-bank` | off (unmeasured) | Opt-in gene `counterweight-spends-the-bank`; see `advanced/counterweight_bank.rs`. | 1 \| 1 |
+| `crushing-steady-passes-the-edge` | off (unmeasured) | Opt-in gene `crushing-steady-passes-the-edge`; see `DeclarationEdge::crushing_steady`. | 1 \| 1 |
 | `culture-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 2 \| 3 |
 | `culture-counter-declares` | off (unmeasured) | Opt-in gene `culture-counter-declares`; see `Self::culture_counter_declares`. | 1 \| 1 |
 | `culture-defense-theater` | off (unmeasured) | A Theater Square while the empire's Culture trails the strongest rival's: claimed for one idle city ahead of the delegated governor (`reserve_culture_defense_theater`), and in the delegated governor ahead of the Harbor. | — \| 2 |

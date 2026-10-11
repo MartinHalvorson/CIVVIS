@@ -144,6 +144,17 @@ pub(crate) const DECLARATION_PEAK_EDGE_RATIO: f64 = 2.0;
 /// `declaration-needs-the-edge-2`: the turns of rival military readings the
 /// peak reading takes the largest of.
 pub(crate) const DECLARATION_PEAK_TURNS: u32 = 30;
+/// `crushing-steady-passes-the-edge`: our military over the target's steady
+/// reading at which a staged declaration passes version 2's edge although the
+/// target out-produces us and its 30-turn peak stands under
+/// [`DECLARATION_PEAK_EDGE_RATIO`]. Version 2's own census measured the rout
+/// trajectory as the rival's power x1.43 against our x0.87 over twenty turns:
+/// three times its steady power still reads twice it after that.
+pub(crate) const CRUSHING_STEADY_RATIO: f64 = 3.0;
+/// `crushing-steady-passes-the-edge`: our military over the target's 30-turn
+/// peak under which the crushing steady reading does not pass. Live Emperor
+/// turns 100-130 held 27 such targets at a median 1.64 times the peak.
+pub(crate) const CRUSHING_PEAK_FLOOR: f64 = 1.5;
 /// `declaration-needs-production-parity`: our Production a turn over the
 /// target's under which an offensive declaration on a major holds. Of the 20
 /// declarations on majors in live Emperor G185-G198, the 16 made under 0.8
@@ -214,6 +225,13 @@ impl DeclarationEdge {
         self.peak_ratio() >= DECLARATION_PEAK_EDGE_RATIO
             || (self.their_production < self.our_production
                 && self.steady_ratio() >= DECLARATION_EDGE_RATIO)
+    }
+
+    /// `crushing-steady-passes-the-edge`: [`CRUSHING_STEADY_RATIO`] times
+    /// its steady power and at least [`CRUSHING_PEAK_FLOOR`] times its
+    /// 30-turn peak, whichever empire out-produces the other.
+    pub fn crushing_steady(&self) -> bool {
+        self.steady_ratio() >= CRUSHING_STEADY_RATIO && self.peak_ratio() >= CRUSHING_PEAK_FLOOR
     }
 }
 /// `diplomatic-contender-eliminated`: the Diplomatic Victory points at which
@@ -2060,7 +2078,12 @@ impl AdvancedAi {
     /// because the army stood staged within reach.
     pub(crate) fn declaration_has_the_edge(&self, g: &Game, pid: usize, target: usize) -> bool {
         if self.declaration_needs_the_edge_2 {
-            return self.declaration_edge_2(g, pid, target).passes();
+            let reading = self.declaration_edge_2(g, pid, target);
+            // `crushing-steady-passes-the-edge`: see
+            // `DeclarationEdge::crushing_steady`. The plain staged
+            // declaration only; the screens that call `passes` keep it.
+            return reading.passes()
+                || (self.crushing_steady_passes_the_edge && reading.crushing_steady());
         }
         !self.declaration_needs_the_edge
             || g.military_power(pid)

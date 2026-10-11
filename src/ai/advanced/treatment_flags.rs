@@ -7395,6 +7395,17 @@ impl AdvancedAi {
         self.spreader_steps_out_of_the_apostle = false;
     }
 
+    /// Opt-in gene `crushing-steady-passes-the-edge`; see
+    /// `DeclarationEdge::crushing_steady`.
+    pub fn enable_crushing_steady_passes_the_edge(&mut self) {
+        self.crushing_steady_passes_the_edge = true;
+    }
+
+    /// The twin of `enable_crushing_steady_passes_the_edge`.
+    pub fn disable_crushing_steady_passes_the_edge(&mut self) {
+        self.crushing_steady_passes_the_edge = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

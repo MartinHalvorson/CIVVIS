@@ -5427,6 +5427,11 @@ pub struct AdvancedAi {
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `crushing-steady-passes-the-edge`: a staged declaration passes the
+    /// version-2 edge at `CRUSHING_STEADY_RATIO` times the target's steady
+    /// military and `CRUSHING_PEAK_FLOOR` times its 30-turn peak, though it
+    /// out-produces us. See `DeclarationEdge::crushing_steady`.
+    crushing_steady_passes_the_edge: bool,
     /// `deterrence-spares-the-faith-defence`: near-rival-deterrence never
     /// displaces a Holy Site, Shrine or Temple at the head of a queue. See
     /// `deterrence_may_displace` in `advanced/near_rival_deterrence.rs`. Off by default.
@@ -10204,6 +10209,7 @@ impl AdvancedAi {
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
             // ---- append: c-d ----------------------------------------
+            crushing_steady_passes_the_edge: false,
             deterrence_spares_the_faith_defence: false,
             civic_awaits_its_inspiration: false,
             capital_campus_before_the_plaza: false,
@@ -23902,6 +23908,26 @@ impl AdvancedAi {
         // an urgent clock and the counters' own waivers do not.
         let edge =
             urgent_waiver || faith_counter_due || self.declaration_has_the_edge(g, pid, target);
+        // `crushing-steady-passes-the-edge`: journal the staged declarations
+        // the gene alone lets through.
+        if self.crushing_steady_passes_the_edge
+            && self.declaration_needs_the_edge_2
+            && close_enough
+            && ready
+            && staged
+            && edge
+            && !urgent_waiver
+            && !faith_counter_due
+        {
+            let reading = self.declaration_edge_2(g, pid, target);
+            if !reading.passes() && reading.crushing_steady() {
+                think!(self.journal(), Military, Detail,
+                       "The edge reads a crushing steady power on {}", g.players[target].civ;
+                       "crushing-steady-passes-the-edge: {:.2} times their steady power ({:.0}) and {:.2} times their 30-turn peak ({:.0}), at {:.0} Production against their {:.0}",
+                       reading.steady_ratio(), reading.steady, reading.peak_ratio(), reading.peak,
+                       reading.our_production, reading.their_production);
+            }
+        }
         if close_enough && ready && staged && !edge {
             if self.declaration_needs_the_edge_2 {
                 let reading = self.declaration_edge_2(g, pid, target);
