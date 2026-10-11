@@ -3687,6 +3687,15 @@ pub const GENES: &[Gene] = &[
     // city and wall health with no attack in reach, such a foundation goes
     // back to the head of its queue and the defence handoff keeps it there.
     Gene { tag: "paused-district-finishes", field: "paused_district_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_paused_district_finishes, disable: AdvancedAi::disable_paused_district_finishes },
+    // 10-11 live census, 38 Immortal and 120 Emperor GC runs: Apprenticeship
+    // at a median t82 (Immortal), the first Industrial Zone founded 22 turns
+    // later (Emperor 27): 0 zones at t100, 1 at t125. Between the technology
+    // and the first zone, producer cities with a legal zone built soldiers
+    // 39%, ordinary buildings 21%, other districts 19%; the producer step
+    // asks only idle queues the claims take first. The producer step's zone
+    // or Workshop now claims its city's queue over a deferrable head. See
+    // `advanced/industrial_zone_claims_the_producer_queue.rs`.
+    Gene { tag: "industrial-zone-claims-the-producer-queue", field: "industrial_zone_claims_the_producer_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_zone_claims_the_producer_queue, disable: AdvancedAi::disable_industrial_zone_claims_the_producer_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

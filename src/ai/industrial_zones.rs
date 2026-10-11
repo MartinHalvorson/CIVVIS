@@ -33,7 +33,7 @@ use super::BasicAi;
 use crate::game::{Game, Item};
 
 /// The fewest cities from which the step opens a zone.
-const PRODUCER_ZONE_MIN_CITIES: usize = 3;
+pub(crate) const PRODUCER_ZONE_MIN_CITIES: usize = 3;
 
 /// The most zones (standing, founded or queued) the step wants: two, three
 /// from `PRODUCER_ZONE_THIRD_AT_CITIES` cities.
@@ -136,7 +136,7 @@ impl BasicAi {
     /// civilization's replacement) of the zone standing in `cid`, when `cid`
     /// is one of the `producer_zones_wanted` most productive unthreatened
     /// cities holding a zone and finishes it within `PRODUCER_ZONE_MAX_TURNS`.
-    fn producer_workshop_item(
+    pub(crate) fn producer_workshop_item(
         g: &Game,
         pid: usize,
         cid: u32,
@@ -178,7 +178,7 @@ impl BasicAi {
     /// have a site (a free specialty slot) and are not due their first Campus
     /// (`first_campus_item`) -- as many as the zones still wanted -- and
     /// finishes it within `PRODUCER_ZONE_MAX_TURNS`.
-    fn producer_zone_item(
+    pub(crate) fn producer_zone_item(
         g: &Game,
         pid: usize,
         cid: u32,
