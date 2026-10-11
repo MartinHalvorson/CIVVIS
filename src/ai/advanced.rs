@@ -7457,6 +7457,12 @@ pub struct AdvancedAi {
     /// or not. See `advanced/launcher_war.rs`.
     launcher_war_ignores_the_edge: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `paused-district-finishes`: a district foundation on the board that the
+    /// host quotes at two turns or less goes back to the head of its queue
+    /// while the city stands at full health with no attack in reach,
+    /// and the defence handoff keeps it there. See
+    /// `advanced/paused_district_finish.rs`.
+    paused_district_finishes: bool,
     /// `peacetime-classical-republic`: the first government is Classical
     /// Republic, not Oligarchy, while no major is at war with us. See
     /// `advanced/peacetime_republic.rs`.
@@ -9308,6 +9314,9 @@ mod government_plaza;
 /// `capital-campus-before-the-plaza`: the capital's Campus and Library
 /// ahead of the Plaza claim. See `advanced/capital_campus_claim.rs`.
 mod capital_campus_claim;
+/// `paused-district-finishes`: a foundation the host quotes at two turns or
+/// less finishes first at full health. See `advanced/paused_district_finish.rs`.
+mod paused_district_finish;
 mod prophet_race_points;
 /// `prophet-builds-its-site`: a Great Prophet never waits for its Holy Site,
 /// and the race stops paying once the host has no Prophet left. See
@@ -10532,6 +10541,7 @@ impl AdvancedAi {
             no_peace_with_a_launcher: false,
             launcher_war_ignores_the_edge: false,
             // ---- append: p-r ----------------------------------------
+            paused_district_finishes: false,
             peacetime_classical_republic: false,
             prophet_builds_its_site: false,
             religious_match_point_defence: false,
@@ -29873,8 +29883,16 @@ impl AdvancedAi {
                     committed.as_ref(),
                     &defence,
                 );
+            // `paused-district-finishes`: an undamaged city one or two turns
+            // from a paused foundation keeps it, or is left for the claim.
+            let paused_finish = (total_damage == 0)
+                .then(|| self.paused_district_finish_item(g, pid, city))
+                .flatten()
+                .map(|(item, _, _)| item);
             if let Some(item) = committed.as_ref().filter(|item| {
-                (Self::active_queue_answers_siege(g, item) || finish_campus)
+                (Self::active_queue_answers_siege(g, item)
+                    || finish_campus
+                    || paused_finish.as_ref() == Some(*item))
                     && g.can_produce(pid, city, item)
             }) {
                 if retained.as_ref().is_none_or(|(old_damage, old_city, _)| {
@@ -29882,6 +29900,9 @@ impl AdvancedAi {
                 }) {
                     retained = Some((total_damage, city, item.clone()));
                 }
+                continue;
+            }
+            if paused_finish.is_some() {
                 continue;
             }
 
@@ -47863,6 +47884,9 @@ impl AdvancedAi {
             }
         }
         Self::surge_release_field_slot(g, held_field_slot);
+        // `paused-district-finishes`: after every ordinary writer, before the
+        // declaration response and the defence handoffs below.
+        self.claim_paused_district_finishes(g, pid);
         // Make the declaration response the final authority over queues this
         // turn. Earlier governors can continue to express their peaceful
         // plan; switching banks that progress and this bounded pass reclaims

@@ -7439,6 +7439,19 @@ impl AdvancedAi {
         self.engineering_for_capped_fresh_water = false;
     }
 
+    /// Finish a paused district foundation the host quotes at two turns or
+    /// less while the city is at full health with no attack in reach. Opt-in
+    /// gene `paused-district-finishes`; see
+    /// `AdvancedAi::paused_district_finish_item`.
+    pub fn enable_paused_district_finishes(&mut self) {
+        self.paused_district_finishes = true;
+    }
+
+    /// The twin of `enable_paused_district_finishes`.
+    pub fn disable_paused_district_finishes(&mut self) {
+        self.paused_district_finishes = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
