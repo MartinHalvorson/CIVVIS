@@ -151,3 +151,43 @@ fn a_reserved_trebuchet_keeps_its_queue() {
         "the reserved Trebuchet is never displaced"
     );
 }
+
+/// `claims_yield_to_settler`: with the settlement target above the city count
+/// the strategic governor would hand the first city its next Settler, so that
+/// city keeps its routine unit for the governor's review instead of taking
+/// the Industrial Zone; with the empire at its target the same city claims.
+#[test]
+fn a_due_settler_city_keeps_its_queue_for_the_settler() {
+    let (game, ranked) = producer_empire("YIELDZONE", 93_201, 1);
+    let mut busy = game.clone();
+    all_queue(&mut busy, &ranked, &unit("knight"));
+    let ai = armed();
+    let counts = ai.counts(&busy, 0);
+
+    let mut short = ai.assess(&busy, 0);
+    short.desired_cities = ranked.len() + 3;
+    assert!(
+        ai.settler_due_in(&busy, 0, ranked[0], &short, &counts),
+        "fixture: a Settler is due in the first city"
+    );
+    let mut on = busy.clone();
+    ai.claim_producer_zone(&mut on, 0, &short);
+    assert_eq!(
+        head(&on, ranked[0]),
+        Some(unit("knight")),
+        "a due Settler keeps the city's queue"
+    );
+
+    let mut sated = ai.assess(&busy, 0);
+    sated.desired_cities = ranked.len();
+    assert!(
+        !ai.settler_due_in(&busy, 0, ranked[0], &sated, &counts),
+        "fixture: at the settlement target"
+    );
+    let mut on = busy.clone();
+    ai.claim_producer_zone(&mut on, 0, &sated);
+    assert!(
+        is_zone(&on, &head(&on, ranked[0])),
+        "no Settler due: the city claims"
+    );
+}

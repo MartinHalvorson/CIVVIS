@@ -186,3 +186,45 @@ fn a_reserved_trebuchet_keeps_its_queue() {
         "the reserved Trebuchet is never displaced"
     );
 }
+
+/// `claims_yield_to_settler`: with the settlement target above the city count
+/// the strategic governor would hand the first city its next Settler, so that
+/// city keeps its routine unit for the governor's review instead of taking
+/// the Campus building; with the empire at its target the same city claims.
+#[test]
+fn a_due_settler_city_keeps_its_queue_for_the_settler() {
+    let (game, ranked) = with_education("YIELDCAMPUS", 94_201, 1);
+    let mut busy = game.clone();
+    all_queue(&mut busy, &ranked, &unit("knight"));
+    let ai = armed();
+    let counts = ai.counts(&busy, 0);
+
+    let mut short = ai.assess(&busy, 0);
+    short.desired_cities = ranked.len() + 3;
+    assert!(
+        ai.settler_due_in(&busy, 0, ranked[0], &short, &counts),
+        "fixture: a Settler is due in the first city"
+    );
+    let mut on = busy.clone();
+    ai.claim_campus_building(&mut on, 0, &short);
+    assert_eq!(
+        head(&on, ranked[0]),
+        Some(unit("knight")),
+        "a due Settler keeps the city's queue"
+    );
+
+    let mut sated = ai.assess(&busy, 0);
+    sated.desired_cities = ranked.len();
+    assert!(
+        !ai.settler_due_in(&busy, 0, ranked[0], &sated, &counts),
+        "fixture: at the settlement target"
+    );
+    let mut on = busy.clone();
+    ai.claim_campus_building(&mut on, 0, &sated);
+    assert!(
+        head(&on, ranked[0])
+            .as_ref()
+            .is_some_and(|item| matches!(item, Item::Building { .. }) && *item != unit("knight")),
+        "no Settler due: the city claims"
+    );
+}

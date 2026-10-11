@@ -97,6 +97,15 @@ fn armed() -> AdvancedAi {
     ai
 }
 
+/// The plan with the empire at its settlement target, so no Settler is due
+/// and the claim is judged on its own guards (see
+/// `advanced/claims_yield_to_settler.rs`).
+fn sated(ai: &AdvancedAi, game: &Game) -> StrategicPlan {
+    let mut plan = ai.assess(game, 0);
+    plan.desired_cities = game.player_city_ids(0).len();
+    plan
+}
+
 fn head(game: &Game, cid: u32) -> Option<Item> {
     game.cities[&cid].queue.first().cloned()
 }
@@ -139,7 +148,7 @@ fn a_capped_city_claims_its_aqueduct_over_a_routine_unit() {
 
     let ai = armed();
     let mut on = busy.clone();
-    let plan = ai.assess(&on, 0);
+    let plan = sated(&ai, &on);
     assert!(
         ai.capped_aqueduct_item(&on, 0, city, &plan).is_some(),
         "fixture: claimable"
@@ -163,7 +172,7 @@ fn a_capped_city_claims_its_aqueduct_over_a_routine_unit() {
         .unwrap()
         .buildings
         .retain(|b| *b != "granary");
-    let plan = ai.assess(&no_granary, 0);
+    let plan = sated(&ai, &no_granary);
     ai.claim_capped_aqueduct(&mut no_granary, 0, &plan);
     assert_eq!(
         head(&no_granary, city),
@@ -190,7 +199,7 @@ fn settlers_faith_science_culture_and_unbound_cities_keep_their_queues() {
     ] {
         let mut kept = game.clone();
         queue(&mut kept, city, keep.clone());
-        let plan = ai.assess(&kept, 0);
+        let plan = sated(&ai, &kept);
         ai.claim_capped_aqueduct(&mut kept, 0, &plan);
         assert_eq!(head(&kept, city), Some(keep.clone()), "{keep:?} stays");
     }
@@ -199,7 +208,7 @@ fn settlers_faith_science_culture_and_unbound_cities_keep_their_queues() {
     queue(&mut attacked, city, unit("warrior"));
     let turn = attacked.turn;
     attacked.cities.get_mut(&city).unwrap().last_attacked = turn;
-    let plan = ai.assess(&attacked, 0);
+    let plan = sated(&ai, &attacked);
     ai.claim_capped_aqueduct(&mut attacked, 0, &plan);
     assert_eq!(
         head(&attacked, city),
@@ -212,7 +221,7 @@ fn settlers_faith_science_culture_and_unbound_cities_keep_their_queues() {
     let housing = roomy.city_housing(&roomy.cities[&city]);
     if housing >= CAPPED_AQUEDUCT_MIN_POP as f64 + 2.0 {
         roomy.cities.get_mut(&city).unwrap().pop = housing.floor() as i32 - 2;
-        let plan = ai.assess(&roomy, 0);
+        let plan = sated(&ai, &roomy);
         ai.claim_capped_aqueduct(&mut roomy, 0, &plan);
         assert_eq!(
             head(&roomy, city),
@@ -231,7 +240,7 @@ fn at_war_a_unit_keeps_its_queue() {
     game.at_war.insert((0, 1));
     let ai = armed();
     queue(&mut game, city, unit("warrior"));
-    let plan = ai.assess(&game, 0);
+    let plan = sated(&ai, &game);
     ai.claim_capped_aqueduct(&mut game, 0, &plan);
     assert_eq!(head(&game, city), Some(unit("warrior")), "a war unit stays");
 }
@@ -287,7 +296,7 @@ fn a_reserved_trebuchet_keeps_its_queue() {
     };
     queue(&mut game, city, unit("trebuchet"));
     let ai = armed();
-    let plan = ai.assess(&game, 0);
+    let plan = sated(&ai, &game);
     assert!(
         ai.capped_aqueduct_item(&game, 0, city, &plan).is_some(),
         "fixture: claimable"
@@ -298,4 +307,70 @@ fn a_reserved_trebuchet_keeps_its_queue() {
         Some(unit("trebuchet")),
         "the reserved Trebuchet is never displaced"
     );
+}
+
+/// `claims_yield_to_settler`: a capped city the strategic governor would hand
+/// its next Settler keeps its queue for it, idle or busy with a routine unit,
+/// because the governor runs after the claim and the city count is what the
+/// gate reads. Without the yield the Aqueduct took the busy queue.
+#[test]
+fn a_due_settler_city_keeps_its_queue_for_the_settler() {
+    let Some((game, city, _aqueduct)) = capped_city(1, LATE) else {
+        panic!("fixture: a city with a legal Aqueduct site");
+    };
+    let ai = armed();
+    let plan = ai.assess(&game, 0);
+    let counts = ai.counts(&game, 0);
+    assert!(
+        ai.settler_due_in(&game, 0, city, &plan, &counts),
+        "fixture: one city on open land, a Settler is due"
+    );
+    let mut idle = game.clone();
+    ai.claim_capped_aqueduct(&mut idle, 0, &plan);
+    assert_eq!(
+        head(&idle, city),
+        None,
+        "idle: the queue waits for the Settler"
+    );
+
+    let mut busy = game.clone();
+    queue(&mut busy, city, unit("warrior"));
+    let plan = ai.assess(&busy, 0);
+    ai.claim_capped_aqueduct(&mut busy, 0, &plan);
+    assert_eq!(
+        head(&busy, city),
+        Some(unit("warrior")),
+        "busy: no claim over a due Settler"
+    );
+}
+
+/// The same capped city with no Settler due (the empire at its settlement
+/// target) still claims its Aqueduct, idle or over a routine unit.
+#[test]
+fn a_city_with_no_settler_due_still_claims_its_aqueduct() {
+    let Some((game, city, aqueduct)) = capped_city(1, LATE) else {
+        panic!("fixture: a city with a legal Aqueduct site");
+    };
+    let mut ai = armed();
+    // The idle branch also asks the basic Settler step; put both targets at
+    // the one city.
+    ai.base.w.city_target = 1.0;
+    for start in [None, Some(unit("warrior"))] {
+        let mut on = game.clone();
+        if let Some(item) = start.clone() {
+            queue(&mut on, city, item);
+        }
+        let plan = sated(&ai, &on);
+        let counts = ai.counts(&on, 0);
+        assert!(
+            !ai.settler_due_in(&on, 0, city, &plan, &counts),
+            "fixture: at the settlement target"
+        );
+        ai.claim_capped_aqueduct(&mut on, 0, &plan);
+        assert_eq!(
+            head(&on, city),
+            Some(aqueduct.clone()),
+            "{start:?}: claimed"
+        );
+    }
 }

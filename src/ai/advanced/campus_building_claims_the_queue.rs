@@ -135,7 +135,8 @@ impl AdvancedAi {
         });
         let city_ids = g.player_city_ids(pid);
         let n_cities = city_ids.len();
-        let settlers = self.counts(g, pid).settlers;
+        let counts = self.counts(g, pid);
+        let settlers = counts.settlers;
         let mut best: Option<(u8, f64, u32, Item)> = None;
         for cid in city_ids {
             let Some((building, rank, turns)) = self.campus_building_claim_item(g, pid, cid, plan)
@@ -143,6 +144,13 @@ impl AdvancedAi {
                 continue;
             };
             if self.early_settler_floor_holds(g, pid, cid, plan) {
+                continue;
+            }
+            // A city the strategic governor would hand its next Settler keeps
+            // its queue for it, idle or not: the governor runs after this
+            // claim, and the city count is what the gate reads. See
+            // `advanced/claims_yield_to_settler.rs`.
+            if self.settler_due_in(g, pid, cid, plan, &counts) {
                 continue;
             }
             match g.cities[&cid].queue.first() {

@@ -9320,6 +9320,9 @@ mod industrial_zone_claims_the_producer_queue;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
 mod campus_building_claims_the_queue;
+/// The queue claims above yield a city whose Settler the strategic governor
+/// would train. See `advanced/claims_yield_to_settler.rs`.
+mod claims_yield_to_settler;
 mod granary_claims_the_bound_queue;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
 /// faith. See `advanced/holy_city_guard.rs`.
