@@ -3861,11 +3861,13 @@ class GameFocusBeforeClickTest(unittest.TestCase):
         with patch.object(civ6_play.popup_clear, "frontmost",
                           side_effect=lambda: next(fronts)), \
                 patch.object(civ6_play, "focus_game") as focus, \
+                patch.object(civ6_play, "game_window", return_value=(0, 33, 864, 542)), \
                 patch.object(civ6_play.time, "sleep"), \
                 patch.object(civ6_play.macos_window, "click_at") as click:
             civ6_play.click_at(10, 20)
         focus.assert_called_once()
-        click.assert_called_once_with(10, 20)
+        # The raise swallows a click: it is spent on the title bar first.
+        self.assertEqual(click.call_args_list, [call(432, 43), call(10, 20)])
 
     def test_a_game_already_in_front_is_not_refocused(self):
         with patch.object(civ6_play.popup_clear, "frontmost",
@@ -3984,6 +3986,16 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         self.assertNotIn("time.sleep(20.0)", unreadable)
         no_submenu = source.split("the menu is not ready yet")[1].split("blind_strikes = 0\n        if len(rows) > 6")[0]
         self.assertNotIn("time.sleep(20.0)", no_submenu)
+
+    def test_a_retry_with_the_submenu_open_does_not_click_single_player_again(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play.bootstrap_game)
+        guard = source.index('_observed_label_point(menushot, "Create Game", bounds)')
+        click = source.index("click_at(*menu_point)")
+        self.assertLess(guard, click)
+        self.assertIn("attempt > 1 and", source[guard - 80:guard],
+                      "the first attempt pays no extra read")
+        self.assertIn("else:\n            click_at(*menu_point)", source)
 
     def test_a_capture_is_recognized_once_until_it_changes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
