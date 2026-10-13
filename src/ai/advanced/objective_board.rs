@@ -2331,6 +2331,10 @@ impl AdvancedAi {
 }
 
 #[cfg(test)]
+#[path = "objective_board/prewar_tests.rs"]
+mod prewar_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::game::Game;
