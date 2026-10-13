@@ -863,3 +863,190 @@ fn a_ford_that_cannot_muster_falls_back_to_the_sea_lane() {
     assert!(v1.form_amphibious_train(&g, 0, cid));
     assert_eq!(v1.amphibious_train.unwrap().lane, train.lane);
 }
+
+/// The ford fixture of `a_one_tile_strait_is_forded_and_crossed_together`:
+/// a one-tile strait west of `island(5)`'s target, our column south of the
+/// port, version two armed.
+fn ford_fixture() -> (Game, u32, Pos, u32, [u32; 2]) {
+    let (mut g, cid, target, _, gun, escorts) = island(5);
+    for uid in [gun, escorts[0], escorts[1]] {
+        g.remove_unit(uid);
+    }
+    let gun = g.spawn_unit("catapult", 0, (7, 11));
+    let escorts = [
+        g.spawn_unit("spearman", 0, (6, 11)),
+        g.spawn_unit("spearman", 0, (7, 12)),
+    ];
+    (g, cid, target, gun, escorts)
+}
+
+#[test]
+fn a_ford_is_held_only_by_a_warship_beside_it_or_within_a_turns_reach() {
+    let (mut g, cid, target, gun, escorts) = ford_fixture();
+    let mut ai = armed_2(&g, cid, gun, escorts);
+    assert!(ai.form_amphibious_train(&g, 0, cid));
+    let train = ai.amphibious_train.clone().unwrap();
+    assert!(train.ford && train.lane.len() == 1);
+    let ford = train.lane.clone();
+    let is_water = |g: &Game, pos: Pos| g.rules.is_water(g.map.get(pos).unwrap());
+
+    // A warship three tiles off on a lake it cannot leave: the sea lane's
+    // three-tile watch would abort, the ford's does not.
+    let lake = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| {
+            g.wdist(*pos, target) >= 9
+                && g.wdist(*pos, ford[0]) == 3
+                && g.unit_ids_at(*pos).is_empty()
+                && g.city_at(*pos).is_none()
+        })
+        .min()
+        .expect("our land three tiles from the ford");
+    g.map.tiles.get_mut(&lake).unwrap().terrain = crate::name!("coast");
+    let watcher = g.spawn_unit("galley", 1, lake);
+    assert!(
+        lane_watched(&g, 0, &ford),
+        "the three-tile watch sees it"
+    );
+    assert!(
+        !ford_watched(&g, 0, &ford),
+        "but it cannot reach the ford this turn"
+    );
+    assert!(ai.amphibious_train_holds(&g, 0), "the ford proceeds");
+    let mut fresh = armed_2(&g, cid, gun, escorts);
+    assert!(fresh.form_amphibious_train(&g, 0, cid));
+    assert!(fresh.amphibious_train.as_ref().unwrap().ford, "and forms");
+    g.remove_unit(watcher);
+
+    // A warship beside the ford holds it, and abandons the ford in hand.
+    let beside = g
+        .nbrs(ford[0])
+        .into_iter()
+        .filter(|pos| is_water(&g, *pos) && !ford.contains(pos))
+        .min()
+        .expect("water beside the ford");
+    let watcher = g.spawn_unit("galley", 1, beside);
+    assert!(ford_watched(&g, 0, &ford));
+    assert!(!ai.amphibious_train_holds(&g, 0), "abandons the ford in hand");
+    let mut fresh = armed_2(&g, cid, gun, escorts);
+    assert!(
+        !fresh.form_amphibious_train(&g, 0, cid)
+            || !fresh.amphibious_train.as_ref().unwrap().ford,
+        "no ford forms under a warship beside it"
+    );
+    g.remove_unit(watcher);
+
+    // A warship three tiles off on water joined to the ford, within its
+    // moves (a Galley sails three), holds it too.
+    let reach = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| is_water(&g, *pos) && *pos != lake && g.wdist(*pos, ford[0]) == 3)
+        .min()
+        .expect("the strait's water three tiles along");
+    g.spawn_unit("galley", 1, reach);
+    assert!(ford_watched(&g, 0, &ford), "it reaches the ford this turn");
+}
+
+#[test]
+fn version_two_keeps_the_three_tile_watch_on_a_sea_lane() {
+    let (mut g, cid, _, _, gun, escorts) = island(2);
+    let mut ai = armed_2(&g, cid, gun, escorts);
+    assert!(ai.form_amphibious_train(&g, 0, cid));
+    let train = ai.amphibious_train.clone().unwrap();
+    assert!(!train.ford, "four water tiles is a sea lane");
+    let lane = train.lane.clone();
+    let three = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| {
+            g.rules.is_water(g.map.get(*pos).unwrap())
+                && lane.iter().map(|tile| g.wdist(*tile, *pos)).min() == Some(3)
+        })
+        .min()
+        .expect("water three tiles from the lane");
+    g.spawn_unit("galley", 1, three);
+    assert!(
+        !ai.amphibious_train_holds(&g, 0),
+        "a warship within three of a sea lane still abandons it"
+    );
+}
+
+#[test]
+fn a_ford_train_gathers_only_units_joined_to_its_near_shore() {
+    let (mut g, cid, target, gun, escorts) = ford_fixture();
+    let mut probe = armed_2(&g, cid, gun, escorts);
+    assert!(probe.form_amphibious_train(&g, 0, cid));
+    let (shore, landing) = {
+        let train = probe.amphibious_train.as_ref().unwrap();
+        (train.port_pos, train.landing)
+    };
+    // One escort four tiles back on our land, so the gathering waits on it.
+    let back = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| {
+            g.wdist(*pos, shore) == 4
+                && g.wdist(*pos, target) > g.wdist(shore, target)
+                && landable(&g, *pos)
+                && g.unit_ids_at(*pos).is_empty()
+        })
+        .min()
+        .expect("our land four tiles behind the shore");
+    g.remove_unit(escorts[1]);
+    let escorts = [escorts[0], g.spawn_unit("spearman", 0, back)];
+    // A gun and an escort of the group already on the target's side of the
+    // strait, nearer the ford than our column (live Immortal 204616Z).
+    let far_side: Vec<Pos> = std::iter::once(landing)
+        .chain(g.nbrs(landing))
+        .filter(|pos| g.wdist(*pos, target) <= 5 && landable(&g, *pos))
+        .take(2)
+        .collect();
+    assert_eq!(far_side.len(), 2, "two tiles across the strait");
+    let far_gun = g.spawn_unit("catapult", 0, far_side[0]);
+    let far_escort = g.spawn_unit("spearman", 0, far_side[1]);
+    let mut ai = armed_2(&g, cid, gun, escorts);
+    let journal = crate::reasoning::Journal::recording();
+    ai.attach_journal(journal.handle());
+    ai.force_groups[0].units.extend([far_gun, far_escort]);
+    assert!(ai.form_amphibious_train(&g, 0, cid));
+    let train = ai.amphibious_train.clone().unwrap();
+    assert!(train.ford);
+    assert!(
+        !train.members.contains(&far_gun) && !train.members.contains(&far_escort),
+        "units across the strait cannot gather at the near shore: {:?}",
+        train.members
+    );
+    assert_eq!(
+        train.members,
+        BTreeSet::from([gun, escorts[0], escorts[1]]),
+        "the near-shore column is the train"
+    );
+    let (released, trace, _) = run_crossing(&mut g, &mut ai, gun, escorts, target, 5, 12);
+    assert!(released, "the gathering completes and the ford is crossed\n{trace}");
+    // The gathering is journalled each turn it lasts.
+    let gathers: Vec<String> = journal
+        .since(0)
+        .thoughts
+        .iter()
+        .filter(|thought| thought.headline.starts_with("Siege train gathers for"))
+        .map(|thought| thought.detail.clone())
+        .collect();
+    assert!(!gathers.is_empty(), "the gathering is journalled\n{trace}");
+    assert!(
+        gathers[0].ends_with(&format!(
+            "2 of 3 within 2 of the ford; waiting on spearman {} at d=4",
+            escorts[1]
+        )),
+        "{gathers:?}"
+    );
+}

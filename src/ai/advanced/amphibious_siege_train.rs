@@ -82,7 +82,17 @@
 //!   [`AMPHIB_ARRIVED_2`] of the landing and lands on any free tile within
 //!   [`AMPHIB_BEACH_2`] of it joined to it over land (version one's two-tile
 //!   test counted a gun on an islet two tiles out as ashore); a member
-//!   ashore by the water steps inland to free the water's edge.
+//!   ashore by the water steps inland to free the water's edge;
+//! - **watches a ford closely, not widely**: a ford is held or abandoned only
+//!   for a visible enemy warship beside a ford tile or able to reach one this
+//!   turn over water ([`ford_watched`]); the sea lane keeps the three-tile
+//!   watch;
+//! - **gathers only the near shore**: a ford train takes only units joined
+//!   over land to its near shore (live 204616Z forded from an islet with the
+//!   column already on the target's side, which could never gather, and the
+//!   train held it eleven turns); and it journals the gathering each turn
+//!   ("Siege train gathers for X: N of M within 2 of the ford; waiting on
+//!   …").
 
 use super::*;
 
@@ -268,6 +278,97 @@ pub(super) fn lane_watched(g: &Game, pid: usize, lane: &[Pos]) -> bool {
                 .iter()
                 .any(|tile| g.wdist(*tile, unit.pos) <= AMPHIB_LANE_SAFETY)
     })
+}
+
+/// Version two, a ford of at most [`AMPHIB_FORD_WATER_MAX`] water tiles: a
+/// visible warship of a power at war with `pid` beside a ford tile, or able
+/// to reach one this turn over water it can sail. A ford is crossed in about
+/// a turn, so only a warship that can strike it this turn holds it; the sea
+/// lane keeps its three-tile watch ([`lane_watched`]). (Live Immortal
+/// 204616Z abandoned one-tile fords on t129 and t132 for a Battleship three
+/// tiles off on water joined to the ford: within its five moves, so it still
+/// holds them.)
+pub(super) fn ford_watched(g: &Game, pid: usize, ford: &[Pos]) -> bool {
+    g.units.values().any(|unit| {
+        unit.owner != pid
+            && g.is_at_war(pid, unit.owner)
+            && g.rules.units[unit.kind].domain.as_deref() == Some("sea")
+            && g.unit_visible_to(unit.id, pid)
+            && (ford.iter().any(|tile| g.wdist(*tile, unit.pos) <= 1)
+                || warship_reaches(g, unit, ford))
+    })
+}
+
+/// Whether `unit` reaches a tile of `ford` within its moves over water it
+/// can sail, one move a tile.
+fn warship_reaches(g: &Game, unit: &crate::game::Unit, ford: &[Pos]) -> bool {
+    let moves = (g.rules.units[unit.kind].moves.floor() as i32).max(1);
+    if ford.iter().all(|tile| g.wdist(*tile, unit.pos) > moves) {
+        return false;
+    }
+    let goals: BTreeSet<Pos> = ford.iter().copied().collect();
+    let mut seen: BTreeSet<Pos> = BTreeSet::from([unit.pos]);
+    let mut frontier = vec![unit.pos];
+    for _ in 0..moves {
+        let mut next = Vec::new();
+        for pos in frontier {
+            for step in g.nbrs(pos) {
+                let water = g.map.get(step).is_some_and(|tile| g.rules.is_water(tile));
+                if water && g.unit_can_traverse(unit.id, step) && seen.insert(step) {
+                    if goals.contains(&step) {
+                        return true;
+                    }
+                    next.push(step);
+                }
+            }
+        }
+        frontier = next;
+    }
+    false
+}
+
+/// Whether the crossing in hand is watched: a ford by [`ford_watched`], a
+/// sea lane by [`lane_watched`].
+fn train_watched(g: &Game, pid: usize, train: &AmphibiousTrain) -> bool {
+    if train.ford && train.lane.len() <= AMPHIB_FORD_WATER_MAX {
+        ford_watched(g, pid, &train.lane)
+    } else {
+        lane_watched(g, pid, &train.lane)
+    }
+}
+
+/// Version two: the units of `ashore` that can gather at a ford's near
+/// `shore`: those on land joined to it over land within reach of the muster.
+/// Live Immortal 204616Z forded from an islet of ours (t117, Aquileia) and
+/// took the nearest guns and escorts by straight distance: the column on the
+/// target's own side of the strait, which had a dry road and could never walk
+/// to the islet's shore. The gathering held it eleven turns (t118-t128): a
+/// Trebuchet sat on the landing tile counted as gathered (two tiles from the
+/// shore, across the water), a second paced between the two tiles three out,
+/// and a Horseman stalled behind it.
+fn near_shore_members(g: &Game, shore: Pos, ashore: &[u32]) -> Vec<u32> {
+    let walkable = |pos: Pos| {
+        g.map
+            .get(pos)
+            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+    };
+    let mut land: BTreeSet<Pos> = BTreeSet::from([shore]);
+    let mut frontier = vec![shore];
+    while let Some(pos) = frontier.pop() {
+        for next in g.nbrs(pos) {
+            if g.wdist(next, shore) <= AMPHIB_MUSTER_RADIUS + AMPHIB_ASSEMBLY_RADIUS
+                && walkable(next)
+                && land.insert(next)
+            {
+                frontier.push(next);
+            }
+        }
+    }
+    ashore
+        .iter()
+        .copied()
+        .filter(|id| g.units.get(id).is_some_and(|unit| land.contains(&unit.pos)))
+        .collect()
 }
 
 /// The landing tiles for `target`, best first: land beside water `rep` can
@@ -567,11 +668,15 @@ impl AdvancedAi {
                 think!(self.journal(), Military, Decision,
                     "Siege train ships for {} from {}", target_name, port_name;
                     "amphibious-siege-train: no dry road reaches {}; {} gun(s) and {} escort(s) \
-                     cross {} of {} water tiles, no enemy warship within {}, to land at {:?}, \
-                     {} tiles from the city",
+                     cross {} of {} water tiles, {}, to land at {:?}, {} tiles from the city",
                     target_name, guns, train.members.len() - guns,
                     if train.ford { "a ford" } else { "a lane" }, train.lane.len(),
-                    AMPHIB_LANE_SAFETY, train.landing, g.wdist(train.landing, train.target_pos);
+                    if train.ford && train.lane.len() <= AMPHIB_FORD_WATER_MAX {
+                        "no enemy warship beside it or within a turn's reach".to_string()
+                    } else {
+                        format!("no enemy warship within {AMPHIB_LANE_SAFETY}")
+                    },
+                    train.landing, g.wdist(train.landing, train.target_pos);
                     train.target_pos);
                 self.amphibious_train = Some(train);
                 true
@@ -795,11 +900,14 @@ impl AdvancedAi {
         water: Vec<Pos>,
         landing: Pos,
     ) -> Result<AmphibiousTrain, String> {
-        if lane_watched(g, pid, &water) {
+        if ford_watched(g, pid, &water) {
             return Err(format!(
-                "an enemy warship within {AMPHIB_LANE_SAFETY} of the ford at {shore:?}"
+                "an enemy warship beside the ford at {shore:?} or within a turn's reach of it"
             ));
         }
+        // Only the units that can gather at the near shore.
+        let ashore = near_shore_members(g, shore, ashore);
+        let ashore = ashore.as_slice();
         let Some(port) = g
             .player_city_ids(pid)
             .into_iter()
@@ -827,8 +935,9 @@ impl AdvancedAi {
             .collect();
         if guns.is_empty() || escorts.len() < AMPHIB_MIN_ESCORTS {
             return Err(format!(
-                "{} gun(s) and {} escort(s) within {AMPHIB_MUSTER_RADIUS} of the ford at \
-                 {shore:?} (needs 1 and {AMPHIB_MIN_ESCORTS})",
+                "{} gun(s) and {} escort(s) on the near shore's land within \
+                 {AMPHIB_MUSTER_RADIUS} of the ford at {shore:?} (needs 1 and \
+                 {AMPHIB_MIN_ESCORTS})",
                 guns.len(),
                 escorts.len()
             ));
@@ -903,6 +1012,31 @@ impl AdvancedAi {
             .filter(|(_, _, placed, (_, stalled))| !placed && *stalled < AMPHIB_STALL_TURNS)
             .map(|(_, distance, ..)| *distance)
             .max();
+        // The gathering, once a turn: who is in place and who is waited on.
+        let gather = (train.phase == AmphibiousPhase::Assemble).then(|| {
+            let placed = readings.iter().filter(|(_, _, placed, _)| *placed).count();
+            let laggard = readings
+                .iter()
+                .filter(|(_, _, placed, _)| !placed)
+                .max_by_key(|(id, distance, ..)| (*distance, std::cmp::Reverse(*id)))
+                .map(|(id, distance, ..)| {
+                    let kind = g
+                        .units
+                        .get(id)
+                        .map_or_else(|| "unit".to_string(), |unit| unit.kind.to_string());
+                    format!("{kind} {id} at d={distance}")
+                });
+            (
+                g.cities
+                    .get(&train.target)
+                    .map_or_else(|| "its target".to_string(), |city| city.name.clone()),
+                placed,
+                readings.len(),
+                if train.ford { "ford" } else { "port" },
+                laggard,
+                train.target_pos,
+            )
+        });
         train.progress = readings
             .into_iter()
             .map(|(id, distance, placed, (best, stalled))| {
@@ -916,6 +1050,14 @@ impl AdvancedAi {
                 (id, entry)
             })
             .collect();
+        if let Some((name, placed, total, point, laggard, target_pos)) = gather {
+            think!(self.journal(), Military, Detail,
+                "Siege train gathers for {}", name;
+                "amphibious-siege-train: {} of {} within {} of the {}; {}",
+                placed, total, AMPHIB_ASSEMBLY_RADIUS, point,
+                laggard.map_or_else(|| "all in place".to_string(), |who| format!("waiting on {who}"));
+                target_pos);
+        }
     }
 
     /// The members the waits hold for: under version two, every member but
@@ -967,9 +1109,14 @@ impl AdvancedAi {
             }
             Some(_) if guns == 0 => Some("no gun is left".to_string()),
             Some(_) if escorts == 0 => Some("no escort is left".to_string()),
-            Some(_) if lane_watched(g, pid, &train.lane) => {
-                Some("an enemy warship watches the lane".to_string())
-            }
+            Some(_) if train_watched(g, pid, &train) => Some(
+                if train.ford && train.lane.len() <= AMPHIB_FORD_WATER_MAX {
+                    "an enemy warship beside the ford or within a turn's reach of it"
+                } else {
+                    "an enemy warship watches the lane"
+                }
+                .to_string(),
+            ),
             Some(_) => None,
         };
         if let Some(reason) = reason {
