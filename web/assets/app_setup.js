@@ -68,6 +68,7 @@ document.getElementById("paneltoggle").onclick = () => togglePanel();
 bindMapAreaEditor();
 document.getElementById("collapsepause").onclick = toggleSpecPause;
 document.getElementById("specpause").onclick = toggleSpecPause;
+document.getElementById("livepause-button").onclick = toggleLivePause;
 function chooseWatchPace(value) {
   const select = document.getElementById("specspeed");
   const ms = Number(value);

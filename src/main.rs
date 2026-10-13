@@ -1765,6 +1765,12 @@ fn main() {
             let map_topology = play_options.map_topology;
             let map_poles = play_options.map_poles;
             let game_speed = GameSpeed::from_id(&play_options.speed).unwrap_or(GameSpeed::Standard);
+            // Only the mirror `tools/follow.py` keeps beside the live game asks
+            // for this: its page then carries the Pause / Resume that holds
+            // the Civilization VI game itself (`civ6::live_pause_status`).
+            if args.iter().any(|a| a == "--live-pause") {
+                civvis::civ6::enable_live_pause_control();
+            }
             civvis::server::serve_with_game(
                 arg(&args, "--port", 8765) as u16,
                 !args.iter().any(|a| a == "--no-open"),

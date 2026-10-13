@@ -67,8 +67,8 @@ DEFAULT_STRATEGY = ""
 CLEANUP_OWNERSHIP_FILE = "cleanup-ownership.json"
 
 sys.path.insert(0, str(HERE))
-from civ6_control import (gamelock, install, launcher, macos_input,
-                          macos_window, popup_clear)  # noqa: E402
+from civ6_control import (gamelock, install, launcher, live_pause,  # noqa: E402
+                          macos_input, macos_window, popup_clear)
 import civ6_env as env  # noqa: E402
 import computer_control as desktop_control  # noqa: E402
 # The objective list is not restated here. This launcher's `--victory` is
@@ -1759,7 +1759,8 @@ def attempt_ceiling(args) -> float:
 
 
 def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
-                           frozen_s: float, locked_probe=None) -> str:
+                           frozen_s: float, locked_probe=None,
+                           paused_probe=None) -> str:
     """Wait for the attempt, and kill it if its TURN stops advancing.
 
     ★★★★★ AN IN-LOOP WATCHDOG CANNOT CATCH A BLOCKED HARNESS. `civ6_play` has
@@ -1802,6 +1803,11 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
     # to be locked — and on a locked machine they spun forever, because each
     # locked slice extends the deadline it is racing.
     is_locked = locked_probe if locked_probe is not None else screen_locked
+    # The operator's Pause (`civ6_control.live_pause`): the mod holds our turn
+    # on purpose, so the turn not moving is the point, not a wedge. Injected
+    # for the same reason as the lock probe.
+    is_paused = paused_probe if paused_probe is not None else live_pause.requested
+    said_paused = False
     while time.time() < deadline:
         slice_started = time.time()
         try:
@@ -1875,6 +1881,22 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
         # must not run at all. Crediting the interval and falling through still
         # killed the attempt — the first version of this fix did exactly that,
         # and `test_a_locked_screen_does_not_kill_a_healthy_attempt` caught it.
+        # ⚠ No cap, unlike the lock below: a pause is an explicit operator
+        # request that stands until the operator lifts it, and the page that
+        # asked for it says so on screen the whole time.
+        if is_paused():
+            paused_for = time.time() - slice_started
+            deadline += paused_for
+            last_turn_at += paused_for
+            if not said_paused:
+                print("[watchdog] the operator paused the game; the attempt "
+                      "clock is held until it resumes", flush=True)
+                said_paused = True
+            continue
+        if said_paused:
+            print("[watchdog] the operator resumed the game; the attempt "
+                  "clock runs again", flush=True)
+            said_paused = False
         if is_locked():
             locked_for = time.time() - slice_started
             if locked_total + locked_for > lock_credit_cap:

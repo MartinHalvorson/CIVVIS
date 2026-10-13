@@ -1712,6 +1712,43 @@
     font-size: var(--type-small); font-weight: 900;
   }
   .launch-badge[hidden] { display: none; }
+  /* The live game's Pause / Resume (`toggleLivePause`): a media control at the
+     foot of the map, which nothing else on a mirrored board occupies. It is
+     shown only where `GET /live-pause` says this page is the mirror beside a
+     Civilization VI verification game, and there it holds the Firaxis game
+     itself. The note beside it says what the game is actually doing — the
+     hold lands at the start of the next turn, not on the click. */
+  #livepause {
+    position: absolute; z-index: 30; left: 50%; bottom: var(--panel-edge);
+    transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px; max-width: calc(100% - 24px);
+    padding: 5px; border-radius: 999px; white-space: nowrap;
+    border: 1px solid #4d685f; background: #0a1512e8;
+    box-shadow: 0 8px 22px #0007; backdrop-filter: blur(12px);
+  }
+  #livepause[hidden] { display: none; }
+  #livepause.live-paused { border-color: var(--gold); }
+  #livepause-button {
+    flex: none; margin: 0; padding: 8px 18px; border-radius: 999px;
+    color: #17160f; background: linear-gradient(135deg, #f0d58f, #c99e4e);
+    border-color: #efd184; font-size: var(--type-control); font-weight: 900;
+    letter-spacing: .04em; box-shadow: inset 0 1px #fff7;
+  }
+  #livepause-button:hover {
+    color: #11140f; background: linear-gradient(135deg, #ffe3a0, #dbae58); border-color: #ffe4a0;
+  }
+  #livepause-button:disabled { opacity: .7; cursor: progress; }
+  #livepause-note {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; padding-right: 10px;
+    color: #dce6e1; font-size: var(--type-control); font-weight: 800;
+  }
+  #livepause-note[hidden] { display: none; }
+  #livepause.live-pending #livepause-note { color: #aebeb7; font-style: italic; }
+  /* On that mirror the spectator Pause would start simulating the mirrored
+     world instead of holding the real one, so the live control is the only
+     pause it offers. */
+  body.live-pause-available #specpause,
+  body.live-pause-available #collapsepause { display: none !important; }
   #empire {
     position: absolute; z-index: 18;
     inset: var(--workspace-block-inset) var(--workspace-inline-inset);
@@ -4771,6 +4808,12 @@
   <div id="worldtracker" aria-label="Research and civics"></div>
   <div id="launchbar" aria-label="Empire screens">
     <div id="launchtabs"></div>
+  </div>
+  <!-- The live game's Pause / Resume. Hidden unless this page is the mirror
+       beside a Civilization VI verification game; see `toggleLivePause`. -->
+  <div id="livepause" hidden role="group" aria-label="Live Civilization VI game">
+    <button id="livepause-button" type="button" aria-pressed="false">⏸ Pause game</button>
+    <span id="livepause-note" aria-live="polite" hidden></span>
   </div>
   <!-- Civ 6's partial-screen hooks (PartialScreenHooks.xml): upper right, read
        right to left — Reports, Era progress, Trade routes, City-States,

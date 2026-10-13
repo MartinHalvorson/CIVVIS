@@ -21543,6 +21543,68 @@ CivvisTrade.answerOrphanSessions = function(turn)
 	end
 end;
 
+-- ★★★ THE OPERATOR'S PAUSE. `tools/civ6_control/live_pause.py` is the
+-- protocol: the CIVVIS page's Pause button leaves a request on the host,
+-- `civ6_play.py` turns it into a `pause` row in this run's orders channel, and
+-- this answers it by not playing. Civilization VI then simply waits on our
+-- turn — the AI cannot move until we end it — so nothing is lost, and lifting
+-- the request lets the same tick carry on into `settleTurn` as though the wait
+-- had been a slow brain.
+--
+-- The hold is TAKEN only at the opening of our turn: the board has gone out
+-- (so the page beside the game shows this very turn) and none of the turn's
+-- orders have been applied. A press mid-turn therefore finishes that turn
+-- first, and every held game stands at a clean boundary. Once held it stays
+-- held until the request is lifted.
+--
+-- ⚠ Polled on the UI clock at most once a second, never per tick — see the
+-- `DB.Query` deadlock note in `settleTurn`. A missing channel reads as "play".
+-- ⚠ On `CivvisBoard`, not a local: the main chunk is at Civ VI's register
+-- ceiling (register_budget_test.lua).
+CivvisBoard.hold = { asked = false, held = false };
+function CivvisBoard.operatorHold(turn)
+	local hold = CivvisBoard.hold;
+	local now = CivvisClock.now();
+	if type(now) ~= "number" or type(hold.polledAt) ~= "number"
+			or now < hold.polledAt or now - hold.polledAt >= 1 then
+		hold.polledAt = now;
+		local asked = false;
+		if attachOrders() then
+			pcall(function()
+				local rows = DB.Query(string.format(
+					"SELECT count(*) AS n FROM civvis.orders WHERE run = '%s' " ..
+					"AND kind = 'pause'", sqlSafe(cfg.RunTag)));
+				for _, row in ipairs(rows) do asked = (tonumber(row.n) or 0) > 0; end
+			end);
+		end
+		hold.asked = asked;
+	end
+	local heldFor = (type(now) == "number" and type(hold.since) == "number")
+		and math.floor(now - hold.since + 0.5) or nil;
+	if hold.held then
+		if not hold.asked then
+			hold.held = false;
+			emit("operator_resumed", { turn = turn, held_s = heldFor });
+			return false;
+		end
+		-- One line every 30 s: the run's record says the quiet is deliberate.
+		if type(now) == "number" and (type(hold.saidAt) ~= "number"
+				or now < hold.saidAt or now - hold.saidAt >= 30) then
+			hold.saidAt = now;
+			emit("operator_pause_held", { turn = turn, held_s = heldFor });
+		end
+		return true;
+	end
+	if not hold.asked then return false; end
+	if cfg.CivvisDecides and (awaiting.turn ~= turn or awaiting.done
+			or (awaiting.frame or 0) ~= 0) then
+		return false;
+	end
+	hold.held, hold.since, hold.saidAt = true, now, now;
+	emit("operator_paused", { turn = turn });
+	return true;
+end
+
 -- Submission is not acceptance: the host may still be settling a movement.
 CivvisQueue.requestEndTurn = function(turn, parameters)
 	if CivvisCitizenGrowth ~= nil and CivvisCitizenGrowth.pending() then return false; end
@@ -22234,6 +22296,8 @@ local function tick()
 				playTurn(player, pid, turn);
 			end
 		end
+
+		if CivvisBoard.operatorHold(turn) then return; end
 
 		-- ⚠ DO NOT END A TURN WHOSE DECISIONS HAVE NOT BEEN MADE. Every order below
 		-- this point assumes the turn has been played. Ending first would hand CIVVIS
@@ -22977,6 +23041,13 @@ CivvisQueue.onUiPulse = function(source)
 		or cfg.Play == false and "disabled" or not cfg.CivvisDecides and "standalone";
 	if rejected then CivvisQueue.noteUiPulse(source, rejected); return; end
 	pcall(CivvisQueue.checkAiPhaseStall);
+	-- A held game is quiet on purpose: tick every pulse so a lifted pause is
+	-- noticed even while the core publishes nothing, and do not call it a wake.
+	if CivvisBoard.hold.held then
+		tick();
+		CivvisQueue.lastUiTick = CivvisQueue.controllerTicks or 0;
+		return;
+	end
 	local serial = CivvisQueue.controllerTicks or 0;
 	if CivvisQueue.lastUiTick ~= serial then
 		CivvisQueue.noteUiPulse(source, "observing");
@@ -23013,6 +23084,9 @@ end;
 -- `orders_peek_wake` says how long the controller had gone without a tick.
 CivvisQueue.onPeekPulse = function()
 	if finished or inTick or cfg.Play == false or not cfg.CivvisDecides then return; end
+	-- Orders the brain wrote for a held turn stay landed until it resumes; the
+	-- UI pulse above owns the held game's ticks.
+	if CivvisBoard.hold.held then return; end
 	if not CivvisQueue.ordersLanded() then return; end
 	local now = CivvisClock.now();
 	local last = CivvisQueue.lastTickAt;

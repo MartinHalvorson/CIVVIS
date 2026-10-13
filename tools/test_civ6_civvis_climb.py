@@ -1420,7 +1420,7 @@ class WedgedAttempt(unittest.TestCase):
         def kill(self):
             self._dead = True
 
-    def _run(self, turns, frozen_s, locked_probe=None):
+    def _run(self, turns, frozen_s, locked_probe=None, paused_probe=None):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "run").mkdir()
@@ -1437,9 +1437,12 @@ class WedgedAttempt(unittest.TestCase):
             try:
                 play = self._Play(clock, self.WAIT_STEP_S)
                 with mock.patch.object(climb.time, "time", lambda: clock["t"]):
+                    # Both probes are pinned: the defaults read this host's
+                    # real screen and its real operator pause file.
                     why = climb.wait_watching_the_turn(
                         play, "run", 3.0, frozen_s,
-                        locked_probe=locked_probe or (lambda: False))
+                        locked_probe=locked_probe or (lambda: False),
+                        paused_probe=paused_probe or (lambda: False))
                 return why, play.signalled
             finally:
                 climb.RUN_ROOT = original
@@ -1497,6 +1500,27 @@ class WedgedAttempt(unittest.TestCase):
         self.assertEqual(why, "locked")
         self.assertLess(time.time() - started, 30.0,
                         "the capped wait must resolve promptly, not spin")
+
+    def test_an_operator_pause_holds_the_attempt_clock(self):
+        """The operator's Pause holds our turn on purpose (`live_pause`).
+
+        The first slice reads turn 151 unpaused; then with `frozen_s=0` any
+        slice that judges the turn would kill the attempt, so surviving forty
+        paused slices — past the 3 s hard budget, too — proves the pause
+        credits both clocks. Once lifted the guard stands again: the same
+        frozen turn is killed on the very next slice.
+        """
+        probes = []
+
+        def paused():
+            probes.append(len(probes))
+            return 2 <= len(probes) <= 41
+
+        why, signalled = self._run([1, 2, 151], frozen_s=0.0, paused_probe=paused)
+        self.assertEqual(why, "frozen")
+        self.assertEqual(signalled, climb.signal.SIGTERM)
+        self.assertEqual(len(probes), 42,
+                         "killed only on the first slice after the pause lifted")
 
     def test_an_unlocked_frozen_turn_is_still_killed(self):
         """The pause must be conditional — with the screen UNLOCKED the guard stands."""
@@ -2970,7 +2994,7 @@ class ExitWhileStaleIsFrozen(unittest.TestCase):
                 with mock.patch.object(climb.time, "time", lambda: clock["t"]):
                     return climb.wait_watching_the_turn(
                         play, "run", 100_000.0, frozen_s,
-                        locked_probe=lambda: False)
+                        locked_probe=lambda: False, paused_probe=lambda: False)
             finally:
                 climb.RUN_ROOT = original
 

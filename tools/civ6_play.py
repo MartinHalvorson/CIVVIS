@@ -44,8 +44,9 @@ from civ6_control import (capture_budget, gamelock, launcher, macos_capture,
                           macos_input, macos_ocr, macos_window,
                           operator_retire, popup_clear, vision,
                           watch)  # noqa: E402
+from civ6_control import live_pause  # noqa: E402
 from civ6_control.orders import (orders_db_path, request_retire,  # noqa: E402
-                                 reset_orders_db)
+                                 reset_orders_db, set_operator_pause)
 # The mod's sentinel for a readback it could not resolve, imported rather than
 # repeated: this harness and the ledger have to agree on what "unreadable"
 # looks like, and a second copy of that fact is a second place for it to rot.
@@ -5136,6 +5137,22 @@ def _play(args: argparse.Namespace) -> int:
         events.write(json.dumps(event, sort_keys=True) + "\n")
         events.flush()
         kind = event.get("kind")
+        # The mod's own word that the game stopped (or carries on), relayed to
+        # the page beside it; see `civ6_control.live_pause`.
+        if kind in ("operator_paused", "operator_pause_held"):
+            state["operator_held"] = True
+            try:
+                live_pause.write_state(args.tag, True, event.get("turn"))
+            except OSError as error:
+                print(f"[pause] could not report the hold: {error}", flush=True)
+            if kind == "operator_paused":
+                print(f"[pause] the game is held at turn {event.get('turn')}",
+                      flush=True)
+        elif kind == "operator_resumed":
+            state["operator_held"] = False
+            live_pause.release_state(args.tag)
+            print(f"[pause] the game resumed at turn {event.get('turn')} after "
+                  f"{event.get('held_s')}s", flush=True)
         if kind == "host":
             state["hosted"] = bool(event.get("started"))
             print(f"[setup] host started={event.get('started')}")
@@ -5487,6 +5504,49 @@ def _play(args: argparse.Namespace) -> int:
             args.focus_every, last_focus[0], place=True,
         )
 
+    # ★ THE OPERATOR'S PAUSE — the CIVVIS page's Pause button, or
+    # `python3 -m civ6_control.live_pause pause`. The request is one host file;
+    # the mod hears it as a `pause` row in this run's orders channel and stops
+    # playing at the opening of our next turn, so Civilization VI itself waits
+    # on us. Once the mod SAYS it holds (`operator_paused`, relayed by
+    # `record`), `watch.follow` refunds every clock exactly as it does for a
+    # locked screen: a held game is not a wedged one.
+    #
+    # ⚠ Held, not merely requested. `each_poll` — the focus keeper — does not
+    # run while paused, and the press that asked for the pause just put Chrome
+    # in front. Standing the keeper down at the request would leave the rest of
+    # the current turn crawling in a throttled background app; standing it
+    # down while the request is still up after a resume would do the same to
+    # the mod that has to notice the resume. So the keeper is off exactly while
+    # the game is held AND still meant to be.
+    #
+    # `each_poll` also carries the retire request, so it is honoured from here
+    # while held: the mod polls for a retire before it checks the hold, and a
+    # paused game can still be retired.
+    pause_flow = {"synced": None, "attempt_at": 0.0}
+
+    def operator_pause_requested() -> bool:
+        wanted = live_pause.requested()
+        now = time.monotonic()
+        if wanted != pause_flow["synced"] and now - pause_flow["attempt_at"] >= 1.0:
+            pause_flow["attempt_at"] = now
+            turn = state.get("turn")
+            if set_operator_pause(orders_db_path(run_dir, args.orders_db), args.tag,
+                                  turn if isinstance(turn, int) and turn >= 0 else None,
+                                  wanted):
+                if wanted or pause_flow["synced"] is not None:
+                    print("[pause] operator " + (
+                        "asked for a pause; the seat holds at the opening of its "
+                        "next turn" if wanted else "lifted the pause"), flush=True)
+                pause_flow["synced"] = wanted
+        return wanted
+
+    def held_or_locked() -> bool:
+        held = operator_pause_requested() and bool(state.get("operator_held"))
+        if held:
+            process_operator_retirement()
+        return console_locked() or held
+
     # ⚠ THE POLL INTERVAL IS THE OUTBOUND LEG OF THE DECISION LOOP. With CIVVIS
     # deciding, the mod holds its turn open until orders arrive, and orders cannot
     # be computed until the board reaches `events.jsonl` through this tail. At the
@@ -5523,7 +5583,7 @@ def _play(args: argparse.Namespace) -> int:
         read_s=read_s,
         stall_s=args.stall_seconds,
         frozen_s=args.frozen_seconds,
-        pause_when=console_locked,
+        pause_when=held_or_locked,
         finish_turn=args.max_turns, ceiling_s=ceiling_s)
     # ★★★ PHOTOGRAPH A STALL BEFORE KILLING IT. Stalls are now the dominant way runs
     # end — t87, t95, t106, t184 — and the event stream goes silent by definition, so
@@ -5578,12 +5638,14 @@ def _play(args: argparse.Namespace) -> int:
                               read_s=read_s,
                               stall_s=args.stall_seconds,
                               frozen_s=args.frozen_seconds,
-                              pause_when=console_locked,
+                              pause_when=held_or_locked,
                               finish_turn=args.max_turns, ceiling_s=ceiling_s)
         if not reason.startswith("stalled"):
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0
     events.close()
+    # Whatever ended the run, it no longer holds a game.
+    live_pause.release_state(args.tag)
 
     # A terminal run must not leave a live game advancing beside a frozen event
     # stream. That produced a turn-259 Firaxis window next to a turn-191 CIVVIS

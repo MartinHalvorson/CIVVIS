@@ -873,6 +873,154 @@ fn civil_from_unix(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
     )
 }
 
+// --- the operator's pause -------------------------------------------------
+
+/// Whether this server shows the live verification game, and so may hold it.
+///
+/// Only the mirror `tools/follow.py` keeps on screen beside Civilization VI
+/// passes `--live-pause`. A spectator table, the lobby or the follower's
+/// throwaway rebuild server never offers a button that stops a game it is not
+/// showing.
+static LIVE_PAUSE_CONTROL: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub fn enable_live_pause_control() {
+    LIVE_PAUSE_CONTROL.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn live_pause_control() -> bool {
+    LIVE_PAUSE_CONTROL.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The request: present means "hold the live game". `tools/civ6_control/
+/// live_pause.py` owns the protocol; these paths and their reading are kept in
+/// step with it.
+fn live_pause_request_path() -> PathBuf {
+    std::env::var_os("CIVVIS_LIVE_PAUSE_FILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home_dir().join(".civvis-live-pause.json"))
+}
+
+/// The report `civ6_play.py` writes from the control mod's own events.
+fn live_pause_state_path() -> PathBuf {
+    std::env::var_os("CIVVIS_LIVE_PAUSE_STATE_FILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home_dir().join(".civvis-live-pause-state.json"))
+}
+
+/// How long a hold report is believed on its own. The harness rewrites it
+/// every 30 s while the mod holds (`operator_pause_held`); past this, it is
+/// believed only while its run still holds the game lock, so a harness that
+/// died holding cannot leave the page saying "Paused" over nothing.
+const LIVE_PAUSE_REPORT_FRESH: std::time::Duration = std::time::Duration::from_secs(120);
+
+fn read_json_object(path: &Path) -> Option<serde_json::Map<String, Value>> {
+    let raw = fs::read_to_string(path).ok()?;
+    match serde_json::from_str::<Value>(&raw).ok()? {
+        Value::Object(map) => Some(map),
+        _ => None,
+    }
+}
+
+/// The file's existence is the request; only an explicit `"paused": false`
+/// inside it reads as "play" — the same reading as `live_pause.requested()`.
+fn live_pause_requested_at(path: &Path) -> bool {
+    if !path.exists() {
+        return false;
+    }
+    read_json_object(path).is_none_or(|map| map.get("paused") != Some(&Value::Bool(false)))
+}
+
+fn live_pause_status_from(
+    request_path: &Path,
+    report_path: &Path,
+    run_holds_game: &dyn Fn(&str) -> bool,
+) -> Value {
+    let request = read_json_object(request_path).unwrap_or_default();
+    let report = read_json_object(report_path).unwrap_or_default();
+    let tag = report.get("tag").and_then(Value::as_str);
+    let fresh = fs::metadata(report_path)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|modified| modified.elapsed().ok())
+        .is_some_and(|age| age <= LIVE_PAUSE_REPORT_FRESH);
+    let held = report.get("held") == Some(&Value::Bool(true))
+        && (fresh || tag.is_some_and(run_holds_game));
+    serde_json::json!({
+        "available": live_pause_control(),
+        "requested": live_pause_requested_at(request_path),
+        "requested_utc": request.get("requested_utc").cloned().unwrap_or(Value::Null),
+        "held": held,
+        "tag": tag,
+        "turn": report.get("turn").cloned().unwrap_or(Value::Null),
+        "since_utc": if held {
+            report.get("since_utc").cloned().unwrap_or(Value::Null)
+        } else {
+            Value::Null
+        },
+    })
+}
+
+/// What the page shows: whether a pause is asked for, and whether the game is
+/// actually standing still yet (the mod holds only at the opening of a turn).
+pub fn live_pause_status() -> Value {
+    live_pause_status_from(
+        &live_pause_request_path(),
+        &live_pause_state_path(),
+        &|tag| holder().is_some_and(|holder| holder.alive && holder.tag == tag),
+    )
+}
+
+fn set_live_pause_at(
+    path: &Path,
+    paused: bool,
+    source: &str,
+    now: std::time::SystemTime,
+) -> Result<(), String> {
+    if !paused {
+        return match fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("could not lift the pause: {error}")),
+        };
+    }
+    let secs = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs())
+        .unwrap_or(0);
+    let (year, month, day, hour, minute, second) = civil_from_unix(secs as i64);
+    let body = serde_json::json!({
+        "paused": true,
+        "requested_utc": format!(
+            "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z"
+        ),
+        "source": source,
+    });
+    // Written beside the target and renamed over it: the watchdogs read this
+    // file every poll and must never see half of it.
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "civvis-live-pause.json".to_string());
+    let staging = path.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
+    fs::write(&staging, format!("{body}\n"))
+        .and_then(|()| fs::rename(&staging, path))
+        .map_err(|error| {
+            let _ = fs::remove_file(&staging);
+            format!("could not ask for the pause: {error}")
+        })
+}
+
+/// Ask for, or lift, the hold on the live game. Resuming removes the request.
+pub fn set_live_pause(paused: bool, source: &str) -> Result<(), String> {
+    set_live_pause_at(
+        &live_pause_request_path(),
+        paused,
+        source,
+        std::time::SystemTime::now(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1105,5 +1253,92 @@ mod tests {
         // Leap years and month ends are where a hand-rolled calendar breaks.
         let leap = epoch + std::time::Duration::from_secs(1_709_164_800);
         assert_eq!(new_tag(leap), "civvis-20240229T000000Z");
+    }
+
+    fn live_pause_scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-live-pause-{name}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Pause writes the request the harness and every watchdog read; Resume
+    /// removes it, and lifting a pause nobody asked for is not an error.
+    #[test]
+    fn the_page_asks_for_and_lifts_the_live_pause() {
+        let dir = live_pause_scratch("request");
+        let request = dir.join("pause.json");
+        let report = dir.join("state.json");
+        let nobody = |_: &str| false;
+        assert!(!live_pause_requested_at(&request));
+        let at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_791_864_000);
+        set_live_pause_at(&request, true, "civvis-page", at).unwrap();
+        assert!(live_pause_requested_at(&request));
+        let written: Value = serde_json::from_str(&fs::read_to_string(&request).unwrap()).unwrap();
+        assert_eq!(written["paused"], true);
+        assert_eq!(written["source"], "civvis-page");
+        assert_eq!(written["requested_utc"], "2026-10-13T04:00:00Z");
+        let status = live_pause_status_from(&request, &report, &nobody);
+        assert_eq!(status["requested"], true);
+        assert_eq!(status["requested_utc"], "2026-10-13T04:00:00Z");
+        // Asked for is not the same as standing still: no report yet.
+        assert_eq!(status["held"], false);
+        // No staging file is left behind beside the request.
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        set_live_pause_at(&request, false, "civvis-page", at).unwrap();
+        assert!(!request.exists());
+        set_live_pause_at(&request, false, "civvis-page", at).unwrap();
+        // The same reading as `live_pause.requested()`: an empty hand-written
+        // file pauses; only an explicit `false` inside it plays.
+        fs::write(&request, "").unwrap();
+        assert!(live_pause_requested_at(&request));
+        fs::write(&request, r#"{"paused": false}"#).unwrap();
+        assert!(!live_pause_requested_at(&request));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// "Paused" is said only on the harness's word that the game stopped, and
+    /// that word expires with the run that gave it.
+    #[test]
+    fn the_page_believes_a_hold_only_from_a_live_run() {
+        let dir = live_pause_scratch("report");
+        let request = dir.join("pause.json");
+        let report = dir.join("state.json");
+        fs::write(
+            &report,
+            r#"{"tag": "civvis-20261013T041158Z", "held": true, "turn": 151,
+                "since_utc": "2026-10-13T04:20:00Z"}"#,
+        )
+        .unwrap();
+        let nobody = |_: &str| false;
+        let status = live_pause_status_from(&request, &report, &nobody);
+        assert_eq!(status["held"], true, "a fresh report is believed");
+        assert_eq!(status["turn"], 151);
+        assert_eq!(status["tag"], "civvis-20261013T041158Z");
+        assert_eq!(status["since_utc"], "2026-10-13T04:20:00Z");
+        assert_eq!(status["requested"], false, "a resume already asked for");
+        // An old report stands only while its run still holds the game.
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+        fs::File::options()
+            .write(true)
+            .open(&report)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        assert_eq!(live_pause_status_from(&request, &report, &nobody)["held"], false);
+        let holds = |tag: &str| tag == "civvis-20261013T041158Z";
+        assert_eq!(live_pause_status_from(&request, &report, &holds)["held"], true);
+        let other = |tag: &str| tag == "civvis-20261013T050000Z";
+        assert_eq!(live_pause_status_from(&request, &report, &other)["held"], false);
+        // A released report is not a hold, however fresh.
+        fs::write(&report, r#"{"tag": "civvis-20261013T041158Z", "held": false}"#).unwrap();
+        let status = live_pause_status_from(&request, &report, &holds);
+        assert_eq!(status["held"], false);
+        assert_eq!(status["since_utc"], Value::Null);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

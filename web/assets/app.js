@@ -6378,6 +6378,7 @@ async function boot() {
       firstLoad = false;
       adoptRunningMode();
       if (SPEC) updatePaceControl(state); // adopt the pace the server is keeping
+      pollLivePause();
       updateBetweenGameCountdownControl(state);
       scheduleSpec(state);
       reportSpecStatus();
@@ -6468,6 +6469,83 @@ function toggleSpecPause() {
   setPace({paused: specPaused});
 }
 setInterval(reportSpecStatus, 4000);
+// --- The live game's Pause / Resume. On the mirror `tools/follow.py` keeps
+// beside a Civilization VI verification game, this holds the Firaxis game
+// itself — not this page's world, which is only its picture (`src/civ6.rs`,
+// `live_pause_status`; `tools/civ6_control/live_pause.py`). The server says
+// whether this page is that mirror; anywhere else the control never appears.
+// The button follows the REQUEST, so it reads Resume the moment Pause is
+// pressed; the note beside it follows the GAME, which only stops at the start
+// of its next turn and says so through the harness.
+const livePause = {available: false, requested: false, held: false, turn: null,
+  busy: false, error: "", timer: null};
+function paintLivePause() {
+  const box = document.getElementById("livepause");
+  if (!box) return;
+  box.hidden = !livePause.available;
+  document.body.classList.toggle("live-pause-available", livePause.available);
+  if (!livePause.available) return;
+  const button = document.getElementById("livepause-button");
+  const note = document.getElementById("livepause-note");
+  const asked = livePause.requested;
+  button.textContent = asked ? "▶ Resume game" : "⏸ Pause game";
+  button.title = asked
+    ? "Let the Civilization VI game carry on from where it stands"
+    : "Hold the Civilization VI game at the start of its next turn";
+  button.setAttribute("aria-pressed", String(asked));
+  button.disabled = livePause.busy;
+  const text = livePause.error ||
+    (asked && livePause.held ? `Paused · turn ${livePause.turn ?? "?"}`
+      : asked ? "Pausing at the start of the next turn…"
+      : livePause.held ? "Resuming…" : "");
+  note.textContent = text;
+  note.hidden = !text;
+  box.classList.toggle("live-paused", asked && livePause.held);
+  box.classList.toggle("live-pending", !livePause.error && asked !== livePause.held);
+}
+function adoptLivePause(status) {
+  if (!status || typeof status !== "object") return;
+  livePause.available = status.available === true;
+  livePause.requested = status.requested === true;
+  livePause.held = status.held === true;
+  livePause.turn = Number.isInteger(status.turn) ? status.turn : null;
+  livePause.error = typeof status.error === "string" ? status.error : "";
+  paintLivePause();
+}
+async function pollLivePause() {
+  clearTimeout(livePause.timer);
+  let answered = true;
+  try {
+    if (!livePause.busy) adoptLivePause(await fetchJSON("/live-pause", {}, 3000));
+  } catch (_) {
+    // The page and this route ship in one binary, so a failure is a server
+    // between frames or restarting: ask again rather than drop the control.
+    answered = false;
+  }
+  // A server that says it is not the live mirror is asked once and left alone.
+  if (livePause.available || !answered)
+    livePause.timer = setTimeout(pollLivePause, answered ? 2000 : 5000);
+}
+async function toggleLivePause() {
+  if (!livePause.available || livePause.busy) return;
+  const paused = !livePause.requested;
+  livePause.busy = true;
+  livePause.requested = paused;
+  livePause.error = "";
+  paintLivePause();
+  try {
+    adoptLivePause(await fetchJSON("/live-pause", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({paused})}, 5000));
+  } catch (_) {
+    livePause.requested = !paused;
+    livePause.error = paused ? "Could not pause — the server did not answer"
+      : "Could not resume — the server did not answer";
+  } finally {
+    livePause.busy = false;
+    paintLivePause();
+  }
+}
 // --- Live time: the turn plate's stopwatch, above its Watch pace row. It
 // reads how long the world on screen has actually been playing: it starts
 // with the world's first unpaused frame, stops while the simulation is paused

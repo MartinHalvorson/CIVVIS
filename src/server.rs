@@ -4826,6 +4826,28 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 }),
             );
         }
+        // The operator's Pause / Resume for the live Civilization VI game this
+        // page mirrors (`tools/civ6_control/live_pause.py`). Answered without
+        // the simulation lock: the mirror's own world is not what it touches,
+        // and the button must answer while a frame is being published.
+        ("GET", "/live-pause") => {
+            respond_json(stream, &civ6::live_pause_status());
+        }
+        ("POST", "/live-pause") => {
+            let asked = if !civ6::live_pause_control() {
+                Err("this page is not showing a live Civilization VI game".to_string())
+            } else if let Some(paused) = parsed["paused"].as_bool() {
+                civ6::set_live_pause(paused, "civvis-page")
+            } else {
+                Err("send {\"paused\": true} or {\"paused\": false}".to_string())
+            };
+            let mut answer = civ6::live_pause_status();
+            answer["error"] = match asked {
+                Ok(()) => Value::Null,
+                Err(error) => Value::String(error),
+            };
+            respond_json(stream, &answer);
+        }
         // Start a real game of Civilization VI with the lobby's settings.
         //
         // The reply is a receipt, not a game: bringing the other game up takes
