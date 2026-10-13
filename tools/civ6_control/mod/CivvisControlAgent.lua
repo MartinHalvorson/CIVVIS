@@ -12052,6 +12052,57 @@ CivvisLedger.strike = function(unit, subject, verb, x, y, turn)
 	                 x = x, y = y, hp = hp, preview = preview });
 end;
 
+-- WorldInput.lua:2004-2015 and :2091-2097 read PLOTS and MODIFIERS in
+-- parallel; only MODIFIER_IS_TARGET rows are offered ranged/air targets.
+-- Observe a refused shot without changing its verdict or issuing an order.
+CivvisLedger.annotateStrikeOffer = function(unit, operation, x, y, payload)
+	payload.native_target_known = false;
+	local offer = try(function()
+		if unit == nil or operation == nil or UnitManager == nil
+				or UnitManager.GetOperationTargets == nil or UnitOperationResults == nil
+				or UnitOperationResults.PLOTS == nil or UnitOperationResults.MODIFIERS == nil
+				or type(UnitOperationResults.MODIFIER_IS_TARGET) ~= "number"
+				or UnitOperationResults.MODIFIER_IS_TARGET % 1 ~= 0 then return nil; end
+		local plot = Map.GetPlot(x, y);
+		local target = plot and plot:GetIndex();
+		if type(target) ~= "number" or target < 0 or target % 1 ~= 0 then return nil; end
+		local results = UnitManager.GetOperationTargets(unit, operation);
+		if type(results) ~= "table" then return nil; end
+		local plots = results[UnitOperationResults.PLOTS];
+		local modifiers = results[UnitOperationResults.MODIFIERS];
+		if type(plots) ~= "table" or type(modifiers) ~= "table"
+				or #plots ~= #modifiers then return nil; end
+		local count = #plots;
+		-- Lua's length operator is ambiguous for sparse tables. Require dense,
+		-- aligned native rows before reporting a known absent target.
+		for index in pairs(plots) do
+			if type(index) ~= "number" or index < 1 or index > count
+					or index % 1 ~= 0 then return nil; end
+		end
+		for index in pairs(modifiers) do
+			if type(index) ~= "number" or index < 1 or index > count
+					or index % 1 ~= 0 then return nil; end
+		end
+		local offered, rows = false, 0;
+		for index = 1, count do
+			local nativePlot, modifier = plots[index], modifiers[index];
+			if type(nativePlot) ~= "number" or nativePlot < 0 or nativePlot % 1 ~= 0
+					or type(modifier) ~= "number" or modifier % 1 ~= 0 then return nil; end
+			if modifier == UnitOperationResults.MODIFIER_IS_TARGET then
+				rows = rows + 1;
+				if nativePlot == target then offered = true; end
+			end
+		end
+		return { offered = offered, rows = rows };
+	end, nil);
+	if offer ~= nil then
+		payload.native_target_known = true;
+		payload.native_target_offered = offer.offered;
+		payload.native_target_rows = offer.rows;
+	end
+	return payload;
+end;
+
 CivvisLedger.onCombatVisBegin = function(kVisData)
 	local attacker = try(function() return kVisData[CombatVisType.ATTACKER]; end);
 	local defender = try(function() return kVisData[CombatVisType.DEFENDER]; end);
@@ -15254,6 +15305,8 @@ local function applyOrder(player, pid, row, turn)
 				-- the decision and the host verdict separate so the next run can
 				-- repair the right side of the bridge instead of guessing from the
 				-- aggregate RANGE_ATTACK refusal count.
+				local nativeOffer = CivvisLedger.annotateStrikeOffer(
+					unit, OP["UNITOPERATION_RANGE_ATTACK"], x, y, {});
 				emit("range_attack_refused", {
 					turn = turn, unit = subject, unit_kind = unitTypeName(unit),
 					unit_x = try(function() return unit:GetX(); end, -1),
@@ -15265,6 +15318,9 @@ local function applyOrder(player, pid, row, turn)
 						return UnitManager.GetActivityType(unit);
 					end, nil),
 					why = refusalReason(unit, OP["UNITOPERATION_RANGE_ATTACK"], params),
+					native_target_known = nativeOffer.native_target_known,
+					native_target_offered = nativeOffer.native_target_offered,
+					native_target_rows = nativeOffer.native_target_rows,
 				});
 			end
 			return accepted, verb;
@@ -15311,6 +15367,7 @@ local function applyOrder(player, pid, row, turn)
 				if verb == "AIR_ATTACK" then
 					-- The same event RANGE_ATTACK files, so the decider's
 					-- `blocked_strikes` keeps the refused pair off the next frame.
+					local nativeOffer = CivvisLedger.annotateStrikeOffer(unit, hash, x, y, {});
 					emit("range_attack_refused", {
 						turn = turn, unit = subject, unit_kind = unitTypeName(unit),
 						verb = verb,
@@ -15320,6 +15377,9 @@ local function applyOrder(player, pid, row, turn)
 						moves = try(function() return unit:GetMovesRemaining(); end, -1),
 						attacks = try(function() return unit:GetAttacksRemaining(); end, -1),
 						why = refusalReason(unit, hash, params),
+						native_target_known = nativeOffer.native_target_known,
+						native_target_offered = nativeOffer.native_target_offered,
+						native_target_rows = nativeOffer.native_target_rows,
 					});
 				end
 				return false, "cannot_" .. string.lower(verb);
