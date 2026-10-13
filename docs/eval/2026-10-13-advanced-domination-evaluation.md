@@ -27,7 +27,18 @@ use the same compiled public forced-policy bundle. These are simulator reach
 probes; they do not reproduce Firaxis rival AI or prove native win-rate gains.
 No source tuning follows their outcomes.
 
-Full local validation, independent CI and probe review are pending. Source,
+All four pairs finished. Both arms lost every game to Science, held zero
+foreign major cities or capitals, and had byte-identical applied-action
+records within each pair. Immortal seeds ended at turns 161 and 163; Deity
+seeds at 122 and 150. The focal seat kept its home capital in the first
+Immortal seed and lost it in the other three. It declared no major war in
+three seeds and one at turn 86 in the second Deity seed. Both two-pair
+commands exited 2 because their existing reach guard rejects an entirely
+identical batch. These are completed negative probes, not passing strength
+comparisons or evidence for enabling the selected policy. No source or seed
+was changed in response.
+
+Full local validation and independent CI are pending. Source,
 binary digest, registration and logs are retained under
 `~/civvis-tactics-results/2026-10-13/native-movement-adoption/`. Native adoption
 of the separately published movement fix is recorded in its own task and does
