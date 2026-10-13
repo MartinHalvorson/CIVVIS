@@ -1504,6 +1504,17 @@ def ensure_game_frontmost(timeout_s: float = 1.5) -> bool:
     while time.monotonic() < deadline:
         time.sleep(0.1)
         if in_front():
+            # ★ RAISED IS NOT YET CLICKABLE: Aspyr's window drops the first
+            # click after it is brought forward. Live 22:36Z 10-13
+            # (civvis-20261013T223558Z, the operator typing again): every
+            # setup click needed a raise, and Create Game clicked straight
+            # after it left the main menu up — four attempts, 179 s. That
+            # click goes to the title bar, which is inert on every screen.
+            bounds = game_window()
+            if bounds is not None:
+                x, y, w, _ = bounds
+                macos_window.click_at(int(x + w / 2), int(y + 10))
+                time.sleep(0.3)
             return True
     print("[focus] Civilization VI is not in front; this click may only "
           "activate it", flush=True)
@@ -3711,8 +3722,20 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             # Otherwise the poll above has already spent this attempt's budget
             # looking; go straight to the next attempt's focus and click.
             continue
-        click_at(*menu_point)
-        time.sleep(2.5)
+        # ★ A RETRY OFTEN FINDS THE SUBMENU STILL OPEN. Backing out of a
+        # failed setup leaves Single Player's submenu up, which shifts the
+        # column ~50 pt left, so the label read off that frame is not where it
+        # rests — and clicking it closes the submenu: "no submenu" and 25 s
+        # lost, twice in each of civvis-20261013T220550Z and ...223558Z. A
+        # submenu already showing Create Game is what the click was for.
+        already_open = (attempt > 1 and
+                        _observed_label_point(menushot, "Create Game", bounds) is not None)
+        if already_open:
+            print(f"attempt {attempt}: the Single Player submenu is already open",
+                  file=sys.stderr)
+        else:
+            click_at(*menu_point)
+            time.sleep(2.5)
         # Read the submenu rather than assume its shape. Which entries it has
         # depends on whether there is a save and a game to resume, so where
         # "Create Game" lands moves between runs. The crop follows the read
