@@ -25,7 +25,9 @@ must retain that newer committed parent rather than overwrite its changes.
 
 All 92 discovered private-plus-overlay Lua suites passed; all 99 scripts
 parsed under Lua 5.1. All 138 installation tests passed. The complete native
-controller suite and both release binaries are pending. No source tuning follows
+controller suite passed all 288 cases with four workers, zero retries and no
+fail-fast. All 780 registered inputs stayed unchanged. Both release binaries
+are pending. No source tuning follows
 native outcomes. The source must remain clean and its registered input hashes
 must match the candidate used for testing and launch.
 
