@@ -1,7 +1,7 @@
 # Native strike target offers
 
-Publication and independent candidate CI are pending. The implementation is
-locally committed; no native candidate game or win-rate improvement is established.
+The implementation has been published to its ownership PR. No native candidate
+game or win-rate improvement is established.
 
 A completed four-player Gran Colombia game recorded 26 ranged refusals with
 `can_start=false,no_reasons [p4r]`. That game used private revision
@@ -77,9 +77,22 @@ Local retained logs have SHA256:
 
 The branch started from `4ac783905`. A connector read confirmed that exact
 GitHub main, and the one pre-ready merge reported already up to date.
-Git push failed DNS resolution. The connector rejected updating this PR because
-the tool requires approval and the session policy is `never`. The PR remains
-draft on its initial claim until publication and candidate checks can proceed.
+Initial publication failed DNS resolution, and the connector rejected updating
+the PR under the former session's approval policy. On 2026-10-13, the normal Git
+push succeeded and published all seven implementation/evidence checkpoints
+through `2ab76d236`. Independent candidate run
+[38344566068](https://github.com/MartinHalvorson/CIVVIS/actions/runs/38344566068)
+passed all 4,835 Rust tests, with 51 existing skips and four ignored
+documentation examples. All eight independent PR checks passed, including
+the control-mod and paired-cost gates. The branch also merged current public
+`8897527b7` once before ready. At merge checkpoint `b730821521`, the complete
+unfiltered local Nextest run passed all **4,835 tests**, with 51 existing skips,
+zero retries and no fail-fast. Documentation had zero failures and four existing
+ignored examples. All 90 discovered Lua suites, 97 Lua parses, and 137
+installation tests passed again. The 626 registered Rust/rules/build/Lua inputs
+were unchanged through validation. Logs and input hashes are retained under
+`~/civvis-tactics-results/2026-10-13/native-strike-offers/`. This diagnostics-only
+change still has no native candidate actuation or strength measurement.
 
 Read-only follow-up matched all 26 historical refusal events to their recorded
 decisions. Three proposed approach moves were absent from emitted orders.
