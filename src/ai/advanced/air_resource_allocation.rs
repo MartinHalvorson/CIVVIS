@@ -139,6 +139,12 @@ impl AdvancedAi {
         target: Name,
         cost: f64,
     ) -> bool {
+        // Every Gold upgrade of the advanced seat but the science core's asks
+        // this first. `amphibious-siege-train-2`: an upgrade replaces the unit
+        // under a new id, which drops it from the crossing in hand.
+        if self.amphibious_locked(uid) {
+            return false;
+        }
         let to = &g.rules.units[target];
         if to.promotion_class == "air_bomber" {
             return true;

@@ -3767,6 +3767,21 @@ pub const GENES: &[Gene] = &[
     // Such a march now waits on its dry road and counts as marching. See
     // `AdvancedAi::dry_road_blocked_holds`.
     Gene { tag: "dry-road-outlasts-a-blocked-step", field: "dry_road_outlasts_a_blocked_step", kind: Kind::OptIn, enable: AdvancedAi::enable_dry_road_outlasts_a_blocked_step, disable: AdvancedAi::disable_dry_road_outlasts_a_blocked_step },
+    // First live crossing, civvis-20261013T083300Z: the train for Susa took
+    // 22 turns from forming to landing (a 12-water-tile lane) though the best
+    // mixed road from Cali crossed ONE water tile; members on the mixed
+    // router hopped between land and sea (each switch ends the turn), a gun
+    // was combined into an Army at sea, and an escort was re-tasked to a
+    // builder guard and then upgraded (a new id, dropped), while the
+    // cohesion hold waited on it. Madrid in the Emperor win (190448Z) has the
+    // same shape: sea lanes of 27-42 tiles, a land road crossing one water
+    // tile. Version two fords a strait of at most two water tiles (march to
+    // the shore, cross, land), locks members against combining, upgrading
+    // and re-tasking, sails on a water-only router, drops a member that does
+    // not close for two turns from the cohesion wait, and lands on any free
+    // tile within two of the landing once the train is within three. See
+    // `advanced/amphibious_siege_train.rs`.
+    Gene { tag: "amphibious-siege-train-2", field: "amphibious_siege_train_2", kind: Kind::OptIn, enable: AdvancedAi::enable_amphibious_siege_train_2, disable: AdvancedAi::disable_amphibious_siege_train_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

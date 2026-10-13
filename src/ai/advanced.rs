@@ -5067,6 +5067,12 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `amphibious-siege-train-2`: everything `amphibious-siege-train` does,
+    /// plus a ford mode for a strait of at most two water tiles, a lock that
+    /// keeps a member from being combined, upgraded or re-tasked mid-crossing,
+    /// a water-only sail and a wider beach. See
+    /// `advanced/amphibious_siege_train.rs`. Off by default.
+    amphibious_siege_train_2: bool,
     /// `backlog-builder-takes-the-queue`: while the worked backlog runs
     /// ahead of the Builder charges, the city that trains a Builder soonest
     /// puts one at the head of its queue ahead of the governor's rescoring.
@@ -10239,6 +10245,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            amphibious_siege_train_2: false,
             backlog_builder_takes_the_queue: false,
             bombers_fly_on_a_small_stock: false,
             builders_improve_the_worked_for_production: false,
@@ -29377,6 +29384,7 @@ impl AdvancedAi {
                 if from.class != "military"
                     || from.siege
                     || matches!(from.domain.as_deref(), Some("sea" | "air"))
+                    || self.amphibious_locked(uid)
                 {
                     return None;
                 }
@@ -37917,6 +37925,10 @@ impl AdvancedAi {
         let Some(unit) = g.units.get(&guard) else {
             return;
         };
+        // `amphibious-siege-train-2`: a member of the crossing guards no one.
+        if self.amphibious_locked(guard) {
+            return;
+        }
         let sea = g.rules.units[unit.kind].domain.as_deref() == Some("sea");
         self.settler_guards.retain(|bound_settler, bound_guard| {
             *bound_settler == settler || *bound_guard != guard
@@ -45782,6 +45794,8 @@ impl AdvancedAi {
                 };
                 if a.kind != b.kind
                     || self.combination_refused(*unit, *with)
+                    || self.amphibious_locked(*unit)
+                    || self.amphibious_locked(*with)
                     || a.linked_to.is_some()
                     || b.linked_to.is_some()
                     || a.moves_left <= 0.0

@@ -768,8 +768,9 @@ impl AdvancedAi {
     }
 
     /// Our field units: military and support, land and sea, not air, not a
-    /// scout with somewhere to explore, not a guard bound to a settler.
-    fn board_pool(&self, g: &Game, pid: usize) -> Vec<u32> {
+    /// scout with somewhere to explore, not a guard bound to a settler, not a
+    /// member of the crossing in hand under `amphibious-siege-train-2`.
+    pub(super) fn board_pool(&self, g: &Game, pid: usize) -> Vec<u32> {
         let mut pool: Vec<u32> = g
             .player_unit_ids(pid)
             .into_iter()
@@ -781,6 +782,7 @@ impl AdvancedAi {
                     && !(BasicAi::unit_doctrine(g, *uid) == UnitDoctrine::Recon
                         && self.base.has_exploration_target(g, pid, *uid))
                     && !self.guard_is_reserved_for_civilian(*uid)
+                    && !self.amphibious_locked(*uid)
                     && (unit.linked_to.is_none()
                         || super::siege_train::linked_support_carrier(g, *uid))
             })

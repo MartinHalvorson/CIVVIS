@@ -152,6 +152,22 @@ impl Game {
     /// reads them past its first edge; occupancy is not read at all, the
     /// field being a road map rather than this turn's route. A tile with no
     /// dry road is absent. No route cache is written.
+    /// Whether `uid` may plan a road through `pos`: its terrain and domain
+    /// (water for an embarking land unit), its owner's territory access, and
+    /// no city but its owner's. Occupancy is not read. One territory reading
+    /// serves every tile asked.
+    pub(crate) fn road_plan_passable(&self, uid: u32) -> impl Fn(Pos) -> bool + '_ {
+        let access = self
+            .units
+            .get(&uid)
+            .map(|unit| self.unit_territory_access(unit));
+        move |pos| {
+            access
+                .as_ref()
+                .is_some_and(|access| self.can_path_through_neighbor(uid, pos, access))
+        }
+    }
+
     pub(crate) fn dry_road_steps(
         &self,
         uid: u32,

@@ -43738,6 +43738,7 @@ fn version_two_genes_are_opt_in_and_turn_version_one_off() {
         "district-coverage",
         "power-the-laboratory",
         "science-victory-drive",
+        "amphibious-siege-train",
     ];
     fn reads(ai: &AdvancedAi) -> Vec<(bool, bool)> {
         vec![
@@ -43759,6 +43760,7 @@ fn version_two_genes_are_opt_in_and_turn_version_one_off() {
             (ai.base.district_coverage, ai.base.district_coverage_2),
             (ai.power_the_laboratory, ai.power_the_laboratory_2),
             (ai.science_victory_drive, ai.science_victory_drive_2),
+            (ai.amphibious_siege_train, ai.amphibious_siege_train_2),
         ]
     }
     for (i, base) in families.iter().enumerate() {

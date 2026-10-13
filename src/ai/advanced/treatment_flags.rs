@@ -7520,10 +7520,12 @@ impl AdvancedAi {
     }
 
     /// The twin of `enable_amphibious_siege_train`; a crossing in hand is
-    /// dropped.
+    /// dropped unless version two still runs.
     pub fn disable_amphibious_siege_train(&mut self) {
         self.amphibious_siege_train = false;
-        self.amphibious_train = None;
+        if !self.amphibious_siege_train_2 {
+            self.amphibious_train = None;
+        }
     }
 
     /// Once Industrialization is known, the zone city whose Factory reaches
@@ -7550,6 +7552,25 @@ impl AdvancedAi {
     /// The twin of `enable_dry_road_outlasts_a_blocked_step`.
     pub fn disable_dry_road_outlasts_a_blocked_step(&mut self) {
         self.dry_road_outlasts_a_blocked_step = false;
+    }
+
+    /// A water-locked siege's crossing fords a strait of one or two water
+    /// tiles, locks its members, sails on water only and lands on a wider
+    /// beach. Opt-in gene `amphibious-siege-train-2`, a superset of
+    /// `amphibious-siege-train`, which it turns off so a seat plays one
+    /// version; see `AdvancedAi::amphibious_hold_step`.
+    pub fn enable_amphibious_siege_train_2(&mut self) {
+        self.amphibious_siege_train = false;
+        self.amphibious_siege_train_2 = true;
+    }
+
+    /// The twin of `enable_amphibious_siege_train_2`; a crossing in hand is
+    /// dropped unless version one still runs.
+    pub fn disable_amphibious_siege_train_2(&mut self) {
+        self.amphibious_siege_train_2 = false;
+        if !self.amphibious_siege_train {
+            self.amphibious_train = None;
+        }
     }
 
     // ---- append: a-b ------------------------------------------------

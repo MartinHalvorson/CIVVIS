@@ -49,6 +49,40 @@
 //! nearest outside the city's own strike range preferred (three tiles, then
 //! two, then one): a train that lands at two or one comes ashore under the
 //! city's ranged attack. Off, nothing runs and no order changes.
+//!
+//! **Version two (`amphibious-siege-train-2`, a superset).** The first live
+//! crossing (civvis-20261013T083300Z, Susa) took 22 turns from forming to
+//! landing over a 12-water-tile lane, though the fewest-water road from the
+//! port crossed ONE water tile: members on the mixed router hopped between
+//! land and sea (each switch ends the turn), a gun was combined into an Army
+//! at sea, and an escort was re-tasked to a builder guard and upgraded (a
+//! new id), while the cohesion hold waited on it. Version two:
+//! - **fords** a strait: when the fewest-water road from a gun of the group
+//!   to the target's staging ring, on the target's own land (an islet in the
+//!   ring stages nothing), crosses one stretch of at most
+//!   [`AMPHIB_FORD_WATER_MAX`] water tiles, the train gathers on the near
+//!   shore of that stretch (not at a port), crosses it, and lands on the far
+//!   shore; the ordinary siege march takes over from there. Members cross as
+//!   the water allows (one land unit a tile), so there is no cohesion wait
+//!   and an escort lands at once; a gun still lands only beside an escort
+//!   ashore. Each gun of the group is tried, and a ford that cannot form (no
+//!   escorts within reach of its shore, a warship on it) falls back to the
+//!   sea lane, so version two ships whatever version one would;
+//! - **locks** its members: none is combined into a Corps or Army, upgraded,
+//!   pooled by the objective board or bound as a civilian's guard while the
+//!   train holds it ([`AdvancedAi::amphibious_locked`]);
+//! - **drops a laggard** from the waits: on a turn no member closes on the
+//!   gathering point (or the landing), the furthest member not yet in place
+//!   counts a stalled turn; after [`AMPHIB_STALL_TURNS`] it no longer holds
+//!   the others back. One that never gathered stays behind when the train
+//!   sails; one at sea is released with the train;
+//! - **sails on water only**: an embarked member steps along sailable water
+//!   toward the beach (`water_step`), never ashore mid-crossing;
+//! - **widens the beach**: the train counts as arrived within
+//!   [`AMPHIB_ARRIVED_2`] of the landing and lands on any free tile within
+//!   [`AMPHIB_BEACH_2`] of it joined to it over land (version one's two-tile
+//!   test counted a gun on an islet two tiles out as ashore); a member
+//!   ashore by the water steps inland to free the water's edge.
 
 use super::*;
 
@@ -84,6 +118,24 @@ pub(super) const AMPHIB_PATIENCE: u32 = 24;
 /// member waits for it.
 pub(super) const AMPHIB_COHESION: i32 = 2;
 
+/// Version two: the most water tiles a ford crosses.
+pub(super) const AMPHIB_FORD_WATER_MAX: usize = 2;
+
+/// Version two: the longest road, in steps, the ford search walks.
+pub(super) const AMPHIB_FORD_ROUTE_MAX: usize = 128;
+
+/// Version two: turns without closing after which a member stops holding
+/// the others back.
+pub(super) const AMPHIB_STALL_TURNS: u32 = 2;
+
+/// Version two: the train counts as arrived when every waited-on member is
+/// within this many tiles of the landing.
+pub(super) const AMPHIB_ARRIVED_2: i32 = 3;
+
+/// Version two: the beach is every free land tile within this many tiles of
+/// the landing.
+pub(super) const AMPHIB_BEACH_2: i32 = 2;
+
 /// Where the crossing stands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum AmphibiousPhase {
@@ -106,6 +158,14 @@ pub(super) struct AmphibiousTrain {
     pub(super) members: BTreeSet<u32>,
     pub(super) phase: AmphibiousPhase,
     pub(super) formed: u32,
+    /// Version two: a ford over a strait; `port_pos` is the near shore (a
+    /// land tile, no city) and `port` only names the nearest city of ours.
+    pub(super) ford: bool,
+    /// Version two: each member's best distance to its goal this phase and
+    /// the turns since it last closed.
+    pub(super) progress: BTreeMap<u32, (i32, u32)>,
+    /// The turn `progress` was last read.
+    pub(super) progress_turn: u32,
 }
 
 /// A siege gun of the train, read from its type (an embarked unit has no
@@ -241,11 +301,201 @@ fn can_embark(g: &Game, pid: usize) -> bool {
     g.has_ability(pid, "mana") || g.tree_effect(pid, "land_unit_embark") > 0.0
 }
 
+/// Whether a unit of another player stands on `pos`.
+fn foreign_at(g: &Game, pid: usize, pos: Pos) -> bool {
+    g.unit_ids_at(pos)
+        .iter()
+        .any(|id| g.units.get(id).is_some_and(|unit| unit.owner != pid))
+}
+
+/// Version two: the fewest-water road for `rep` from `start` to a free land
+/// tile within `range` of `target` on the target's own land (fewest water
+/// tiles first, then fewest steps), as `(shore, water, landing)` when that road crosses ONE stretch of
+/// one to [`AMPHIB_FORD_WATER_MAX`] water tiles: the near-shore land tile,
+/// the stretch's water tiles in order, and the far-shore land tile. `None`
+/// when the best road is dry, crosses more water or two stretches, or runs
+/// past [`AMPHIB_FORD_ROUTE_MAX`] steps. Land tiles a foreign unit holds and
+/// cities not ours are not walked.
+pub(super) fn ford_crossing(
+    g: &Game,
+    pid: usize,
+    rep: u32,
+    start: Pos,
+    target: Pos,
+    range: i32,
+) -> Option<(Pos, Vec<Pos>, Pos)> {
+    use std::cmp::Reverse;
+    use std::collections::BinaryHeap;
+    let is_water = |pos: Pos| g.map.get(pos).is_some_and(|tile| g.rules.is_water(tile));
+    let passable = g.road_plan_passable(rep);
+    let open = |pos: Pos| passable(pos) && !foreign_at(g, pid, pos);
+    // The far shore must be the target's own land, joined to the city over
+    // land: an islet within the staging ring stages nothing.
+    let mut mainland: BTreeSet<Pos> = BTreeSet::new();
+    let mut frontier: Vec<Pos> = g
+        .nbrs(target)
+        .into_iter()
+        .filter(|pos| landable(g, *pos))
+        .collect();
+    mainland.extend(frontier.iter().copied());
+    while let Some(pos) = frontier.pop() {
+        for next in g.nbrs(pos) {
+            if g.wdist(next, target) <= range + AMPHIB_ASSEMBLY_RADIUS
+                && landable(g, next)
+                && mainland.insert(next)
+            {
+                frontier.push(next);
+            }
+        }
+    }
+    let goal = |pos: Pos| g.wdist(pos, target) <= range && mainland.contains(&pos) && open(pos);
+    let mut best: BTreeMap<Pos, (usize, usize)> = BTreeMap::new();
+    let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
+    let mut heap = BinaryHeap::new();
+    best.insert(start, (0, 0));
+    heap.push(Reverse((0usize, 0usize, start)));
+    let mut found = None;
+    while let Some(Reverse((water, steps, pos))) = heap.pop() {
+        if best.get(&pos).is_some_and(|known| (water, steps) > *known) {
+            continue;
+        }
+        if goal(pos) {
+            found = Some(pos);
+            break;
+        }
+        if steps >= AMPHIB_FORD_ROUTE_MAX {
+            continue;
+        }
+        for next in g.nbrs(pos) {
+            if !open(next) {
+                continue;
+            }
+            let key = (water + usize::from(is_water(next)), steps + 1);
+            if key.0 > AMPHIB_FORD_WATER_MAX {
+                continue;
+            }
+            if best.get(&next).is_none_or(|known| key < *known) {
+                best.insert(next, key);
+                parent.insert(next, pos);
+                heap.push(Reverse((key.0, key.1, next)));
+            }
+        }
+    }
+    let end = found?;
+    let mut path = vec![end];
+    let mut cursor = end;
+    while let Some(previous) = parent.get(&cursor) {
+        path.push(*previous);
+        cursor = *previous;
+    }
+    path.reverse();
+    let wet: Vec<bool> = path.iter().map(|pos| is_water(*pos)).collect();
+    let first = wet.iter().position(|w| *w)?;
+    let last = wet.iter().rposition(|w| *w)?;
+    if first == 0
+        || last + 1 >= path.len()
+        || wet[first..=last].iter().any(|w| !*w)
+        || !landable(g, path[last + 1])
+    {
+        return None;
+    }
+    Some((path[first - 1], path[first..=last].to_vec(), path[last + 1]))
+}
+
+/// Version two: the first step of the shortest water-only road for `uid` to
+/// any tile of `goals`, over sailable water no foreign unit holds, from the
+/// unit's tile when it is at sea, else from the free water beside it. Only a
+/// free first step is taken. `None` when the unit already stands on a goal,
+/// no road exists, or no free first step leads to one.
+fn water_step(
+    g: &Game,
+    pid: usize,
+    uid: u32,
+    rep: u32,
+    goals: &std::collections::HashSet<Pos>,
+) -> Option<Pos> {
+    let here = g.units.get(&uid)?.pos;
+    if goals.contains(&here) {
+        return None;
+    }
+    let open = |pos: Pos| {
+        sailable(g, rep, pos)
+            && g.unit_ids_at(pos)
+                .iter()
+                .all(|id| g.units.get(id).is_none_or(|unit| unit.owner == pid))
+    };
+    let mut first: BTreeMap<Pos, Pos> = BTreeMap::new();
+    let mut frontier: std::collections::VecDeque<Pos> = std::collections::VecDeque::new();
+    for next in g.nbrs(here) {
+        if open(next) && g.can_move(uid, next) && !first.contains_key(&next) {
+            first.insert(next, next);
+            frontier.push_back(next);
+        }
+    }
+    while let Some(pos) = frontier.pop_front() {
+        if goals.contains(&pos) {
+            return first.get(&pos).copied();
+        }
+        let step = first[&pos];
+        for next in g.nbrs(pos) {
+            if next != here && !first.contains_key(&next) && open(next) {
+                first.insert(next, step);
+                frontier.push_back(next);
+            }
+        }
+    }
+    None
+}
+
+/// Version two's beach: the land within [`AMPHIB_BEACH_2`] of `landing`
+/// joined to it over land inside that radius, so the near shore of a narrow
+/// strait is never mistaken for the far one.
+fn beach_zone(g: &Game, landing: Pos) -> BTreeSet<Pos> {
+    let mut zone = BTreeSet::new();
+    if !landable(g, landing) {
+        return zone;
+    }
+    zone.insert(landing);
+    let mut frontier = vec![landing];
+    while let Some(pos) = frontier.pop() {
+        for next in g.nbrs(pos) {
+            if g.wdist(next, landing) <= AMPHIB_BEACH_2 && landable(g, next) && zone.insert(next) {
+                frontier.push(next);
+            }
+        }
+    }
+    zone
+}
+
+/// The name a journal line gives the crossing's start: the port's name, or
+/// the ford's shore.
+fn start_name(g: &Game, train: &AmphibiousTrain) -> String {
+    if train.ford {
+        format!("the strait at {:?}", train.port_pos)
+    } else {
+        g.cities
+            .get(&train.port)
+            .map_or_else(|| format!("{:?}", train.port_pos), |city| city.name.clone())
+    }
+}
+
 impl AdvancedAi {
+    /// Whether either version of the gene runs.
+    pub(super) fn amphibious_on(&self) -> bool {
+        self.amphibious_siege_train || self.amphibious_siege_train_2
+    }
+
+    /// Version two's membership lock: `uid` belongs to the crossing in hand,
+    /// so it is not combined, upgraded, pooled by the objective board or
+    /// bound as a civilian's guard. Always false without version two.
+    pub(super) fn amphibious_locked(&self, uid: u32) -> bool {
+        self.amphibious_siege_train_2 && self.amphibious_member(uid)
+    }
+
     /// Whether `uid` belongs to the crossing in hand. Always false with the
     /// gene off.
     pub(super) fn amphibious_member(&self, uid: u32) -> bool {
-        self.amphibious_siege_train
+        self.amphibious_on()
             && self
                 .amphibious_train
                 .as_ref()
@@ -262,7 +512,7 @@ impl AdvancedAi {
         uid: u32,
         target: u32,
     ) -> Option<bool> {
-        if !self.amphibious_siege_train {
+        if !self.amphibious_on() {
             return None;
         }
         let replaceable = self.amphibious_train.as_ref().is_some_and(|train| {
@@ -295,7 +545,13 @@ impl AdvancedAi {
         if !self.amphibious_train_holds(g, pid) {
             return None;
         }
-        Some(self.amphibious_member_turn(g, pid, uid))
+        let acted = self.amphibious_member_turn(g, pid, uid);
+        // Version two hands a member the train let go (landed, or left
+        // behind) back to its ordinary step this turn.
+        if self.amphibious_siege_train_2 && !acted && !self.amphibious_member(uid) {
+            return None;
+        }
+        Some(acted)
     }
 
     /// Form a crossing for `target` if the gate passes (module docs). True
@@ -307,13 +563,14 @@ impl AdvancedAi {
             Ok(train) => {
                 let guns = train.members.iter().filter(|id| is_gun(g, **id)).count();
                 let target_name = g.cities[&target].name.clone();
-                let port_name = g.cities[&train.port].name.clone();
+                let port_name = start_name(g, &train);
                 think!(self.journal(), Military, Decision,
                     "Siege train ships for {} from {}", target_name, port_name;
                     "amphibious-siege-train: no dry road reaches {}; {} gun(s) and {} escort(s) \
-                     cross a lane of {} water tiles, no enemy warship within {}, to land at {:?}, \
+                     cross {} of {} water tiles, no enemy warship within {}, to land at {:?}, \
                      {} tiles from the city",
-                    target_name, guns, train.members.len() - guns, train.lane.len(),
+                    target_name, guns, train.members.len() - guns,
+                    if train.ford { "a ford" } else { "a lane" }, train.lane.len(),
                     AMPHIB_LANE_SAFETY, train.landing, g.wdist(train.landing, train.target_pos);
                     train.target_pos);
                 self.amphibious_train = Some(train);
@@ -369,6 +626,37 @@ impl AdvancedAi {
         let Some(rep) = ashore.iter().copied().find(|id| is_gun(g, *id)) else {
             return Err("the force group has no gun ashore".into());
         };
+        // Version two: a strait of at most two water tiles is forded. A ford
+        // that cannot form falls back to the sea lane, so version two ships
+        // whatever version one would.
+        let ford = if self.amphibious_siege_train_2 {
+            self.amphibious_ford(g, pid, target, target_pos, &ashore)
+        } else {
+            None
+        };
+        let ford_refused = match ford {
+            Some(Ok(train)) => return Ok(train),
+            Some(Err(reason)) => Some(reason),
+            None => None,
+        };
+        self.amphibious_lane(g, pid, target, target_pos, rep, &ashore)
+            .map_err(|lane| match ford_refused {
+                Some(ford) => format!("{ford}; by sea, {lane}"),
+                None => lane,
+            })
+    }
+
+    /// The sea-lane crossing (module docs): the shortest lane from a coastal
+    /// city of ours to a landing beside the target, or why not.
+    fn amphibious_lane(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: u32,
+        target_pos: Pos,
+        rep: u32,
+        ashore: &[u32],
+    ) -> Result<AmphibiousTrain, String> {
         let landings = landing_tiles(g, pid, rep, target_pos);
         if landings.is_empty() {
             return Err(format!(
@@ -453,7 +741,209 @@ impl AdvancedAi {
             members: guns.iter().chain(escorts.iter()).copied().collect(),
             phase: AmphibiousPhase::Assemble,
             formed: g.turn,
+            ford: false,
+            progress: BTreeMap::new(),
+            progress_turn: g.turn,
         })
+    }
+
+    /// Version two's ford for `target` (module docs): `None` when the
+    /// fewest-water road from the gun `rep` is no ford (the sea lane is tried
+    /// next), else the ford train or why it cannot form.
+    fn amphibious_ford(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: u32,
+        target_pos: Pos,
+        ashore: &[u32],
+    ) -> Option<Result<AmphibiousTrain, String>> {
+        // From each gun ashore in turn (a group can stand on two shores):
+        // the first ford that forms, else why the first found cannot.
+        let mut refused = None;
+        for rep in ashore.iter().copied().filter(|id| is_gun(g, *id)) {
+            let Some((shore, water, landing)) = ford_crossing(
+                g,
+                pid,
+                rep,
+                g.units[&rep].pos,
+                target_pos,
+                super::siege_train::STAGING_FAR,
+            ) else {
+                continue;
+            };
+            match self.ford_train(g, pid, target, target_pos, ashore, shore, water, landing) {
+                Ok(train) => return Some(Ok(train)),
+                Err(reason) => {
+                    refused.get_or_insert(reason);
+                }
+            }
+        }
+        refused.map(Err)
+    }
+
+    /// The ford train over `water` from `shore` to `landing`, or why not.
+    #[allow(clippy::too_many_arguments)]
+    fn ford_train(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: u32,
+        target_pos: Pos,
+        ashore: &[u32],
+        shore: Pos,
+        water: Vec<Pos>,
+        landing: Pos,
+    ) -> Result<AmphibiousTrain, String> {
+        if lane_watched(g, pid, &water) {
+            return Err(format!(
+                "an enemy warship within {AMPHIB_LANE_SAFETY} of the ford at {shore:?}"
+            ));
+        }
+        let Some(port) = g
+            .player_city_ids(pid)
+            .into_iter()
+            .min_by_key(|cid| (g.wdist(g.cities[cid].pos, shore), *cid))
+        else {
+            return Err("no city of ours".into());
+        };
+        let mut near: Vec<(i32, u32)> = ashore
+            .iter()
+            .map(|id| (g.wdist(g.units[id].pos, shore), *id))
+            .filter(|(distance, _)| *distance <= AMPHIB_MUSTER_RADIUS)
+            .collect();
+        near.sort_unstable();
+        let guns: Vec<u32> = near
+            .iter()
+            .map(|(_, id)| *id)
+            .filter(|id| is_gun(g, *id))
+            .take(AMPHIB_MAX_GUNS)
+            .collect();
+        let escorts: Vec<u32> = near
+            .iter()
+            .map(|(_, id)| *id)
+            .filter(|id| is_escort(g, *id))
+            .take(AMPHIB_MAX_ESCORTS)
+            .collect();
+        if guns.is_empty() || escorts.len() < AMPHIB_MIN_ESCORTS {
+            return Err(format!(
+                "{} gun(s) and {} escort(s) within {AMPHIB_MUSTER_RADIUS} of the ford at \
+                 {shore:?} (needs 1 and {AMPHIB_MIN_ESCORTS})",
+                guns.len(),
+                escorts.len()
+            ));
+        }
+        Ok(AmphibiousTrain {
+            target,
+            target_pos,
+            port,
+            port_pos: shore,
+            landing,
+            lane: water,
+            members: guns.iter().chain(escorts.iter()).copied().collect(),
+            phase: AmphibiousPhase::Assemble,
+            formed: g.turn,
+            ford: true,
+            progress: BTreeMap::new(),
+            progress_turn: g.turn,
+        })
+    }
+
+    /// Version two: read each member's closing once a turn, against the
+    /// gathering point while assembling and the landing while sailing. A
+    /// member in place (gathered ashore; ashore on the beach) or nearer its
+    /// goal than ever is closing. On a turn no member closed, the furthest
+    /// member still waited on and not in place counts a stalled turn: the
+    /// straggler a cohesion wait holds the others for, or the one left
+    /// behind once the rest are in place. A member queued at a ford's shore
+    /// while the others cross is not stalled, since someone crossed.
+    fn amphibious_track_progress(&mut self, g: &Game) {
+        if !self.amphibious_siege_train_2 {
+            return;
+        }
+        let Some(train) = self.amphibious_train.as_mut() else {
+            return;
+        };
+        if train.progress_turn == g.turn && !train.progress.is_empty() {
+            return;
+        }
+        train.progress_turn = g.turn;
+        let beach = match train.phase {
+            AmphibiousPhase::Assemble => BTreeSet::new(),
+            AmphibiousPhase::Sail => beach_zone(g, train.landing),
+        };
+        let in_place = |unit: &crate::game::Unit| {
+            !g.is_embarked(unit)
+                && match train.phase {
+                    AmphibiousPhase::Assemble => {
+                        g.wdist(unit.pos, train.port_pos) <= AMPHIB_ASSEMBLY_RADIUS
+                    }
+                    AmphibiousPhase::Sail => beach.contains(&unit.pos),
+                }
+        };
+        let goal = match train.phase {
+            AmphibiousPhase::Assemble => train.port_pos,
+            AmphibiousPhase::Sail => train.landing,
+        };
+        // (id, distance, in place, known best and stalled turns)
+        let readings: Vec<(u32, i32, bool, (i32, u32))> = train
+            .members
+            .iter()
+            .filter_map(|id| {
+                let unit = g.units.get(id)?;
+                let known = train.progress.get(id).copied().unwrap_or((i32::MAX, 0));
+                Some((*id, g.wdist(unit.pos, goal), in_place(unit), known))
+            })
+            .collect();
+        let progressed = readings
+            .iter()
+            .any(|(_, distance, _, (best, _))| *distance < *best);
+        let furthest = readings
+            .iter()
+            .filter(|(_, _, placed, (_, stalled))| !placed && *stalled < AMPHIB_STALL_TURNS)
+            .map(|(_, distance, ..)| *distance)
+            .max();
+        train.progress = readings
+            .into_iter()
+            .map(|(id, distance, placed, (best, stalled))| {
+                let entry = if placed || distance < best {
+                    (distance.min(best), 0)
+                } else if !progressed && Some(distance) == furthest {
+                    (best, stalled + 1)
+                } else {
+                    (best, stalled)
+                };
+                (id, entry)
+            })
+            .collect();
+    }
+
+    /// The members the waits hold for: under version two, every member but
+    /// a laggard that has not closed for [`AMPHIB_STALL_TURNS`] turns (all of
+    /// them if that would leave no gun or no escort); every member under
+    /// version one.
+    fn amphibious_waited_on(&self, g: &Game, train: &AmphibiousTrain) -> Vec<u32> {
+        let all: Vec<u32> = train.members.iter().copied().collect();
+        if !self.amphibious_siege_train_2 {
+            return all;
+        }
+        let kept: Vec<u32> = all
+            .iter()
+            .copied()
+            .filter(|id| {
+                train
+                    .progress
+                    .get(id)
+                    .is_none_or(|(_, stalled)| *stalled < AMPHIB_STALL_TURNS)
+            })
+            .collect();
+        let guns = kept.iter().any(|id| is_gun(g, *id));
+        let escorts = kept.iter().any(|id| is_escort(g, *id));
+        if guns && escorts {
+            kept
+        } else {
+            all
+        }
     }
 
     /// Whether the crossing in hand still holds; abandons it (journal) and
@@ -499,9 +989,11 @@ impl AdvancedAi {
 
     /// One member's turn in the crossing (module docs).
     fn amphibious_member_turn(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        self.amphibious_track_progress(g);
         let Some(train) = self.amphibious_train.clone() else {
             return false;
         };
+        let v2 = self.amphibious_siege_train_2;
         let rep = train
             .members
             .iter()
@@ -509,21 +1001,41 @@ impl AdvancedAi {
             .find(|id| is_gun(g, *id))
             .unwrap_or(uid);
         let at = |g: &Game, id: u32| g.units[&id].pos;
+        let waited = self.amphibious_waited_on(g, &train);
+        let start = start_name(g, &train);
         if train.phase == AmphibiousPhase::Assemble {
-            let gathered = train.members.iter().all(|id| {
+            let gathered = waited.iter().all(|id| {
                 g.wdist(at(g, *id), train.port_pos) <= AMPHIB_ASSEMBLY_RADIUS
                     && !g.is_embarked(&g.units[id])
             });
             if gathered {
+                // Version two leaves a member that never gathered behind.
+                let left: Vec<u32> = train
+                    .members
+                    .iter()
+                    .copied()
+                    .filter(|id| !waited.contains(id))
+                    .collect();
                 if let Some(held) = self.amphibious_train.as_mut() {
                     held.phase = AmphibiousPhase::Sail;
+                    held.members.retain(|id| !left.contains(id));
+                    held.progress.clear();
                 }
                 think!(self.journal(), Military, Detail,
-                    "Siege train embarks for {} from {}",
-                    g.cities[&train.target].name, g.cities[&train.port].name;
-                    "amphibious-siege-train: {} member(s) gathered within {} tiles of the port",
-                    train.members.len(), AMPHIB_ASSEMBLY_RADIUS;
+                    "Siege train embarks for {} from {}", g.cities[&train.target].name, start;
+                    "amphibious-siege-train: {} member(s) gathered within {} tiles of {}{}",
+                    waited.len(), AMPHIB_ASSEMBLY_RADIUS,
+                    if train.ford { "the strait" } else { "the port" },
+                    if left.is_empty() {
+                        String::new()
+                    } else {
+                        format!("; {} that did not close for {} turns stay behind",
+                            left.len(), AMPHIB_STALL_TURNS)
+                    };
                     train.target_pos);
+                if left.contains(&uid) {
+                    return false;
+                }
                 return self.amphibious_member_turn(g, pid, uid);
             }
             if g.wdist(at(g, uid), train.port_pos) <= AMPHIB_ASSEMBLY_RADIUS {
@@ -544,32 +1056,63 @@ impl AdvancedAi {
                 None => self.base.fortify_or_stop(g, pid, uid),
             };
         }
-        // Sail. The beach is the landing tile and the land beside it.
-        let beach: BTreeSet<Pos> = std::iter::once(train.landing)
-            .chain(g.nbrs(train.landing))
-            .filter(|pos| landable(g, *pos))
-            .collect();
+        // Sail. The beach is the landing tile and the land beside it; under
+        // version two, the land joined to it within two tiles.
+        let beach: BTreeSet<Pos> = if v2 {
+            beach_zone(g, train.landing)
+        } else {
+            std::iter::once(train.landing)
+                .chain(g.nbrs(train.landing))
+                .filter(|pos| landable(g, *pos))
+                .collect()
+        };
         let ashore_on_beach = |g: &Game, id: u32| {
             let unit = &g.units[&id];
-            !g.is_embarked(unit) && g.wdist(unit.pos, train.landing) <= 2
+            !g.is_embarked(unit)
+                && if v2 {
+                    beach.contains(&unit.pos)
+                } else {
+                    g.wdist(unit.pos, train.landing) <= 2
+                }
         };
-        if train.members.iter().all(|id| ashore_on_beach(g, *id)) {
+        if waited.iter().all(|id| ashore_on_beach(g, *id)) {
             think!(self.journal(), Military, Decision,
                 "Siege train lands at {:?} before {}", train.landing, g.cities[&train.target].name;
                 "amphibious-siege-train: {} member(s) ashore {} tiles from the city; the \
                  siege march takes them on",
-                train.members.len(), g.wdist(train.landing, train.target_pos);
+                waited.len(), g.wdist(train.landing, train.target_pos);
                 train.target_pos);
             self.amphibious_train = None;
             return false;
         }
+        let here = at(g, uid);
         if ashore_on_beach(g, uid) {
+            // Version two clears the water's edge for the members still
+            // crossing: one step inland, escorts toward the city, guns away.
+            if v2 {
+                let coastal = |pos: Pos| !shore_water(g, rep, pos).is_empty();
+                if coastal(here) {
+                    let inland = g
+                        .nbrs(here)
+                        .into_iter()
+                        .filter(|pos| {
+                            beach.contains(pos) && !coastal(*pos) && g.can_move(uid, *pos)
+                        })
+                        .min_by_key(|pos| {
+                            let toward = g.wdist(*pos, train.target_pos);
+                            (if is_gun(g, uid) { -toward } else { toward }, *pos)
+                        });
+                    if let Some(pos) = inland {
+                        return self.base.tactical_apply_move(g, pid, uid, pos);
+                    }
+                }
+            }
             return self.base.fortify_or_stop(g, pid, uid);
         }
-        let here = at(g, uid);
         let embarked = g.is_embarked(&g.units[&uid]);
         // A free beach tile beside a member at sea: escorts land once the
-        // whole train is at sea within two tiles of the landing; a gun lands
+        // whole train is at sea within two tiles of the landing (version two:
+        // the members waited on, within three; a ford's at once); a gun lands
         // only beside an escort already ashore.
         if embarked {
             let free: Vec<Pos> = g
@@ -578,10 +1121,11 @@ impl AdvancedAi {
                 .filter(|pos| beach.contains(pos) && g.can_move(uid, *pos))
                 .collect();
             if !free.is_empty() {
-                let arrived = train
-                    .members
-                    .iter()
-                    .all(|id| g.wdist(at(g, *id), train.landing) <= 2);
+                let reach = if v2 { AMPHIB_ARRIVED_2 } else { 2 };
+                let arrived = (v2 && train.ford)
+                    || waited
+                        .iter()
+                        .all(|id| g.wdist(at(g, *id), train.landing) <= reach);
                 if is_escort(g, uid) && arrived {
                     // The escort shields: the free tile nearest the city.
                     let pos = *free
@@ -616,16 +1160,16 @@ impl AdvancedAi {
                 return self.base.fortify_or_stop(g, pid, uid);
             }
         }
-        // Keep together: a member well ahead of the furthest waits.
+        // Keep together: a member well ahead of the furthest waits (not over
+        // a ford, which one land unit a tile crosses in turn).
         let mine = g.wdist(here, train.landing);
-        let furthest = train
-            .members
+        let furthest = waited
             .iter()
             .filter(|id| !ashore_on_beach(g, **id))
             .map(|id| g.wdist(at(g, *id), train.landing))
             .max()
             .unwrap_or(mine);
-        if embarked && mine + AMPHIB_COHESION < furthest {
+        if embarked && !(v2 && train.ford) && mine + AMPHIB_COHESION < furthest {
             return self.base.fortify_or_stop(g, pid, uid);
         }
         // Steer for water beside a FREE beach tile once any lies open, so a
@@ -647,10 +1191,18 @@ impl AdvancedAi {
         if anchorage.contains(&here) {
             return self.base.fortify_or_stop(g, pid, uid);
         }
-        match g
-            .route_step_to_any(uid, &anchorage)
-            .filter(|pos| g.can_move(uid, *pos))
-        {
+        // Version two sails on water only; a member still ashore takes the
+        // mixed road to the water when no water lies beside it.
+        let step = if v2 {
+            water_step(g, pid, uid, rep, &anchorage).or_else(|| {
+                (!embarked)
+                    .then(|| g.route_step_to_any(uid, &anchorage))
+                    .flatten()
+            })
+        } else {
+            g.route_step_to_any(uid, &anchorage)
+        };
+        match step.filter(|pos| g.can_move(uid, *pos)) {
             Some(pos) => self.base.tactical_apply_move(g, pid, uid, pos),
             None => self.base.fortify_or_stop(g, pid, uid),
         }
@@ -663,8 +1215,9 @@ impl AdvancedAi {
     /// kept under the old ids, a replay of live Emperor 004440Z re-formed the
     /// train for Amsterdam on t156 two turns after it shipped, because the
     /// old target id no longer named Amsterdam. A train whose target or port
-    /// the new board does not hold is dropped; the next water hold re-forms
-    /// it.
+    /// the new board does not hold is dropped (a ford's shore holds no city;
+    /// its port follows as the owner's nearest city); the next water hold
+    /// re-forms it. Each member's closing follows its id.
     pub(super) fn remap_amphibious_train(
         &mut self,
         previous: &Game,
@@ -674,19 +1227,33 @@ impl AdvancedAi {
         let Some(mut train) = self.amphibious_train.take() else {
             return;
         };
-        let (Some(target), Some(port)) =
-            (next.city_at(train.target_pos), next.city_at(train.port_pos))
-        else {
+        let Some(target) = next.city_at(train.target_pos) else {
+            return;
+        };
+        // A ford's shore is no city: its port is the owner's nearest city.
+        let port = next.city_at(train.port_pos).or_else(|| {
+            let owner = previous.cities.get(&train.port)?.owner;
+            next.player_city_ids(owner)
+                .into_iter()
+                .min_by_key(|cid| (next.wdist(next.cities[cid].pos, train.port_pos), *cid))
+                .filter(|_| train.ford)
+        });
+        let Some(port) = port else {
             return;
         };
         train.target = target;
         train.port = port;
+        let renumber = |old: u32| {
+            let new = *units.get(&old)?;
+            (previous.units.get(&old)?.owner == next.units.get(&new)?.owner).then_some(new)
+        };
         train.members = std::mem::take(&mut train.members)
             .into_iter()
-            .filter_map(|old| {
-                let new = *units.get(&old)?;
-                (previous.units.get(&old)?.owner == next.units.get(&new)?.owner).then_some(new)
-            })
+            .filter_map(renumber)
+            .collect();
+        train.progress = std::mem::take(&mut train.progress)
+            .into_iter()
+            .filter_map(|(old, entry)| Some((renumber(old)?, entry)))
             .collect();
         self.amphibious_train = Some(train);
     }

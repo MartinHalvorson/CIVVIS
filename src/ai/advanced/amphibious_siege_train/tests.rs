@@ -320,3 +320,546 @@ fn the_whole_train_crosses_and_lands_together() {
         assert!(g.wdist(g.units[&uid].pos, landing) <= 2);
     }
 }
+
+// ---- amphibious-siege-train-2 ---------------------------------------------
+
+/// `armed` with version two alone, so every test below also shows version
+/// two runs without version one.
+fn armed_2(g: &Game, cid: u32, gun: u32, escorts: [u32; 2]) -> AdvancedAi {
+    let mut ai = armed(g, cid, gun, escorts);
+    ai.disable_amphibious_siege_train();
+    ai.enable_amphibious_siege_train_2();
+    ai
+}
+
+/// Every member steps until it stops acting, round after round, until the
+/// train lets go or `rounds` pass. Returns whether it let go, the trace, and
+/// each member's count of land-to-sea and sea-to-land switches. A gun ashore
+/// within `far` of the target always has an escort ashore there.
+fn run_crossing(
+    g: &mut Game,
+    ai: &mut AdvancedAi,
+    gun: u32,
+    escorts: [u32; 2],
+    target: Pos,
+    far: i32,
+    rounds: usize,
+) -> (bool, String, BTreeMap<u32, usize>) {
+    let members = [gun, escorts[0], escorts[1]];
+    let far_shore = |g: &Game, id: u32| {
+        let unit = &g.units[&id];
+        !g.is_embarked(unit) && g.wdist(unit.pos, target) <= far
+    };
+    let mut switches: BTreeMap<u32, usize> = members.iter().map(|id| (*id, 0)).collect();
+    let mut trace = String::new();
+    for round in 0..rounds {
+        trace.push_str(&format!(
+            "r{round} {:?}: {}\n",
+            ai.amphibious_train.as_ref().map(|t| t.phase),
+            members
+                .iter()
+                .map(|id| {
+                    let u = &g.units[id];
+                    format!(
+                        "{}@{:?}{}",
+                        u.kind,
+                        u.pos,
+                        if g.is_embarked(u) { "~" } else { "" }
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
+        for uid in members {
+            for _ in 0..6 {
+                if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
+                    break;
+                }
+                let before = g.is_embarked(&g.units[&uid]);
+                let acted = ai.amphibious_member_step(g, 0, uid);
+                if g.is_embarked(&g.units[&uid]) != before {
+                    *switches.get_mut(&uid).unwrap() += 1;
+                }
+                if acted != Some(true) {
+                    break;
+                }
+            }
+            if far_shore(g, gun) {
+                assert!(
+                    escorts.iter().any(|id| far_shore(g, *id)),
+                    "the gun landed alone\n{trace}"
+                );
+            }
+        }
+        if ai.amphibious_train.is_none() {
+            return (true, trace, switches);
+        }
+        end_round(g);
+    }
+    (false, trace, switches)
+}
+
+#[test]
+fn version_two_ships_off_and_is_registered() {
+    let ai = AdvancedAi::new();
+    assert!(!ai.amphibious_siege_train_2);
+    assert!(super::super::GENES.iter().any(|gene| gene.opt_in()
+        && gene.tag == "amphibious-siege-train-2"
+        && gene.field == "amphibious_siege_train_2"));
+    // Off, a crossing's members are not locked.
+    let (g, cid, _, _, gun, escorts) = island(2);
+    let mut ai = armed(&g, cid, gun, escorts);
+    assert!(ai.form_amphibious_train(&g, 0, cid));
+    assert!(ai.amphibious_member(gun) && !ai.amphibious_locked(gun));
+}
+
+#[test]
+fn version_two_alone_crosses_a_sea_lane() {
+    let (mut g, cid, target, _, gun, escorts) = island(2);
+    let mut ai = armed_2(&g, cid, gun, escorts);
+    assert!(ai.form_amphibious_train(&g, 0, cid));
+    assert!(
+        !ai.amphibious_train.as_ref().unwrap().ford,
+        "four water tiles is no ford"
+    );
+    let landing = ai.amphibious_train.as_ref().unwrap().landing;
+    let (released, trace, switches) = run_crossing(
+        &mut g,
+        &mut ai,
+        gun,
+        escorts,
+        target,
+        AMPHIB_LANDING_MAX,
+        20,
+    );
+    assert!(
+        released,
+        "the crossing completes; landing {landing:?}\n{trace}"
+    );
+    for (uid, count) in switches {
+        assert!(
+            g.wdist(g.units[&uid].pos, landing) <= AMPHIB_BEACH_2,
+            "{uid} on the beach\n{trace}"
+        );
+        assert!(
+            count <= 2,
+            "{uid} embarked once and landed once, not {count} switches\n{trace}"
+        );
+    }
+}
+
+#[test]
+fn the_ford_search_finds_a_strait_of_one_or_two_water_tiles() {
+    for (island_radius, water) in [(5, 1), (4, 2)] {
+        let (g, _, target, _, gun, _) = island(island_radius);
+        let start = g.units[&gun].pos;
+        let (shore, lane, landing) = ford_crossing(
+            &g,
+            0,
+            gun,
+            start,
+            target,
+            super::super::siege_train::STAGING_FAR,
+        )
+        .unwrap_or_else(|| panic!("island {island_radius}: a ford"));
+        assert_eq!(lane.len(), water, "island {island_radius}");
+        assert_eq!(g.wdist(shore, target), 7, "the near shore is our land");
+        assert_eq!(
+            g.wdist(landing, target),
+            island_radius,
+            "the far shore is theirs"
+        );
+        assert!(lane
+            .iter()
+            .all(|pos| g.rules.is_water(g.map.get(*pos).unwrap())));
+        assert!(g.nbrs(shore).contains(&lane[0]) && g.nbrs(landing).contains(&lane[water - 1]));
+    }
+    // Three water tiles is no ford: version two falls back to the sea lane.
+    let (g, cid, target, _, gun, escorts) = island(3);
+    assert!(ford_crossing(&g, 0, gun, g.units[&gun].pos, target, 5).is_none());
+    let mut ai = armed_2(&g, cid, gun, escorts);
+    assert!(ai.form_amphibious_train(&g, 0, cid));
+    assert!(!ai.amphibious_train.as_ref().unwrap().ford);
+}
+
+#[test]
+fn a_one_tile_strait_is_forded_and_crossed_together() {
+    let (mut g, cid, target, _, gun, escorts) = island(5);
+    // The column south of the port, so the near shore is no city.
+    for uid in [gun, escorts[0], escorts[1]] {
+        g.remove_unit(uid);
+    }
+    let gun = g.spawn_unit("catapult", 0, (7, 11));
+    let escorts = [
+        g.spawn_unit("spearman", 0, (6, 11)),
+        g.spawn_unit("spearman", 0, (7, 12)),
+    ];
+    // Version one finds no landing within three of the city.
+    let mut v1 = armed(&g, cid, gun, escorts);
+    assert!(
+        !v1.form_amphibious_train(&g, 0, cid),
+        "no landing beside water within 3"
+    );
+    let mut ai = armed_2(&g, cid, gun, escorts);
+    assert!(ai.form_amphibious_train(&g, 0, cid));
+    let train = ai.amphibious_train.clone().unwrap();
+    assert!(train.ford && train.lane.len() == 1);
+    assert!(
+        g.city_at(train.port_pos).is_none(),
+        "the gathering point is the shore"
+    );
+    assert_eq!(g.wdist(train.port_pos, target), 7);
+    assert_eq!(g.wdist(train.landing, target), 5);
+    assert_eq!(train.members.len(), 3);
+    // The ford follows a rebuilt board although its shore holds no city.
+    let mut next = g.clone();
+    let mut units = BTreeMap::new();
+    for old in [gun, escorts[0], escorts[1]] {
+        let (kind, pos) = (next.units[&old].kind.to_string(), next.units[&old].pos);
+        next.remove_unit(old);
+        units.insert(old, next.spawn_unit(&kind, 0, pos));
+    }
+    let mut follow = ai.clone();
+    follow.remap_siege_memory(&g, &next, &units);
+    let followed = follow
+        .amphibious_train
+        .expect("a ford survives the rebuild");
+    assert!(followed.ford && followed.members.contains(&units[&gun]));
+    // March to the shore, cross, and land on the far side: one embark and
+    // one landing each, a gun never ashore there without an escort.
+    let (released, trace, switches) = run_crossing(&mut g, &mut ai, gun, escorts, target, 5, 12);
+    assert!(released, "the ford completes\n{trace}");
+    for (uid, count) in switches {
+        let unit = &g.units[&uid];
+        assert!(
+            !g.is_embarked(unit) && g.wdist(unit.pos, target) <= 5,
+            "{uid} across\n{trace}"
+        );
+        assert_eq!(count, 2, "{uid} embarked once and landed once\n{trace}");
+    }
+}
+
+#[test]
+fn members_are_locked_against_combining_upgrading_and_re_tasking() {
+    let (mut g, cid, _, _, gun, escorts) = island(2);
+    // The escorts side by side, and spare bodies so the reserve allows a
+    // combination.
+    let beside = g
+        .nbrs(g.units[&escorts[0]].pos)
+        .into_iter()
+        .filter(|pos| landable(&g, *pos) && g.unit_ids_at(*pos).is_empty())
+        .min()
+        .expect("free land beside the escort");
+    g.remove_unit(escorts[1]);
+    let escorts = [escorts[0], g.spawn_unit("spearman", 0, beside)];
+    let target = g.cities[&cid].pos;
+    for k in 0..6 {
+        g.spawn_unit("warrior", 0, (target.0 - 12 - 2 * k, target.1 + 4));
+    }
+    g.players[0].civics.insert(crate::name!("nationalism"));
+    let settler = g.spawn_unit("settler", 0, (target.0 - 12, target.1 - 4));
+    for version in [1, 2] {
+        let mut g = g.clone();
+        let mut ai = if version == 1 {
+            armed(&g, cid, gun, escorts)
+        } else {
+            armed_2(&g, cid, gun, escorts)
+        };
+        assert!(ai.form_amphibious_train(&g, 0, cid));
+        let locked = version == 2;
+        assert!(escorts
+            .iter()
+            .chain([&gun])
+            .all(|id| ai.amphibious_locked(*id) == locked));
+        // No upgrade: every Gold upgrade but the science core's asks this.
+        assert_eq!(
+            ai.air_resource_upgrade_preserves_wing(&g, 0, gun, crate::name!("trebuchet"), 0.0),
+            !locked
+        );
+        // Not pooled by the objective board.
+        let pool = ai.board_pool(&g, 0);
+        assert_eq!(pool.contains(&escorts[0]), !locked);
+        // Not bound as a settler's guard.
+        ai.bind_settler_guard(&g, settler, escorts[1]);
+        assert_eq!(
+            ai.settler_guards.get(&settler) == Some(&escorts[1]),
+            !locked
+        );
+        // Not combined into a Corps.
+        ai.settler_guards.clear();
+        ai.advanced_formations(&mut g, 0);
+        let both = escorts
+            .iter()
+            .all(|id| g.units.get(id).is_some_and(|u| u.formation == 0));
+        assert_eq!(
+            both, locked,
+            "version {version}: the escorts combine only when unlocked"
+        );
+    }
+}
+
+#[test]
+fn a_member_that_does_not_close_stays_behind() {
+    let (mut g, cid, _, port, gun, escorts) = island(2);
+    // One escort far from the port that never moves.
+    g.remove_unit(escorts[1]);
+    let straggler = g.spawn_unit("spearman", 0, (port.0 - 6, port.1));
+    let third = g.spawn_unit("spearman", 0, (port.0 - 1, port.1 - 1));
+    let mut ai = armed_2(&g, cid, gun, [escorts[0], straggler]);
+    ai.force_groups[0].units.push(third);
+    assert!(ai.form_amphibious_train(&g, 0, cid));
+    let train = ai.amphibious_train.clone().unwrap();
+    assert!(train.members.contains(&straggler) && train.members.contains(&third));
+    let near = [gun, escorts[0], third];
+    let mut rounds = 0;
+    while ai.amphibious_train.as_ref().unwrap().phase == AmphibiousPhase::Assemble {
+        assert!(
+            rounds < AMPHIB_STALL_TURNS as usize + 4,
+            "the train never sails"
+        );
+        for uid in near {
+            for _ in 0..4 {
+                if ai.amphibious_member_step(&mut g, 0, uid) != Some(true) {
+                    break;
+                }
+            }
+        }
+        if ai.amphibious_train.as_ref().unwrap().phase == AmphibiousPhase::Assemble {
+            // Waited on until it has failed to close for two turns.
+            let waited = ai.amphibious_waited_on(&g, ai.amphibious_train.as_ref().unwrap());
+            assert!(
+                waited.contains(&straggler)
+                    || ai.amphibious_train.as_ref().unwrap().progress[&straggler].1
+                        >= AMPHIB_STALL_TURNS
+            );
+        }
+        end_round(&mut g);
+        rounds += 1;
+    }
+    let train = ai.amphibious_train.clone().unwrap();
+    assert!(
+        !train.members.contains(&straggler),
+        "the straggler stays behind"
+    );
+    assert!(!ai.amphibious_locked(straggler));
+    assert!(near.iter().all(|id| train.members.contains(id)));
+}
+
+#[test]
+fn the_cohesion_wait_blames_the_straggler_not_the_waiters() {
+    let (mut g, cid, _, _, gun, escorts) = island(2);
+    let mut ai = armed_2(&g, cid, gun, escorts);
+    assert!(ai.form_amphibious_train(&g, 0, cid));
+    let landing = ai.amphibious_train.as_ref().unwrap().landing;
+    let mut water: Vec<(i32, Pos)> = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| g.rules.is_water(g.map.get(*pos).unwrap()))
+        .map(|pos| (g.wdist(pos, landing), pos))
+        .collect();
+    water.sort_unstable();
+    let at = |d: i32| {
+        water
+            .iter()
+            .filter(move |(w, _)| *w == d)
+            .map(|(_, pos)| *pos)
+    };
+    let (a, b) = (at(4).next().unwrap(), at(4).nth(1).unwrap());
+    let (reach, far) = *water.last().unwrap();
+    assert!(
+        reach >= 4 + AMPHIB_COHESION + 1,
+        "fixture: a straggler well behind"
+    );
+    for uid in [gun, escorts[0], escorts[1]] {
+        g.remove_unit(uid);
+    }
+    let gun = g.spawn_unit("catapult", 0, a);
+    let escort = g.spawn_unit("spearman", 0, b);
+    let straggler = g.spawn_unit("spearman", 0, far);
+    {
+        let train = ai.amphibious_train.as_mut().unwrap();
+        train.members = [gun, escort, straggler].into_iter().collect();
+        train.phase = AmphibiousPhase::Sail;
+        train.progress.clear();
+    }
+    // Nobody moves for three readings: the waiters are held, the straggler
+    // stalls.
+    for _ in 0..=AMPHIB_STALL_TURNS {
+        ai.amphibious_track_progress(&g);
+        end_round(&mut g);
+    }
+    let train = ai.amphibious_train.clone().unwrap();
+    assert_eq!(train.progress[&gun].1, 0);
+    assert_eq!(train.progress[&escort].1, 0);
+    assert_eq!(train.progress[&straggler].1, AMPHIB_STALL_TURNS);
+    assert_eq!(ai.amphibious_waited_on(&g, &train), vec![gun, escort]);
+    // Version one waits on everyone.
+    let mut v1 = ai.clone();
+    v1.enable_amphibious_siege_train();
+    v1.disable_amphibious_siege_train_2();
+    assert_eq!(v1.amphibious_waited_on(&g, &train).len(), 3);
+}
+
+#[test]
+fn version_two_sails_on_water_only() {
+    let (mut g, cid, target, port, gun, escorts) = island(2);
+    // Islets on the straight lane from the port to the island, two tiles
+    // from the landing: no ford (the islets are not the target's land).
+    for x in [target.0 - 4, target.0 - 5] {
+        let tile = g.map.tiles.get_mut(&(x, target.1)).unwrap();
+        tile.terrain = crate::name!("grassland");
+    }
+    let islets = g.clone();
+    let mut ai = armed_2(&g, cid, gun, escorts);
+    assert!(ai.form_amphibious_train(&g, 0, cid));
+    assert!(!ai.amphibious_train.as_ref().unwrap().ford);
+    let landing = ai.amphibious_train.as_ref().unwrap().landing;
+    let zone = beach_zone(&g, landing);
+    let (released, trace, switches) = run_crossing(
+        &mut g,
+        &mut ai,
+        gun,
+        escorts,
+        target,
+        AMPHIB_LANDING_MAX,
+        24,
+    );
+    assert!(released, "the crossing completes from {port:?}\n{trace}");
+    for (uid, count) in switches {
+        assert!(
+            count <= 2,
+            "{uid} hopped ashore mid-crossing ({count} switches)\n{trace}"
+        );
+        assert!(
+            zone.contains(&g.units[&uid].pos),
+            "{uid} on the island's beach\n{trace}"
+        );
+    }
+    // Version one's mixed router walks the gun onto the islets, and its
+    // two-tile beach counts the islet as ashore: the gun is left there.
+    let mut g = islets;
+    let mut v1 = armed(&g, cid, gun, escorts);
+    assert!(v1.form_amphibious_train(&g, 0, cid));
+    let (released, trace, _) = run_crossing(
+        &mut g,
+        &mut v1,
+        gun,
+        escorts,
+        target,
+        AMPHIB_LANDING_MAX,
+        24,
+    );
+    assert!(
+        released && !zone.contains(&g.units[&gun].pos),
+        "version one strands the gun\n{trace}"
+    );
+    // The router itself never steps ashore.
+    let at_sea = g.spawn_unit("spearman", 0, (target.0 - 6, target.1));
+    assert!(g.is_embarked(&g.units[&at_sea]));
+    let goals: std::collections::HashSet<Pos> = [(target.0 - 3, target.1 + 1)].into();
+    if let Some(step) = water_step(&g, 0, at_sea, at_sea, &goals) {
+        assert!(g.rules.is_water(g.map.get(step).unwrap()));
+    }
+}
+
+#[test]
+fn version_two_lands_on_a_wider_beach_once_within_three() {
+    let (mut g, cid, _, _, gun, escorts) = island(2);
+    let mut ai = armed_2(&g, cid, gun, escorts);
+    assert!(ai.form_amphibious_train(&g, 0, cid));
+    let landing = ai.amphibious_train.as_ref().unwrap().landing;
+    let zone = beach_zone(&g, landing);
+    // Water three tiles from the landing beside a beach tile two from it,
+    // where no tile beside the water is the landing's own ring.
+    let mut spots: Vec<(Pos, Pos)> = zone
+        .iter()
+        .filter(|b| g.wdist(**b, landing) == 2)
+        .flat_map(|b| g.nbrs(*b).into_iter().map(move |w| (w, *b)))
+        .filter(|(w, _)| {
+            g.map.get(*w).is_some_and(|tile| g.rules.is_water(tile))
+                && g.wdist(*w, landing) == 3
+                && g.nbrs(*w)
+                    .into_iter()
+                    .all(|n| g.wdist(n, landing) >= 2 || !landable(&g, n))
+        })
+        .collect();
+    spots.sort_unstable();
+    let (water, _) = *spots
+        .first()
+        .expect("fixture: water three out beside the wide beach");
+    let others: Vec<Pos> = g
+        .wdisk(landing, 3)
+        .into_iter()
+        .filter(|pos| {
+            *pos != water
+                && g.rules.is_water(g.map.get(*pos).unwrap())
+                && g.wdist(*pos, landing) == 3
+        })
+        .collect();
+    for uid in [gun, escorts[0], escorts[1]] {
+        g.remove_unit(uid);
+    }
+    let escort = g.spawn_unit("spearman", 0, water);
+    let gun = g.spawn_unit("catapult", 0, others[0]);
+    let second = g.spawn_unit("spearman", 0, others[1]);
+    for version in [1, 2] {
+        let mut g = g.clone();
+        let mut ai = ai.clone();
+        if version == 1 {
+            ai.enable_amphibious_siege_train();
+            ai.disable_amphibious_siege_train_2();
+        }
+        let train = ai.amphibious_train.as_mut().unwrap();
+        train.members = [gun, escort, second].into_iter().collect();
+        train.phase = AmphibiousPhase::Sail;
+        let _ = ai.amphibious_member_step(&mut g, 0, escort);
+        let unit = &g.units[&escort];
+        if version == 2 {
+            assert!(!g.is_embarked(unit), "version two lands within three");
+            assert!(zone.contains(&unit.pos) && g.wdist(unit.pos, landing) <= AMPHIB_BEACH_2);
+        } else {
+            assert!(g.is_embarked(unit), "version one waits for all within two");
+        }
+    }
+}
+
+#[test]
+fn a_ford_that_cannot_muster_falls_back_to_the_sea_lane() {
+    // `island(3)`: a three-tile sea lane from the port, and a land bridge
+    // on the south side that leaves a two-tile ford there, more than ten
+    // tiles from the port, where only one gun of the group stands.
+    let (mut g, cid, target, port, gun, escorts) = island(3);
+    let bridge = (12, 10);
+    assert_eq!(
+        g.wdist(bridge, target),
+        4,
+        "fixture: the bridge is in the ring"
+    );
+    g.map.tiles.get_mut(&bridge).unwrap().terrain = crate::name!("grassland");
+    let south = g.spawn_unit("catapult", 0, (14, 13));
+    let (shore, lane, landing) =
+        ford_crossing(&g, 0, south, g.units[&south].pos, target, 5).expect("the south ford");
+    assert_eq!((lane.len(), landing), (2, bridge));
+    assert!(escorts
+        .iter()
+        .all(|id| g.wdist(g.units[id].pos, shore) > AMPHIB_MUSTER_RADIUS));
+    assert!(g.wdist(port, shore) > AMPHIB_MUSTER_RADIUS);
+    let mut ai = armed_2(&g, cid, gun, escorts);
+    ai.force_groups[0].units.insert(0, south);
+    let refusal = ai
+        .amphibious_ford(&g, 0, cid, target, &[south, gun, escorts[0], escorts[1]])
+        .expect("a ford is found")
+        .expect_err("no escort within reach of the ford");
+    assert!(refusal.contains(&format!("{shore:?}")), "{refusal}");
+    // Version two still ships what version one ships: the sea lane.
+    assert!(ai.form_amphibious_train(&g, 0, cid));
+    let train = ai.amphibious_train.clone().unwrap();
+    assert!(!train.ford, "{train:?}");
+    assert!(train.members.contains(&gun) && !train.members.contains(&south));
+    let mut v1 = armed(&g, cid, gun, escorts);
+    v1.force_groups[0].units.insert(0, south);
+    assert!(v1.form_amphibious_train(&g, 0, cid));
+    assert_eq!(v1.amphibious_train.unwrap().lane, train.lane);
+}
