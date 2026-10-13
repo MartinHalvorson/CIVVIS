@@ -3733,6 +3733,17 @@ pub const GENES: &[Gene] = &[
     // the multipliers a Mine's Production gets, and ramps the Housing price in
     // from three citizens of room. See `advanced/growth_farm.rs`.
     Gene { tag: "growth-prices-the-farm-2", field: "growth_prices_the_farm_2", kind: Kind::OptIn, enable: AdvancedAi::enable_growth_prices_the_farm_2, disable: AdvancedAi::disable_growth_prices_the_farm_2 },
+    // 2026-10-12 capital-staging tally, five live gate passers with logs:
+    // when a major's capital was the siege objective after t150, the top hold
+    // in two of five was water ("the bombard holds on land short of the
+    // water ... no dry road opens within 128 steps": 133 lines in the Emperor
+    // win civvis-20261010T190448Z, 342 in civvis-20261011T004440Z), and 51%
+    // of at-war capital samples had no land unit of ours within six tiles. A
+    // water-locked objective's guns and escorts now gather at a coastal city,
+    // embark together over a lane no visible enemy warship watches, and land
+    // together beside the target; a gun never lands alone. See
+    // `advanced/amphibious_siege_train.rs`.
+    Gene { tag: "amphibious-siege-train", field: "amphibious_siege_train", kind: Kind::OptIn, enable: AdvancedAi::enable_amphibious_siege_train, disable: AdvancedAi::disable_amphibious_siege_train },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

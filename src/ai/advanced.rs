@@ -5426,6 +5426,16 @@ pub struct AdvancedAi {
     /// military against our 1,622, and never declared on them. See
     /// `advanced/siege_road.rs`. Off by default.
     blocker_becomes_the_target: bool,
+    /// `amphibious-siege-train`: a Domination siege whose objective has no
+    /// dry road crosses the water as one group of guns and escorts, landing
+    /// together beside the target. See `advanced/amphibious_siege_train.rs`.
+    /// Off by default.
+    amphibious_siege_train: bool,
+    /// The crossing in hand under `amphibious-siege-train`, if any.
+    amphibious_train: Option<amphibious_siege_train::AmphibiousTrain>,
+    /// `amphibious-siege-train`: the (turn, target) of the last journalled
+    /// refusal, so a held column journals why once per turn.
+    amphibious_refused: Option<(u32, u32)>,
     /// `aqueduct-claims-the-capped-queue`: a city within one of its housing,
     /// Granary built, puts the legal Aqueduct it can finish in time ahead of
     /// the routine claims, the deterrent and the governor's rescoring. See
@@ -9317,6 +9327,9 @@ mod engineering_for_capped_fresh_water;
 /// `advanced/siege_tier_before_the_beeline.rs`.
 mod siege_tier_before_the_beeline;
 mod aqueduct_claims_the_capped_queue;
+/// `amphibious-siege-train`: a water-locked siege objective's guns and
+/// escorts cross as one group. See `advanced/amphibious_siege_train.rs`.
+mod amphibious_siege_train;
 /// `industrial-zone-claims-the-producer-queue`: the producer step's
 /// Industrial Zone or Workshop claims its city's queue. See
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
@@ -9795,6 +9808,7 @@ impl AdvancedAi {
         self.forget_missionary_explore();
         self.force_groups.clear();
         self.force_groups_dirty = true;
+        self.amphibious_train = None;
     }
 
     /// Carry unit-keyed memory across a rebuilt board. See
@@ -10282,6 +10296,9 @@ impl AdvancedAi {
             breaker_to_the_fastest: false,
             age_closer_spends_the_reserve: false,
             blocker_becomes_the_target: false,
+            amphibious_siege_train: false,
+            amphibious_train: None,
+            amphibious_refused: None,
             aqueduct_claims_the_capped_queue: false,
             // ---- append: c-d ----------------------------------------
             campus_building_claims_the_queue: false,
@@ -42130,6 +42147,7 @@ impl AdvancedAi {
         if self.base.come_ashore
             && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea")
             && g.is_embarked(&g.units[&uid])
+            && !self.amphibious_member(uid)
             && self.base.disembark_step(g, pid, uid)
         {
             return true;
@@ -44565,6 +44583,12 @@ impl AdvancedAi {
         // false with the gene off. See `advanced/battle_planner.rs`.
         if self.battle_planner_claims(uid) {
             return self.base.fortify_or_stop(g, pid, uid);
+        }
+        // `amphibious-siege-train`: a member of the crossing in hand takes
+        // the train's orders before anything else can land it at home. `None`
+        // with the gene off. See `advanced/amphibious_siege_train.rs`.
+        if let Some(acted) = self.amphibious_member_step(g, pid, uid) {
+            return acted;
         }
         let unit = g.units[&uid].clone();
         let rules = std::sync::Arc::clone(&g.rules);
