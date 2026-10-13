@@ -7037,6 +7037,12 @@ pub struct AdvancedAi {
     /// zone's Workshop) at the head of its queue over a deferrable head. See
     /// `advanced/industrial_zone_claims_the_producer_queue.rs`. Off by default.
     industrial_zone_claims_the_producer_queue: bool,
+    /// `industrial-zone-claims-the-factory`: once Industrialization is known,
+    /// the zone city whose Factory reaches the most new cities (then, with
+    /// Coal, the Factory city whose plant powers the most Factories) puts it
+    /// at the head of its queue over a deferrable head. See
+    /// `advanced/industrial_zone_claims_the_factory.rs`. Off by default.
+    industrial_zone_claims_the_factory: bool,
     // ---- append: l-o ------------------------------------------------
     /// `muster-walks-the-road`: a mustering member of a train that cannot
     /// yet close walks in by the dry road, not by straight distance, to the
@@ -9334,6 +9340,11 @@ mod amphibious_siege_train;
 /// Industrial Zone or Workshop claims its city's queue. See
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
+/// `industrial-zone-claims-the-factory`: once Industrialization is known, the
+/// Factory that reaches the most new cities (then the Coal Power Plant that
+/// powers the most Factories) claims its city's queue. See
+/// `advanced/industrial_zone_claims_the_factory.rs`.
+mod industrial_zone_claims_the_factory;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
 mod campus_building_claims_the_queue;
@@ -10553,6 +10564,7 @@ impl AdvancedAi {
             granary_claims_the_bound_queue: false,
             gold_buys_the_settler: false,
             industrial_zone_claims_the_producer_queue: false,
+            industrial_zone_claims_the_factory: false,
             // ---- append: l-o ----------------------------------------
             muster_walks_the_road: false,
             near_rival_deterrence: false,
@@ -31215,7 +31227,10 @@ impl AdvancedAi {
                     // `industrial-zone-claims-the-producer-queue`: the claimed
                     // zone or Workshop finishes while the producer step still
                     // names it.
-                    || self.producer_zone_claim_holds(g, pid, cid, plan, item))
+                    || self.producer_zone_claim_holds(g, pid, cid, plan, item)
+                    // `industrial-zone-claims-the-factory`: the claimed Factory
+                    // or Coal Power Plant finishes.
+                    || self.factory_claim_holds(g, pid, cid, plan, item))
                     && Self::production_commitment_is_legal(g, pid, cid, item)
             });
             // `commercial-hub-in-the-strategic-queue`: a queued Commercial Hub
@@ -47905,6 +47920,12 @@ impl AdvancedAi {
             // Prophet race and the routine claims. Exact no-op while the gene
             // is off. See `advanced/industrial_zone_claims_the_producer_queue.rs`.
             self.claim_producer_zone(g, pid, &plan);
+            // `industrial-zone-claims-the-factory`: the Factory that reaches
+            // the most new cities, or the plant that powers the most Factories,
+            // after the Industrial Zone and ahead of the Campus building claim.
+            // Exact no-op while the gene is off. See
+            // `advanced/industrial_zone_claims_the_factory.rs`.
+            self.claim_factory(g, pid, &plan);
             // `campus-building-claims-the-queue`: a standing Campus's next
             // building, after the Industrial Zone and ahead of the Prophet race
             // and the routine claims. Exact no-op while the gene is off. See

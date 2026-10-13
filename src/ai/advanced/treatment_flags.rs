@@ -7526,6 +7526,19 @@ impl AdvancedAi {
         self.amphibious_train = None;
     }
 
+    /// Once Industrialization is known, the zone city whose Factory reaches
+    /// the most new cities (then, with Coal, the Factory city whose plant
+    /// powers the most Factories) claims its queue. Opt-in gene
+    /// `industrial-zone-claims-the-factory`; see `AdvancedAi::claim_factory`.
+    pub fn enable_industrial_zone_claims_the_factory(&mut self) {
+        self.industrial_zone_claims_the_factory = true;
+    }
+
+    /// The twin of `enable_industrial_zone_claims_the_factory`.
+    pub fn disable_industrial_zone_claims_the_factory(&mut self) {
+        self.industrial_zone_claims_the_factory = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

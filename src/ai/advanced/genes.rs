@@ -3744,6 +3744,18 @@ pub const GENES: &[Gene] = &[
     // together beside the target; a gun never lands alone. See
     // `advanced/amphibious_siege_train.rs`.
     Gene { tag: "amphibious-siege-train", field: "amphibious_siege_train", kind: Kind::OptIn, enable: AdvancedAi::enable_amphibious_siege_train, disable: AdvancedAi::disable_amphibious_siege_train },
+    // 10-13, 17 Immortal runs: after t100 the rivals' Production a citizen
+    // climbs from ~2.8 to 4.5-6.8 by t125-150 while ours stays 2.0-2.5. At
+    // t150 our 11 games held 25 Workshops, 9 Factories and 1 Coal Power Plant
+    // with Industrialization known in 9 (median t118): 679 city-turns with a
+    // Workshop and no Factory (53 building one) and 119 with a Factory and no
+    // power while Coal income was positive in 74% of samples. A Factory pays
+    // +3 to every city within six tiles of its zone, +3 more powered. The zone
+    // city whose Factory newly reaches the most cities (then the Factory city
+    // whose plant powers the most Factories, with Coal) claims its queue with
+    // the Industrial Zone claim's rules. See
+    // `advanced/industrial_zone_claims_the_factory.rs`.
+    Gene { tag: "industrial-zone-claims-the-factory", field: "industrial_zone_claims_the_factory", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_zone_claims_the_factory, disable: AdvancedAi::disable_industrial_zone_claims_the_factory },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -349,6 +349,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `housing-research-2` | off (unmeasured) | Research housing that the capped cities can actually build. | 1 \| 2 |
 | `improvement-upgrades-count` | off (unmeasured) | Opt-in gene `improvement-upgrades-count`; see `Self::improvement_upgrades_count`. | 1 \| 1 |
 | `industrial-hub` | off (unmeasured) | One Industrial Zone where its Factory reaches the most cities, and its chain; see `BasicAi::industrial_hub`. | 1 \| 1 |
+| `industrial-zone-claims-the-factory` | off (unmeasured) | Once Industrialization is known, the zone city whose Factory reaches the most new cities (then, with Coal, the Factory city whose plant powers the most Factories) claims its queue. | 1 \| 1 |
 | `industrial-zone-claims-the-producer-queue` | off (unmeasured) | Once Apprenticeship is known, the producer step's Industrial Zone (or the zone's Workshop) claims its city's queue over a deferrable head. | 1 \| 1 |
 | `industrial-zone-in-the-producers` | off (unmeasured) | Opt-in gene `industrial-zone-in-the-producers`; see `BasicAi::industrial_zone_in_the_producers`. | 1 \| 1 |
 | `industry-before-the-army` | off (unmeasured) | The delegated city governor's Industrial Zone, Workshop and Factory ahead of the military floor. | — \| 3 |
