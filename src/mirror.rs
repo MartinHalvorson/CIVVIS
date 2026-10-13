@@ -7395,6 +7395,11 @@ pub struct Reconstruction {
     /// Civilization VI city id -> CIVVIS city id for every city retained in the
     /// board memory.  Unlike `city_ids`, this includes visible rival cities so an
     /// outgoing international route can retain its destination.
+    ///
+    /// ⚠ Native city ids are unique only per player (our first city and every
+    /// rival's first city are all 65536), so a colliding id keeps whichever
+    /// owner was inserted last. Resolve our own cities by position or through
+    /// `city_ids`, never through this map alone.
     pub known_city_ids: std::collections::BTreeMap<i64, u32>,
     pub placed_cities: usize,
     pub placed_units: usize,
@@ -12303,21 +12308,25 @@ fn step_district_progress(ctx: &mut HostStepCtx<'_>) {
         .cities
         .iter()
         .filter_map(|city| {
-            let cid = ctx.known_city_ids.get(&city.id).copied().or_else(|| {
-                // Older exports can lack a positive native city id. Their actual
-                // own-city centre still names the city planted in this same pass.
-                (city.id <= 0)
-                    .then(|| {
-                        ctx.game
-                            .city_at(crate::hex::offset_to_axial(city.x, city.y))
-                    })
-                    .flatten()
-            })?;
-            ctx.game
-                .cities
-                .get(&cid)
-                .is_some_and(|city| city.owner == 0)
-                .then_some((cid, city.id))
+            let ours = |cid: &u32| ctx.game.cities.get(cid).is_some_and(|city| city.owner == 0);
+            // Our own centre names the city planted for this export in the same
+            // pass. Civilization VI numbers cities per player, so the native id
+            // alone is ambiguous: Bogotá's 65536 is every other player's first
+            // city too, and `known_city_ids` keeps whichever owner was planted
+            // last (live: 58 of 75 of our cities shared an id with a visible
+            // rival or city-state). The id is only the fallback, and only when
+            // it still names a city of ours.
+            let cid = ctx
+                .game
+                .city_at(crate::hex::offset_to_axial(city.x, city.y))
+                .filter(ours)
+                .or_else(|| {
+                    (city.id > 0)
+                        .then(|| ctx.known_city_ids.get(&city.id).copied())
+                        .flatten()
+                        .filter(ours)
+                })?;
+            Some((cid, city.id))
         })
         .collect();
     apply_host_district_progress(ctx.game, &ctx.state.cities, &city_ids);

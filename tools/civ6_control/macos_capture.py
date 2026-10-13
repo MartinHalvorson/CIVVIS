@@ -172,12 +172,16 @@ func capture(_ rect: CGRect, to output: URL, fallback: Bool) -> (Int32, String) 
 if serveMode {
     // One line per frame in: `x y width height output-path`. One line out:
     // the status a one-shot helper would have exited with, then its detail.
-    // EOF (the Python side closed the pipe or died) ends the helper.
+    // EOF (the Python side closed the pipe or died) ends the helper, and so
+    // does two idle minutes (SIGALRM's default action): Python retires an idle
+    // helper after one, so this only ends one a parent stopped asking.
     func reply(_ status: Int32, _ detail: String) {
         let line = detail.isEmpty ? "\(status)\n" : "\(status) \(detail)\n"
         FileHandle.standardOutput.write(Data(line.utf8))
     }
-    while let request = readLine() {
+    while true {
+        alarm(120)
+        guard let request = readLine() else { break }
         let fields = request.split(
             separator: " ", maxSplits: 4, omittingEmptySubsequences: false
         ).map(String.init)
@@ -366,13 +370,34 @@ def _capture_command(box_points, output: str | Path, *, fallback: bool) -> list[
 #: churn, not anything the operator did, was stopping the operator's
 #: recordings. A long-lived helper is attributed once and stays attributed.
 #:
-#: The helpers are still recycled: after a timeout (killed), a permission
-#: denial, a crash, `SERVER_MAX_CONSECUTIVE_MISSES` failed frames in a row,
-#: or `SERVER_MAX_AGE_SECONDS` -- two processes an hour instead of 1,500.
+#: The helpers are still recycled: after ANY failed frame (killed, see below),
+#: `SERVER_MAX_IDLE_SECONDS` without a frame, or `SERVER_MAX_AGE_SECONDS`.
 #: ScreenCaptureKit and the CoreGraphics fallback never share a process (see
 #: the Swift comment above `capture`).
+#:
+#: ★★★★★ EVERY LIVE HELPER RUNS FROM ITS OWN EXECUTABLE PATH.
+#: `replayd` (the daemon that also writes the operator's Cmd-Shift-5 movie)
+#: keeps ONE capture connection per executable path. Two live helpers started
+#: from the same file evict each other: each reconnects, which drops the other,
+#: thousands of times a second ("RPDaemonProxy: connection INTERRUPTED",
+#: replayd error 4097), and neither gets a frame again. Measured 2026-10-10 on
+#: the live host: two `--serve` helpers from one path, first frame 127 ms,
+#: then every frame from both a 3.5 s miss; the same pair from two copies of
+#: the binary, every frame 85-120 ms. With one cached binary, the popup
+#: keeper's helper, `civ6_play`'s helper and each process's two backends were
+#: all that one client: 3,300-5,600 reconnects a second for a day, replayd at
+#: 88 % CPU, the unified log flooded down to ~1.5 h, ~500 failed popup frames
+#: an hour, and resumed games stuck 24.5 min and 4 h in
+#: `wait_for_safe_screen_capture`. The per-frame helper this replaced rarely
+#: overlapped itself, which hid the rule. So each process and backend execs a
+#: private copy, `live/cgcapture-<digest>-<pid>-<backend>` (see
+#: `_private_executable`).
+#:
+#: ★★★★ A helper that failed a frame never serves another: a failure is where
+#: the re-dialling shows, so it ends the process, bounding any storm to one
+#: frame. A healthy helper still serves every frame.
 SERVER_MAX_AGE_SECONDS = 1800.0
-SERVER_MAX_CONSECUTIVE_MISSES = 3
+SERVER_MAX_IDLE_SECONDS = 60.0  # the Swift helper exits by itself at 120 s idle
 
 
 class _CaptureServer:
@@ -390,11 +415,12 @@ class _CaptureServer:
         self.process: subprocess.Popen | None = None
         self.buffer = b""
         self.started = 0.0
-        self.misses = 0
+        self.last_used = 0.0
         self.lock = threading.Lock()
 
     def command(self) -> list[str]:
-        return [str(self.binary), "--serve"] + (["--fallback"] if self.fallback else [])
+        executable = _private_executable(self.binary, self.fallback)
+        return [str(executable), "--serve"] + (["--fallback"] if self.fallback else [])
 
     def _start(self) -> subprocess.Popen:
         self.process = subprocess.Popen(
@@ -405,8 +431,7 @@ class _CaptureServer:
             bufsize=0,
         )
         self.buffer = b""
-        self.started = time.monotonic()
-        self.misses = 0
+        self.started = self.last_used = time.monotonic()
         return self.process
 
     def stop(self, *, kill: bool = False) -> None:
@@ -438,9 +463,11 @@ class _CaptureServer:
         """One frame; None when the helper had to be killed for taking too long."""
         with self.lock:
             process = self.process
+            now = time.monotonic()
             if process is not None and (
                     process.poll() is not None
-                    or time.monotonic() - self.started >= SERVER_MAX_AGE_SECONDS):
+                    or now - self.started >= SERVER_MAX_AGE_SECONDS
+                    or now - self.last_used >= SERVER_MAX_IDLE_SECONDS):
                 self.stop()
                 process = None
             if process is None:
@@ -469,13 +496,9 @@ class _CaptureServer:
                 status = int(status_text)
             except ValueError:
                 return self._failed(arguments, f"unreadable capture reply {reply[:80]!r}")
-            if status == 0:
-                self.misses = 0
-            else:
-                self.misses += 1
-                if (status == SCREEN_CAPTURE_PERMISSION_DENIED
-                        or self.misses >= SERVER_MAX_CONSECUTIVE_MISSES):
-                    self.stop()
+            self.last_used = time.monotonic()
+            if status != 0:
+                self.stop(kill=True)  # see the ★★★★★ above SERVER_MAX_AGE_SECONDS
             return subprocess.CompletedProcess(arguments, status, "", detail)
 
 
@@ -494,6 +517,49 @@ def _server(binary: Path, fallback: bool) -> _CaptureServer:
         return server
 
 
+_SWEPT_PRIVATE_COPIES = False
+
+
+def _private_executable(binary: Path, fallback: bool) -> Path:
+    """This process's own copy of the helper for one backend (see the ★★★★★
+    above `SERVER_MAX_AGE_SECONDS`): replayd tells capture clients apart by
+    executable path, so two live helpers must never share one."""
+    global _SWEPT_PRIVATE_COPIES
+    path = _private_path(binary, fallback)
+    path.parent.mkdir(mode=0o700, exist_ok=True)
+    if not _SWEPT_PRIVATE_COPIES:
+        _SWEPT_PRIVATE_COPIES = True
+        _sweep_private_copies(path.parent)
+    if not path.is_file():
+        temporary = path.with_name(path.name + ".tmp")
+        shutil.copyfile(binary, temporary)
+        temporary.chmod(0o700)
+        os.replace(temporary, path)
+    return path
+
+
+def _private_path(binary: Path, fallback: bool) -> Path:
+    backend = "fallback" if fallback else "native"
+    return binary.parent / "live" / f"{binary.name}-{os.getpid()}-{backend}"
+
+
+def _sweep_private_copies(live: Path) -> None:
+    """Delete the copies of processes that have exited (crashed, killed)."""
+    for copy in live.iterdir():
+        try:
+            pid = int(copy.name.split("-")[-2])
+        except (IndexError, ValueError):
+            continue
+        try:
+            os.kill(pid, 0)
+            continue
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            continue  # alive, owned by someone else
+        copy.unlink(missing_ok=True)
+
+
 def stop_capture_servers() -> None:
     """End the long-lived helpers (also run at interpreter exit)."""
     with _SERVERS_LOCK:
@@ -502,6 +568,7 @@ def stop_capture_servers() -> None:
     for server in servers:
         with server.lock:
             server.stop()
+        _private_path(server.binary, server.fallback).unlink(missing_ok=True)
 
 
 atexit.register(stop_capture_servers)

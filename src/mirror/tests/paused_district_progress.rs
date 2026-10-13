@@ -345,3 +345,60 @@ fn saved_work_requires_the_exact_city_owned_foundation() {
     apply_host_district_progress(&mut mirror.game, &state.cities, &BTreeMap::from([(cid, 7)]));
     assert_eq!(mirror.game.item_invested_production(cid, &campus()), 0.0);
 }
+
+/// Civilization VI numbers cities per player: our first city and every other
+/// player's first city share one native id. A rival and a city-state holding
+/// a city with Bogotá's id must not take Bogotá's banked district work.
+#[test]
+fn a_foreign_city_sharing_our_native_id_keeps_our_paused_work() {
+    let (_, mut state) = fixture();
+    let plots = (0..12)
+        .flat_map(|x| {
+            (0..12).map(move |y| {
+                let mut tile = plot(x, y, "TERRAIN_GRASS");
+                if x >= 9 && y >= 9 {
+                    tile.o = 1;
+                } else if x <= 2 && y >= 9 {
+                    tile.o = 6;
+                } else {
+                    tile.o = 0;
+                }
+                tile.oc = Some(7);
+                tile
+            })
+        })
+        .collect();
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 79,
+        width: 12,
+        height: 12,
+        chunk: 1,
+        plots,
+    }]);
+    let foreign = state_from_json(
+        r#"{
+        "turn":79,
+        "rivals":[{"player":1,"civ":"CIVILIZATION_PERSIA",
+            "cities":[{"id":7,"name":"Pasargadae","x":10,"y":10,"pop":4}]}],
+        "minors":[{"player":6,"civ":"CIVILIZATION_BRUSSELS",
+            "cities":[{"id":7,"name":"Brussels","x":1,"y":10,"pop":3}]}]
+    }"#,
+    )
+    .unwrap();
+    state.rivals = foreign.rivals;
+    state.minors = foreign.minors;
+    let mut mirror = build(&snapshot, &state);
+    let cid = mirror.cid_of[&7];
+    assert_eq!(mirror.game.cities[&cid].owner, 0);
+    // The collision is real on the board: the shared id names a foreign city.
+    let shared = mirror.known_city_ids[&7];
+    assert_ne!(shared, cid, "fixture must collide");
+    assert_ne!(mirror.game.cities[&shared].owner, 0);
+    assert_eq!(mirror.game.item_invested_production(cid, &campus()), 40.0);
+    assert_eq!(
+        mirror.game.item_remaining_cost_for_city(0, cid, &campus()),
+        33.0
+    );
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.game.item_invested_production(cid, &campus()), 40.0);
+}
