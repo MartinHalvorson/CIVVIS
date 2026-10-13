@@ -1,9 +1,9 @@
 # Native military stacking adoption at advanced difficulty
 
-Public #4027 and #4032 are merged, but the native Immortal seat still uses a
-private deployment. Its reservation
-function retains the earlier blanket Great Person tile restriction, and its
-Lua controller does not emit native target-offer observations.
+Public #4027 and #4032 are merged. The native Immortal seat has now adopted
+both published fixes while retaining its complete current private strategy
+parent. The earlier deployment reserved every Great Person tile and did not
+emit native target-offer observations.
 
 ## Isolated deployment composite
 
@@ -17,12 +17,16 @@ the final diff against that parent still contains only the four published
 files. Candidate `084441330` retains the publisher's growth, amphibious siege,
 factory queue and operator pause/new-game additions. It is backed up
 at GitHub `refs/civvis/wip/codex-goal-1013-native-movement-a5ff89e1e`.
-Neither rotating native pin nor another writer's strategy branch was edited.
+The private publisher worktrees and strategy branches remain untouched.
 
 The patch, captured parents, registered 784 inputs and preparation receipts are
 retained under `~/civvis-tactics-results/2026-10-13/native-movement-adoption/`.
 The latest parent's exact 256-policy forcing and verification policy are kept
-unchanged.
+unchanged. Nine requested policies already ship by default; the played genome
+therefore reports 247 additional forced rows and 419 active treatments. All
+12 retained completed parent attempts reported exactly the same actual genome
+and native setup. The candidate's expected requested, additional and active
+lists were registered before its outcomes.
 If the native publisher advances while this snapshot is building, adoption
 must retain that newer committed parent rather than overwrite its changes.
 
@@ -30,11 +34,12 @@ must retain that newer committed parent rather than overwrite its changes.
 
 All 92 discovered private-plus-overlay Lua suites passed; all 99 scripts
 parsed under Lua 5.1. All 138 installation tests passed. The complete native
-controller suite passed all 288 cases on both earlier parents with four
-workers, zero retries and no fail-fast. Both earlier release builds completed
-and remain recorded as unused preparations. The latest parent's complete
-controller validation and release build are pending; its 43 brain lifecycle
-tests passed. No source tuning follows
+controller suite passed all 288 cases on all three parents with four workers,
+zero retries and no fail-fast. Both earlier release builds completed and
+remain recorded as unused preparations. The latest parent's 43 brain lifecycle
+tests passed, and both release binaries built successfully. All 784 registered
+build/native-control inputs remain exact, and direct hash checks establish that
+all 99 originally tested Lua scripts are unchanged. No source tuning follows
 native outcomes. The source must remain clean and its registered input hashes
 must match the candidate used for testing and launch.
 
@@ -51,6 +56,24 @@ retains the read-back settings. It preserves completed summaries, raw events,
 decisions, runtime updates and a consistent SQLite orders backup with content
 digests. Local controls reject changed Lua and binary bytes and verify exact
 evidence retention and guarded difficulty restoration.
+
+The home source pointer selected the clean candidate at
+2026-10-13T09:28:45Z under a kernel lock and an exact parent/forcing comparison.
+The in-progress parent attempt kept its frozen binary. The next attempt,
+`civvis-20261013T093609Z`, reports candidate revision `084441330` and binary
+SHA-256 `677d6e04221418de28c4bf6e3ed1c188c47803ed0f9d175c905854b422589897`.
+All four installed configured Lua scripts match the candidate byte for byte.
+Native seat telemetry reads back Immortal, Gran Colombia/Simón, four players,
+Tiny Pangaea, Online speed, six city-states, Gathering Storm, no game modes,
+all victories and the 650-turn clock. The registered three-plus-three native
+batch is running; complete candidate outcomes and diagnostic reach are pending.
+
+Historical context contains all 12 retained completed attempts at parent
+`6f0eb8c8a`, captured before adoption: eight production-rank retirements and
+four defeats, with no wins or foreign original capitals observed held. The
+last native export retained the home original capital in nine. These are
+different native worlds and are descriptive context, not matched controls or
+evidence of a candidate win-rate change.
 
 Pre-size the initial exploratory observation at three candidate attempts on
 Immortal, then three on Deity using the same controller and forced-policy
