@@ -1,23 +1,28 @@
 # Native military stacking adoption at advanced difficulty
 
-Public #4027 and #4032 are merged, but the native Immortal seat still uses the
-private `a5ff89e1eec1cadf3e904f0a38ffc7da0447b639` deployment. Its reservation
+Public #4027 and #4032 are merged, but the native Immortal seat still uses a
+private deployment. Its reservation
 function retains the earlier blanket Great Person tile restriction, and its
 Lua controller does not emit native target-offer observations.
 
 ## Isolated deployment composite
 
-An immutable deployment snapshot preserves that complete committed private
+An immutable deployment snapshot preserves the complete committed private
 parent and applies only the published four-file patch from public
 `8897527b7..a7d1db48a`: native order filtering, its nine added regressions, the
-refusal diagnostic and its Lua contract cases. Source
-`85d121aa1` is a detached build consumer with a unique commit; it is backed up
+refusal diagnostic and its Lua contract cases. During preparation the native
+publisher advanced from `a5ff89e1e` through `3cfa0848a` to `6f0eb8c8a`.
+Each newer committed parent was merged into this private build consumer;
+the final diff against that parent still contains only the four published
+files. Candidate `084441330` retains the publisher's growth, amphibious siege,
+factory queue and operator pause/new-game additions. It is backed up
 at GitHub `refs/civvis/wip/codex-goal-1013-native-movement-a5ff89e1e`.
 Neither rotating native pin nor another writer's strategy branch was edited.
 
-The patch, captured parent, registered 780 inputs and preparation receipt are
+The patch, captured parents, registered 784 inputs and preparation receipts are
 retained under `~/civvis-tactics-results/2026-10-13/native-movement-adoption/`.
-The existing forced-policy file and verification policy are kept unchanged.
+The latest parent's exact 256-policy forcing and verification policy are kept
+unchanged.
 If the native publisher advances while this snapshot is building, adoption
 must retain that newer committed parent rather than overwrite its changes.
 
@@ -25,9 +30,11 @@ must retain that newer committed parent rather than overwrite its changes.
 
 All 92 discovered private-plus-overlay Lua suites passed; all 99 scripts
 parsed under Lua 5.1. All 138 installation tests passed. The complete native
-controller suite passed all 288 cases with four workers, zero retries and no
-fail-fast. All 780 registered inputs stayed unchanged. Both release binaries
-are pending. No source tuning follows
+controller suite passed all 288 cases on both earlier parents with four
+workers, zero retries and no fail-fast. Both earlier release builds completed
+and remain recorded as unused preparations. The latest parent's complete
+controller validation and release build are pending; its 43 brain lifecycle
+tests passed. No source tuning follows
 native outcomes. The source must remain clean and its registered input hashes
 must match the candidate used for testing and launch.
 
@@ -37,6 +44,13 @@ Adopt only at a natural attempt boundary, preserving the current game's
 immutable decider snapshot. Verify the first adopted attempt's revision,
 binary digest, mod source and read-back game settings. A changed pin alone
 does not establish adoption.
+
+The batch recorder compares the installed, configured Lua scripts byte for
+byte with the candidate's rendered scripts, verifies the attempt binary and
+retains the read-back settings. It preserves completed summaries, raw events,
+decisions, runtime updates and a consistent SQLite orders backup with content
+digests. Local controls reject changed Lua and binary bytes and verify exact
+evidence retention and guarded difficulty restoration.
 
 Pre-size the initial exploratory observation at three candidate attempts on
 Immortal, then three on Deity using the same controller and forced-policy
