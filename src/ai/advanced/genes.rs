@@ -3721,6 +3721,18 @@ pub const GENES: &[Gene] = &[
     // now claims its city's queue over a deferrable head. See
     // `advanced/campus_building_claims_the_queue.rs`.
     Gene { tag: "campus-building-claims-the-queue", field: "campus_building_claims_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_building_claims_the_queue, disable: AdvancedAi::disable_campus_building_claims_the_queue },
+    // 10-13, 5 Immortal runs + 33 surviving 10-10/11 copies: our worked land
+    // yields 2.04 Food a tile at turn 60 (1.80 at 100) against the two a
+    // citizen eats, so a city's surplus stays its centre's +3-4 and growth is
+    // linear; Food a citizen 2.74 against the rivals' 3.06. Farms are 14-25% of
+    // our improvements and 45-56% of the rivals'; the day's Builders laid 93
+    // Mines (worth 15.5) and 63 Lumber Mills (13.9) to 40 Farms (6.2), and
+    // improvements gave our cities 0.29 Housing at turn 60 while 45-50% grow at
+    // x0.5/x0.25 from their cap. Version 1 priced nothing in a city with room.
+    // Version 2 prices a growing city's Food as the citizens it grows, under
+    // the multipliers a Mine's Production gets, and ramps the Housing price in
+    // from three citizens of room. See `advanced/growth_farm.rs`.
+    Gene { tag: "growth-prices-the-farm-2", field: "growth_prices_the_farm_2", kind: Kind::OptIn, enable: AdvancedAi::enable_growth_prices_the_farm_2, disable: AdvancedAi::disable_growth_prices_the_farm_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

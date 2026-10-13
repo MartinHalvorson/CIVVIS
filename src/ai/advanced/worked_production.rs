@@ -55,7 +55,7 @@ pub(crate) struct WorkedTilesFrame {
 
 impl AdvancedAi {
     /// Whether city `cid` of `pid` works `pos` this turn.
-    fn city_works_the_tile(&self, g: &Game, pid: usize, cid: u32, pos: Pos) -> bool {
+    pub(super) fn city_works_the_tile(&self, g: &Game, pid: usize, cid: u32, pos: Pos) -> bool {
         if let Some(worked) = g.observed_city_worked_tiles.get(&cid) {
             return worked.contains(&pos);
         }

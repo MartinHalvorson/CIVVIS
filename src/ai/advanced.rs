@@ -6801,6 +6801,10 @@ pub struct AdvancedAi {
     /// in a small city that is Housing-bound or not growing. See
     /// `advanced/growth_farm.rs`.
     growth_prices_the_farm: bool,
+    /// `growth-prices-the-farm-2`: version 1, plus a growing city's Food priced
+    /// as the citizens it grows and Housing priced before the cap. See
+    /// `advanced/growth_farm.rs`.
+    growth_prices_the_farm_2: bool,
     /// `invest-keeps-its-cavalry`: the raid planner takes no cavalry from a
     /// siege that is investing, reducing or taking its city, or whose muster
     /// has closed. See `siege_train::siege_needs_the_unit`.
@@ -10494,6 +10498,7 @@ impl AdvancedAi {
             gun_queues_behind_the_column: false,
             housing_cap_builds_the_aqueduct: false,
             growth_prices_the_farm: false,
+            growth_prices_the_farm_2: false,
             invest_keeps_its_cavalry: false,
             guns_grind_the_walls: false,
             grinding_sieges: BTreeSet::new(),
@@ -40085,6 +40090,8 @@ impl AdvancedAi {
                 self.improvement_value_with_appeal(g, pos, improvement, strategy, appeal)
                     + self.first_luxury_premium(g, pid, pos, improvement)
                     + self.growth_farm_premium(g, pid, pos, improvement)
+                    // `growth-prices-the-farm-2`: zero with the gene off.
+                    + self.growing_city_food_premium(g, pid, pos, improvement, strategy)
                     // `builders-improve-the-worked-for-production`: zero with
                     // the gene off. See `advanced/worked_production.rs`.
                     + self.worked_production_premium(g, pid, pos, improvement, strategy)
@@ -40103,6 +40110,7 @@ impl AdvancedAi {
                     self.improvement_value_with_appeal(g, pos, &improvement, strategy, appeal)
                         + self.first_luxury_premium(g, pid, pos, &improvement)
                         + self.growth_farm_premium(g, pid, pos, &improvement)
+                        + self.growing_city_food_premium(g, pid, pos, &improvement, strategy)
                         + self.worked_production_premium(g, pid, pos, &improvement, strategy);
                 (value, improvement)
             })
