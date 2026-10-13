@@ -65,8 +65,23 @@ SHA-256 `677d6e04221418de28c4bf6e3ed1c188c47803ed0f9d175c905854b422589897`.
 All four installed configured Lua scripts match the candidate byte for byte.
 Native seat telemetry reads back Immortal, Gran Colombia/Simón, four players,
 Tiny Pangaea, Online speed, six city-states, Gathering Storm, no game modes,
-all victories and the 650-turn clock. The registered three-plus-three native
-batch is running; complete candidate outcomes and diagnostic reach are pending.
+all victories and the 650-turn clock. The controller's actual played genome
+matches all registered treatment lists. Its genome event carries a null embedded
+revision; identity is established by the frozen attempt manifest, runtime
+update, validated binary digest and clean source receipt.
+
+The first adopted attempt ended at turn 104 with an opponent Religious victory
+(`victory` index 4 in the native seat's victory registry, `won=false`). It held
+its home original capital, captured no observed foreign major city or original
+capital, and submitted no qualifying move onto an idle Great Person's tile.
+This attempt therefore establishes no native reach for the movement repair.
+The refusal diagnostic did execute: at turn 84 Archer `1769477` at `(22,29)`
+requested `(23,30)`; the native SDK query returned two target rows and reported
+that the requested plot was not offered. The original refusal remained
+`can_start=false,no_reasons [p4r]`. This identifies target omission, not its
+cause. Full raw evidence and the negative outcome are retained. The registered
+three-plus-three batch remains running; the other candidate outcomes and
+movement reach are pending.
 
 Historical context contains all 12 retained completed attempts at parent
 `6f0eb8c8a`, captured before adoption: eight production-rank retirements and
