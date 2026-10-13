@@ -4457,6 +4457,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 // 0 is the unlimited pace; anything else is a turn budget.
                 sh.pace_ms.store(v.min(60_000), Ordering::Relaxed);
                 sh.turn_us.store(0, Ordering::Relaxed); // re-measure at the new pace
+                // On the live mirror the pace is the Civilization VI game's.
+                if civ6::live_pause_control() {
+                    if let Err(error) = civ6::set_live_pace(v) {
+                        eprintln!("[live pace] {error}");
+                    }
+                }
             }
             if let Some(value) = parsed["between_game_countdown_ms"]
                 .as_u64()
@@ -4953,7 +4959,13 @@ pub fn serve_with_game(
         next_game_params: Mutex::new(session.take_resumed_next_game_params()),
         match_series: Mutex::new(None),
         session: Mutex::new(session),
-        pace_ms: AtomicU64::new(500), // half a second per turn by default
+        // Half a second per turn by default; the live mirror starts on the
+        // pace its Civilization VI game is actually held to.
+        pace_ms: AtomicU64::new(if civ6::live_pause_control() {
+            civ6::live_pace_ms()
+        } else {
+            500
+        }),
         between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
         finale_rearm: AtomicBool::new(false),
         finale_hold: AtomicU64::new(0),

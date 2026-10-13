@@ -109,6 +109,23 @@ class Report(unittest.TestCase):
             self.assertFalse(path.exists())
 
 
+class Pace(unittest.TestCase):
+    def test_the_page_pace_is_read_as_a_bounded_budget(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pace.json"
+            self.assertEqual(live_pause.requested_pace_ms(path), 0, "unset is no wait")
+            live_pause.set_pace(2000, path=path)
+            self.assertEqual(live_pause.requested_pace_ms(path), 2000)
+            self.assertEqual(json.loads(path.read_text())["ms"], 2000)
+            live_pause.set_pace(10 ** 9, path=path)
+            self.assertEqual(live_pause.requested_pace_ms(path), live_pause.MAX_PACE_MS)
+            for body in ("{torn", '{"ms": "fast"}', '{"ms": true}', '{"ms": -5}', "[]"):
+                path.write_text(body)
+                self.assertEqual(live_pause.requested_pace_ms(path), 0, body)
+            with mock.patch.dict("os.environ", {live_pause.PACE_ENV: str(path)}):
+                self.assertEqual(live_pause.pace_path(), path)
+
+
 class OrdersRow(unittest.TestCase):
     def test_the_pause_row_survives_the_brain_answering_the_held_turn(self):
         with TemporaryDirectory() as tmp:
@@ -134,6 +151,29 @@ class OrdersRow(unittest.TestCase):
             self.assertEqual(conn.execute(count, ("civvis-a",)).fetchone()[0], 0)
             self.assertEqual(conn.execute(count, ("civvis-b",)).fetchone()[0], 1)
             conn.close()
+
+    def test_the_pace_row_is_one_budget_per_run_and_survives_the_brain(self):
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "orders.sqlite"
+            conn = civ6_brain.connect(db_path)
+            rows = "SELECT turn, seq, frame, x FROM orders WHERE run = ? AND kind = 'pace'"
+            self.assertTrue(orders.set_operator_pace(db_path, "civvis-a", 2000))
+            self.assertTrue(orders.set_operator_pace(db_path, "civvis-a", 4000))
+            civ6_brain.write_turn(conn, "civvis-a", 12, [], frame=0)
+            conn.commit()
+            self.assertEqual(conn.execute(rows, ("civvis-a",)).fetchall(),
+                             [(0, orders.PACE_SEQ, orders.PACE_FRAME, 4000)])
+            # The pause and the pace are separate rows.
+            self.assertTrue(orders.set_operator_pause(db_path, "civvis-a", 12, True))
+            self.assertEqual(len(conn.execute(rows, ("civvis-a",)).fetchall()), 1)
+            # Lightning is no row at all, for this run only.
+            self.assertTrue(orders.set_operator_pace(db_path, "civvis-b", 500))
+            self.assertTrue(orders.set_operator_pace(db_path, "civvis-a", 0))
+            self.assertEqual(conn.execute(rows, ("civvis-a",)).fetchall(), [])
+            self.assertEqual(len(conn.execute(rows, ("civvis-b",)).fetchall()), 1)
+            conn.close()
+            self.assertFalse(orders.set_operator_pace(Path(tmp) / "none.sqlite", "civvis-a", 500))
+            self.assertFalse((Path(tmp) / "none.sqlite").exists())
 
     def test_a_database_not_yet_made_is_left_for_the_brain(self):
         """The game attaches whatever file is at the path, so the pause must

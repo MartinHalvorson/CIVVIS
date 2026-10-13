@@ -50,6 +50,9 @@ from typing import Any
 
 REQUEST_ENV = "CIVVIS_LIVE_PAUSE_FILE"
 STATE_ENV = "CIVVIS_LIVE_PAUSE_STATE_FILE"
+PACE_ENV = "CIVVIS_LIVE_PACE_FILE"
+#: The page's slowest pace is 4 s; past a minute a "pace" is a pause.
+MAX_PACE_MS = 60_000
 
 
 def request_path() -> Path:
@@ -62,6 +65,19 @@ def state_path() -> Path:
     configured = os.environ.get(STATE_ENV)
     return (Path(configured).expanduser() if configured
             else Path.home() / ".civvis-live-pause-state.json")
+
+
+def pace_path() -> Path:
+    """``~/.civvis-live-pace.json``: the page's Watch pace for the live game.
+
+    ``{"ms": N}``, a whole-turn budget (Blitz 500, Fast 1000, Standard 2000,
+    Slow 4000; Lightning 0 is no wait).  The mirror server writes it when the
+    page's pace changes; ``civ6_play.py`` relays it to the control mod as a
+    ``pace`` row.  Host-wide like the pause, so the next game keeps the pace.
+    """
+    configured = os.environ.get(PACE_ENV)
+    return (Path(configured).expanduser() if configured
+            else Path.home() / ".civvis-live-pace.json")
 
 
 def utc_stamp() -> str:
@@ -137,6 +153,21 @@ def holds_game(request: Path | None = None, report: Path | None = None) -> bool:
     return (_read_json(report or state_path()) or {}).get("held") is True
 
 
+def requested_pace_ms(path: Path | None = None) -> int:
+    """The live game's per-turn budget in ms; 0 (no wait) when unset or unreadable."""
+    payload = _read_json(path or pace_path()) or {}
+    value = payload.get("ms")
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
+        return 0
+    return max(0, min(MAX_PACE_MS, int(value)))
+
+
+def set_pace(ms: int, path: Path | None = None) -> None:
+    """Set the live game's Watch pace (what the mirror server does for the page)."""
+    _atomic_json(path or pace_path(),
+                 {"ms": max(0, min(MAX_PACE_MS, int(ms))), "updated_utc": utc_stamp()})
+
+
 def write_state(tag: str, held: bool, turn: int | None,
                 path: Path | None = None) -> None:
     """Report what the game is actually doing, for the page to show."""
@@ -180,6 +211,7 @@ def status() -> dict[str, Any]:
         "tag": report.get("tag"),
         "turn": report.get("turn"),
         "since_utc": report.get("since_utc"),
+        "pace_ms": requested_pace_ms(),
     }
 
 
