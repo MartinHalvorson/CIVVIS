@@ -2931,15 +2931,36 @@ fn append_luxury_buy_order(
 // the deal week, at the rival the turn rotates to among those at peace that
 // offer a type we lack, with no deal already heading their way and no
 // denunciation either way inside `LUXURY_SWAP_DENOUNCE_TURNS`.
+//
+// Version two (`luxury-swap-asks-2`), from 22 live Immortal games on
+// 455f438ca: version one closed 36 of 119 asks and every close added a type,
+// but a rival whose land holds the spare we put up closed 2 of 32 against 34
+// of 87 otherwise (the rival's own tradeable list never names it, so only
+// the board can tell), and 25 of the 32 had another partner or spare that
+// fit; 28 luxury slots with a spare and an offer sat one Amenity short,
+// under the two-short gate, while 55 of the 87 short cities at turn 150 were
+// exactly one short. So version two asks from one Amenity short, and
+// only of a partner whose mirrored board (`lacks`) holds none of one of our
+// spares, offering those spares; with no such partner it holds.
 const LUXURY_SWAP_MIN_DEFICIT: f64 = 2.0;
+const LUXURY_SWAP_2_MIN_DEFICIT: f64 = 1.0;
 const LUXURY_SWAP_SECOND_COPY_SPARES: f64 = 4.0;
 const LUXURY_SWAP_DENOUNCE_TURNS: i64 = 30;
 
+/// `lacks` (`luxury-swap-asks-2`, `None` for version one): whether the rival
+/// with this host player id holds no copy of the luxury, as the host names
+/// it, on its mirrored board; `None` when the board cannot say.
 fn append_luxury_swap_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
+    lacks: Option<&dyn Fn(i64, &str) -> Option<bool>>,
 ) -> Option<&'static str> {
-    if amenity_deficit(state) < LUXURY_SWAP_MIN_DEFICIT {
+    let min_deficit = if lacks.is_some() {
+        LUXURY_SWAP_2_MIN_DEFICIT
+    } else {
+        LUXURY_SWAP_MIN_DEFICIT
+    };
+    if amenity_deficit(state) < min_deficit {
         return Some("luxury_swap_hold:content");
     }
     if state.turn % LUXURY_BUY_CADENCE != LUXURY_BUY_PHASE {
@@ -2973,12 +2994,18 @@ fn append_luxury_swap_order(
             .then_with(|| left.0.cmp(right.0))
     });
     let held: f64 = spares.iter().map(|(_, spare)| spare).sum();
-    let given = if held < LUXURY_SWAP_SECOND_COPY_SPARES {
-        format!("{}=1", spares[0].0)
-    } else if spares.len() > 1 {
-        format!("{}=1,{}=1", spares[0].0, spares[1].0)
-    } else {
-        format!("{}=2", spares[0].0)
+    // One copy of the first spare offered; two copies once four or more are
+    // held: one each of the first two, or two of a lone type that has them.
+    let give = |offered: &[(&str, f64)]| {
+        if held < LUXURY_SWAP_SECOND_COPY_SPARES {
+            format!("{}=1", offered[0].0)
+        } else if offered.len() > 1 {
+            format!("{}=1,{}=1", offered[0].0, offered[1].0)
+        } else if offered[0].1 >= 2.0 {
+            format!("{}=2", offered[0].0)
+        } else {
+            format!("{}=1", offered[0].0)
+        }
     };
     let recent = |turn: Option<i64>| {
         turn.is_some_and(|at| at >= 0 && i64::from(state.turn) - at < LUXURY_SWAP_DENOUNCE_TURNS)
@@ -3005,7 +3032,40 @@ fn append_luxury_swap_order(
         return Some("luxury_swap_hold:no_partner");
     }
     partners.sort_by_key(|rival| rival.player);
-    let partner = partners[(state.turn / LUXURY_BUY_CADENCE) as usize % partners.len()];
+    let week = (state.turn / LUXURY_BUY_CADENCE) as usize;
+    let (partner, given) = match lacks {
+        None => (partners[week % partners.len()], give(&spares)),
+        Some(lacks) => {
+            // Each partner with the spares its board holds none of, a known
+            // lack before one the board cannot read, most copies first.
+            let fitted: Vec<(&civvis::mirror::StateRival, Vec<(&str, f64)>)> = partners
+                .iter()
+                .filter_map(|rival| {
+                    let mut fit: Vec<(&str, f64, bool)> = spares
+                        .iter()
+                        .filter_map(|(name, spare)| match lacks(rival.player as i64, name) {
+                            Some(false) => None,
+                            known => Some((*name, *spare, known.is_some())),
+                        })
+                        .collect();
+                    fit.sort_by_key(|(_, _, known)| !*known);
+                    (!fit.is_empty()).then(|| {
+                        (
+                            *rival,
+                            fit.into_iter()
+                                .map(|(name, spare, _)| (name, spare))
+                                .collect(),
+                        )
+                    })
+                })
+                .collect();
+            if fitted.is_empty() {
+                return Some("luxury_swap_hold:no_fit");
+            }
+            let (partner, fit) = &fitted[week % fitted.len()];
+            (*partner, give(fit))
+        }
+    };
     let income = state
         .gold_per_turn
         .filter(|income| income.is_finite())
@@ -5124,11 +5184,26 @@ fn decide(
     // the rival's one working deal and the trade cooldown the sales share.
     // `luxury-swap-asks`: a spare copy for a luxury the seat lacks, ahead of
     // the Gold-only ask on the same slot.
-    if ai.luxury_swap_asks_enabled() {
-        match append_luxury_swap_order(state, &mut orders) {
+    // `luxury-swap-asks-2` fits the spare to the partner by the board: the
+    // rival's seat holds no copy of it.
+    if ai.luxury_swap_asks_enabled() || ai.luxury_swap_asks_2_enabled() {
+        let lacks = |seller: i64, resource: &str| {
+            let id = resource.strip_prefix("RESOURCE_")?.to_ascii_lowercase();
+            mirror_state.game.rules.resources.get(id.as_str())?;
+            (1..mirror_state.game.players.len())
+                .find(|seat| host_player_target(mirror_state, state, *seat) == Some(seller))
+                .map(|seat| mirror_state.game.resource_access_count(seat, &id) == 0)
+        };
+        let fit = ai
+            .luxury_swap_asks_2_enabled()
+            .then_some(&lacks as &dyn Fn(i64, &str) -> Option<bool>);
+        match append_luxury_swap_order(state, &mut orders, fit) {
             None => note_bits.push("luxury_swap=1".to_string()),
             Some(why) => {
-                if why == "luxury_swap_hold:no_spare" || why == "luxury_swap_hold:no_partner" {
+                if why == "luxury_swap_hold:no_spare"
+                    || why == "luxury_swap_hold:no_partner"
+                    || why == "luxury_swap_hold:no_fit"
+                {
                     note_bits.push(why.to_string());
                 }
             }
@@ -17934,7 +18009,7 @@ mod tests {
         // is seat 4 (15 % 2 == 1 of seats 2 and 4); Gold up to a copy's
         // worth, 135 + 10·3 = 165, which the treasury and income carry.
         let mut orders = Vec::new();
-        assert_eq!(append_luxury_swap_order(&state, &mut orders), None);
+        assert_eq!(append_luxury_swap_order(&state, &mut orders, None), None);
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].kind, "buy");
         assert_eq!(orders[0].subject, Some(4));
@@ -17948,7 +18023,10 @@ mod tests {
         let mut next = state.clone();
         next.turn = 100;
         let mut next_orders = Vec::new();
-        assert_eq!(append_luxury_swap_order(&next, &mut next_orders), None);
+        assert_eq!(
+            append_luxury_swap_order(&next, &mut next_orders, None),
+            None
+        );
         assert_eq!(next_orders[0].subject, Some(2));
 
         // Four spare copies or more: two go, one of each of the two largest;
@@ -17956,7 +18034,10 @@ mod tests {
         let mut rich = state.clone();
         rich.luxury_counts = counts(&[("RESOURCE_SPICES", 4.0), ("RESOURCE_TURTLES", 2.0)]);
         let mut rich_orders = Vec::new();
-        assert_eq!(append_luxury_swap_order(&rich, &mut rich_orders), None);
+        assert_eq!(
+            append_luxury_swap_order(&rich, &mut rich_orders, None),
+            None
+        );
         assert_eq!(
             rich_orders[0].verb.as_deref(),
             Some("LUXURY_ANY;RESOURCE_SPICES=1,RESOURCE_TURTLES=1")
@@ -17964,7 +18045,10 @@ mod tests {
         let mut one_type = state.clone();
         one_type.luxury_counts = counts(&[("RESOURCE_SPICES", 5.0)]);
         let mut one_orders = Vec::new();
-        assert_eq!(append_luxury_swap_order(&one_type, &mut one_orders), None);
+        assert_eq!(
+            append_luxury_swap_order(&one_type, &mut one_orders, None),
+            None
+        );
         assert_eq!(
             one_orders[0].verb.as_deref(),
             Some("LUXURY_ANY;RESOURCE_SPICES=2")
@@ -17978,7 +18062,7 @@ mod tests {
             verb: Some("RESOURCE_SPICES=1".to_string()),
             pos: Some((24, 0)),
         }];
-        assert_eq!(append_luxury_swap_order(&state, &mut selling), None);
+        assert_eq!(append_luxury_swap_order(&state, &mut selling, None), None);
         assert_eq!(selling.len(), 2);
         assert_eq!(selling[1].subject, Some(4));
         assert_eq!(
@@ -17991,7 +18075,10 @@ mod tests {
         broke.gold = 10;
         broke.gold_per_turn = Some(-2.0);
         let mut broke_orders = Vec::new();
-        assert_eq!(append_luxury_swap_order(&broke, &mut broke_orders), None);
+        assert_eq!(
+            append_luxury_swap_order(&broke, &mut broke_orders, None),
+            None
+        );
         assert_eq!(broke_orders[0].pos, Some((0, 0)));
 
         // Held: content, off the slot, no export of our copies, no spare, or
@@ -18001,38 +18088,163 @@ mod tests {
         let mut content = state.clone();
         content.cities = vec![short(5.0, 4.0), short(3.0, 4.0)];
         assert_eq!(
-            append_luxury_swap_order(&content, &mut held),
+            append_luxury_swap_order(&content, &mut held, None),
             Some("luxury_swap_hold:content")
         );
         let mut off_slot = state.clone();
         off_slot.turn = 95;
         assert_eq!(
-            append_luxury_swap_order(&off_slot, &mut held),
+            append_luxury_swap_order(&off_slot, &mut held, None),
             Some("luxury_swap_hold:cadence")
         );
         let mut blind = state.clone();
         blind.luxury_counts = None;
         assert_eq!(
-            append_luxury_swap_order(&blind, &mut held),
+            append_luxury_swap_order(&blind, &mut held, None),
             Some("luxury_swap_hold:counts_unknown")
         );
         let mut lean = state.clone();
         lean.luxury_counts = counts(&[("RESOURCE_SPICES", 1.0), ("RESOURCE_HONEY", 1.0)]);
         assert_eq!(
-            append_luxury_swap_order(&lean, &mut held),
+            append_luxury_swap_order(&lean, &mut held, None),
             Some("luxury_swap_hold:no_spare")
         );
         let mut denounced = state.clone();
         denounced.rivals[0].our_denounce_turn = Some(80);
         denounced.rivals[1].their_denounce_turn = Some(70);
         assert_eq!(
-            append_luxury_swap_order(&denounced, &mut held),
+            append_luxury_swap_order(&denounced, &mut held, None),
             Some("luxury_swap_hold:no_partner")
         );
         denounced.rivals[1].their_denounce_turn = Some(60);
-        assert_eq!(append_luxury_swap_order(&denounced, &mut held), None);
+        assert_eq!(append_luxury_swap_order(&denounced, &mut held, None), None);
         assert_eq!(held.len(), 1);
         assert_eq!(held[0].subject, Some(4));
+    }
+
+    /// `luxury-swap-asks-2`: asked from one Amenity short, and only of a
+    /// partner whose board holds none of a spare we put up, that spare
+    /// first; a partner the board cannot read comes after a known lack.
+    #[test]
+    fn luxury_swaps_2_offer_the_spare_the_partner_lacks() {
+        let short = |needed: f64, have: f64| StateCity {
+            amenities: have,
+            amenities_needed: needed,
+            ..StateCity::default()
+        };
+        let offering = |player, luxuries: &[&str]| StateRival {
+            player,
+            tradeable_luxuries: Some(luxuries.iter().map(|name| name.to_string()).collect()),
+            ..StateRival::default()
+        };
+        let state = StateSnapshot {
+            turn: 94, // the luxury slot; week 15
+            gold: 200,
+            gold_per_turn: Some(12.0),
+            // One Amenity short in all: version one holds.
+            cities: vec![short(5.0, 4.0), short(3.0, 4.0)],
+            luxury_counts: Some(
+                [
+                    ("RESOURCE_SPICES", 3.0),
+                    ("RESOURCE_HONEY", 1.0),
+                    ("RESOURCE_TURTLES", 2.0),
+                ]
+                .iter()
+                .map(|(name, count)| (name.to_string(), *count))
+                .collect(),
+            ),
+            rivals: vec![
+                offering(2, &["RESOURCE_SILK"]),
+                offering(4, &["RESOURCE_AMBER"]),
+            ],
+            ..StateSnapshot::default()
+        };
+        let mut held = Vec::new();
+        assert_eq!(
+            append_luxury_swap_order(&state, &mut held, None),
+            Some("luxury_swap_hold:content")
+        );
+
+        // Seat 2's land holds Spices, not Turtles; seat 4's holds both. Seat 2
+        // is the only fit and gets the Turtles, though version one's
+        // rotation would have sent Spices to seat 4.
+        let board = |seat: i64, luxury: &str| match (seat, luxury) {
+            (2, "RESOURCE_TURTLES") => Some(true),
+            _ => Some(false),
+        };
+        let mut orders = Vec::new();
+        assert_eq!(
+            append_luxury_swap_order(&state, &mut orders, Some(&board)),
+            None
+        );
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].subject, Some(2));
+        assert_eq!(
+            orders[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_TURTLES=1")
+        );
+        assert_eq!(orders[0].pos, Some((155, 0)));
+
+        // Both seats fit: the week rotates among them, and a spare the board
+        // cannot read goes after a known lack.
+        let open = |seat: i64, luxury: &str| match (seat, luxury) {
+            (4, "RESOURCE_TURTLES") => Some(true),
+            (4, _) => None,
+            (2, "RESOURCE_SPICES") => Some(true),
+            _ => Some(false),
+        };
+        let mut rotated = Vec::new();
+        assert_eq!(
+            append_luxury_swap_order(&state, &mut rotated, Some(&open)),
+            None
+        );
+        assert_eq!(rotated[0].subject, Some(4));
+        assert_eq!(
+            rotated[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_TURTLES=1")
+        );
+
+        // Four spares or more: two go, both ones the partner lacks; a lone
+        // fitting type with one spare gives one copy.
+        let mut rich = state.clone();
+        rich.luxury_counts = Some(
+            [
+                ("RESOURCE_SPICES", 4.0),
+                ("RESOURCE_TURTLES", 2.0),
+                ("RESOURCE_JADE", 2.0),
+            ]
+            .iter()
+            .map(|(name, count)| (name.to_string(), *count))
+            .collect(),
+        );
+        let lacks_two = |_: i64, luxury: &str| Some(luxury != "RESOURCE_SPICES");
+        let mut rich_orders = Vec::new();
+        assert_eq!(
+            append_luxury_swap_order(&rich, &mut rich_orders, Some(&lacks_two)),
+            None
+        );
+        assert_eq!(
+            rich_orders[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_JADE=1,RESOURCE_TURTLES=1")
+        );
+        let mut rich_one = Vec::new();
+        assert_eq!(
+            append_luxury_swap_order(&rich, &mut rich_one, Some(&board)),
+            None
+        );
+        assert_eq!(rich_one[0].subject, Some(2));
+        assert_eq!(
+            rich_one[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_TURTLES=1")
+        );
+
+        // Every partner's land holds every spare: held, not asked.
+        let full = |_: i64, _: &str| Some(false);
+        assert_eq!(
+            append_luxury_swap_order(&state, &mut held, Some(&full)),
+            Some("luxury_swap_hold:no_fit")
+        );
+        assert!(held.is_empty());
     }
 
     /// `siege-buys-the-gun-resource`: the Bombard's Niter, asked of the

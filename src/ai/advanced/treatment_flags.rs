@@ -7573,6 +7573,17 @@ impl AdvancedAi {
         }
     }
 
+    /// Opt-in gene `luxury-swap-asks-2`; see
+    /// `AdvancedAi::luxury_swap_asks_2`.
+    pub fn enable_luxury_swap_asks_2(&mut self) {
+        self.luxury_swap_asks_2 = true;
+    }
+
+    /// The twin of `enable_luxury_swap_asks_2`.
+    pub fn disable_luxury_swap_asks_2(&mut self) {
+        self.luxury_swap_asks_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

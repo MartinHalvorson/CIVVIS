@@ -7497,6 +7497,11 @@ pub struct AdvancedAi {
     /// and short of the launch opens from 0.8 times its steady power, staged
     /// or not. See `advanced/launcher_war.rs`.
     launcher_war_ignores_the_edge: bool,
+    /// `luxury-swap-asks-2`: version two of `luxury-swap-asks`. The swap is
+    /// asked from one Amenity short, not two, and only of a peaceful rival
+    /// whose board holds none of the spare we put up, that spare first
+    /// (`append_luxury_swap_order` in `civvis_orders`). Off by default.
+    luxury_swap_asks_2: bool,
     // ---- append: p-r ------------------------------------------------
     /// `paused-district-finishes`: a district foundation on the board that the
     /// host quotes at two turns or less goes back to the head of its queue
@@ -10628,6 +10633,7 @@ impl AdvancedAi {
             luxury_swap_asks: false,
             no_peace_with_a_launcher: false,
             launcher_war_ignores_the_edge: false,
+            luxury_swap_asks_2: false,
             // ---- append: p-r ----------------------------------------
             paused_district_finishes: false,
             peacetime_classical_republic: false,
@@ -11005,6 +11011,13 @@ impl AdvancedAi {
     /// a luxury swap (`append_luxury_swap_order` in `civvis_orders`).
     pub fn luxury_swap_asks_enabled(&self) -> bool {
         self.luxury_swap_asks
+    }
+
+    /// Whether `luxury-swap-asks-2` is on; the live bridge then asks the
+    /// swap from one Amenity short and fits the spare to the partner
+    /// (`append_luxury_swap_order` in `civvis_orders`).
+    pub fn luxury_swap_asks_2_enabled(&self) -> bool {
+        self.luxury_swap_asks_2
     }
 
     /// Whether `siege-buys-the-gun-resource` is on; the live bridge asks

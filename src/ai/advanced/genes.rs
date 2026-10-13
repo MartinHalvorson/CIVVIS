@@ -3782,6 +3782,18 @@ pub const GENES: &[Gene] = &[
     // tile within two of the landing once the train is within three. See
     // `advanced/amphibious_siege_train.rs`.
     Gene { tag: "amphibious-siege-train-2", field: "amphibious_siege_train_2", kind: Kind::OptIn, enable: AdvancedAi::enable_amphibious_siege_train_2, disable: AdvancedAi::disable_amphibious_siege_train_2 },
+    // Version two of `luxury-swap-asks`. 21 live Immortal games on 455f438ca:
+    // our cities Displeased or worse 32/39/53/63% at turns 75/100/125/150,
+    // luxuries flat at 2.3-2.5 Amenities a city while the need climbs, and
+    // peaceful rivals offering 3.4-3.9 luxury types we lack in nearly every
+    // game. Version one closed 36 of 119 asks (22 games) and every close
+    // added a type, but a rival whose land holds the spare we put up closed
+    // 2 of 32 against 34 of 87 otherwise, and 25 of those 32 had a partner
+    // and spare that fit; the two-short gate also held 28 luxury slots with
+    // a spare and an offer. Version two asks from one Amenity short and only
+    // of a partner whose mirrored board holds none of a spare, offering that
+    // spare. See `append_luxury_swap_order` in `civvis_orders`.
+    Gene { tag: "luxury-swap-asks-2", field: "luxury_swap_asks_2", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_swap_asks_2, disable: AdvancedAi::disable_luxury_swap_asks_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

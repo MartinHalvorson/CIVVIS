@@ -366,7 +366,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `liberation-funds-the-congress` | off (unmeasured) | Opt-in gene `liberation-funds-the-congress`; see `Self::liberation_funds_the_congress`. | 1 \| 1 |
 | `long-road-names-the-blocker` | off (unmeasured) | Opt-in gene `long-road-names-the-blocker`; see `Self::long_road_names_the_blocker`. | 1 \| 1 |
 | `luxury-buy-asks` | off (unmeasured) | Opt-in gene `luxury-buy-asks`; see `Self::luxury_buy_asks`. | 1 \| 1 |
-| `luxury-swap-asks` | off (unmeasured) | Opt-in gene `luxury-swap-asks`; see `Self::luxury_swap_asks`. | 1 \| 1 |
+| `luxury-swap-asks` | off (unmeasured) | Opt-in gene `luxury-swap-asks`; see `Self::luxury_swap_asks`. | — \| 2 |
+| `luxury-swap-asks-2` | off (unmeasured) | Opt-in gene `luxury-swap-asks-2`; see `AdvancedAi::luxury_swap_asks_2`. | — \| 2 |
 | `march-uses-its-moves` | off (unmeasured) | Opt-in gene `march-uses-its-moves`; see `Self::march_uses_its_moves`. | 1 \| 1 |
 | `match-point-interception-ignores-power` | off (unmeasured) | Opt-in gene `match-point-interception-ignores-power`; see `Self::last_holdout_interception`. | 1 \| 1 |
 | `melee-storms-an-open-city` | off (unmeasured) | Opt-in gene `melee-storms-an-open-city`; see `Self::melee_storms_an_open_city`. | 1 \| 1 |
