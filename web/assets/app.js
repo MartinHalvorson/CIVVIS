@@ -6532,42 +6532,41 @@ function paintLivePause() {
     (ending || (!livePause.newGameArmed && asked !== livePause.held)));
   placeLivePause();
 }
-// The controls stand in the map's bottom-right corner unless something else
-// does: the world minimap is anchored there on a wide map, the compact
-// arrangements move it and the map tools about, the sky bar unfolds, and the
-// minimap can be dragged anywhere. So: the corner if it is free, else as far
-// right on the bottom row as is free (beside the minimap), else as little
-// above the corner as clears what holds it. Rerun on every paint (the 2 s
-// poll) and on resize, which follows a dragged minimap or an unfolded bar.
+// The controls stand stacked in the map's bottom-left corner unless something
+// else does: the map tools sit there on most layouts, the sky bar unfolds above
+// them, and the world minimap can be moved or dragged there. So: the corner if
+// it is free, else as little above the corner as clears what holds it, else
+// beside it. Rerun on every paint (the 2 s poll) and on resize, which follows
+// a dragged minimap or an unfolded bar.
 function placeLivePause() {
   const box = document.getElementById("livepause");
   if (!box || box.hidden || !box.offsetParent) return;
-  box.style.right = "";
+  box.style.left = "";
   box.style.bottom = "";
   const frame = box.offsetParent.getBoundingClientRect();
   const home = box.getBoundingClientRect();
-  const edge = Math.max(0, frame.right - home.right);
+  const edge = Math.max(0, home.left - frame.left);
   const gap = 8;
   const obstacles = [...document.querySelectorAll("#maparea .minimap-frame, #zoomctl-main, #skynav")]
     .filter((el) => el.getClientRects().length > 0)
     .map((el) => el.getBoundingClientRect())
     .filter((r) => r.width > 0 && r.height > 0);
-  const blocked = ([right, bottom]) => {
-    const r = {right: frame.right - right, bottom: frame.bottom - bottom};
-    r.left = r.right - home.width;
+  const blocked = ([left, bottom]) => {
+    const r = {left: frame.left + left, bottom: frame.bottom - bottom};
+    r.right = r.left + home.width;
     r.top = r.bottom - home.height;
-    if (r.left < frame.left || r.top < frame.top) return true;
+    if (r.right > frame.right || r.top < frame.top) return true;
     return obstacles.some((o) =>
       o.left < r.right && o.right > r.left && o.top < r.bottom && o.bottom > r.top);
   };
   const spots = [[edge, edge]];
   for (const o of obstacles) {
-    spots.push([Math.ceil(frame.right - o.left + gap), edge]);
     spots.push([edge, Math.ceil(frame.bottom - o.top + gap)]);
+    spots.push([Math.ceil(o.right - frame.left + gap), edge]);
   }
-  spots.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
-  const [right, bottom] = spots.find((spot) => !blocked(spot)) ?? [edge, edge];
-  if (right !== edge) box.style.right = `${right}px`;
+  spots.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const [left, bottom] = spots.find((spot) => !blocked(spot)) ?? [edge, edge];
+  if (left !== edge) box.style.left = `${left}px`;
   if (bottom !== edge) box.style.bottom = `${bottom}px`;
 }
 window.addEventListener("resize", placeLivePause);
@@ -6592,6 +6591,8 @@ function adoptLivePause(status) {
   if (livePause.ending) disarmLiveNewGame();
   if (typeof status.error === "string" && status.error) showLiveError(status.error);
   else if ("error" in status || Date.now() >= livePause.errorUntil) showLiveError("");
+  // The live time stops and starts with the hold, not with the next frame.
+  syncLiveClockRun();
   paintLivePause();
 }
 async function pollLivePause() {
@@ -6690,9 +6691,14 @@ function liveClockLabel() {
 // Start or stop the accumulator against what the page is showing right now.
 // Paused covers the unstarted opening as well: a clock that has never run
 // and is not running reads 0:00, which is what an unstarted game has played.
+// On the mirror beside a Civilization VI verification game this page's own
+// simulation never runs — the world is a picture of the Firaxis game — so the
+// clock follows that game instead: it runs while the game plays and stops
+// while the operator's Pause holds it (`livePause.held`, the mod's own word).
 function syncLiveClockRun() {
   const over = gameFinished(state);
-  const shouldRun = SPEC && !!state && !specPaused && !over;
+  const paused = livePause.available ? livePause.held : specPaused;
+  const shouldRun = SPEC && !!state && !paused && !over;
   if (shouldRun && liveClock.runningSince === null) {
     liveClock.runningSince = Date.now();
   } else if (!shouldRun && liveClock.runningSince !== null) {
@@ -23637,6 +23643,10 @@ function hudTurnPlate() {
   // simultaneous` still reads honestly here.
   const turnStructureName = state.turn_structure === "simultaneous" ? "Simultaneous" : "Sequential";
   const turnStructureValue = `<b>${turnStructureName}</b>`;
+  // The map first, as the lobby names it: how many civilizations were dealt
+  // and on which script ("4P Pangaea"). The dealt count includes the fallen.
+  const dealtCivs = state.players.filter(p => !p.is_minor && !p.is_barbarian).length;
+  const mapRowValue = `${dealtCivs}P ${mapName}`;
   // "Remaining" is a count of who is still playing, so a civilization that has
   // been wiped off the map no longer appears in it. The count it was taken out
   // of is worth as much as the count itself — eight remaining reads very
@@ -23700,6 +23710,7 @@ function hudTurnPlate() {
       `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`
     : ``;
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
+    `map ${mapRowValue}; ` +
     `game speed ${speedName}; ${turnStructureName.toLowerCase()} turns; ` +
     (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
     `watch pace ${watchPace}; ` +
@@ -23724,6 +23735,7 @@ function hudTurnPlate() {
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
     `</div>` +
     `<div class="turn-settings" aria-label="Game setup">` +
+    `<div class="turn-setting"><span>Map:</span><b>${escapeAttr(mapRowValue)}</b></div>` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
     `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
     (liveTimeText !== null
