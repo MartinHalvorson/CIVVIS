@@ -5442,6 +5442,11 @@ pub struct AdvancedAi {
     /// `advanced/aqueduct_claims_the_capped_queue.rs`. Off by default.
     aqueduct_claims_the_capped_queue: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `dry-road-outlasts-a-blocked-step`: a Stage or Invest march whose dry
+    /// road exists but cannot start this turn (an enemy zone of control, or
+    /// our own units on every dry step) waits without reading as a water
+    /// hold. See `AdvancedAi::dry_road_blocked_holds`. Off by default.
+    dry_road_outlasts_a_blocked_step: bool,
     /// `campus-building-claims-the-queue`: a city whose standing Campus can
     /// build its next building (Library, else University, else Research
     /// Lab) puts it at the head of its queue over a deferrable head. See
@@ -10312,6 +10317,7 @@ impl AdvancedAi {
             amphibious_refused: None,
             aqueduct_claims_the_capped_queue: false,
             // ---- append: c-d ----------------------------------------
+            dry_road_outlasts_a_blocked_step: false,
             campus_building_claims_the_queue: false,
             crushing_steady_passes_the_edge: false,
             deterrence_spares_the_faith_defence: false,

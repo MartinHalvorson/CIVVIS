@@ -114,6 +114,37 @@ impl Game {
         None
     }
 
+    /// A dry road [`Self::route_step_dry`] cannot start this turn: the length
+    /// of the dry road, no longer than `max_len`, from `uid` to a tile within
+    /// `range` of `target`, and whether an enemy zone of control holds the
+    /// unit (else every dry neighbour refuses it as a stop, one of our own
+    /// units standing there). `None` when `route_step_dry` finds a first step,
+    /// when the unit already stands within `range`, and when no dry road
+    /// exists even through occupied tiles: only that last case is a water
+    /// hold. `route_step_dry` reads its first edge as a stop and returns
+    /// nothing for a unit the zone of control has locked, so a gun behind a
+    /// friend on the one land exit, or beside an enemy, read as cut off by
+    /// water: 65 of 90 distinct "holds on land short of the water" rows of
+    /// the 10-13 live Immortal runs had a dry road for a gun of that kind.
+    pub(crate) fn dry_road_blocked_now(
+        &self,
+        uid: u32,
+        target: Pos,
+        range: i32,
+        max_len: usize,
+    ) -> Option<(usize, bool)> {
+        let start = self.units.get(&uid)?.pos;
+        if self.wdist(start, target) <= range
+            || self.route_step_dry(uid, target, range, max_len).is_some()
+        {
+            return None;
+        }
+        let steps = *self
+            .dry_road_steps(uid, target, range, max_len)
+            .get(&start)?;
+        Some((steps, self.formation_movement_locked_by_zoc(uid)))
+    }
+
     /// The steps over dry land from each tile to a tile within `range` of
     /// `target`, as `uid` would walk them, at most `max_len` steps out: a
     /// breadth-first flood back from the dry tiles within `range`. Terrain,

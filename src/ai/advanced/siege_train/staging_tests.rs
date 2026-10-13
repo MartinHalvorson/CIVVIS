@@ -1029,6 +1029,129 @@ fn stage_march_gene_leaves_a_crossing_without_come_ashore_and_a_dry_march_alone(
     assert_eq!(run(true), run(false));
 }
 
+/// `dry-road-outlasts-a-blocked-step`: one of our Spearmen on the spit, the
+/// gun's one dry step out of the ring, refuses that step as a stop, so
+/// `route_step_dry` finds nothing and the Stage march reads as a water hold
+/// though the spit road is there. No road at all stays a water hold.
+#[test]
+fn a_friend_on_the_one_dry_step_leaves_the_dry_road_standing() {
+    let (mut g, cid, gun, start) = gun_behind_a_strait(true);
+    let target = g.cities[&cid].pos;
+    let (_, road) = g
+        .route_step_dry(gun, target, STAGING_FAR, STAGE_DRY_LIMIT)
+        .expect("fixture: the spit road");
+    assert_eq!(
+        g.dry_road_blocked_now(gun, target, STAGING_FAR, STAGE_DRY_LIMIT),
+        None,
+        "an open road is not a blocked one"
+    );
+    g.spawn_unit("spearman", 0, (start.0 - 1, start.1));
+    assert!(
+        matches!(stage_march(&g, gun, target, STAGING_FAR), StageMarch::Hold { .. }),
+        "fixture: the friend on the spit reads as water"
+    );
+    assert_eq!(
+        g.dry_road_blocked_now(gun, target, STAGING_FAR, STAGE_DRY_LIMIT),
+        Some((road, false))
+    );
+    let (g, cid, gun, _) = gun_behind_a_strait(false);
+    assert_eq!(
+        g.dry_road_blocked_now(gun, g.cities[&cid].pos, STAGING_FAR, STAGE_DRY_LIMIT),
+        None,
+        "no road round the water is the water hold"
+    );
+}
+
+/// An enemy beside the gun, on an islet off the ring, after the gun acted
+/// without moving: the zone of control locks it, and `route_step_dry`
+/// answers nothing though the spit is open.
+#[test]
+fn a_zone_of_control_lock_leaves_the_dry_road_standing() {
+    let (mut g, cid, gun, start) = gun_behind_a_strait(true);
+    let target = g.cities[&cid].pos;
+    let islet = (start.0 + 1, start.1);
+    g.map.tiles.get_mut(&islet).unwrap().terrain = crate::name!("grassland");
+    g.at_war.insert((0, 1));
+    g.spawn_unit("warrior", 1, islet);
+    let (_, road) = g
+        .route_step_dry(gun, target, STAGING_FAR, STAGE_DRY_LIMIT)
+        .expect("fixture: the spit is open before the gun acts");
+    let unit = g.units.get_mut(&gun).unwrap();
+    unit.started_turn_in_zoc = true;
+    unit.acted = true;
+    unit.moved = false;
+    assert_eq!(g.route_step_dry(gun, target, STAGING_FAR, STAGE_DRY_LIMIT), None);
+    assert_eq!(
+        g.dry_road_blocked_now(gun, target, STAGING_FAR, STAGE_DRY_LIMIT),
+        Some((road, true))
+    );
+}
+
+/// The Stage and Invest marches of a gun behind a friend on the spit, with
+/// `siege-target-needs-a-road`: the gun waits where it stands either way; off,
+/// the turn is a water hold the road tally counts; on, it waits on its dry
+/// road and the tally counts a march.
+#[test]
+fn a_blocked_dry_road_waits_without_a_water_hold_under_the_gene() {
+    let run = |gene: bool, invest: bool| {
+        let (mut g, cid, gun, start) = gun_behind_a_strait(true);
+        g.spawn_unit("spearman", 0, (start.0 - 1, start.1));
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        let mut ai = AdvancedAi::new();
+        ai.enable_siege_train();
+        ai.enable_come_ashore();
+        ai.enable_stage_march_keeps_to_land();
+        ai.enable_siege_target_needs_a_road();
+        if gene {
+            ai.enable_dry_road_outlasts_a_blocked_step();
+        }
+        let journal = crate::reasoning::Journal::recording();
+        crate::ai::Ai::attach_journal(&mut ai, journal.handle());
+        if invest {
+            assert!(ai.close_to_staging(&mut g, 0, gun, &city).is_some());
+        } else {
+            ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+        }
+        let said: Vec<String> = journal
+            .since(0)
+            .thoughts
+            .iter()
+            .map(|t| t.headline.to_string())
+            .collect();
+        let held = ai.siege_road_tally.get(&cid).and_then(|tally| tally.held(gun));
+        (g.units[&gun].pos == start, said, held)
+    };
+    let (stood, said, held) = run(false, false);
+    assert!(stood);
+    assert!(said.iter().any(|line| line.contains("short of the water")), "{said:#?}");
+    assert_eq!(held, Some(true), "off, the road tally counts a hold");
+    let (stood, said, held) = run(true, false);
+    assert!(stood, "the gun still waits for the spit to clear");
+    assert!(said.iter().any(|line| line.contains("waits on its dry road")), "{said:#?}");
+    assert!(!said.iter().any(|line| line.contains("short of the water")), "{said:#?}");
+    assert_eq!(held, Some(false), "on, the road tally counts a march");
+    let (stood, said, _) = run(true, true);
+    assert!(stood, "the Invest march waits as well");
+    assert!(said.iter().any(|line| line.contains("waits on its dry road")), "{said:#?}");
+}
+
+/// The gene ships off; a true water hold is left to the hold.
+#[test]
+fn dry_road_gene_ships_off_and_leaves_a_true_water_hold() {
+    assert!(!AdvancedAi::new().dry_road_outlasts_a_blocked_step);
+    assert!(super::super::GENES.iter().any(|gene| gene.opt_in()
+        && gene.tag == "dry-road-outlasts-a-blocked-step"
+        && gene.field == "dry_road_outlasts_a_blocked_step"));
+    let (mut g, cid, gun, _) = gun_behind_a_strait(false);
+    let city = CityView::of(&g, cid).unwrap();
+    let mut ai = AdvancedAi::new();
+    ai.enable_dry_road_outlasts_a_blocked_step();
+    let hold = stage_march(&g, gun, city.pos, STAGING_FAR);
+    assert!(matches!(hold, StageMarch::Hold { .. }));
+    assert_eq!(ai.dry_road_blocked_holds(&mut g, 0, gun, &city, &hold), None);
+}
+
 /// `siege-members-use-their-moves`: a postless gun far from an invested city
 /// walks a tile per movement point toward the staging ring in one decision,
 /// where it otherwise takes the router's single step.

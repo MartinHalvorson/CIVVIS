@@ -3379,6 +3379,10 @@ impl AdvancedAi {
             } else {
                 StageMarch::Ordinary
             };
+            // `dry-road-outlasts-a-blocked-step`: see `dry_road_blocked_holds`.
+            if let Some(acted) = self.dry_road_blocked_holds(g, pid, uid, city, &dry_march) {
+                return acted;
+            }
             let water_hold = matches!(dry_march, StageMarch::Hold { .. });
             // `long-road-names-the-blocker`: see `long_road_holds`.
             let dry_march = self.long_road_holds(g, uid, city.pos, dry_march);
@@ -3957,6 +3961,42 @@ impl AdvancedAi {
         self.base.fortify_or_stop(g, pid, uid)
     }
 
+    /// `dry-road-outlasts-a-blocked-step`: a Stage or Invest march that reads
+    /// as a water hold (`StageMarch::Hold`) while a dry road does reach the
+    /// staging ring, the road's first step being blocked this turn: an enemy
+    /// zone of control holds the unit, or one of our own units stands on
+    /// every dry neighbour. The unit waits where it stands, as the hold did,
+    /// but the turn is no water hold: `siege-target-needs-a-road` counts the
+    /// unit as marching (the road stand-down retargets only a target no road
+    /// reaches), and `amphibious-siege-train` does not ship it. `None` with
+    /// the gene off, for any other march, and for a true water hold. Live
+    /// Immortal 10-13: 65 of 90 distinct "holds on land short of the water"
+    /// rows had a dry road for a gun of that kind; civvis-20261013T082508Z
+    /// held its Trebuchets for Tlacopan, on our own continent with a 13-tile
+    /// road through unowned and Aztec land, as water-locked at turns 103-105
+    /// and 141-142.
+    fn dry_road_blocked_holds(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        city: &CityView,
+        march: &StageMarch,
+    ) -> Option<bool> {
+        if !self.dry_road_outlasts_a_blocked_step || !matches!(march, StageMarch::Hold { .. }) {
+            return None;
+        }
+        let (dry, zoc) = g.dry_road_blocked_now(uid, city.pos, STAGING_FAR, STAGE_DRY_LIMIT)?;
+        let _ = self.note_stage_march(g, uid, city.id, &StageMarch::Ordinary);
+        think!(self.journal(), Military, Detail,
+            "Siege of {}: the {} waits on its dry road", g.cities[&city.id].name, g.units[&uid].kind;
+            "dry-road-outlasts-a-blocked-step: the road over land runs {} steps, but {} this turn; not a water hold",
+            dry,
+            if zoc { "an enemy zone of control holds it" } else { "our own units stand on every dry step" };
+            city.pos);
+        Some(self.base.fortify_or_stop(g, pid, uid))
+    }
+
     /// A gun or shooter with no firing post this turn, still beyond the
     /// staging ring, walks up to it rather than fortifying where it stands.
     /// The firing band holds only so many tiles; the rest of a twenty-unit
@@ -3980,6 +4020,10 @@ impl AdvancedAi {
         } else {
             StageMarch::Ordinary
         };
+        // `dry-road-outlasts-a-blocked-step`: see `dry_road_blocked_holds`.
+        if let Some(acted) = self.dry_road_blocked_holds(g, pid, uid, city, &dry_march) {
+            return Some(acted);
+        }
         let water_hold = matches!(dry_march, StageMarch::Hold { .. });
         let dry_march = self.long_road_holds(g, uid, city.pos, dry_march);
         let dry = match dry_march {

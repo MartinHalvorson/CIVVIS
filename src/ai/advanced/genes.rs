@@ -3756,6 +3756,17 @@ pub const GENES: &[Gene] = &[
     // the Industrial Zone claim's rules. See
     // `advanced/industrial_zone_claims_the_factory.rs`.
     Gene { tag: "industrial-zone-claims-the-factory", field: "industrial_zone_claims_the_factory", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_zone_claims_the_factory, disable: AdvancedAi::disable_industrial_zone_claims_the_factory },
+    // 10-13 live Immortal runs: 65 of 90 distinct "holds on land short of
+    // the water" rows had a dry road for a gun of that kind. The Stage and
+    // Invest marches read `route_step_dry`, which takes its first edge as a
+    // stop and returns nothing for a unit an enemy zone of control has
+    // locked, so a gun behind a friend on the one land exit, or beside an
+    // enemy, read as water-locked: it fortified, the road stand-down counted
+    // it, and `amphibious-siege-train` shipped it (civvis-20261013T082508Z
+    // held Tlacopan, on our continent with a 13-tile road, as water-locked).
+    // Such a march now waits on its dry road and counts as marching. See
+    // `AdvancedAi::dry_road_blocked_holds`.
+    Gene { tag: "dry-road-outlasts-a-blocked-step", field: "dry_road_outlasts_a_blocked_step", kind: Kind::OptIn, enable: AdvancedAi::enable_dry_road_outlasts_a_blocked_step, disable: AdvancedAi::disable_dry_road_outlasts_a_blocked_step },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
