@@ -3779,8 +3779,12 @@ pub const GENES: &[Gene] = &[
     // the shore, cross, land), locks members against combining, upgrading
     // and re-tasking, sails on a water-only router, drops a member that does
     // not close for two turns from the cohesion wait, and lands on any free
-    // tile within two of the landing once the train is within three. See
-    // `advanced/amphibious_siege_train.rs`.
+    // tile within two of the landing once the train is within three. A ford
+    // is held only for a warship beside it or within a turn's reach (a sea
+    // lane keeps the three-tile watch), gathers only the units joined over
+    // land to its near shore (live 204616Z forded from an islet with the
+    // column already across, held eleven turns), and journals the gathering
+    // each turn. See `advanced/amphibious_siege_train.rs`.
     Gene { tag: "amphibious-siege-train-2", field: "amphibious_siege_train_2", kind: Kind::OptIn, enable: AdvancedAi::enable_amphibious_siege_train_2, disable: AdvancedAi::disable_amphibious_siege_train_2 },
     // Version two of `luxury-swap-asks`. 21 live Immortal games on 455f438ca:
     // our cities Displeased or worse 32/39/53/63% at turns 75/100/125/150,
