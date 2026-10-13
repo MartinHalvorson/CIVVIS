@@ -7501,6 +7501,17 @@ impl AdvancedAi {
         self.campus_building_claims_the_queue = false;
     }
 
+    /// Opt-in gene `growth-prices-the-farm-2`; see
+    /// `AdvancedAi::growth_prices_the_farm_2`.
+    pub fn enable_growth_prices_the_farm_2(&mut self) {
+        self.growth_prices_the_farm_2 = true;
+    }
+
+    /// The twin of `enable_growth_prices_the_farm_2`.
+    pub fn disable_growth_prices_the_farm_2(&mut self) {
+        self.growth_prices_the_farm_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

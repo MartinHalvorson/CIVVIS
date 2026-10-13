@@ -190,3 +190,157 @@ fn a_weak_housing_bound_city_farms_even_against_the_foundation_bonus() {
         "gene: the Housing-bound city's Farm outbids the Mine's foundation bonus"
     );
 }
+
+/// A Domination seat with version 2 on, as the live bundle seats it beside
+/// `builders-improve-the-worked-for-production`.
+fn version_two() -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_builders_improve_the_worked_for_production();
+    ai.enable_growth_prices_the_farm_2();
+    ai
+}
+
+/// The same seat with version 1 instead, the bundle before this gene.
+fn version_one() -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_builders_improve_the_worked_for_production();
+    ai.enable_growth_prices_the_farm();
+    ai
+}
+
+#[test]
+fn version_two_prices_a_growing_citys_food_where_version_one_pays_nothing() {
+    let (mut game, capital, hill, flat) = capital_with_a_hill_and_a_flat();
+    set_headroom(&mut game, capital, 3.0);
+    let headroom = game.city_housing_headroom(&game.cities[&capital]);
+    assert!(headroom >= 2.0, "fixture: the city has room ({headroom})");
+    let v1 = version_one();
+    let v2 = version_two();
+    assert_eq!(
+        v1.growing_city_food_premium(&game, 0, flat, "farm", GrandStrategy::Conquest),
+        0.0,
+        "version 1 alone prices nothing in a city with room"
+    );
+    assert!(
+        v2.growing_city_food_premium(&game, 0, flat, "farm", GrandStrategy::Conquest) > 0.0,
+        "version 2 prices the Farm's Food in a growing city"
+    );
+    assert!(
+        farm_over_mine(&game, &v2, hill, flat) > farm_over_mine(&game, &v1, hill, flat),
+        "the Farm closes on the Mine"
+    );
+    assert_eq!(
+        v2.growing_city_food_premium(&game, 0, hill, "mine", GrandStrategy::Conquest),
+        0.0,
+        "a Mine has no Food to price"
+    );
+}
+
+#[test]
+fn the_food_premium_is_the_grown_citizens_priced_as_production() {
+    let (mut game, capital, _hill, flat) = capital_with_a_hill_and_a_flat();
+    set_headroom(&mut game, capital, 3.0);
+    let ai = version_two();
+    let city = &game.cities[&capital];
+    let farm = &game.rules.improvements["farm"];
+    let food = farm.yields.food + AdvancedAi::improvement_tree_yields(&game, 0, "farm").food;
+    let citizens = AdvancedAi::growth_citizens(&game, city.pop, game.city_housing_headroom(city));
+    let horizon = game.standard_duration(growth_farm::GROWTH_HORIZON_STANDARD_TURNS) as f64;
+    assert!(
+        (citizens - (horizon / game.growth_cost(city.pop)).min(game.city_housing_headroom(city) - 1.0)).abs() < 1e-9,
+        "citizens = horizon / growth cost, capped one below the Housing"
+    );
+    let strategy = GrandStrategy::Conquest;
+    let production = ai.yield_value(
+        Yields {
+            production: food * growth_farm::CITIZEN_PRODUCTION_POINTS * citizens / 2.0,
+            ..Yields::default()
+        },
+        strategy,
+    );
+    let foundation = 1.0
+        + ai.city_production_foundation_shortfall(&game, 0, capital)
+            * PRODUCTION_FOUNDATION_IMPROVEMENT_MULTIPLIER;
+    let worked = if ai.city_works_the_tile(&game, 0, capital, flat) {
+        worked_production::WORKED_PRODUCTION_PREMIUM
+    } else {
+        0.0
+    };
+    let paid = ai.yield_value(
+        Yields {
+            food: farm.yields.food,
+            ..Yields::default()
+        },
+        strategy,
+    );
+    let expected = (production * foundation * (1.0 + worked) - paid).max(0.0);
+    assert!(
+        (ai.growing_city_food_premium(&game, 0, flat, "farm", strategy) - expected).abs() < 1e-9,
+        "premium = Production of the grown citizens × foundation × worked − the Food already paid"
+    );
+}
+
+#[test]
+fn the_food_premium_stops_without_room_in_a_large_city_and_on_foreign_land() {
+    let (mut game, capital, _hill, flat) = capital_with_a_hill_and_a_flat();
+    let ai = version_two();
+    set_headroom(&mut game, capital, 1.0);
+    assert_eq!(
+        ai.growing_city_food_premium(&game, 0, flat, "farm", GrandStrategy::Conquest),
+        0.0,
+        "within one of the cap the Food is mostly wasted; version 1's Housing price answers"
+    );
+    set_headroom(&mut game, capital, 3.0);
+    assert_eq!(
+        ai.growing_city_food_premium(&game, 1, flat, "farm", GrandStrategy::Conquest),
+        0.0,
+        "no premium on a tile another player's city owns"
+    );
+    game.cities.get_mut(&capital).unwrap().pop = growth_farm::GROWTH_CITY_POP_MAX;
+    assert_eq!(
+        ai.growing_city_food_premium(&game, 0, flat, "farm", GrandStrategy::Conquest),
+        0.0,
+        "a large city pays no premium"
+    );
+}
+
+#[test]
+fn version_two_prices_housing_before_the_cap() {
+    let (mut game, capital, _hill, flat) = capital_with_a_hill_and_a_flat();
+    let farm_housing = game.rules.improvements["farm"].housing;
+    assert!(farm_housing > 0.0, "fixture: a Farm gives Housing");
+    set_headroom(&mut game, capital, 2.0);
+    let headroom = game.city_housing_headroom(&game.cities[&capital]);
+    assert!(headroom > 1.0 && headroom < 4.0, "fixture: room 2-3 ({headroom})");
+    assert_eq!(
+        version_one().growth_farm_premium(&game, 0, flat, "farm"),
+        0.0,
+        "version 1 waits for the cap"
+    );
+    assert!(
+        version_two().growth_farm_premium(&game, 0, flat, "farm") > 0.0,
+        "version 2 prices the Farm's Housing as the city approaches the cap"
+    );
+    set_headroom(&mut game, capital, 0.0);
+    assert_eq!(
+        version_one().growth_farm_premium(&game, 0, flat, "farm"),
+        version_two().growth_farm_premium(&game, 0, flat, "farm"),
+        "at the cap both versions price Housing alike"
+    );
+}
+
+#[test]
+fn growth_prices_the_farm_2_is_off_by_default_and_reversible() {
+    let (mut game, capital, _hill, flat) = capital_with_a_hill_and_a_flat();
+    set_headroom(&mut game, capital, 3.0);
+    assert!(!AdvancedAi::new().growth_prices_the_farm_2);
+    assert!(!AdvancedAi::legacy().growth_prices_the_farm_2);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    let strategy = GrandStrategy::Conquest;
+    assert_eq!(ai.growing_city_food_premium(&game, 0, flat, "farm", strategy), 0.0);
+    ai.enable_growth_prices_the_farm_2();
+    assert!(ai.growing_city_food_premium(&game, 0, flat, "farm", strategy) > 0.0);
+    ai.disable_growth_prices_the_farm_2();
+    assert_eq!(ai.growing_city_food_premium(&game, 0, flat, "farm", strategy), 0.0);
+    assert_eq!(ai.growth_farm_premium(&game, 0, flat, "farm"), 0.0);
+}
