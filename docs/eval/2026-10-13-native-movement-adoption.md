@@ -79,9 +79,41 @@ The refusal diagnostic did execute: at turn 84 Archer `1769477` at `(22,29)`
 requested `(23,30)`; the native SDK query returned two target rows and reported
 that the requested plot was not offered. The original refusal remained
 `can_start=false,no_reasons [p4r]`. This identifies target omission, not its
-cause. Full raw evidence and the negative outcome are retained. The registered
-three-plus-three batch remains running; the other candidate outcomes and
-movement reach are pending.
+cause. Full raw evidence and the negative outcome are retained.
+
+All three registered Immortal attempts completed. The second,
+`civvis-20261013T094133Z`, retired at turn 150 in production rank four
+(174 versus rivals' 409, 312 and 364). It submitted 14 qualifying military
+`MOVE_TO` orders onto idle Great Person tiles; 13 have exact native
+`host_move` endpoint events, and 12 show both actors sharing the endpoint
+in the next native export. Examples include Archer `720902` at turn 58,
+Archer `1507338` at turn 63/frame 1 and Horseman `1376258` at turn 64/frame 1,
+all sharing `(11,29)` with Great Person `1835020`. No same-frame shot request
+or native combat followed these qualifying moves. This establishes execution
+of the movement repair without establishing improved combat or win rate.
+
+The third, `civvis-20261013T094855Z`, lost to an opponent's Religious victory
+at turn 88. Across the three games, no foreign major city or original capital
+was observed held; every last export retained the home original capital.
+Refused-shot diagnostics report eight known omissions of the requested target
+and seven unknown target queries. All positive and negative observations,
+including absent movement reach in the first and third games, remain retained.
+
+The coordinator advanced to Deity at 09:53:27Z. Attempt
+`civvis-20261013T095333Z` installed the exact candidate mod and froze the exact
+binary, but never emitted a native seat or state record. Its setup repeatedly
+failed difficulty read-back; the partial summary is `reason=killed`, turn -1,
+with no game outcome. This is a harness failure and supplies no verified Deity
+game or strength result. Saved captures show Deity; the actual native OCR
+reads the value as `Delty`, which the exact-value reader rejects. A separate
+startup correction is being evaluated.
+
+At 09:56Z another publisher replaced the source with `11b1470c1`, an Immortal
+A/B variant that retains this candidate as an ancestor and removes four
+Prophet-race requests. The observer stopped rather than pooling different
+genomes and restored its owned Deity policy to Immortal. The replacement keeps
+both published fixes. The planned three Deity games remain incomplete;
+advanced-rung startup and strategy improvement continue separately.
 
 Historical context contains all 12 retained completed attempts at parent
 `6f0eb8c8a`, captured before adoption: eight production-rank retirements and
