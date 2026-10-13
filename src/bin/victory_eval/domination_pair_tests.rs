@@ -38,7 +38,7 @@ fn explicit_profile_overrides_and_unknown_policies_are_rejected() {
 
 #[test]
 fn focal_identity_and_handicap_match_the_fixed_king_profile() {
-    let game = Game::new_with(options(37140000, None));
+    let game = Game::new_with(options(37140000, None, 250));
     assert_eq!(game.players[0].civ, "Gran Colombia");
     assert_eq!((game.map.width, game.map.height), (60, 38));
     assert!(game.is_handicap_exempt(0));
@@ -47,7 +47,7 @@ fn focal_identity_and_handicap_match_the_fixed_king_profile() {
         assert!(!game.is_handicap_exempt(pid));
         assert!(game.handicap_yield_pct(pid).science > 0.0);
     }
-    let p = profile(37140000, None);
+    let p = profile(37140000, None, 250);
     assert_eq!(p["players"], 4);
     assert_eq!(
         (p["width"].as_i64(), p["height"].as_i64()),
@@ -72,8 +72,8 @@ fn focal_identity_and_handicap_match_the_fixed_king_profile() {
 
 #[test]
 fn same_seed_seats_and_world_are_identical_before_policy_application() {
-    let off = Game::new_with(options(37140001, None));
-    let on = Game::new_with(options(37140001, None));
+    let off = Game::new_with(options(37140001, None, 250));
+    let on = Game::new_with(options(37140001, None, 250));
     assert_eq!(
         serde_json::to_vec(&off).unwrap(),
         serde_json::to_vec(&on).unwrap()
@@ -91,7 +91,7 @@ fn only_the_focal_seat_receives_the_policy_callback() {
         enable: |ai| *ai = AdvancedAi::targeting(VictoryTarget::Science),
         disable: |ai| *ai = AdvancedAi::targeting(VictoryTarget::Domination),
     };
-    let game = Game::new_with(options(37140002, None));
+    let game = Game::new_with(options(37140002, None, 250));
     let off = fleet(&game, &policy, false);
     let on = fleet(&game, &policy, true);
     assert_eq!(off[0].victory_target(), Some(VictoryTarget::Domination));
@@ -104,7 +104,7 @@ fn only_the_focal_seat_receives_the_policy_callback() {
 
 #[test]
 fn real_policy_keeps_domination_and_adaptive_rival_assignments() {
-    let game = Game::new_with(options(37140003, None));
+    let game = Game::new_with(options(37140003, None, 250));
     for enabled in [false, true] {
         let ais = fleet(&game, gene("siege-is-progress-3").unwrap(), enabled);
         assert_eq!(ais[0].victory_target(), Some(VictoryTarget::Domination));
@@ -134,7 +134,7 @@ fn an_existing_result_file_is_preserved_before_any_game_runs() {
 
 #[test]
 fn conquest_observer_separates_defense_major_attacks_and_minor_attacks() {
-    let mut game = Game::new_with(options(37140004, None));
+    let mut game = Game::new_with(options(37140004, None, 250));
     let minor = game
         .players
         .iter()
@@ -179,7 +179,7 @@ fn conquest_observer_separates_defense_major_attacks_and_minor_attacks() {
 
 #[test]
 fn conquest_observer_distinguishes_capitals_from_minors_and_tracks_losses() {
-    let mut game = Game::new_with(options(37140005, None));
+    let mut game = Game::new_with(options(37140005, None, 250));
     let minor_city = game
         .cities
         .values()
@@ -240,7 +240,7 @@ fn explicit_native_rung_reaches_player_and_barbarian_rules_and_provenance() {
     for difficulty in ["prince", "king"] {
         let config = parse(&args(&["--difficulty", difficulty])).unwrap();
         assert_eq!(config.difficulty, Some(difficulty));
-        let game = Game::new_with(options(37860000, config.difficulty));
+        let game = Game::new_with(options(37860000, config.difficulty, config.max_turns));
         let report = profile(37860000, config.difficulty);
         assert_eq!(report["difficulty"], difficulty);
         assert_eq!(report["barbarian_difficulty"], difficulty);

@@ -29,6 +29,9 @@ struct Config {
     games: u64,
     start_seed: u64,
     out: PathBuf,
+    /// The clock; 250 (the natural one) unless `--max-turns` shortens it for
+    /// an economy probe read at the earlier `ECONOMY_MARKS`.
+    max_turns: u32,
 }
 
 fn parse(args: &[String]) -> Result<Config, String> {
@@ -37,6 +40,7 @@ fn parse(args: &[String]) -> Result<Config, String> {
     let mut games = 16;
     let mut start_seed = 37_140_000;
     let mut out = None;
+    let mut max_turns = 250;
     let mut seen = BTreeSet::new();
     for pair in args.chunks(2) {
         let flag = &pair[0];
@@ -52,12 +56,26 @@ fn parse(args: &[String]) -> Result<Config, String> {
                 difficulty = Some(match value.as_str() {
                     "prince" => "prince",
                     "king" => "king",
-                    _ => return Err("--difficulty must be prince or king".to_string()),
+                    // The live lane's rungs (Emperor = Lv 6, Immortal = Lv 7):
+                    // data/difficulties.json carries both handicaps.
+                    "emperor" => "emperor",
+                    "immortal" => "immortal",
+                    _ => {
+                        return Err(
+                            "--difficulty must be prince, king, emperor or immortal".to_string()
+                        )
+                    }
                 });
             }
             "--games" => games = value.parse::<u64>().map_err(|e| e.to_string())?,
             "--start-seed" => start_seed = value.parse::<u64>().map_err(|e| e.to_string())?,
             "--out" => out = Some(PathBuf::from(value)),
+            "--max-turns" => {
+                max_turns = value.parse::<u32>().map_err(|e| e.to_string())?;
+                if !(40..=250).contains(&max_turns) {
+                    return Err("--max-turns must be 40-250".to_string());
+                }
+            }
             _ => {
                 return Err(format!(
                     "unsupported argument {flag} for fixed-profile Domination probe"
@@ -74,10 +92,11 @@ fn parse(args: &[String]) -> Result<Config, String> {
         games,
         start_seed,
         out: out.ok_or("--out is required; existing files are never overwritten")?,
+        max_turns,
     })
 }
 
-fn options(seed: u64, difficulty: Option<&str>) -> GameOptions {
+fn options(seed: u64, difficulty: Option<&str>, max_turns: u32) -> GameOptions {
     GameOptions {
         map_script: MapScript::Pangaea,
         difficulty: difficulty.unwrap_or("king").to_string(),
@@ -91,12 +110,12 @@ fn options(seed: u64, difficulty: Option<&str>) -> GameOptions {
         handicap_exempt: BTreeSet::from([0]),
         barbarians: true,
         // Shipped Civ VI Maps.xml:106: MAPSIZE_TINY, four players, 60x38.
-        ..GameOptions::new(4, 60, 38, seed, 250, 6)
+        ..GameOptions::new(4, 60, 38, seed, max_turns, 6)
     }
 }
 
-fn profile(seed: u64, difficulty: Option<&str>) -> serde_json::Value {
-    let setup = options(seed, difficulty);
+fn profile(seed: u64, difficulty: Option<&str>, max_turns: u32) -> serde_json::Value {
+    let setup = options(seed, difficulty, max_turns);
     serde_json::json!({
         "players": setup.players, "width": setup.width, "height": setup.height,
         "map": format!("{:?}", setup.map_script), "difficulty": setup.difficulty,
@@ -188,6 +207,15 @@ struct SeatEconomy {
     /// Live trade routes other majors own that end in this seat's cities:
     /// each grants its owner +25% Tourism against this seat.
     inbound_foreign_routes: usize,
+    /// Farms, Mines and Lumber Mills on this seat's tiles: the Builder's mix,
+    /// for a policy that moves it.
+    farms: usize,
+    mines: usize,
+    lumber_mills: usize,
+    /// Food surplus summed over the seat's cities (Food less two a citizen).
+    food_surplus: f64,
+    /// Cities within one citizen of their Housing.
+    housing_bound_cities: usize,
 }
 
 impl SeatEconomy {
@@ -217,7 +245,17 @@ impl SeatEconomy {
             ..Default::default()
         };
         for city in g.cities.values().filter(|city| city.owner == pid) {
+            for pos in &city.owned_tiles {
+                match g.map.tiles.get(pos).and_then(|tile| tile.improvement.as_deref()) {
+                    Some("farm") => seat.farms += 1,
+                    Some("mine") => seat.mines += 1,
+                    Some("lumber_mill") => seat.lumber_mills += 1,
+                    _ => {}
+                }
+            }
+            seat.housing_bound_cities += usize::from(g.city_housing_headroom(city) <= 1.0);
             let yields = g.city_yields(city.id);
+            seat.food_surplus += yields.food - 2.0 * f64::from(city.pop);
             seat.science += yields.science;
             seat.culture += yields.culture;
             seat.gold += yields.gold;
@@ -270,6 +308,11 @@ impl SeatEconomy {
             inbound_foreign_routes: self
                 .inbound_foreign_routes
                 .max(other.inbound_foreign_routes),
+            farms: self.farms.max(other.farms),
+            mines: self.mines.max(other.mines),
+            lumber_mills: self.lumber_mills.max(other.lumber_mills),
+            food_surplus: self.food_surplus.max(other.food_surplus),
+            housing_bound_cities: self.housing_bound_cities.max(other.housing_bound_cities),
         }
     }
 }
@@ -430,8 +473,8 @@ struct Trial {
     civs: Vec<String>,
 }
 
-fn trial(seed: u64, difficulty: Option<&str>, policy: &Gene, enabled: bool) -> Trial {
-    let mut game = Game::new_with(options(seed, difficulty));
+fn trial(seed: u64, difficulty: Option<&str>, max_turns: u32, policy: &Gene, enabled: bool) -> Trial {
+    let mut game = Game::new_with(options(seed, difficulty, max_turns));
     let civs = game.players.iter().take(4).map(|p| p.civ.clone()).collect();
     let mut ais = fleet(&game, policy, enabled);
     // `CIVVIS_PAIR_EXPLAIN=<dir>` records the focal seat's journal and writes
@@ -535,12 +578,12 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
         // with the second leg. Both worlds and controllers start fresh.
         let (off, on) = if index % 2 == 0 {
             (
-                trial(seed, config.difficulty, config.policy, false),
-                trial(seed, config.difficulty, config.policy, true),
+                trial(seed, config.difficulty, config.max_turns, config.policy, false),
+                trial(seed, config.difficulty, config.max_turns, config.policy, true),
             )
         } else {
-            let on = trial(seed, config.difficulty, config.policy, true);
-            (trial(seed, config.difficulty, config.policy, false), on)
+            let on = trial(seed, config.difficulty, config.max_turns, config.policy, true);
+            (trial(seed, config.difficulty, config.max_turns, config.policy, false), on)
         };
         if off.civs != on.civs {
             return Err(format!("paired civilizations differ at seed {seed}"));
@@ -555,7 +598,7 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
             "schema": 5, "kind": "simulator_domination_policy_pair",
             "policy": config.policy.tag, "seed": seed,
             "execution_order": if index % 2 == 0 { "off,on" } else { "on,off" },
-            "profile": profile(seed, config.difficulty), "civilizations": off.civs,
+            "profile": profile(seed, config.difficulty, config.max_turns), "civilizations": off.civs,
             "focal_seat": 0, "focal_target": "domination",
             "rivals": "adaptive CIVVIS live bridge; not Firaxis AI",
             "forced_focal_policies": FORCED.trim().split(',').collect::<Vec<_>>(),

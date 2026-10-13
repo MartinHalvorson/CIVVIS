@@ -219,6 +219,8 @@ impl AdvancedAi {
             // `growth-prices-the-farm`: zero with the gene off. See
             // `advanced/growth_farm.rs`.
             + self.growth_farm_premium(g, pid, pos, improvement)
+            // `growth-prices-the-farm-2`: zero with the gene off.
+            + self.growing_city_food_premium(g, pid, pos, improvement, strategy)
             // `builders-improve-the-worked-for-production`: zero with the gene
             // off. See `advanced/worked_production.rs`.
             + self.worked_production_premium(g, pid, pos, improvement, strategy)

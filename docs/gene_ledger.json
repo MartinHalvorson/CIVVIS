@@ -2521,6 +2521,15 @@
           "granary-before-the-army-2": null
         }
       },
+      "growth-prices-the-farm": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "growth-prices-the-farm": null,
+          "growth-prices-the-farm-2": null
+        }
+      },
       "holy-site-where-the-threat-is": {
         "rule_on": [],
         "head": "holy-site-where-the-threat-is",
