@@ -11266,13 +11266,23 @@ fn the_civ6_endpoints_answer_on_any_host() {
     assert_eq!(live_pause["available"], false, "{live_pause}");
     assert!(live_pause["requested"].is_boolean(), "{live_pause}");
     assert!(live_pause["held"].is_boolean(), "{live_pause}");
-    // The page asks before it shows the control, and the control names what
-    // pressing it will do.
+    // Its New game reads the same live run — this host's real one, if any, so
+    // only the shape is asserted. Again no POST: a broken guard would retire
+    // the real game.
+    assert!(live_pause["new_game"]["requested"].is_boolean(), "{live_pause}");
+    assert!(live_pause["new_game"]["retired"].is_boolean(), "{live_pause}");
+    // The page asks before it shows the controls, the controls name what
+    // pressing them will do, and New game is armed by one press and sent by
+    // a second.
     for piece in [
         "id=\"livepause\" hidden",
         "await fetchJSON(\"/live-pause\", {}, 3000)",
         "button.textContent = asked ? \"▶ Resume game\" : \"⏸ Pause game\";",
         "document.getElementById(\"livepause-button\").onclick = toggleLivePause;",
+        "<button id=\"livenewgame-button\" type=\"button\">↻ New game</button>",
+        "postLiveControl(\"/live-new-game\", {confirm: true}, 20000)",
+        "document.getElementById(\"livenewgame-button\").onclick = pressLiveNewGame;",
+        "body.live-pause-available #specbar { display: none !important; }",
     ] {
         assert!(EMBEDDED_INDEX.contains(piece), "the live pause is missing {piece}");
     }
