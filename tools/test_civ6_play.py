@@ -4813,3 +4813,54 @@ class TheFinalScreenHoldIsForTheWinClip(unittest.TestCase):
         self.assertIn('hold = end_game_hold_seconds(state["outcome"], args.end_game_seconds)',
                       source)
         self.assertIn("time.sleep(hold)", source)
+
+
+class DeitySetupLabelReadback(unittest.TestCase):
+    """Native 20261013T095333Z never started: Vision read Deity as Delty."""
+
+    SCREEN = (1728, 1117)
+    BOUNDS = (0, 33, 864, 542)
+    # Actual game-window OCR boxes from dropdown-difficulty-closed.png. Both
+    # the window and enlarged-crop passes reported Delty with confidence 1.
+    OBSERVATIONS = [
+        {"text": "CHOOSE GAME DIFFICULTY", "confidence": 1,
+         "x": 0.21339399663315278, "y": 0.19296024920977803,
+         "width": 0.07345141746379713, "height": 0.010724743029424487},
+        {"text": "Delty", "confidence": 1,
+         "x": 0.24498008191676815, "y": 0.2058904135455601,
+         "width": 0.009535152603078755, "height": 0.0067966306647127},
+        {"text": "CHOOSE GAME SPEED", "confidence": 1,
+         "x": 0.22077546262553674, "y": 0.22157564909807442,
+         "width": 0.058677863191675256, "height": 0.010368515789882364},
+        {"text": "Online", "confidence": 1,
+         "x": 0.24424660875769608, "y": 0.2353424808222818,
+         "width": 0.012469045541904615, "height": 0.005663858958409052},
+    ]
+
+    def test_closed_native_deity_field_reads_its_observed_position(self):
+        with patch.object(civ6_play, "desktop_size", return_value=self.SCREEN), \
+             patch.object(civ6_play, "recognize_once", return_value=self.OBSERVATIONS), \
+             patch.object(civ6_play, "_menu_crop_ocr", return_value=[]):
+            self.assertEqual(civ6_play._setup_current_value(
+                Path("native-deity.png"), self.BOUNDS, "difficulty"),
+                ("DIFFICULTY_DEITY", (431, 233)))
+
+    def test_deity_option_selection_uses_the_same_observed_spelling(self):
+        with patch.object(civ6_play, "desktop_size", return_value=self.SCREEN), \
+             patch.object(civ6_play, "recognize_once", return_value=self.OBSERVATIONS), \
+             patch.object(civ6_play, "_menu_crop_ocr", return_value=[]):
+            self.assertEqual(civ6_play._observed_label_point(
+                Path("native-deity.png"), "Deity", self.BOUNDS), (431, 233))
+
+    def test_other_short_misreadings_stay_unverified(self):
+        for text in ("Deit", "Diet", "Dirty", "Deitv", "DeityV"):
+            with self.subTest(text=text):
+                self.assertFalse(civ6_play._menu_label_matches(text, "Deity"))
+
+    def test_matching_deity_text_outside_the_game_cannot_license_a_click(self):
+        outside = [{**self.OBSERVATIONS[1], "x": 0.7}]
+        with patch.object(civ6_play, "desktop_size", return_value=self.SCREEN), \
+             patch.object(civ6_play, "recognize_once", return_value=outside), \
+             patch.object(civ6_play, "_menu_crop_ocr", return_value=[]):
+            self.assertIsNone(civ6_play._observed_label_point(
+                Path("native-deity.png"), "Deity", self.BOUNDS))
