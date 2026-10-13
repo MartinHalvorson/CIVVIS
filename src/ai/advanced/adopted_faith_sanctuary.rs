@@ -70,8 +70,9 @@ impl AdvancedAi {
     }
 
     /// A Holy Site and Shrine need time to finish before the last alternative
-    /// faith disappears. Global conversion plus an arrival at home can warn
-    /// construction sooner without changing when ordinary spreaders act.
+    /// faith disappears. A visible charged spreader approaching an adopted
+    /// counterfaith is also a construction warning: a temporary loss of a
+    /// foreign majority must not hide an imminent conversion at home.
     fn adopted_faith_construction_threat(&self, g: &Game, pid: usize) -> Option<String> {
         if let Some(threat) = self.adopted_faith_threat(g, pid) {
             return Some(threat);
@@ -118,7 +119,44 @@ impl AdvancedAi {
                 best = Some((converted, arrived, faith.to_owned()));
             }
         }
-        best.map(|(_, _, faith)| faith)
+        if let Some((_, _, faith)) = best {
+            return Some(faith);
+        }
+        // Preserve an existing global warning. The local approach only fills
+        // its gaps; it must not redirect defense toward a different faith.
+        g.units
+            .values()
+            .filter(|unit| {
+                unit.owner != pid
+                    && unit.charges > 0
+                    && g.rules.units[unit.kind].religious_spread > 0.0
+            })
+            .filter_map(|unit| {
+                let faith = unit.religion.as_deref()?;
+                if !majors
+                    .iter()
+                    .any(|founder| founder.id != pid && founder.religion.as_deref() == Some(faith))
+                {
+                    return None;
+                }
+                let distance = home
+                    .iter()
+                    .filter(|cid| {
+                        g.city_religion(&g.cities[cid]).is_some_and(|counterfaith| {
+                            counterfaith != faith
+                                && Self::safe_adopted_counterfaith(g, pid, counterfaith)
+                        })
+                    })
+                    .map(|cid| g.wdist(g.cities[cid].pos, unit.pos))
+                    .min()?;
+                // GetMaxMoves, when observed, includes native bonuses. Spent
+                // movement does not remove next turn's conversion threat.
+                // This is a warning window, not a guaranteed path or spread.
+                (distance <= g.unit_max_moves(unit.id).ceil() as i32 + 1)
+                    .then_some((distance, faith))
+            })
+            .min_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(right.1)))
+            .map(|(_, faith)| faith.to_owned())
     }
 
     /// A purchased defender keeps its faith when city majorities change.
