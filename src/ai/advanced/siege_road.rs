@@ -42,6 +42,11 @@ const LONG_ROAD_FACTOR: usize = 2;
 /// short road with a small detour still marches.
 const LONG_ROAD_EXTRA: usize = 10;
 
+/// `closed-border-blocker-declares`: our military over a blocker's steady
+/// reading (and its suzerain's, for a city-state) at or over which its
+/// closed borders are declared on: the blocker at half our power or under.
+pub(super) const BLOCKER_POWER_RATIO: f64 = 2.0;
+
 /// One siege's march outcomes for the turn, and its run of road-bound turns.
 #[derive(Clone, Debug, Default)]
 pub(super) struct RoadTally {
@@ -113,6 +118,9 @@ impl AdvancedAi {
                 let tally = self.siege_road_tally.entry(city).or_default();
                 tally.marched.remove(&uid);
                 tally.held.insert(uid, blocker);
+                if let Some(owner) = blocker {
+                    self.note_closed_border_hold(g, g.units[&uid].owner, owner);
+                }
                 blocker.map(|owner| g.players[owner].civ.clone())
             }
             _ => {
@@ -356,12 +364,25 @@ impl AdvancedAi {
         rival: usize,
         plan: &super::StrategicPlan,
     ) -> bool {
-        // `capital-taken-moves-on` opens the next capital's owner the same way.
-        (self.blocker_becomes_the_target || self.capital_taken_moves_on)
+        // `capital-taken-moves-on` opens the next capital's owner the same way;
+        // `closed-border-blocker-declares` its own weak blocker.
+        (self.blocker_becomes_the_target
+            || self.capital_taken_moves_on
+            || (self.closed_border_blocker_declares
+                && self.closed_border_front(g, pid) == Some(rival)))
             && !g.is_at_war(pid, rival)
             && plan
                 .target_player
                 .is_some_and(|target| target != rival && g.is_at_war(pid, target))
+    }
+
+    /// `blocker-becomes-the-target`: the stood-down siege's blocker
+    /// (`stood_down_blocker_front`), else, under
+    /// `closed-border-blocker-declares`, the weak blocker of a held one
+    /// (`closed_border_front`). `None` with both genes off.
+    pub(crate) fn road_blocker_front(&self, g: &Game, pid: usize) -> Option<usize> {
+        self.stood_down_blocker_front(g, pid)
+            .or_else(|| self.closed_border_front(g, pid))
     }
 
     /// `blocker-becomes-the-target`: the major whose closed borders shut the
@@ -373,7 +394,7 @@ impl AdvancedAi {
     /// opens the road (`siege_road_reopened`) and is Domination progress.
     /// `None` with the gene off, under another victory target, or when no
     /// such blocker stands; the lowest player id of several.
-    pub(crate) fn road_blocker_front(&self, g: &Game, pid: usize) -> Option<usize> {
+    pub(super) fn stood_down_blocker_front(&self, g: &Game, pid: usize) -> Option<usize> {
         if !self.blocker_becomes_the_target
             || self.active_victory_target(g) != Some(super::VictoryTarget::Domination)
         {
@@ -399,6 +420,115 @@ impl AdvancedAi {
                     && self.declaration_edge_2(g, pid, *blocker).passes()
             })
             .min()
+    }
+
+    /// `closed-border-blocker-declares`: the third party whose closed
+    /// borders have held a Stage march of ours [`ROAD_HOLD_TURNS`] turns
+    /// running, through last turn, or shut the road of a siege stood down
+    /// for want of one while that stand-down holds, when it is weak
+    /// (`closed_border_blocker_is_weak`). `blocker-becomes-the-target` asked
+    /// for the stand-down, an original capital and the version-2 edge; a
+    /// train held short of closed borders mostly holds instead -- the
+    /// breaker and muster waits keep the capture open -- and over 138 live
+    /// Immortal runs of 10-11/13 the gene never fired while 19 games held a
+    /// siege behind 27 blockers and 58 of 59 open-borders asks during the
+    /// holds were refused. civvis-20261013T083300Z held its Susa train,
+    /// bombard to tank, short of Mongolia's borders from turn 175 at about
+    /// five times Mongolia's power, stood the Sparda siege down for them at
+    /// 190, and lost to Persia's Culture at 193. The declaration desk opens
+    /// the war as `road_opening` with every other safety kept. `None` with
+    /// the gene off, under another victory target, or when no such blocker
+    /// stands; the lowest player id of several.
+    pub(crate) fn closed_border_front(&self, g: &Game, pid: usize) -> Option<usize> {
+        if !self.closed_border_blocker_declares
+            || self.active_victory_target(g) != Some(super::VictoryTarget::Domination)
+        {
+            return None;
+        }
+        let held = self
+            .closed_border_holds
+            .iter()
+            .filter(|((seat, _), (first, last))| {
+                *seat == pid && last + 1 >= g.turn && last + 1 - first >= ROAD_HOLD_TURNS
+            })
+            .map(|((_, blocker), _)| *blocker);
+        let stood_down = self
+            .siege_road_closed
+            .iter()
+            .filter(|(city, closed)| closed.seat == pid && self.capture_stood_down_holds(g, **city))
+            .filter_map(|(_, closed)| closed.blocker);
+        held.chain(stood_down)
+            .filter(|blocker| self.closed_border_blocker_is_weak(g, pid, *blocker))
+            .min()
+    }
+
+    /// `closed-border-blocker-declares`: whether `blocker` may be declared on
+    /// for its closed borders: alive, at peace with us and a legal campaign
+    /// target (met, no friendship or alliance, a city-state not ours or a
+    /// friend's), with our military [`BLOCKER_POWER_RATIO`] times its steady
+    /// reading and [`super::one_war::CRUSHING_PEAK_FLOOR`] times its 30-turn
+    /// peak. A city-state's suzerain, when it has one at peace with us, must
+    /// read as weak too: its war comes with the city-state's.
+    fn closed_border_blocker_is_weak(&self, g: &Game, pid: usize, blocker: usize) -> bool {
+        let Some(player) = g.players.get(blocker) else {
+            return false;
+        };
+        if blocker == pid
+            || !player.alive
+            || player.is_barbarian
+            || g.is_at_war(pid, blocker)
+            || !self.campaign_target_legal(g, pid, blocker)
+        {
+            return false;
+        }
+        let ours = g.military_power(pid);
+        let weak = |rival: usize| {
+            ours >= BLOCKER_POWER_RATIO * self.steady_rival_power(g, rival).max(1.0)
+                && ours
+                    >= super::one_war::CRUSHING_PEAK_FLOOR
+                        * self.peak_rival_power(g, rival).max(1.0)
+        };
+        weak(blocker)
+            && (!player.is_minor
+                || g.suzerain_of(blocker)
+                    .is_none_or(|suzerain| g.is_at_war(pid, suzerain) || weak(suzerain)))
+    }
+
+    /// `closed-border-blocker-declares`: a Stage march of `seat`'s held short
+    /// of `blocker`'s closed borders this turn. Extends the running hold, or
+    /// starts one after a turn without; says once, on the turn the run
+    /// reaches [`ROAD_HOLD_TURNS`], whether the blocker reads weak enough to
+    /// become the front.
+    fn note_closed_border_hold(&mut self, g: &Game, seat: usize, blocker: usize) {
+        if !self.closed_border_blocker_declares {
+            return;
+        }
+        let run = self
+            .closed_border_holds
+            .entry((seat, blocker))
+            .or_insert((g.turn, g.turn));
+        if g.turn > run.1 + 1 || g.turn < run.0 {
+            *run = (g.turn, g.turn);
+        }
+        let reached = run.1 + 1 - run.0 < ROAD_HOLD_TURNS && g.turn + 1 - run.0 >= ROAD_HOLD_TURNS;
+        run.1 = run.1.max(g.turn);
+        if !reached {
+            return;
+        }
+        let ours = g.military_power(seat);
+        let (steady, peak) = (
+            self.steady_rival_power(g, blocker),
+            self.peak_rival_power(g, blocker),
+        );
+        let verdict = if self.closed_border_blocker_is_weak(g, seat, blocker) {
+            "weak enough: the war that opens the road is the next front"
+        } else {
+            "not weak enough, or not a legal target: the train keeps holding"
+        };
+        think!(self.journal(), Military, Strategy,
+               "{}'s closed borders have held our siege march {} turns", g.players[blocker].civ, ROAD_HOLD_TURNS;
+               "closed-border-blocker-declares: our {ours:.0} power against their steady {steady:.0} and 30-turn peak {peak:.0} (needs {BLOCKER_POWER_RATIO:.1} and {:.1} times); {verdict}",
+               super::one_war::CRUSHING_PEAK_FLOOR);
     }
 }
 
@@ -878,5 +1008,223 @@ mod tests {
         assert!(super::super::GENES
             .iter()
             .any(|gene| gene.tag == "blocker-becomes-the-target" && gene.opt_in()));
+    }
+
+    /// `closed-border-blocker-declares`: `strip` with powers read from the
+    /// host -- ours 4,000, the screen's `screen`, the target's 500 -- and
+    /// two marchers beside the held soldier, so the train is never half held
+    /// and no road stand-down fires: the shape of a siege that holds short
+    /// of closed borders instead.
+    fn held_strip(screen: f64) -> (Game, u32, u32, Vec<u32>) {
+        let (mut game, target, soldier) = strip();
+        game.record_contact(0, 1);
+        game.record_contact(0, 2);
+        for (seat, power) in [(0, 4000.0), (1, screen), (2, 500.0)] {
+            std::sync::Arc::make_mut(&mut game.observed_military_power).insert(seat, power);
+        }
+        let mates = [(9, 6), (9, 5)]
+            .into_iter()
+            .map(|pos| game.spawn_test_unit("warrior", 0, pos))
+            .collect();
+        (game, target, soldier, mates)
+    }
+
+    /// `turns` turns in which the soldier holds short of the screen and the
+    /// mates march, reconciling the ledger after each.
+    fn hold_beside_marchers(
+        ai: &mut AdvancedAi,
+        g: &mut Game,
+        target: u32,
+        soldier: u32,
+        mates: &[u32],
+        turns: u32,
+    ) {
+        for _ in 0..turns {
+            let _ = ai.note_stage_march(g, soldier, target, &StageMarch::Hold { wet: 30 });
+            for mate in mates {
+                let _ = ai.note_stage_march(g, *mate, target, &StageMarch::Ordinary);
+            }
+            ai.reconcile_commitments(g, 0);
+            g.turn += 1;
+        }
+    }
+
+    fn blocker_ai(gene: bool, g: &Game, target: u32) -> AdvancedAi {
+        let mut ai = ai(true, g, target);
+        // As armed live: version 1 on beside the gene, or alone.
+        ai.enable_blocker_becomes_the_target();
+        if gene {
+            ai.enable_closed_border_blocker_declares();
+        }
+        ai.disable_capital_prey_opens_a_front();
+        ai.disable_capital_prey_opens_a_front_2();
+        ai.enable_one_war_at_a_time();
+        ai.one_war = Some(front(2, g.turn));
+        ai
+    }
+
+    /// `closed-border-blocker-declares`: three turns of holds short of a
+    /// screen at half our power or under name it as the road-blocker front
+    /// and the second front, with no stand-down; two turns do not, nor does
+    /// a run that stopped, nor the gene off (version 1 waits on a stand-down
+    /// that never comes).
+    #[test]
+    fn a_weak_blocker_of_a_held_siege_becomes_the_second_front() {
+        let (game, target, soldier, mates) = held_strip(600.0);
+        for gene in [false, true] {
+            let mut ai = blocker_ai(gene, &game, target);
+            let mut g = game.clone();
+            hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, ROAD_HOLD_TURNS - 1);
+            assert_eq!(ai.road_blocker_front(&g, 0), None, "two turns of holds name nothing");
+            hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, 1);
+            assert!(!ai.capture_stood_down.contains_key(&target), "fixture: the siege holds, never stood down");
+            if gene {
+                assert_eq!(ai.closed_border_front(&g, 0), Some(1), "gene on: the screen is named");
+                assert_eq!(ai.road_blocker_front(&g, 0), Some(1));
+                assert_eq!(ai.one_war_second_front(&g, 0), Some(1), "and opens the second front");
+                let plan = ai.plan.clone().expect("the fixture's plan");
+                assert!(ai.second_front_displaced(&g, 0, 1, &plan));
+                // At war with the screen the road is open: nothing is named.
+                let mut opened = g.clone();
+                opened.at_war.insert((0, 1));
+                opened.at_war.insert((1, 0));
+                assert_eq!(ai.road_blocker_front(&opened, 0), None, "at war: the road is open");
+                // A run that stopped two turns ago is no hold.
+                let mut later = g.clone();
+                later.turn += 1;
+                assert_eq!(ai.closed_border_front(&later, 0), None, "a stale run names nothing");
+            } else {
+                assert_eq!(ai.road_blocker_front(&g, 0), None, "gene off: version 1 waits on a stand-down");
+                assert_ne!(ai.one_war_second_front(&g, 0), Some(1));
+            }
+        }
+    }
+
+    /// `closed-border-blocker-declares`: a break of a turn restarts the run.
+    #[test]
+    fn a_broken_hold_restarts_the_run() {
+        let (game, target, soldier, mates) = held_strip(600.0);
+        let mut ai = blocker_ai(true, &game, target);
+        let mut g = game.clone();
+        hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, 2);
+        g.turn += 1; // a turn without a hold
+        hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, 2);
+        assert_eq!(ai.closed_border_front(&g, 0), None, "two and two are not three running");
+        hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, 1);
+        assert_eq!(ai.closed_border_front(&g, 0), Some(1));
+    }
+
+    /// `closed-border-blocker-declares`: a screen over half our power, or one
+    /// we are friends with, is not named however long it holds the road.
+    #[test]
+    fn a_strong_or_friendly_blocker_is_not_named() {
+        let (game, target, soldier, mates) = held_strip(2_100.0);
+        let mut ai = blocker_ai(true, &game, target);
+        let mut g = game.clone();
+        hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, ROAD_HOLD_TURNS + 2);
+        assert_eq!(ai.closed_border_front(&g, 0), None, "over half our power");
+
+        // Weak now, but a 30-turn peak over two-thirds of ours.
+        let (game, target, soldier, mates) = held_strip(600.0);
+        let mut ai = blocker_ai(true, &game, target);
+        ai.rival_power_peak_seen
+            .entry(1)
+            .or_default()
+            .push((game.turn, 3_000.0));
+        let mut g = game.clone();
+        hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, ROAD_HOLD_TURNS);
+        assert_eq!(ai.closed_border_front(&g, 0), None, "a recent peak at strength");
+
+        let (mut game, target, soldier, mates) = held_strip(600.0);
+        game.players[0].friends_until.insert(1, game.turn + 30);
+        let mut ai = blocker_ai(true, &game, target);
+        let mut g = game.clone();
+        hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, ROAD_HOLD_TURNS);
+        assert_eq!(ai.closed_border_front(&g, 0), None, "a friend is no campaign target");
+    }
+
+    /// `closed-border-blocker-declares`: a city-state screen is named alone
+    /// or under a suzerain we outgun; a strong suzerain at peace with us
+    /// keeps it off the list, and so does our own suzerainty.
+    #[test]
+    fn a_city_state_blocker_needs_a_weak_suzerain() {
+        let (mut game, target, _, _) = held_strip(300.0);
+        game.players[1].is_minor = true;
+        let ai = blocker_ai(true, &game, target);
+        assert!(ai.closed_border_blocker_is_weak(&game, 0, 1), "no suzerain: named");
+
+        // The target, at war with us, is its suzerain: the city-state is in
+        // that war already, its borders open, and there is nothing to declare.
+        let mut fought = game.clone();
+        fought.players[2].envoys.push((1, 5));
+        assert_eq!(fought.suzerain_of(1), Some(2), "fixture: the target holds it");
+        assert!(fought.is_at_war(0, 1), "fixture: dragged into its suzerain's war");
+        assert!(!ai.closed_border_blocker_is_weak(&fought, 0, 1), "already at war: not named");
+
+        // At peace with that suzerain, and it at strength.
+        let mut strong = fought.clone();
+        strong.at_war.remove(&(0, 2));
+        strong.at_war.remove(&(2, 0));
+        std::sync::Arc::make_mut(&mut strong.observed_military_power).insert(2, 2_500.0);
+        assert!(!ai.closed_border_blocker_is_weak(&strong, 0, 1), "a strong suzerain at peace");
+        // At peace, but weak.
+        std::sync::Arc::make_mut(&mut strong.observed_military_power).insert(2, 900.0);
+        assert!(ai.closed_border_blocker_is_weak(&strong, 0, 1), "a weak suzerain at peace");
+
+        // Ours.
+        let mut ours = game.clone();
+        ours.players[0].envoys.push((1, 5));
+        assert!(!ai.closed_border_blocker_is_weak(&ours, 0, 1), "our own city-state");
+    }
+
+    /// `closed-border-blocker-declares` at the declaration desk, with version
+    /// 1 armed in both runs as it is live: the plan stays on the target's
+    /// war, the siege holds short of the weak screen and is never stood down
+    /// for the road, and under the gene the desk declares on the screen; off
+    /// it nothing does.
+    #[test]
+    fn the_desk_declares_on_a_weak_blocker_of_a_held_siege() {
+        let (mut game, target, soldier, mates) = held_strip(600.0);
+        game.turn = 150;
+        game.found_city_for(0, (8, 4), None);
+        game.players[0].gold = 3000.0;
+        for gene in [false, true] {
+            let mut ai = blocker_ai(gene, &game, target);
+            ai.coalition_before_war = false;
+            ai.coalition_before_war_2 = false;
+            ai.coalition_before_war_3 = false;
+            let mut g = game.clone();
+            hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, ROAD_HOLD_TURNS);
+            let mut plan = ai.plan.clone().expect("the fixture's plan");
+            for _ in 0..12 {
+                if g.is_at_war(0, 1) {
+                    break;
+                }
+                plan.assessed_turn = g.turn;
+                assert_eq!(plan.target_player, Some(2), "the plan stays on the target's war");
+                ai.advanced_diplomacy(&mut g, 0, &plan);
+                hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, 1);
+            }
+            assert!(ai.siege_road_closed.is_empty(), "no road stand-down for version 1");
+            if gene {
+                assert!(g.is_at_war(0, 1), "gene on: the weak blocker is declared on");
+            } else {
+                assert!(!g.is_at_war(0, 1), "gene off: nothing declares on the screen");
+            }
+        }
+    }
+
+    /// `closed-border-blocker-declares` is a registered, reversible opt-in.
+    #[test]
+    fn closed_border_blocker_declares_is_a_reversible_opt_in() {
+        let mut ai = AdvancedAi::new();
+        assert!(!ai.closed_border_blocker_declares);
+        ai.enable_closed_border_blocker_declares();
+        assert!(ai.closed_border_blocker_declares);
+        ai.disable_closed_border_blocker_declares();
+        assert!(!ai.closed_border_blocker_declares);
+        assert!(super::super::GENES
+            .iter()
+            .any(|gene| gene.tag == "closed-border-blocker-declares" && gene.opt_in()));
     }
 }

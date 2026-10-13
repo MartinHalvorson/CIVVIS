@@ -5448,6 +5448,16 @@ pub struct AdvancedAi {
     /// `advanced/aqueduct_claims_the_capped_queue.rs`. Off by default.
     aqueduct_claims_the_capped_queue: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `closed-border-blocker-declares`: a third party whose closed borders
+    /// have held a Domination siege's march [`siege_road::ROAD_HOLD_TURNS`]
+    /// turns running, at half our power or under (a major, or a city-state
+    /// whose suzerain is as weak), is the road-blocker front of
+    /// `blocker-becomes-the-target` with no stood-down siege asked of it.
+    /// See `AdvancedAi::closed_border_front`. Off by default.
+    closed_border_blocker_declares: bool,
+    /// `closed-border-blocker-declares`: per seat and blocker, the first and
+    /// last turn of the running Stage holds short of its closed borders.
+    closed_border_holds: BTreeMap<(usize, usize), (u32, u32)>,
     /// `dry-road-outlasts-a-blocked-step`: a Stage or Invest march whose dry
     /// road exists but cannot start this turn (an enemy zone of control, or
     /// our own units on every dry step) waits without reading as a water
@@ -10329,6 +10339,8 @@ impl AdvancedAi {
             amphibious_refused: None,
             aqueduct_claims_the_capped_queue: false,
             // ---- append: c-d ----------------------------------------
+            closed_border_blocker_declares: false,
+            closed_border_holds: BTreeMap::new(),
             dry_road_outlasts_a_blocked_step: false,
             campus_building_claims_the_queue: false,
             crushing_steady_passes_the_edge: false,
@@ -24254,8 +24266,13 @@ impl AdvancedAi {
                         "the war lets the army condemn the faith taking our cities, before any siege is staged"
                     } else if overwhelming_ready {
                         "an overwhelming army needs no staged siege: the war writes the Siege row that brings it to the ring"
-                    } else if road_opening_ready {
+                    } else if road_opening_ready
+                        && self.stood_down_blocker_front(g, pid) == Some(target)
+                    {
                         "its closed borders shut the road to a siege we stood down, and the war opens it"
+                    } else if road_opening_ready {
+                        // See `closed_border_front` (`closed-border-blocker-declares`).
+                        "its closed borders have held our siege's march three turns at half our power or under, and the war opens the road"
                     } else if moving_on_ready {
                         "the beaten rival's capital is ours and it refuses peace, so the army moves on to the next capital"
                     } else if launcher_ready && !staged {

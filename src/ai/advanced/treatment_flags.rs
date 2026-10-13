@@ -7501,6 +7501,18 @@ impl AdvancedAi {
         self.campus_building_claims_the_queue = false;
     }
 
+    /// A weak third party whose closed borders hold a siege's march three
+    /// turns is declared on. Opt-in gene `closed-border-blocker-declares`;
+    /// see [`Self::closed_border_front`].
+    pub fn enable_closed_border_blocker_declares(&mut self) {
+        self.closed_border_blocker_declares = true;
+    }
+
+    /// The twin of `enable_closed_border_blocker_declares`.
+    pub fn disable_closed_border_blocker_declares(&mut self) {
+        self.closed_border_blocker_declares = false;
+    }
+
     /// Opt-in gene `growth-prices-the-farm-2`; see
     /// `AdvancedAi::growth_prices_the_farm_2`.
     pub fn enable_growth_prices_the_farm_2(&mut self) {

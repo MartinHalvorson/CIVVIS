@@ -3800,6 +3800,18 @@ pub const GENES: &[Gene] = &[
     // of a partner whose mirrored board holds none of a spare, offering that
     // spare. See `append_luxury_swap_order` in `civvis_orders`.
     Gene { tag: "luxury-swap-asks-2", field: "luxury_swap_asks_2", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_swap_asks_2, disable: AdvancedAi::disable_luxury_swap_asks_2 },
+    // The road-blocker front of `blocker-becomes-the-target` needed a siege
+    // stood down for want of the road, and a train held short of a third
+    // party's closed borders mostly holds instead: over 138 live Immortal
+    // runs of 10-11/13 the closed-borders hold struck 19 games (27 blockers),
+    // 58 of 59 open-borders asks during the holds were refused, and the gene
+    // never fired. civvis-20261013T083300Z held its Susa train
+    // short of Mongolia's borders from turn 175 at about five times
+    // Mongolia's power until Persia won on Culture at 193. This gene's
+    // trigger is three turns of holds against a blocker at half our power or
+    // under; a city-state needs a suzerain as weak. See
+    // `AdvancedAi::closed_border_front`.
+    Gene { tag: "closed-border-blocker-declares", field: "closed_border_blocker_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_closed_border_blocker_declares, disable: AdvancedAi::disable_closed_border_blocker_declares },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
