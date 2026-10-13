@@ -1994,6 +1994,10 @@ pub const GENES: &[Gene] = &[
     // objective left the second threatened city with nothing. Priced on the
     // arena first. See `advanced/objective_board.rs`.
     Gene { tag: "objective-board", field: "objective_board", kind: Kind::OptIn, enable: AdvancedAi::enable_objective_board, disable: AdvancedAi::disable_objective_board },
+    // Prepare the named legal Domination target before war: a land Siege
+    // row musters on the legal approach-side 3–5 ring. Defense allocations
+    // and declaration requirements remain unchanged. Requires the board.
+    Gene { tag: "prewar-siege-board", field: "prewar_siege_board", kind: Kind::OptIn, enable: AdvancedAi::enable_prewar_siege_board, disable: AdvancedAi::disable_prewar_siege_board },
     // Who may be a target, when a war is declared and when peace is sued
     // for, read off the Objective Board's own requirements in place of
     // empire-wide power ratios: a rival whose nearest city's Siege bill is

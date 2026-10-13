@@ -6147,6 +6147,10 @@ pub struct AdvancedAi {
     /// so the planners and the ladder read it unchanged. Opt-in gene
     /// `objective-board`. See `advanced/objective_board.rs`.
     objective_board: bool,
+    /// Allocate the named Domination siege at peace, mustering outside
+    /// foreign borders while the ordinary declaration gates still wait.
+    /// Opt-in `prewar-siege-board`; requires `objective-board`.
+    prewar_siege_board: bool,
     /// The board and its forces, kept across turns. See `objective_board`.
     objective_board_state: objective_board::ObjectiveBoard,
     /// The host refuses ~14% of MOVE_TO orders as `did_not_move`, the refusal
@@ -8573,6 +8577,7 @@ impl AdvancedAi {
             liang_follows_builders: false,
             modernize_before_spending: false,
             objective_board: false,
+            prewar_siege_board: false,
             objective_board_state: objective_board::ObjectiveBoard::default(),
             live_move_refusal_break: false,
             live_barbarian_scouts_capture: false,
