@@ -7501,6 +7501,20 @@ impl AdvancedAi {
         self.campus_building_claims_the_queue = false;
     }
 
+    /// A water-locked Domination siege objective's guns and escorts cross as
+    /// one group. Opt-in gene `amphibious-siege-train`; see
+    /// `AdvancedAi::amphibious_hold_step`.
+    pub fn enable_amphibious_siege_train(&mut self) {
+        self.amphibious_siege_train = true;
+    }
+
+    /// The twin of `enable_amphibious_siege_train`; a crossing in hand is
+    /// dropped.
+    pub fn disable_amphibious_siege_train(&mut self) {
+        self.amphibious_siege_train = false;
+        self.amphibious_train = None;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
