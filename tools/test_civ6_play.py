@@ -13,6 +13,7 @@ import sys
 import subprocess
 import tempfile
 import time
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -3849,6 +3850,81 @@ class ConnectionIssueAcknowledgement(unittest.TestCase):
                 labels = self.labels(); labels["OK"] = [button]
                 result, click = self.dismiss(labels)
                 self.assertFalse(result); click.assert_not_called()
+
+
+
+class GameFocusBeforeClickTest(unittest.TestCase):
+    """A click meant for Civilization VI waits until it is the front app."""
+
+    def test_a_click_raises_the_game_first_when_something_else_is_in_front(self):
+        fronts = iter(["Terminal", "Terminal", "Civ6_Exe_Child"])
+        with patch.object(civ6_play.popup_clear, "frontmost",
+                          side_effect=lambda: next(fronts)), \
+                patch.object(civ6_play, "focus_game") as focus, \
+                patch.object(civ6_play.time, "sleep"), \
+                patch.object(civ6_play.macos_window, "click_at") as click:
+            civ6_play.click_at(10, 20)
+        focus.assert_called_once()
+        click.assert_called_once_with(10, 20)
+
+    def test_a_game_already_in_front_is_not_refocused(self):
+        with patch.object(civ6_play.popup_clear, "frontmost",
+                          return_value="Civ6_Exe_Child"), \
+                patch.object(civ6_play, "focus_game") as focus, \
+                patch.object(civ6_play.macos_window, "click_at") as click:
+            civ6_play.click_at(1, 2)
+        focus.assert_not_called()
+        click.assert_called_once_with(1, 2)
+
+    def test_a_game_that_never_comes_forward_is_said_and_clicked_anyway(self):
+        clock = iter(float(n) for n in range(100))
+        with patch.object(civ6_play.popup_clear, "frontmost", return_value="Terminal"), \
+                patch.object(civ6_play, "focus_game"), \
+                patch.object(civ6_play.time, "sleep"), \
+                patch.object(civ6_play.time, "monotonic", side_effect=lambda: next(clock)), \
+                patch("builtins.print") as said:
+            self.assertFalse(civ6_play.ensure_game_frontmost(timeout_s=3.0))
+        self.assertIn("not in front", said.call_args.args[0])
+
+
+class EarlyWindowPlacementTest(unittest.TestCase):
+    """The new game's window goes to its corner as soon as it exists."""
+
+    def test_the_window_is_placed_the_moment_it_appears_and_kept_there(self):
+        windows = iter([None, None, (0, 0, 1728, 1117), (0, 33, 864, 542)])
+        placed = threading.Event()
+        stop = threading.Event()
+        calls = []
+
+        def place(*args):
+            calls.append(args)
+            if len(calls) >= 2:
+                placed.set()
+
+        with patch.object(civ6_play, "game_window",
+                          side_effect=lambda: next(windows, (0, 33, 864, 542))), \
+                patch.object(civ6_play, "place_game", side_effect=place), \
+                patch.object(civ6_play, "setup_mark") as mark:
+            thread = civ6_play.place_window_as_it_appears(None, stop, poll_s=0.001)
+            self.assertTrue(placed.wait(5.0))
+            stop.set()
+            thread.join(5.0)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(calls[0], (civ6_play.GAME_SIDE, civ6_play.GAME_FRACTION,
+                                    civ6_play.GAME_VFRACTION))
+        mark.assert_called_once_with("window_placed")
+
+    def test_a_game_that_exits_ends_the_watch(self):
+        process = mock.Mock()
+        process.poll.return_value = 1
+        with patch.object(civ6_play, "game_window") as window, \
+                patch.object(civ6_play, "place_game") as place:
+            thread = civ6_play.place_window_as_it_appears(
+                process, threading.Event(), poll_s=0.001)
+            thread.join(5.0)
+        self.assertFalse(thread.is_alive())
+        window.assert_not_called()
+        place.assert_not_called()
 
 
 if __name__ == "__main__":

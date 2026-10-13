@@ -1213,7 +1213,10 @@ BOOTSTRAP_ATTEMPTS = 16
 # pass, ~1.5 s; looking every three seconds proceeds the moment the menu is up
 # and spends the same budget when it is not.
 SCREEN_POLL_BUDGET_S = 20.0
-SCREEN_POLL_S = 3.0
+# 1.5 s, not 3: a New game waits on this poll for the logos to give way to the
+# menu, and every look costs ~1.5 s on top of it (operator 2026-10-13: a new
+# game "should be fast").
+SCREEN_POLL_S = 1.5
 
 
 def _poll_screen(read, budget_s: float = SCREEN_POLL_BUDGET_S,
@@ -1479,8 +1482,68 @@ def maintain_game_focus(interval: float, last_focus: float, *,
     return now
 
 
+def ensure_game_frontmost(timeout_s: float = 1.5) -> bool:
+    """Raise Civilization VI and see it in front before a click aimed at it.
+
+    ★ A click on a background window only activates it. Live 2026-10-13
+    (civvis-20261013T220550Z, a New game while the operator typed in a
+    Terminal): setup focused the game once per attempt, then spent 5-20 s
+    reading the screen, and by the click Terminal was in front again; five
+    attempts' Single Player and Create Game clicks did nothing, 4 m 20 s to
+    turn 1 against a ~50 s norm. So every click checks first, here.
+    """
+    def in_front() -> bool:
+        try:
+            return popup_clear.frontmost().startswith("Civ6")
+        except (OSError, subprocess.SubprocessError):
+            return False
+    if in_front():
+        return True
+    focus_game()
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        time.sleep(0.1)
+        if in_front():
+            return True
+    print("[focus] Civilization VI is not in front; this click may only "
+          "activate it", flush=True)
+    return False
+
+
 def click_at(px: int, py: int) -> None:
+    ensure_game_frontmost()
     return macos_window.click_at(px, py)
+
+
+def place_window_as_it_appears(game_process, stop: threading.Event,
+                               timeout_s: float = 30.0,
+                               poll_s: float = 0.15) -> threading.Thread:
+    """Put the game in its corner the moment its window exists.
+
+    Operator 2026-10-13: "have the new game load immediately in the upper
+    left too, rather than full screen for a bit". Aspyr opens a window the
+    size of the render — the whole screen — about 2.5 s after launch, and the
+    one placement used to come at `menu_reached`, 4-6 s in, so a full-screen
+    "Loading, please wait..." covered the CIVVIS page for seconds. This
+    watches from the launch and places the window as soon as it is there,
+    and again if the game resizes it, until `stop` is set at the main menu
+    (whose own placement stays the final word). A game that exits ends it.
+    """
+    def watch() -> None:
+        deadline = time.monotonic() + timeout_s
+        placed = 0
+        while not stop.is_set() and time.monotonic() < deadline:
+            if game_process is not None and game_process.poll() is not None:
+                return
+            if game_window() is not None:
+                place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
+                if placed == 0:
+                    setup_mark("window_placed")
+                placed += 1
+            stop.wait(poll_s)
+    thread = threading.Thread(target=watch, name="place-window", daemon=True)
+    thread.start()
+    return thread
 
 
 def park_setup_pointer(bounds: tuple[int, int, int, int]) -> None:
@@ -3724,9 +3787,12 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         # opens the post-host modal. Keep proving the exact page for the whole
         # startup window rather than allowing a transient false negative to
         # strand the run behind Begin Game.
-        intro_retries = max(4, min(60, int(verify_s / 2)))
+        # Probed every second rather than every two, over the same window: the
+        # board's arrival ends the probe, and a slower poll was seconds of
+        # every new game spent after the game was already there.
+        intro_retries = max(8, min(120, int(verify_s)))
         advance_leader_intro(bounds, args.leader, run_dir, attempt,
-                             retries=intro_retries, poll_s=2.0,
+                             retries=intro_retries, poll_s=1.0,
                              board_ready=board_is_ready, relay_s=0.05,
                              defer_s=float(getattr(args, "leader_intro_defer", 0.0) or 0.0))
         if board_seen["value"]:
@@ -4916,10 +4982,18 @@ def _play(args: argparse.Namespace) -> int:
     if not args.keep_game_options:
         apply_verification_options()
     launcher.clear_run_logs()
+    # Measured before the launch, so placing the window as it appears pays no
+    # AppKit compile (~1.5 s) while it shows full screen.
+    desktop_size()
     setup_clock_start()
     game_process = launcher.launch(stdout=run_dir / "stdout.log")
     setup_mark("launched")
-    if not launcher.wait_for_launched_main_menu(game_process, args.startup_timeout):
+    placing = threading.Event()
+    placer = place_window_as_it_appears(game_process, placing)
+    reached_menu = launcher.wait_for_launched_main_menu(game_process, args.startup_timeout)
+    placing.set()
+    placer.join(timeout=HOST_PROBE_TIMEOUT_S + 1.0)
+    if not reached_menu:
         stop_brain()
         print("the game did not reach the main menu", file=sys.stderr)
         return 3
