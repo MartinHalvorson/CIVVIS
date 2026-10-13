@@ -3812,6 +3812,11 @@ pub const GENES: &[Gene] = &[
     // under; a city-state needs a suzerain as weak. See
     // `AdvancedAi::closed_border_front`.
     Gene { tag: "closed-border-blocker-declares", field: "closed_border_blocker_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_closed_border_blocker_declares, disable: AdvancedAi::disable_closed_border_blocker_declares },
+    // `purchases-keep-the-upkeep-reserve`: the main purchase pass, the
+    // counterweight Shrine's Gold branch and the city-state levy keep one and
+    // a half turns of the army's bill, the floor `upkeep-reserve` gives the
+    // upgrade passes. See `AdvancedAi::purchase_upkeep_floor`.
+    Gene { tag: "purchases-keep-the-upkeep-reserve", field: "purchases_keep_the_upkeep_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_purchases_keep_the_upkeep_reserve, disable: AdvancedAi::disable_purchases_keep_the_upkeep_reserve },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

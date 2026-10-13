@@ -232,3 +232,45 @@ fn a_covered_shrine_is_bought() {
         "the Shrine stands"
     );
 }
+
+/// `purchases-keep-the-upkeep-reserve`: the Gold branch leaves one and a half
+/// turns of the army's bill behind. With a 100-Gold unit bill the Shrine
+/// waits at its bare price and is bought once the bank covers price and 150.
+#[test]
+fn a_covered_shrine_keeps_the_upkeep_reserve() {
+    let (mut g, mut ai, caracas) = g425_turn_88();
+    ai.enable_counterweight_finishes_one_shrine();
+    ai.enable_purchases_keep_the_upkeep_reserve();
+    Arc::make_mut(&mut g.host_maintenance).insert(
+        0,
+        crate::game::HostMaintenance {
+            units: Some(100.0),
+            buildings: None,
+            districts: None,
+        },
+    );
+    let price = g
+        .building_gold_purchase_cost(0, caracas, "shrine")
+        .expect("Caracas can buy its Shrine");
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 5,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    g.players[0].gold = price;
+    ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+    assert!(
+        !has_shrine(&g, caracas),
+        "the bare price would leave no bill"
+    );
+    assert_eq!(g.players[0].gold, price);
+
+    g.players[0].gold = price + 150.0;
+    ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+    assert!(has_shrine(&g, caracas));
+    assert!(g.players[0].gold + f64::EPSILON >= 150.0);
+}

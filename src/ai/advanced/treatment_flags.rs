@@ -7596,6 +7596,17 @@ impl AdvancedAi {
         self.luxury_swap_asks_2 = false;
     }
 
+    /// Opt-in gene `purchases-keep-the-upkeep-reserve`; see
+    /// `AdvancedAi::purchases_keep_the_upkeep_reserve`.
+    pub fn enable_purchases_keep_the_upkeep_reserve(&mut self) {
+        self.purchases_keep_the_upkeep_reserve = true;
+    }
+
+    /// The twin of `enable_purchases_keep_the_upkeep_reserve`.
+    pub fn disable_purchases_keep_the_upkeep_reserve(&mut self) {
+        self.purchases_keep_the_upkeep_reserve = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

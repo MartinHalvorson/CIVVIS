@@ -7513,6 +7513,17 @@ pub struct AdvancedAi {
     /// (`append_luxury_swap_order` in `civvis_orders`). Off by default.
     luxury_swap_asks_2: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `purchases-keep-the-upkeep-reserve`: the discretionary Gold buys keep
+    /// the floor the upgrade passes already keep (`upkeep-reserve`): one and
+    /// a half turns of the army's bill. The main purchase pass, the
+    /// counterweight Shrine's Gold branch and the city-state levy each spent
+    /// below it on live Immortal civvis-20261013T220550Z: a levy, an Arena, a
+    /// Lighthouse and a Shrine took 785 Gold to 17 over turns 194-199 against
+    /// a 201-Gold unit bill, the next tick went negative, and bankruptcy's
+    /// -9 Amenities in every city cut Production 591 to 337. Emergency
+    /// defence, border parity and siege-resource buys stay unguarded. See
+    /// `AdvancedAi::purchase_upkeep_floor`. Off by default.
+    purchases_keep_the_upkeep_reserve: bool,
     /// `paused-district-finishes`: a district foundation on the board that the
     /// host quotes at two turns or less goes back to the head of its queue
     /// while the city stands at full health with no attack in reach,
@@ -10647,6 +10658,7 @@ impl AdvancedAi {
             launcher_war_ignores_the_edge: false,
             luxury_swap_asks_2: false,
             // ---- append: p-r ----------------------------------------
+            purchases_keep_the_upkeep_reserve: false,
             paused_district_finishes: false,
             peacetime_classical_republic: false,
             prophet_builds_its_site: false,
@@ -15721,6 +15733,12 @@ impl AdvancedAi {
         .flatten();
         let restore_space_race = self.base.exclude_space_race;
         self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
+        // `purchases-keep-the-upkeep-reserve`: the delegated governor's own
+        // Gold pass bought the Lighthouse that, with a Shrine, took
+        // civvis-20261013T220550Z to 17 Gold at turn 199. Lent for the call;
+        // unchanged while the gene is off.
+        let restore_reserve_floor = self.base.reserve_floor;
+        self.base.reserve_floor = self.purchase_upkeep_floor(g, pid, restore_reserve_floor);
         // `housing-bound-city-builds-its-granary`,
         // `commercial-hub-and-traders` and `industrial-zone-in-the-producers`:
         // the plan's threatened city keeps its stock defence order. Lent for
@@ -15741,6 +15759,7 @@ impl AdvancedAi {
         }
         if !self.plan_city_target && !self.rapid_city_expansion_2 {
             self.base.cities(g, pid);
+            self.base.reserve_floor = restore_reserve_floor;
             self.base.exclude_space_race = restore_space_race;
             self.base.w.mil_per_city = restore_military;
             self.base.w.faith_builder = restore_faith_builder;
@@ -15772,6 +15791,7 @@ impl AdvancedAi {
             self.base.w.builder_per_city = restore_builders.max(PRODUCTION_BUILDERS_PER_CITY);
         }
         self.base.cities(g, pid);
+        self.base.reserve_floor = restore_reserve_floor;
         self.base.exclude_space_race = restore_space_race;
         self.base.w.city_target = restore_target;
         self.base.w.settler_stop_turn = restore_stop;
@@ -23783,7 +23803,10 @@ impl AdvancedAi {
                 GrandStrategy::Conquest | GrandStrategy::Recovery
             )
         {
-            self.base.levy_city_state_military(g, pid, true);
+            // `purchases-keep-the-upkeep-reserve`: the levy leaves the
+            // army's bill behind; zero, the shipped levy, while it is off.
+            let floor = self.purchase_upkeep_floor(g, pid, 0.0);
+            self.base.levy_city_state_military(g, pid, true, floor);
         }
         // A visible spreader can supply an immediate religious counter even
         // when the founder's cities have not yet been discovered.
@@ -25473,6 +25496,10 @@ impl AdvancedAi {
         // sum that grows with every city founded. `stock` comes back
         // unchanged while the gene is off. See `advanced/gold_and_cards.rs`.
         let reserve = self.working_treasury_reserve(g, pid, reserve);
+        // `purchases-keep-the-upkeep-reserve`: never below one and a half
+        // turns of the army's bill. `stock` comes back unchanged while the
+        // gene is off. See `advanced/gold_and_cards.rs`.
+        let reserve = self.purchase_upkeep_floor(g, pid, reserve);
         // `threatened-city-reserve`: never below one emergency defender
         // while a city of ours is threatened or bleeding. `stock` comes back
         // unchanged while the gene is off. See `advanced/gold_and_cards.rs`.
@@ -48132,7 +48159,12 @@ impl AdvancedAi {
             // `threatened-city-reserve`: the baseline buyer is the one that
             // actually spends on the live seat (its wartime reserve is
             // 40 + 10 a city); hand it the same floor for this call only.
-            self.base.reserve_floor = self.threatened_city_gold_floor(g, pid, &plan);
+            // `purchases-keep-the-upkeep-reserve` raises that floor to one
+            // and a half turns of the army's bill: this buyer bought the
+            // Arena and the Lighthouse that took civvis-20261013T220550Z to
+            // bankruptcy at turn 200. Unchanged while the gene is off.
+            let floor = self.threatened_city_gold_floor(g, pid, &plan);
+            self.base.reserve_floor = self.purchase_upkeep_floor(g, pid, floor);
             self.base.spend_gold(
                 g,
                 pid,

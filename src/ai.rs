@@ -9673,7 +9673,7 @@ impl BasicAi {
         }
         let at_war = others.iter().any(|o| g.is_at_war(pid, *o));
         if at_war {
-            self.levy_city_state_military(g, pid, false);
+            self.levy_city_state_military(g, pid, false, 0.0);
         }
         if !at_war
             && (g.turn as f64) > self.w.war_min_turn
@@ -9718,13 +9718,23 @@ impl BasicAi {
     /// Turn spare wartime Gold into immediately usable troops when this AI is
     /// a city-state's Suzerain. `urgent` lets the strategic AI spend deeper
     /// into its treasury for Conquest/Recovery plans; the general AI retains
-    /// a larger economic reserve.
-    pub(crate) fn levy_city_state_military(&self, g: &mut Game, pid: usize, urgent: bool) {
+    /// a larger economic reserve. `floor` is Gold the levy must leave in the
+    /// treasury on top of that share (`purchases-keep-the-upkeep-reserve`);
+    /// zero keeps the shipped levy.
+    pub(crate) fn levy_city_state_military(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        urgent: bool,
+        floor: f64,
+    ) {
         if self.minor || self.barb {
             return;
         }
         let reserve_share = if urgent { 0.20 } else { 0.40 };
-        let spendable = (g.players[pid].gold * (1.0 - reserve_share) - 20.0).max(0.0);
+        let spendable = (g.players[pid].gold * (1.0 - reserve_share) - 20.0)
+            .min(g.players[pid].gold - floor)
+            .max(0.0);
         let best = g
             .players
             .iter()
