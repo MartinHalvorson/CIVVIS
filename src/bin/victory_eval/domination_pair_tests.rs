@@ -17,7 +17,7 @@ fn args(extra: &[&str]) -> Vec<String> {
 fn explicit_profile_overrides_and_unknown_policies_are_rejected() {
     for extra in [
         vec!["--target", "science"],
-        vec!["--difficulty", "emperor"],
+        vec!["--difficulty", "unknown-rung"],
         vec!["--difficulty", "prince", "--difficulty", "king"],
         vec!["--players", "6"],
         vec!["--games", "0"],
