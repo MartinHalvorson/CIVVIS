@@ -1713,30 +1713,32 @@
   }
   .launch-badge[hidden] { display: none; }
   /* The live game's controls — Pause / Resume (`toggleLivePause`) and New game
-     (`pressLiveNewGame`) — in the map's bottom-right corner (the action corner
-     is a solo-seat frame's). The world minimap and the map tools can hold that
-     corner too, so `placeLivePause` steps beside or above them; these
+     (`pressLiveNewGame`) — small and stacked in the map's bottom-left corner
+     (operator 2026-10-13: "half the size and in the lower left ... stacked").
+     The map tools hold that corner on most layouts and the world minimap can
+     be moved there, so `placeLivePause` steps above or beside them; these
      offsets are only the first paint. They are shown only where
      `GET /live-pause` says this page is
      the mirror beside a Civilization VI verification game, and there they act
      on the Firaxis game itself. The note above them says what the game is
      actually doing — the hold lands on the mod's next tick of our turn, and a new
-     game takes a few minutes to come up, neither on the click. */
+     game takes a while to come up, neither on the click. */
   #livepause {
-    position: absolute; z-index: 30; right: var(--panel-edge); bottom: var(--panel-edge);
-    display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
-    max-width: min(300px, calc(100% - 2 * var(--panel-edge)));
+    position: absolute; z-index: 30; left: var(--panel-edge); bottom: var(--panel-edge);
+    display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+    max-width: min(150px, calc(100% - 2 * var(--panel-edge)));
   }
   #livepause[hidden] { display: none; }
   .livepause-buttons {
-    display: flex; gap: 6px; padding: 5px; border-radius: 999px; white-space: nowrap;
+    display: flex; flex-direction: column; align-items: stretch; gap: 3px;
+    padding: 3px; border-radius: 9px; white-space: nowrap;
     border: 1px solid #4d685f; background: #0a1512e8;
-    box-shadow: 0 8px 22px #0007; backdrop-filter: blur(12px);
+    box-shadow: 0 4px 11px #0007; backdrop-filter: blur(12px);
   }
   #livepause.live-paused .livepause-buttons { border-color: var(--gold); }
   .livepause-buttons button {
-    flex: none; margin: 0; padding: 8px 16px; border-radius: 999px;
-    font-size: var(--type-control); font-weight: 900; letter-spacing: .04em;
+    flex: none; margin: 0; padding: 4px 8px; border-radius: 999px; text-align: left;
+    font-size: calc(var(--type-control) / 2); font-weight: 900; letter-spacing: .04em;
   }
   #livepause-button {
     color: #17160f; background: linear-gradient(135deg, #f0d58f, #c99e4e);
@@ -1759,9 +1761,9 @@
   }
   .livepause-buttons button:disabled { opacity: .6; cursor: progress; }
   #livepause-note {
-    max-width: 100%; padding: 6px 12px; border-radius: 12px; text-align: right;
+    max-width: 100%; padding: 3px 6px; border-radius: 6px; text-align: left;
     border: 1px solid #4d685f; background: #0a1512e8; backdrop-filter: blur(12px);
-    color: #dce6e1; font-size: var(--type-control); font-weight: 800; line-height: 1.3;
+    color: #dce6e1; font-size: calc(var(--type-control) / 2); font-weight: 800; line-height: 1.3;
   }
   #livepause-note[hidden] { display: none; }
   #livepause.live-pending #livepause-note { color: #aebeb7; font-style: italic; }
