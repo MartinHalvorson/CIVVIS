@@ -982,8 +982,8 @@ impl AdvancedAi {
             }
         }
 
-        // Siege: the plan's target city and the campaign's cities, in order,
-        // while their owner is at war with us; the arena's flag.
+        // Siege: wartime objectives, plus the opt-in named preparation target
+        // at peace. Preparation pays the same bill and keeps defense priority.
         let mut siege_cities: Vec<u32> = Vec::new();
         if let Some(target) = plan.target_city {
             siege_cities.push(target);
@@ -1017,10 +1017,27 @@ impl AdvancedAi {
             let Some(city) = g.cities.get(&cid) else {
                 continue;
             };
-            if city.owner == pid || !g.is_at_war(pid, city.owner) {
+            let preparing = self.prewar_siege_target(g, pid, plan, cid);
+            if city.owner == pid || (!g.is_at_war(pid, city.owner) && !preparing) {
                 continue;
             }
-            let state = if self.siege_train {
+            if preparing {
+                let land: Vec<Pos> = pool
+                    .iter()
+                    .filter(|uid| UnitFacts::of(g, **uid).domain == ForceDomain::Land)
+                    .map(|uid| g.units[uid].pos)
+                    .collect();
+                let approach = medoid(g, &land).unwrap_or_else(|| self.reserve_tile(g, pid, &rows));
+                if self
+                    .prewar_rally(g, pid, city.pos, approach, visible)
+                    .is_none()
+                {
+                    continue;
+                }
+            }
+            let state = if preparing {
+                RowState::Staging
+            } else if self.siege_train {
                 match self.sieges.get(&cid).map(|siege| siege.stage) {
                     Some(SiegeStage::Stage) => RowState::Staging,
                     Some(SiegeStage::Invest) => RowState::Investing,
@@ -1043,7 +1060,7 @@ impl AdvancedAi {
                 state,
                 depends_on: previous_siege,
                 land: true,
-                sea: BasicAi::city_is_coastal(g, cid),
+                sea: !preparing && BasicAi::city_is_coastal(g, cid),
                 label: city.name.clone(),
                 urgent: false,
             });
@@ -1435,6 +1452,16 @@ impl AdvancedAi {
         let row_keys: BTreeSet<ObjectiveKey> = rows.iter().map(|row| row.key).collect();
         for force in &mut forces {
             if force.objective_key == ObjectiveKey::Reserve {
+                continue;
+            }
+            // A retained naval force from a prior war cannot be sent to the
+            // land-only peacetime preparation row.
+            if self.prewar_siege_board
+                && force.domain == ForceDomain::Sea
+                && matches!(force.objective_key, ObjectiveKey::Siege(cid)
+                    if g.cities.get(&cid).is_some_and(|city| !g.is_at_war(pid, city.owner)))
+            {
+                force.units.clear();
                 continue;
             }
             if row_keys.contains(&force.objective_key)
@@ -1896,6 +1923,67 @@ impl AdvancedAi {
             .unwrap_or((0, 0))
     }
 
+    /// Preparation is only for the committed, named, legal major target.
+    /// Existing wars keep their normal doctrine and suppress another front.
+    fn prewar_siege_target(&self, g: &Game, pid: usize, plan: &StrategicPlan, cid: u32) -> bool {
+        if !self.prewar_siege_board
+            || self.active_victory_target(g) != Some(super::VictoryTarget::Domination)
+            || plan.strategy != GrandStrategy::Conquest
+            || plan.target_city != Some(cid)
+        {
+            return false;
+        }
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        let Some(player) = g.players.get(city.owner) else {
+            return false;
+        };
+        plan.target_player == Some(city.owner)
+            && !player.is_minor
+            && player.alive
+            && !g.is_at_war(pid, city.owner)
+            && !g.same_team(pid, city.owner)
+            && g.has_met(pid, city.owner)
+            && self.campaign_target_legal(g, pid, city.owner)
+            && self.one_war_enemies(g, pid).is_empty()
+    }
+
+    /// A known, dry approach tile on the declaration gate's own staging
+    /// ring. Foreign territory and occupied tiles are not preparation ground.
+    /// No far-side fallback: a blocked ring leaves this objective unallocated.
+    fn prewar_rally(
+        &self,
+        g: &Game,
+        pid: usize,
+        objective: Pos,
+        approach: Pos,
+        visible: &crate::world::TileBits,
+    ) -> Option<Pos> {
+        let approach_distance = g.wdist(approach, objective);
+        g.wdisk(objective, 5)
+            .into_iter()
+            .filter(|pos| (3..=5).contains(&g.wdist(*pos, objective)))
+            .filter(|pos| g.wdist(*pos, approach) < approach_distance)
+            .filter(|pos| g.players[pid].explored.contains(pos))
+            .filter(|pos| g.city_at(*pos).is_none())
+            .filter(|pos| {
+                g.map.get(*pos).is_some_and(|tile| {
+                    g.rules.is_passable(tile)
+                        && !g.rules.is_water(tile)
+                        && tile.owner_city.is_none_or(|cid| {
+                            g.cities.get(&cid).is_some_and(|city| city.owner == pid)
+                        })
+                })
+            })
+            .filter(|pos| {
+                !g.units.values().any(|unit| {
+                    unit.pos == *pos && unit.owner != pid && self.observed(g, pid, visible, unit)
+                })
+            })
+            .min_by_key(|pos| (g.wdist(*pos, approach), *pos))
+    }
+
     /// The far side of `objective` from the enemy near it: a passable land
     /// tile two or three out, farthest from the hostile centroid, nearest
     /// the force. The force's own medoid when nothing hostile is in sight.
@@ -2115,6 +2203,9 @@ impl AdvancedAi {
                 None => force.aimed_at,
             };
             let kind = row.map(|row| row.kind);
+            let preparing = self.prewar_siege_board
+                && matches!(force.objective_key, ObjectiveKey::Siege(cid)
+                    if g.cities.get(&cid).is_some_and(|city| !g.is_at_war(pid, city.owner)));
             // Where the group is sent: the row's tile, except that a Defend
             // that engages is sent at the threat, as the shipped objective
             // aims a relief at the nearest besieger.
@@ -2156,21 +2247,29 @@ impl AdvancedAi {
                     effective_strength(g.unit_strength(&g.units[uid], true), g.units[uid].hp)
                 })
                 .sum();
-            let rally = match kind {
-                Some(ObjectiveKind::Siege | ObjectiveKind::Defend | ObjectiveKind::Relieve) => self
-                    .far_side(
-                        g,
-                        pid,
-                        objective,
-                        force_medoid,
-                        &visible,
-                        kind == Some(ObjectiveKind::Siege),
-                    ),
-                _ => force_medoid,
+            let rally = if preparing {
+                self.prewar_rally(g, pid, objective, force_medoid, &visible)
+                    .unwrap_or(force_medoid)
+            } else {
+                match kind {
+                    Some(ObjectiveKind::Siege | ObjectiveKind::Defend | ObjectiveKind::Relieve) => {
+                        self.far_side(
+                            g,
+                            pid,
+                            objective,
+                            force_medoid,
+                            &visible,
+                            kind == Some(ObjectiveKind::Siege),
+                        )
+                    }
+                    _ => force_medoid,
+                }
             };
             force.rally = rally;
             // The posture, and where a standing force stands.
-            let (posture, anchor) = if !arena && average_hp <= self.base.w.withdraw_hp + 10.0 {
+            let (posture, anchor) = if preparing && average_hp > self.base.w.withdraw_hp + 10.0 {
+                (ForcePosture::Muster, rally)
+            } else if !arena && average_hp <= self.base.w.withdraw_hp + 10.0 {
                 (ForcePosture::Recover, force_medoid)
             } else {
                 match kind {

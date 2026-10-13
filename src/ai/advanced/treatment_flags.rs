@@ -4197,6 +4197,17 @@ impl AdvancedAi {
         self.objective_board = false;
     }
 
+    /// Prepare a legal named Domination siege at peace. Requires the board;
+    /// does not enable it or relax any declaration gate.
+    pub fn enable_prewar_siege_board(&mut self) {
+        self.prewar_siege_board = true;
+    }
+
+    /// The twin of `enable_prewar_siege_board`.
+    pub fn disable_prewar_siege_board(&mut self) {
+        self.prewar_siege_board = false;
+    }
+
     /// `war-policy-via-board`: target feasibility, the declaration and the
     /// peace term read off the board. See `advanced/war_policy.rs`.
     pub fn enable_war_policy_via_board(&mut self) {
