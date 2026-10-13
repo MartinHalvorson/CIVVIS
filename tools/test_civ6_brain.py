@@ -82,6 +82,31 @@ class _Decider(civ6_brain.Decider):
         raise AssertionError("the canned process must not be replaced")
 
 
+class OperatorHoldClockTest(unittest.TestCase):
+    """The worker outlives an operator's pause instead of timing out inside it."""
+
+    def test_the_deadline_stands_still_while_the_game_is_held(self):
+        clock = civ6_brain.OperatorHoldClock(deadline=100.0)
+        self.assertTrue(clock.running(50.0))
+        self.assertFalse(clock.note("state", 60.0), "a board is not about the hold")
+        self.assertTrue(clock.note("operator_paused", 90.0))
+        # Held past the deadline: still running, however long the hold.
+        self.assertTrue(clock.running(5_000.0))
+        self.assertTrue(clock.note("operator_pause_held", 120.0))
+        self.assertEqual(clock.held_since, 90.0, "the hold began when it was taken")
+        self.assertTrue(clock.note("operator_resumed", 390.0))
+        # The 300 s held are given back: 10 s were left at the hold.
+        self.assertEqual(clock.deadline, 400.0)
+        self.assertTrue(clock.running(399.0))
+        self.assertFalse(clock.running(400.0))
+
+    def test_a_resume_without_a_hold_changes_nothing(self):
+        clock = civ6_brain.OperatorHoldClock(deadline=100.0)
+        self.assertTrue(clock.note("operator_resumed", 50.0))
+        self.assertEqual(clock.deadline, 100.0)
+        self.assertFalse(clock.running(100.0))
+
+
 class DeciderProtocolTest(unittest.TestCase):
     def test_a_plain_response_is_read(self) -> None:
         decider = _Decider([

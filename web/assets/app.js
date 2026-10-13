@@ -6469,16 +6469,27 @@ function toggleSpecPause() {
   setPace({paused: specPaused});
 }
 setInterval(reportSpecStatus, 4000);
-// --- The live game's Pause / Resume. On the mirror `tools/follow.py` keeps
-// beside a Civilization VI verification game, this holds the Firaxis game
-// itself — not this page's world, which is only its picture (`src/civ6.rs`,
-// `live_pause_status`; `tools/civ6_control/live_pause.py`). The server says
-// whether this page is that mirror; anywhere else the control never appears.
-// The button follows the REQUEST, so it reads Resume the moment Pause is
-// pressed; the note beside it follows the GAME, which only stops at the start
-// of its next turn and says so through the harness.
+// --- The live game's Pause / Resume and New game. On the mirror
+// `tools/follow.py` keeps beside a Civilization VI verification game, these act
+// on the Firaxis game itself — not this page's world, which is only its picture
+// (`src/civ6.rs`, `live_pause_status`; `tools/civ6_control/live_pause.py`). The
+// server says whether this page is that mirror; anywhere else the controls
+// never appear. The Pause button follows the REQUEST, so it reads Resume the
+// moment Pause is pressed; the note above it follows the GAME, which only
+// stops at the start of its next turn and says so through the harness.
+//
+// New game is Civilization VI's own Retire (`civvis-games retire`): the lane's
+// supervisor starts the next game once the mod has retired this one, and this
+// page follows it there the way it follows any new game. It cannot be taken
+// back, so the first press only arms it; a second within a few seconds sends.
+const LIVE_NEW_GAME_ARMED_MS = 6000;
+const LIVE_ERROR_SHOWN_MS = 10000;
 const livePause = {available: false, requested: false, held: false, turn: null,
-  busy: false, error: "", timer: null};
+  busy: false, error: "", errorUntil: 0, timer: null, asked: 0,
+  newGameArmed: false, newGameTimer: null, ending: false};
+function liveMirrorTurn() {
+  return typeof state === "object" && state && Number.isInteger(state.turn) ? state.turn : null;
+}
 function paintLivePause() {
   const box = document.getElementById("livepause");
   if (!box) return;
@@ -6486,22 +6497,82 @@ function paintLivePause() {
   document.body.classList.toggle("live-pause-available", livePause.available);
   if (!livePause.available) return;
   const button = document.getElementById("livepause-button");
+  const fresh = document.getElementById("livenewgame-button");
   const note = document.getElementById("livepause-note");
   const asked = livePause.requested;
+  const ending = livePause.ending;
   button.textContent = asked ? "▶ Resume game" : "⏸ Pause game";
   button.title = asked
     ? "Let the Civilization VI game carry on from where it stands"
     : "Hold the Civilization VI game at the start of its next turn";
   button.setAttribute("aria-pressed", String(asked));
-  button.disabled = livePause.busy;
+  button.disabled = livePause.busy || ending;
+  fresh.textContent = ending ? "↻ Starting…" : livePause.newGameArmed ? "Confirm new game" : "↻ New game";
+  fresh.title = livePause.newGameArmed
+    ? "End this Civilization VI game now and start a fresh one"
+    : "End this Civilization VI game with its own Retire and start a fresh one";
+  fresh.classList.toggle("confirming", livePause.newGameArmed && !ending);
+  fresh.disabled = livePause.busy || ending;
+  const turn = liveMirrorTurn();
   const text = livePause.error ||
-    (asked && livePause.held ? `Paused · turn ${livePause.turn ?? "?"}`
+    (ending ? "Ending this game · the next one starts in a few minutes"
+      : livePause.newGameArmed
+        ? `Press again to end this game${turn === null ? "" : ` at turn ${turn}`} and start a new one`
+      : asked && livePause.held ? `Paused · turn ${livePause.turn ?? "?"}`
       : asked ? "Pausing at the start of the next turn…"
       : livePause.held ? "Resuming…" : "");
   note.textContent = text;
   note.hidden = !text;
-  box.classList.toggle("live-paused", asked && livePause.held);
-  box.classList.toggle("live-pending", !livePause.error && asked !== livePause.held);
+  box.classList.toggle("live-paused", asked && livePause.held && !ending);
+  box.classList.toggle("live-error", !!livePause.error);
+  box.classList.toggle("live-pending", !livePause.error &&
+    (ending || (!livePause.newGameArmed && asked !== livePause.held)));
+  placeLivePause();
+}
+// The controls stand in the map's bottom-right corner unless something else
+// does: the world minimap is anchored there on a wide map, the compact
+// arrangements move it and the map tools about, the sky bar unfolds, and the
+// minimap can be dragged anywhere. So: the corner if it is free, else as far
+// right on the bottom row as is free (beside the minimap), else as little
+// above the corner as clears what holds it. Rerun on every paint (the 2 s
+// poll) and on resize, which follows a dragged minimap or an unfolded bar.
+function placeLivePause() {
+  const box = document.getElementById("livepause");
+  if (!box || box.hidden || !box.offsetParent) return;
+  box.style.right = "";
+  box.style.bottom = "";
+  const frame = box.offsetParent.getBoundingClientRect();
+  const home = box.getBoundingClientRect();
+  const edge = Math.max(0, frame.right - home.right);
+  const gap = 8;
+  const obstacles = [...document.querySelectorAll("#maparea .minimap-frame, #zoomctl-main, #skynav")]
+    .filter((el) => el.getClientRects().length > 0)
+    .map((el) => el.getBoundingClientRect())
+    .filter((r) => r.width > 0 && r.height > 0);
+  const blocked = ([right, bottom]) => {
+    const r = {right: frame.right - right, bottom: frame.bottom - bottom};
+    r.left = r.right - home.width;
+    r.top = r.bottom - home.height;
+    if (r.left < frame.left || r.top < frame.top) return true;
+    return obstacles.some((o) =>
+      o.left < r.right && o.right > r.left && o.top < r.bottom && o.bottom > r.top);
+  };
+  const spots = [[edge, edge]];
+  for (const o of obstacles) {
+    spots.push([Math.ceil(frame.right - o.left + gap), edge]);
+    spots.push([edge, Math.ceil(frame.bottom - o.top + gap)]);
+  }
+  spots.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  const [right, bottom] = spots.find((spot) => !blocked(spot)) ?? [edge, edge];
+  if (right !== edge) box.style.right = `${right}px`;
+  if (bottom !== edge) box.style.bottom = `${bottom}px`;
+}
+window.addEventListener("resize", placeLivePause);
+// A refusal stays on screen long enough to read: the 2 s status poll answers
+// without an error and must not wipe one a press just got.
+function showLiveError(text) {
+  livePause.error = text;
+  livePause.errorUntil = text ? Date.now() + LIVE_ERROR_SHOWN_MS : 0;
 }
 function adoptLivePause(status) {
   if (!status || typeof status !== "object") return;
@@ -6509,14 +6580,26 @@ function adoptLivePause(status) {
   livePause.requested = status.requested === true;
   livePause.held = status.held === true;
   livePause.turn = Number.isInteger(status.turn) ? status.turn : null;
-  livePause.error = typeof status.error === "string" ? status.error : "";
+  const fresh = status.new_game && typeof status.new_game === "object" ? status.new_game : {};
+  // Asked for or done, the game is on its way out. Between games (no live run)
+  // the answer stands until a live run without a request says otherwise —
+  // the retired harness exits a little before this mirror is replaced.
+  if (fresh.requested === true || fresh.retired === true) livePause.ending = true;
+  else if (fresh.live === true) livePause.ending = false;
+  if (livePause.ending) disarmLiveNewGame();
+  if (typeof status.error === "string" && status.error) showLiveError(status.error);
+  else if ("error" in status || Date.now() >= livePause.errorUntil) showLiveError("");
   paintLivePause();
 }
 async function pollLivePause() {
   clearTimeout(livePause.timer);
   let answered = true;
+  // A press made while this poll is out answers for itself; this older
+  // reading must not land after it and flip the button back.
+  const asked = livePause.asked;
   try {
-    if (!livePause.busy) adoptLivePause(await fetchJSON("/live-pause", {}, 3000));
+    const status = await fetchJSON("/live-pause", {}, 3000);
+    if (!livePause.busy && asked === livePause.asked) adoptLivePause(status);
   } catch (_) {
     // The page and this route ship in one binary, so a failure is a server
     // between frames or restarting: ask again rather than drop the control.
@@ -6526,25 +6609,61 @@ async function pollLivePause() {
   if (livePause.available || !answered)
     livePause.timer = setTimeout(pollLivePause, answered ? 2000 : 5000);
 }
-async function toggleLivePause() {
-  if (!livePause.available || livePause.busy) return;
-  const paused = !livePause.requested;
+async function postLiveControl(path, body, timeoutMs) {
+  livePause.asked += 1;
   livePause.busy = true;
-  livePause.requested = paused;
-  livePause.error = "";
+  showLiveError("");
   paintLivePause();
   try {
-    adoptLivePause(await fetchJSON("/live-pause", {method: "POST",
+    adoptLivePause(await fetchJSON(path, {method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({paused})}, 5000));
+      body: JSON.stringify(body)}, timeoutMs));
+    return true;
   } catch (_) {
-    livePause.requested = !paused;
-    livePause.error = paused ? "Could not pause — the server did not answer"
-      : "Could not resume — the server did not answer";
+    return false;
   } finally {
     livePause.busy = false;
     paintLivePause();
   }
+}
+async function toggleLivePause() {
+  if (!livePause.available || livePause.busy || livePause.ending) return;
+  disarmLiveNewGame();
+  const paused = !livePause.requested;
+  livePause.requested = paused;
+  if (!await postLiveControl("/live-pause", {paused}, 5000)) {
+    livePause.requested = !paused;
+    showLiveError(paused ? "Could not pause — the server did not answer"
+      : "Could not resume — the server did not answer");
+    paintLivePause();
+  }
+}
+function disarmLiveNewGame() {
+  clearTimeout(livePause.newGameTimer);
+  livePause.newGameTimer = null;
+  livePause.newGameArmed = false;
+}
+async function pressLiveNewGame() {
+  if (!livePause.available || livePause.busy || livePause.ending) return;
+  if (!livePause.newGameArmed) {
+    livePause.newGameArmed = true;
+    showLiveError("");
+    clearTimeout(livePause.newGameTimer);
+    livePause.newGameTimer = setTimeout(() => {
+      disarmLiveNewGame();
+      paintLivePause();
+    }, LIVE_NEW_GAME_ARMED_MS);
+    paintLivePause();
+    return;
+  }
+  disarmLiveNewGame();
+  // The switch proves the one live game with `ps` before it writes anything.
+  if (!await postLiveControl("/live-new-game", {confirm: true}, 20000)) {
+    showLiveError("Could not start a new game — the server did not answer");
+  } else if (livePause.error) {
+    showLiveError(`Could not start a new game — ${livePause.error}`);
+  }
+  paintLivePause();
 }
 // --- Live time: the turn plate's stopwatch, above its Watch pace row. It
 // reads how long the world on screen has actually been playing: it starts

@@ -1902,6 +1902,9 @@ impl AdvancedAi {
             .values()
             .filter_map(|siege| siege.taker)
             .collect();
+        // `amphibious-siege-train`: the crossing in hand follows its target,
+        // port and members the same way.
+        self.remap_amphibious_train(previous, next, units);
     }
 
     /// Whether the siege has reserved this unit as its taker — the hook a
@@ -3376,6 +3379,7 @@ impl AdvancedAi {
             } else {
                 StageMarch::Ordinary
             };
+            let water_hold = matches!(dry_march, StageMarch::Hold { .. });
             // `long-road-names-the-blocker`: see `long_road_holds`.
             let dry_march = self.long_road_holds(g, uid, city.pos, dry_march);
             // `siege-target-needs-a-road`: see `advanced/siege_road.rs`.
@@ -3388,6 +3392,14 @@ impl AdvancedAi {
                         owner, wet;
                         city.pos);
                 } else {
+                    // `amphibious-siege-train`: a pure water hold may cross as
+                    // one group. `None` with the gene off, and the hold stands.
+                    // See `advanced/amphibious_siege_train.rs`.
+                    if water_hold {
+                        if let Some(acted) = self.amphibious_hold_step(g, pid, uid, city.id) {
+                            return acted;
+                        }
+                    }
                     think!(self.journal(), Military, Detail,
                         "Siege of {}: the {} holds on land short of the water", g.cities[&city.id].name, g.units[&uid].kind;
                         "the march crosses water in {} steps and come-ashore lands an embarked unit at home; no dry road opens within {} steps",
@@ -3968,11 +3980,20 @@ impl AdvancedAi {
         } else {
             StageMarch::Ordinary
         };
+        let water_hold = matches!(dry_march, StageMarch::Hold { .. });
         let dry_march = self.long_road_holds(g, uid, city.pos, dry_march);
         let dry = match dry_march {
             StageMarch::Ordinary => dry_march_step(g, uid, city.pos, STAGING_FAR),
             StageMarch::Dry { step, .. } => Some(step),
-            StageMarch::Hold { .. } => return Some(self.base.fortify_or_stop(g, pid, uid)),
+            StageMarch::Hold { .. } => {
+                // `amphibious-siege-train`: see the Stage march's water hold.
+                if water_hold {
+                    if let Some(acted) = self.amphibious_hold_step(g, pid, uid, city.id) {
+                        return Some(acted);
+                    }
+                }
+                return Some(self.base.fortify_or_stop(g, pid, uid));
+            }
         };
         let next = dry
             .or_else(|| g.route_step(uid, city.pos, STAGING_FAR))

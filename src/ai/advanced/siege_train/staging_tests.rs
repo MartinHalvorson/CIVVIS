@@ -1102,3 +1102,32 @@ fn a_melee_member_walks_up_to_the_strike_and_no_further() {
         "on, to the edge of the strike"
     );
 }
+
+/// `amphibious-siege-train`: off, a gun with no dry road to its objective
+/// holds on land; on, the same hold forms a crossing and the gathered train
+/// sets off.
+#[test]
+fn the_amphibious_train_forms_at_the_water_hold_only_with_its_gene() {
+    use super::super::amphibious_siege_train::tests::{armed, island};
+    let run = |gene: bool| {
+        let (mut g, cid, _, _, gun, escorts) = island(2);
+        let mut ai = armed(&g, cid, gun, escorts);
+        if !gene {
+            ai.disable_amphibious_siege_train();
+        }
+        ai.enable_siege_train();
+        ai.enable_come_ashore();
+        ai.enable_stage_march_keeps_to_land();
+        let start = g.units[&gun].pos;
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+        (start, g.units[&gun].pos, ai.amphibious_train.is_some())
+    };
+    let (start, off_pos, off_train) = run(false);
+    assert_eq!(off_pos, start, "the water hold stands");
+    assert!(!off_train);
+    let (start, on_pos, on_train) = run(true);
+    assert!(on_train, "the hold forms a crossing");
+    assert_ne!(on_pos, start, "the gathered train sets off");
+}

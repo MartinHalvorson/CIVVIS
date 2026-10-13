@@ -189,6 +189,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `air-fire-counts-on-the-city` | off (unmeasured) | Opt-in gene `air-fire-counts-on-the-city`; see `Self::air_fire_counts_on_the_city`. | 1 \| 1 |
 | `air-surge-strikes-through-urgency` | off (unmeasured) | Opt-in gene `air-surge-strikes-through-urgency`; see `Self::air_surge_strikes_through_urgency`. | 1 \| 1 |
 | `air-volley-needs-a-road` | off (unmeasured) | Opt-in gene `air-volley-needs-a-road`; see `Self::air_volley_needs_a_road`. | 1 \| 1 |
+| `amphibious-siege-train` | off (unmeasured) | A water-locked Domination siege objective's guns and escorts cross as one group. | 1 \| 1 |
 | `aqueduct-claims-the-capped-queue` | off (unmeasured) | Opt-in gene `aqueduct-claims-the-capped-queue`; see `advanced/aqueduct_claims_the_capped_queue.rs`. | 1 \| 1 |
 | `backlog-builder-takes-the-queue` | off (unmeasured) | Opt-in gene `backlog-builder-takes-the-queue`; see `advanced/backlog_builder_takes_the_queue.rs`. | 1 \| 1 |
 | `beeline-orders-by-value` | off (unmeasured) | `beeline-orders-by-value`: a forced research or civic goal walks its prerequisites by value, not by printed price. | 1 \| 1 |
@@ -348,6 +349,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `housing-research-2` | off (unmeasured) | Research housing that the capped cities can actually build. | 1 \| 2 |
 | `improvement-upgrades-count` | off (unmeasured) | Opt-in gene `improvement-upgrades-count`; see `Self::improvement_upgrades_count`. | 1 \| 1 |
 | `industrial-hub` | off (unmeasured) | One Industrial Zone where its Factory reaches the most cities, and its chain; see `BasicAi::industrial_hub`. | 1 \| 1 |
+| `industrial-zone-claims-the-factory` | off (unmeasured) | Once Industrialization is known, the zone city whose Factory reaches the most new cities (then, with Coal, the Factory city whose plant powers the most Factories) claims its queue. | 1 \| 1 |
 | `industrial-zone-claims-the-producer-queue` | off (unmeasured) | Once Apprenticeship is known, the producer step's Industrial Zone (or the zone's Workshop) claims its city's queue over a deferrable head. | 1 \| 1 |
 | `industrial-zone-in-the-producers` | off (unmeasured) | Opt-in gene `industrial-zone-in-the-producers`; see `BasicAi::industrial_zone_in_the_producers`. | 1 \| 1 |
 | `industry-before-the-army` | off (unmeasured) | The delegated city governor's Industrial Zone, Workshop and Factory ahead of the military floor. | — \| 3 |
