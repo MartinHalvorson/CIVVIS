@@ -7596,6 +7596,17 @@ impl AdvancedAi {
         self.luxury_swap_asks_2 = false;
     }
 
+    /// Opt-in gene `unwalled-city-spares-the-train`; see
+    /// `AdvancedAi::unwalled_city_spares_the_train`.
+    pub fn enable_unwalled_city_spares_the_train(&mut self) {
+        self.unwalled_city_spares_the_train = true;
+    }
+
+    /// The twin of `enable_unwalled_city_spares_the_train`.
+    pub fn disable_unwalled_city_spares_the_train(&mut self) {
+        self.unwalled_city_spares_the_train = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

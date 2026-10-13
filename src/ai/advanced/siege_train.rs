@@ -2659,7 +2659,7 @@ impl AdvancedAi {
         });
 
         let damage_ready = self.conversion_siege_ready(g, pid, cid, &force);
-        let damage_budget = self.conversion_siege_budget(g, pid, cid, &force);
+        let damage_budget = self.conversion_siege_entry_budget(g, pid, cid, &force, 5);
         // Entry needs a margin for the first reply. Once the train has
         // invested, a modest dip below that entry margin must not pull its
         // guns back out of firing range every other turn. A force that cannot
@@ -2784,7 +2784,7 @@ impl AdvancedAi {
                     reading.leaves_walls_shut(&city)
                 };
             let budget_mustered =
-                self.conversion_siege_budget_within(g, pid, cid, &force, MUSTER_BREACH_FAR);
+                self.conversion_siege_entry_budget(g, pid, cid, &force, MUSTER_BREACH_FAR);
             let ready_mustered = !self.siege_positive_damage_budget
                 || budget_mustered.is_some_and(|(turns, endurance)| turns <= endurance * 0.8);
             let continues_mustered = !self.siege_positive_damage_budget
@@ -6288,6 +6288,9 @@ mod air_tests;
 
 #[cfg(test)]
 mod swarm_tests;
+
+#[cfg(test)]
+mod spared_tests;
 
 #[cfg(test)]
 mod post_reachability_tests;
