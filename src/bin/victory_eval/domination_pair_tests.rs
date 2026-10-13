@@ -17,7 +17,9 @@ fn args(extra: &[&str]) -> Vec<String> {
 fn explicit_profile_overrides_and_unknown_policies_are_rejected() {
     for extra in [
         vec!["--target", "science"],
-        vec!["--difficulty", "emperor"],
+        vec!["--difficulty", "deity"],
+        vec!["--max-turns", "30"],
+        vec!["--max-turns", "251"],
         vec!["--difficulty", "prince", "--difficulty", "king"],
         vec!["--players", "6"],
         vec!["--games", "0"],
@@ -34,6 +36,10 @@ fn explicit_profile_overrides_and_unknown_policies_are_rejected() {
     assert!(parse(&args(&[])[..2]).is_err());
     let valid = parse(&args(&["--games", "2", "--start-seed", "99"])).unwrap();
     assert_eq!((valid.games, valid.start_seed), (2, 99));
+    assert_eq!(valid.max_turns, 250, "the natural clock unless shortened");
+    let short = parse(&args(&["--max-turns", "160"])).unwrap();
+    assert_eq!(short.max_turns, 160);
+    assert_eq!(options(1, None, short.max_turns).max_turns, 160);
 }
 
 #[test]
@@ -237,11 +243,11 @@ fn conquest_observer_distinguishes_capitals_from_minors_and_tracks_losses() {
 
 #[test]
 fn explicit_native_rung_reaches_player_and_barbarian_rules_and_provenance() {
-    for difficulty in ["prince", "king"] {
+    for difficulty in ["prince", "king", "emperor", "immortal"] {
         let config = parse(&args(&["--difficulty", difficulty])).unwrap();
         assert_eq!(config.difficulty, Some(difficulty));
         let game = Game::new_with(options(37860000, config.difficulty, config.max_turns));
-        let report = profile(37860000, config.difficulty);
+        let report = profile(37860000, config.difficulty, config.max_turns);
         assert_eq!(report["difficulty"], difficulty);
         assert_eq!(report["barbarian_difficulty"], difficulty);
         assert_eq!(game.barbarian_difficulty, difficulty);
@@ -250,7 +256,7 @@ fn explicit_native_rung_reaches_player_and_barbarian_rules_and_provenance() {
         for pid in 1..4 {
             assert_eq!(
                 game.handicap_yield_pct(pid).science > 0.0,
-                difficulty == "king"
+                difficulty != "prince"
             );
         }
     }
