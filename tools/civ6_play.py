@@ -1698,7 +1698,7 @@ def _setup_current_value(path: Path, bounds: tuple[int, int, int, int],
     left, right = SETUP_COLUMN
     candidates: list[tuple[int, str, tuple[int, int]]] = []
     for observation in observations:
-        option = allowed.get(_normalized_label(str(observation.get("text", ""))))
+        option = allowed.get(_observed_menu_label(str(observation.get("text", ""))))
         if option is None:
             continue
         point = _observation_point(observation)
@@ -1866,6 +1866,14 @@ def _normalized_label(value: str) -> str:
     return "".join(character for character in ascii_value.casefold() if character.isalnum())
 
 
+def _observed_menu_label(value: str) -> str:
+    label = _normalized_label(value)
+    # Native 20261013T095333Z: both window and enlarged-crop Vision passes
+    # read the rendered Deity value as "Delty", with confidence 1. Accept
+    # this observed i/l confusion in read-back and option selection alike.
+    return "deity" if label == "delty" else label
+
+
 def _menu_label_matches(observed: str, wanted: str) -> bool:
     """Tolerate a small OCR edit distance in a long menu label.
 
@@ -1875,7 +1883,7 @@ def _menu_label_matches(observed: str, wanted: str) -> bool:
     constrained to the game window, so two edits in a ten-character label are
     conservative enough to recover the visible row without a coordinate guess.
     """
-    observed = _normalized_label(observed)
+    observed = _observed_menu_label(observed)
     wanted = _normalized_label(wanted)
     if observed == wanted:
         return True
