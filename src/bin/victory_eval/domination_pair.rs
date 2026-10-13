@@ -7,7 +7,8 @@
 //!
 //! Both legs use 4 players, 60x38 Pangaea, 6 city-states, Online,
 //! barbarians, all victory conditions and the natural 250-turn clock.
-//! `--difficulty prince|king` sets both player and barbarian difficulty.
+//! `--difficulty` accepts every canonical rung, including Immortal and Deity,
+//! and sets both player and barbarian difficulty.
 //! Omission preserves the historical King-player/Emperor-barbarian profile.
 //! Only seat zero's named policy is disabled/enabled. The other seats keep
 //! their adaptive deployed controllers. The focal seat also carries the
@@ -49,11 +50,20 @@ fn parse(args: &[String]) -> Result<Config, String> {
                 policy = Some(gene(value).ok_or_else(|| format!("unknown policy {value}"))?);
             }
             "--difficulty" => {
-                difficulty = Some(match value.as_str() {
-                    "prince" => "prince",
-                    "king" => "king",
-                    _ => return Err("--difficulty must be prince or king".to_string()),
-                });
+                difficulty = Some(
+                    civvis::civ6::difficulty_for_civvis(value)
+                        .ok_or_else(|| {
+                            format!(
+                                "--difficulty must be one of {}",
+                                civvis::civ6::DIFFICULTIES
+                                    .iter()
+                                    .map(|spec| spec.civvis)
+                                    .collect::<Vec<_>>()
+                                    .join("|"),
+                            )
+                        })?
+                        .civvis,
+                );
             }
             "--games" => games = value.parse::<u64>().map_err(|e| e.to_string())?,
             "--start-seed" => start_seed = value.parse::<u64>().map_err(|e| e.to_string())?,
