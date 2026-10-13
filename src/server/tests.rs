@@ -11258,6 +11258,24 @@ fn the_civ6_endpoints_answer_on_any_host() {
         Some("no Civilization VI difficulty is called \"not-a-rung\"")
     );
     assert!(refused["started"].is_null());
+    // The live game's Pause is offered only by the mirror `tools/follow.py`
+    // starts with `--live-pause`; this server was not, so it says so. (No
+    // POST here: a broken guard would write this host's real pause request
+    // and hold whatever verification game is running.)
+    let live_pause = json_at("/live-pause");
+    assert_eq!(live_pause["available"], false, "{live_pause}");
+    assert!(live_pause["requested"].is_boolean(), "{live_pause}");
+    assert!(live_pause["held"].is_boolean(), "{live_pause}");
+    // The page asks before it shows the control, and the control names what
+    // pressing it will do.
+    for piece in [
+        "id=\"livepause\" hidden",
+        "await fetchJSON(\"/live-pause\", {}, 3000)",
+        "button.textContent = asked ? \"▶ Resume game\" : \"⏸ Pause game\";",
+        "document.getElementById(\"livepause-button\").onclick = toggleLivePause;",
+    ] {
+        assert!(EMBEDDED_INDEX.contains(piece), "the live pause is missing {piece}");
+    }
 }
 
 /// Diplomacy needs a complete player-facing action surface. The screen
