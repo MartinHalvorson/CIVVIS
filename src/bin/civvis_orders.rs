@@ -56,6 +56,10 @@ mod host_ranged_history;
 #[path = "civvis_orders/unit_identity.rs"]
 mod unit_identity;
 
+#[cfg(test)]
+#[path = "civvis_orders/great_person_reservation_tests.rs"]
+mod great_person_reservation_tests;
+
 fn arg_text(args: &[String], flag: &str) -> Option<String> {
     args.iter()
         .position(|value| value == flag)
@@ -3137,7 +3141,7 @@ fn is_founded_zero_charge_prophet(
             .is_some_and(|religion| !religion.trim().is_empty())
 }
 
-/// Keep every physical Great Person hex clear for the current Lua batch.
+/// Reserve Great Person tiles against civilian conflicts and activation races.
 ///
 /// Firaxis queues unit operations. `CanStartCommand` can therefore approve a Great
 /// Person retirement and a later move onto that person's hex even though the move
@@ -3145,16 +3149,20 @@ fn is_founded_zero_charge_prophet(
 /// Navigator hit this exact race three times while a Galley oscillated through his
 /// Harbor. An inactive Great Person also blocks another civilian from entering its
 /// plot: Hildegard spent forty turns trying to enter a Holy Site occupied by an
-/// unspent Prophet. Reserve every observed Great Person hex and reconsider those
-/// moves after the next authoritative export.
-#[cfg(test)]
-#[path = "civvis_orders/great_person_reservation_tests.rs"]
-mod great_person_reservation_tests;
-
+/// unspent Prophet. Combat units can share an idle person's tile; reserve their
+/// entry only when this batch submits an activation. Preserve the full reservation
+/// for civilian, support and unobserved movers.
 fn defer_great_person_plot_conflicts(
     orders: Vec<Order>,
     state: &civvis::mirror::StateSnapshot,
 ) -> (Vec<Order>, usize) {
+    let activations = orders
+        .iter()
+        .filter(|order| {
+            order.kind == "unit" && order.verb.as_deref() == Some("ACTIVATE_GREAT_PERSON")
+        })
+        .filter_map(|order| order.subject)
+        .collect::<std::collections::BTreeSet<_>>();
     let people = state
         .units
         .iter()
@@ -3167,19 +3175,29 @@ fn defer_great_person_plot_conflicts(
                 !is_founded_zero_charge_prophet(unit, person, state)
             })
         })
-        .map(|unit| (unit.id, (unit.x, unit.y)))
+        .map(|unit| (unit.id, (unit.x, unit.y), activations.contains(&unit.id)))
         .collect::<Vec<_>>();
     let mut deferred = 0;
     let orders = orders
         .into_iter()
         .filter(|order| {
+            // The native combat and civilian slots coexist. Resolve military
+            // identity from the observed actor, not a translated unit name.
+            // Only physical MOVE_TO orders get this exemption; other uses of
+            // a destination retain the existing reservation.
+            let military_move = order.verb.as_deref() == Some("MOVE_TO")
+                && state.units.iter().any(|unit| {
+                    order.subject == Some(unit.id) && (unit.combat > 0.0 || unit.ranged > 0.0)
+                });
             // A Trade Route uses `pos` to name its destination city, not a
             // physical hex the Trader will enter in this Lua batch.
             let conflicts = order.kind == "unit"
                 && order.verb.as_deref() != Some("TRADE_ROUTE")
-                && people
-                    .iter()
-                    .any(|(person, pos)| order.subject != Some(*person) && order.pos == Some(*pos));
+                && people.iter().any(|(person, pos, activating)| {
+                    order.subject != Some(*person)
+                        && order.pos == Some(*pos)
+                        && (*activating || !military_move)
+                });
             if conflicts {
                 deferred += 1;
             }
