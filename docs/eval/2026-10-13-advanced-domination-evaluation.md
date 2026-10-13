@@ -38,8 +38,14 @@ identical batch. These are completed negative probes, not passing strength
 comparisons or evidence for enabling the selected policy. No source or seed
 was changed in response.
 
-Full local validation and independent CI are pending. Source,
-binary digest, registration and logs are retained under
+Full local validation passed all 4,980 default-plus-developer-tool tests with
+four workers, zero retries and no fail-fast; 51 pre-existing skipped cases
+remain skipped. Independent CI on implementation `ff4e53b59` passed every
+required check, including the default Rust suite, all 24 evaluator tests,
+Rust quality and paired cost. Formatting and diff checks passed. This change
+extends the evaluator's accepted setup; it changes no simulator rules or AI
+policy, so an engine soak is not applicable. Source,
+binary digest, registration and outcome/conquest logs are retained under
 `~/civvis-tactics-results/2026-10-13/native-movement-adoption/`. Native adoption
 of the separately published movement fix is recorded in its own task and does
 not change this evaluator's simulation results.
