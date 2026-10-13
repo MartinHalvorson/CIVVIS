@@ -326,6 +326,17 @@ impl AdvancedAi {
         upgrade_floor_from(stock, g.unit_gold_maintenance(pid))
     }
 
+    /// `purchases-keep-the-upkeep-reserve`: the treasury a discretionary Gold
+    /// buy leaves, never below [`UPKEEP_RESERVE_TURNS`] turns of the empire's
+    /// unit bill -- the floor `upgrade_treasury_floor` keeps. `stock` comes
+    /// back unchanged while the gene is off.
+    pub(super) fn purchase_upkeep_floor(&self, g: &Game, pid: usize, stock: f64) -> f64 {
+        if !self.purchases_keep_the_upkeep_reserve {
+            return stock;
+        }
+        upgrade_floor_from(stock, g.unit_gold_maintenance(pid))
+    }
+
     /// `treasury-at-work-2`: the reserve `advanced_gold_spending` keeps back,
     /// given the plan's stock reserve. Returns `stock` untouched while the
     /// gene is off.
@@ -1078,3 +1089,7 @@ mod tests {
         assert_eq!(ai.upgrade_treasury_floor(&g, 0, 30.0), 30.0);
     }
 }
+
+#[cfg(test)]
+#[path = "purchase_upkeep_floor_tests.rs"]
+mod purchase_upkeep_floor_tests;

@@ -170,7 +170,14 @@ impl AdvancedAi {
             } else {
                 g.players[pid].gold
             };
-            if bank + f64::EPSILON < price {
+            // `purchases-keep-the-upkeep-reserve`: a Gold Shrine leaves the
+            // army's bill behind; the Faith branch is not guarded.
+            let floor = if currency == "gold" {
+                self.purchase_upkeep_floor(g, pid, 0.0)
+            } else {
+                0.0
+            };
+            if bank + f64::EPSILON < price + floor {
                 continue;
             }
             if g.apply(

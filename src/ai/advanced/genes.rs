@@ -3800,6 +3800,11 @@ pub const GENES: &[Gene] = &[
     // of a partner whose mirrored board holds none of a spare, offering that
     // spare. See `append_luxury_swap_order` in `civvis_orders`.
     Gene { tag: "luxury-swap-asks-2", field: "luxury_swap_asks_2", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_swap_asks_2, disable: AdvancedAi::disable_luxury_swap_asks_2 },
+    // `purchases-keep-the-upkeep-reserve`: the main purchase pass, the
+    // counterweight Shrine's Gold branch and the city-state levy keep one and
+    // a half turns of the army's bill, the floor `upkeep-reserve` gives the
+    // upgrade passes. See `AdvancedAi::purchase_upkeep_floor`.
+    Gene { tag: "purchases-keep-the-upkeep-reserve", field: "purchases_keep_the_upkeep_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_purchases_keep_the_upkeep_reserve, disable: AdvancedAi::disable_purchases_keep_the_upkeep_reserve },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
