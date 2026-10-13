@@ -11,7 +11,10 @@
 //! breaker the siege reservation queued
 //! ([`AdvancedAi::queued_wall_breaker`]), anything finishing this turn, a
 //! military unit while at war with a major, and an idle city with a Settler
-//! due. The displaced item keeps its progress.
+//! due. The displaced item keeps its progress. While a walled domination
+//! siege is below its gun cap the claim stands down entirely, so the siege
+//! reservation (which runs later and reuses only idle or fresh routine
+//! queues) still finds its city ([`AdvancedAi::siege_reservation_open`]).
 //!
 //! **Why (2026-10-11 census, 75 live Immortal GC runs since 08:27Z and 82
 //! Emperor since 10-10 18:00Z).** Gold a turn falls behind the best rival
@@ -123,6 +126,12 @@ impl AdvancedAi {
     /// the gene off.
     pub(super) fn claim_commercial_hub(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         if !self.commercial_hub_claims_the_trade_city {
+            return;
+        }
+        // A live walled siege below its gun cap keeps the idle queues for the
+        // siege reservation, which runs after the claims and reuses only an
+        // idle or fresh routine queue (see `siege_reservation_open`).
+        if self.siege_reservation_open(g, pid, plan) {
             return;
         }
         let at_major_war = g.players.iter().any(|other| {

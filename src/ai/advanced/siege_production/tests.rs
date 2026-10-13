@@ -767,3 +767,35 @@ fn a_housing_bound_citys_fresh_granary_is_not_given_to_the_siege_gun_under_the_g
         "room to grow: the fresh Granary is routine again"
     );
 }
+
+/// `commercial-hub-claims-the-trade-city` stands down while the siege
+/// reservation is open: a walled campaign target at war with fewer siege
+/// units than the cap. Peace, or a full siege train, closes it.
+#[test]
+fn the_siege_reservation_is_open_while_walls_stand_below_the_gun_cap() {
+    let (g, ai, plan, _, _) = siege_gap_case();
+    assert!(
+        ai.siege_reservation_open(&g, 0, &plan),
+        "walls 200 at war with no gun: the reservation is open"
+    );
+
+    let (mut peace, ai, plan, _, _) = siege_gap_case();
+    peace.at_war.remove(&(0, 1));
+    assert!(
+        !ai.siege_reservation_open(&peace, 0, &plan),
+        "at peace: no reservation"
+    );
+
+    let (mut full, ai, plan, home, _) = siege_gap_case();
+    full.players[0]
+        .techs
+        .extend(["mathematics", "construction"].map(crate::name::Name::new));
+    let pos = full.cities[&home].pos;
+    for _ in 0..10 {
+        full.spawn_unit("catapult", 0, pos);
+    }
+    assert!(
+        !ai.siege_reservation_open(&full, 0, &plan),
+        "a full siege train: the reservation is closed"
+    );
+}

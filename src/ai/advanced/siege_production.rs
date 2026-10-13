@@ -718,6 +718,50 @@ impl AdvancedAi {
         ) && (city.pop as f64) + 1.0 >= g.city_housing(city)
     }
 
+    /// `commercial-hub-claims-the-trade-city`: whether the delegated
+    /// domination siege reservation is still open -- a walled campaign
+    /// target at war (`reserve_delegated_domination_siege`'s own target
+    /// test) with fewer siege units than its cap. While it is, the
+    /// Commercial Hub claim leaves the idle queues to the gun: the
+    /// reservation runs after the claims and reuses only an idle or fresh
+    /// routine queue, so a claimed district would close the city to it
+    /// (live G073131Z: Quito's Trebuchet reservations at t72, t73 and t76
+    /// vanished under the claim).
+    pub(super) fn siege_reservation_open(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return false;
+        }
+        let Some(target) = plan
+            .target_city
+            .and_then(|cid| g.cities.get(&cid))
+            .filter(|city| {
+                city.owner != pid
+                    && !g.players[city.owner].is_minor
+                    && self.breaker_war_with(g, pid, city.owner, plan)
+                    && (city.wall_hp > 0
+                        || (city.hp >= 160
+                            && g.players[city.owner]
+                                .techs
+                                .contains(&crate::name!("masonry"))))
+            })
+        else {
+            return false;
+        };
+        let cap =
+            if self.siege_train_scales_with_walls && g.city_max_wall_hp(target) >= HEAVY_WALL_HP {
+                HEAVY_WALL_SIEGE_CAP
+            } else {
+                SHORTFALL_SIEGE_CAP
+            };
+        let cap = cap.max(self.breakers_matched_guns(g, pid, target.id).unwrap_or(0));
+        self.counts(g, pid).siege < cap
+    }
+
     /// A roster full of field units can still lack the ability to break walls.
     /// Counts include queued units, so only the first siege order gets this
     /// composition exception to the ordinary army ceiling. An active siege
