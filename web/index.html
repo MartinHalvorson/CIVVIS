@@ -1725,20 +1725,20 @@
      game takes a while to come up, neither on the click. */
   #livepause {
     position: absolute; z-index: 30; left: var(--panel-edge); bottom: var(--panel-edge);
-    display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
-    max-width: min(150px, calc(100% - 2 * var(--panel-edge)));
+    display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+    max-width: min(195px, calc(100% - 2 * var(--panel-edge)));
   }
   #livepause[hidden] { display: none; }
   .livepause-buttons {
-    display: flex; flex-direction: column; align-items: stretch; gap: 3px;
-    padding: 3px; border-radius: 9px; white-space: nowrap;
+    display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+    padding: 4px; border-radius: 12px; white-space: nowrap;
     border: 1px solid #4d685f; background: #0a1512e8;
-    box-shadow: 0 4px 11px #0007; backdrop-filter: blur(12px);
+    box-shadow: 0 5px 14px #0007; backdrop-filter: blur(12px);
   }
   #livepause.live-paused .livepause-buttons { border-color: var(--gold); }
   .livepause-buttons button {
-    flex: none; margin: 0; padding: 4px 8px; border-radius: 999px; text-align: left;
-    font-size: calc(var(--type-control) / 2); font-weight: 900; letter-spacing: .04em;
+    flex: none; margin: 0; padding: 5px 10px; border-radius: 999px; text-align: left;
+    font-size: calc(var(--type-control) * .65); font-weight: 900; letter-spacing: .04em;
   }
   #livepause-button {
     color: #17160f; background: linear-gradient(135deg, #f0d58f, #c99e4e);
@@ -1761,10 +1761,34 @@
   }
   .livepause-buttons button:disabled { opacity: .6; cursor: progress; }
   #livepause-note {
-    max-width: 100%; padding: 3px 6px; border-radius: 6px; text-align: left;
+    max-width: 100%; padding: 4px 8px; border-radius: 8px; text-align: left;
     border: 1px solid #4d685f; background: #0a1512e8; backdrop-filter: blur(12px);
-    color: #dce6e1; font-size: calc(var(--type-control) / 2); font-weight: 800; line-height: 1.3;
+    color: #dce6e1; font-size: calc(var(--type-control) * .65); font-weight: 800; line-height: 1.3;
   }
+  /* What our civilization is studying and running, above the controls: the
+     research and civic in progress, the government, and the policy cards in
+     its slots, each card in its slot's colour as Civ VI draws them. */
+  #livetracker {
+    display: grid; grid-template-columns: auto 1fr; gap: 2px 6px; align-items: baseline;
+    max-width: 100%; padding: 5px 8px; border-radius: 10px;
+    border: 1px solid #4d685f; background: #0a1512e8; backdrop-filter: blur(12px);
+    color: #dce6e1; font-size: calc(var(--type-control) * .65); line-height: 1.3;
+    box-shadow: 0 5px 14px #0007;
+  }
+  #livetracker[hidden] { display: none; }
+  #livetracker .lt-k { color: #9db0a8; font-weight: 700; letter-spacing: .03em; }
+  #livetracker .lt-v { font-weight: 900; min-width: 0; overflow-wrap: anywhere; }
+  #livetracker .lt-v small { margin-left: 4px; color: #aebeb7; font-weight: 700; }
+  #livetracker .lt-cards { display: flex; flex-wrap: wrap; gap: 2px 3px; }
+  #livetracker .lt-card {
+    padding: 0 5px; border-radius: 4px; font-weight: 800; white-space: nowrap;
+    color: #f4efe2; background: #3b4a45; border: 1px solid #ffffff1f;
+  }
+  #livetracker .lt-card.slot-military { background: #7a3328; }
+  #livetracker .lt-card.slot-economic { background: #7a6324; }
+  #livetracker .lt-card.slot-diplomatic { background: #285a7a; }
+  #livetracker .lt-card.slot-wildcard { background: #5b3f7a; }
+  #livetracker .lt-none { color: #aebeb7; font-style: italic; font-weight: 700; }
   #livepause-note[hidden] { display: none; }
   #livepause.live-pending #livepause-note { color: #aebeb7; font-style: italic; }
   #livepause.live-error #livepause-note { color: #f2b8a8; border-color: #8a4740; font-style: normal; }
@@ -4839,6 +4863,7 @@
        the mirror beside a Civilization VI verification game; see
        `toggleLivePause` and `pressLiveNewGame`. -->
   <div id="livepause" hidden role="group" aria-label="Live Civilization VI game">
+    <div id="livetracker" hidden aria-label="What our civilization is studying and running"></div>
     <span id="livepause-note" aria-live="polite" hidden></span>
     <div class="livepause-buttons">
       <button id="livepause-button" type="button" aria-pressed="false">⏸ Pause game</button>
