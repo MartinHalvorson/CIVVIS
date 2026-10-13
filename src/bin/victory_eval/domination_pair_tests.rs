@@ -17,7 +17,7 @@ fn args(extra: &[&str]) -> Vec<String> {
 fn explicit_profile_overrides_and_unknown_policies_are_rejected() {
     for extra in [
         vec!["--target", "science"],
-        vec!["--difficulty", "emperor"],
+        vec!["--difficulty", "unknown-rung"],
         vec!["--difficulty", "prince", "--difficulty", "king"],
         vec!["--players", "6"],
         vec!["--games", "0"],
@@ -68,6 +68,55 @@ fn focal_identity_and_handicap_match_the_fixed_king_profile() {
         .unwrap()
         .values()
         .all(|v| v == true));
+}
+
+fn advanced_handicap(difficulty: &str, science: f64, production: f64, strength: f64, army: usize) {
+    let config = parse(&args(&["--difficulty", difficulty])).unwrap();
+    let game = Game::new_with(options(37_140_006, config.difficulty));
+    let recorded = profile(37_140_006, config.difficulty);
+    assert_eq!(game.difficulty, difficulty);
+    assert_eq!(game.barbarian_difficulty, difficulty);
+    assert_eq!(recorded["difficulty"], difficulty);
+    assert_eq!(recorded["barbarian_difficulty"], difficulty);
+    assert_eq!(recorded["handicap_exempt"], serde_json::json!([0]));
+    assert_eq!(game.players[0].civ, "Gran Colombia");
+    assert_eq!(game.handicap_yield_pct(0).science, 0.0);
+    assert_eq!(game.handicap_yield_pct(0).production, 0.0);
+    assert_eq!(game.handicap_combat_strength(0), 0.0);
+    let military = |pid| {
+        game.units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid && game.rules.units[unit.kind.as_str()].class == "military"
+            })
+            .count()
+    };
+    assert_eq!(
+        military(0),
+        1,
+        "the focal seat keeps its ordinary starting army"
+    );
+    for pid in 1..4 {
+        assert!(!game.is_handicap_exempt(pid));
+        assert_eq!(game.handicap_yield_pct(pid).science, science);
+        assert_eq!(game.handicap_yield_pct(pid).production, production);
+        assert_eq!(game.handicap_combat_strength(pid), strength);
+        assert_eq!(
+            military(pid),
+            army,
+            "rival {pid} receives the selected starting army"
+        );
+    }
+}
+
+#[test]
+fn immortal_probe_records_and_applies_asymmetric_level_seven_handicaps() {
+    advanced_handicap("immortal", 24.0, 60.0, 2.0, 4);
+}
+
+#[test]
+fn deity_probe_records_and_applies_asymmetric_level_eight_handicaps() {
+    advanced_handicap("deity", 32.0, 80.0, 3.0, 5);
 }
 
 #[test]
