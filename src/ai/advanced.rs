@@ -8395,6 +8395,11 @@ pub struct AdvancedAi {
     /// `advanced/science_suppression_pads.rs`.
     science_suppression_hits_the_pads: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `unwalled-city-spares-the-train`: on the siege's entry reads (Stage
+    /// -> Invest and the muster's close) a city with no standing wall, and no
+    /// walled Encampment, charges the train's endurance no city strike, as it
+    /// can make none. See `victory_conversion::conversion_siege_entry_budget`.
+    unwalled_city_spares_the_train: bool,
     /// `theology-fights-only-to-win`: an Apostle or Inquisitor starts a
     /// theological fight only when the mean exchange kills the defender or
     /// trades evenly and survives. See `advanced/theology_fights.rs`. Off by default.
@@ -10810,6 +10815,7 @@ impl AdvancedAi {
             science_denial_refused_pads: BTreeMap::new(),
             science_suppression_hits_the_pads: false,
             // ---- append: t-z ----------------------------------------
+            unwalled_city_spares_the_train: false,
             theology_fights_only_to_win: false,
             trader_fills_the_idle_route: false,
             wall_sortie_skips_the_encampment: false,

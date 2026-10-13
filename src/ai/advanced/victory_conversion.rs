@@ -988,6 +988,35 @@ impl AdvancedAi {
         force: &[u32],
         radius: i32,
     ) -> Option<(f64, f64)> {
+        self.siege_budget_reading(g, pid, cid, force, radius, false)
+    }
+
+    /// The budget the siege's entry reads — Stage -> Invest
+    /// (`conversion_siege_ready`) and the muster's close — over the members
+    /// within `radius`. It is [`Self::conversion_siege_budget_within`] but
+    /// for `unwalled-city-spares-the-train`; the production reads keep the
+    /// shipped budget, so the guns bought for a target that walls up do not
+    /// change.
+    pub(super) fn conversion_siege_entry_budget(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        force: &[u32],
+        radius: i32,
+    ) -> Option<(f64, f64)> {
+        self.siege_budget_reading(g, pid, cid, force, radius, true)
+    }
+
+    fn siege_budget_reading(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        force: &[u32],
+        radius: i32,
+        entry: bool,
+    ) -> Option<(f64, f64)> {
         let city = g.cities.get(&cid)?;
         // A siege staged outside the city's strike radius can lose current
         // sight of a city it has already found. Requiring live visibility
@@ -1018,6 +1047,24 @@ impl AdvancedAi {
         // blow is per-turn fire, not only the last one. A breached wall is
         // repaired only after three turns unattacked.
         let swarm = self.unwalled_city_takes_the_swarm && wall_hp <= 0;
+        // `unwalled-city-spares-the-train`: the same city strikes nobody
+        // (`Game::city_can_strike`, `BasicAi::city_centre_strikes`), so on
+        // the entry reads its strike costs the train no endurance, unless a
+        // walled Encampment shoots in its place. Charged a strike at the
+        // owner's best ranged strength, a train read about three turns of
+        // endurance a member: over the 10-13 Immortal control runs 21
+        // objectives stood unwalled at full health, a shooter in range on 2,
+        // and 30 of the 70 muster holds read a finite budget short of its
+        // endurance — Jenne (civvis-20261013T184508Z) at turn 110 met its
+        // bill, 166 against 115, and held at 6.2 turns against 3.5.
+        let spared = entry
+            && self.unwalled_city_spares_the_train
+            && wall_hp <= 0
+            && !(city.encampment_hp > 0
+                && city.encampment_wall_hp > 0
+                && !city.encampment_pillaged
+                && g.city_district_family_position(city, crate::name!("encampment"))
+                    .is_some());
         // `siege-counts-posted-shooters`: a shooter with no firing post fires
         // nothing, and one with a hostile unit in reach shoots that first
         // while the walls stand. See `siege_train::posted_shooters`.
@@ -1104,8 +1151,11 @@ impl AdvancedAi {
                 0.0
             };
             wall_dps += damage * wall_multiplier;
-            let mut incoming =
-                expected_damage(g.city_ranged_strength(cid), g.unit_strength(unit, false));
+            let mut incoming = if spared {
+                0.0
+            } else {
+                expected_damage(g.city_ranged_strength(cid), g.unit_strength(unit, false))
+            };
             // `unwalled-city-takes-the-swarm`: a member that swings every turn
             // takes the city's reply on every swing.
             if let Some(reply) = swarm_reply {
@@ -1168,7 +1218,7 @@ impl AdvancedAi {
     ) -> bool {
         !self.siege_positive_damage_budget
             || self
-                .conversion_siege_budget(g, pid, cid, force)
+                .conversion_siege_entry_budget(g, pid, cid, force, 5)
                 .is_some_and(|(turns, endurance)| turns <= endurance * 0.8)
     }
 

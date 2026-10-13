@@ -3817,6 +3817,13 @@ pub const GENES: &[Gene] = &[
     // a half turns of the army's bill, the floor `upkeep-reserve` gives the
     // upgrade passes. See `AdvancedAi::purchase_upkeep_floor`.
     Gene { tag: "purchases-keep-the-upkeep-reserve", field: "purchases_keep_the_upkeep_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_purchases_keep_the_upkeep_reserve, disable: AdvancedAi::disable_purchases_keep_the_upkeep_reserve },
+    // Live Immortal 10-13: 21 objectives stood unwalled at full health
+    // during a muster, a shooter in range on 2 and none taken; 30 of the 70
+    // muster holds read a finite budget whose endurance was charged a strike
+    // the city cannot make. Jenne (civvis-20261013T184508Z) met its bill at
+    // turn 110 and held at 6.2 turns against 3.5 endurance. See
+    // `conversion_siege_entry_budget`.
+    Gene { tag: "unwalled-city-spares-the-train", field: "unwalled_city_spares_the_train", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_city_spares_the_train, disable: AdvancedAi::disable_unwalled_city_spares_the_train },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
