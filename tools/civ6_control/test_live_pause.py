@@ -82,6 +82,26 @@ class Report(unittest.TestCase):
             self.assertEqual(released["turn"], 151)
             self.assertNotIn("since_utc", released)
 
+    def test_the_game_is_held_only_while_asked_and_reported(self):
+        """What a window-clicking tool asks: both halves, and the request
+        alone decides a resume — a stale report never keeps a game held."""
+        with TemporaryDirectory() as tmp:
+            request, report = Path(tmp) / "pause.json", Path(tmp) / "state.json"
+            self.assertFalse(live_pause.holds_game(request, report))
+            live_pause.set_requested(True, source="test", path=request)
+            self.assertFalse(live_pause.holds_game(request, report),
+                             "asked but not yet held: the turn is still playing")
+            live_pause.write_state("civvis-a", True, 40, path=report)
+            self.assertTrue(live_pause.holds_game(request, report))
+            live_pause.set_requested(False, path=request)
+            self.assertFalse(live_pause.holds_game(request, report),
+                             "Resume hands the screen back before the mod answers")
+            live_pause.set_requested(True, source="test", path=request)
+            live_pause.release_state("civvis-a", path=report)
+            self.assertFalse(live_pause.holds_game(request, report))
+            report.write_text("{torn")
+            self.assertFalse(live_pause.holds_game(request, report))
+
     def test_a_missing_report_is_released_quietly(self):
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "state.json"

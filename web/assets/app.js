@@ -6475,8 +6475,11 @@ setInterval(reportSpecStatus, 4000);
 // (`src/civ6.rs`, `live_pause_status`; `tools/civ6_control/live_pause.py`). The
 // server says whether this page is that mirror; anywhere else the controls
 // never appear. The Pause button follows the REQUEST, so it reads Resume the
-// moment Pause is pressed; the note above it follows the GAME, which only
-// stops at the start of its next turn and says so through the harness.
+// moment Pause is pressed; the note above it follows the GAME, which stops on
+// the mod's next tick of our turn (a second or so; a few more when our turn's
+// end was already sent) and says so through the harness. Held, the game is the
+// operator's to scroll, zoom and click around: the mod's camera and screen
+// closers stand down until Resume.
 //
 // New game is Civilization VI's own Retire (`civvis-games retire`): the lane's
 // supervisor starts the next game once the mod has retired this one, and this
@@ -6504,7 +6507,7 @@ function paintLivePause() {
   button.textContent = asked ? "▶ Resume game" : "⏸ Pause game";
   button.title = asked
     ? "Let the Civilization VI game carry on from where it stands"
-    : "Hold the Civilization VI game at the start of its next turn";
+    : "Hold the Civilization VI game where it stands, to look around it";
   button.setAttribute("aria-pressed", String(asked));
   button.disabled = livePause.busy || ending;
   fresh.textContent = ending ? "↻ Starting…" : livePause.newGameArmed ? "Confirm new game" : "↻ New game";
@@ -6519,7 +6522,7 @@ function paintLivePause() {
       : livePause.newGameArmed
         ? `Press again to end this game${turn === null ? "" : ` at turn ${turn}`} and start a new one`
       : asked && livePause.held ? `Paused · turn ${livePause.turn ?? "?"}`
-      : asked ? "Pausing at the start of the next turn…"
+      : asked ? "Pausing…"
       : livePause.held ? "Resuming…" : "");
   note.textContent = text;
   note.hidden = !text;

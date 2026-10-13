@@ -1127,6 +1127,16 @@ else
 		return not ContextPtr:IsHidden();
 	end
 
+	-- The operator's Pause (CivvisBoard.operatorHold in the agent). While the
+	-- live game is held, a screen up is one the operator opened to look at — a
+	-- leader, the trade overview, the Congress — or one they are reading, so
+	-- nothing here closes it. Their Resume hands the screen back to the clock.
+	local function operatorHolds()
+		local held = false;
+		pcall(function() held = ExposedMembers.CivvisOperatorHold == true; end);
+		return held;
+	end
+
 	-- The shipped diplomacy contexts are visible before they can accept an
 	-- action. During the opening fade the view mode is still being constructed;
 	-- calling its handlers then is a successful Lua call that does nothing. The
@@ -1252,6 +1262,9 @@ else
 				if not isUp() then showing = false; return; end
 			end
 		end
+		-- After the pulse above, which is how a held agent hears the resume
+		-- while a leader screen hides TopPanel. The clock restarts on resume.
+		if operatorHolds() then showing = false; return; end
 		if not showing then
 			showing = true;
 			remaining = SECONDS;

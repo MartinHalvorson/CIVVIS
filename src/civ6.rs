@@ -962,7 +962,7 @@ fn live_pause_status_from(
 }
 
 /// What the page shows: whether a pause is asked for, and whether the game is
-/// actually standing still yet (the mod holds only at the opening of a turn).
+/// actually standing still yet (the mod holds on its next tick of our turn).
 pub fn live_pause_status() -> Value {
     let mut status = live_pause_status_from(
         &live_pause_request_path(),

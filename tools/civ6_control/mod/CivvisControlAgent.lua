@@ -21611,22 +21611,38 @@ end;
 -- the request lets the same tick carry on into `settleTurn` as though the wait
 -- had been a slow brain.
 --
--- The hold is TAKEN only at the opening of our turn: the board has gone out
--- (so the page beside the game shows this very turn) and none of the turn's
--- orders have been applied. A press mid-turn therefore finishes that turn
--- first, and every held game stands at a clean boundary. Once held it stays
--- held until the request is lifted.
+-- The hold is TAKEN on the first tick of our turn that sees the request —
+-- the opening, a replan frame, the queue draining, the blockers being
+-- answered — and the game stands exactly where that tick found it: orders the
+-- brain has written stay unapplied, a unit mid-walk finishes its step and no
+-- more. Operator 2026-10-13: "ideally, it can pause instantly"; the first
+-- version waited for the next opening, a whole turn of play after the press.
+-- Every budget the turn spends (`awaiting.polls`, `CivvisQueue.ticks`) counts
+-- only the ticks `settleTurn` runs, so a held turn carries on as if the wait
+-- had been a slow brain. Only a turn whose end has already been SENT cannot be
+-- held — the engine ends it whatever this says — so that press waits for the
+-- next opening, a few seconds of rival play later. Once held it stays held
+-- until the request is lifted.
 --
--- ⚠ Polled on the UI clock at most once a second, never per tick — see the
--- `DB.Query` deadlock note in `settleTurn`. A missing channel reads as "play".
+-- While held, `ExposedMembers.CivvisOperatorHold` is true and the mod's other
+-- contexts take their hands off the game, so the operator can scroll, zoom
+-- and click around it: the camera (CivvisControlMapView) stops aiming and
+-- zooming, and the screen closer (CivvisControlAutoClose) leaves every screen
+-- up to them. Contexts share no globals; ExposedMembers is the shared table.
+--
+-- ⚠ Polled on the UI clock at most four times a second, never per tick — see
+-- the `DB.Query` deadlock note in `settleTurn`. A missing channel reads as
+-- "play".
 -- ⚠ On `CivvisBoard`, not a local: the main chunk is at Civ VI's register
 -- ceiling (register_budget_test.lua).
-CivvisBoard.hold = { asked = false, held = false };
+CivvisBoard.hold = { asked = false, held = false, pollSeconds = 0.25 };
+-- A fresh game starts unheld, whatever the last one left in the shared table.
+pcall(function() ExposedMembers.CivvisOperatorHold = false; end);
 function CivvisBoard.operatorHold(turn)
 	local hold = CivvisBoard.hold;
 	local now = CivvisClock.now();
 	if type(now) ~= "number" or type(hold.polledAt) ~= "number"
-			or now < hold.polledAt or now - hold.polledAt >= 1 then
+			or now < hold.polledAt or now - hold.polledAt >= hold.pollSeconds then
 		hold.polledAt = now;
 		local asked = false;
 		if attachOrders() then
@@ -21644,6 +21660,7 @@ function CivvisBoard.operatorHold(turn)
 	if hold.held then
 		if not hold.asked then
 			hold.held = false;
+			pcall(function() ExposedMembers.CivvisOperatorHold = false; end);
 			emit("operator_resumed", { turn = turn, held_s = heldFor });
 			return false;
 		end
@@ -21656,12 +21673,16 @@ function CivvisBoard.operatorHold(turn)
 		return true;
 	end
 	if not hold.asked then return false; end
-	if cfg.CivvisDecides and (awaiting.turn ~= turn or awaiting.done
-			or (awaiting.frame or 0) ~= 0) then
+	-- The board for this turn goes out first, so the page shows this turn.
+	if cfg.CivvisDecides and awaiting.turn ~= turn then return false; end
+	if try(function() return UI.HasSentTurnComplete(); end, false) == true then
 		return false;
 	end
 	hold.held, hold.since, hold.saidAt = true, now, now;
-	emit("operator_paused", { turn = turn });
+	pcall(function() ExposedMembers.CivvisOperatorHold = true; end);
+	-- Where in the turn it stopped: frame 0 unsettled is the opening.
+	emit("operator_paused", { turn = turn, frame = awaiting.frame or 0,
+	                          settled = awaiting.done == true });
 	return true;
 end
 
@@ -21783,6 +21804,9 @@ local function tick()
 			end);
 			if wanted then
 				CivvisBoard.retireAsked = true;
+				-- Retired while paused: the game is over, so its closing screens
+				-- go back to the screen closer.
+				pcall(function() ExposedMembers.CivvisOperatorHold = false; end);
 				local action = try(function() return ActionTypes.ACTION_RETIRE; end);
 				if action == nil then
 					emit("retire_failed", { why = "no_action_type" });

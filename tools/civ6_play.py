@@ -5022,6 +5022,14 @@ def _play(args: argparse.Namespace) -> int:
         # an ordinary card. Defer optional requests before capture/budget
         # work while the shared desktop is in use. The independent,
         # confirmed-stall recovery below can still recover a blocked game.
+        # ★ The operator's Pause: a held game's screens are the operator's —
+        # they are looking around it — so nothing clicks or presses Escape.
+        # The mod's closer stands down too; this catches a request queued
+        # just before the hold.
+        if state.get("operator_held"):
+            print(f"[{kind}] the operator holds the game; leaving "
+                  f"{event.get('screen')} to them", flush=True)
+            return
         if shared_desktop_in_use():
             print(f"[{kind}] shared desktop in use; deferring optional "
                   f"recovery for {event.get('screen')}")
@@ -5515,8 +5523,8 @@ def _play(args: argparse.Namespace) -> int:
     # ★ THE OPERATOR'S PAUSE — the CIVVIS page's Pause button, or
     # `python3 -m civ6_control.live_pause pause`. The request is one host file;
     # the mod hears it as a `pause` row in this run's orders channel and stops
-    # playing at the opening of our next turn, so Civilization VI itself waits
-    # on us. Once the mod SAYS it holds (`operator_paused`, relayed by
+    # playing on the next tick of our turn (or at the next opening, if this
+    # turn's end is already sent), so Civilization VI itself waits on us. Once the mod SAYS it holds (`operator_paused`, relayed by
     # `record`), `watch.follow` refunds every clock exactly as it does for a
     # locked screen: a held game is not a wedged one.
     #
@@ -5544,8 +5552,8 @@ def _play(args: argparse.Namespace) -> int:
                                   wanted):
                 if wanted or pause_flow["synced"] is not None:
                     print("[pause] operator " + (
-                        "asked for a pause; the seat holds at the opening of its "
-                        "next turn" if wanted else "lifted the pause"), flush=True)
+                        "asked for a pause; the seat holds on its next tick of "
+                        "our turn" if wanted else "lifted the pause"), flush=True)
                 pause_flow["synced"] = wanted
         return wanted
 

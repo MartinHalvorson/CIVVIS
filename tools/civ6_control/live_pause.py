@@ -21,11 +21,16 @@ the host:
 
 ``civ6_play.py`` carries the request to the mod as an out-of-band ``pause``
 row in the run's orders database (see :func:`orders.set_operator_pause`).  The
-mod honours it at the opening of our turn — after the turn's board has gone
-out, before any of its orders are applied — and simply stops playing: Civ VI
-waits on our turn, the AI cannot move, and nothing is lost.  Every watchdog
-that measures turn progress reads :func:`requested` and stands down while it
-holds, so a paused game is never mistaken for a wedged one.
+mod honours it on the next tick of our turn — wherever the turn stands, once
+its board has gone out — and simply stops playing: Civ VI waits on our turn,
+the AI cannot move, and nothing is lost.  Only a press after our turn's end
+was sent waits for the next opening, a few seconds of rival play.  Every
+watchdog that measures turn progress reads :func:`requested` and stands down
+while it holds, so a paused game is never mistaken for a wedged one.
+
+A held game is the operator's to look around: the mod's camera and screen
+closer stand down while it holds, and every tool that would otherwise click or
+key the game's window asks :func:`holds_game` first.
 
 Both files are optional and every reader fails OPEN: a missing, unreadable or
 malformed request means "play".  A pause nobody can see must never be the
@@ -118,6 +123,18 @@ def set_requested(paused: bool, source: str = "cli", path: Path | None = None) -
         target.unlink()
     except FileNotFoundError:
         pass
+
+
+def holds_game(request: Path | None = None, report: Path | None = None) -> bool:
+    """Whether the live game is held right now: asked for AND reported held.
+
+    Asked before anything clicks or keys the game's window: while this is true
+    every screen up is one the operator opened or is reading.  Lifting the
+    request answers False at once, before the mod has even resumed.
+    """
+    if not requested(request):
+        return False
+    return (_read_json(report or state_path()) or {}).get("held") is True
 
 
 def write_state(tag: str, held: bool, turn: int | None,

@@ -49,6 +49,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from civ6_control import macos_capture, macos_input, macos_ocr  # noqa: E402
+try:
+    from civ6_control import live_pause  # noqa: E402
+except ImportError:  # a tree older than the operator's Pause
+    live_pause = None
 
 PILLOW_MISSING = "popup_clear needs Pillow: python3 -m pip install pillow"
 
@@ -166,6 +170,20 @@ def game_in_progress(runs_dir, fresh_seconds=180.0):
                 return True
         return False
     except OSError:
+        return False
+
+
+def operator_holds_game():
+    """True while the operator's Pause holds the live game (`live_pause`).
+
+    Every screen on a held game is the operator's: a leader they opened, the
+    pause menu, a governor panel. Unreadable means "not held", as before.
+    """
+    if live_pause is None:
+        return False
+    try:
+        return live_pause.holds_game()
+    except Exception:  # noqa: BLE001 - the backstop must never die on this
         return False
 
 
@@ -1223,7 +1241,26 @@ def main():
     warned_setup = False
     warned_cards = False
     last_pause_reason = None
+    warned_hold = False
     while True:
+        # ★ THE OPERATOR'S PAUSE. While the live game is held the operator is
+        # looking around it, and a click or an Escape from here would close
+        # the screen they opened under them (Escape on the map opens the pause
+        # menu, which this then "cleared"). Nothing is captured or clicked
+        # until they resume, and the episode counters start afresh then.
+        if operator_holds_game():
+            if not warned_hold:
+                log("the operator holds the game; leaving its screens to them")
+                warned_hold = True
+            if args.once:
+                return
+            time.sleep(max(MIN_POLL_SECONDS, args.interval))
+            continue
+        if warned_hold:
+            log("the operator resumed the game; popup checks back on")
+            warned_hold = False
+            esc_budget_used = advisor_stuck_passes = 0
+            leader_passes = no_target_passes = misses = 0
         # Do this before even probing capture or window geometry.  A pre-turn
         # Create Game screen is setup, not a popup, so it must have exclusive
         # access to System Events while the recorder's UI is present.

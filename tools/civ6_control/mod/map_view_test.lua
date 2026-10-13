@@ -3,7 +3,8 @@ local function host(cfg, initial)
     local h = { zoom = initial, writes = 0, events = {}, looks = {}, logs = {},
                 turn = 10, active = false, capital = {10, 10},
                 options = {LookAtPlayerTurnCombat=2, LookAtPlayerOffTurnCombat=1, AutoUnitCycle=1} }
-    local env = setmetatable({ CivvisControlConfig=cfg }, {__index=_G})
+    h.exposed = {}
+    local env = setmetatable({ CivvisControlConfig=cfg, ExposedMembers=h.exposed }, {__index=_G})
     env.Options = {
         GetUserOption=function(_, key) if h.optionThrow then error("options unavailable") end; return h.options[key] end,
         SetUserOption=function(_, key, value) h.options[key]=value end,
@@ -154,6 +155,25 @@ k.pulse();assert(near(k.last(), 10, 10), "home first")
 k.events.CombatVisBegin({{playerID=0},{playerID=1},x=40,y=40});k.pulses(2)
 assert(near(k.last(), 10, 10), "no re-aim inside the hold")
 k.pulses(2);assert(near(k.last(), 40, 40), "re-aim once the hold has passed")
+
+-- The operator's Pause: while the agent holds the game the camera is theirs.
+local p=host({CivvisDecides=true}, .8)
+p.pulse();assert(near(p.last(), 10, 10), "home first")
+p.exposed.CivvisOperatorHold=true
+local pLooks, pWrites=#p.looks, p.writes
+p.zoom=.2;for _=1,20 do p.events.Camera_Updated() end
+p.events.CombatVisEnd();p.events.LocalPlayerTurnBegin()
+p.events.CombatVisBegin({{playerID=0},{playerID=1},x=40,y=40})
+p.pulses(30)
+assert(p.zoom==.2 and p.writes==pWrites, "a held game's zoom is the operator's")
+assert(#p.looks==pLooks, "a held game's camera does not pan or re-centre")
+assert(p.options.AutoUnitCycle==0, "unit cycling stays off: it would move the operator's view")
+p.exposed.CivvisOperatorHold=false
+p.pulse()
+assert(p.zoom==.8, "resume takes the zoom back")
+assert(#p.looks>pLooks and near(p.last(), 40, 40), "resume looks at the front again")
+local resumedLooks=#p.looks;p.pulses(3)
+assert(#p.looks==resumedLooks, "the resume look is once, not every pulse")
 
 -- Memory is bounded.
 local busy=host({CivvisDecides=true}, .8)

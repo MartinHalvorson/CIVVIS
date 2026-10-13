@@ -44,6 +44,16 @@ local plotDistance = nil;
 
 local function automated() return cfg.Play ~= false and cfg.CivvisDecides; end
 
+-- The operator's Pause (CivvisBoard.operatorHold in the agent) hands the
+-- camera to the person at the keyboard: while the game is held nothing here
+-- aims, pans or zooms, so they can look around it freely. Resume hands it back.
+local standingDown = false;
+local function operatorHolds()
+    local held = false;
+    pcall(function() held = ExposedMembers.CivvisOperatorHold == true; end);
+    return held;
+end
+
 local function localPlayer()
     local ok, pid = pcall(function() return Game.GetLocalPlayer(); end);
     return ok and tonumber(pid) or -1;
@@ -160,7 +170,7 @@ local function quietNativeCamera()
 end
 
 function CivvisMapView.Enforce()
-    if not automated() or adjusting then return; end
+    if not automated() or adjusting or operatorHolds() then return; end
     adjusting = true;
     local ok, before, after = pcall(function()
         local zoom = UI.GetMapZoom();
@@ -215,7 +225,7 @@ end
 
 -- `force` is the turn start: our turn is active but the queue has not begun.
 function CivvisMapView.Follow(force)
-    if not automated() then return; end
+    if not automated() or operatorHolds() then return; end
     if aim ~= nil and not force and ourTurnActive() then return; end
     if aim ~= nil and (not dirty or pulses - lastAimPulse < HOLD_PULSES) then
         if pulses - lastLookPulse >= REASSERT_PULSES then lookAt(aim.x, aim.y); end
@@ -252,6 +262,13 @@ function CivvisMapView.Pulse()
     pulses = pulses + 1;
     retryBlocked = false;
     quietNativeCamera();
+    if operatorHolds() then standingDown = true; return; end
+    -- Back from a pause: the view is wherever the operator left it, so look
+    -- at the front again now rather than at the next turn.
+    if standingDown then
+        standingDown = false;
+        if aim ~= nil then pcall(lookAt, aim.x, aim.y); end
+    end
     pcall(CivvisMapView.Follow);
     CivvisMapView.Enforce();
 end
