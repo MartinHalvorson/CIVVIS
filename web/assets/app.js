@@ -6518,7 +6518,7 @@ function paintLivePause() {
   fresh.disabled = livePause.busy || ending;
   const turn = liveMirrorTurn();
   const text = livePause.error ||
-    (ending ? "Ending this game · the next one starts in a few minutes"
+    (ending ? "Ending this game · the next one starts in about a minute"
       : livePause.newGameArmed
         ? `Press again to end this game${turn === null ? "" : ` at turn ${turn}`} and start a new one`
       : asked && livePause.held ? `Paused · turn ${livePause.turn ?? "?"}`
