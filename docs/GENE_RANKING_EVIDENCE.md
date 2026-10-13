@@ -184,6 +184,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `prewar-siege-board` | off (unmeasured) | Prepare a legal named Domination siege at peace. | 1 \| 1 |
 | `unit-preservation` | off (unmeasured) | Enable combat preservation and full-health recovery. | 1 \| 1 |
 
 ## Removed from the code

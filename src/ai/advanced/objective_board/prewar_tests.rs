@@ -248,7 +248,7 @@ fn preparation_moves_the_column_toward_its_rally_without_declaring() {
         let before = game.units[uid].pos;
         let moves = game.unit_max_moves(*uid);
         game.units.get_mut(uid).unwrap().moves_left = moves;
-        ai.coordinated_tactical_step(&mut game, 0, *uid, &group, &[], false);
+        ai.advanced_military_step_with_decline(&mut game, 0, *uid, &plan, false);
         let after = game.units[uid].pos;
         steps.push((
             *uid,

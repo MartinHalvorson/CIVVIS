@@ -6147,10 +6147,6 @@ pub struct AdvancedAi {
     /// so the planners and the ladder read it unchanged. Opt-in gene
     /// `objective-board`. See `advanced/objective_board.rs`.
     objective_board: bool,
-    /// Allocate the named Domination siege at peace, mustering outside
-    /// foreign borders while the ordinary declaration gates still wait.
-    /// Opt-in `prewar-siege-board`; requires `objective-board`.
-    prewar_siege_board: bool,
     /// The board and its forces, kept across turns. See `objective_board`.
     objective_board_state: objective_board::ObjectiveBoard,
     /// The host refuses ~14% of MOVE_TO orders as `did_not_move`, the refusal
@@ -6443,6 +6439,10 @@ pub struct AdvancedAi {
     lane_delegates_production_2: bool,
 
     // ---- append: p-r ------------------------------------------------
+    /// Allocate the named Domination siege at peace, mustering outside
+    /// foreign borders while the ordinary declaration gates still wait.
+    /// Opt-in `prewar-siege-board`; requires `objective-board`.
+    prewar_siege_board: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     reinforce_before_stall: bool,
     /// The stock alliance desk asks for a Research Alliance, on any turn,
@@ -8577,7 +8577,6 @@ impl AdvancedAi {
             liang_follows_builders: false,
             modernize_before_spending: false,
             objective_board: false,
-            prewar_siege_board: false,
             objective_board_state: objective_board::ObjectiveBoard::default(),
             live_move_refusal_break: false,
             live_barbarian_scouts_capture: false,
@@ -8603,6 +8602,7 @@ impl AdvancedAi {
             lane_delegates_production_2: false,
 
             // ---- append: p-r ----------------------------------------
+            prewar_siege_board: false,
             reinforce_before_stall: false,
             research_alliance_first: false,
             research_alliance_asked: BTreeMap::new(),
