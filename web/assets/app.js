@@ -6493,11 +6493,52 @@ const livePause = {available: false, requested: false, held: false, turn: null,
 function liveMirrorTurn() {
   return typeof state === "object" && state && Number.isInteger(state.turn) ? state.turn : null;
 }
+// What our civilization is studying and running, above the live controls
+// (operator 2026-10-13: "the current tech being researched ... and the civic
+// and the policies that are active"). The mirror carries the seat's own
+// research, civic, government and slotted cards (`state.me`, rebuilt from
+// the Civilization VI board each turn), so this reads them straight off it.
+function liveTrackerHtml(me) {
+  const percent = (name, progress, cost) => {
+    let total = 0;
+    try { total = cost(name); } catch (_) { total = 0; }
+    return total > 0
+      ? `<small>${Math.min(100, Math.round(100 * (Number(progress) || 0) / total))}%</small>` : "";
+  };
+  const row = (label, value) =>
+    `<span class="lt-k">${label}</span><span class="lt-v">${value}</span>`;
+  const none = text => `<span class="lt-none">${text}</span>`;
+  const studying = (name, progress, cost) => name
+    ? `${escapeAttr(titleCase(name))}${percent(name, progress, cost)}` : none("choosing…");
+  const order = {military: 0, economic: 1, diplomatic: 2, wildcard: 3};
+  const cards = [...(me.policies || [])]
+    .sort((a, b) => (order[policySlotOf(a)] ?? 4) - (order[policySlotOf(b)] ?? 4));
+  const cardList = cards.length
+    ? `<span class="lt-cards">${cards.map(card =>
+        `<span class="lt-card slot-${escapeAttr(policySlotOf(card))}" ` +
+        `title="${escapeAttr(`${titleCase(card)} — ${policySlotOf(card)} card`)}">` +
+        `${escapeAttr(titleCase(card))}</span>`).join("")}</span>`
+    : none("none slotted");
+  return row("Research", studying(me.research, me.research_progress, techCost)) +
+    row("Civic", studying(me.civic, me.civic_progress, civicCost)) +
+    row("Government", me.government ? escapeAttr(titleCase(me.government)) : none("none")) +
+    row("Policies", cardList);
+}
+function paintLiveTracker() {
+  const panel = document.getElementById("livetracker");
+  if (!panel) return;
+  const me = livePause.available && state && state.me;
+  panel.hidden = !me;
+  if (!me) return;
+  const html = liveTrackerHtml(me);
+  if (panel.dataset.painted !== html) { panel.innerHTML = html; panel.dataset.painted = html; }
+}
 function paintLivePause() {
   const box = document.getElementById("livepause");
   if (!box) return;
   box.hidden = !livePause.available;
   document.body.classList.toggle("live-pause-available", livePause.available);
+  paintLiveTracker();
   if (!livePause.available) return;
   const button = document.getElementById("livepause-button");
   const fresh = document.getElementById("livenewgame-button");
