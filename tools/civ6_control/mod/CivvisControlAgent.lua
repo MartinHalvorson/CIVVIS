@@ -21644,16 +21644,20 @@ function CivvisBoard.operatorHold(turn)
 	if type(now) ~= "number" or type(hold.polledAt) ~= "number"
 			or now < hold.polledAt or now - hold.polledAt >= hold.pollSeconds then
 		hold.polledAt = now;
-		local asked = false;
+		-- The watch pace rides the same query (`CivvisBoard.paceHold`).
+		local asked, pace = false, 0;
 		if attachOrders() then
 			pcall(function()
 				local rows = DB.Query(string.format(
-					"SELECT count(*) AS n FROM civvis.orders WHERE run = '%s' " ..
-					"AND kind = 'pause'", sqlSafe(cfg.RunTag)));
-				for _, row in ipairs(rows) do asked = (tonumber(row.n) or 0) > 0; end
+					"SELECT kind, x FROM civvis.orders WHERE run = '%s' " ..
+					"AND kind IN ('pause', 'pace')", sqlSafe(cfg.RunTag)));
+				for _, row in ipairs(rows) do
+					if row.kind == "pause" then asked = true;
+					elseif row.kind == "pace" then pace = math.max(0, tonumber(row.x) or 0); end
+				end
 			end);
 		end
-		hold.asked = asked;
+		hold.asked, hold.paceMs = asked, pace;
 	end
 	local heldFor = (type(now) == "number" and type(hold.since) == "number")
 		and math.floor(now - hold.since + 0.5) or nil;
@@ -21690,6 +21694,41 @@ function CivvisBoard.operatorHold(turn)
 	-- page said "Pausing…" and the popup backstop pressed Escape three times
 	-- on the held game.
 	emit("operator_pause_held", { turn = turn, held_s = 0 });
+	return true;
+end
+
+-- ★ THE WATCH PACE. Operator 2026-10-13: "lets try to have watch pace apply to
+-- verification games too". The page's Watch pace is a whole-turn budget —
+-- Blitz 0.5 s, Fast 1 s, Standard 2 s, Slow 4 s, Lightning none — and on the
+-- live mirror it reaches here as the `pace` row `operatorHold` polls
+-- (`hold.paceMs`). Each turn's OPENING waits until the previous opening is
+-- that long ago: the board is already out, so the brain answers during the
+-- wait and only the moves are held back; once they begin they run at speed.
+-- A turn that already took longer than the budget does not wait at all.
+function CivvisBoard.paceHold(turn)
+	local hold = CivvisBoard.hold;
+	local now = CivvisClock.now();
+	hold.pacing = false;
+	if type(now) ~= "number" then return false; end
+	if hold.paceTurn ~= turn then
+		hold.paceTurn, hold.prevOpenedAt, hold.openedAt = turn, hold.openedAt, now;
+	end
+	local ms = tonumber(hold.paceMs) or 0;
+	if ms <= 0 or type(hold.prevOpenedAt) ~= "number" or now < hold.prevOpenedAt then
+		return false;
+	end
+	if cfg.CivvisDecides and (awaiting.turn ~= turn or awaiting.done
+			or (awaiting.frame or 0) ~= 0) then
+		return false;
+	end
+	local left = ms / 1000 - (now - hold.prevOpenedAt);
+	if left <= 0 then return false; end
+	if hold.paceSaid ~= turn then
+		hold.paceSaid = turn;
+		emit("pace_hold", { turn = turn, pace_ms = ms,
+		                    wait_ms = math.floor(left * 1000 + 0.5) });
+	end
+	hold.pacing = true;
 	return true;
 end
 
@@ -22389,6 +22428,7 @@ local function tick()
 		end
 
 		if CivvisBoard.operatorHold(turn) then return; end
+		if CivvisBoard.paceHold(turn) then return; end
 
 		-- ⚠ DO NOT END A TURN WHOSE DECISIONS HAVE NOT BEEN MADE. Every order below
 		-- this point assumes the turn has been played. Ending first would hand CIVVIS
@@ -23179,6 +23219,8 @@ CivvisQueue.onPeekPulse = function()
 	-- UI pulse above owns the held game's ticks.
 	if CivvisBoard.hold.held then return; end
 	if not CivvisQueue.ordersLanded() then return; end
+	-- A turn held to the watch pace: tick quietly until its wait is up.
+	if CivvisBoard.hold.pacing then tick(); return; end
 	local now = CivvisClock.now();
 	local last = CivvisQueue.lastTickAt;
 	emit("orders_peek_wake", {

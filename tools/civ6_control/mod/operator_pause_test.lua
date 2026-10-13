@@ -11,7 +11,7 @@ handle:close()
 local block = assert(source:match("(CivvisBoard%.hold = .-\nend\n)"),
 	"the operator hold is defined on CivvisBoard")
 
-local clock, rows, queries, attached, sent = 0, 0, 0, true, false
+local clock, rows, queries, attached, sent, pace = 0, 0, 0, true, false, 0
 local events = {}
 local env = {
 	string = string, math = math, type = type, tonumber = tonumber,
@@ -31,9 +31,12 @@ local env = {
 	ExposedMembers = { CivvisOperatorHold = true },
 	DB = { Query = function(sql)
 		queries = queries + 1
-		assert(sql:find("kind = 'pause'", 1, true), sql)
+		assert(sql:find("kind IN ('pause', 'pace')", 1, true), sql)
 		assert(sql:find("run = 'civvis-test'", 1, true), sql)
-		return { { n = rows } }
+		local out = {}
+		if rows > 0 then out[#out + 1] = { kind = "pause" } end
+		if pace > 0 then out[#out + 1] = { kind = "pace", x = pace } end
+		return out
 	end },
 	emit = function(kind, payload) events[#events + 1] = { kind = kind, payload = payload } end,
 }
@@ -119,6 +122,53 @@ assert(hold(9) == true)
 assert(events[8].kind == "operator_paused")
 env.cfg.CivvisDecides = true
 
+-- 9. The watch pace rides the same poll.
+env.cfg.CivvisDecides = true
+rows, pace = 0, 1500
+clock = 50
+assert(hold(9) == false)
+assert(env.CivvisBoard.hold.paceMs == 1500, "the pace row is read with the pause")
+pace = 0
+clock = 51
+hold(9)
+assert(env.CivvisBoard.hold.paceMs == 0, "no row is Lightning")
+
+-- 10. Each turn's opening waits until the previous opening is the pace ago,
+-- says so once, and lets the moves run at speed once they begin.
+local paceBlock = assert(source:match("(function CivvisBoard%.paceHold%(turn%).-\nend\n)"),
+	"the watch pace is defined on CivvisBoard")
+local paceChunk = assert(loadstring(paceBlock))
+setfenv(paceChunk, env)
+paceChunk()
+local paceHold = env.CivvisBoard.paceHold
+local board = env.CivvisBoard.hold
+board.paceMs = 2000
+clock = 100
+env.awaiting.turn, env.awaiting.done, env.awaiting.frame = 20, false, 0
+assert(paceHold(20) == false, "the first opening has nothing to wait on")
+env.awaiting.done = true
+clock = 101.2
+env.awaiting.turn, env.awaiting.done = 21, false
+local before = #events
+assert(paceHold(21) == true, "1.2 s after the last opening, a 2 s pace waits")
+assert(board.pacing == true)
+assert(events[#events].kind == "pace_hold" and events[#events].payload.wait_ms == 800
+	and events[#events].payload.pace_ms == 2000)
+clock = 101.9
+assert(paceHold(21) == true and #events == before + 1, "said once per turn")
+clock = 102.05
+assert(paceHold(21) == false and board.pacing == false, "released at the budget")
+clock = 106
+env.awaiting.turn = 22
+assert(paceHold(22) == false, "a turn slower than the pace does not wait")
+clock = 106.5
+env.awaiting.turn, env.awaiting.done = 23, true
+assert(paceHold(23) == false, "moves already begun are not held back")
+board.paceMs = 0
+clock = 106.6
+env.awaiting.turn, env.awaiting.done = 24, false
+assert(paceHold(24) == false, "Lightning never waits")
+
 -- The wiring: the tick holds after the board goes out and before any of it is
 -- applied; the held game's UI pulse ticks without calling itself a wake, and
 -- landed orders do not wake it either.
@@ -128,6 +178,9 @@ local holdAt = tick:find("if CivvisBoard.operatorHold(turn) then return; end", 1
 local settleAt = tick:find("not settleTurn(player, pid, turn, playTurn)", 1, true)
 assert(opening and holdAt and settleAt and opening < holdAt and holdAt < settleAt,
 	"the hold sits between the board going out and the turn being settled")
+local paceAt = tick:find("if CivvisBoard.paceHold(turn) then return; end", 1, true)
+assert(paceAt and holdAt < paceAt and paceAt < settleAt,
+	"the pace waits after the pause and before the turn is settled")
 local pulse = assert(source:match("CivvisQueue%.onUiPulse = function%(source%)(.-)\nend;"))
 local heldAt = pulse:find("if CivvisBoard.hold.held then", 1, true)
 local wakeAt = pulse:find('emit("controller_wake"', 1, true)
@@ -136,6 +189,8 @@ local peek = assert(source:match("CivvisQueue%.onPeekPulse = function%(%)(.-)\ne
 local peekHeld = peek:find("if CivvisBoard.hold.held then return; end", 1, true)
 local peekWake = peek:find('emit("orders_peek_wake"', 1, true)
 assert(peekHeld and peekWake and peekHeld < peekWake)
+local peekPacing = peek:find("if CivvisBoard.hold.pacing then tick(); return; end", 1, true)
+assert(peekPacing and peekPacing < peekWake, "a paced turn ticks without a wake per peek")
 
 -- A game retired while paused is over: its screens go back to the closer.
 local retireAt = tick:find("CivvisBoard.retireAsked = true;", 1, true)

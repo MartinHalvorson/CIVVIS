@@ -1024,6 +1024,51 @@ pub fn set_live_pause(paused: bool, source: &str) -> Result<(), String> {
     )
 }
 
+// --- the operator's watch pace --------------------------------------------
+//
+// On the live mirror the page's Watch pace is the Civilization VI game's own
+// per-turn budget (`tools/civ6_control/live_pause.py` `requested_pace_ms`):
+// `civ6_play.py` relays it to the control mod, which holds each turn's
+// opening until the previous opening is that long ago. Lightning (0) is no
+// wait at all, the lane's own speed, and what an unset pace means.
+
+fn live_pace_path() -> PathBuf {
+    std::env::var_os("CIVVIS_LIVE_PACE_FILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home_dir().join(".civvis-live-pace.json"))
+}
+
+/// The live game's pace, as `live_pause.requested_pace_ms` reads it.
+fn live_pace_ms_at(path: &Path) -> u64 {
+    read_json_object(path)
+        .and_then(|map| map.get("ms").and_then(Value::as_u64))
+        .map_or(0, |ms| ms.min(60_000))
+}
+
+pub fn live_pace_ms() -> u64 {
+    live_pace_ms_at(&live_pace_path())
+}
+
+fn set_live_pace_at(path: &Path, ms: u64) -> Result<(), String> {
+    let body = serde_json::json!({ "ms": ms.min(60_000) });
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "civvis-live-pace.json".to_string());
+    let staging = path.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
+    fs::write(&staging, format!("{body}\n"))
+        .and_then(|()| fs::rename(&staging, path))
+        .map_err(|error| {
+            let _ = fs::remove_file(&staging);
+            format!("could not set the live game's pace: {error}")
+        })
+}
+
+/// Hold the live game to a Watch pace; 0 lets it play at full speed.
+pub fn set_live_pace(ms: u64) -> Result<(), String> {
+    set_live_pace_at(&live_pace_path(), ms)
+}
+
 // --- the operator's New game ----------------------------------------------
 //
 // The page's New game is `civvis-games retire`: the live run is asked to end
@@ -1373,6 +1418,28 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// The page's Watch pace is the live game's per-turn budget, read the way
+    /// `live_pause.requested_pace_ms` reads it: unset or unreadable is no
+    /// wait, and past a minute it is clamped.
+    #[test]
+    fn the_page_sets_the_live_games_watch_pace() {
+        let dir = live_pause_scratch("pace");
+        let pace = dir.join("pace.json");
+        assert_eq!(live_pace_ms_at(&pace), 0);
+        set_live_pace_at(&pace, 2_000).unwrap();
+        assert_eq!(live_pace_ms_at(&pace), 2_000);
+        let written: Value = serde_json::from_str(&fs::read_to_string(&pace).unwrap()).unwrap();
+        assert_eq!(written["ms"], 2_000);
+        set_live_pace_at(&pace, 0).unwrap();
+        assert_eq!(live_pace_ms_at(&pace), 0);
+        set_live_pace_at(&pace, 3_600_000).unwrap();
+        assert_eq!(live_pace_ms_at(&pace), 60_000);
+        fs::write(&pace, "{torn").unwrap();
+        assert_eq!(live_pace_ms_at(&pace), 0);
+        // No staging file is left behind beside it.
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
     }
 
     /// Pause writes the request the harness and every watchdog read; Resume

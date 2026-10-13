@@ -46,7 +46,8 @@ from civ6_control import (capture_budget, gamelock, launcher, macos_capture,
                           watch)  # noqa: E402
 from civ6_control import live_pause  # noqa: E402
 from civ6_control.orders import (orders_db_path, request_retire,  # noqa: E402
-                                 reset_orders_db, set_operator_pause)
+                                 reset_orders_db, set_operator_pace,
+                                 set_operator_pause)
 # The mod's sentinel for a readback it could not resolve, imported rather than
 # repeated: this harness and the ledger have to agree on what "unreadable"
 # looks like, and a second copy of that fact is a second place for it to rot.
@@ -5540,10 +5541,27 @@ def _play(args: argparse.Namespace) -> int:
     # while held: the mod polls for a retire before it checks the hold, and a
     # paused game can still be retired.
     pause_flow = {"synced": None, "attempt_at": 0.0}
+    # ★ THE WATCH PACE rides the same poll: the page's pace on the live mirror
+    # (`live_pause.requested_pace_ms`) becomes a `pace` row the mod holds each
+    # turn's opening to. Absent or Lightning is no row and no wait.
+    pace_flow = {"synced": None, "attempt_at": 0.0}
+
+    def sync_operator_pace(now: float) -> None:
+        pace = live_pause.requested_pace_ms()
+        if pace == pace_flow["synced"] or now - pace_flow["attempt_at"] < 1.0:
+            return
+        pace_flow["attempt_at"] = now
+        if set_operator_pace(orders_db_path(run_dir, args.orders_db), args.tag, pace):
+            if pace or pace_flow["synced"] is not None:
+                print(f"[pace] watch pace {pace} ms per turn" if pace
+                      else "[pace] watch pace lifted; the game plays at full speed",
+                      flush=True)
+            pace_flow["synced"] = pace
 
     def operator_pause_requested() -> bool:
         wanted = live_pause.requested()
         now = time.monotonic()
+        sync_operator_pace(now)
         if wanted != pause_flow["synced"] and now - pause_flow["attempt_at"] >= 1.0:
             pause_flow["attempt_at"] = now
             turn = state.get("turn")
