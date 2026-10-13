@@ -3147,6 +3147,10 @@ fn is_founded_zero_charge_prophet(
 /// plot: Hildegard spent forty turns trying to enter a Holy Site occupied by an
 /// unspent Prophet. Reserve every observed Great Person hex and reconsider those
 /// moves after the next authoritative export.
+#[cfg(test)]
+#[path = "civvis_orders/great_person_reservation_tests.rs"]
+mod great_person_reservation_tests;
+
 fn defer_great_person_plot_conflicts(
     orders: Vec<Order>,
     state: &civvis::mirror::StateSnapshot,
