@@ -92,7 +92,12 @@
 //!   column already on the target's side, which could never gather, and the
 //!   train held it eleven turns); and it journals the gathering each turn
 //!   ("Siege train gathers for X: N of M within 2 of the ford; waiting on
-//!   …").
+//!   …");
+//! - **sails from where the dry road ends**: a sea lane never starts at a
+//!   port on the objective's own landmass (a landing there would be on our
+//!   own land, a dry road away), and drafts only the units on land joined to
+//!   its port, so a unit with a dry road keeps marching overland (a replay
+//!   of 204616Z shipped from Cuenca to land on the same mainland).
 
 use super::*;
 
@@ -347,16 +352,31 @@ fn train_watched(g: &Game, pid: usize, train: &AmphibiousTrain) -> bool {
 /// shore, across the water), a second paced between the two tiles three out,
 /// and a Horseman stalled behind it.
 fn near_shore_members(g: &Game, shore: Pos, ashore: &[u32]) -> Vec<u32> {
+    let land = land_joined(
+        g,
+        shore,
+        Some(AMPHIB_MUSTER_RADIUS + AMPHIB_ASSEMBLY_RADIUS),
+    );
+    ashore
+        .iter()
+        .copied()
+        .filter(|id| g.units.get(id).is_some_and(|unit| land.contains(&unit.pos)))
+        .collect()
+}
+
+/// `from` and the land tiles joined to it over passable land, out to
+/// `radius` tiles from it (`None`: its whole landmass).
+fn land_joined(g: &Game, from: Pos, radius: Option<i32>) -> BTreeSet<Pos> {
     let walkable = |pos: Pos| {
         g.map
             .get(pos)
             .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
     };
-    let mut land: BTreeSet<Pos> = BTreeSet::from([shore]);
-    let mut frontier = vec![shore];
+    let mut land: BTreeSet<Pos> = BTreeSet::from([from]);
+    let mut frontier = vec![from];
     while let Some(pos) = frontier.pop() {
         for next in g.nbrs(pos) {
-            if g.wdist(next, shore) <= AMPHIB_MUSTER_RADIUS + AMPHIB_ASSEMBLY_RADIUS
+            if radius.is_none_or(|radius| g.wdist(next, from) <= radius)
                 && walkable(next)
                 && land.insert(next)
             {
@@ -364,11 +384,7 @@ fn near_shore_members(g: &Game, shore: Pos, ashore: &[u32]) -> Vec<u32> {
             }
         }
     }
-    ashore
-        .iter()
-        .copied()
-        .filter(|id| g.units.get(id).is_some_and(|unit| land.contains(&unit.pos)))
-        .collect()
+    land
 }
 
 /// The landing tiles for `target`, best first: land beside water `rep` can
@@ -777,6 +793,81 @@ impl AdvancedAi {
         if ports.is_empty() {
             return Err("no coastal city of ours".into());
         }
+        // The guns and escorts a port musters from `pool`, nearest first.
+        let muster = |port_pos: Pos, pool: &[u32]| {
+            let mut near_port: Vec<(i32, u32)> = pool
+                .iter()
+                .map(|id| (g.wdist(g.units[id].pos, port_pos), *id))
+                .filter(|(distance, _)| *distance <= AMPHIB_MUSTER_RADIUS)
+                .collect();
+            near_port.sort_unstable();
+            let guns: Vec<u32> = near_port
+                .iter()
+                .map(|(_, id)| *id)
+                .filter(|id| is_gun(g, *id))
+                .take(AMPHIB_MAX_GUNS)
+                .collect();
+            let escorts: Vec<u32> = near_port
+                .iter()
+                .map(|(_, id)| *id)
+                .filter(|id| is_escort(g, *id))
+                .take(AMPHIB_MAX_ESCORTS)
+                .collect();
+            (guns, escorts)
+        };
+        // Version two: the crossing starts where the dry road ends. A port on
+        // the objective's own landmass is passed over (its units march), and
+        // a port drafts only the units on land joined to it, none of which
+        // has a dry road; a port that musters too few is passed over too.
+        // Live Immortal 204616Z (replayed with the ford fix) shipped from
+        // Cuenca, on our mainland with Durocortorum, across one tile of a bay
+        // to land at (11, 17) on that same mainland, drafting the column that
+        // was marching there overland.
+        let v2 = self.amphibious_siege_train_2;
+        let mut drafted: BTreeMap<u32, (Vec<u32>, Vec<u32>)> = BTreeMap::new();
+        let ports = if v2 {
+            let objective_land = land_joined(g, target_pos, None);
+            let off: Vec<(u32, Pos)> = ports
+                .into_iter()
+                .filter(|(_, pos)| !objective_land.contains(pos))
+                .collect();
+            if off.is_empty() {
+                return Err(format!(
+                    "every coastal city of ours stands on {}'s own landmass, with a dry road \
+                     to it",
+                    g.cities[&target].name
+                ));
+            }
+            for (cid, pos) in &off {
+                drafted.insert(*cid, muster(*pos, &near_shore_members(g, *pos, ashore)));
+            }
+            let mustered: Vec<(u32, Pos)> = off
+                .iter()
+                .copied()
+                .filter(|(cid, _)| {
+                    let (guns, escorts) = &drafted[cid];
+                    !guns.is_empty() && escorts.len() >= AMPHIB_MIN_ESCORTS
+                })
+                .collect();
+            if mustered.is_empty() {
+                let (cid, (guns, escorts)) = drafted
+                    .iter()
+                    .max_by_key(|(cid, (guns, escorts))| {
+                        (guns.len().min(1) + escorts.len(), std::cmp::Reverse(**cid))
+                    })
+                    .expect("a port off the objective's landmass");
+                return Err(format!(
+                    "{} gun(s) and {} escort(s) on {}'s land within {AMPHIB_MUSTER_RADIUS} of it \
+                     (needs 1 and {AMPHIB_MIN_ESCORTS}); units with a dry road march",
+                    guns.len(),
+                    escorts.len(),
+                    g.cities[cid].name
+                ));
+            }
+            mustered
+        } else {
+            ports
+        };
         // The shortest lane over every port and landing; nearer members
         // break a tie, then the board's order.
         let mut best: Option<((usize, i32, usize), u32, Pos, Pos, Vec<Pos>)> = None;
@@ -809,24 +900,10 @@ impl AdvancedAi {
                 g.cities[&port].name
             ));
         }
-        let mut near_port: Vec<(i32, u32)> = ashore
-            .iter()
-            .map(|id| (g.wdist(g.units[id].pos, port_pos), *id))
-            .filter(|(distance, _)| *distance <= AMPHIB_MUSTER_RADIUS)
-            .collect();
-        near_port.sort_unstable();
-        let guns: Vec<u32> = near_port
-            .iter()
-            .map(|(_, id)| *id)
-            .filter(|id| is_gun(g, *id))
-            .take(AMPHIB_MAX_GUNS)
-            .collect();
-        let escorts: Vec<u32> = near_port
-            .iter()
-            .map(|(_, id)| *id)
-            .filter(|id| is_escort(g, *id))
-            .take(AMPHIB_MAX_ESCORTS)
-            .collect();
+        let (guns, escorts) = match drafted.remove(&port) {
+            Some(mustered) => mustered,
+            None => muster(port_pos, ashore),
+        };
         if guns.is_empty() || escorts.len() < AMPHIB_MIN_ESCORTS {
             return Err(format!(
                 "{} gun(s) and {} escort(s) within {AMPHIB_MUSTER_RADIUS} of {} (needs 1 and \

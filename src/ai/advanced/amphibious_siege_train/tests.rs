@@ -1050,3 +1050,74 @@ fn a_ford_train_gathers_only_units_joined_to_its_near_shore() {
         "{gathers:?}"
     );
 }
+
+#[test]
+fn a_unit_with_a_dry_road_is_not_drafted_into_a_sea_lane() {
+    let (mut g, cid, target, _, gun, escorts) = island(2);
+    // A gun and an escort of the group already on the target's island: they
+    // have a dry road, and stand within the muster of our port.
+    let theirs: Vec<Pos> = g
+        .nbrs(target)
+        .into_iter()
+        .filter(|pos| landable(&g, *pos) && g.unit_ids_at(*pos).is_empty())
+        .take(2)
+        .collect();
+    let road_gun = g.spawn_unit("catapult", 0, theirs[0]);
+    let road_escort = g.spawn_unit("spearman", 0, theirs[1]);
+    let mut v1 = armed(&g, cid, gun, escorts);
+    v1.force_groups[0].units.extend([road_gun, road_escort]);
+    assert!(v1.form_amphibious_train(&g, 0, cid));
+    assert!(
+        v1.amphibious_train.as_ref().unwrap().members.contains(&road_gun),
+        "version one drafts the nearest units to the port, a dry road or not"
+    );
+    let mut ai = armed_2(&g, cid, gun, escorts);
+    ai.force_groups[0].units.extend([road_gun, road_escort]);
+    assert!(ai.form_amphibious_train(&g, 0, cid));
+    let train = ai.amphibious_train.clone().unwrap();
+    assert!(!train.ford, "a sea lane");
+    assert_eq!(
+        train.members,
+        BTreeSet::from([gun, escorts[0], escorts[1]]),
+        "only the units on the port's land, which lack a dry road"
+    );
+    // Without the column at the port, the train does not form at all.
+    for uid in [gun, escorts[0], escorts[1]] {
+        g.remove_unit(uid);
+    }
+    let mut ai = armed_2(&g, cid, road_gun, [road_escort, road_escort]);
+    let reason = ai.amphibious_gate(&g, 0, cid).err().expect("no train");
+    assert!(
+        reason.contains("units with a dry road march"),
+        "{reason}"
+    );
+}
+
+#[test]
+fn a_sea_lane_landing_on_our_own_landmass_with_a_dry_road_is_refused() {
+    let (mut g, cid, target, port, gun, escorts) = island(2);
+    // A land bridge from our land to the target's island, away from the
+    // port: the bay beside it still offers a short lane to a landing.
+    for d in 3..=6 {
+        g.map.tiles.get_mut(&(target.0, target.1 - d)).unwrap().terrain =
+            crate::name!("grassland");
+    }
+    assert!(
+        land_joined(&g, target, None).contains(&port),
+        "our port stands on the target's landmass"
+    );
+    let mut v1 = armed(&g, cid, gun, escorts);
+    assert!(
+        v1.form_amphibious_train(&g, 0, cid),
+        "version one still ships across the bay: {:?}",
+        v1.amphibious_gate(&g, 0, cid).err()
+    );
+    let landing = v1.amphibious_train.as_ref().unwrap().landing;
+    assert!(land_joined(&g, port, None).contains(&landing));
+    let ai = armed_2(&g, cid, gun, escorts);
+    let reason = ai.amphibious_gate(&g, 0, cid).err().expect("refused");
+    assert!(
+        reason.contains("own landmass, with a dry road"),
+        "{reason}"
+    );
+}

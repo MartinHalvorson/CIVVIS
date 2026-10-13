@@ -3784,7 +3784,9 @@ pub const GENES: &[Gene] = &[
     // lane keeps the three-tile watch), gathers only the units joined over
     // land to its near shore (live 204616Z forded from an islet with the
     // column already across, held eleven turns), and journals the gathering
-    // each turn. See `advanced/amphibious_siege_train.rs`.
+    // each turn. A sea lane sails only from a port off the objective's
+    // landmass and drafts only the units joined to that port by land: a unit
+    // with a dry road marches. See `advanced/amphibious_siege_train.rs`.
     Gene { tag: "amphibious-siege-train-2", field: "amphibious_siege_train_2", kind: Kind::OptIn, enable: AdvancedAi::enable_amphibious_siege_train_2, disable: AdvancedAi::disable_amphibious_siege_train_2 },
     // Version two of `luxury-swap-asks`. 21 live Immortal games on 455f438ca:
     // our cities Displeased or worse 32/39/53/63% at turns 75/100/125/150,
