@@ -964,11 +964,14 @@ fn live_pause_status_from(
 /// What the page shows: whether a pause is asked for, and whether the game is
 /// actually standing still yet (the mod holds only at the opening of a turn).
 pub fn live_pause_status() -> Value {
-    live_pause_status_from(
+    let mut status = live_pause_status_from(
         &live_pause_request_path(),
         &live_pause_state_path(),
         &|tag| holder().is_some_and(|holder| holder.alive && holder.tag == tag),
-    )
+    );
+    // The New game beside the Pause reads the same live run.
+    status["new_game"] = live_new_game_status_at(live_run_dir().as_deref());
+    status
 }
 
 fn set_live_pause_at(
@@ -1019,6 +1022,112 @@ pub fn set_live_pause(paused: bool, source: &str) -> Result<(), String> {
         source,
         std::time::SystemTime::now(),
     )
+}
+
+// --- the operator's New game ----------------------------------------------
+//
+// The page's New game is `civvis-games retire`: the live run is asked to end
+// with Civilization VI's own Retire (`tools/civ6_control/operator_retire.py`
+// owns that protocol), the ladder row says `operator_retired`, and the lane's
+// supervisor starts the next game as it does after any ending. Nothing is
+// killed and nothing is launched from here.
+
+/// The reason the run and its ladder row carry, so a census can tell an
+/// operator's restart from a lost game.
+const LIVE_NEW_GAME_REASON: &str = "operator: new game from the CIVVIS page";
+
+/// The live run's directory: the game lock's holder, while its process lives.
+fn live_run_dir() -> Option<PathBuf> {
+    let holder = holder().filter(|holder| holder.alive)?;
+    let safe = !holder.tag.is_empty()
+        && holder
+            .tag
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        && !holder.tag.starts_with('.');
+    safe.then(|| run_root().join(&holder.tag))
+}
+
+/// Whether the live run has been asked to retire, and whether the control mod
+/// has done it. Read from the sidecars `operator_retire.py` keeps in the run.
+fn live_new_game_status_at(run_dir: Option<&Path>) -> Value {
+    // `live: false` is the gap between games: the retired run's harness has
+    // exited and the next one has not taken the lock yet.
+    let Some(run_dir) = run_dir else {
+        return serde_json::json!({
+            "live": false, "requested": false, "retired": false, "detail": null,
+        });
+    };
+    let request = run_dir.join("operator-retire-request.json").is_file();
+    let retired = run_dir.join("operator-retire.json").is_file();
+    let detail = read_json_object(&run_dir.join("operator-retire-status.json"))
+        .and_then(|note| note.get("detail").cloned())
+        .unwrap_or(Value::Null);
+    serde_json::json!({
+        "live": true,
+        "requested": request && !retired,
+        "retired": retired,
+        "detail": if retired { Value::Null } else { detail },
+    })
+}
+
+/// What `civvis-games retire` said, as the page's answer. A game already on its
+/// way out is what was asked for, not a failure.
+fn live_new_game_outcome(succeeded: bool, stdout: &str, stderr: &str) -> Result<(), String> {
+    let said = format!("{stdout}\n{stderr}");
+    if succeeded
+        || said.contains("already has a pending retirement request")
+        || said.contains("already has a recorded retirement")
+    {
+        return Ok(());
+    }
+    // The retire tool explains itself on stderr; the switch's own refusals
+    // (lanes off) print a `==` heading and then the reason on stdout.
+    let last_said = |text: &str| {
+        text.lines()
+            .map(str::trim)
+            .rfind(|line| !line.is_empty() && !line.starts_with("=="))
+            .map(str::to_string)
+    };
+    let why = last_said(stderr)
+        .or_else(|| last_said(stdout))
+        .unwrap_or_else(|| "the lane's switch refused without saying why".to_string());
+    let why = why
+        .trim_start_matches("retire request refused: ")
+        .trim_start_matches("refused: ");
+    Err(if why.contains("has no recorded turn") {
+        "the game is still being set up; try again once its first turn is on screen".to_string()
+    } else if why.contains("no tagged civ6_play harness is active") {
+        "no live game is running to replace".to_string()
+    } else if why.contains("is already complete") {
+        "this game has already ended; the next one is on its way".to_string()
+    } else {
+        why.to_string()
+    })
+}
+
+/// Ask Civilization VI to retire the live game so the lane starts a fresh one,
+/// and lift any pause: the pause request is host-wide, so standing it would
+/// hold the new game at its first turn, and New game means a game that plays.
+pub fn request_live_new_game() -> Result<(), String> {
+    let tools = tools_dir()
+        .ok_or_else(|| "the CIVVIS tools directory is not beside this server".to_string())?;
+    // The operator's own switch, not a copy of it: it refuses when the lanes
+    // are off (a retired game would get no successor), and its retire tool
+    // proves exactly one live game and refuses to touch one still in setup.
+    let output = Command::new("/bin/zsh")
+        .arg(tools.join("ops").join("civvis-games.sh"))
+        .args(["retire", LIVE_NEW_GAME_REASON])
+        .env("CIVVIS_RUNS_ROOT", run_root())
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|error| format!("could not ask for a new game: {error}"))?;
+    live_new_game_outcome(
+        output.status.success(),
+        &String::from_utf8_lossy(&output.stdout),
+        &String::from_utf8_lossy(&output.stderr),
+    )?;
+    set_live_pause(false, "civvis-page")
 }
 
 #[cfg(test)]
@@ -1340,5 +1449,87 @@ mod tests {
         assert_eq!(status["held"], false);
         assert_eq!(status["since_utc"], Value::Null);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// New game reads the live run's retire sidecars: asked for until the
+    /// control mod has retired the game, and no live run means nothing asked.
+    #[test]
+    fn the_page_sees_a_new_game_asked_for_and_done() {
+        let none = live_new_game_status_at(None);
+        assert_eq!(none["live"], false);
+        assert_eq!(none["requested"], false);
+        assert_eq!(none["retired"], false);
+        let dir = live_pause_scratch("new-game");
+        let playing = live_new_game_status_at(Some(&dir));
+        assert_eq!(playing["live"], true);
+        assert_eq!(playing["requested"], false);
+        fs::write(
+            dir.join("operator-retire-request.json"),
+            r#"{"tag": "civvis-20261013T054246Z", "state": "requested"}"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("operator-retire-status.json"),
+            r#"{"state": "pending", "detail": "wrote native retire order; awaiting control-mod acknowledgement"}"#,
+        )
+        .unwrap();
+        let asked = live_new_game_status_at(Some(&dir));
+        assert_eq!(asked["requested"], true);
+        assert_eq!(asked["retired"], false);
+        assert_eq!(
+            asked["detail"],
+            "wrote native retire order; awaiting control-mod acknowledgement"
+        );
+        fs::write(dir.join("operator-retire.json"), r#"{"state": "retired"}"#).unwrap();
+        let done = live_new_game_status_at(Some(&dir));
+        assert_eq!(done["requested"], false, "a retired game is no longer asked for");
+        assert_eq!(done["retired"], true);
+        assert_eq!(done["detail"], Value::Null);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// What `civvis-games retire` says becomes the page's answer: a game
+    /// already on its way out is success, and a refusal says why in words the
+    /// operator can act on.
+    #[test]
+    fn the_page_reads_the_switch_for_a_new_game() {
+        assert_eq!(live_new_game_outcome(true, "== retiring the active game ==\n", ""), Ok(()));
+        assert_eq!(
+            live_new_game_outcome(
+                false,
+                "== retiring the active game ==\n",
+                "retire request refused: run 'civvis-x' already has a pending retirement request\n",
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            live_new_game_outcome(
+                false,
+                "== retiring the active game ==\n",
+                "retire request refused: run 'civvis-x' has no recorded turn; refusing to touch setup\n",
+            ),
+            Err("the game is still being set up; try again once its first turn is on screen".into())
+        );
+        assert_eq!(
+            live_new_game_outcome(
+                false,
+                "== retiring the active game ==\n",
+                "retire request refused: no tagged civ6_play harness is active\n",
+            ),
+            Err("no live game is running to replace".into())
+        );
+        // The switch's own refusal is on stdout, under its heading.
+        assert_eq!(
+            live_new_game_outcome(
+                false,
+                "== retiring the active game ==\n  refused: the game lanes are OFF; use civvis-games on before requesting a replacement\n",
+                "",
+            ),
+            Err("the game lanes are OFF; use civvis-games on before requesting a replacement".into())
+        );
+        assert_eq!(
+            live_new_game_outcome(false, "", ""),
+            Err("the lane's switch refused without saying why".into())
+        );
     }
 }

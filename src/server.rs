@@ -4848,6 +4848,26 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             };
             respond_json(stream, &answer);
         }
+        // The operator's New game for that same live game: Civilization VI's
+        // own Retire through `civvis-games retire`, after which the lane's
+        // supervisor starts the next game (`civ6::request_live_new_game`).
+        // The page confirms first; a body must say so, so a stray POST to the
+        // route cannot end a game.
+        ("POST", "/live-new-game") => {
+            let asked = if !civ6::live_pause_control() {
+                Err("this page is not showing a live Civilization VI game".to_string())
+            } else if parsed["confirm"].as_bool() != Some(true) {
+                Err("send {\"confirm\": true} to end this game and start a new one".to_string())
+            } else {
+                civ6::request_live_new_game()
+            };
+            let mut answer = civ6::live_pause_status();
+            answer["error"] = match asked {
+                Ok(()) => Value::Null,
+                Err(error) => Value::String(error),
+            };
+            respond_json(stream, &answer);
+        }
         // Start a real game of Civilization VI with the lobby's settings.
         //
         // The reply is a receipt, not a game: bringing the other game up takes

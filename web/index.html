@@ -1712,43 +1712,67 @@
     font-size: var(--type-small); font-weight: 900;
   }
   .launch-badge[hidden] { display: none; }
-  /* The live game's Pause / Resume (`toggleLivePause`): a media control at the
-     foot of the map, which nothing else on a mirrored board occupies. It is
-     shown only where `GET /live-pause` says this page is the mirror beside a
-     Civilization VI verification game, and there it holds the Firaxis game
-     itself. The note beside it says what the game is actually doing — the
-     hold lands at the start of the next turn, not on the click. */
+  /* The live game's controls — Pause / Resume (`toggleLivePause`) and New game
+     (`pressLiveNewGame`) — in the map's bottom-right corner (the action corner
+     is a solo-seat frame's). The world minimap and the map tools can hold that
+     corner too, so `placeLivePause` steps beside or above them; these
+     offsets are only the first paint. They are shown only where
+     `GET /live-pause` says this page is
+     the mirror beside a Civilization VI verification game, and there they act
+     on the Firaxis game itself. The note above them says what the game is
+     actually doing — the hold lands at the start of the next turn, and a new
+     game takes a few minutes to come up, neither on the click. */
   #livepause {
-    position: absolute; z-index: 30; left: 50%; bottom: var(--panel-edge);
-    transform: translateX(-50%);
-    display: flex; align-items: center; gap: 10px; max-width: calc(100% - 24px);
-    padding: 5px; border-radius: 999px; white-space: nowrap;
+    position: absolute; z-index: 30; right: var(--panel-edge); bottom: var(--panel-edge);
+    display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+    max-width: min(300px, calc(100% - 2 * var(--panel-edge)));
+  }
+  #livepause[hidden] { display: none; }
+  .livepause-buttons {
+    display: flex; gap: 6px; padding: 5px; border-radius: 999px; white-space: nowrap;
     border: 1px solid #4d685f; background: #0a1512e8;
     box-shadow: 0 8px 22px #0007; backdrop-filter: blur(12px);
   }
-  #livepause[hidden] { display: none; }
-  #livepause.live-paused { border-color: var(--gold); }
+  #livepause.live-paused .livepause-buttons { border-color: var(--gold); }
+  .livepause-buttons button {
+    flex: none; margin: 0; padding: 8px 16px; border-radius: 999px;
+    font-size: var(--type-control); font-weight: 900; letter-spacing: .04em;
+  }
   #livepause-button {
-    flex: none; margin: 0; padding: 8px 18px; border-radius: 999px;
     color: #17160f; background: linear-gradient(135deg, #f0d58f, #c99e4e);
-    border-color: #efd184; font-size: var(--type-control); font-weight: 900;
-    letter-spacing: .04em; box-shadow: inset 0 1px #fff7;
+    border-color: #efd184; box-shadow: inset 0 1px #fff7;
   }
   #livepause-button:hover {
     color: #11140f; background: linear-gradient(135deg, #ffe3a0, #dbae58); border-color: #ffe4a0;
   }
-  #livepause-button:disabled { opacity: .7; cursor: progress; }
+  #livenewgame-button {
+    color: #dce6e1; background: linear-gradient(180deg, #243530, #192823); border-color: #4d685f;
+  }
+  #livenewgame-button:hover {
+    color: var(--text); background: linear-gradient(180deg, #315048, #223a34); border-color: #6f8f84;
+  }
+  /* Ending a game is the one press here that cannot be taken back, so the
+     first press only arms it and the button says so in a different colour. */
+  #livenewgame-button.confirming,
+  #livenewgame-button.confirming:hover {
+    color: #fff4ef; background: linear-gradient(135deg, #c9583f, #9a3626); border-color: #e48a72;
+  }
+  .livepause-buttons button:disabled { opacity: .6; cursor: progress; }
   #livepause-note {
-    min-width: 0; overflow: hidden; text-overflow: ellipsis; padding-right: 10px;
-    color: #dce6e1; font-size: var(--type-control); font-weight: 800;
+    max-width: 100%; padding: 6px 12px; border-radius: 12px; text-align: right;
+    border: 1px solid #4d685f; background: #0a1512e8; backdrop-filter: blur(12px);
+    color: #dce6e1; font-size: var(--type-control); font-weight: 800; line-height: 1.3;
   }
   #livepause-note[hidden] { display: none; }
   #livepause.live-pending #livepause-note { color: #aebeb7; font-style: italic; }
+  #livepause.live-error #livepause-note { color: #f2b8a8; border-color: #8a4740; font-style: normal; }
   /* On that mirror the spectator Pause would start simulating the mirrored
-     world instead of holding the real one, so the live control is the only
-     pause it offers. */
+     world instead of holding the real one, and Restart sim would replace the
+     mirrored world with a simulated one while the real game played on — so the
+     live controls are the only pause and the only restart it offers. */
   body.live-pause-available #specpause,
-  body.live-pause-available #collapsepause { display: none !important; }
+  body.live-pause-available #collapsepause,
+  body.live-pause-available #specbar { display: none !important; }
   #empire {
     position: absolute; z-index: 18;
     inset: var(--workspace-block-inset) var(--workspace-inline-inset);
@@ -4809,11 +4833,15 @@
   <div id="launchbar" aria-label="Empire screens">
     <div id="launchtabs"></div>
   </div>
-  <!-- The live game's Pause / Resume. Hidden unless this page is the mirror
-       beside a Civilization VI verification game; see `toggleLivePause`. -->
+  <!-- The live game's Pause / Resume and New game. Hidden unless this page is
+       the mirror beside a Civilization VI verification game; see
+       `toggleLivePause` and `pressLiveNewGame`. -->
   <div id="livepause" hidden role="group" aria-label="Live Civilization VI game">
-    <button id="livepause-button" type="button" aria-pressed="false">⏸ Pause game</button>
     <span id="livepause-note" aria-live="polite" hidden></span>
+    <div class="livepause-buttons">
+      <button id="livepause-button" type="button" aria-pressed="false">⏸ Pause game</button>
+      <button id="livenewgame-button" type="button">↻ New game</button>
+    </div>
   </div>
   <!-- Civ 6's partial-screen hooks (PartialScreenHooks.xml): upper right, read
        right to left — Reports, Era progress, Trade routes, City-States,

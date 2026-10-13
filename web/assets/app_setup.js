@@ -69,6 +69,7 @@ bindMapAreaEditor();
 document.getElementById("collapsepause").onclick = toggleSpecPause;
 document.getElementById("specpause").onclick = toggleSpecPause;
 document.getElementById("livepause-button").onclick = toggleLivePause;
+document.getElementById("livenewgame-button").onclick = pressLiveNewGame;
 function chooseWatchPace(value) {
   const select = document.getElementById("specspeed");
   const ms = Number(value);
