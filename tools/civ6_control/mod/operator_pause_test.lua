@@ -63,18 +63,20 @@ assert(queries == 1, "polled " .. queries .. " times inside a quarter second")
 clock = 0.3
 env.awaiting.done, env.awaiting.frame = true, 2
 assert(hold(7) == true)
-assert(kinds() == "operator_paused")
+-- The held line right behind it is what gets the paused one written out.
+assert(kinds() == "operator_paused,operator_pause_held")
 assert(events[1].payload.turn == 7 and events[1].payload.frame == 2
 	and events[1].payload.settled == true)
+assert(events[2].payload.held_s == 0)
 assert(shared.CivvisOperatorHold == true, "the camera and screen closer are told")
 for _ = 1, 20 do assert(hold(7) == true) end
-assert(#events == 1, "a held game repeats nothing inside 30 s")
+assert(#events == 2, "a held game repeats nothing inside 30 s")
 
 -- 4. Held, it stays held and reports every 30 s.
 clock = 30.3
 assert(hold(7) == true)
-assert(kinds() == "operator_paused,operator_pause_held")
-assert(events[2].payload.held_s == 30)
+assert(kinds() == "operator_paused,operator_pause_held,operator_pause_held")
+assert(events[3].payload.held_s == 30)
 
 -- 5. Lifting the request resumes on the next poll, with the time held.
 rows = 0
@@ -82,31 +84,31 @@ clock = 30.4
 assert(hold(7) == true, "not re-polled within a quarter second")
 clock = 30.6
 assert(hold(7) == false)
-assert(kinds() == "operator_paused,operator_pause_held,operator_resumed")
-assert(events[3].payload.held_s == 30 and events[3].payload.turn == 7)
+assert(kinds() == "operator_paused,operator_pause_held,operator_pause_held,operator_resumed")
+assert(events[4].payload.held_s == 30 and events[4].payload.turn == 7)
 assert(shared.CivvisOperatorHold == false, "the camera and screen closer get the game back")
-assert(hold(7) == false and #events == 3)
+assert(hold(7) == false and #events == 4)
 
 -- 6. A turn whose end is already sent ends whatever this says; the next
 -- opening holds, once its board is out.
 rows, sent = 1, true
 clock = 31
-assert(hold(7) == false and #events == 3)
+assert(hold(7) == false and #events == 4)
 sent = false
 env.awaiting.turn, env.awaiting.done, env.awaiting.frame = 8, false, 0
 assert(hold(7) == false, "the board for this turn is not out yet")
 assert(hold(8) == true)
-assert(events[4].kind == "operator_paused" and events[4].payload.turn == 8
-	and events[4].payload.frame == 0 and events[4].payload.settled == false)
+assert(events[5].kind == "operator_paused" and events[5].payload.turn == 8
+	and events[5].payload.frame == 0 and events[5].payload.settled == false)
 rows = 0
 clock = 32
-assert(hold(8) == false and events[5].kind == "operator_resumed")
+assert(hold(8) == false and events[7].kind == "operator_resumed")
 
 -- 7. A channel that cannot be read is a game that plays.
 rows, attached = 1, false
 clock = 40
 env.awaiting.turn, env.awaiting.done, env.awaiting.frame = 9, false, 0
-assert(hold(9) == false and #events == 5)
+assert(hold(9) == false and #events == 7)
 attached = true
 
 -- 8. A seat the Lua plays itself has no orders to wait for: any tick holds.
@@ -114,7 +116,7 @@ env.cfg.CivvisDecides = false
 env.awaiting.done = true
 clock = 41
 assert(hold(9) == true)
-assert(events[6].kind == "operator_paused")
+assert(events[8].kind == "operator_paused")
 env.cfg.CivvisDecides = true
 
 -- The wiring: the tick holds after the board goes out and before any of it is

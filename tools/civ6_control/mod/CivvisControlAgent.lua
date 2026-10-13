@@ -21683,6 +21683,13 @@ function CivvisBoard.operatorHold(turn)
 	-- Where in the turn it stopped: frame 0 unsettled is the opening.
 	emit("operator_paused", { turn = turn, frame = awaiting.frame or 0,
 	                          settled = awaiting.done == true });
+	-- ★ AND A RECORD RIGHT BEHIND IT. The game writes its last record only
+	-- when the next one is logged (`LogTail` in watch.py), and a held game
+	-- logs nothing for 30 s. Live 2026-10-13 (civvis-20261013T213509Z t16):
+	-- held 1.1 s after the press, but the harness heard it 30 s later, so the
+	-- page said "Pausing…" and the popup backstop pressed Escape three times
+	-- on the held game.
+	emit("operator_pause_held", { turn = turn, held_s = 0 });
 	return true;
 end
 
