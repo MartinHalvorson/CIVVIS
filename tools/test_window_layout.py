@@ -77,10 +77,25 @@ class SavedFramePlacementTests(unittest.TestCase):
     def test_a_saved_frame_wins_over_the_fractions(self):
         self.assertEqual(self.placed(frame=(0, 33, 902, 611)), (0, 33, 902, 611))
 
+    def test_setup_never_uses_the_saved_frame(self):
+        """The setup readers are calibrated to the computed quadrant: two setups
+        at 902x611 could not verify the game modes off (2026-10-14)."""
+        import civ6_play
+        seen = {}
+        with mock.patch.object(civ6_play, "GAME_CONFIGURED", False), \
+             mock.patch.object(civ6_play, "desktop_size", lambda: SCREEN), \
+             mock.patch.object(civ6_play.window_layout, "frame_for",
+                               lambda quadrant, size: (0, 33, 902, 611)), \
+             mock.patch.object(civ6_play.macos_window, "place_game",
+                               lambda *a, **k: seen.update(k)):
+            civ6_play.place_game("left", 0.5, 0.5)
+        self.assertIsNone(seen["frame"])
+
     def test_civ6_play_hands_the_saved_upper_left_frame_to_the_placer(self):
         import civ6_play
         seen = {}
-        with mock.patch.object(civ6_play, "desktop_size", lambda: SCREEN), \
+        with mock.patch.object(civ6_play, "GAME_CONFIGURED", True), \
+             mock.patch.object(civ6_play, "desktop_size", lambda: SCREEN), \
              mock.patch.object(civ6_play.window_layout, "frame_for",
                                lambda quadrant, size: (0, 33, 902, 611) if quadrant == "upper-left" else None), \
              mock.patch.object(civ6_play.macos_window, "place_game",
