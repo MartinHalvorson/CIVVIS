@@ -3874,7 +3874,10 @@ pub const GENES: &[Gene] = &[
     // first Disrupt Rocketry came at turn 176. While a space racer exists, a
     // Spy outside every racer's cities starts no capture-risk operation, an
     // idle one is posted to the leading racer before any pad is seen, and in
-    // a racer's city it runs Disrupt Rocketry or a safe operation. See
+    // a racer's city it runs Disrupt Rocketry or a safe operation. The
+    // leader follows the race (a racer one project behind with 1.25x the
+    // Science counts level; Emperor 100910Z's Greece), and a Spy at a racer
+    // that no longer leads moves on unless offered the disruption. See
     // `advanced/racer_keeps_the_spies.rs`.
     Gene { tag: "racer-keeps-the-spies", field: "racer_keeps_the_spies", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_keeps_the_spies, disable: AdvancedAi::disable_racer_keeps_the_spies },
     // `capital-walls-before-the-surprise`: a met major at peace with twice

@@ -28908,7 +28908,13 @@ impl AdvancedAi {
             // rebuilt mirror cannot see the running operation, so without
             // this the same order goes out every turn. See
             // `spy_mission_patience`.
-            if self.spy_mission_patience && self.spy_orders_until.contains_key(&spy_id) {
+            // `racer-keeps-the-spies`: …unless it stands in a racer's city
+            // that is no longer the leader's, running only a Listening Post
+            // or Gain Sources. Never taken with the gene off.
+            if self.spy_mission_patience
+                && self.spy_orders_until.contains_key(&spy_id)
+                && !Self::racer_spy_moves_on(g, spy_id, racer_spy_leader, &racer_spy_racers)
+            {
                 continue;
             }
             let legal = g.legal_spy_actions(pid, spy_id);
@@ -29035,8 +29041,16 @@ impl AdvancedAi {
             // `science-denial-every-pad`: an idle spy in a foreign city that
             // is no free pad city of a decisive science threat leaves for the
             // nearest one. Never taken with the gene off (`every_pads` empty).
+            // `racer-keeps-the-spies`: …but not out of the leading racer's
+            // city, where that gene posted it. Never held with it off.
+            let in_racer_leaders_city = racer_spy_leader.is_some_and(|leader| {
+                current_city
+                    .and_then(|city| g.cities.get(&city))
+                    .is_some_and(|city| city.owner == leader)
+            });
             if let Some(pad_city) =
                 Self::every_pad_repost(g, pid, spy_id, current_city, &every_pads)
+                    .filter(|_| !in_racer_leaders_city)
             {
                 if let Some(action) = legal.iter().find(
                     |action| matches!(action, Action::AssignSpy { city, .. } if *city == pad_city),
@@ -29077,8 +29091,9 @@ impl AdvancedAi {
                     continue;
                 }
             }
-            // `racer-keeps-the-spies`: an idle Spy outside every racer's (and
-            // culture racer's) cities goes to the leading space racer, before
+            // `racer-keeps-the-spies`: an idle Spy outside the leading space
+            // racer's cities (and any culture racer's, and any other racer's
+            // where Disrupt Rocketry is offered) goes to the leader, before
             // any pad of it is seen. Never taken with the gene off
             // (`racer_spy_leader` is `None`).
             if let Some(post) = Self::racer_spy_post(
@@ -29086,7 +29101,8 @@ impl AdvancedAi {
                 spy_id,
                 current_city,
                 racer_spy_leader,
-                &racer_spy_stays,
+                &racer_spy_racers,
+                &culture_heist_targets,
                 &legal,
             ) {
                 if let Some(action) = legal.iter().find(
