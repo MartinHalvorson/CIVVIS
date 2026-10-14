@@ -218,6 +218,22 @@ fn browser_civ6_status() -> Value {
     })
 }
 
+/// `GET /live-pause` on a page with no live Civilization VI game behind it,
+/// in the native answer's shape (`civ6::live_pause_status`).
+fn browser_live_pause_status(error: Value) -> Value {
+    json!({
+        "available": false,
+        "requested": false,
+        "requested_utc": Value::Null,
+        "held": false,
+        "tag": Value::Null,
+        "turn": Value::Null,
+        "since_utc": Value::Null,
+        "new_game": {"live": false, "requested": false, "retired": false, "detail": Value::Null},
+        "error": error,
+    })
+}
+
 /// Replace a browser state map with the tile delta from the exact frame the
 /// page says it holds.
 ///
@@ -351,6 +367,13 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
         ("GET", "/civ6") => browser_civ6_status(),
         ("POST", "/civ6/start") => {
             json!({"error": CIV6_NATIVE_ONLY_MESSAGE, "started": Value::Null})
+        }
+        // The Pause and New game beside a live Civilization VI game drive the
+        // native lane's own files. A browser build mirrors no live game, so it
+        // answers that none is here and the page keeps both buttons hidden.
+        ("GET", "/live-pause") => browser_live_pause_status(Value::Null),
+        ("POST", "/live-pause") | ("POST", "/live-new-game") => {
+            browser_live_pause_status(json!(CIV6_NATIVE_ONLY_MESSAGE))
         }
 
         ("GET", "/status") => with_session(|session| {
