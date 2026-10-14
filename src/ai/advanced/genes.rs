@@ -3848,6 +3848,14 @@ pub const GENES: &[Gene] = &[
     // under 400 walls at turn 150, where they read 14-36. See
     // `advanced/war_target_walls.rs`.
     Gene { tag: "war-target-prices-the-walls", field: "war_target_prices_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_war_target_prices_the_walls, disable: AdvancedAi::disable_war_target_prices_the_walls },
+    // A Resident Embassy reveals the host's capital: over 30 Immortal games of
+    // 10-13/14, 12 capitals appeared the turn one landed, while 38 of 90 were
+    // never seen. The stock cadence asked an Unfriendly favourite (880 of
+    // 1,038 asks refused by the bridge), never the plan's target, and stalled
+    // once its favourite held an Embassy. Asked whenever Neutral, 7 never-seen
+    // capitals would have been revealed and 16 a median 7 turns sooner. See
+    // `advanced/embassy_capital.rs`.
+    Gene { tag: "embassy-finds-the-capital", field: "embassy_finds_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_embassy_finds_the_capital, disable: AdvancedAi::disable_embassy_finds_the_capital },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

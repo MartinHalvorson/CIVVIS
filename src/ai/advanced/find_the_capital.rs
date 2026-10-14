@@ -83,7 +83,7 @@ impl AdvancedAi {
 
     /// Whether this seat knows where `rival`'s original capital stands, on
     /// the board or in its memory of cities it has seen.
-    fn original_capital_known(g: &Game, pid: usize, rival: usize) -> bool {
+    pub(super) fn original_capital_known(g: &Game, pid: usize, rival: usize) -> bool {
         g.cities
             .values()
             .any(|city| city.is_capital && city.original_owner == rival)

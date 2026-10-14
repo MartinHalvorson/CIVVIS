@@ -308,6 +308,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `early-settler-floor` | off (unmeasured) | Enable `early-settler-floor`. | 1 \| 1 |
 | `elimination-waits-on-the-clock` | off (unmeasured) | Opt-in gene `elimination-waits-on-the-clock`; see `Self::elimination_waits_on_the_clock`. | 1 \| 1 |
 | `elimination-yields-to-a-launch` | off (unmeasured) | Opt-in gene `elimination-yields-to-a-launch`; see `AdvancedAi::elimination_yields_to_a_launch`. | 1 \| 1 |
+| `embassy-finds-the-capital` | off (unmeasured) | Opt-in gene `embassy-finds-the-capital`; see `AdvancedAi::embassy_finds_the_capital`. | 1 \| 1 |
 | `engineering-for-capped-fresh-water` | off (unmeasured) | Opt-in gene `engineering-for-capped-fresh-water`; see `advanced/engineering_for_capped_fresh_water.rs`. | 1 \| 1 |
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |
 | `faith-counter-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-counter-needs-the-edge`; see `AdvancedAi::faith_counter_has_the_edge`. | 1 \| 1 |

@@ -7662,6 +7662,17 @@ impl AdvancedAi {
         self.war_target_prices_the_walls = false;
     }
 
+    /// Opt-in gene `embassy-finds-the-capital`; see
+    /// `AdvancedAi::embassy_finds_the_capital`.
+    pub fn enable_embassy_finds_the_capital(&mut self) {
+        self.embassy_finds_the_capital = true;
+    }
+
+    /// The twin of `enable_embassy_finds_the_capital`.
+    pub fn disable_embassy_finds_the_capital(&mut self) {
+        self.embassy_finds_the_capital = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

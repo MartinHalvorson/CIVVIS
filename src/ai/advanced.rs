@@ -6251,6 +6251,15 @@ pub struct AdvancedAi {
     /// the declaration edge. See `advanced/dvp_leader_front.rs`.
     dvp_leader_is_the_front: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `embassy-finds-the-capital`: on a Domination plan with Diplomatic
+    /// Service known, one Resident Embassy a turn goes to a met rival at
+    /// peace whose original capital we have never seen and whose standing
+    /// toward us the host reads as Neutral or warmer, the plan's target
+    /// first. See `advanced/embassy_capital.rs`.
+    embassy_finds_the_capital: bool,
+    /// `embassy-finds-the-capital`: the turn each rival was last asked for
+    /// an Embassy, so one refusal does not hold the next rival back.
+    embassy_capital_asks: BTreeMap<usize, u32>,
     /// `elimination-yields-to-a-launch`: the Diplomatic Victory elimination
     /// front (`diplomatic_contender_to_eliminate`) yields, without holding the
     /// contender's capital, to a rival already at war with us whose Mars stage
@@ -9107,6 +9116,9 @@ pub use air_city_assault::AirCityAssault;
 /// `war-target-prices-the-walls`: see `advanced/war_target_walls.rs`.
 mod war_target_walls;
 
+/// `embassy-finds-the-capital`: see `advanced/embassy_capital.rs`.
+mod embassy_capital;
+
 mod denial_nearest_finish;
 mod denial_needs_a_road;
 mod city_memory;
@@ -10535,6 +10547,8 @@ impl AdvancedAi {
             congress_guards_the_leader: false,
             dvp_leader_is_the_front: false,
             // ---- append: e-f ----------------------------------------
+            embassy_finds_the_capital: false,
+            embassy_capital_asks: BTreeMap::new(),
             elimination_yields_to_a_launch: false,
             first_luxury_first_2: false,
             falling_city_calls_the_takers: false,
@@ -23531,11 +23545,16 @@ impl AdvancedAi {
         // the kind, the cadence, the ranking's science term and the partner
         // bar. See `advanced/research_alliance.rs`.
         self.propose_strategic_alliance(g, pid, plan, denied_partner);
+        // `embassy-finds-the-capital`: an Embassy to a rival whose original
+        // capital we have never seen, the plan's target first; the stock
+        // cadence below opens no second session on a turn it sends one. See
+        // `advanced/embassy_capital.rs`.
+        let embassy_sent = self.embassy_finds_the_capital_step(g, pid, plan.target_player);
         // Relationship mechanics must be part of a strategic AI turn too.
         // Send one mission to the best non-hostile major, preferring the
         // Embassy that supersedes a prior Delegation. This mirrors the basic
         // controller's cadence but uses the plan-aware relationship score.
-        if g.turn % 8 == pid as u32 % 8 {
+        if !embassy_sent && g.turn % 8 == pid as u32 % 8 {
             let mission = g
                 .players
                 .iter()
