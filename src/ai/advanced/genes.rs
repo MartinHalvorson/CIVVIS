@@ -3842,6 +3842,12 @@ pub const GENES: &[Gene] = &[
     // retired as forgotten three times. No Builder of ours stood on a
     // mountain in 984 Builder-turns after the unlock over two games.
     Gene { tag: "builders-route-around-mountains", field: "builders_route_around_mountains", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_route_around_mountains, disable: AdvancedAi::disable_builders_route_around_mountains },
+    // Over the 15 strong Immortal games of 10-12/13 the decisive siege opened
+    // 7-44 turns after its target had Urban Defenses (400 walls) in 8 of 13,
+    // our guns then reading 2-12 a shot, while 9 games still held a rival
+    // under 400 walls at turn 150, where they read 14-36. See
+    // `advanced/war_target_walls.rs`.
+    Gene { tag: "war-target-prices-the-walls", field: "war_target_prices_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_war_target_prices_the_walls, disable: AdvancedAi::disable_war_target_prices_the_walls },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

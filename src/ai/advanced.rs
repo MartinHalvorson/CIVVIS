@@ -8416,6 +8416,10 @@ pub struct AdvancedAi {
     /// `advanced/science_suppression_pads.rs`.
     science_suppression_hits_the_pads: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `war-target-prices-the-walls`: at peace, the Domination campaign names
+    /// the rival whose capital our fielded siege guns take soonest. See
+    /// `advanced/war_target_walls.rs`.
+    war_target_prices_the_walls: bool,
     /// `unwalled-city-spares-the-train`: on the siege's entry reads (Stage
     /// -> Invest and the muster's close) a city with no standing wall, and no
     /// walled Encampment, charges the train's endurance no city strike, as it
@@ -9099,6 +9103,10 @@ mod air_resource_settlement;
 mod air_surge;
 mod native_air_assault;
 pub use air_city_assault::AirCityAssault;
+
+/// `war-target-prices-the-walls`: see `advanced/war_target_walls.rs`.
+mod war_target_walls;
+
 mod denial_nearest_finish;
 mod denial_needs_a_road;
 mod city_memory;
@@ -10840,6 +10848,7 @@ impl AdvancedAi {
             science_denial_refused_pads: BTreeMap::new(),
             science_suppression_hits_the_pads: false,
             // ---- append: t-z ----------------------------------------
+            war_target_prices_the_walls: false,
             unwalled_city_spares_the_train: false,
             theology_fights_only_to_win: false,
             trader_fills_the_idle_route: false,
@@ -15041,6 +15050,20 @@ impl AdvancedAi {
                         // (`science-leader-is-the-target`): behind the
                         // counter, ahead of every elective pick below.
                         .or(science_leader)
+                        // `war-target-prices-the-walls`: behind every counter,
+                        // contender and the Science leader, the elective
+                        // capital pick below yields to a capital our fielded
+                        // guns take sooner. See `advanced/war_target_walls.rs`.
+                        .or_else(|| {
+                            if !self.war_target_prices_the_walls {
+                                return None;
+                            }
+                            let default = self
+                                .domination_followup_target(g, pid, None)
+                                .or(domination_frontier_target)
+                                .or_else(|| domination_capital.map(|(owner, _)| owner));
+                            self.wall_priced_war_target(g, pid, default)
+                        })
                         // A secured capital advances the Domination campaign
                         // to another capital owner, even when its frontier
                         // must be taken first. Otherwise prefer an eligible

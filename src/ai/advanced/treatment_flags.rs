@@ -7651,6 +7651,17 @@ impl AdvancedAi {
         self.builders_route_around_mountains = false;
     }
 
+    /// Opt-in gene `war-target-prices-the-walls`; see
+    /// `AdvancedAi::war_target_prices_the_walls`.
+    pub fn enable_war_target_prices_the_walls(&mut self) {
+        self.war_target_prices_the_walls = true;
+    }
+
+    /// The twin of `enable_war_target_prices_the_walls`.
+    pub fn disable_war_target_prices_the_walls(&mut self) {
+        self.war_target_prices_the_walls = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
