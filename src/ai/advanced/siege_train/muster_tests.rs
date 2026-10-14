@@ -514,3 +514,160 @@ fn the_dry_road_map_keeps_to_land_within_its_limit() {
         "the start lies past a two-step road"
     );
 }
+
+/// The shortest road enters a neighbouring walled city's strike ring. The
+/// safe road first heads away from the objective, then returns on its south.
+fn muster_detour_board() -> (Game, u32, u32, Pos, Vec<Pos>) {
+    let (mut g, cid) = walled_city();
+    let city = g.cities[&cid].pos;
+    let at = |x, y| (city.0 + x, city.1 + y);
+    let start = at(-12, 0);
+    let threat = at(-9, -2);
+    let detour = vec![
+        start,
+        at(-13, 1),
+        at(-13, 2),
+        at(-13, 3),
+        at(-12, 3),
+        at(-12, 4),
+        at(-11, 4),
+        at(-10, 4),
+        at(-9, 4),
+        at(-8, 4),
+        at(-7, 4),
+        at(-6, 4),
+        at(-5, 4),
+    ];
+    let short: Vec<Pos> = (-12..=-5).map(|x| at(x, 0)).collect();
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = if detour.contains(&tile.pos)
+            || short.contains(&tile.pos)
+            || tile.pos == city
+            || tile.pos == threat
+        {
+            crate::name!("grassland")
+        } else {
+            crate::name!("mountain")
+        };
+        tile.feature = None;
+        tile.hills = false;
+    }
+    // Pose a world campaign so the siege member's turn cycle matches the
+    // production staging path.
+    g.map_script = crate::setup::MapScript::Pangaea;
+    // A random storm added 30 non-combat damage on the third march. This
+    // controlled case isolates the neighbouring city's fire and route.
+    g.disaster_intensity = 0;
+    g.storms.clear();
+    g.turn = 30;
+    g.at_war.insert((0, 1));
+    let neighbor = g.found_city_for(1, threat, Some("Road blocker".into()));
+    g.cities.get_mut(&neighbor).unwrap().wall_hp = 100;
+    let uid = g.spawn_unit("warrior", 0, start);
+    assert!(
+        detour
+            .windows(2)
+            .all(|edge| g.nbrs(edge[0]).contains(&edge[1])),
+        "the detour must be a connected road"
+    );
+    assert_eq!(g.wdist(start, city), 12);
+    (g, cid, uid, start, detour)
+}
+
+#[test]
+fn a_stalled_muster_walks_around_a_neighboring_city() {
+    let (mut g, cid, uid, start, detour) = muster_detour_board();
+    let view = CityView::of(&g, cid).unwrap();
+    let mut ai = train(true);
+    ai.enable_muster_walks_the_road();
+    let mut move_probe = g.speculative_clone();
+    let move_result = move_probe.apply(
+        0,
+        &Action::MoveTo {
+            unit: uid,
+            to: detour[2],
+        },
+    );
+    assert!(
+        move_result.is_ok(),
+        "fixture's safe first march must execute: {move_result:?}; current={}, winner={:?}",
+        g.current,
+        g.winner
+    );
+    assert_eq!(move_probe.units[&uid].pos, detour[2]);
+    let road = g.dry_road_steps(uid, view.pos, STAGING_FAR, MUSTER_ROAD_STEPS);
+    assert!(road.contains_key(&start));
+    let mut field = super::super::battle_planner::DangerField::with_reach(&g, 0, true);
+    field.share(&g);
+    assert_eq!(field.rotation_danger(start, uid), 0.0);
+    assert!(
+        g.reachable(uid)
+            .into_iter()
+            .filter(|pos| { road.get(pos).is_some_and(|steps| *steps < road[&start]) })
+            .all(
+                |pos| field.contributions(pos, uid).iter().any(|(source, blow)| {
+                    *blow > 0.0
+                        && source.is_some_and(|id| {
+                            id & super::super::battle_planner::STRUCTURE_SOURCE != 0
+                        })
+                })
+            ),
+        "every step that shortens the terrain road enters city fire"
+    );
+    for _ in 0..8 {
+        ai.muster_step(&mut g, 0, uid, &view);
+        let pos = g.units[&uid].pos;
+        assert!(
+            detour.contains(&pos),
+            "the member keeps the safe road: {pos:?}"
+        );
+        let mut check = super::super::battle_planner::DangerField::with_reach(&g, 0, true);
+        check.share(&g);
+        let blows = check.contributions(pos, uid);
+        assert_eq!(
+            check.rotation_danger(pos, uid),
+            0.0,
+            "no turn ends under fire at {pos:?}: {blows:?}; units={:?}",
+            g.units
+                .values()
+                .map(|u| (u.id, u.owner, u.kind, u.pos))
+                .collect::<Vec<_>>()
+        );
+        if g.wdist(pos, view.pos) <= MUSTER_BREACH_FAR {
+            break;
+        }
+        g.apply(0, &Action::EndTurn).unwrap();
+        g.apply(1, &Action::EndTurn).unwrap();
+    }
+    assert_ne!(
+        g.units[&uid].pos, start,
+        "a safe detour must replace the indefinite hold"
+    );
+    assert!(
+        g.wdist(g.units[&uid].pos, view.pos) <= MUSTER_BREACH_FAR,
+        "the member reaches the band that counts toward muster readiness"
+    );
+}
+
+#[test]
+fn a_muster_without_a_safe_detour_holds() {
+    let (mut g, cid, uid, start, detour) = muster_detour_board();
+    g.map.tiles.get_mut(&detour[1]).unwrap().terrain = crate::name!("mountain");
+    let view = CityView::of(&g, cid).unwrap();
+    let mut ai = train(true);
+    ai.enable_muster_walks_the_road();
+    ai.muster_step(&mut g, 0, uid, &view);
+    assert_eq!(
+        g.units[&uid].pos, start,
+        "the fallback cannot cross enemy fire or impassable ground"
+    );
+}
+
+#[test]
+fn the_road_treatment_is_required_for_a_muster_detour() {
+    let (mut g, cid, uid, start, _) = muster_detour_board();
+    let view = CityView::of(&g, cid).unwrap();
+    let mut ai = train(true);
+    ai.muster_step(&mut g, 0, uid, &view);
+    assert_eq!(g.units[&uid].pos, start);
+}
